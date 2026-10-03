@@ -499,6 +499,107 @@
     return lines;
   }
 
+  function annualToMonthlyProb(annual) {
+    const q = Math.min(1, Math.max(0, num(annual, 0)));
+    return 1 - Math.pow(1 - q, 1 / 12);
+  }
+
+  function coverageLimitFor(rules, adl) {
+    const limits = (rules && rules.coverage_limits) || {};
+    const raw = limits[String(adl)] != null ? limits[String(adl)] : limits[adl];
+    const limit = Number(raw);
+    return Number.isFinite(limit) ? limit : null;
+  }
+
+  /**
+   * Issuance against the simulation's underwriting snapshot.
+   * Decline threshold and maximum acceptance age are hard declines.
+   * Max ADL (and the other automatic-approval gates) only auto-issue;
+   * a life that fails one gate is referred, never declined by automation.
+   */
+  function issueFromRules(life, rules) {
+    const src = life || {};
+    const cfg = rules || {};
+    const adl = num(src.adl != null ? src.adl : src.health_score, NaN);
+    const age = num(src.age, NaN);
+    const coverage = num(src.coverage != null ? src.coverage : src.coverage_amount, NaN);
+    const decline = num(cfg.decline_threshold, 9);
+    const maxAge = num(cfg.max_acceptance_age, 65);
+    const exclusion = num(cfg.disability_exclusion_threshold, 8);
+    if (!Number.isFinite(age) || age > maxAge) {
+      return { uw_status: 'declined', issuance: 'declined', reason: 'age', disability_eligible: false, coverage: coverage };
+    }
+    if (!Number.isFinite(adl) || adl >= decline) {
+      return { uw_status: 'declined', issuance: 'declined', reason: 'adl', disability_eligible: false, coverage: coverage };
+    }
+    const limit = coverageLimitFor(cfg, adl);
+    const capped = limit != null && coverage > limit ? limit : coverage;
+    const disabilityEligible = !(adl >= exclusion);
+    if (!cfg.auto_approve_enabled) {
+      return {
+        uw_status: 'approved', issuance: 'book', reason: 'accepted',
+        disability_eligible: disabilityEligible, coverage: capped,
+      };
+    }
+    const smoker = String(src.smoking_status || '').toLowerCase();
+    const nonsmoker = smoker === 'nonsmoker' || smoker === 'non-smoker' || smoker === 'never';
+    const clean = !cfg.auto_approve_require_clean_history || nonsmoker;
+    const risk = num(src.risk_score, NaN);
+    const auto = adl <= num(cfg.auto_approve_max_adl, 3)
+      && age >= num(cfg.auto_approve_min_age, 18)
+      && age <= num(cfg.auto_approve_max_age, 60)
+      && capped <= num(cfg.auto_approve_max_coverage, 500000)
+      && Number.isFinite(risk)
+      && risk <= num(cfg.auto_approve_max_risk_score, 0.25)
+      && clean;
+    return {
+      uw_status: auto ? 'approved' : 'pending',
+      issuance: auto ? 'auto' : 'referred',
+      reason: auto ? 'auto' : 'referred',
+      disability_eligible: disabilityEligible,
+      coverage: capped,
+    };
+  }
+
+  /**
+   * One monthly draw against the kernel year-1 claim probabilities.
+   * Death is drawn first. Disability is drawn only when the life still
+   * covers it. The amount is the contractual sum, not a random severity.
+   */
+  function kernelClaimEvent(life, draw) {
+    const src = life || {};
+    if (src.uw_status !== 'approved') return null;
+    if (src.policy_status === 'terminated' || src.policy_status === 'cancelled') return null;
+    if (src.has_claim) return null;
+    const u = num(draw, 1);
+    const qDeath = annualToMonthlyProb(src.prob_mortality_year1);
+    const qDisable = src.disability_eligible === false
+      ? 0
+      : annualToMonthlyProb(src.prob_disability_year1);
+    if (u < qDeath) {
+      return {
+        type: 'mortality',
+        amount: Math.round(num(src.life_sum, 0) * 100) / 100,
+        cause: 'Death — natural or accidental',
+      };
+    }
+    if (u < qDeath + qDisable) {
+      return {
+        type: 'disability',
+        amount: Math.round(num(src.disability_sum, 0) * 100) / 100,
+        cause: 'Permanent total disability (3+ ADL)',
+      };
+    }
+    return null;
+  }
+
+  function premiumComponentsMatch(life) {
+    const src = life || {};
+    const sum = num(src.risk_premium, 0) + num(src.savings_premium, 0)
+      + num(src.expense_loading, 0) + num(src.profit_margin, 0);
+    return Math.abs(sum - num(src.annual_premium, 0)) < 0.05;
+  }
+
   return {
     COLLECTION_RATE: COLLECTION_RATE,
     claimMix: claimMix,
@@ -506,5 +607,9 @@
     managementFeeOnContributions: managementFeeOnContributions,
     portfolioSnapshot: portfolioSnapshot,
     snapshotLines: snapshotLines,
+    annualToMonthlyProb: annualToMonthlyProb,
+    issueFromRules: issueFromRules,
+    kernelClaimEvent: kernelClaimEvent,
+    premiumComponentsMatch: premiumComponentsMatch,
   };
 });

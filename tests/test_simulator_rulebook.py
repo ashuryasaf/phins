@@ -1,0 +1,165 @@
+"""Portfolio simulator and sandbox rulebook stay on the rate tables.
+
+Accepted lives respect the decline threshold, the acceptance age cap and
+the ADL coverage limits. Automatic approval, including maximum ADL, only
+auto-issues. Year-1 claims equal the kernel probabilities. The sandbox
+module applies the same gates and draws claims from those probabilities.
+"""
+
+import json
+import subprocess
+from pathlib import Path
+
+from services.actuarial_service import (
+    PortfolioSimulator,
+    SimulationParams,
+    get_actuarial_store,
+)
+
+
+def _run(age_max=70, count=60, **kwargs):
+    store = get_actuarial_store()
+    saved = {
+        'auto_approve_enabled': store.config.auto_approve_enabled,
+        'auto_approve_max_adl': store.config.auto_approve_max_adl,
+        'auto_approve_require_clean_history': store.config.auto_approve_require_clean_history,
+    }
+    store.config.auto_approve_enabled = kwargs.get('auto', saved['auto_approve_enabled'])
+    store.config.auto_approve_max_adl = kwargs.get('max_adl', saved['auto_approve_max_adl'])
+    if 'clean' in kwargs:
+        store.config.auto_approve_require_clean_history = kwargs['clean']
+    try:
+        sim = PortfolioSimulator(store)
+        return sim.generate_portfolio(SimulationParams(
+            customer_count=count,
+            age_min=25,
+            age_max=age_max,
+            age_distribution='uniform',
+            age_mean=45,
+            age_std=8,
+            coverage_min=50000,
+            coverage_max=800000,
+            coverage_distribution='uniform',
+            coverage_median=200000,
+            policy_term_mode='fixed',
+            policy_term_fixed=10,
+        ))
+    finally:
+        store.config.auto_approve_enabled = saved['auto_approve_enabled']
+        store.config.auto_approve_max_adl = saved['auto_approve_max_adl']
+        store.config.auto_approve_require_clean_history = saved['auto_approve_require_clean_history']
+
+
+def test_accepted_book_obeys_underwriting_and_kernel_claims():
+    result = _run()
+    rules = result['underwriting_rules']
+    flags = result['rule_integrity']
+    assert flags['all_checks_pass'] is True
+    assert rules['decline_threshold'] >= 1
+    assert rules['max_acceptance_age'] == 65
+    lives = result['priced_lives']
+    assert lives
+    assert len(lives) <= 2000
+    decline = rules['decline_threshold']
+    for life in lives:
+        assert life['adl'] < decline
+        assert life['age'] <= rules['max_acceptance_age']
+        assert life['year1_identity_holds'] is True
+        components = (
+            life['risk_premium'] + life['savings_premium']
+            + life['expense_loading'] + life['profit_margin']
+        )
+        assert abs(components - life['annual_premium']) < 0.05
+        if life['exclude_disability']:
+            assert life['disability_eligible'] is False
+            assert life['prob_disability_year1'] == 0.0
+        limit = rules['coverage_limits'].get(str(life['adl']))
+        if limit is not None:
+            assert life['coverage'] <= float(limit) + 0.01
+    summary = result['portfolio_summary']
+    assert summary['accepted_customers'] == len(lives) or summary['accepted_customers'] > len(lives)
+    assert summary['accepted_customers'] >= 1
+
+
+def test_maximum_adl_blocks_automatic_issue_only():
+    result = _run(auto=True, max_adl=3, clean=False, count=80)
+    rules = result['underwriting_rules']
+    assert rules['auto_approve_enabled'] is True
+    assert result['rule_integrity']['auto_approved_respects_max_adl'] is True
+    assert result['rule_integrity']['all_checks_pass'] is True
+    autos = [life for life in result['priced_lives'] if life['issuance'] == 'auto']
+    referred = [life for life in result['priced_lives'] if life['issuance'] == 'referred']
+    assert autos or referred
+    for life in autos:
+        assert life['adl'] <= 3
+        assert life['uw_status'] == 'approved'
+    for life in referred:
+        assert life['uw_status'] == 'pending'
+        assert life['adl'] < rules['decline_threshold']
+    assert result['issuance']['auto_approved'] == result['portfolio_summary']['auto_approved_customers']
+    assert result['issuance']['referred'] == result['portfolio_summary']['referred_customers']
+
+
+def test_sandbox_rulebook_matches_maximum_adl_and_kernel_draw():
+    root = Path(__file__).resolve().parents[1]
+    script = r"""
+const snap = require('./web_portal/static/sandbox-portfolio-snapshot.js');
+const rules = {
+  decline_threshold: 9,
+  disability_exclusion_threshold: 8,
+  max_acceptance_age: 65,
+  coverage_limits: { '8': 500000 },
+  auto_approve_enabled: true,
+  auto_approve_max_adl: 3,
+  auto_approve_min_age: 18,
+  auto_approve_max_age: 60,
+  auto_approve_max_coverage: 500000,
+  auto_approve_max_risk_score: 0.25,
+  auto_approve_require_clean_history: true,
+};
+const clean = snap.issueFromRules({
+  age: 40, adl: 2, coverage: 200000, risk_score: 0.01, smoking_status: 'nonsmoker',
+}, rules);
+if (clean.uw_status !== 'approved' || clean.issuance !== 'auto') process.exit(2);
+const overAdl = snap.issueFromRules({
+  age: 40, adl: 5, coverage: 200000, risk_score: 0.01, smoking_status: 'nonsmoker',
+}, rules);
+if (overAdl.uw_status !== 'pending' || overAdl.issuance !== 'referred') process.exit(3);
+const declined = snap.issueFromRules({
+  age: 40, adl: 9, coverage: 200000, risk_score: 0.01, smoking_status: 'nonsmoker',
+}, rules);
+if (declined.uw_status !== 'declined' || declined.reason !== 'adl') process.exit(4);
+const tooOld = snap.issueFromRules({
+  age: 70, adl: 2, coverage: 200000, risk_score: 0.01, smoking_status: 'nonsmoker',
+}, rules);
+if (tooOld.reason !== 'age') process.exit(5);
+const life = {
+  uw_status: 'approved', policy_status: 'active', has_claim: false,
+  disability_eligible: true,
+  prob_mortality_year1: 0.5, prob_disability_year1: 0.5,
+  life_sum: 100000, disability_sum: 25000,
+};
+const death = snap.kernelClaimEvent(life, 0.01);
+if (!death || death.type !== 'mortality' || death.amount !== 100000) process.exit(6);
+const monthlyDeath = snap.annualToMonthlyProb(0.5);
+const disable = snap.kernelClaimEvent(life, monthlyDeath + 0.001);
+if (!disable || disable.type !== 'disability' || disable.amount !== 25000) process.exit(7);
+const none = snap.kernelClaimEvent(life, 0.999);
+if (none) process.exit(8);
+const excluded = Object.assign({}, life, { disability_eligible: false });
+const noDisable = snap.kernelClaimEvent(excluded, monthlyDeath + 0.001);
+if (noDisable) process.exit(9);
+if (!snap.premiumComponentsMatch({
+  risk_premium: 100, savings_premium: 40, expense_loading: 15, profit_margin: 15.5, annual_premium: 170.5,
+})) process.exit(10);
+console.log('ok');
+"""
+    proc = subprocess.run(
+        ['node', '-e', script],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr or proc.stdout
+    assert 'ok' in proc.stdout

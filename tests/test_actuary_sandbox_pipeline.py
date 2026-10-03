@@ -269,11 +269,11 @@ def test_actuary_dashboard_wires_100k_cap_and_5yr_forecast():
     assert 'id="sandbox-proj-chart-accum"' in content
     assert 'id="sandbox-proj-chart-capacity"' in content
     assert "sandboxRenderForecastCharts" in content
-    # Contract age-trigger handling (Draft 3.1): disability is lifelong with
-    # age-banded benefit sums; the accepted age band is carried so an age-55
-    # cohort claims accordingly.
+    # Contract age-trigger handling (Draft 3.1): disability continues for
+    # life with age-banded benefit sums. Eligibility is the underwriting
+    # exclusion rule, not a hardcoded true on every account.
     assert "disability_max_age" in content
-    assert "disability_eligible: true" in content
+    assert "disability_eligible: decision.disability_eligible" in content
     assert "disability_band_age: disabilityBandAge" in content
     assert "age_min: acceptedAgeMin" in content
 

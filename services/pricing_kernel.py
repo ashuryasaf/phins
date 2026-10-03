@@ -547,6 +547,10 @@ class PremiumComponents:
     # tables, before lapse). Basis for a year-1 "paid claims / premium" loss
     # ratio; distinct from pv_total_risk_claims / term (lifetime-annualised).
     expected_claims_year1: float = 0.0
+    # Year-1 incidence from the same rate tables, ADL multipliers and
+    # demographic factors as the claim PV. Not part of the integrity hash.
+    prob_mortality_year1: float = 0.0
+    prob_disability_year1: float = 0.0
     # Undiscounted expected claim cash flows by policy year. Discounting
     # this vector at ``discount_rate`` reproduces the claim PV (lapse is
     # inside the cash flow only when the pricing config applies it). The
@@ -863,6 +867,8 @@ def _pv_claims_mutually_exclusive(
     pv_mortality = 0.0
     pv_disability = 0.0
     expected_claims_year1 = 0.0
+    prob_mortality_year1 = 0.0
+    prob_disability_year1 = 0.0
     cashflows: List[float] = []
     prob_alive_not_disabled = 1.0
 
@@ -904,6 +910,11 @@ def _pv_claims_mutually_exclusive(
         if year == 1:
             # Undiscounted, pre-lapse expected claims in the first policy year:
             # the year-1 basis for a "paid claims / premium" loss ratio.
+            # The two probabilities are the kernel claim assumptions the
+            # sandbox lifecycle draws against (death first, then disability
+            # only if the life is still in force and disability is covered).
+            prob_mortality_year1 = prob_die_this_year
+            prob_disability_year1 = prob_disable_this_year if disability_active else 0.0
             expected_claims_year1 = life_sum * prob_die_this_year
             if disability_active and benefit_pct > 0:
                 expected_claims_year1 += disability_sum * benefit_pct * prob_disable_this_year
@@ -914,6 +925,8 @@ def _pv_claims_mutually_exclusive(
         "pv_mortality": pv_mortality,
         "pv_disability": pv_disability,
         "expected_claims_year1": expected_claims_year1,
+        "prob_mortality_year1": prob_mortality_year1,
+        "prob_disability_year1": prob_disability_year1,
         "expected_claims_by_year": cashflows,
     }
 
@@ -939,6 +952,8 @@ def _pv_claims_independent(
 
     pv_mortality = 0.0
     expected_claims_year1 = 0.0
+    prob_mortality_year1 = 0.0
+    prob_disability_year1 = 0.0
     cashflows = [0.0] * term
     for year in range(1, term + 1):
         current_age = age + year - 1
@@ -959,6 +974,7 @@ def _pv_claims_independent(
         pv_mortality += life_sum * death_prob * discount
         cashflows[year - 1] += life_sum * death_prob * lapse_survival
         if year == 1:
+            prob_mortality_year1 = death_prob
             expected_claims_year1 += life_sum * death_prob
 
     pv_disability = 0.0
@@ -987,12 +1003,15 @@ def _pv_claims_independent(
             pv_disability += survival * dis_rate * disability_sum * benefit_pct * discount
             cashflows[year - 1] += survival * dis_rate * disability_sum * benefit_pct * lapse_survival
             if year == 1:
+                prob_disability_year1 = survival * dis_rate
                 expected_claims_year1 += survival * dis_rate * disability_sum * benefit_pct
 
     return {
         "pv_mortality": pv_mortality,
         "pv_disability": pv_disability,
         "expected_claims_year1": expected_claims_year1,
+        "prob_mortality_year1": prob_mortality_year1,
+        "prob_disability_year1": prob_disability_year1,
         "expected_claims_by_year": cashflows,
     }
 
@@ -1172,6 +1191,8 @@ def price_policy(
         pv_disability_claims=round(pv_disability, 2),
         pv_total_risk_claims=round(pv_total, 2),
         expected_claims_year1=round(expected_claims_year1, 2),
+        prob_mortality_year1=float(pv_payload.get("prob_mortality_year1") or 0.0),
+        prob_disability_year1=float(pv_payload.get("prob_disability_year1") or 0.0),
         expected_claims_by_year=expected_claims_by_year,
         eligible=True,
         coverage_amount=float(coverage),
@@ -1264,6 +1285,18 @@ def price_policy(
                 float(demo["mortality_factor"]) >= 0.0
                 and float(demo["disability_factor"]) >= 0.0
             ),
+            # Year-1 cash claim = issue-age life sum × q(x) + disability sum
+            # × benefit % × i(x). Same probabilities the sandbox draws.
+            "year1_claims_match_kernel_probabilities": abs(
+                float(pv_payload.get("expected_claims_year1") or 0.0)
+                - (
+                    float(issue_sums["life_sum"])
+                    * float(pv_payload.get("prob_mortality_year1") or 0.0)
+                    + float(issue_sums["disability_sum"])
+                    * float(benefit_pct)
+                    * float(pv_payload.get("prob_disability_year1") or 0.0)
+                )
+            ) < 1e-6,
         },
     )
 

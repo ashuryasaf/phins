@@ -1834,6 +1834,25 @@ class AutomationMetrics:
 # is still acceptable.
 MAX_ACCEPTANCE_AGE = 65
 
+# Kernel-priced lives kept on the simulation so the sandbox and the random
+# lifecycle clone real prices instead of inventing a second premium. The
+# cap is a reservoir over the accepted book; every accepted life still
+# passes the rule checks below, whether or not it lands in the sample.
+PRICED_LIFE_SAMPLE_CAP = 2000
+DECLINED_LIFE_SAMPLE_CAP = 200
+
+
+def _reservoir_keep(sample: List[Dict], seen: int, item: Dict, cap: int) -> int:
+    """Reservoir-sample ``item`` into ``sample`` with equal probability."""
+    seen += 1
+    if len(sample) < cap:
+        sample.append(item)
+        return seen
+    slot = random.randrange(seen)
+    if slot < cap:
+        sample[slot] = item
+    return seen
+
 # Age bands used by the portfolio simulator. Labels match
 # PortfolioSimulator._get_age_bracket so the acceptance matrix reconciles
 # with demographics.age_distribution.
@@ -2312,6 +2331,24 @@ class PortfolioSimulator:
         # so the sums reconcile to the premium totals below.
         age_money: Dict[int, Dict[str, float]] = {}
 
+        priced_sample: List[Dict] = []
+        declined_sample: List[Dict] = []
+        accepted_seen = 0
+        declined_seen = 0
+        auto_approved_count = 0
+        referred_count = 0
+        rule_breaks = {
+            'accepted_adl_at_or_above_decline': 0,
+            'accepted_above_max_age': 0,
+            'accepted_above_adl_coverage_limit': 0,
+            'auto_approved_above_max_adl': 0,
+            'auto_approved_outside_age': 0,
+            'auto_approved_above_max_coverage': 0,
+            'disability_priced_when_excluded': 0,
+            'year1_claims_mismatch': 0,
+        }
+        uw_cfg = self.tables.config
+
         # Financial totals
         totals = {
             'coverage': 0,
@@ -2360,6 +2397,20 @@ class PortfolioSimulator:
                     cell['rejected_age'] += 1
                 else:
                     cell['rejected_adl'] += 1
+                declined_seen = _reservoir_keep(declined_sample, declined_seen, {
+                    'age': int(customer['age']),
+                    'gender': customer.get('gender'),
+                    'smoking_status': customer.get('smoking_status') or 'nonsmoker',
+                    'ethnicity': customer.get('ethnicity'),
+                    'adl': int(customer['adl']),
+                    'coverage': float(customer['coverage']),
+                    'term': int(customer['term']),
+                    'uw_status': 'declined',
+                    'issuance': 'declined',
+                    'decline_reason': reason,
+                    'reason_code': uw_result.get('reason_code') or 'adl',
+                    'disability_eligible': False,
+                }, DECLINED_LIFE_SAMPLE_CAP)
                 continue
             cell['accepted'] += 1
             hist['accepted'] += 1
@@ -2373,7 +2424,91 @@ class PortfolioSimulator:
             customer['pv_disability'] = premium['pv_disability']
             customer['expected_claims_year1'] = premium.get('expected_claims_year1', 0.0)
             customer['integrity_hash'] = premium.get('integrity_hash')
-            
+
+            adl_level = int(customer['adl'])
+            age_years = int(customer['age'])
+            coverage_now = float(customer['coverage'])
+            if adl_level >= int(uw_cfg.decline_threshold):
+                rule_breaks['accepted_adl_at_or_above_decline'] += 1
+            if age_years > MAX_ACCEPTANCE_AGE:
+                rule_breaks['accepted_above_max_age'] += 1
+            adl_limit = (uw_cfg.coverage_limits or {}).get(adl_level)
+            if adl_limit is not None and coverage_now > float(adl_limit) + 0.01:
+                rule_breaks['accepted_above_adl_coverage_limit'] += 1
+            if uw_result.get('exclude_disability') and float(premium.get('pv_disability') or 0.0) > 0.02:
+                rule_breaks['disability_priced_when_excluded'] += 1
+            if not premium.get('year1_identity_holds'):
+                rule_breaks['year1_claims_mismatch'] += 1
+
+            p_death = float(premium.get('prob_mortality_year1') or 0.0)
+            p_disable = float(premium.get('prob_disability_year1') or 0.0)
+            risk_score = min(1.0, max(0.0, p_death + p_disable))
+            if uw_cfg.auto_approve_enabled:
+                decision = evaluate_auto_approval({
+                    'age': age_years,
+                    'adl_level': adl_level,
+                    'coverage_amount': coverage_now,
+                    'risk_score': risk_score,
+                    'smoking_status': customer.get('smoking_status') or 'nonsmoker',
+                    'medical_conditions': [],
+                    'prior_disclosure': '',
+                })
+                if decision.get('auto_approve'):
+                    uw_status = 'approved'
+                    issuance = 'auto'
+                    auto_approved_count += 1
+                    if adl_level > int(uw_cfg.auto_approve_max_adl):
+                        rule_breaks['auto_approved_above_max_adl'] += 1
+                    if (
+                        age_years < int(uw_cfg.auto_approve_min_age)
+                        or age_years > int(uw_cfg.auto_approve_max_age)
+                    ):
+                        rule_breaks['auto_approved_outside_age'] += 1
+                    if coverage_now > float(uw_cfg.auto_approve_max_coverage) + 0.01:
+                        rule_breaks['auto_approved_above_max_coverage'] += 1
+                else:
+                    uw_status = 'pending'
+                    issuance = 'referred'
+                    referred_count += 1
+            else:
+                # Automation is off. The accepted book is issued; the max-ADL
+                # gate is an auto-issue ceiling, not a second decline rule.
+                uw_status = 'approved'
+                issuance = 'book'
+            customer['uw_status'] = uw_status
+            customer['issuance'] = issuance
+            customer['risk_score'] = risk_score
+
+            accepted_seen = _reservoir_keep(priced_sample, accepted_seen, {
+                'age': age_years,
+                'gender': customer.get('gender'),
+                'smoking_status': customer.get('smoking_status') or 'nonsmoker',
+                'ethnicity': customer.get('ethnicity'),
+                'adl': adl_level,
+                'coverage': coverage_now,
+                'term': int(customer['term']),
+                'annual_premium': premium['annual_premium'],
+                'monthly_premium': premium.get('monthly_premium'),
+                'risk_premium': premium['risk_premium'],
+                'savings_premium': premium['savings_premium'],
+                'expense_loading': premium.get('expense_loading'),
+                'profit_margin': premium.get('profit_margin'),
+                'expected_claims_year1': premium.get('expected_claims_year1', 0.0),
+                'prob_mortality_year1': p_death,
+                'prob_disability_year1': p_disable,
+                'life_sum': premium.get('life_sum'),
+                'disability_sum': premium.get('disability_sum'),
+                'benefit_pct': premium.get('benefit_pct'),
+                'exclude_disability': bool(uw_result.get('exclude_disability')),
+                'disability_eligible': not bool(uw_result.get('exclude_disability')),
+                'loading': float(uw_result.get('loading') or 0.0),
+                'risk_score': round(risk_score, 6),
+                'uw_status': uw_status,
+                'issuance': issuance,
+                'year1_identity_holds': bool(premium.get('year1_identity_holds')),
+                'integrity_hash': premium.get('integrity_hash'),
+            }, PRICED_LIFE_SAMPLE_CAP)
+
             # Update totals
             totals['coverage'] += customer['coverage']
             totals['annual_premium'] += customer['annual_premium']
@@ -2626,10 +2761,29 @@ class PortfolioSimulator:
                 'internal_score_assessed_count': score_count,
                 'internal_score_is_average': score_mean is not None,
                 'decline_threshold': int(self.tables.config.decline_threshold),
+                'auto_approved_customers': auto_approved_count,
+                'referred_customers': referred_count,
+                'issued_without_auto_approve': (
+                    accepted_count if not uw_cfg.auto_approve_enabled else 0
+                ),
             },
             
             'demographics': demographics,
             'declined': declined,
+            'underwriting_rules': self._underwriting_rules_snapshot(),
+            'priced_lives': priced_sample,
+            'declined_sample': declined_sample,
+            'issuance': {
+                'auto_approve_enabled': bool(uw_cfg.auto_approve_enabled),
+                'auto_approved': auto_approved_count,
+                'referred': referred_count,
+                'declined': declined['count'],
+                'issued_as_accepted_book': (
+                    accepted_count if not uw_cfg.auto_approve_enabled else auto_approved_count
+                ),
+                'risk_score_basis': 'kernel_year1_claim_probability',
+            },
+            'rule_integrity': self._rule_integrity(rule_breaks, priced_sample),
             'age_adl_matrix': age_adl_matrix,
             'accepted_money_by_age': accepted_money['rows'],
             'accepted_money_integrity': accepted_money['integrity'],
@@ -2751,6 +2905,50 @@ class PortfolioSimulator:
         )
         return result
     
+    def _underwriting_rules_snapshot(self) -> Dict:
+        """Rules in force for this run. The sandbox clones this snapshot."""
+        cfg = self.tables.config
+        return {
+            'decline_threshold': int(cfg.decline_threshold),
+            'disability_exclusion_threshold': int(cfg.disability_exclusion_threshold),
+            'coverage_limits': {
+                str(k): float(v) for k, v in (cfg.coverage_limits or {}).items()
+            },
+            'loadings': {
+                str(k): float(v) for k, v in (cfg.loadings or {}).items()
+            },
+            'max_acceptance_age': MAX_ACCEPTANCE_AGE,
+            'auto_approve_enabled': bool(cfg.auto_approve_enabled),
+            'auto_approve_max_adl': int(cfg.auto_approve_max_adl),
+            'auto_approve_min_age': int(cfg.auto_approve_min_age),
+            'auto_approve_max_age': int(cfg.auto_approve_max_age),
+            'auto_approve_max_risk_score': float(cfg.auto_approve_max_risk_score),
+            'auto_approve_max_coverage': float(cfg.auto_approve_max_coverage),
+            'auto_approve_require_clean_history': bool(
+                cfg.auto_approve_require_clean_history
+            ),
+            'risk_score_basis': 'kernel_year1_claim_probability',
+            'tables_version': self.tables.current_version,
+            'config_version': str(getattr(cfg, 'config_version', '') or ''),
+        }
+
+    @staticmethod
+    def _rule_integrity(breaks: Dict[str, int], priced_sample: List[Dict]) -> Dict:
+        flags = {
+            'accepted_adl_below_decline': breaks['accepted_adl_at_or_above_decline'] == 0,
+            'accepted_age_within_cap': breaks['accepted_above_max_age'] == 0,
+            'coverage_within_adl_limit': breaks['accepted_above_adl_coverage_limit'] == 0,
+            'auto_approved_respects_max_adl': breaks['auto_approved_above_max_adl'] == 0,
+            'auto_approved_respects_age_band': breaks['auto_approved_outside_age'] == 0,
+            'auto_approved_respects_max_coverage': breaks['auto_approved_above_max_coverage'] == 0,
+            'excluded_disability_has_zero_pv': breaks['disability_priced_when_excluded'] == 0,
+            'year1_claims_match_kernel_probabilities': breaks['year1_claims_mismatch'] == 0,
+            'priced_sample_within_cap': len(priced_sample) <= PRICED_LIFE_SAMPLE_CAP,
+        }
+        flags['all_checks_pass'] = all(flags.values())
+        flags['breaks'] = dict(breaks)
+        return flags
+
     def _generate_customer(self, params: SimulationParams) -> Dict:
         """Generate a single customer with random demographics"""
         # Age. Resample outside the window; do not clamp onto age_max.
@@ -2941,13 +3139,23 @@ class PortfolioSimulator:
             exclude_disability=bool(uw_result.get('exclude_disability', False)),
         )
 
+        checks = components.integrity_checks or {}
         return {
             'annual_premium': components.annual_premium,
+            'monthly_premium': components.monthly_premium,
             'risk_premium': components.risk_premium_annual,
             'savings_premium': components.savings_premium_annual,
+            'expense_loading': components.expense_loading_annual,
+            'profit_margin': components.profit_margin_annual,
             'pv_mortality': components.pv_mortality_claims,
             'pv_disability': components.pv_disability_claims,
             'expected_claims_year1': components.expected_claims_year1,
+            'prob_mortality_year1': components.prob_mortality_year1,
+            'prob_disability_year1': components.prob_disability_year1,
+            'life_sum': components.life_sum_used,
+            'disability_sum': components.disability_sum_used,
+            'benefit_pct': components.benefit_pct_used,
+            'year1_identity_holds': bool(checks.get('year1_claims_match_kernel_probabilities')),
             'expected_claims_by_year': list(components.expected_claims_by_year or []),
             'integrity_hash': components.integrity_hash,
             'product_id': components.product_id,
