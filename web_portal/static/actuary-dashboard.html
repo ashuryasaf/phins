@@ -5825,7 +5825,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             ADL ${rules.decline_threshold}+ is declined. Acceptance stops at age ${rules.max_acceptance_age}.
             Disability benefits stop at ADL ${rules.disability_exclusion_threshold}.
             ${autoOn
-              ? `Automatic approval is on: max ADL ${rules.auto_approve_max_adl}, ages ${rules.auto_approve_min_age}–${rules.auto_approve_max_age}, max coverage ${fmtCurrency(rules.auto_approve_max_coverage)}, max kernel year-1 claim probability ${(Number(rules.auto_approve_max_risk_score || 0) * 100).toFixed(1)}%. Auto-issued ${fmt(issuance.auto_approved || 0)}, referred ${fmt(issuance.referred || 0)}.`
+              ? `Automatic approval is on: max ADL ${rules.auto_approve_max_adl}, ages ${rules.auto_approve_min_age}–${rules.auto_approve_max_age}, max coverage ${fmtCurrency(rules.auto_approve_max_coverage)}, max kernel year-1 claim probability ${(Number(rules.auto_approve_max_risk_score || 0) * 100).toFixed(1)}%. Auto-issued ${fmtCount(issuance.auto_approved || 0)}, referred ${fmtCount(issuance.referred || 0)}.`
               : `Automatic approval is off, so the accepted book is issued. Max ADL ${rules.auto_approve_max_adl} applies when automatic approval is turned on.`}
             Year-1 claims equal life sum × mortality q plus disability sum × benefit × disability incidence.
           </p>
@@ -8438,6 +8438,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         const id = `CUST-TESTSIM-${seq}`;
         const monthly = Number(src.monthly_premium);
         const annual = Number(src.annual_premium) || 0;
+        const eligibleAtIssue = decision.disability_eligible !== false && src.disability_eligible !== false && !src.exclude_disability;
         const reliablePayer = decision.uw_status === 'approved' && Math.random() < SANDBOX_COLLECTION_RATE;
         window.actuarySandbox.customers.push({
           id,
@@ -8460,7 +8461,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           risk_score: Number(src.risk_score) || 0,
           uw_status: decision.uw_status,
           issuance: decision.issuance,
-          disability_eligible: decision.disability_eligible !== false && src.disability_eligible !== false && !src.exclude_disability,
+          disability_eligible: eligibleAtIssue,
+          disability_excluded_at_issue: !eligibleAtIssue,
+          issue_annual_premium: annual,
           prob_mortality_year1: Number(src.prob_mortality_year1) || 0,
           prob_disability_year1: Number(src.prob_disability_year1) || 0,
           life_sum: Number(src.life_sum) || 0,
@@ -8630,7 +8633,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         for (const claim of claims) {
           const owner = customers.find(c => c.id === claim.customer_id);
           if (!owner) { claimBreach += 1; continue; }
-          if (claim.type === 'disability' && owner.disability_eligible === false) claimBreach += 1;
+          if (claim.type === 'disability' && owner.disability_excluded_at_issue) claimBreach += 1;
           const contractual = claim.type === 'mortality' ? Number(owner.life_sum) : Number(owner.disability_sum);
           if (claim.kernel_realized && Math.abs(Number(claim.amount) - contractual) > 0.02) claimBreach += 1;
         }
@@ -8917,6 +8920,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         const seq = String(idx).padStart(6, '0');
         const id = `CUST-TESTSIM-${seq}`;
         const annual = Number(src.annual_premium) || 0;
+        const eligibleAtIssue = decision.disability_eligible !== false && src.disability_eligible !== false && src.exclude_disability !== true;
         const monthly = Number.isFinite(Number(src.monthly_premium))
           ? Number(src.monthly_premium)
           : Math.round((annual / 12) * 100) / 100;
@@ -8941,7 +8945,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           risk_score: Number(src.risk_score) || 0,
           uw_status: decision.uw_status,
           issuance: decision.issuance,
-          disability_eligible: decision.disability_eligible !== false && src.disability_eligible !== false && src.exclude_disability !== true,
+          disability_eligible: eligibleAtIssue,
+          disability_excluded_at_issue: !eligibleAtIssue,
+          issue_annual_premium: annual,
           prob_mortality_year1: Number(src.prob_mortality_year1) || 0,
           prob_disability_year1: Number(src.prob_disability_year1) || 0,
           life_sum: Number(src.life_sum) || 0,

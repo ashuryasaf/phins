@@ -152,6 +152,10 @@ if (noDisable) process.exit(9);
 if (!snap.premiumComponentsMatch({
   risk_premium: 100, savings_premium: 40, expense_loading: 15, profit_margin: 15.5, annual_premium: 170.5,
 })) process.exit(10);
+if (!snap.premiumComponentsMatch({
+  risk_premium: 100, savings_premium: 40, expense_loading: 15, profit_margin: 15.5,
+  annual_premium: 999, issue_annual_premium: 170.5,
+})) process.exit(11);
 console.log('ok');
 """
     proc = subprocess.run(

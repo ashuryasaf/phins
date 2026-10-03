@@ -273,7 +273,8 @@ def test_actuary_dashboard_wires_100k_cap_and_5yr_forecast():
     # life with age-banded benefit sums. Eligibility is the underwriting
     # exclusion rule, not a hardcoded true on every account.
     assert "disability_max_age" in content
-    assert "disability_eligible: decision.disability_eligible" in content
+    assert "disability_eligible: eligibleAtIssue" in content
+    assert "decision.disability_eligible !== false" in content
     assert "disability_band_age: disabilityBandAge" in content
     assert "age_min: acceptedAgeMin" in content
 

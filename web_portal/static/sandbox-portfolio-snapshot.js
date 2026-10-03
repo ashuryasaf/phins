@@ -597,7 +597,12 @@
     const src = life || {};
     const sum = num(src.risk_premium, 0) + num(src.savings_premium, 0)
       + num(src.expense_loading, 0) + num(src.profit_margin, 0);
-    return Math.abs(sum - num(src.annual_premium, 0)) < 0.05;
+    // A paid disability claim can restate the billed premium. The kernel
+    // identity stays on the issue premium.
+    const annual = src.issue_annual_premium != null
+      ? num(src.issue_annual_premium, 0)
+      : num(src.annual_premium, 0);
+    return Math.abs(sum - annual) < 0.05;
   }
 
   return {
