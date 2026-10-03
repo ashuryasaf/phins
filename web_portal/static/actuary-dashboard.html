@@ -9105,7 +9105,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
 
       if (action === 'approve_uw') {
-        const target = customers.find(c => c.uw_status === 'pending');
+        // Referred lives are in force, so a pending row can already have
+        // lapsed or terminated. Only underwrite one that is still in force —
+        // a decision must never put a cancelled or dead life back on the book.
+        const target = customers.find(c => c.uw_status === 'pending' && c.policy_status === 'active');
         if (target) {
           const Snap = window.PhinsSandboxSnapshot;
           const gate = (Snap && sb.rules) ? Snap.issueFromRules({
@@ -9120,6 +9123,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             target.policy_status = 'declined';
             target.issuance = 'declined';
             sandboxVoidOpenBills(target.id);
+            sandboxVoidOpenClaims(target.id);
             sandboxLogEvent('uw', `Underwriting kept ${target.id} declined (${gate.reason}). Automation cannot issue past the decline rule.`, 'info');
           } else {
             target.uw_status = 'approved';
@@ -9132,11 +9136,12 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
 
       if (action === 'decline_uw') {
-        const target = customers.find(c => c.uw_status === 'pending');
+        const target = customers.find(c => c.uw_status === 'pending' && c.policy_status === 'active');
         if (target) {
           target.uw_status = 'declined';
           target.policy_status = 'declined';
           sandboxVoidOpenBills(target.id);
+          sandboxVoidOpenClaims(target.id);
           sandboxLogEvent('uw', `Underwriting declined for ${target.id} (risk ${target.risk_score}).`, 'info');
         }
         return;
@@ -9744,6 +9749,19 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       sb.bills.forEach((b) => {
         if (b.customer_id === customerId && (b.status === 'outstanding' || b.status === 'overdue')) {
           b.status = 'voided';
+        }
+      });
+    }
+
+    // A declined applicant stays a customer only: an opening claim seeded while
+    // the life was referred must not stay payable, or the lifecycle could pay it
+    // and terminate a policy that was never issued.
+    function sandboxVoidOpenClaims(customerId) {
+      const sb = window.actuarySandbox;
+      if (!sb || !customerId) return;
+      sb.claims.forEach((c) => {
+        if (c.customer_id === customerId && (c.status === 'pending' || c.status === 'approved')) {
+          c.status = 'voided';
         }
       });
     }

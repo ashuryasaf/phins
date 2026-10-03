@@ -286,6 +286,11 @@ def test_actuary_dashboard_wires_100k_cap_and_5yr_forecast():
     assert "kernelBook" in content
     assert "kind === 'multiple'" in content
     assert "Forecast month 1 equals the original active policies" in content
+    # A lifecycle underwriting decision only touches a referred life that is
+    # still in force, so it cannot revive a lapsed or terminated policy, and a
+    # decline voids the opening claim as well as the open bills.
+    assert content.count("c.uw_status === 'pending' && c.policy_status === 'active'") == 2
+    assert content.count("sandboxVoidOpenClaims(target.id)") == 2
 
 
 def test_actuary_dashboard_renders_sandbox_stats_single_pass():
