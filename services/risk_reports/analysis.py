@@ -9,7 +9,7 @@ touches the stores.
 
 import re
 from datetime import datetime
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from services.risk_reports.models import Anomaly, DataType, Factor, Pattern, Severity
 
 
@@ -333,6 +333,147 @@ class DataClassifier:
         
         return best_type, min(confidence + 0.3, 1.0)
 
+
+
+# Money columns are right-skewed by nature. A z-score on הפקדות מעסיק
+# flags the large policies, not a broken file.
+_MONEY_MARKERS = (
+    'הפקד', 'יתרה', 'צביר', 'פיצוי', 'חיסכון', 'כיסוי', 'פרמיה', 'סכום',
+    'balance', 'deposit', 'premium', 'coverage', 'severance', 'savings', 'amount',
+)
+# Rate markers win over money markers: שיעור דמי ניהול מחיסכון is a percent.
+# Only a named fee counts: a generic percent header such as אחוז במסלול holds
+# allocation weights, not management fees.
+_RATE_MARKERS = (
+    'דמי ניהול', 'management fee', 'fee rate',
+)
+_ACCUMULATION_FEE_MARKERS = ('מחיסכון', 'מצבירה', 'צבור', 'צבירה', 'accumulation', 'savings')
+
+
+def column_measure_kind(name: str) -> str:
+    """'rate', 'money', or 'other'. Rate is tested first so a fee column is not treated as savings."""
+    text = str(name or '')
+    folded = text.lower()
+    if any(marker in text or marker in folded for marker in _RATE_MARKERS):
+        return 'rate'
+    if any(marker in text or marker in folded for marker in _MONEY_MARKERS):
+        return 'money'
+    return 'other'
+
+
+def _parse_measure(value: Any) -> float:
+    clean = str(value).replace(',', '').replace('₪', '').replace('$', '').replace('€', '').replace('%', '').strip()
+    if not clean:
+        raise ValueError('empty')
+    return float(clean)
+
+
+def _hebrew_column(name: str) -> bool:
+    return bool(re.search(r'[\u0590-\u05FF]', str(name or '')))
+
+
+def _anomaly(kind: str, severity: Severity, description: str, column: str, recommendation: str, extra: Dict = None) -> Anomaly:
+    payload = {'column': column}
+    if extra:
+        payload.update(extra)
+    return Anomaly(
+        type=kind,
+        severity=severity,
+        description=description,
+        affected_data=payload,
+        recommendation=recommendation,
+    )
+
+
+def rate_column_anomaly(column: str, numbers: List[float]) -> Optional[Anomaly]:
+    """Judge a fee-rate column by its scale and the regulatory band, not by z-score.
+
+    Accumulation fees are a small percent (pension about 0.5, gemel about 1.05,
+    older manager policies up to about 2). Deposit fees run up to about 6.
+    A column whose median is tens or thousands is shekels sitting in a rate field.
+    """
+    if not numbers:
+        return None
+    name = str(column)
+    hebrew = _hebrew_column(name)
+    negatives = [value for value in numbers if value < -1e-9]
+    if negatives:
+        count = len(negatives)
+        if hebrew:
+            description = f"נמצאו {count} שיעורים שליליים ב'{name}'"
+            recommendation = f"שיעור שלילי ב'{name}' אינו דמי ניהול. יש להשוות את התא מול הקובץ שהועלה."
+        else:
+            description = f"Found {count} negative rates in '{name}'"
+            recommendation = f"A negative rate in '{name}' is not a management fee. Compare the cell with the uploaded file."
+        return _anomaly('rate_sign', Severity.HIGH, description, name, recommendation, {'count': count})
+
+    positives = sorted(value for value in numbers if value > 0)
+    if len(positives) < 3:
+        return None
+    median = positives[len(positives) // 2]
+    accumulation = any(marker in name.lower() for marker in _ACCUMULATION_FEE_MARKERS)
+    # Fees are read on the percent scale. A default fund charges 0.1-0.22 from
+    # accumulation, so a sub-1 median is a legal rate, never a decimal fraction
+    # to measure against a 0.02 cap.
+    if median <= 20:
+        cap = 2.0 if accumulation else 6.0
+        absurd_floor = 20
+    else:
+        cap = None
+        absurd_floor = None
+    absurd = [value for value in positives if absurd_floor is None or value > absurd_floor]
+    if cap is None or (absurd and absurd_floor is not None and any(value > 20 for value in absurd)):
+        if hebrew:
+            if cap is None:
+                description = (
+                    f"העמודה '{name}' נראית כסכום בשקלים (חציון {median:,.2f}), לא כשיעור דמי ניהול"
+                )
+            else:
+                description = (
+                    f"העמודה '{name}' מערבת שיעורים עם {len(absurd)} סכומים בשקלים"
+                )
+            recommendation = (
+                f"שיעור דמי ניהול נשמר כאחוז. סכום בשקלים ב'{name}' אינו נספר בתוך הצבירה."
+            )
+        else:
+            if cap is None:
+                description = f"'{name}' looks like a shekel amount (median {median:,.2f}), not a fee rate"
+            else:
+                description = f"'{name}' mixes fee rates with {len(absurd)} shekel amounts"
+            recommendation = f"Keep '{name}' as a percent. A shekel amount in that column is not part of accumulation."
+        return _anomaly('rate_unit', Severity.HIGH, description, name, recommendation, {'median': median, 'count': len(absurd)})
+
+    above = [value for value in positives if value > cap + 1e-9]
+    if not above:
+        return None
+    shown = f'{cap:g}'
+    if hebrew:
+        description = f"{len(above)} ערכים ב'{name}' מעל תקרת השיעור ({shown})"
+        recommendation = (
+            f"תקרת דמי ניהול מצבירה היא כ-2% ומהפקדה כ-6%. יש לבדוק את '{name}' מול הקובץ, לא מול סטיית תקן."
+        )
+    else:
+        description = f"{len(above)} values in '{name}' sit above the fee-rate cap ({shown})"
+        recommendation = (
+            f"Accumulation fees top out near 2% and deposit fees near 6%. Check '{name}' against the file, not against a standard deviation."
+        )
+    return _anomaly('rate_cap', Severity.MEDIUM, description, name, recommendation, {'cap': cap, 'count': len(above)})
+
+
+def money_column_anomaly(column: str, numbers: List[float]) -> Optional[Anomaly]:
+    """A wide spread of deposits is the portfolio. Only a negative amount is an integrity break."""
+    negatives = [value for value in numbers if value < -0.01]
+    if not negatives:
+        return None
+    name = str(column)
+    count = len(negatives)
+    if _hebrew_column(name):
+        description = f"נמצאו {count} סכומים שליליים ב'{name}'"
+        recommendation = f"סכום שלילי ב'{name}' נשמר לבדיקה מול הקובץ. פיזור רחב של הפקדות אינו חריגת נתונים."
+    else:
+        description = f"Found {count} negative amounts in '{name}'"
+        recommendation = f"A negative amount in '{name}' should be checked against the file. A wide spread of deposits is not a data error."
+    return _anomaly('money_sign', Severity.MEDIUM, description, name, recommendation, {'count': count})
 
 
 class AnalysisMixin:
@@ -708,8 +849,11 @@ class AnalysisMixin:
                         significance=0.5
                     ))
         
-        # Pattern 5: Outlier patterns
+        # Pattern 5: Outlier patterns. Money and fee-rate columns are assessed
+        # by sign and by the fee band, not by the interquartile fence.
         for col, profile in profiles.items():
+            if column_measure_kind(col) in ('money', 'rate'):
+                continue
             if profile['numeric'] and profile['stats']:
                 q1 = profile['stats'].get('q1', 0)
                 q3 = profile['stats'].get('q3', 0)
@@ -747,34 +891,60 @@ class AnalysisMixin:
         if len(rows) < 3:
             return anomalies
         
-        # Z-score based anomaly detection for numeric columns
+        # Numeric columns. Pension money and fee rates are not judged by a
+        # normal curve: הפקדות מעסיק is skewed, and שיעור דמי ניהול is a
+        # percent band. A z-score is kept only for other columns, and only
+        # when a small share of rows sits past 3σ — a fat tail is the
+        # distribution, not a critical file error.
         for col, profile in profiles.items():
-            if profile['numeric'] and profile['stats']:
-                mean = profile['stats'].get('mean', 0)
-                std_dev = profile['stats'].get('std_dev', 0)
-                
-                if std_dev > 0:
-                    extreme_values = []
-                    for i, row in enumerate(rows):
-                        try:
-                            val = float(str(row.get(col, 0)).replace(',', '').replace('₪', '').replace('$', '').replace('€', ''))
-                            z_score = abs(val - mean) / std_dev
-                            if z_score > 3:  # More than 3 standard deviations
-                                extreme_values.append({'row': i, 'value': val, 'z_score': round(z_score, 2)})
-                        except:
-                            pass
-                    
-                    if extreme_values:
-                        severity = Severity.CRITICAL if len(extreme_values) > 5 else (
-                            Severity.HIGH if len(extreme_values) > 2 else Severity.MEDIUM
-                        )
-                        anomalies.append(Anomaly(
-                            type='statistical_outlier',
-                            severity=severity,
-                            description=f"Found {len(extreme_values)} extreme values in '{col}' (>3 standard deviations from mean)",
-                            affected_data={'column': col, 'outliers': extreme_values[:5]},
-                            recommendation=f"Review extreme values in '{col}' for data accuracy"
-                        ))
+            if not (profile.get('numeric') and profile.get('stats')):
+                continue
+            numbers: List[float] = []
+            for row in rows:
+                raw = row.get(col, '')
+                if raw is None or str(raw).strip() == '':
+                    continue
+                try:
+                    numbers.append(_parse_measure(raw))
+                except (TypeError, ValueError):
+                    continue
+            if len(numbers) < 3:
+                continue
+            kind = column_measure_kind(col)
+            if kind == 'rate':
+                found = rate_column_anomaly(col, numbers)
+                if found:
+                    anomalies.append(found)
+                continue
+            if kind == 'money':
+                found = money_column_anomaly(col, numbers)
+                if found:
+                    anomalies.append(found)
+                continue
+            mean = float(profile['stats'].get('mean', 0) or 0)
+            std_dev = float(profile['stats'].get('std_dev', 0) or 0)
+            if std_dev <= 0:
+                continue
+            extreme_values = []
+            for index, val in enumerate(numbers):
+                z_score = abs(val - mean) / std_dev
+                if z_score > 3:
+                    extreme_values.append({'row': index, 'value': val, 'z_score': round(z_score, 2)})
+            if not extreme_values or len(extreme_values) / len(numbers) > 0.05:
+                continue
+            if _hebrew_column(col):
+                description = f"נמצאו {len(extreme_values)} ערכים חריגים ב'{col}'"
+                recommendation = f"יש להשוות את '{col}' מול הקובץ שהועלה. ריבוי ערכים רחוקים מהממוצע מתאר את ההתפלגות, לא שגיאת קובץ."
+            else:
+                description = f"Found {len(extreme_values)} unusual values in '{col}'"
+                recommendation = f"Compare '{col}' with the uploaded file. A wide spread describes the distribution, not a broken cell."
+            anomalies.append(Anomaly(
+                type='statistical_outlier',
+                severity=Severity.MEDIUM,
+                description=description,
+                affected_data={'column': col, 'outliers': extreme_values[:5]},
+                recommendation=recommendation,
+            ))
         
         # Data quality anomalies
         high_null_cols = [col for col, p in profiles.items() if p['null_count'] > len(rows) * 0.3]
