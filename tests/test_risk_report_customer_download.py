@@ -554,5 +554,136 @@ class TestHebrewChartLabels(unittest.TestCase):
         self.assertIn('פוליסת חיסכון', cleaned)
 
 
+def _pdf_contains(pdf_text: str, token: str) -> bool:
+    if token in pdf_text:
+        return True
+    visual = bidi_text(token, rtl=True)
+    return visual in pdf_text
+
+
+class TestExecutiveMislakaBriefing(unittest.TestCase):
+    def test_narrative_titles_stay_assessment_sections(self):
+        from services.risk_reports.pdf_export import (
+            is_policy_table_section,
+            is_undesigned_narrative_section,
+        )
+        for title in (
+            'סיכום ההערכה שלך',
+            'הערכת הפנסיה והביטוח שלך',
+            'פרטי הפוליסה שלך',
+            'נקודות לתשומת לב',
+            'חריגות ואזהרות',
+        ):
+            self.assertTrue(is_undesigned_narrative_section(title))
+            self.assertFalse(is_non_assessment_section_title(title))
+        self.assertTrue(is_policy_table_section('סטטוס פוליסות (טבלת שיוכים)'))
+        self.assertTrue(is_policy_table_section('הפוליסות שלך'))
+
+    def test_noto_serif_is_the_heading_face(self):
+        from services.risk_reports.pdf_export import _heading_fonts, _register_fonts
+        body, body_bold = _register_fonts()
+        heading, heading_bold = _heading_fonts()
+        self.assertEqual(body, 'PHINSHebrew')
+        self.assertEqual(body_bold, 'PHINSHebrew-Bold')
+        self.assertEqual(heading, 'PHINSHebrewSerif')
+        self.assertEqual(heading_bold, 'PHINSHebrewSerif-Bold')
+
+    def test_pension_pdf_drops_unfiltered_narratives_and_keeps_figures(self):
+        summary = {
+            'title': 'ההערכה שלך',
+            'language': 'hebrew',
+            'is_pension_data': True,
+            'generated_at': '2026-10-03T10:00:00',
+            'pension_assessment': {
+                'client': {'full_name': 'ישראל ישראלי', 'id_number': '123456782'},
+                'totals': {
+                    'total_balance': 88000.50,
+                    'total_savings': 88000.50,
+                    'total_severance': 16500,
+                    'total_tagmulim': 71500.50,
+                    'account_count': 1,
+                },
+                'accounts': [{
+                    'policy_number': 'POL-EXEC-9',
+                    'provider': 'הכשרה חברה לביטוח',
+                    'product_type_display': 'פוליסת חיסכון',
+                    'product_name': 'מסלול כללי',
+                    'status': 'פעיל',
+                    'investment_track': 'מסלול כללי',
+                    'total_balance': 88000.50,
+                    'severance_balance': 16500,
+                    'section14': True,
+                    'employer_name': 'מעסיק לדוגמה',
+                }],
+            },
+            'chart_summaries': [{
+                'title': 'צבירה לפי יצרן',
+                'type': 'bar',
+                'caption': 'מסתכם לצבירה כוללת',
+                'matches_accumulation': True,
+                'series': [{'label': 'הכשרה', 'value': 88000.50}],
+            }, {
+                'title': 'חיסכון מול כיסוי',
+                'type': 'doughnut',
+                'caption': 'חיסכון ₪88,000.50 = צבירה כוללת · כיסוי ₪0',
+                'series': [
+                    {'label': 'חיסכון', 'value': 88000.50},
+                    {'label': 'כיסוי', 'value': 0},
+                ],
+            }],
+            'assessment_sections': [
+                {'title': 'סיכום ההערכה', 'content': 'UNFILTERED-SUMMARY-DUMP', 'columns': [], 'rows': []},
+                {'title': 'הערכת הפנסיה והביטוח שלך', 'content': 'UNFILTERED-PENSION-DUMP', 'columns': [], 'rows': []},
+                {'title': 'פרטי פוליסת ביטוח', 'content': 'UNFILTERED-POLICY-DUMP', 'columns': [], 'rows': []},
+                {'title': 'חריגות ואזהרות', 'content': 'UNFILTERED-ANOMALY-DUMP', 'columns': [], 'rows': []},
+                {
+                    'title': 'סטטוס פוליסות (טבלת שיוכים)',
+                    'content': 'WIDE-STATUS-GRID',
+                    'columns': ['פוליסה'],
+                    'rows': [{'פוליסה': 'SHOULD-NOT-REPEAT'}],
+                },
+                {'title': 'פרופיל לקוח (שיוך)', 'content': 'פרטי לקוח מאומתים', 'columns': [], 'rows': []},
+            ],
+        }
+        pdf_bytes = build_report_pdf_bytes(summary)
+        self.assertTrue(pdf_bytes.startswith(b'%PDF'))
+        from pypdf import PdfReader
+        pdf_text = '\n'.join(
+            (page.extract_text() or '') for page in PdfReader(io.BytesIO(pdf_bytes)).pages
+        )
+        for banned in (
+            'UNFILTERED-SUMMARY-DUMP',
+            'UNFILTERED-PENSION-DUMP',
+            'UNFILTERED-POLICY-DUMP',
+            'UNFILTERED-ANOMALY-DUMP',
+            'WIDE-STATUS-GRID',
+            'SHOULD-NOT-REPEAT',
+        ):
+            self.assertNotIn(banned, pdf_text)
+        self.assertIn('POL-EXEC-9', pdf_text)
+        self.assertIn('88,000.50', pdf_text)
+        self.assertIn('16,500.00', pdf_text)
+        self.assertTrue(_pdf_contains(pdf_text, 'הפוליסות שלך'))
+        self.assertTrue(_pdf_contains(pdf_text, 'ריכוז הצבירה'))
+        self.assertTrue(_pdf_contains(pdf_text, 'פרטי לקוח מאומתים'))
+        self.assertTrue(_pdf_contains(pdf_text, 'כן'))
+        self.assertTrue(_pdf_contains(pdf_text, 'מסלול כללי'))
+
+    def test_dashboard_hides_narratives_and_marks_the_policy_table(self):
+        from pathlib import Path
+        html = Path('web_portal/static/risk-reports-dashboard.html').read_text(encoding='utf-8')
+        self.assertIn('undesignedNarratives', html)
+        self.assertIn('סיכום ההערכה שלך', html)
+        self.assertIn('הערכת הפנסיה והביטוח שלך', html)
+        self.assertIn('פרטי הפוליסה שלך', html)
+        self.assertIn('נקודות לתשומת לב', html)
+        self.assertIn('executive-policies', html)
+        self.assertIn('executive-table', html)
+        self.assertIn('executive-concentration', html)
+        self.assertIn("'הפוליסות שלך'", html)
+        self.assertIn('Noto Serif Hebrew', html)
+        self.assertIn('Noto Sans Hebrew', html)
+
+
 if __name__ == '__main__':
     unittest.main()

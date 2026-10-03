@@ -3,3 +3,8 @@ under the DejaVu Fonts license (Bitstream Vera + Arev), which permits
 use, modification, and redistribution. The subset files in this directory
 are used only to render PHINS investor PDF letterheads that contain Hebrew.
 Full sources: https://dejavu-fonts.github.io/
+
+Noto Sans Hebrew and Noto Serif Hebrew are redistributed under the SIL Open
+Font License 1.1. They are the body and heading faces of the customer
+assessment PDF and include Latin, digits, Hebrew, and the shekel sign.
+Source: https://fonts.google.com/noto
