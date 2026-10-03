@@ -1682,25 +1682,32 @@ def _append_customer_charts(
     # Keep the heading with the first row of cards instead of stranding it.
     story.append(CondPageBreak(340))
 
-    heading = 'ריכוז הצבירה' if is_hebrew else 'Accumulation'
+    # Accumulation copy belongs to the Mislaka briefing; a generic assessment
+    # keeps its own chart heading.
+    pension = bool(summary.get('is_pension_data') or summary.get('pension_assessment'))
+    if pension:
+        heading = 'ריכוז הצבירה' if is_hebrew else 'Accumulation'
+    else:
+        heading = 'התרשימים מההערכה' if is_hebrew else 'Charts from your assessment'
     story.append(_safe_paragraph(heading, heading_style, rtl=is_hebrew, max_width=usable_width))
-    intro = (
-        'הסכומים מחושבים מתוך הצבירה הכוללת והכיסויים שבקובץ.'
-        if is_hebrew else
-        'Figures are taken from total accumulation and the covers in the file.'
-    )
     ink = getattr(heading_style, 'textColor', None) or PHINS_INK
-    intro_style = ParagraphStyle(
-        'CustomerChartIntro',
-        fontName=font_name,
-        fontSize=9,
-        leading=14,
-        alignment=getattr(heading_style, 'alignment', 0),
-        textColor=ink,
-        spaceBefore=2,
-        spaceAfter=4,
-    )
-    story.append(_safe_paragraph(intro, intro_style, rtl=is_hebrew, max_width=usable_width))
+    if pension:
+        intro = (
+            'הסכומים מחושבים מתוך הצבירה הכוללת והכיסויים שבקובץ.'
+            if is_hebrew else
+            'Figures are taken from total accumulation and the covers in the file.'
+        )
+        intro_style = ParagraphStyle(
+            'CustomerChartIntro',
+            fontName=font_name,
+            fontSize=9,
+            leading=14,
+            alignment=getattr(heading_style, 'alignment', 0),
+            textColor=ink,
+            spaceBefore=2,
+            spaceAfter=4,
+        )
+        story.append(_safe_paragraph(intro, intro_style, rtl=is_hebrew, max_width=usable_width))
     story.append(Spacer(1, 10))
     chart_title = ParagraphStyle(
         'CustomerChartTitle',
