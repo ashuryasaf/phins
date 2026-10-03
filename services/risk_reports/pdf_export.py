@@ -167,6 +167,45 @@ def is_completeness_section_title(title: str) -> bool:
     return any(marker in str(title or '') or marker in normalized for marker in _COMPLETENESS_MARKERS)
 
 
+# Narrative dumps. A Mislaka briefing keeps the structured policy table and
+# the accumulation charts; these blocks are unfiltered prose.
+_UNDESIGNED_NARRATIVE_TITLES = frozenset({
+    'סיכום ההערכה',
+    'סיכום ההערכה שלך',
+    'assessment summary',
+    'תקציר מנהלים',
+    'executive summary',
+    'הערכת הפנסיה והביטוח שלך',
+    'דוח ניתוח פנסיה וביטוח',
+    'pension & insurance analysis report',
+    'your pension & insurance assessment',
+    'פרטי הפוליסה שלך',
+    'פרטי פוליסת ביטוח',
+    'insurance policy details',
+    'your policy details',
+    'נקודות לתשומת לב',
+    'חריגות ואזהרות',
+    'anomalies & warnings',
+    'anomalies and warnings',
+    'points to review',
+})
+
+_POLICY_TABLE_TITLES = frozenset({
+    'הפוליסות שלך',
+    'סטטוס פוליסות (טבלת שיוכים)',
+    'policy status (affiliation table)',
+})
+
+
+def is_undesigned_narrative_section(title: str) -> bool:
+    """True for the unfiltered narrative blocks left out of a Mislaka briefing."""
+    return _normalize_section_title(title) in _UNDESIGNED_NARRATIVE_TITLES
+
+
+def is_policy_table_section(title: str) -> bool:
+    return _normalize_section_title(title) in _POLICY_TABLE_TITLES
+
+
 def is_non_assessment_section_title(title: str) -> bool:
     """True for statistical filler, completeness, or schema-catalog sections."""
     normalized = _normalize_section_title(title)
@@ -756,6 +795,7 @@ def _holdings_detail_specs(is_hebrew: bool):
         ('תאריך הצטרפות' if is_hebrew else 'Join Date', lambda account: account.get('start_date'), 'text'),
         ('תאריך נזילות' if is_hebrew else 'Liquidity Date', lambda account: account.get('liquidity_date'), 'text'),
         ('תאריך סטטוס' if is_hebrew else 'Status Date', lambda account: account.get('status_date'), 'text'),
+        ('סעיף 14' if is_hebrew else 'Section 14', lambda account: _section14_label(account, is_hebrew), 'text'),
     ]
     fees = [
         policy,
@@ -770,6 +810,14 @@ def _holdings_detail_specs(is_hebrew: bool):
         ('תשואה' if is_hebrew else 'Yield', lambda account: account.get('yield_rate'), 'percent'),
     ]
     return dates, fees
+
+
+def _section14_label(account: Dict[str, Any], is_hebrew: bool) -> str:
+    if not isinstance(account, dict) or 'section14' not in account:
+        return ''
+    if is_hebrew:
+        return 'כן' if account.get('section14') else 'לא'
+    return 'Yes' if account.get('section14') else 'No'
 
 
 def _accumulation_total_pairs(totals: Dict[str, Any], is_hebrew: bool) -> List[List[Any]]:
@@ -802,8 +850,33 @@ def _accumulation_total_pairs(totals: Dict[str, Any], is_hebrew: bool) -> List[L
     return pairs
 
 
+def _register_font_file(path: str, name: str) -> bool:
+    if not path or not os.path.exists(path):
+        return False
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+    except Exception:
+        return False
+    if name not in set(pdfmetrics.getRegisteredFontNames()):
+        pdfmetrics.registerFont(TTFont(name, path))
+    return True
+
+
 def _register_fonts() -> Tuple[str, str]:
-    """Register a Hebrew-capable pair; fall back to Helvetica if unavailable."""
+    """Register Hebrew body and heading faces. Body pair is the return value.
+
+    Noto Sans Hebrew is the table and body face. Noto Serif Hebrew is the
+    heading face (see ``_heading_fonts``). DejaVu remains the fallback.
+    """
+    font_dir = os.path.join(_STATIC_DIR, 'fonts')
+    _register_font_file(os.path.join(font_dir, 'NotoSerifHebrew-Regular.ttf'), 'PHINSHebrewSerif')
+    _register_font_file(os.path.join(font_dir, 'NotoSerifHebrew-Bold.ttf'), 'PHINSHebrewSerif-Bold')
+    sans = _register_font_file(os.path.join(font_dir, 'NotoSansHebrew-Regular.ttf'), 'PHINSHebrew')
+    sans_bold = _register_font_file(os.path.join(font_dir, 'NotoSansHebrew-Bold.ttf'), 'PHINSHebrew-Bold')
+    if sans:
+        return 'PHINSHebrew', 'PHINSHebrew-Bold' if sans_bold else 'PHINSHebrew'
+
     try:
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
@@ -811,14 +884,11 @@ def _register_fonts() -> Tuple[str, str]:
         return 'Helvetica', 'Helvetica-Bold'
 
     candidates = (
-        (os.path.join(_STATIC_DIR, 'fonts', 'DejaVuSans.ttf'),
-         os.path.join(_STATIC_DIR, 'fonts', 'DejaVuSans-Bold.ttf'),
+        (os.path.join(font_dir, 'DejaVuSans.ttf'),
+         os.path.join(font_dir, 'DejaVuSans-Bold.ttf'),
          'DejaVuSans', 'DejaVuSans-Bold'),
         ('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
          '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-         'DejaVuSans', 'DejaVuSans-Bold'),
-        ('/workspace/web_portal/static/fonts/DejaVuSans.ttf',
-         '/workspace/web_portal/static/fonts/DejaVuSans-Bold.ttf',
          'DejaVuSans', 'DejaVuSans-Bold'),
     )
     registered = set(pdfmetrics.getRegisteredFontNames())
@@ -830,6 +900,20 @@ def _register_fonts() -> Tuple[str, str]:
                 pdfmetrics.registerFont(TTFont(bold_name, bold_path))
             return regular_name, bold_name if os.path.exists(bold_path) else regular_name
     return 'Helvetica', 'Helvetica-Bold'
+
+
+def _heading_fonts() -> Tuple[str, str]:
+    """Serif pair for titles. Falls back to the body face when it is absent."""
+    body, body_bold = _register_fonts()
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        registered = set(pdfmetrics.getRegisteredFontNames())
+    except Exception:
+        return body, body_bold
+    if 'PHINSHebrewSerif' in registered:
+        bold = 'PHINSHebrewSerif-Bold' if 'PHINSHebrewSerif-Bold' in registered else 'PHINSHebrewSerif'
+        return 'PHINSHebrewSerif', bold
+    return body, body_bold
 
 
 def _measure_text_width(text: str, font: str, size: float) -> float:
@@ -906,6 +990,20 @@ def kv_text_adjusted_widths(
     return [value_width, label_width] if rtl else [label_width, value_width]
 
 
+def _table_side_pad(widths) -> float:
+    """Padding that still leaves a positive content box in the narrowest column."""
+    numeric = []
+    for width in widths or []:
+        try:
+            numeric.append(float(width))
+        except (TypeError, ValueError):
+            continue
+    narrowest = min(numeric) if numeric else 48.0
+    if narrowest >= 28.0:
+        return 8.0
+    return max(2.0, (narrowest - 4.0) / 2.0)
+
+
 def _style_table(table, header_color: str = PHINS_NAVY, rtl: bool = False):
     from reportlab.lib import colors
     from reportlab.platypus import TableStyle
@@ -915,14 +1013,7 @@ def _style_table(table, header_color: str = PHINS_NAVY, rtl: bool = False):
     # A wide holdings grid scales columns under the page width. Padding must
     # stay inside the narrowest column or ReportLab refuses the table.
     raw_widths = getattr(table, '_colWidths', None) or getattr(table, 'colWidths', None) or []
-    numeric = []
-    for width in raw_widths:
-        try:
-            numeric.append(float(width))
-        except (TypeError, ValueError):
-            continue
-    narrowest = min(numeric) if numeric else 48.0
-    side_pad = 8.0 if narrowest >= 28.0 else max(2.0, (narrowest - 4.0) / 2.0)
+    side_pad = _table_side_pad(raw_widths)
     table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(header_color)),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor(PHINS_GOLD_STRONG)),
@@ -930,7 +1021,7 @@ def _style_table(table, header_color: str = PHINS_NAVY, rtl: bool = False):
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f4ea')]),
         ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor(PHINS_INK)),
         ('LINEBELOW', (0, 0), (-1, 0), 1.6, colors.HexColor(PHINS_GOLD)),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('ALIGN', (0, 0), (-1, -1), align),
         ('LEFTPADDING', (0, 0), (-1, -1), side_pad),
         ('RIGHTPADDING', (0, 0), (-1, -1), side_pad),
@@ -954,13 +1045,31 @@ def _rtl_break_lines(text: str, font: str, size: float, max_width: float) -> Lis
     lines: List[str] = []
     current = ''
     limit = max(1.0, float(max_width or 0) or 460)
+
+    def pieces(token: str) -> List[str]:
+        if stringWidth(token, font, size) <= limit:
+            return [token]
+        chunk = ''
+        out: List[str] = []
+        for char in token:
+            trial = chunk + char
+            if chunk and stringWidth(trial, font, size) > limit:
+                out.append(chunk)
+                chunk = char
+            else:
+                chunk = trial
+        if chunk:
+            out.append(chunk)
+        return out or [token]
+
     for word in words:
-        trial = f'{current} {word}'.strip()
-        if not current or stringWidth(trial, font, size) <= limit:
-            current = trial
-        else:
-            lines.append(current)
-            current = word
+        for part in pieces(word):
+            trial = f'{current} {part}'.strip()
+            if not current or stringWidth(trial, font, size) <= limit:
+                current = trial
+            else:
+                lines.append(current)
+                current = part
     if current:
         lines.append(current)
     return lines or ['']
@@ -1085,13 +1194,18 @@ def _build_text_table(
     widths = text_adjusted_col_widths(
         columns, usable_width=usable_width, font=font, size=size,
     )
+    side_pad = _table_side_pad(widths)
+    # Wrap inside the padding the table style will apply, so Hebrew stays in the cell.
+    def _cell_width(width: float) -> float:
+        return max(8.0, float(width) - (side_pad * 2.0) - 1.0)
+
     table_data: List[List[Any]] = [[
-        _safe_paragraph(header, header_style, rtl=rtl, max_width=width)
+        _safe_paragraph(header, header_style, rtl=rtl, max_width=_cell_width(width))
         for header, width in zip(display_headers, widths)
     ]]
     for row in display_rows:
         table_data.append([
-            _safe_paragraph(cell, cell_style, rtl=rtl, max_width=width)
+            _safe_paragraph(cell, cell_style, rtl=rtl, max_width=_cell_width(width))
             for cell, width in zip(row, widths)
         ])
     table = Table(table_data, colWidths=widths, repeatRows=1)
@@ -1474,23 +1588,38 @@ def _chart_drawing(chart: Dict[str, Any], width: float, height: float, rtl: bool
 
 def _chart_value_caption(chart: Dict[str, Any], style, rtl: bool, max_width: float):
     """Short number line so a consultant can talk through the chart without guessing."""
-    parts: List[str] = []
+    chunks: List[str] = []
     for point in (chart.get('series') or [])[:8]:
         label = _as_str(point.get('label'))
         value = point.get('value')
         try:
             number = float(value)
-            value_text = f"₪{number:,.0f}" if abs(number) >= 100 else _as_str(value)
+            # Same two decimals as the policy tables, so a caption cannot round a shekel.
+            value_text = f"₪{number:,.2f}"
         except (TypeError, ValueError):
             value_text = _as_str(value)
         if label:
-            parts.append(f'{label}: {value_text}')
+            chunks.append(f'{label}: {value_text}')
         elif value_text:
-            parts.append(value_text)
+            chunks.append(value_text)
+    font = getattr(style, 'fontName', 'Helvetica')
+    size = float(getattr(style, 'fontSize', 8) or 8)
+    limit = max(48.0, float(max_width or 0) - 12.0)
+    lines: List[str] = []
+    current = ''
+    for chunk in chunks:
+        trial = f'{current} · {chunk}' if current else chunk
+        if not current or _measure_text_width(trial, font, size) <= limit:
+            current = trial
+        else:
+            lines.append(current)
+            current = chunk
+    if current:
+        lines.append(current)
     note = _as_str(chart.get('caption'))
     if note:
-        parts.append(note)
-    return _safe_paragraph('  ·  '.join(parts), style, rtl=rtl, max_width=max_width)
+        lines.append(note)
+    return _safe_paragraph('\n'.join(lines), style, rtl=rtl, max_width=max_width)
 
 
 def _chart_card(
@@ -1543,53 +1672,85 @@ def _append_customer_charts(
     usable_width: float,
     font_name: str,
 ) -> None:
+    from reportlab.lib.enums import TA_CENTER
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.platypus import Spacer, Table, TableStyle
+    from reportlab.platypus import CondPageBreak, Spacer, Table, TableStyle
 
     charts = prepare_customer_download_charts(summary.get('chart_summaries') or [])
     if not charts:
         return
-    heading = 'התרשימים מההערכה' if is_hebrew else 'Charts from your assessment'
+    # Keep the heading with the first row of cards instead of stranding it.
+    story.append(CondPageBreak(340))
+
+    heading = 'ריכוז הצבירה' if is_hebrew else 'Accumulation'
     story.append(_safe_paragraph(heading, heading_style, rtl=is_hebrew, max_width=usable_width))
-    story.append(Spacer(1, 4))
+    intro = (
+        'הסכומים מחושבים מתוך הצבירה הכוללת והכיסויים שבקובץ.'
+        if is_hebrew else
+        'Figures are taken from total accumulation and the covers in the file.'
+    )
+    ink = getattr(heading_style, 'textColor', None) or PHINS_INK
+    intro_style = ParagraphStyle(
+        'CustomerChartIntro',
+        fontName=font_name,
+        fontSize=9,
+        leading=14,
+        alignment=getattr(heading_style, 'alignment', 0),
+        textColor=ink,
+        spaceBefore=2,
+        spaceAfter=4,
+    )
+    story.append(_safe_paragraph(intro, intro_style, rtl=is_hebrew, max_width=usable_width))
+    story.append(Spacer(1, 10))
+    chart_title = ParagraphStyle(
+        'CustomerChartTitle',
+        fontName=getattr(heading_style, 'fontName', font_name),
+        fontSize=11,
+        leading=15,
+        alignment=TA_CENTER,
+        textColor=ink,
+        spaceBefore=0,
+        spaceAfter=1,
+    )
     caption_style = ParagraphStyle(
         'CustomerChartCaption',
         fontName=font_name,
         fontSize=8,
-        leading=10,
-        alignment=getattr(heading_style, 'alignment', 0),
-        textColor=getattr(heading_style, 'textColor', None) or PHINS_INK,
+        leading=12,
+        alignment=TA_CENTER,
+        textColor=ink,
     )
-    cell_width = (usable_width - 10) / 2
+    # Two cards per row, with padding inside the column so drawings stay on the page.
+    column = usable_width / 2.0
+    pad = 8.0
+    card_width = column - (pad * 2.0)
     row: List[Any] = []
+
+    def _chart_row(cells: List[Any]):
+        table = Table([cells], colWidths=[column, column])
+        table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), pad),
+            ('RIGHTPADDING', (0, 0), (-1, -1), pad),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 16))
+
     for chart in charts[:6]:
         card = _chart_card(
-            chart, cell_width, 188, is_hebrew, heading_style, caption_style, font_name,
+            chart, card_width, 198, is_hebrew, chart_title, caption_style, font_name,
         )
         if card is None:
             continue
         row.append(card)
         if len(row) == 2:
-            table = Table([row], colWidths=[cell_width, cell_width])
-            table.setStyle(TableStyle([
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 3),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-            ]))
-            story.append(table)
-            story.append(Spacer(1, 8))
+            _chart_row(row)
             row = []
     if row:
-        if len(row) == 1:
-            row.append('')
-        table = Table([row], colWidths=[cell_width, cell_width])
-        table.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 3),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-        ]))
-        story.append(table)
-        story.append(Spacer(1, 8))
+        row.append('')
+        _chart_row(row)
 
 
 def _product_accumulation_rows(totals: Dict[str, Any], is_hebrew: bool = True) -> List[List[str]]:
@@ -1882,9 +2043,10 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import CondPageBreak, SimpleDocTemplate, Spacer, Table, TableStyle
 
     base_font, bold_font = _register_fonts()
+    _heading_font, heading_bold = _heading_fonts()
     is_hebrew = is_rtl_language(summary.get('language'))
     align = TA_RIGHT if is_hebrew else TA_LEFT
     assessment = summary.get('pension_assessment') or {}
@@ -1904,12 +2066,12 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
     from reportlab.lib import colors as rl_colors
     title_style = ParagraphStyle(
         'MislakaPdfTitle', parent=styles['Title'],
-        fontName=bold_font, fontSize=16, leading=20,
+        fontName=heading_bold, fontSize=16, leading=22,
         alignment=align, textColor=rl_colors.HexColor(PHINS_NAVY),
     )
     heading_style = ParagraphStyle(
         'MislakaPdfHeading', parent=styles['Heading2'],
-        fontName=bold_font, fontSize=12, leading=15,
+        fontName=heading_bold, fontSize=13, leading=18,
         alignment=align, spaceBefore=8, spaceAfter=4,
         textColor=rl_colors.HexColor(PHINS_NAVY),
     )
@@ -1920,10 +2082,14 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
     )
     cell_style = ParagraphStyle(
         'MislakaPdfCell', parent=styles['BodyText'],
-        fontName=base_font, fontSize=8, leading=10,
+        fontName=base_font, fontSize=8, leading=11,
         alignment=align, textColor=rl_colors.HexColor(PHINS_INK),
     )
     navy_cell_style = _navy_cell_style(cell_style)
+    table_header_style = ParagraphStyle(
+        'MislakaPdfTableHead', parent=navy_cell_style,
+        fontName=heading_bold, leading=11,
+    )
 
     story: List[Any] = []
     title = customer_report_title(summary)
@@ -1984,7 +2150,7 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
         ]
         story.append(_build_text_table(
             provider_headers, provider_rows,
-            cell_style=cell_style, header_style=navy_cell_style,
+            cell_style=cell_style, header_style=table_header_style,
             rtl=is_hebrew, usable_width=usable_width,
             font=getattr(cell_style, 'fontName', 'Helvetica'),
         ))
@@ -1997,11 +2163,12 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
         shown = accounts[:80]
         money_headers, money_rows = _active_holdings_table(_holdings_money_specs(is_hebrew), shown)
         if money_headers:
-            accounts_heading = 'החשבונות והפוליסות שלך' if is_hebrew else 'Your Accounts & Policies'
+            story.append(CondPageBreak(160))
+            accounts_heading = 'הפוליסות שלך' if is_hebrew else 'Your Policies'
             story.append(_safe_paragraph(accounts_heading, heading_style, rtl=is_hebrew, max_width=usable_width))
             story.append(_build_text_table(
                 money_headers, money_rows,
-                cell_style=cell_style, header_style=navy_cell_style,
+                cell_style=cell_style, header_style=table_header_style,
                 rtl=is_hebrew, usable_width=usable_width,
                 font=getattr(cell_style, 'fontName', 'Helvetica'),
             ))
@@ -2019,7 +2186,7 @@ def _build_mislaka_assessment_pdf(summary: Dict[str, Any]) -> bytes:
             story.append(_safe_paragraph(detail_heading, heading_style, rtl=is_hebrew, max_width=usable_width))
             story.append(_build_text_table(
                 detail_headers, detail_rows,
-                cell_style=cell_style, header_style=navy_cell_style,
+                cell_style=cell_style, header_style=table_header_style,
                 rtl=is_hebrew, usable_width=usable_width,
                 font=getattr(cell_style, 'fontName', 'Helvetica'),
             ))
@@ -2047,8 +2214,15 @@ def _append_assessment_sections(
     from reportlab.platypus import Spacer
 
     header_style = _navy_cell_style(cell_style)
+    pension = bool(summary.get('is_pension_data') or summary.get('pension_assessment'))
+    accounts_already_shown = pension and bool((summary.get('pension_assessment') or {}).get('accounts'))
     for section in prepare_customer_download_sections(summary.get('assessment_sections') or []):
         title_text = section.get('title') or ''
+        if pension and is_undesigned_narrative_section(title_text):
+            continue
+        # The briefing already prints הפוליסות שלך as fitted tables.
+        if accounts_already_shown and is_policy_table_section(title_text):
+            continue
         content = (section.get('content') or '').strip()
         rows = section.get('rows') or []
         if not content and not rows:
@@ -2257,7 +2431,7 @@ def build_report_csv_bytes(summary: Dict[str, Any]) -> bytes:
             shown = accounts[:80]
             money_headers, money_rows = _active_holdings_table(_holdings_money_specs(is_hebrew), shown)
             if money_headers:
-                writer.writerow(['החשבונות והפוליסות שלך' if is_hebrew else 'Your Accounts & Policies'])
+                writer.writerow(['הפוליסות שלך' if is_hebrew else 'Your Policies'])
                 writer.writerow(money_headers)
                 for row in money_rows:
                     writer.writerow(row)

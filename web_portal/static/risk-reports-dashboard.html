@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#060d1f">
   <title>PHINS - Swiftness Risk Intelligence</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=Noto+Sans+Hebrew:wght@400;500;600;700&family=Noto+Serif+Hebrew:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
@@ -771,12 +771,17 @@
     .charts-container {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-      gap: 1.15rem;
-      margin-bottom: 2rem;
+      gap: 1.45rem 1.5rem;
+      margin-bottom: 2.25rem;
+    }
+
+    .charts-container.executive-concentration {
+      gap: 1.75rem 1.6rem;
+      padding: 1.65rem 1.45rem 1.85rem;
     }
 
     .charts-container:not(:empty) {
-      padding: 1.25rem 1.1rem 1.35rem;
+      padding: 1.45rem 1.3rem 1.6rem;
       border-radius: 22px;
       background: linear-gradient(108deg,
         #b9dcff 0%,
@@ -789,20 +794,24 @@
     
     .charts-heading {
       grid-column: 1 / -1;
-      padding: 0.15rem 0.15rem 0.35rem;
+      padding: 0.15rem 0.25rem 0.95rem;
     }
 
     .charts-heading h3 {
-      font-family: 'Space Grotesk', 'Heebo', sans-serif;
+      font-family: 'Noto Serif Hebrew', 'Heebo', serif;
       color: #0e2f63;
-      font-size: 1.35rem;
+      font-size: 1.55rem;
       font-weight: 600;
+      letter-spacing: 0.01em;
+      margin: 0;
     }
 
     .charts-heading p {
-      color: #5b6b82;
-      font-size: 0.92rem;
-      margin-top: 0.2rem;
+      color: #3e5274;
+      font-family: 'Noto Sans Hebrew', 'Heebo', sans-serif;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      margin-top: 0.35rem;
     }
 
     .chart-card {
@@ -810,7 +819,7 @@
       overflow: hidden;
       background: linear-gradient(162deg, #ffffff 0%, #eef6ff 44%, #fff4cc 100%);
       border-radius: 16px;
-      padding: 1.25rem 1.2rem 0.85rem;
+      padding: 1.45rem 1.3rem 1.05rem;
       box-shadow: 0 14px 34px rgba(42, 116, 255, 0.08);
       border: 1px solid rgba(42, 116, 255, 0.16);
     }
@@ -829,8 +838,8 @@
       margin: 0;
       color: #0e2f63;
       text-align: center;
-      font-family: 'Heebo', 'Space Grotesk', sans-serif;
-      font-size: 1.02rem;
+      font-family: 'Noto Serif Hebrew', 'Heebo', serif;
+      font-size: 1.08rem;
       font-weight: 600;
       letter-spacing: 0.01em;
     }
@@ -851,14 +860,15 @@
       font-weight: 500;
       font-size: 0.84rem;
       color: #3e5274;
-      font-family: 'Heebo', 'Inter', sans-serif;
-      line-height: 1.45;
+      font-family: 'Noto Sans Hebrew', 'Heebo', sans-serif;
+      line-height: 1.6;
       font-variant-numeric: tabular-nums;
     }
     
     .chart-wrapper {
       position: relative;
-      height: 320px;
+      height: 340px;
+      margin-top: 0.35rem;
     }
     
     /* Risk Gauge */
@@ -947,11 +957,29 @@
     
     .report-section h3 {
       color: var(--primary);
-      font-size: 1.15rem;
-      margin-bottom: 1rem;
+      font-family: 'Noto Serif Hebrew', 'Heebo', serif;
+      font-size: 1.28rem;
+      font-weight: 600;
+      margin-bottom: 0.85rem;
       display: flex;
       align-items: center;
       gap: 10px;
+    }
+
+    .report-section.executive-policies {
+      background: linear-gradient(165deg, #ffffff 0%, #f3f8ff 52%, #fff6dc 100%);
+      border: 1px solid rgba(42, 116, 255, 0.16);
+      border-radius: 16px;
+      padding: 1.2rem 1.15rem 1rem;
+      border-inline-start: 4px solid #e3bf6f;
+    }
+
+    .report-section.executive-policies h3 {
+      color: #0e2f63;
+    }
+
+    .report-section.executive-policies .table-scroll {
+      margin-top: 0.35rem;
     }
     
     .report-section .content {
@@ -2006,6 +2034,43 @@
     .data-table th:last-child {
       border-start-end-radius: 11px;
     }
+
+    .executive-table {
+      table-layout: fixed;
+      width: 100%;
+      min-width: 52rem;
+      font-family: 'Noto Sans Hebrew', 'Heebo', sans-serif;
+    }
+
+    .executive-table col.col-num {
+      width: 7.4rem;
+    }
+
+    .executive-table th,
+    .executive-table td {
+      font-size: 0.76rem;
+      line-height: 1.45;
+      padding: 8px 7px;
+      max-width: none;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      vertical-align: top;
+      text-align: start;
+    }
+
+    .executive-table th {
+      font-family: 'Noto Serif Hebrew', 'Heebo', serif;
+      font-weight: 600;
+      font-size: 0.74rem;
+    }
+
+    .executive-table td.num {
+      white-space: nowrap;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      width: 7.2rem;
+    }
     
     /* RTL Support */
     [dir="rtl"] {
@@ -2079,8 +2144,15 @@
     }
     body.phins-unified .page-title p,
     body.phins-unified .chart-total,
-    body.phins-unified .charts-heading p {
-      font-family: 'Heebo', 'Inter', sans-serif;
+    body.phins-unified .charts-heading p,
+    body.phins-unified .executive-table {
+      font-family: 'Noto Sans Hebrew', 'Heebo', sans-serif;
+    }
+    body.phins-unified .charts-heading h3,
+    body.phins-unified .chart-card h4,
+    body.phins-unified .report-section h3,
+    body.phins-unified .executive-table th {
+      font-family: 'Noto Serif Hebrew', 'Heebo', serif;
     }
     body.phins-unified .stat-card h5,
     body.phins-unified .stat-card small {
@@ -4034,13 +4106,55 @@
         'הערכת סיכון', 'risk assessment', 'מדדים מרכזיים', 'key metrics',
         'מפת שיוכים', 'affiliation mapping'
       ];
+      const normalizeTitle = (value) => String(value || '')
+        .replace(/[״“”"]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+      const undesignedNarratives = new Set([
+        'סיכום ההערכה',
+        'סיכום ההערכה שלך',
+        'assessment summary',
+        'תקציר מנהלים',
+        'executive summary',
+        'הערכת הפנסיה והביטוח שלך',
+        'דוח ניתוח פנסיה וביטוח',
+        'pension & insurance analysis report',
+        'your pension & insurance assessment',
+        'פרטי הפוליסה שלך',
+        'פרטי פוליסת ביטוח',
+        'insurance policy details',
+        'your policy details',
+        'נקודות לתשומת לב',
+        'חריגות ואזהרות',
+        'anomalies & warnings',
+        'anomalies and warnings',
+        'points to review'
+      ].map(normalizeTitle));
+      const policyTableTitles = new Set([
+        'הפוליסות שלך',
+        'סטטוס פוליסות (טבלת שיוכים)',
+        'policy status (affiliation table)',
+        'your policies'
+      ].map(normalizeTitle));
+      const mislakaReport = Boolean(
+        report.metadata?.is_pension_data ||
+        pensionData ||
+        (report.sections || []).some(section => policyTableTitles.has(normalizeTitle(section.title)))
+      );
       const visibleSections = (report.sections || []).filter(section => {
+        const normalized = normalizeTitle(section.title);
+        if (mislakaReport && undesignedNarratives.has(normalized)) return false;
         if (!isPensionData) return true;
-        const title = String(section.title || '').toLowerCase();
-        return !statisticalTitles.some(token => title.includes(token));
+        return !statisticalTitles.some(token => normalized.includes(token));
       });
       reportBody.innerHTML = visibleSections.map(section => {
         const title = section.title || '';
+        const normalized = normalizeTitle(title);
+        const isPolicyTable = policyTableTitles.has(normalized);
+        const displayTitle = isPolicyTable
+          ? (reportLanguage === 'hebrew' ? 'הפוליסות שלך' : 'Your Policies')
+          : title;
         const isMislakaSection = title.includes('מסלקה') || 
                                  title.toLowerCase().includes('mislaka');
         const isPensionSection = title.includes('פנסיה') || 
@@ -4048,23 +4162,25 @@
                                  title.includes('ביטוח') ||
                                  title.toLowerCase().includes('insurance');
         
-        const sectionClass = isMislakaSection 
+        const sectionClass = isPolicyTable
+          ? 'report-section executive-policies fade-in'
+          : isMislakaSection 
           ? 'report-section mislaka-report fade-in'
           : isPensionSection 
           ? 'report-section pension-section fade-in' 
           : 'report-section fade-in';
         
-        // Format content with better whitespace and structure handling
-        let content = section.content || '';
+        // The policy grid is the table. Its filler sentence is not part of the briefing.
+        let content = isPolicyTable ? '' : (section.content || '');
         if (content) {
           content = formatMislakaReport(content);
         }
         
         return `
           <div class="${sectionClass}" dir="${reportLanguage === 'hebrew' ? 'rtl' : 'ltr'}">
-            <h3>${getSectionIcon(title)} ${title}</h3>
-            <div class="content">${content}</div>
-            ${section.data_table ? renderDataTable(section.data_table) : ''}
+            <h3>${getSectionIcon(displayTitle)} ${displayTitle}</h3>
+            ${content ? `<div class="content">${content}</div>` : ''}
+            ${section.data_table ? renderDataTable(section.data_table, { executive: isPolicyTable }) : ''}
           </div>
         `;
       }).join('');
@@ -4395,10 +4511,13 @@
         config && concentrationTitles.indexOf(config.title) !== -1
       ));
       if (showsConcentration) {
+        container.classList.add('executive-concentration');
         const heading = document.createElement('div');
         heading.className = 'charts-heading';
         heading.innerHTML = '<h3>ריכוז הצבירה</h3><p>הסכומים מחושבים מתוך הצבירה הכוללת והכיסויים שבקובץ</p>';
         container.appendChild(heading);
+      } else {
+        container.classList.remove('executive-concentration');
       }
       
       // Check if Chart.js is available
@@ -4718,8 +4837,10 @@
       }
     }
     
-    function renderDataTable(data) {
+    function renderDataTable(data, options = {}) {
       if (!data) return '';
+      const executive = Boolean(options && options.executive);
+      const tableClass = executive ? 'data-table executive-table' : 'data-table';
 
       // Structured table format: { columns: [...], rows: [...] } or direct rows array.
       if (Array.isArray(data) || Array.isArray(data.rows)) {
@@ -4731,10 +4852,20 @@
           ? preferredColumns
           : [...new Set(rows.flatMap(row => Object.keys(row || {})))];
         const cappedRows = rows.slice(0, 120);
+        const moneyColumns = executive ? resolvedColumns.map(col => {
+          const values = cappedRows
+            .map(row => row?.[col])
+            .filter(value => value !== '' && value !== null && value !== undefined && value !== 0 && value !== '0');
+          return values.length > 0 && values.every(isNumericCell);
+        }) : [];
+        const colgroup = executive
+          ? `<colgroup>${resolvedColumns.map((_, index) => `<col class="${moneyColumns[index] ? 'col-num' : 'col-text'}">`).join('')}</colgroup>`
+          : '';
 
         return `
           <div class="table-scroll">
-          <table class="data-table">
+          <table class="${tableClass}">
+            ${colgroup}
             <thead>
               <tr>
                 ${resolvedColumns.map(col => `<th>${escapeHtml(col)}</th>`).join('')}
@@ -4764,7 +4895,7 @@
 
       return `
         <div class="table-scroll">
-        <table class="data-table">
+        <table class="${tableClass}">
           <thead>
             <tr>
               <th>Metric</th>
