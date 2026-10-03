@@ -341,7 +341,7 @@ PHINS_INK = '#12284c'
 PHINS_ICE = '#f3f7fd'
 PHINS_GREY = '#5b6b82'
 _BRAND_CHART_COLORS = (
-    PHINS_NAVY, PHINS_GOLD, PHINS_NAVY_MID, PHINS_CYAN, '#e3bf6f', '#6ea8ff',
+    '#2a74ff', '#f5c542', '#3ec8ff', '#6d9bff', '#ffb020', '#2fcec0', '#8eb6ff', '#ffe27a',
 )
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -1523,9 +1523,14 @@ def _chart_card(
         ('BOTTOMPADDING', (0, 0), (-1, 0), 2),
         ('TOPPADDING', (0, -1), (-1, -1), 2),
         ('BOTTOMPADDING', (0, -1), (-1, -1), 8),
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fffdf8')),
-        ('BOX', (0, 0), (-1, -1), 0.6, colors.HexColor('#e3d7b4')),
-        ('LINEABOVE', (0, 0), (-1, 0), 2.2, colors.HexColor(PHINS_GOLD)),
+        ('BACKGROUND', (0, 0), (-1, -1), (
+            'HORIZONTAL',
+            colors.HexColor('#d4ebff'),
+            colors.HexColor('#fffdf8'),
+            colors.HexColor('#ffe08a'),
+        )),
+        ('BOX', (0, 0), (-1, -1), 0.6, colors.HexColor('#f0d48a')),
+        ('LINEABOVE', (0, 0), (-1, 0), 3.4, colors.HexColor('#f5c542')),
     ]))
     return card
 

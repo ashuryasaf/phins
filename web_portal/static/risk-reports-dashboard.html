@@ -774,6 +774,18 @@
       gap: 1.15rem;
       margin-bottom: 2rem;
     }
+
+    .charts-container:not(:empty) {
+      padding: 1.25rem 1.1rem 1.35rem;
+      border-radius: 22px;
+      background: linear-gradient(108deg,
+        #b9dcff 0%,
+        #e7f3ff 24%,
+        #fffdf8 50%,
+        #ffe9ad 78%,
+        #ffd15c 100%);
+      box-shadow: inset 0 0 0 1px rgba(42, 116, 255, 0.14);
+    }
     
     .charts-heading {
       grid-column: 1 / -1;
@@ -794,12 +806,23 @@
     }
 
     .chart-card {
-      background: linear-gradient(180deg, #fffdf8 0%, #ffffff 38%);
+      position: relative;
+      overflow: hidden;
+      background: linear-gradient(162deg, #ffffff 0%, #eef6ff 44%, #fff4cc 100%);
       border-radius: 16px;
-      padding: 1.15rem 1.2rem 0.85rem;
-      box-shadow: 0 14px 34px rgba(6, 13, 31, 0.07);
-      border: 1px solid rgba(14, 47, 99, 0.08);
-      border-top: 3px solid #e3bf6f;
+      padding: 1.25rem 1.2rem 0.85rem;
+      box-shadow: 0 14px 34px rgba(42, 116, 255, 0.08);
+      border: 1px solid rgba(42, 116, 255, 0.16);
+    }
+
+    .chart-card::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 8px;
+      background: linear-gradient(90deg, #3d9bff 0%, #fff6c4 46%, #f5c542 100%);
     }
     
     .chart-card h4 {
@@ -815,11 +838,11 @@
     .chart-card h4::after {
       content: '';
       display: block;
-      width: 42px;
-      height: 2px;
+      width: 84px;
+      height: 3px;
       margin: 0.45rem auto 0.35rem;
-      border-radius: 2px;
-      background: linear-gradient(90deg, #c9a04e, #f7e2a0);
+      border-radius: 3px;
+      background: linear-gradient(90deg, #3d9bff 0%, #fff1a8 48%, #f5c542 100%);
     }
 
     .chart-total {
@@ -4497,6 +4520,63 @@
       return `<p class="chart-total">סה״כ ${escapeHtml(formatChartMoney(total, symbol))}</p>`;
     }
 
+    const PHINS_BRIGHT_COLORS = [
+      '#2a74ff', '#f5c542', '#3ec8ff', '#6d9bff', '#ffb020', '#2fcec0', '#8eb6ff', '#ffe27a'
+    ];
+
+    function chartPalette(options) {
+      const given = options && options.colors;
+      if (Array.isArray(given) && given.length) return given;
+      return PHINS_BRIGHT_COLORS;
+    }
+
+    function mixHex(hex, toward, amount) {
+      const read = function(value) {
+        const body = String(value || '').replace('#', '');
+        if (body.length < 6) return [42, 116, 255];
+        return [
+          parseInt(body.slice(0, 2), 16),
+          parseInt(body.slice(2, 4), 16),
+          parseInt(body.slice(4, 6), 16)
+        ];
+      };
+      const from = read(hex);
+      const to = read(toward);
+      const t = Math.max(0, Math.min(1, amount));
+      const mixed = from.map(function(channel, index) {
+        return Math.round(channel + (to[index] - channel) * t);
+      });
+      return '#' + mixed.map(function(channel) {
+        return channel.toString(16).padStart(2, '0');
+      }).join('');
+    }
+
+    function markGradient(chart, index, palette, chartType, horizontal) {
+      const base = palette[index % palette.length];
+      const area = chart.chartArea;
+      if (!area) return base;
+      const left = Number(area.left);
+      const right = Number(area.right);
+      const top = Number(area.top);
+      const bottom = Number(area.bottom);
+      if (![left, right, top, bottom].every(Number.isFinite) || right <= left || bottom <= top) {
+        return base;
+      }
+      const bright = mixHex(base, '#ffffff', 0.55);
+      const deep = mixHex(base, '#123a8a', 0.22);
+      const draw = chart.ctx;
+      // Span the whole plot so the wash is wide, not a short fade on one bar.
+      const gradient = horizontal
+        ? draw.createLinearGradient(left, top, right, top)
+        : (chartType === 'bar'
+          ? draw.createLinearGradient(left, top, left, bottom)
+          : draw.createLinearGradient(left, top, right, bottom));
+      gradient.addColorStop(0, bright);
+      gradient.addColorStop(0.38, base);
+      gradient.addColorStop(1, deep);
+      return gradient;
+    }
+
     function createChart(ctx, config) {
       if (!ctx || !config) return null;
       
@@ -4506,6 +4586,8 @@
       const symbol = options.currency_symbol || '₪';
       const values = (config.data && config.data.values) ? config.data.values : [];
       const labels = (config.data && config.data.labels) ? config.data.labels : [];
+      const palette = chartPalette(options);
+      const horizontal = chartType === 'bar' && !!options.horizontal;
       
       const centerTotal = chartType === 'doughnut' ? {
         id: 'phinsCenterTotal',
@@ -4542,11 +4624,11 @@
             labels: labels,
             datasets: [{
               data: values,
-              backgroundColor: options.colors || [
-                '#0e2f63', '#e3bf6f', '#15449b', '#0b5c82', '#c9a04e', '#7fb2ff', '#12315f', '#f7e2a0'
-              ],
+              backgroundColor: function(context) {
+                return markGradient(context.chart, context.dataIndex, palette, chartType, horizontal);
+              },
               borderWidth: chartType === 'bar' ? 0 : 2,
-              borderColor: '#fffdf8',
+              borderColor: '#ffffff',
               borderRadius: chartType === 'bar' ? 6 : 0,
               spacing: chartType === 'bar' ? 0 : 3,
               hoverOffset: chartType === 'bar' ? 0 : 8,
@@ -4562,23 +4644,22 @@
             plugins: {
               legend: {
                 position: chartType === 'bar' ? 'top' : 'bottom',
-                labels: Object.assign({
+                labels: {
                   font: { family: "'Heebo', 'Inter', sans-serif", size: 12 },
                   color: '#12203a',
                   boxWidth: 10,
                   boxHeight: 10,
                   padding: 14,
                   usePointStyle: true,
-                  pointStyle: 'rectRounded'
-                }, currency ? {
+                  pointStyle: 'rectRounded',
                   generateLabels: function(chart) {
                     const items = chart.data.labels || [];
                     const series = (chart.data.datasets[0] && chart.data.datasets[0].data) || [];
-                    const colors = (chart.data.datasets[0] && chart.data.datasets[0].backgroundColor) || [];
                     return items.map(function(label, index) {
-                      const color = Array.isArray(colors) ? colors[index % colors.length] : colors;
+                      const color = palette[index % palette.length];
+                      const amount = currency ? `  ${formatChartMoney(series[index], symbol)}` : '';
                       return {
-                        text: `${label}  ${formatChartMoney(series[index], symbol)}`,
+                        text: `${label}${amount}`,
                         fillStyle: color,
                         strokeStyle: color,
                         fontColor: '#12203a',
@@ -4588,7 +4669,7 @@
                       };
                     });
                   }
-                } : {})
+                }
               },
               tooltip: {
                 backgroundColor: '#060d1f',

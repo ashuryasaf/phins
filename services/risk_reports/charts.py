@@ -11,9 +11,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from services.risk_reports.models import AnalysisResult, ChartConfig, ChartType
 from services.risk_reports.pdf_export import classify_cover_type
 
-# Same navy/gold sequence the customer PDF drawings use.
+# Bright PHINS sequence. The dashboard paints each mark as a wide gradient
+# from a light stop through these hues; the PDF uses the same solids.
 PHINS_CHART_COLORS = [
-    '#0e2f63', '#e3bf6f', '#15449b', '#0b5c82', '#c9a04e', '#7fb2ff', '#12315f', '#f7e2a0',
+    '#2a74ff', '#f5c542', '#3ec8ff', '#6d9bff', '#ffb020', '#2fcec0', '#8eb6ff', '#ffe27a',
 ]
 
 
