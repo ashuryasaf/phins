@@ -707,3 +707,19 @@ def test_pension_columns_are_judged_by_sign_and_fee_band_not_zscore():
     assert 'רמת חשיבות' not in text
     assert 'לא ציון חשיבות' in text
 
+
+def test_doughnut_hole_total_follows_the_unit_and_the_report_language():
+    """A ring of row counts (ID Field Coverage) is not a shekel amount."""
+    html = open(
+        os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                     'web_portal', 'static', 'risk-reports-dashboard.html'),
+        encoding='utf-8',
+    ).read()
+    plugin_at = html.find("id: 'phinsCenterTotal'")
+    assert plugin_at > 0
+    plugin = html[plugin_at:html.find('draw.restore();', plugin_at)]
+    assert 'draw.fillText(chartTotalLabel(), ' in plugin
+    assert 'currency ? formatChartMoney(total, symbol) : formatChartCount(total)' in plugin
+    assert 'סה״כ' not in plugin
+    assert "(currentReport && currentReport.language === 'hebrew') ? 'סה״כ' : 'Total'" in html
+

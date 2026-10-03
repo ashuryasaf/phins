@@ -4459,6 +4459,12 @@
       return formatChartMoney(amount, sym);
     }
 
+    function formatChartCount(value) {
+      const amount = Number(value) || 0;
+      // LTR mark keeps the digits in order on a Hebrew canvas.
+      return `\u200E${amount.toLocaleString('he-IL', { maximumFractionDigits: 0 })}`;
+    }
+
     function isNumericCell(value) {
       if (typeof value === 'number' && Number.isFinite(value)) return true;
       if (typeof value !== 'string') return false;
@@ -4472,6 +4478,10 @@
       }
       const values = Array.isArray(data.values) ? data.values : [];
       return values.reduce((sum, value) => sum + (Number(value) || 0), 0);
+    }
+
+    function chartTotalLabel() {
+      return (currentReport && currentReport.language === 'hebrew') ? 'סה״כ' : 'Total';
     }
 
     function chartTotalLine(config) {
@@ -4512,10 +4522,14 @@
           draw.textBaseline = 'middle';
           draw.fillStyle = '#5b6b82';
           draw.font = "500 11px 'Heebo', 'Inter', sans-serif";
-          draw.fillText('סה״כ', arc.x, arc.y - 11);
+          draw.fillText(chartTotalLabel(), arc.x, arc.y - 11);
           draw.fillStyle = '#0e2f63';
           draw.font = "600 13px 'Heebo', 'Inter', sans-serif";
-          draw.fillText(formatChartMoney(total, symbol), arc.x, arc.y + 8);
+          // Only a currency ring carries a ₪ figure; other rings count rows.
+          draw.fillText(
+            currency ? formatChartMoney(total, symbol) : formatChartCount(total),
+            arc.x, arc.y + 8
+          );
           draw.restore();
         }
       } : null;
