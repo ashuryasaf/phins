@@ -815,8 +815,9 @@
           <strong>Source.</strong> Mortality q(x) calibrated to OECD insured-lives table for males age 35–39, healthy
           underwriting class. Disability incidence i(x) calibrated to PHINS permanent 3+ ADL severity model. Expected
           severity assumptions: mortality payout = L; disability payout = D × 0.55 average present value (graded by
-          expected duration and lump-sum / income-stream mix). All values in this appendix are deterministically
-          computed from the same locked actuarial source block as page 1 — no value on either page is hand-typed.
+          expected duration and lump-sum / income-stream mix). Ages 35–39 use this locked profile.
+          Every other age uses the kernel V2.0 bracket (rate per 1,000 ÷ 1,000) with no second age-factor multiply.
+          A missing bracket is left blank, never shown as zero.
         </div>
       </div>
 
@@ -829,6 +830,7 @@
     </div>
   </div>
 
+  <script src="/risk-reference-rates.js"></script>
   <script>
     // ──────────────────────────────────────────────────────────────────────
     // SINGLE LOCKED ACTUARIAL SOURCE BLOCK
@@ -960,13 +962,18 @@
         const factor = ageFactor(age);
         const monthly = totalMonthly(age, M.L, M.D);
         const annual = monthly * 12;
-        const qx = M.mortality[age] || 0;
-        const ix = M.disabilityIncidence[age] || 0;
+        const rates = window.phinsReferenceRates
+          ? window.phinsReferenceRates(age, M)
+          : { qx: M.mortality[age] == null ? null : M.mortality[age], ix: M.disabilityIncidence[age] == null ? null : M.disabilityIncidence[age] };
+        const qx = rates.qx;
+        const ix = rates.ix;
         const sums = benefitSums(age, M.L);
-        const eLoss = qx * sums.lifeSum * M.mortalitySeverity + ix * sums.disabilitySum * M.disabilitySeverity;
-        const lr = eLoss / annual;
+        const eLoss = (qx == null || ix == null)
+          ? null
+          : qx * sums.lifeSum * M.mortalitySeverity + ix * sums.disabilitySum * M.disabilitySeverity;
+        const lr = eLoss == null ? null : eLoss / annual;
         totalPremium += annual;
-        totalELoss += eLoss;
+        if (eLoss != null) totalELoss += eLoss;
 
         // Forecast grid card
         const card = document.createElement('div');
@@ -988,10 +995,10 @@
           '<td>' + age + '</td>' +
           '<td>' + factor.toFixed(3) + '</td>' +
           '<td>' + fmtUSD(annual, 2) + '</td>' +
-          '<td>' + fmtPct(qx, 3) + '</td>' +
-          '<td>' + fmtPct(ix, 3) + '</td>' +
-          '<td>' + fmtUSD(eLoss, 2) + '</td>' +
-          '<td>' + fmtPct(lr, 1) + '</td>';
+          '<td>' + (qx == null ? '—' : fmtPct(qx, 3)) + '</td>' +
+          '<td>' + (ix == null ? '—' : fmtPct(ix, 3)) + '</td>' +
+          '<td>' + (eLoss == null ? '—' : fmtUSD(eLoss, 2)) + '</td>' +
+          '<td>' + (lr == null ? '—' : fmtPct(lr, 1)) + '</td>';
         simTbody.appendChild(tr);
       }
 

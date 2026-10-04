@@ -11436,13 +11436,17 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
 
     # ---- Risk Reference ----
     ws_ref = wb.create_sheet('Risk Reference')
-    ws_ref.append(['Year', 'Age', 'Age Factor', 'Annual Premium', 'Mortality q(x)', 'Disability i(x)', 'Expected Loss', 'Loss Ratio'])
+    ws_ref.append([
+        'Year', 'Age', 'Age Factor', 'Annual Premium', 'Mortality q(x)', 'Disability i(x)',
+        'Expected Loss', 'Loss Ratio', 'Life Sum', 'Disability Sum', 'Rate Source',
+    ])
     style_header(ws_ref)
     for row in reference.get('yearly_projection', []):
         ws_ref.append([
             row.get('year'), row.get('age'), row.get('age_factor'),
             row.get('annual_premium'), row.get('mortality_qx'),
             row.get('disability_ix'), row.get('expected_loss'), row.get('loss_ratio'),
+            row.get('life_sum'), row.get('disability_sum'), row.get('rate_source'),
         ])
     totals = reference.get('totals', {})
     ws_ref.append([])
@@ -11459,6 +11463,8 @@ def _build_actuarial_xlsx(simulation: Dict[str, Any], projection: Dict[str, Any]
         'Disability i(x)': ratio_fmt,
         'Expected Loss': money_fmt,
         'Loss Ratio': pct_fmt,
+        'Life Sum': money_fmt,
+        'Disability Sum': money_fmt,
     })
     apply_key_value_money_format(
         ws_ref,
@@ -11820,16 +11826,35 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
         body,
     ))
     story.append(Spacer(1, 4))
-    ref_rows = [['Year', 'Age', 'Age Factor', 'Annual Premium', 'q(x)', 'i(x)', 'Expected Loss', 'Loss Ratio']]
+    def _ref_rate(value):
+        if value is None:
+            return '—'
+        return f"{float(value):.5f}"
+
+    def _ref_money(value):
+        if value is None:
+            return '—'
+        return f"{float(value):,.2f}"
+
+    def _ref_ratio(value):
+        if value is None:
+            return '—'
+        return f"{(float(value) * 100):.2f}%"
+
+    ref_rows = [[
+        'Year', 'Age', 'Age Factor', 'Annual Premium', 'q(x)', 'i(x)',
+        'Expected Loss', 'Loss Ratio', 'Rate Source',
+    ]]
     for row in reference.get('yearly_projection', []):
         ref_rows.append([
             row.get('year'), row.get('age'),
             f"{row.get('age_factor', 0):.4f}",
-            f"{row.get('annual_premium', 0):,.2f}",
-            f"{row.get('mortality_qx', 0):.5f}",
-            f"{row.get('disability_ix', 0):.5f}",
-            f"{row.get('expected_loss', 0):,.2f}",
-            f"{(row.get('loss_ratio', 0) * 100):.2f}%",
+            _ref_money(row.get('annual_premium')),
+            _ref_rate(row.get('mortality_qx')),
+            _ref_rate(row.get('disability_ix')),
+            _ref_money(row.get('expected_loss')),
+            _ref_ratio(row.get('loss_ratio')),
+            row.get('rate_source') or '—',
         ])
     ref_table = Table(ref_rows, hAlign='LEFT', repeatRows=1)
     ref_table.setStyle(TableStyle([
@@ -11843,11 +11868,17 @@ def _build_actuarial_pdf(simulation: Dict[str, Any], projection: Dict[str, Any],
     story.append(ref_table)
     totals = reference.get('totals', {})
     story.append(Spacer(1, 6))
+    loss_total = totals.get('cumulative_expected_loss')
+    ratio_total = totals.get('average_loss_ratio')
+    margin_total = totals.get('expense_plus_capital_margin')
+    loss_text = 'withheld' if loss_total is None else f"${float(loss_total):,.2f}"
+    ratio_text = 'withheld' if ratio_total is None else f"{(float(ratio_total) * 100):.2f}%"
+    margin_text = 'withheld' if margin_total is None else f"{(float(margin_total) * 100):.2f}%"
     story.append(Paragraph(
         f"Cumulative premium <b>${totals.get('cumulative_premium', 0):,.2f}</b> &nbsp;|&nbsp; "
-        f"Cumulative expected loss <b>${totals.get('cumulative_expected_loss', 0):,.2f}</b> &nbsp;|&nbsp; "
-        f"Average loss ratio <b>{(totals.get('average_loss_ratio', 0) * 100):.2f}%</b> &nbsp;|&nbsp; "
-        f"Expense+capital margin <b>{(totals.get('expense_plus_capital_margin', 0) * 100):.2f}%</b>",
+        f"Cumulative expected loss <b>{loss_text}</b> &nbsp;|&nbsp; "
+        f"Average loss ratio <b>{ratio_text}</b> &nbsp;|&nbsp; "
+        f"Expense+capital margin <b>{margin_text}</b>",
         body,
     ))
 

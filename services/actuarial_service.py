@@ -3675,8 +3675,9 @@ def evaluate_auto_approval(
 #
 # * an :class:`AgeCurve` from ``services.pricing_kernel`` (the published curve
 #   is registered as ``risk_reference_v1``)
-# * mortality q(x) and permanent ADL disability i(x) tables for the selected
-#   age window
+# * mortality q(x) and permanent ADL disability i(x): the profile lists the
+#   locked ages (35–39). Every other age uses the active kernel rate-table
+#   bracket (rate per 1,000 / 1,000) with no second age-curve multiply
 # * mortality / disability severity factors
 # * the desired starting age, projection horizon, life sum, and product
 # =============================================================================
@@ -3911,6 +3912,27 @@ def list_risk_reference_profiles() -> List[Dict[str, Any]]:
     return summaries
 
 
+def kernel_bracket_probability(brackets: Optional[List[Dict[str, Any]]], age: int) -> Optional[float]:
+    """Raw kernel incidence for one age: rate per 1,000 divided by 1,000.
+
+    Returns ``None`` when no bracket covers the age. Does not apply an age
+    curve, and does not invent a fallback rate for an uncovered age.
+    """
+    age_i = int(age)
+    for row in brackets or []:
+        if not isinstance(row, dict):
+            continue
+        try:
+            lo = int(row.get('age_min'))
+            hi = int(row.get('age_max'))
+            per_thousand = float(row.get('rate_per_1000'))
+        except (TypeError, ValueError):
+            continue
+        if lo <= age_i < hi:
+            return per_thousand / 1000.0
+    return None
+
+
 def risk_reference_age_factor(age: int, profile_id: Optional[str] = None) -> float:
     """Age factor for a risk-reference profile (delegates to its age curve)."""
     profile = get_risk_reference_profile(profile_id)
@@ -3981,6 +4003,277 @@ def risk_reference_monthly_premiums(age: int,
     }
 
 
+# One-year age map drawn on the risk-reference bar. The span is the ages
+# the published tariff and the default kernel brackets both price. It is
+# not a second model.
+RISK_REFERENCE_MAP_AGE_MIN = 20
+RISK_REFERENCE_MAP_AGE_MAX = 85
+# Permanent disability on this contract is ADL 10 (fully disabled, global ADL 3+).
+PERMANENT_DISABILITY_ADL = 10
+
+
+def _profile_listed_rate(table: Any, age: int) -> Optional[float]:
+    if not isinstance(table, dict):
+        return None
+    if age in table:
+        return float(table[age])
+    key = str(age)
+    if key in table:
+        return float(table[key])
+    return None
+
+
+def resolve_reference_incidence(
+    age: int,
+    profile: Dict[str, Any],
+    mort_brackets: Optional[List[Dict[str, Any]]],
+    dis_brackets: Optional[List[Dict[str, Any]]],
+) -> Dict[str, Any]:
+    """q(x) and i(x) for one age, same rule as the risk-reference table.
+
+    A listed profile age wins. Otherwise the kernel bracket
+    (rate per 1,000 / 1,000) is used. An age outside both is unavailable.
+    """
+    age_i = int(age)
+    published_q = _profile_listed_rate(profile.get('mortality_qx') or {}, age_i)
+    published_i = _profile_listed_rate(profile.get('disability_incidence_ix') or {}, age_i)
+    bracket_q = kernel_bracket_probability(mort_brackets, age_i)
+    bracket_i = kernel_bracket_probability(dis_brackets, age_i)
+    if published_q is not None:
+        qx: Optional[float] = published_q
+        qx_source = 'published_profile'
+    elif bracket_q is not None:
+        qx = bracket_q
+        qx_source = 'kernel_table'
+    else:
+        qx = None
+        qx_source = 'unavailable'
+    if published_i is not None:
+        ix: Optional[float] = published_i
+        ix_source = 'published_profile'
+    elif bracket_i is not None:
+        ix = bracket_i
+        ix_source = 'kernel_table'
+    else:
+        ix = None
+        ix_source = 'unavailable'
+    if qx_source == ix_source:
+        rate_source = qx_source
+    else:
+        rate_source = f'{qx_source}/{ix_source}'
+    return {
+        'age': age_i,
+        'mortality_qx': qx,
+        'disability_ix': ix,
+        'mortality_rate_source': qx_source,
+        'disability_rate_source': ix_source,
+        'rate_source': rate_source,
+        'rates_resolved': qx is not None and ix is not None,
+        'published_q': published_q,
+        'published_i': published_i,
+        'bracket_q': bracket_q,
+        'bracket_i': bracket_i,
+    }
+
+
+def curtate_life_expectancy(
+    start_age: int,
+    qx_at: Any,
+    terminal_age: Optional[int],
+    scale: float = 1.0,
+) -> Optional[float]:
+    """Curtate years e_x from a one-year mortality function.
+
+    e_x is the sum of survival probabilities from the next year through
+    ``terminal_age``. ``scale`` multiplies each q before it is capped at 1.
+    A missing q on that path returns None. It is not filled with zero.
+    """
+    if terminal_age is None:
+        return None
+    try:
+        scale_f = float(scale)
+    except (TypeError, ValueError):
+        return None
+    if scale_f <= 0.0:
+        return None
+    age = int(start_age)
+    last = int(terminal_age)
+    if age > last:
+        return None
+    survival = 1.0
+    total = 0.0
+    while age <= last:
+        raw = qx_at(age)
+        if raw is None:
+            return None
+        try:
+            q = float(raw) * scale_f
+        except (TypeError, ValueError):
+            return None
+        if q < 0.0:
+            return None
+        if q > 1.0:
+            q = 1.0
+        survival *= (1.0 - q)
+        total += survival
+        if survival <= 0.0:
+            break
+        age += 1
+    return round(total, 4)
+
+
+def _mortality_terminal_age(brackets: Optional[List[Dict[str, Any]]]) -> Optional[int]:
+    """Last integer age inside any mortality bracket (age_max is exclusive)."""
+    last = None
+    for row in brackets or []:
+        if not isinstance(row, dict):
+            continue
+        try:
+            hi = int(row.get('age_max'))
+        except (TypeError, ValueError):
+            continue
+        if hi <= 0:
+            continue
+        candidate = hi - 1
+        if last is None or candidate > last:
+            last = candidate
+    return last
+
+
+def _adl_mortality_multiplier(
+    tables: Optional[Dict[str, Any]],
+    adl: int = PERMANENT_DISABILITY_ADL,
+) -> Optional[float]:
+    """Live-table mortality multiplier for one ADL. Missing rows stay None."""
+    for item in (tables or {}).get('adl_mortality_multipliers') or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            if int(item.get('adl')) != int(adl):
+                continue
+            return float(item.get('multiplier'))
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def build_risk_reference_age_map(
+    face: float,
+    profile: Dict[str, Any],
+    profile_id: Optional[str],
+    disability_share_of_life: float,
+    mort_brackets: List[Dict[str, Any]],
+    dis_brackets: List[Dict[str, Any]],
+    tables: Optional[Dict[str, Any]] = None,
+    age_min: int = RISK_REFERENCE_MAP_AGE_MIN,
+    age_max: int = RISK_REFERENCE_MAP_AGE_MAX,
+) -> Dict[str, Any]:
+    """One-year tariff, incidence, and curtate expectancy at each age.
+
+    Premium and expected loss use the risk-reference identity. Healthy
+    curtate years use that same q(x). Disability curtate years use
+    q(x) times the ADL 10 mortality multiplier, capped at 1. A missing
+    rate or a missing multiplier is withheld.
+    """
+    terminal = _mortality_terminal_age(mort_brackets)
+    multiplier = _adl_mortality_multiplier(tables, PERMANENT_DISABILITY_ADL)
+    mort_sev = float(profile['mortality_severity'])
+    dis_sev = float(profile['disability_severity'])
+
+    def qx_at(age: int) -> Optional[float]:
+        return resolve_reference_incidence(
+            age, profile, mort_brackets, dis_brackets
+        )['mortality_qx']
+
+    rows: List[Dict[str, Any]] = []
+    premium_ok = True
+    withheld_ok = True
+    expectancy_order_ok = True
+    for age in range(int(age_min), int(age_max) + 1):
+        premiums = risk_reference_monthly_premiums(
+            age,
+            life_sum=face,
+            profile_id=profile_id,
+            disability_share_of_life=disability_share_of_life,
+        )
+        incidence = resolve_reference_incidence(age, profile, mort_brackets, dis_brackets)
+        annual = float(premiums['annual_premium'])
+        # Monthly pieces are rounded to the cent before display. Twelve of
+        # those cents can differ from the annual tariff by at most $0.12.
+        from_months = round(
+            (float(premiums['life_monthly']) + float(premiums['disability_monthly'])) * 12, 2
+        )
+        if abs(annual - from_months) > 0.12 + 1e-9:
+            premium_ok = False
+        life_at_age = float(premiums['life_sum'])
+        disability_at_age = float(premiums['disability_sum'])
+        qx = incidence['mortality_qx']
+        ix = incidence['disability_ix']
+        if incidence['rates_resolved']:
+            expected_out: Optional[float] = round(
+                float(qx) * life_at_age * mort_sev
+                + float(ix) * disability_at_age * dis_sev,
+                2,
+            )
+        else:
+            expected_out = None
+        if (expected_out is None) != (not incidence['rates_resolved']):
+            withheld_ok = False
+        if expected_out == 0 and not incidence['rates_resolved']:
+            withheld_ok = False
+        healthy = curtate_life_expectancy(age, qx_at, terminal, 1.0)
+        if multiplier is None:
+            disabled = None
+        else:
+            disabled = curtate_life_expectancy(age, qx_at, terminal, multiplier)
+        if healthy is None or disabled is None:
+            pass
+        elif multiplier is not None and multiplier > 1.0 and disabled > healthy + 1e-9:
+            expectancy_order_ok = False
+        rows.append({
+            'age': age,
+            'annual_premium': round(annual, 2),
+            'expected_loss': expected_out,
+            'mortality_qx': qx,
+            'disability_ix': ix,
+            'rate_source': incidence['rate_source'],
+            'rates_resolved': incidence['rates_resolved'],
+            'life_sum': round(life_at_age, 2),
+            'disability_sum': round(disability_at_age, 2),
+            'healthy_curtate_expectancy': healthy,
+            'disability_curtate_expectancy': disabled,
+        })
+    return {
+        'age_min': int(age_min),
+        'age_max': int(age_max),
+        'face_amount': round(float(face), 2),
+        'terminal_age': terminal,
+        'disability_adl': PERMANENT_DISABILITY_ADL,
+        'disability_mortality_multiplier': (
+            None if multiplier is None else round(float(multiplier), 6)
+        ),
+        'method': (
+            'Each age is the one-year tariff on this risk cover. '
+            'Premium is the published tariff. Expected loss is '
+            'q(x) × life sum × mortality severity + i(x) × disability sum × disability severity. '
+            'q(x) and i(x) follow the table: published profile where listed, otherwise the kernel bracket. '
+            'Healthy curtate years sum survival from that q(x) through the last age the mortality table covers. '
+            'Disability curtate years use the same q(x) times the ADL 10 mortality multiplier, capped at 1. '
+            'A missing rate or a missing multiplier is left blank.'
+        ),
+        'rows': rows,
+        'data_integrity': {
+            'premium_matches_rounded_monthlies': premium_ok,
+            'unresolved_loss_withheld': withheld_ok,
+            'disability_expectancy_not_longer_than_healthy': expectancy_order_ok,
+            'disability_expectancy_withheld_without_multiplier': (
+                multiplier is not None
+                or all(row['disability_curtate_expectancy'] is None for row in rows)
+            ),
+        },
+    }
+
+
 def build_risk_reference(start_age: Optional[int] = None,
                          projection_years: Optional[int] = None,
                          life_sum: Optional[float] = None,
@@ -3997,8 +4290,11 @@ def build_risk_reference(start_age: Optional[int] = None,
     The L:D contract ratio (``disability_share_of_life``) is now sourced
     from the actuary-table UnderwritingConfig when no override is passed,
     so the risk-reference forecast always agrees with what the pricing
-    kernel actually used to price the production portfolio. With default
-    inputs it still reproduces the locked public one-pager exactly.
+    kernel actually used to price the production portfolio. Premium stays
+    the published tariff (base rate × age-curve factor × attained-age
+    sums). Mortality q(x) and disability i(x) use the locked profile when
+    that age is listed, and the active kernel bracket otherwise. Default
+    inputs (ages 35–39) still reproduce the locked public one-pager.
     """
     profile = get_risk_reference_profile(profile_id)
     start_age = int(start_age if start_age is not None else profile['reference_start_age'])
@@ -4011,12 +4307,28 @@ def build_risk_reference(start_age: Optional[int] = None,
             )
         except Exception:
             disability_share_of_life = float(profile['disability_share_of_life'])
-    mortality_qx = profile.get('mortality_qx', {})
-    disability_ix = profile.get('disability_incidence_ix', {})
+    mort_brackets: List[Dict[str, Any]] = []
+    dis_brackets: List[Dict[str, Any]] = []
+    tables_version = None
+    _tables: Dict[str, Any] = {}
+    try:
+        _store = get_actuarial_store()
+        _tables = _store.get_current_tables() or {}
+        mort_brackets = list(_tables.get('mortality_rates') or [])
+        dis_brackets = list(_tables.get('disability_incidence_rates') or [])
+        tables_version = getattr(_store, 'current_version', None)
+    except Exception:
+        mort_brackets = []
+        dis_brackets = []
+        tables_version = None
+        _tables = {}
 
     yearly = []
     cumulative_premium = 0.0
     cumulative_expected_loss = 0.0
+    loss_complete = True
+    published_match = True
+    kernel_identity = True
     for offset in range(projection_years):
         age = start_age + offset
         premiums = risk_reference_monthly_premiums(
@@ -4026,15 +4338,45 @@ def build_risk_reference(start_age: Optional[int] = None,
         annual = premiums['annual_premium']
         life_at_age = float(premiums.get('life_sum') or face)
         disability_at_age = float(premiums.get('disability_sum') or 0.0)
-        qx = float(mortality_qx.get(age, mortality_qx.get(str(age), 0.0)))
-        ix = float(disability_ix.get(age, disability_ix.get(str(age), 0.0)))
-        expected_loss = (
-            qx * life_at_age * float(profile['mortality_severity'])
-            + ix * disability_at_age * float(profile['disability_severity'])
-        )
-        loss_ratio = (expected_loss / annual) if annual > 0 else 0.0
+        incidence = resolve_reference_incidence(age, profile, mort_brackets, dis_brackets)
+        qx = incidence['mortality_qx']
+        ix = incidence['disability_ix']
+        qx_source = incidence['mortality_rate_source']
+        ix_source = incidence['disability_rate_source']
+        published_q = incidence['published_q']
+        published_i = incidence['published_i']
+        bracket_q = incidence['bracket_q']
+        bracket_i = incidence['bracket_i']
+        if qx_source == 'published_profile' and abs(float(qx) - float(published_q)) > 1e-12:
+            published_match = False
+        if ix_source == 'published_profile' and abs(float(ix) - float(published_i)) > 1e-12:
+            published_match = False
+        if qx_source == 'kernel_table' and (
+            bracket_q is None or abs(float(qx) - float(bracket_q)) > 1e-12
+        ):
+            kernel_identity = False
+        if ix_source == 'kernel_table' and (
+            bracket_i is None or abs(float(ix) - float(bracket_i)) > 1e-12
+        ):
+            kernel_identity = False
+        resolved = bool(incidence['rates_resolved'])
+        if resolved:
+            expected_loss = (
+                float(qx) * life_at_age * float(profile['mortality_severity'])
+                + float(ix) * disability_at_age * float(profile['disability_severity'])
+            )
+            loss_ratio = (expected_loss / annual) if annual > 0 else 0.0
+            cumulative_expected_loss += expected_loss
+            expected_loss_out: Optional[float] = round(expected_loss, 2)
+            loss_ratio_out: Optional[float] = round(loss_ratio, 4)
+        else:
+            # An uncovered age is withheld. It is not written as a zero loss
+            # against a positive premium.
+            loss_complete = False
+            expected_loss_out = None
+            loss_ratio_out = None
         cumulative_premium += annual
-        cumulative_expected_loss += expected_loss
+        rate_source = incidence['rate_source']
         yearly.append({
             'year': offset + 1,
             'age': age,
@@ -4046,11 +4388,29 @@ def build_risk_reference(start_age: Optional[int] = None,
             'disability_monthly': premiums.get('disability_monthly'),
             'mortality_qx': qx,
             'disability_ix': ix,
-            'expected_loss': round(expected_loss, 2),
-            'loss_ratio': round(loss_ratio, 4),
+            'mortality_rate_source': qx_source,
+            'disability_rate_source': ix_source,
+            'rate_source': rate_source,
+            'rates_resolved': resolved,
+            'expected_loss': expected_loss_out,
+            'loss_ratio': loss_ratio_out,
         })
 
-    avg_loss_ratio = (cumulative_expected_loss / cumulative_premium) if cumulative_premium > 0 else 0.0
+    if loss_complete and cumulative_premium > 0:
+        avg_loss_ratio: Optional[float] = cumulative_expected_loss / cumulative_premium
+        reported_loss: Optional[float] = round(cumulative_expected_loss, 2)
+        reported_ratio: Optional[float] = round(avg_loss_ratio, 4)
+        reported_margin: Optional[float] = round(1 - avg_loss_ratio, 4)
+    elif loss_complete:
+        avg_loss_ratio = 0.0
+        reported_loss = round(cumulative_expected_loss, 2)
+        reported_ratio = 0.0
+        reported_margin = 0.0
+    else:
+        avg_loss_ratio = None
+        reported_loss = None
+        reported_ratio = None
+        reported_margin = None
 
     # ----- Optional savings accumulation projection -----
     # When the caller passes savings_rate > 0, project a savings AUM
@@ -4148,6 +4508,15 @@ def build_risk_reference(start_age: Optional[int] = None,
             band_ok = False
             break
 
+    age_map = build_risk_reference_age_map(
+        face=face,
+        profile=profile,
+        profile_id=profile_id,
+        disability_share_of_life=float(disability_share_of_life),
+        mort_brackets=mort_brackets,
+        dis_brackets=dis_brackets,
+        tables=_tables,
+    )
     payload = {
         'profile_id': profile['id'],
         'source': {
@@ -4173,6 +4542,13 @@ def build_risk_reference(start_age: Optional[int] = None,
             'disability_share_of_life': float(disability_share_of_life),
             'disability_share_of_life_post65': float(post_sums['disability_share']),
             'life_share_of_coverage_post65': float(post_sums['life_share']),
+            'tables_version': tables_version,
+            'rate_method': (
+                'Published profile q(x) and i(x) where that age is listed. '
+                'Every other age uses the active kernel bracket '
+                '(rate per 1,000 / 1,000) with no second age-curve multiply. '
+                'An age outside every bracket is withheld, not shown as zero.'
+            ),
             'disability_to_life_ratio_display': (
                 f'1:{int(round(1.0 / disability_share_of_life))}'
                 if disability_share_of_life and abs(1.0 / disability_share_of_life - round(1.0 / disability_share_of_life)) < 0.01
@@ -4183,19 +4559,26 @@ def build_risk_reference(start_age: Optional[int] = None,
             ),
         },
         'yearly_projection': yearly,
+        'age_map': age_map,
         'totals': {
             'cumulative_premium': round(cumulative_premium, 2),
-            'cumulative_expected_loss': round(cumulative_expected_loss, 2),
-            'average_loss_ratio': round(avg_loss_ratio, 4),
-            'expense_plus_capital_margin': round(1 - avg_loss_ratio, 4) if cumulative_premium > 0 else 0.0,
+            'cumulative_expected_loss': reported_loss,
+            'average_loss_ratio': reported_ratio,
+            'expense_plus_capital_margin': reported_margin,
         },
         'data_integrity': {
             'cumulative_premium_check': abs(
                 sum(row['annual_premium'] for row in yearly) - round(cumulative_premium, 2)
             ) < 0.5,
-            'cumulative_loss_check': abs(
-                sum(row['expected_loss'] for row in yearly) - round(cumulative_expected_loss, 2)
-            ) < 0.5,
+            'cumulative_loss_check': (
+                loss_complete
+                and abs(
+                    sum(row['expected_loss'] for row in yearly) - (reported_loss or 0.0)
+                ) < 0.5
+            ),
+            'rates_resolved_for_every_age': loss_complete,
+            'published_ages_match_locked_profile': published_match,
+            'kernel_rates_match_bracket_identity': kernel_identity,
             'severity_assumptions': {
                 'mortality_severity': float(profile['mortality_severity']),
                 'disability_severity': float(profile['disability_severity']),
