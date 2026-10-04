@@ -330,6 +330,8 @@ def test_risk_reference_age_map_matches_tariff_and_disability_expectancy():
     assert 'healthy_curtate_expectancy' in dashboard
     assert 'disability_curtate_expectancy' in dashboard
     assert 'Research average years after ADL 3' in dashboard
+    assert 'published ADL 3 average' in dashboard
+    assert 'q(x) times the ADL 10 mortality multiplier' not in dashboard
     assert 'adl3_disabled_life_expectancy' in dashboard
 
 
