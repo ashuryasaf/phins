@@ -8738,7 +8738,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         for (const c of customers) {
           const adl = Number(c.health_score);
           const age = Number(c.age);
-          if (c.uw_status === 'declined' && adl >= 1 && adl <= maxAdl && age <= maxAge) lowAdlDeclined += 1;
+          // Only an issue-time decline breaches the rule. A later manual
+          // decline of a referred life is a lifecycle decision, not automation.
+          if (c.uw_status === 'declined' && !c.manual_decline && adl >= 1 && adl <= maxAdl && age <= maxAge) lowAdlDeclined += 1;
           if (c.uw_status === 'declined') continue;
           if (adl >= decline || age > maxAge) hardBreach += 1;
           if (c.issuance === 'auto' && adl > maxAdl) autoBreach += 1;
@@ -9193,9 +9195,14 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             ? Snap.claimAuthorization(target, owner)
             : { ok: false, reason: 'risk_score_unknown', label: 'unknown' };
           if (!auth.ok) {
+            // Authorization is re-checked at payment. A claim that no longer
+            // passes returns to pending so the approval path decides it again;
+            // left approved and held, nothing would ever select it.
             target.authorization = 'held';
             target.authorization_reason = auth.reason || 'not_authorized';
-            sandboxLogEvent('claim', `Claim ${target.id} not paid (${auth.reason || 'not authorized'}).`, 'info');
+            target.status = 'pending';
+            target.approved_amount = 0;
+            sandboxLogEvent('claim', `Claim ${target.id} not paid (${auth.reason || 'not authorized'}); returned to pending.`, 'info');
             return;
           }
           target.status = 'paid';
@@ -9276,6 +9283,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           target.uw_status = 'declined';
           target.policy_status = 'declined';
           target.issuance = 'declined';
+          target.manual_decline = true;
           target.uw_basis = 'Manually declined. The year-1 claim probability is not the decline rule.';
           sandboxVoidOpenBills(target.id);
           sandboxVoidOpenClaims(target.id);
