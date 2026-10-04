@@ -199,6 +199,29 @@ def test_database_snapshot_survives_file_loss(tmp_path, monkeypatch):
         db_module.reset_connection()
 
 
+def test_missing_adl3_table_merges_on_load_without_rewriting_rates(isolated_state):
+    """An older snapshot gains the research table in memory only."""
+    store = ActuarialTablesStore()
+    payload = serialize_store(store)
+    mortality = payload['versions'][payload['current_version']]['mortality_rates']
+    for version in payload['versions'].values():
+        version.pop('adl3_disabled_life_expectancy', None)
+    payload['integrity_sha256'] = compute_snapshot_checksum(payload)
+    isolated_state.write_text(json.dumps(payload), encoding='utf-8')
+
+    restored = ActuarialTablesStore()
+    assert load_actuarial_store(restored, str(isolated_state)) is True
+    current = restored.get_current_tables()
+    assert current['mortality_rates'] == mortality
+    research = current['adl3_disabled_life_expectancy']
+    assert len(research) == 110
+    age35 = next(row for row in research if row['age'] == 35)
+    assert age35['average_years'] == 5.248615017
+    on_disk = json.loads(isolated_state.read_text(encoding='utf-8'))
+    assert 'adl3_disabled_life_expectancy' not in on_disk['versions'][on_disk['current_version']]
+    assert on_disk['integrity_sha256'] == compute_snapshot_checksum(on_disk)
+
+
 def test_snapshot_checksum_roundtrip(isolated_state):
     store = ActuarialTablesStore()
     payload = serialize_store(store)

@@ -335,6 +335,14 @@ def _apply_snapshot(store: Any, payload: Dict[str, Any]) -> bool:
     versions = payload.get("versions") or {}
     if isinstance(versions, dict) and versions:
         store.versions = versions
+        # Old snapshots predate the ADL 3 expectancy table. Fill only that
+        # key from the published default. Do not rewrite pricing rows and
+        # do not persist from this read.
+        try:
+            from services.adl3_disabled_life_expectancy import ensure_adl3_table
+            ensure_adl3_table(store.versions)
+        except Exception as exc:
+            logger.warning("ADL 3 expectancy table was not merged on load: %s", exc)
     current = payload.get("current_version")
     if current and current in store.versions:
         store.current_version = current

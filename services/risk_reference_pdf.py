@@ -36,6 +36,7 @@ _MAP_KEYS = (
     'age', 'annual_premium', 'expected_loss', 'mortality_qx', 'disability_ix',
     'rates_resolved', 'life_sum', 'disability_sum',
     'healthy_curtate_expectancy', 'disability_curtate_expectancy',
+    'male_years', 'female_years', 'pricing_basis_disabled_curtate',
 )
 _SAVINGS_YEAR_KEYS = (
     'year', 'age', 'annual_risk_premium', 'monthly_contribution',
@@ -461,12 +462,17 @@ def render_risk_reference_pdf(reference: Dict[str, Any]) -> Tuple[str, bytes]:
 
     story.append(Paragraph('Age map', h2))
     multiplier = age_map.get('disability_mortality_multiplier')
+    mult_note = (
+        'Disabled years are the published ADL 3 remaining-life average. '
+        'Man and woman are the same study. Healthy years stay curtate survival on pricing q(x). '
+        'A missing research age is left blank. The years do not change with the face amount.'
+    )
     if multiplier is None:
-        mult_note = 'The ADL 10 mortality multiplier is not on the live table, so disability life expectancy is withheld.'
+        mult_note += ' The ADL 10 pricing multiplier is not on the live table.'
     else:
-        mult_note = (
-            f"Disability life expectancy multiplies q(x) by {_plain(multiplier, 2)}, "
-            f"the ADL {age_map.get('disability_adl')} factor, and caps the product at 1."
+        mult_note += (
+            f" The ADL {age_map.get('disability_adl')} pricing multiplier remains "
+            f"{_plain(multiplier, 2)} and is not this line."
         )
     story.append(para(mult_note, meta))
     story.append(para(
@@ -503,8 +509,10 @@ def render_risk_reference_pdf(reference: Dict[str, Any]) -> Tuple[str, bytes]:
     story.append(_line_chart(
         ages,
         [
-            ('Curtate years on q(x)', PHINS_NAVY, series_values('healthy_curtate_expectancy')),
-            ('Curtate years if disabled', PHINS_GOLD, series_values('disability_curtate_expectancy')),
+            ('Healthy q(x)', PHINS_NAVY, series_values('healthy_curtate_expectancy')),
+            ('ADL 3 average', PHINS_GOLD, series_values('disability_curtate_expectancy')),
+            ('ADL 3 man', PHINS_GREY, series_values('male_years')),
+            ('ADL 3 woman', '#c45c26', series_values('female_years')),
         ],
         usable,
         _axis_years,

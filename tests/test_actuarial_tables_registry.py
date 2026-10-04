@@ -63,11 +63,25 @@ def test_registry_includes_global_entries_for_both_rate_bands():
     by_id = {e['id']: e for e in entries}
     assert 'global:mortality_rates' in by_id
     assert 'global:disability_incidence_rates' in by_id
+    assert 'global:adl3_disabled_life_expectancy' in by_id
+    expectancy = by_id['global:adl3_disabled_life_expectancy']
+    assert expectancy['used_in_pricing'] is False
+    assert expectancy['assumption_only'] is True
+    assert expectancy['row_count'] == 110
+    assert 'rows' not in expectancy
     for entry in entries:
-        if entry['scope'] == 'global':
+        if entry['id'] in ('global:mortality_rates', 'global:disability_incidence_rates'):
             assert entry['used_in_pricing'] is True
+        if entry['scope'] == 'global':
             assert entry['integrity_hash'] and len(entry['integrity_hash']) == 64
             assert entry['row_count'] > 0
+    looked = get_active_rate_table_rows('global', 'adl3_disabled_life_expectancy')
+    assert looked['success'] is True
+    assert len(looked['rows']) == 110
+    assert looked['rows'][0]['age'] == 1
+    assert looked['rows'][34]['average_years'] == 5.248615017
+    assert looked['rows'][34]['female_excess_pct'] == 12
+    assert 'adl3_disabled_life_expectancy' not in SUPPORTED_RATE_BANDS
 
 
 def test_registry_surfaces_cohort_overrides_with_friendly_labels():
@@ -213,11 +227,13 @@ def test_registry_endpoint_returns_global_entries(admin_token):
     payload = json.loads(body)
     assert payload['success'] is True
     summary = payload['summary']
-    assert summary['global'] == 2
+    assert summary['global'] == 3
     assert summary['used_in_pricing'] >= 2
     by_id = {e['id']: e for e in payload['items']}
     assert 'global:mortality_rates' in by_id
     assert 'global:disability_incidence_rates' in by_id
+    assert 'global:adl3_disabled_life_expectancy' in by_id
+    assert by_id['global:adl3_disabled_life_expectancy']['used_in_pricing'] is False
     # Manifest hash must be a 64-char hex string covering the whole registry.
     manifest = payload['integrity']['manifest_hash']
     assert isinstance(manifest, str) and len(manifest) == 64

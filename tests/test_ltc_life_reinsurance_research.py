@@ -25,7 +25,9 @@ from services.ltc_life_reinsurance_research import (
     TABLE_COLUMNS,
     build_ltc_life_research,
     clear_staged_research_overlay,
+    extract_research_table,
     get_staged_research_overlay,
+    list_research_tables,
     parse_research_params,
     promote_research_overlay,
     research_table_csv,
@@ -305,6 +307,32 @@ def _has_phrase(text: str, phrase: str, rtl: bool = False) -> bool:
         visual = bidi_text(phrase, rtl=True)
         return visual in text or visual.replace(' ', '') in text.replace(' ', '')
     return False
+
+
+def test_adl3_expectancy_table_is_the_published_study():
+    """The LTC bar lists the same research rows. It does not reprice."""
+    pack = build_ltc_life_research({})
+    assert 'adl3_disabled_life_expectancy' in list_research_tables()
+    rows = extract_research_table(pack, 'adl3_disabled_life_expectancy')
+    assert len(rows) == 110
+    by_age = {row['age']: row for row in rows}
+    assert by_age[35]['male_years'] == 4.95
+    assert by_age[35]['female_years'] == 5.54
+    assert by_age[35]['average_years'] == 5.248615017
+    assert by_age[35]['female_excess_pct'] == 12
+    # Published percent, including the one-point gap versus rounded sex columns.
+    assert by_age[5]['female_excess_pct'] == 23
+    assert by_age[100]['average_years'] == by_age[98]['average_years']
+    assert by_age[108]['average_years'] != by_age[107]['average_years']
+    assert 'adl3_disabled_life_expectancy' not in (pack.get('pricing_use') or {})
+    cross = pack['tables']['cross_risk_adl_mortality']
+    assert cross and all('remaining_le_after_3adl' in row for row in cross)
+    assert all(row['remaining_le_after_3adl'] != 5.248615017 for row in cross)
+    _filename, csv_bytes = research_table_csv(pack, 'adl3_disabled_life_expectancy')
+    reader = csv.DictReader(io.StringIO(csv_bytes.decode('utf-8')))
+    assert reader.fieldnames == [
+        'age', 'male_years', 'female_years', 'average_years', 'female_excess_pct',
+    ]
 
 
 def test_research_pdf_covers_every_study_column():

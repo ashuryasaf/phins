@@ -1058,6 +1058,10 @@ def build_ltc_life_research(
     cover = _COVERAGE_TYPE_FACTORS[params.coverage_type]
     region = _REGION_FACTORS[params.region]
 
+    from services.adl3_disabled_life_expectancy import adl3_rows_for_tables
+    # Same published rows the Risk Reference chart reads. Not the closed-form
+    # remaining_le_after_3adl column, and not a promote-to-pricing target.
+    adl3_expectancy = adl3_rows_for_tables(tables)
     tables_block = {
         'historical_appetite': historical,
         'age_cover_matrix': age_cover,
@@ -1066,6 +1070,7 @@ def build_ltc_life_research(
         'coverage_forecast': forecast,
         'pricing_overlay': pricing,
         'adl_mortality_multipliers': adl_mult,
+        'adl3_disabled_life_expectancy': adl3_expectancy,
     }
     params_dict = asdict(params)
     integrity = {
@@ -1212,6 +1217,9 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
     ],
     'adl_mortality_multipliers': [
         'adl', 'multiplier', 'trigger', 'note',
+    ],
+    'adl3_disabled_life_expectancy': [
+        'age', 'male_years', 'female_years', 'average_years', 'female_excess_pct',
     ],
     'mortality_rates': ['age_min', 'age_max', 'rate_per_1000'],
     'disability_incidence_rates': ['age_min', 'age_max', 'rate_per_1000'],

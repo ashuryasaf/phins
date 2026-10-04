@@ -1677,7 +1677,8 @@
           <div class="alert alert-warning">
             This is the unified registry of every life-and-disability rate table the platform uses for premium and simulation —
             global defaults, cohort overrides (e.g. <em>death table for female Caucasian</em>, <em>disability table for Asian men</em>),
-            and the uploaded catalog. Every entry below is downloadable for audit and replaceable from an uploaded table.
+            and the uploaded catalog. Every pricing entry below is downloadable for audit and replaceable from an uploaded table.
+            The ADL 3 disabled life expectancy table is an assumption for the Risk Reference chart. It is downloadable and it is not a premium band.
             Each row carries a deterministic SHA-256 integrity hash so two viewers can confirm they are looking at the exact
             same rate band; the manifest hash on the right-hand summary covers the full registry.
           </div>
@@ -1710,6 +1711,7 @@
                   <option value="">All</option>
                   <option value="mortality_rates">Death (mortality)</option>
                   <option value="disability_incidence_rates">Disability (permanent ADL)</option>
+                  <option value="adl3_disabled_life_expectancy">ADL 3 disabled life expectancy</option>
                 </select>
               </div>
               <div class="form-group">
@@ -3246,6 +3248,23 @@
           </div>
 
           <div class="card">
+            <div class="card-title">ADL 3 disabled life expectancy — research table</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              Published remaining years after ADL 3. The average is the research column. It is the same table the Risk Reference chart uses. It is not the closed-form cross-risk expectancy, and Promote does not write it into a premium band.
+            </p>
+            <div class="ltc-table-scroll">
+              <table class="data-table" id="ltc-adl3-le-table">
+                <thead>
+                  <tr>
+                    <th>Age</th><th>Man</th><th>Woman</th><th>Average</th><th>Woman excess</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="5" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
             <div class="card-title">Pricing overlay — download or promote into live tables</div>
             <p style="color:var(--text-light);margin-bottom:12px;">
               Technical rates are upload-compatible (<code>age_min, age_max, rate_per_1000</code>). Stage keeps them for further use without changing quotes. Promote writes a new actuarial sub-version (restore from Version History if needed).
@@ -3263,6 +3282,7 @@
                   <option value="reinsurance_exposure">Reinsurance exposure</option>
                   <option value="coverage_forecast">Coverage forecast</option>
                   <option value="adl_mortality_multipliers">ADL mortality multipliers</option>
+                  <option value="adl3_disabled_life_expectancy">ADL 3 disabled life expectancy (research)</option>
                 </select>
               </div>
               <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
@@ -7156,11 +7176,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             labels,
             datasets: [
               line('Curtate years on pricing q(x)', map.rows.map((row) => rrChartNumber(row.healthy_curtate_expectancy)), '#0e2f63'),
-              line('Curtate years if disabled (ADL 10)', map.rows.map((row) => rrChartNumber(row.disability_curtate_expectancy)), '#c9a04e'),
+              line('Research average years after ADL 3', map.rows.map((row) => rrChartNumber(row.disability_curtate_expectancy)), '#c9a04e'),
+              line('Research years, man', map.rows.map((row) => rrChartNumber(row.male_years)), '#5b6b82'),
+              line('Research years, woman', map.rows.map((row) => rrChartNumber(row.female_years)), '#c45c26'),
             ],
           },
           options: baseOptions(
-            'Curtate years',
+            'Years',
             null,
             (ctx) => ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toFixed(2)} years`,
           ),
@@ -7240,9 +7262,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const bandAge = ref.reference.disability_band_age || 65;
       const map = ref.age_map || null;
       const mult = map ? map.disability_mortality_multiplier : null;
-      const multNote = mult == null
-        ? 'The ADL 10 mortality multiplier is not on the live table, so disability life expectancy is withheld.'
-        : `Disability life expectancy multiplies q(x) by ${Number(mult).toFixed(2)}, the ADL ${map.disability_adl} factor on the live table, and caps the product at 1.`;
+      const multNote = 'Disabled years on this chart are the published ADL 3 remaining-life average, with man and woman from the same study. They do not multiply q(x) by the ADL 10 factor. Healthy years stay curtate survival on pricing q(x).'
+        + (mult == null
+          ? ' The ADL 10 pricing multiplier is not on the live table.'
+          : ` The ADL ${map.disability_adl} pricing multiplier remains ${Number(mult).toFixed(2)} and is not this line.`);
       const mapIntegrity = map
         ? Object.keys(map.data_integrity || {}).filter((key) => typeof map.data_integrity[key] === 'boolean').map((key) => rrIntegrityItem(key, map.data_integrity[key])).join('')
         : '<li>age map: <span class="rr-fail">FAIL</span></li>';
@@ -7250,7 +7273,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const map35 = mapAt(35);
       const map70 = mapAt(70);
       const mapAnchor = (map35 && map70)
-        ? `Age 35: premium ${fmtCurrency(map35.annual_premium)}, expected loss ${rrMoney(map35.expected_loss)}, q(x) ${rrRatePct(map35.mortality_qx, 3)}, i(x) ${rrRatePct(map35.disability_ix, 3)}, curtate years if disabled ${map35.disability_curtate_expectancy == null ? '—' : Number(map35.disability_curtate_expectancy).toFixed(2)}. Age 70: premium ${fmtCurrency(map70.annual_premium)}, expected loss ${rrMoney(map70.expected_loss)}, q(x) ${rrRatePct(map70.mortality_qx, 3)}, i(x) ${rrRatePct(map70.disability_ix, 3)}, curtate years if disabled ${map70.disability_curtate_expectancy == null ? '—' : Number(map70.disability_curtate_expectancy).toFixed(2)}.`
+        ? `Age 35: premium ${fmtCurrency(map35.annual_premium)}, expected loss ${rrMoney(map35.expected_loss)}, q(x) ${rrRatePct(map35.mortality_qx, 3)}, i(x) ${rrRatePct(map35.disability_ix, 3)}, research years if disabled ${map35.disability_curtate_expectancy == null ? '—' : Number(map35.disability_curtate_expectancy).toFixed(2)} (man ${map35.male_years == null ? '—' : Number(map35.male_years).toFixed(2)}, woman ${map35.female_years == null ? '—' : Number(map35.female_years).toFixed(2)}). Age 70: premium ${fmtCurrency(map70.annual_premium)}, expected loss ${rrMoney(map70.expected_loss)}, q(x) ${rrRatePct(map70.mortality_qx, 3)}, i(x) ${rrRatePct(map70.disability_ix, 3)}, research years if disabled ${map70.disability_curtate_expectancy == null ? '—' : Number(map70.disability_curtate_expectancy).toFixed(2)} (man ${map70.male_years == null ? '—' : Number(map70.male_years).toFixed(2)}, woman ${map70.female_years == null ? '—' : Number(map70.female_years).toFixed(2)}).`
         : '';
       resultsEl.innerHTML = `
         <div class="rr-headline">
@@ -7656,7 +7679,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const scopeClass = entry.scope === 'cohort' ? 'scope-cohort' : (entry.scope === 'uploaded' ? 'scope-uploaded' : 'scope-global');
       const usedBadge = entry.used_in_pricing
         ? '<span class="tb-badge active" title="Used in premium and simulation">In use</span>'
-        : '<span class="tb-badge idle" title="Uploaded — not yet active">Idle</span>';
+        : (entry.assumption_only
+          ? '<span class="tb-badge idle" title="Assumption table. Not a premium rate band.">Assumption</span>'
+          : '<span class="tb-badge idle" title="Uploaded — not yet active">Idle</span>');
       const scopeBadge = `<span class="tb-badge scope">${escapeHtml(entry.scope)}</span>`;
       const meta = [
         entry.row_count ? `${entry.row_count} rows` : null,
@@ -7685,7 +7710,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           <div class="tb-actions">
             <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "csv")'> CSV</button>
             <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "json")'> JSON</button>
-            <button class="btn-small btn-warning" onclick="prepareRegistryReplace(${replaceArgs})">↻ Replace</button>
+            ${entry.assumption_only ? '' : `<button class="btn-small btn-warning" onclick="prepareRegistryReplace(${replaceArgs})">↻ Replace</button>`}
           </div>
         </div>
       `;
@@ -7711,7 +7736,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       tbody.innerHTML = items.map((entry) => {
         const usedCell = entry.used_in_pricing
           ? '<span class="tb-badge active">In use</span>'
-          : '<span class="tb-badge idle">Idle</span>';
+          : (entry.assumption_only
+            ? '<span class="tb-badge idle">Assumption</span>'
+            : '<span class="tb-badge idle">Idle</span>');
         // Same JSON-stringify-then-HTML-escape pattern as renderTablesBarCard:
         // protects the inline onclick handler from cohort metadata that might
         // contain quotes, backslashes, or other JS-significant characters.
@@ -7735,7 +7762,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
               ${previewBtn}
               <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "csv")'> CSV</button>
               <button class="btn-small btn-outline" onclick='downloadRegistryEntry(${JSON.stringify(entry).replace(/'/g, "&apos;")}, "json")'> JSON</button>
-              <button class="btn-small btn-warning" onclick="prepareRegistryReplace(${replaceArgs})">↻ Replace</button>
+              ${entry.assumption_only ? '' : `<button class="btn-small btn-warning" onclick="prepareRegistryReplace(${replaceArgs})">↻ Replace</button>`}
             </td>
           </tr>
         `;
