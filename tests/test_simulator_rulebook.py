@@ -202,6 +202,42 @@ const drifted = snap.portfolioSnapshot({
   premiumPerCustomer: 100, rows: grown.rows,
 });
 if (drifted.checks.ok || drifted.checks.originalOpeningIdentity) process.exit(27);
+if (!clean.failed_gates || clean.failed_gates.length !== 0) process.exit(28);
+if (!clean.basis || clean.basis.indexOf('probability') === -1) process.exit(29);
+const highRisk = snap.issueFromRules({
+  age: 40, adl: 2, coverage: 200000, risk_score: 0.01,
+  prob_mortality_year1: 0.25, prob_disability_year1: 0.15,
+  smoking_status: 'nonsmoker',
+}, rules);
+if (highRisk.uw_status !== 'pending' || highRisk.issuance !== 'referred') process.exit(30);
+if (!highRisk.failed_gates || highRisk.failed_gates.indexOf('max_risk_score') === -1) process.exit(31);
+if (highRisk.uw_status === 'declined' || !highRisk.basis || highRisk.basis.indexOf('not declined') === -1) process.exit(32);
+if (!tooOld.basis || tooOld.basis.indexOf('not a decline') === -1) process.exit(33);
+const authLife = {
+  uw_status: 'approved', policy_status: 'active', disability_eligible: true,
+  prob_mortality_year1: 0.08, prob_disability_year1: 0.04,
+  life_sum: 100000, disability_sum: 25000,
+};
+const authOk = snap.claimAuthorization({ type: 'mortality', amount: 100000 }, authLife);
+if (!authOk.ok || authOk.reason !== 'kernel_year1_probability') process.exit(34);
+if (Math.abs(authOk.risk_score - 0.12) > 1e-9) process.exit(35);
+const unknown = snap.claimAuthorization(
+  { type: 'mortality', amount: 100000 },
+  { uw_status: 'approved', policy_status: 'active', life_sum: 100000, disability_sum: 25000 }
+);
+if (unknown.ok || unknown.reason !== 'risk_score_unknown') process.exit(36);
+const outOfForce = snap.claimAuthorization(
+  { type: 'mortality', amount: 100000 },
+  { uw_status: 'declined', policy_status: 'declined', prob_mortality_year1: 0.1, life_sum: 100000 }
+);
+if (outOfForce.ok || outOfForce.reason !== 'not_in_force') process.exit(37);
+const badAmt = snap.claimAuthorization({ type: 'mortality', amount: 1 }, authLife);
+if (badAmt.ok || badAmt.reason !== 'amount') process.exit(38);
+const noDis = snap.claimAuthorization(
+  { type: 'disability', amount: 25000 },
+  Object.assign({}, authLife, { disability_eligible: false })
+);
+if (noDis.ok || noDis.reason !== 'disability_excluded') process.exit(39);
 console.log('ok');
 """
     proc = subprocess.run(
