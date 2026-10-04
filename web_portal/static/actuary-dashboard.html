@@ -2378,6 +2378,25 @@
             accepted parents from age 18 through the PhinSafe maximum age.
           </div>
 
+          <div class="card" id="phinsafe-download-card">
+            <div class="card-title">Published PhinSafe report</div>
+            <p style="color:var(--text-light);margin:0 0 12px;">
+              The PDF and the CSV print the PhinSafe book this page already published.
+              They use the same method as the portfolio simulation report: the file
+              restates that book and does not reprice it. Community weights must sum
+              to 100, and community cents equal the rider book when every community
+              uses the parent maximum age. A younger community cap stays at or under
+              that book, because older parents are not given to it. When an offspring
+              portfolio has been developed from this same book, its schedule is
+              included and must sum to the published totals. The cover says PASS only
+              when those checks pass.
+            </p>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;">
+              <button class="btn btn-success" type="button" id="phinsafe-pdf-btn" onclick="downloadPhinsafeReport('pdf')">Download PDF report</button>
+              <button class="btn btn-outline" type="button" id="phinsafe-csv-btn" onclick="downloadPhinsafeReport('csv')">Download CSV data</button>
+            </div>
+          </div>
+
           <div class="card">
             <div class="card-title">PhinSafe test</div>
             <div class="form-row">
@@ -4011,6 +4030,10 @@
             <strong>Israel (ISA prospectus + CMISA Solvency II + IFRS&nbsp;17)</strong> file with their regulators and stock-exchange chamber.
             Every figure is sourced deterministically from the <em>Simulation</em> bars (portfolio simulator + sandbox lifecycle + reserves + valuation)
             and the live actuarial version-governance API — no figures are invented in this section.
+            Section B.7 restates PHINS Unified and PhinSafe when those actuarial snapshots are bound to this simulation.
+            Any other platform revenue center, such as health-wallet margin, investments markup, or technology sales,
+            is an outline and a forecast method only. This filing does not issue a financial statement for a center
+            that has no bound actuarial snapshot.
           </div>
 
           <div class="annual-grid-2">
@@ -4065,6 +4088,12 @@
                   <td><span id="annual-src-governance" class="badge badge-inactive">—</span></td>
                   <td id="annual-src-governance-detail" class="muted-text">Version governance not fetched.</td>
                   <td><button class="btn-small btn-outline" onclick="showSection('versions')">Open</button></td>
+                </tr>
+                <tr data-source="phinsafe">
+                  <td>PhinSafe rider</td>
+                  <td><span id="annual-src-phinsafe" class="badge badge-inactive">—</span></td>
+                  <td id="annual-src-phinsafe-detail" class="muted-text">No PhinSafe book published for this simulation.</td>
+                  <td><button class="btn-small btn-outline" onclick="showSection('phinsafe')">Open</button></td>
                 </tr>
               </tbody>
             </table>
@@ -4303,6 +4332,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
   
   <script src="/sandbox-portfolio-snapshot.js"></script>
   <script src="/simulation-report.js"></script>
+  <script src="/phinsafe-report.js"></script>
+  <script src="/revenue-centers.js"></script>
   <script>
     // Global state
     let token = localStorage.getItem('phins_token');
@@ -11011,6 +11042,28 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         ? `tables ${currentVersionGovernance.current_version} · config ${currentVersionGovernance.current_config_version} · ${annualFmtCount(currentVersionGovernance.adoption?.policies_total)} policies versioned`
         : null);
 
+      const phinsafePublished = window.phinsafePublished || {};
+      const phinsafeBook = phinsafePublished.book || null;
+      const phinsafePortfolio = phinsafePublished.portfolio || null;
+      const phinsafeMatch = !!(phinsafeBook && simId && phinsafeBook.simulation_id === simId && phinsafeBook.document_hash);
+      const phinsafeWithheld = !!(phinsafeBook && ((simId && phinsafeBook.simulation_id !== simId) || !simId));
+      const phinsafeCurrency = document.getElementById('annual-currency')?.value || 'USD';
+      let phinsafeLabel = null;
+      if (phinsafeMatch) {
+        const rider = phinsafeBook.rider_book || {};
+        const portfolioNote = (phinsafePortfolio && phinsafePortfolio.source_book_hash === phinsafeBook.document_hash)
+          ? ' · offspring portfolio bound'
+          : '';
+        phinsafeLabel = `${phinsafeBook.simulation_id} · rider premium ${annualFmtMoney(rider.annual_premium, phinsafeCurrency)}${portfolioNote}`;
+      } else if (phinsafeWithheld) {
+        phinsafeLabel = `Withheld. Book ${phinsafeBook.simulation_id} is not the bound simulation.`;
+      }
+      set('annual-src-phinsafe', phinsafeMatch, phinsafeLabel);
+      if (!phinsafeMatch && phinsafeWithheld) {
+        const phinsafeBadge = document.getElementById('annual-src-phinsafe');
+        if (phinsafeBadge) phinsafeBadge.textContent = 'withheld';
+      }
+
       const badge = document.getElementById('annual-report-source-badge');
       if (badge) {
         const bound = [!!sim, sandboxBound, reservesBound, valuationBound].filter(Boolean).length;
@@ -11058,6 +11111,27 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           ? `tables ${currentVersionGovernance.current_version} · config ${currentVersionGovernance.current_config_version} · ${annualFmtCount(currentVersionGovernance.adoption?.policies_total)} policies versioned`
           : 'Version governance not fetched.';
       }
+    }
+
+    // Compact copy of the bound simulation for Section B.7. Missing
+    // amounts stay null so a revenue center cannot print them as zero.
+    function annualUnifiedSnapshot(sim) {
+      if (!sim || !sim.simulation_id) return null;
+      const summary = sim.portfolio_summary || {};
+      const risk = sim.risk_metrics || {};
+      const kernel = sim.pricing_kernel || {};
+      const params = sim.parameters || {};
+      const has = (obj, key) => Object.prototype.hasOwnProperty.call(obj || {}, key);
+      return {
+        simulation_id: sim.simulation_id,
+        product_id: params.product_id || kernel.product_id || null,
+        tables_version: sim.tables_version || null,
+        accepted: has(summary, 'accepted_customers') ? summary.accepted_customers : null,
+        coverage: has(summary, 'total_coverage') ? summary.total_coverage : null,
+        annual_premium: has(summary, 'total_annual_premium') ? summary.total_annual_premium : null,
+        annual_expected_claims: has(risk, 'annual_expected_claims') ? risk.annual_expected_claims : null,
+        year1_loss_ratio: has(risk, 'loss_ratio_year1') ? risk.loss_ratio_year1 : null,
+      };
     }
 
     // ----- Report builder (deterministic; no synthetic values) -----
@@ -11134,6 +11208,17 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         ? JSON.parse(JSON.stringify(currentVersionGovernance))
         : null;
 
+      const phinsafePublished = window.phinsafePublished || {};
+      if (typeof buildRevenueCenters !== 'function') {
+        stmts.revenue_centers = null;
+      } else {
+        stmts.revenue_centers = buildRevenueCenters({
+          unified: annualUnifiedSnapshot(sim),
+          phinsafe: phinsafePublished.book || null,
+          phinsafePortfolio: phinsafePublished.portfolio || null,
+        });
+      }
+
       // Integrity checks across the pipeline
       const checks = [];
       checks.push({ name: 'Cap table sums to 100%', ok: Math.abs(capTotal - 100) < 0.01, detail: capTotal.toFixed(2) + '%' });
@@ -11144,6 +11229,13 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       checks.push({ name: 'Actuarial version governance bound', ok: !!stmts.version_governance, detail: stmts.version_governance ? `tables ${stmts.version_governance.current_version} · config ${stmts.version_governance.current_config_version}` : 'missing' });
       if (sim && stmts.premium_reconciliation_ok != null) {
         checks.push({ name: 'Premium reconciliation (N×avg = total)', ok: stmts.premium_reconciliation_ok, detail: stmts.premium_reconciliation_ok ? 'pass' : 'check Simulator' });
+      }
+      if (!stmts.revenue_centers) {
+        checks.push({ name: 'Revenue centers outline', ok: false, detail: 'revenue-centers.js did not load' });
+      } else {
+        (stmts.revenue_centers.checks || []).forEach((item) => {
+          checks.push({ name: item.name, ok: !!item.ok, detail: item.detail || '' });
+        });
       }
       if (sim && sandboxIx) {
         const simAccepted = sim.portfolio_summary?.accepted_customers || 0;
@@ -11168,6 +11260,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           reserves_projection_years: reserves?.projection_years || null,
           valuation_hash: valuation?.integrity_hash || null,
           reinsurance_contracts: reinsurance?.selected_contracts || 0,
+          phinsafe_reporting: (stmts.revenue_centers?.centers || []).find((center) => center.id === 'phinsafe')?.reporting || null,
+          phinsafe_document_hash: (stmts.revenue_centers?.centers || []).find((center) => center.id === 'phinsafe')?.figures?.document_hash || null,
         },
         generated_at: new Date().toISOString(),
       };
@@ -11793,7 +11887,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         { id: 'Note 6', title: 'Reinsurance', body: reinsurance ? `One or more reinsurance treaties are bound with ${(reinsurance.providers || []).length || 0} provider(s); ceded premium is ${annualFmtMoney(cededPremium, ccy)} and reserve relief is estimated at ${annualFmtMoney(reinsurance.reserve_relief_estimate || 0, ccy)}.` : 'No reinsurance program is currently bound. The Company retains 100% of underwriting exposure on its balance sheet.' },
         { id: 'Note 7', title: 'Investments and savings AUM', body: `The segregated policyholder savings AUM closes at ${annualFmtMoney(savingsFundClosing, ccy)} with an effective yield of ${savingsYieldPct.toFixed(2)}%. Management-fee income recognised across the projection horizon totals ${annualFmtMoney(out.investment_income.management_fee_income, ccy)}.` },
         { id: 'Note 8', title: 'Debt and financing', body: debtTotalPrincipal > 0 ? `Long-term debt of ${annualFmtMoney(debtTotalPrincipal, ccy)} at a weighted-average coupon of ${debtWAC.toFixed(2)}% generates annual interest expense of ${annualFmtMoney(interestOnDebt, ccy)}. The debt-to-equity ratio is ${totalEquity > 0 ? (debtTotalPrincipal / totalEquity).toFixed(2) : '—'}×.` : 'The Company has no interest-bearing debt outstanding at the reporting date.' },
-        { id: 'Note 9', title: 'Concentration and segment reporting', body: 'The Company operates a single segment — adjustable life-and-disability insurance — sold direct-to-customer in the home jurisdiction. Geographic concentration is therefore total (100% of premium). The largest cohort by sum insured is disclosed in Section H; no individual policyholder exceeds 1% of total in-force coverage.' },
+        { id: 'Note 9', title: 'Concentration and segment reporting', body: 'The Company operates a single segment — adjustable life-and-disability insurance — sold direct-to-customer in the home jurisdiction. Geographic concentration is therefore total (100% of premium). The largest cohort by sum insured is disclosed in Section H; no individual policyholder exceeds 1% of total in-force coverage. Other platform revenue centers are outlined in Section B.7. This filing does not issue financial statements for a center with no bound actuarial snapshot.' },
         { id: 'Note 10', title: 'Subsequent events and contingencies', body: 'No subsequent events that would require recognition or disclosure have occurred between the period end and the date of issuance of this report. Refer to Section N (Appendix) for any issuer-supplied addenda.' },
         { id: 'Note 11', title: 'Income taxes', body: 'Current and deferred income tax balances are disclosed in the cash-flow statement (Section I) using the statutory corporate-tax rate of the home jurisdiction. No material tax disputes or uncertain tax positions are outstanding.' },
         { id: 'Note 12', title: 'Fair-value hierarchy', body: 'Investment balances are classified within Level 1 (quoted prices) and Level 2 (observable inputs) of the IFRS 13 / ASC 820 fair-value hierarchy. No Level 3 holdings are material to the balance sheet at the reporting date.' },
@@ -11845,6 +11939,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       out.regulatory_mapping = [
         { section: 'A. Capital structure', sec10k: 'Item 12 (Security Ownership)', naic: 'Schedule Y', osfi: 'LICAT — Available Capital', csa: 'AIF § 3 (General Development)', isa: 'Periodic Report § 26-32', cmisa: 'Form 7 (Own funds)', ifrs17: 'IAS 24 disclosures' },
         { section: 'B.1 Business overview', sec10k: 'Item 1 (Business)', naic: 'General Interrogatories', osfi: 'OSFI Memorandum', csa: 'AIF § 3', isa: 'Periodic Report § 6-12', cmisa: 'Form 5 (Business profile)', ifrs17: '§ 132' },
+        { section: 'B.7 Revenue centers', sec10k: 'Item 1 (Business — segments, outline only)', naic: 'General Interrogatories', osfi: 'OSFI Memorandum', csa: 'AIF § 3', isa: 'Periodic Report § 6-12', cmisa: 'Form 5 (Business profile)', ifrs17: 'outline only — no financial statement' },
         { section: 'B.2 Risk factors', sec10k: 'Item 1A (Risk Factors)', naic: 'Notes to Financial Statements', osfi: 'ORSA Report', csa: 'AIF § 13', isa: 'Periodic Report § 22-25', cmisa: 'ORSA', ifrs17: '§ 124-132' },
         { section: 'B.5 Critical estimates', sec10k: 'Item 7 (MD&A — Critical Estimates)', naic: 'Notes 1-3', osfi: 'LICAT — Methodology', csa: 'AIF § 14', isa: 'Periodic Report § 22', cmisa: 'Form 6 (Technical Provisions)', ifrs17: '§ 117-119' },
         { section: 'B.6 Market risk (quantitative)', sec10k: 'Item 7A (Quantitative & Qualitative)', naic: 'Schedule D & E (interest sensitivity)', osfi: 'LICAT — Market Risk', csa: 'AIF § 14', isa: 'Periodic Report § 25', cmisa: 'Form 6 (Sensitivities)', ifrs17: '§ 124-127' },
@@ -11891,6 +11986,35 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     function annualSubsection(title, html) {
       return `<h3>${annualEsc(title)}</h3>${html}`;
     }
+    function annualRevenueValue(row, ccy) {
+      if (!row || row.value == null || row.value === '') return '';
+      if (row.kind === 'money') return annualFmtMoney(row.value, ccy);
+      if (row.kind === 'count') return annualFmtCount(row.value);
+      if (row.kind === 'pct') return annualFmtPct(row.value);
+      return annualEsc(String(row.value));
+    }
+    function annualRevenueCentersHtml(block, ccy) {
+      const centers = (block && block.centers) || [];
+      const method = (block && block.method) || '';
+      if (!centers.length) {
+        return '<h4>B.7 Revenue centers</h4><p><em>Revenue-center outline is not available.</em></p>';
+      }
+      const cards = centers.map((center) => {
+        const figures = (center.figure_rows && center.figure_rows.length)
+          ? `<table><thead><tr><th>Published figure</th><th class="num">Value</th></tr></thead><tbody>${center.figure_rows.map((row) => `<tr><td>${annualEsc(row.label)}</td><td class="num">${annualRevenueValue(row, ccy)}</td></tr>`).join('')}</tbody></table>`
+          : '<p>No amount is published for this center.</p>';
+        const forecast = (center.forecast && center.forecast.length)
+          ? `<table><thead><tr><th>Year</th><th>Age</th><th class="num">Premium</th><th class="num">Expected claims</th><th class="num">Savings</th></tr></thead><tbody>${center.forecast.map((row) => `<tr><td>${annualEsc(row.year)}</td><td>${annualEsc(row.age)}</td><td class="num">${row.premium == null ? '' : annualFmtMoney(row.premium, ccy)}</td><td class="num">${row.expected_claims == null ? '' : annualFmtMoney(row.expected_claims, ccy)}</td><td class="num">${row.savings == null ? '' : annualFmtMoney(row.savings, ccy)}</td></tr>`).join('')}</tbody></table>`
+          : '';
+        return `<h5>${annualEsc(center.name)}</h5>
+          <p><strong>Reporting:</strong> ${annualEsc(center.reporting || '')}. <strong>Financial reporting:</strong> ${annualEsc(center.financial_reporting || '')}. This center does not issue a financial statement.</p>
+          <p>${annualEsc(center.outline || '')}</p>
+          <p><strong>Forecast.</strong> ${annualEsc(center.forecast_method || '')}</p>
+          ${figures}
+          ${forecast}`;
+      }).join('');
+      return `<h4>B.7 Revenue centers</h4><p>${annualEsc(method)}</p>${cards}`;
+    }
     function annualMoneyTable(rows, ccy, lastBold) {
       const body = rows.map((r, ix) => {
         const [label, value, kind] = Array.isArray(r) ? r : [r.label, r.value, r.kind];
@@ -11913,7 +12037,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const items = [
         'Cover — Executive Summary &amp; Pipeline Integrity',
         'Section A — Capital Structure (Cap Table, Debt)',
-        'Section B — Business, Customer Relations &amp; MD&amp;A (incl. Five-year highlights, Risk Factors, Critical Estimates, Market Risk)',
+        'Section B — Business, Customer Relations &amp; MD&amp;A (incl. Five-year highlights, Risk Factors, Critical Estimates, Market Risk, Revenue Centers)',
         'Section C — Statement of Financial Position',
         'Section D — Statement of Profit or Loss (incl. Operating Ratios)',
         'Section E — Insurance-Contract Disclosure (IFRS 17 / Schedule P) + Reserve Roll-Forward',
@@ -12082,7 +12206,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         `<h4>B.4 Pipeline data accumulation</h4>
          <p>The figures in this report aggregate deterministically from the bound Simulation pipeline. The chart below traces realized premium collected vs claims paid month-by-month across the sandbox lifecycle (a single source of truth for the realized layer in Sections D and J).</p>
          ${annualChartCanvas('annual-chart-accum', 240)}` +
-        critEstHtml + mrHtml);
+        critEstHtml + mrHtml + annualRevenueCentersHtml(statements.revenue_centers, ccy));
 
       // ----- Section C -----
       let balanceHtml = '<p><em>Balance sheet requires the Reserves &amp; IFRS 17 projection plus Portfolio Valuation to be bound.</em></p>';
@@ -13006,6 +13130,16 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (p.statements.decline_pie) sections.push(section('Decline Reasons Pie', ['Reason', 'Applications'], p.statements.decline_pie.map(r => [r.label, r.value])));
       if (p.statements.notes) sections.push(section('Notes to the Financial Statements', ['Id', 'Title', 'Body'], p.statements.notes.map(n => [n.id, n.title, n.body])));
       if (p.statements.critical_estimates) sections.push(section('Critical Accounting Estimates', ['Estimate', 'Method'], p.statements.critical_estimates.map(c => [c.label, c.method])));
+      if (p.statements.revenue_centers) {
+        const rc = p.statements.revenue_centers;
+        sections.push(section('Revenue Centers (B.7)', ['Id', 'Name', 'Kind', 'Reporting', 'FinancialReporting', 'FinancialStatement', 'Outline', 'ForecastMethod'], (rc.centers || []).map(c => [c.id, c.name, c.kind, c.reporting, c.financial_reporting, c.financial_statement ? 'yes' : 'no', c.outline, c.forecast_method])));
+        const figureRows = [];
+        (rc.centers || []).forEach(c => (c.figure_rows || []).forEach(row => figureRows.push([c.id, row.label, row.kind, row.value])));
+        sections.push(section('Revenue Center Figures (published snapshots only)', ['Center', 'Field', 'Kind', 'Value'], figureRows));
+        const forecastRows = [];
+        (rc.centers || []).forEach(c => (c.forecast || []).forEach(row => forecastRows.push([c.id, row.year, row.age, row.premium, row.expected_claims, row.savings])));
+        sections.push(section('Revenue Center Forecast', ['Center', 'Year', 'Age', 'Premium', 'ExpectedClaims', 'Savings'], forecastRows));
+      }
       if (p.statements.regulatory_mapping) sections.push(section('Regulatory Mapping', ['Section', 'SEC10K', 'NAIC', 'OSFI', 'CSA', 'ISA', 'CMISA', 'IFRS17'], p.statements.regulatory_mapping.map(r => [r.section, r.sec10k, r.naic, r.osfi, r.csa, r.isa, r.cmisa, r.ifrs17])));
       sections.push(section('Integrity Checks', ['Check', 'Result', 'Detail'], p.checks.map(c => [c.name, c.ok ? 'PASS' : 'FAIL', c.detail])));
       sections.push(section('Standards Packs Selected', ['Pack ID', 'Label'], p.packs.map(pk => [pk, ANNUAL_PACK_LABELS[pk] || pk])));
@@ -13189,7 +13323,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const toc = [
         'Cover — Executive Summary & Pipeline Integrity',
         'Section A — Capital Structure (cap table, debt)',
-        'Section B — Business, Customer Relations & MD&A (incl. Five-year highlights, Risk Factors, Critical Estimates, Market Risk)',
+        'Section B — Business, Customer Relations & MD&A (incl. Five-year highlights, Risk Factors, Critical Estimates, Market Risk, Revenue Centers)',
         'Section C — Statement of Financial Position',
         'Section D — Statement of Profit or Loss (incl. Operating Ratios)',
         'Section E — Insurance-Contract Disclosure + Reserve Roll-Forward',
@@ -13282,6 +13416,36 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           { columnStyles: { 0: { cellWidth: 160 }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } } }));
         afterTable();
         embedChart('annual-chart-market-risk', 'Quantitative market-risk sensitivities (B.6)', 230);
+      }
+      const revenueBlock = p.statements.revenue_centers;
+      if (revenueBlock && (revenueBlock.centers || []).length) {
+        subHeading('B.7 Revenue centers');
+        paragraph(revenueBlock.method || '');
+        for (const center of revenueBlock.centers) {
+          paragraph(center.name + '. Reporting: ' + (center.reporting || '') + '. Financial reporting: ' + (center.financial_reporting || '') + '. This center does not issue a financial statement.');
+          paragraph(center.outline || '');
+          paragraph('Forecast. ' + (center.forecast_method || ''));
+          if (center.figure_rows && center.figure_rows.length) {
+            doc.autoTable(tableOpts(['Published figure', 'Value'],
+              center.figure_rows.map(row => [row.label, annualRevenueValue(row, ccy)]),
+              { columnStyles: { 1: { halign: 'right' } } }));
+            afterTable();
+          } else {
+            paragraph('No amount is published for this center.');
+          }
+          if (center.forecast && center.forecast.length) {
+            doc.autoTable(tableOpts(['Year', 'Age', 'Premium', 'Expected claims', 'Savings'],
+              center.forecast.map(row => [
+                row.year == null ? '' : String(row.year),
+                row.age == null ? '' : String(row.age),
+                row.premium == null ? '' : annualFmtMoney(row.premium, ccy),
+                row.expected_claims == null ? '' : annualFmtMoney(row.expected_claims, ccy),
+                row.savings == null ? '' : annualFmtMoney(row.savings, ccy),
+              ]),
+              { columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } } }));
+            afterTable();
+          }
+        }
       }
 
       // Section C
@@ -13679,6 +13843,156 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       })).filter((row) => row.community_id);
     }
 
+    function publishPhinsafeBook(book) {
+      window.phinsafePublished = { book: book, portfolio: null };
+      if (typeof refreshAnnualReportSources === 'function') refreshAnnualReportSources();
+    }
+
+    function publishPhinsafePortfolio(portfolio) {
+      const current = window.phinsafePublished || { book: null, portfolio: null };
+      window.phinsafePublished = { book: current.book || null, portfolio: portfolio };
+      if (typeof refreshAnnualReportSources === 'function') refreshAnnualReportSources();
+    }
+
+    function phinsafeDownloadName(simulationId, extension) {
+      const clean = String(simulationId || 'phinsafe').replace(/[^A-Za-z0-9._-]+/g, '_');
+      return 'phinsafe_' + clean + '.' + extension;
+    }
+
+    function downloadPhinsafeReport(format) {
+      const published = window.phinsafePublished || {};
+      if (!published.book) {
+        alert('Run the PhinSafe test first.');
+        return;
+      }
+      if (typeof phinsafeReportModel !== 'function' || typeof phinsafeReportCsv !== 'function') {
+        alert('PhinSafe report script is still loading — try again in a moment.');
+        return;
+      }
+      const model = phinsafeReportModel(published.book, published.portfolio || null, {
+        money: fmtCurrency,
+        count: fmtCount,
+        pct: fmtPctValue,
+        num: fmtNumber,
+      });
+      if (format === 'csv') {
+        const blob = new Blob([phinsafeReportCsv(model)], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = phinsafeDownloadName(model.headline.simulationId, 'csv');
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return;
+      }
+      downloadPhinsafePdf(published.book, model);
+    }
+
+    function downloadPhinsafePdf(book, model) {
+      const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+      if (!jsPDFCtor) { alert('PDF library still loading — try again in a moment.'); return; }
+      const doc = new jsPDFCtor({ unit: 'pt', format: 'a4', orientation: 'landscape' });
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const margin = 36;
+      const NAVY = [14, 47, 99];
+      const GOLD = [201, 160, 78];
+      doc.setFillColor(6, 13, 31);
+      doc.rect(0, 0, pageW, 78, 'F');
+      doc.setFillColor(GOLD[0], GOLD[1], GOLD[2]);
+      doc.rect(0, 78, pageW, 4, 'F');
+      doc.setTextColor(247, 226, 160);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.text('PHINS', margin, 28);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(183, 211, 255);
+      doc.text('Personal Health Insurance & Savings', margin, 42);
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text('PhinSafe Report', margin, 62);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(String(model.headline.simulationId || ''), pageW - margin, 62, { align: 'right' });
+
+      doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      let y = 100;
+      doc.text('Data integrity: ' + (model.allPass ? 'PASS' : 'FAIL'), margin, y);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      y += 16;
+      doc.text('This report restates the published PhinSafe book. It does not reprice it.', margin, y);
+      y += 14;
+      doc.text('Accepted parents: ' + model.headline.parents, margin, y);
+      y += 14;
+      doc.text('Settled benefit: ' + model.headline.coverage, margin, y);
+      y += 14;
+      doc.text('Rider annual premium: ' + model.headline.premium, margin, y);
+      y += 14;
+      doc.text('Offspring portfolio: ' + model.headline.portfolio, margin, y);
+      if (!model.allPass) {
+        y += 16;
+        const failed = model.checks.filter((item) => !item.ok).map((item) => item.name).join('; ');
+        const lines = doc.splitTextToSize('Failed checks: ' + failed, pageW - margin * 2);
+        doc.setTextColor(155, 44, 44);
+        doc.text(lines, margin, y);
+        y += lines.length * 12;
+        doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
+      }
+      (model.notes || []).forEach((note) => {
+        y += 14;
+        const lines = doc.splitTextToSize(note, pageW - margin * 2);
+        doc.text(lines, margin, y);
+        y += lines.length * 12;
+      });
+
+      const addTable = (title, columns, rows, startY, note) => {
+        let top = startY;
+        if (top > pageH - 96) {
+          doc.addPage();
+          top = margin;
+        }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
+        doc.text(title, margin, top);
+        if (note) {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          const noteLines = doc.splitTextToSize(String(note), pageW - margin * 2);
+          doc.text(noteLines, margin, top + 12);
+          top += noteLines.length * 10 + 4;
+        }
+        doc.autoTable({
+          startY: top + 6,
+          head: [columns],
+          body: rows.length ? rows : [columns.map((_, index) => (index ? '—' : 'None'))],
+          styles: { fontSize: 8, cellPadding: 3, textColor: NAVY },
+          headStyles: { fillColor: NAVY, textColor: [247, 226, 160] },
+          margin: { left: margin, right: margin, bottom: 32, top: margin },
+        });
+        return (doc.lastAutoTable.finalY || top) + 16;
+      };
+
+      y = addTable(
+        'Integrity checks',
+        ['Check', 'Result'],
+        model.checks.map((item) => [item.name, item.ok ? 'PASS' : 'FAIL']),
+        y + 10
+      );
+      model.tables.forEach((table) => {
+        y = addTable(table.title, table.columns, table.rows, y, table.note);
+      });
+
+      doc.save(phinsafeDownloadName(book.simulation_id || model.headline.simulationId, 'pdf'));
+    }
+
     function renderPhinsafeBook(book) {
       const host = document.getElementById('phinsafe-results');
       if (!host) return;
@@ -13769,6 +14083,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           if (host) host.innerHTML = `<div class="alert alert-danger">${phinsafeEsc(data.error || 'PhinSafe projection failed')}</div>`;
         } else {
           renderPhinsafeBook(data.book);
+          publishPhinsafeBook(data.book);
           syncPhinsafeSavingsDefault(data.book);
         }
       } catch (err) {
@@ -13974,6 +14289,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           if (host) host.innerHTML = `<div class="alert alert-danger">${phinsafeEsc(data.error || 'PhinSafe portfolio failed')}</div>`;
         } else {
           renderPhinsafePortfolio(data.portfolio);
+          publishPhinsafePortfolio(data.portfolio);
         }
       } catch (err) {
         destroyPhinsafeCharts();
