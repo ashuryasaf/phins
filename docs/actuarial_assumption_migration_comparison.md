@@ -91,6 +91,7 @@ Draft 2.0 at 65 would have been life-only ≈ 200.00 with disability 0 — also 
 4. **Docs ↔ PDF** — Israel PDFs are regenerated from the markdown sources (`scripts/generate_investor_pdfs.py`); tests assert MD needles and PDF validity.
 5. **Future data** — new policies / simulations / applications resolve sums from live `UnderwritingConfig` (persisted), not hard-coded Draft 2.0/3.0 constants.
 6. **Risk-reference incidence** — premium stays the published tariff at every age. q(x) and i(x) use the locked profile at ages 35–39 and the active kernel bracket elsewhere, with no second age-curve multiply. An uncovered age is withheld. The Fefferman and Goldsobel one-pagers call `risk-reference-rates.js` for the same identity. The Israel pitch premium remains ILS 4,518 at age 42.
+7. **Adjustable risk cover** — the actuary Risk Reference bar prices `face_amount` from $50,000 to $2,000,000 (step $10,000). It opens at the published $500,000 example so the locked one-pager and the age-65 $50 / $40 anchors still appear first. Life and disability sums follow the age bands of that face; premium and expected loss scale with it. q(x) and i(x) do not.
 
 ---
 

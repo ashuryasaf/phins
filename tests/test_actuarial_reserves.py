@@ -108,6 +108,59 @@ def test_risk_reference_is_modular_for_any_age_term_lifesum():
     assert ref['data_integrity']['cumulative_loss_check']
 
 
+def test_risk_reference_cover_scales_with_chosen_face():
+    """A non-default face reprices sums, premium, and expected loss.
+
+    The published example stays $500,000. Doubling the cover doubles the
+    attained-age sums. Premium and expected loss follow those sums. q(x)
+    and i(x) stay on the age, and from age 65 life is one quarter of the face.
+    """
+    base = build_risk_reference(start_age=35, projection_years=1)
+    doubled = build_risk_reference(start_age=35, projection_years=1, life_sum=1_000_000)
+    base_row = base['yearly_projection'][0]
+    doubled_row = doubled['yearly_projection'][0]
+    assert base['reference']['face_amount'] == 500_000.0
+    assert doubled['reference']['face_amount'] == 1_000_000.0
+    assert doubled['reference']['life_sum'] == 1_000_000.0
+    assert doubled['reference']['disability_sum'] == 250_000.0
+    assert doubled_row['life_sum'] == base_row['life_sum'] * 2
+    assert doubled_row['disability_sum'] == base_row['disability_sum'] * 2
+    assert doubled_row['mortality_qx'] == base_row['mortality_qx']
+    assert doubled_row['disability_ix'] == base_row['disability_ix']
+    assert abs(doubled_row['annual_premium'] - base_row['annual_premium'] * 2) < 1.0
+    assert abs(doubled_row['expected_loss'] - base_row['expected_loss'] * 2) < 0.05
+    assert doubled['data_integrity']['disability_sum_matches_age_band'] is True
+    assert doubled['data_integrity']['cumulative_premium_check'] is True
+    assert doubled['data_integrity']['cumulative_loss_check'] is True
+
+    senior_base = build_risk_reference(start_age=70, projection_years=1)
+    senior = build_risk_reference(start_age=70, projection_years=1, life_sum=1_000_000)
+    assert senior['reference']['face_amount'] == 1_000_000.0
+    assert senior['reference']['life_sum'] == 250_000.0
+    assert senior['reference']['disability_sum'] == 250_000.0
+    senior_row = senior['yearly_projection'][0]
+    senior_base_row = senior_base['yearly_projection'][0]
+    assert senior_row['life_sum'] == 250_000.0
+    assert senior_row['disability_sum'] == 250_000.0
+    assert senior_row['life_sum'] == senior_base_row['life_sum'] * 2
+    assert abs(senior_row['annual_premium'] - senior_base_row['annual_premium'] * 2) < 1.0
+    assert abs(senior_row['expected_loss'] - senior_base_row['expected_loss'] * 2) < 0.05
+    assert senior_row['mortality_qx'] == senior_base_row['mortality_qx']
+
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    dashboard = open(
+        os.path.join(root, 'web_portal', 'static', 'actuary-dashboard.html'),
+        encoding='utf-8',
+    ).read()
+    assert 'id="risk-ref-cover"' in dashboard
+    assert 'Risk cover ($)' in dashboard
+    assert 'id="risk-ref-life-sum"' in dashboard
+    assert 'bindRiskCoverControls' in dashboard
+    assert 'ref.reference.face_amount' in dashboard
+    assert 'value="500000"' in dashboard
+
+
 def test_risk_reference_kernel_rates_cover_any_age():
     """Published ages stay locked. Every other covered age uses the kernel bracket.
 

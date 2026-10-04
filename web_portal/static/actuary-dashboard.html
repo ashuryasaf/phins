@@ -1187,6 +1187,11 @@
     .rr-headline p { margin: 0; color: #d6e4f7; font-size: 0.86rem; }
     .rr-pass { color: #2f855a; font-weight: 700; }
     .rr-fail { color: #c53030; font-weight: 700; }
+    .rr-cover { margin: 2px 0 14px; }
+    .rr-cover-row { display: grid; grid-template-columns: minmax(180px, 1fr) 180px; gap: 12px; align-items: center; }
+    .rr-cover-slider { width: 100%; height: 28px; accent-color: #c9a04e; cursor: pointer; }
+    .rr-cover-note { margin: 8px 0 0; color: var(--text-light); font-size: 0.85rem; }
+    @media (max-width: 720px) { .rr-cover-row { grid-template-columns: 1fr; } }
     .annual-report-preview .integrity-ok { color: #2f855a; font-weight: 700; }
     .annual-report-preview .integrity-bad { color: #c53030; font-weight: 700; }
     @media (max-width: 720px) { .annual-report-preview .exec-tiles { grid-template-columns: repeat(2, 1fr); } }
@@ -2924,11 +2929,19 @@
             </div>
           </div>
           <div class="alert alert-warning">
-            Premium stays the published tariff: base rate times the age-curve factor times the attained-age life and disability sums. Ages 35–39 keep the locked one-pager q(x) and i(x). Every other age uses the active kernel rate-table bracket, with no second age-factor multiply. An age outside every bracket is withheld, not shown as a zero loss.
+            Premium stays the published tariff: base rate times the age-curve factor times the attained-age life and disability sums. The risk cover opens at the published $500,000 example and can be set from $50,000 to $2,000,000. Ages 35–39 keep the locked one-pager q(x) and i(x). Every other age uses the active kernel rate-table bracket, with no second age-factor multiply. An age outside every bracket is withheld, not shown as a zero loss.
           </div>
 
           <div class="card">
             <div class="card-title">Reference Inputs</div>
+            <div class="rr-cover">
+              <label class="form-label" for="risk-ref-cover">Risk cover ($)</label>
+              <div class="rr-cover-row">
+                <input type="range" id="risk-ref-cover" class="rr-cover-slider" min="50000" max="2000000" step="10000" value="500000" aria-label="Risk cover" aria-valuemin="50000" aria-valuemax="2000000" aria-valuenow="500000">
+                <input type="number" id="risk-ref-life-sum" class="form-input" value="500000" min="50000" max="2000000" step="10000" aria-label="Risk cover in dollars">
+              </div>
+              <p id="risk-ref-cover-note" class="rr-cover-note">Risk cover $500,000. Before age 65, life is $500,000 and disability is $125,000. From age 65, life steps to $125,000 and disability equals that life sum. $500,000 is the published example; move the bar to reprice this face.</p>
+            </div>
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Profile</label>
@@ -2941,10 +2954,6 @@
               <div class="form-group">
                 <label class="form-label">Projection Years</label>
                 <input type="number" id="risk-ref-years" class="form-input" value="5" min="1" max="40">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Life Sum ($)</label>
-                <input type="number" id="risk-ref-life-sum" class="form-input" value="500000" min="10000" step="10000">
               </div>
               <div class="form-group" style="display:flex;align-items:flex-end;">
                 <button class="btn btn-primary" onclick="loadRiskReference()">Recalculate</button>
@@ -4435,6 +4444,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         loadVersionInsights();
         loadAuditLog();
         loadIntegrations();
+        bindRiskCoverControls();
         loadRiskReference();
         loadUploadedTables();
         loadCohortOverrides();
@@ -6878,7 +6888,66 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     // =====================================================================
     // RISK REFERENCE
     // =====================================================================
+    const RISK_COVER_MIN = 50000;
+    const RISK_COVER_MAX = 2000000;
+    const RISK_COVER_STEP = 10000;
+    const RISK_COVER_EXAMPLE = 500000;
+
+    function clampRiskCover(value) {
+      let n = Number(value);
+      if (!Number.isFinite(n)) n = RISK_COVER_EXAMPLE;
+      n = Math.round(n / RISK_COVER_STEP) * RISK_COVER_STEP;
+      if (n < RISK_COVER_MIN) n = RISK_COVER_MIN;
+      if (n > RISK_COVER_MAX) n = RISK_COVER_MAX;
+      return n;
+    }
+
+    function riskCoverBandText(face) {
+      const money = (amount) => (typeof fmtCurrency === 'function'
+        ? fmtCurrency(amount)
+        : ('$' + Number(amount).toLocaleString()));
+      return 'Risk cover ' + money(face)
+        + '. Before age 65, life is ' + money(face)
+        + ' and disability is ' + money(face / 4)
+        + '. From age 65, life steps to ' + money(face / 4)
+        + ' and disability equals that life sum. $500,000 is the published example; move the bar to reprice this face.';
+    }
+
+    function paintRiskCover(face) {
+      const slider = document.getElementById('risk-ref-cover');
+      const number = document.getElementById('risk-ref-life-sum');
+      const note = document.getElementById('risk-ref-cover-note');
+      const amount = clampRiskCover(face);
+      if (slider) {
+        slider.value = String(amount);
+        slider.setAttribute('aria-valuenow', String(amount));
+      }
+      if (number) number.value = String(amount);
+      if (note) note.textContent = riskCoverBandText(amount);
+      return amount;
+    }
+
+    function bindRiskCoverControls() {
+      const slider = document.getElementById('risk-ref-cover');
+      const number = document.getElementById('risk-ref-life-sum');
+      if (!slider || !number || slider.dataset.bound === '1') return;
+      slider.dataset.bound = '1';
+      paintRiskCover(number.value || RISK_COVER_EXAMPLE);
+      slider.addEventListener('input', () => {
+        paintRiskCover(slider.value);
+      });
+      slider.addEventListener('change', () => {
+        paintRiskCover(slider.value);
+        loadRiskReference();
+      });
+      number.addEventListener('change', () => {
+        paintRiskCover(number.value);
+        loadRiskReference();
+      });
+    }
+
     async function loadRiskReference() {
+      bindRiskCoverControls();
       const resultsEl = document.getElementById('risk-reference-results');
       resultsEl.innerHTML = '<p style="color:var(--text-light);">Loading…</p>';
       const profileSelect = document.getElementById('risk-ref-profile');
@@ -7011,17 +7080,23 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
       const method = (ref.reference && ref.reference.rate_method) || '';
       const tablesVersion = (ref.reference && ref.reference.tables_version) || '—';
+      const face = ref.reference.face_amount;
+      const bandAge = ref.reference.disability_band_age || 65;
       resultsEl.innerHTML = `
         <div class="rr-headline">
           <div class="rr-kicker">Risk reference</div>
-          <h3>Any attained age the kernel table covers</h3>
+          <h3>Risk cover ${fmtCurrency(face)}</h3>
           <p>${method}</p>
         </div>
         <p>
           Source: <a href="${ref.source.url}" target="_blank" rel="noopener noreferrer">${ref.source.document}</a> (${ref.source.version}, ${ref.source.doc_date}). Kernel tables <code>${tablesVersion}</code>.
+          At issue age ${ref.reference.start_age}, life is ${fmtCurrency(ref.reference.life_sum)} and disability is ${fmtCurrency(ref.reference.disability_sum)}.
+          From age ${bandAge}, life is ${fmtCurrency(ref.reference.life_sum_post65)} and disability is ${fmtCurrency(ref.reference.disability_sum_post65)}.
         </p>
         <div class="stats-grid">
-          <div class="stat-card"><div class="stat-label">Life Sum</div><div class="stat-value">${fmtCurrency(ref.reference.life_sum)}</div></div>
+          <div class="stat-card"><div class="stat-label">Risk cover</div><div class="stat-value">${fmtCurrency(face)}</div></div>
+          <div class="stat-card"><div class="stat-label">Life at issue age</div><div class="stat-value">${fmtCurrency(ref.reference.life_sum)}</div></div>
+          <div class="stat-card"><div class="stat-label">Disability at issue age</div><div class="stat-value">${fmtCurrency(ref.reference.disability_sum)}</div></div>
           <div class="stat-card success"><div class="stat-label">Cumulative Premium</div><div class="stat-value">${fmtCurrency(totals.cumulative_premium)}</div></div>
           <div class="stat-card warning"><div class="stat-label">Cumulative Expected Loss</div><div class="stat-value">${rrMoney(totals.cumulative_expected_loss)}</div></div>
           <div class="stat-card"><div class="stat-label">Avg Loss Ratio</div><div class="stat-value">${rrRatePct(totals.average_loss_ratio, 2)}</div></div>
