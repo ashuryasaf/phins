@@ -286,6 +286,12 @@ def test_actuary_dashboard_wires_100k_cap_and_5yr_forecast():
     assert "kernelBook" in content
     assert "kind === 'multiple'" in content
     assert "Forecast month 1 equals the original active policies" in content
+    assert "claimAuthorization" in content
+    assert "uw_basis" in content
+    assert "Year-1 claim probability" in content
+    assert "authorization: 'held'" in content
+    assert "ADL 1 through the automatic maximum is not declined" in content
+    assert "Authorized claims carry the year-1 claim probability" in content
     # A lifecycle underwriting decision only touches a referred life that is
     # still in force, so it cannot revive a lapsed or terminated policy, and a
     # decline voids the opening claim as well as the open bills.

@@ -534,11 +534,69 @@
     return Number.isFinite(limit) ? limit : null;
   }
 
+  function pctLabel(value) {
+    return (num(value, 0) * 100).toFixed(2) + '%';
+  }
+
+  /**
+   * Year-1 claim probability. The sandbox risk score is q(x) + i(x)
+   * from the rate tables: mortality plus disability incidence. i(x) is
+   * zero when disability is excluded. A stored risk_score is used only
+   * when the two probabilities were not supplied.
+   */
+  function year1RiskScore(life) {
+    const src = life || {};
+    const hasQ = src.prob_mortality_year1 != null && src.prob_mortality_year1 !== '';
+    const hasI = src.prob_disability_year1 != null && src.prob_disability_year1 !== '';
+    if (!hasQ && !hasI) {
+      const stored = num(src.risk_score, NaN);
+      const known = Number.isFinite(stored);
+      return {
+        known: known,
+        score: known ? Math.min(1, Math.max(0, stored)) : null,
+        mortality: null,
+        disability: null,
+        basis: 'kernel_year1_claim_probability',
+        formula: 'q(x) + i(x)',
+      };
+    }
+    const q = Math.min(1, Math.max(0, num(src.prob_mortality_year1, 0)));
+    const eligible = src.disability_eligible !== false
+      && src.disability_excluded_at_issue !== true
+      && src.exclude_disability !== true;
+    const i = eligible ? Math.min(1, Math.max(0, num(src.prob_disability_year1, 0))) : 0;
+    return {
+      known: true,
+      score: Math.min(1, q + i),
+      mortality: q,
+      disability: i,
+      basis: 'kernel_year1_claim_probability',
+      formula: 'q(x) + i(x)',
+    };
+  }
+
+  function riskLabel(risk) {
+    if (!risk || !risk.known || risk.score == null) return 'unknown';
+    if (risk.mortality == null || risk.disability == null) return pctLabel(risk.score);
+    return pctLabel(risk.score) + ' (q ' + pctLabel(risk.mortality) + ' + i ' + pctLabel(risk.disability) + ')';
+  }
+
+  function riskFields(risk) {
+    return {
+      risk_score: risk && risk.known ? risk.score : null,
+      risk_basis: 'q(x) + i(x)',
+      risk_mortality: risk ? risk.mortality : null,
+      risk_disability: risk ? risk.disability : null,
+    };
+  }
+
   /**
    * Issuance against the simulation's underwriting snapshot.
    * Decline threshold and maximum acceptance age are hard declines.
-   * Max ADL (and the other automatic-approval gates) only auto-issue;
-   * a life that fails one gate is referred, never declined by automation.
+   * ADL 1 through the automatic maximum is an issue ceiling, not a
+   * decline: a life in that band is approved when every other automatic
+   * gate passes, and referred when one fails. The risk gate is the
+   * year-1 claim probability, not a separate score.
    */
   function issueFromRules(life, rules) {
     const src = life || {};
@@ -549,39 +607,116 @@
     const decline = num(cfg.decline_threshold, 9);
     const maxAge = num(cfg.max_acceptance_age, 65);
     const exclusion = num(cfg.disability_exclusion_threshold, 8);
+    const maxAdl = num(cfg.auto_approve_max_adl, 3);
+    const adlKnown = Number.isFinite(adl);
     if (!Number.isFinite(age) || age > maxAge) {
-      return { uw_status: 'declined', issuance: 'declined', reason: 'age', disability_eligible: false, coverage: coverage };
+      const risk = year1RiskScore(Object.assign({}, src, { disability_eligible: false }));
+      return Object.assign({
+        uw_status: 'declined', issuance: 'declined', reason: 'age',
+        disability_eligible: false, coverage: coverage, failed_gates: ['max_acceptance_age'],
+        basis: 'Declined for age ' + age + ', above the maximum acceptance age ' + maxAge + '. ADL ' + adl + ' is not a decline.',
+      }, riskFields(risk));
     }
-    if (!Number.isFinite(adl) || adl >= decline) {
-      return { uw_status: 'declined', issuance: 'declined', reason: 'adl', disability_eligible: false, coverage: coverage };
+    if (!adlKnown || adl >= decline) {
+      const risk = year1RiskScore(Object.assign({}, src, { disability_eligible: false }));
+      return Object.assign({
+        uw_status: 'declined', issuance: 'declined', reason: 'adl',
+        disability_eligible: false, coverage: coverage, failed_gates: ['decline_threshold'],
+        basis: 'Declined: ADL ' + adl + ' is at or above the decline threshold (' + decline + ').',
+      }, riskFields(risk));
     }
     const limit = coverageLimitFor(cfg, adl);
     const capped = limit != null && coverage > limit ? limit : coverage;
-    const disabilityEligible = !(adl >= exclusion);
+    const disabilityEligible = !(adl >= exclusion) && src.exclude_disability !== true;
+    const risk = year1RiskScore(Object.assign({}, src, { disability_eligible: disabilityEligible }));
+    const score = risk.known ? risk.score : NaN;
     if (!cfg.auto_approve_enabled) {
-      return {
+      return Object.assign({
         uw_status: 'approved', issuance: 'book', reason: 'accepted',
-        disability_eligible: disabilityEligible, coverage: capped,
-      };
+        disability_eligible: disabilityEligible, coverage: capped, failed_gates: [],
+        basis: 'Accepted book. Automatic approval is off, so ADL ' + adl + ' is issued. Decline starts at ADL ' + decline + '. Year-1 claim probability ' + riskLabel(risk) + '.',
+      }, riskFields(risk));
     }
     const smoker = String(src.smoking_status || '').toLowerCase();
     const nonsmoker = smoker === 'nonsmoker' || smoker === 'non-smoker' || smoker === 'never';
-    const clean = !cfg.auto_approve_require_clean_history || nonsmoker;
-    const risk = num(src.risk_score, NaN);
-    const auto = adl <= num(cfg.auto_approve_max_adl, 3)
-      && age >= num(cfg.auto_approve_min_age, 18)
-      && age <= num(cfg.auto_approve_max_age, 60)
-      && capped <= num(cfg.auto_approve_max_coverage, 500000)
-      && Number.isFinite(risk)
-      && risk <= num(cfg.auto_approve_max_risk_score, 0.25)
-      && clean;
-    return {
+    const cleanRequired = !!cfg.auto_approve_require_clean_history;
+    const minAge = num(cfg.auto_approve_min_age, 18);
+    const maxAutoAge = num(cfg.auto_approve_max_age, 60);
+    const maxCoverage = num(cfg.auto_approve_max_coverage, 500000);
+    const maxRisk = num(cfg.auto_approve_max_risk_score, 0.25);
+    const failed = [];
+    if (!(adl <= maxAdl)) failed.push('max_adl');
+    if (!(age >= minAge)) failed.push('min_age');
+    if (!(age <= maxAutoAge)) failed.push('max_age');
+    if (!(capped <= maxCoverage)) failed.push('max_coverage');
+    if (!(Number.isFinite(score) && score <= maxRisk)) failed.push('max_risk_score');
+    if (cleanRequired && !nonsmoker) failed.push('clean_history');
+    const auto = failed.length === 0;
+    const withinAdl = adl >= 1 && adl <= maxAdl;
+    let why = '';
+    if (failed.indexOf('max_risk_score') !== -1) {
+      why = 'year-1 claim probability ' + riskLabel(risk) + ' is above the ' + pctLabel(maxRisk) + ' automatic ceiling';
+    } else if (failed.indexOf('max_age') !== -1 || failed.indexOf('min_age') !== -1) {
+      why = 'age ' + age + ' is outside the automatic band ' + minAge + '–' + maxAutoAge;
+    } else if (failed.indexOf('max_coverage') !== -1) {
+      why = 'coverage is above the automatic maximum';
+    } else if (failed.indexOf('clean_history') !== -1) {
+      why = 'smoking history is not the clean-history nonsmoker gate';
+    } else if (failed.indexOf('max_adl') !== -1) {
+      why = 'ADL ' + adl + ' is above the automatic ceiling (max ADL ' + maxAdl + ') and below the decline threshold (' + decline + ')';
+    }
+    let basis;
+    if (auto) {
+      basis = 'Approved. ADL ' + adl + ' is within the automatic ceiling (max ADL ' + maxAdl + '). Year-1 claim probability ' + riskLabel(risk) + ' is within the ' + pctLabel(maxRisk) + ' automatic ceiling.';
+    } else if (withinAdl) {
+      basis = 'ADL ' + adl + ' passes the automatic ADL ceiling (max ' + maxAdl + ') and is not declined. Referred: ' + why + '.';
+    } else {
+      basis = 'Referred, not declined. ' + why + '. Year-1 claim probability ' + riskLabel(risk) + '.';
+    }
+    return Object.assign({
       uw_status: auto ? 'approved' : 'pending',
       issuance: auto ? 'auto' : 'referred',
       reason: auto ? 'auto' : 'referred',
       disability_eligible: disabilityEligible,
       coverage: capped,
-    };
+      failed_gates: failed,
+      basis: basis,
+    }, riskFields(risk));
+  }
+
+  /**
+   * A claim is authorized only on an in-force life, at the contractual
+   * sum, with a known year-1 claim probability. The probability is the
+   * incidence basis. It does not decline the claim a second time.
+   */
+  function claimAuthorization(claim, owner) {
+    const src = owner || {};
+    const item = claim || {};
+    const risk = year1RiskScore(src);
+    const fields = riskFields(risk);
+    const type = String(item.type || '');
+    const amount = num(item.amount, NaN);
+    if (!isInForcePolicy(src)) {
+      return Object.assign({ ok: false, reason: 'not_in_force', label: riskLabel(risk) }, fields);
+    }
+    if (!risk.known) {
+      return Object.assign({ ok: false, reason: 'risk_score_unknown', label: 'unknown' }, fields);
+    }
+    if (type !== 'mortality' && type !== 'disability') {
+      return Object.assign({ ok: false, reason: 'cause', label: riskLabel(risk) }, fields);
+    }
+    if (type === 'disability' && (src.disability_excluded_at_issue === true || src.disability_eligible === false)) {
+      return Object.assign({ ok: false, reason: 'disability_excluded', label: riskLabel(risk) }, fields);
+    }
+    const contractual = type === 'mortality' ? num(src.life_sum, NaN) : num(src.disability_sum, NaN);
+    if (!Number.isFinite(amount) || !Number.isFinite(contractual) || Math.abs(amount - contractual) > 0.02) {
+      return Object.assign({ ok: false, reason: 'amount', label: riskLabel(risk) }, fields);
+    }
+    return Object.assign({
+      ok: true,
+      reason: 'kernel_year1_probability',
+      label: riskLabel(risk),
+    }, fields);
   }
 
   /**
@@ -748,6 +883,9 @@
     snapshotLines: snapshotLines,
     annualToMonthlyProb: annualToMonthlyProb,
     issueFromRules: issueFromRules,
+    year1RiskScore: year1RiskScore,
+    riskLabel: riskLabel,
+    claimAuthorization: claimAuthorization,
     kernelClaimEvent: kernelClaimEvent,
     premiumComponentsMatch: premiumComponentsMatch,
     isInForcePolicy: isInForcePolicy,
