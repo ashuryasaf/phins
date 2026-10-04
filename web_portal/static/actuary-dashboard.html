@@ -1159,6 +1159,34 @@
     .annual-report-preview .exec-tile-navy { border-left-color: #0e2f63; }
     .annual-report-preview .exec-badges { margin-top: 10px; font-size: 0.8rem; }
     .annual-report-preview .filing-badge { display: inline-block; background: linear-gradient(135deg, #0e2f63 0%, #123f82 100%); color: #eaf1ff; padding: 2px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 600; margin-right: 4px; margin-bottom: 4px; }
+    .annual-report-preview .rc-deck { margin: 14px 0 8px; }
+    .annual-report-preview .rc-section-kicker { font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: #c9a04e; font-weight: 700; margin: 0; }
+    .annual-report-preview .rc-section-head h4 { margin: 2px 0 6px; font-size: 1.15rem; }
+    .annual-report-preview .rc-method { background: #f7fafc; border-left: 3px solid #0e2f63; padding: 8px 12px; margin: 0 0 12px; color: #334155; }
+    .annual-report-preview .rc-statement { border: 1px solid #d7e2f0; border-radius: 10px; overflow: hidden; margin: 0 0 14px; background: #fff; break-inside: avoid; }
+    .annual-report-preview .rc-head { background: linear-gradient(135deg, #0e2f63 0%, #123f82 100%); color: #eaf1ff; padding: 12px 14px 13px; }
+    .annual-report-preview .rc-head h5 { color: #fff; margin: 2px 0 0; font-size: 1.08rem; font-family: 'Space Grotesk', 'Inter', sans-serif; letter-spacing: 0.01em; }
+    .annual-report-preview .rc-kicker { color: #f7e2a0; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; }
+    .annual-report-preview .rc-legal { color: #c5d4ee; font-size: 0.78rem; margin-top: 3px; }
+    .annual-report-preview .rc-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .annual-report-preview .rc-badge { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; background: rgba(255,255,255,0.12); color: #f7e2a0; border: 1px solid rgba(247, 226, 160, 0.45); }
+    .annual-report-preview .rc-badge.rc-bound { background: #2f855a; color: #fff; border-color: #2f855a; }
+    .annual-report-preview .rc-badge.rc-withheld { background: #c53030; color: #fff; border-color: #c53030; }
+    .annual-report-preview .rc-body { padding: 12px 14px 14px; }
+    .annual-report-preview .rc-outline { margin: 0 0 8px; }
+    .annual-report-preview .rc-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 8px; margin: 10px 0; }
+    .annual-report-preview .rc-tile { background: #f8fbff; border: 1px solid #e2e8f0; border-top: 3px solid #c9a04e; border-radius: 8px; padding: 8px 10px; }
+    .annual-report-preview .rc-tile-label { font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase; color: #5b6b82; }
+    .annual-report-preview .rc-tile-value { font-size: 1.02rem; font-weight: 700; color: #0e2f63; margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .annual-report-preview .rc-meta { font-size: 0.8rem; color: #4a5568; margin: 4px 0 8px; }
+    .annual-report-preview .rc-unpublished { background: #fffaf0; border: 1px dashed #c9a04e; border-radius: 8px; padding: 12px 14px; margin: 8px 0; color: #744210; }
+    .annual-report-preview .rc-unpublished strong { display: block; color: #0e2f63; margin-bottom: 4px; }
+    .rr-headline { background: linear-gradient(135deg, #0e2f63 0%, #123f82 100%); color: #eaf1ff; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+    .rr-headline h3 { color: #fff; margin: 2px 0 6px; font-size: 1.15rem; }
+    .rr-kicker { color: #f7e2a0; font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; }
+    .rr-headline p { margin: 0; color: #d6e4f7; font-size: 0.86rem; }
+    .rr-pass { color: #2f855a; font-weight: 700; }
+    .rr-fail { color: #c53030; font-weight: 700; }
     .annual-report-preview .integrity-ok { color: #2f855a; font-weight: 700; }
     .annual-report-preview .integrity-bad { color: #c53030; font-weight: 700; }
     @media (max-width: 720px) { .annual-report-preview .exec-tiles { grid-template-columns: repeat(2, 1fr); } }
@@ -2889,14 +2917,14 @@
               </div>
               <div class="brand-divider"></div>
               <div>
-                <div class="brand-title">Risk Reference (Locked Source)</div>
-                <div class="brand-tagline">Public one-pager · dashboard · audit reports share one registered profile</div>
+                <div class="brand-title">Risk Reference</div>
+                <div class="brand-tagline">Published tariff · kernel q(x) and i(x) at every covered age</div>
               </div>
               <span class="header-badge">Research &amp; Audit</span>
             </div>
           </div>
           <div class="alert alert-warning">
-            This panel reproduces the locked actuarial source block published on the PHINS public risk one-pager. Every figure is computed server-side from a registered risk-reference profile so the dashboard, audit reports, and the public document always agree.
+            Premium stays the published tariff: base rate times the age-curve factor times the attained-age life and disability sums. Ages 35–39 keep the locked one-pager q(x) and i(x). Every other age uses the active kernel rate-table bracket, with no second age-factor multiply. An age outside every bracket is withheld, not shown as a zero loss.
           </div>
 
           <div class="card">
@@ -6893,23 +6921,49 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (selectEl.innerHTML !== html) selectEl.innerHTML = html;
     }
 
+    function rrRatePct(value, digits) {
+      if (value == null || value === '') return '—';
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '—';
+      return (n * 100).toFixed(digits) + '%';
+    }
+    function rrMoney(value) {
+      if (value == null || value === '') return '—';
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '—';
+      return fmtCurrency(n);
+    }
+    function rrSourceLabel(source) {
+      if (source === 'published_profile') return 'Published profile';
+      if (source === 'kernel_table') return 'Kernel table';
+      if (source === 'unavailable') return 'Unavailable';
+      return source || '—';
+    }
+    function rrIntegrityItem(name, ok) {
+      const mark = ok
+        ? '<span class="rr-pass">PASS</span>'
+        : '<span class="rr-fail">FAIL</span>';
+      return `<li>${name}: ${mark}</li>`;
+    }
     function renderRiskReference(ref) {
       const resultsEl = document.getElementById('risk-reference-results');
       if (!ref) { resultsEl.innerHTML = '<p>No data.</p>'; return; }
       const totals = ref.totals || {};
       const refRows = (ref.yearly_projection || []).map((row) => `
         <tr>
-          <td>${row.year}</td><td>${row.age}</td><td>${row.age_factor.toFixed(4)}</td>
-          <td>${fmtCurrency(row.annual_premium)}</td>
-          <td>${(row.mortality_qx * 100).toFixed(3)}%</td>
-          <td>${(row.disability_ix * 100).toFixed(3)}%</td>
-          <td>${fmtCurrency(row.expected_loss)}</td>
-          <td>${(row.loss_ratio * 100).toFixed(2)}%</td>
+          <td>${row.year}</td><td>${row.age}</td><td>${Number(row.age_factor).toFixed(4)}</td>
+          <td>${rrMoney(row.life_sum)}</td>
+          <td>${rrMoney(row.disability_sum)}</td>
+          <td>${rrMoney(row.annual_premium)}</td>
+          <td>${rrRatePct(row.mortality_qx, 3)}</td>
+          <td>${rrRatePct(row.disability_ix, 3)}</td>
+          <td>${rrSourceLabel(row.rate_source)}</td>
+          <td>${rrMoney(row.expected_loss)}</td>
+          <td>${rrRatePct(row.loss_ratio, 2)}</td>
         </tr>
       `).join('');
       const integrityKeys = Object.keys(ref.data_integrity || {}).filter(k => typeof ref.data_integrity[k] === 'boolean');
-      const integrityHtml = integrityKeys.map(k =>
-        `<li>${k}: ${ref.data_integrity[k] ? '' : ''}</li>`).join('');
+      const integrityHtml = integrityKeys.map(k => rrIntegrityItem(k, ref.data_integrity[k])).join('');
       // Optional savings accumulation block for the reference policyholder.
       let savingsHtml = '';
       const accum = ref.savings_accumulation;
@@ -6930,9 +6984,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         `).join('');
         const aTot = accum.totals || {};
         const aInt = accum.data_integrity || {};
-        const aIntHtml = Object.keys(aInt).map(k =>
-          `<li>${k}: ${aInt[k] ? '' : ''}</li>`
-        ).join('');
+        const aIntHtml = Object.keys(aInt).map(k => rrIntegrityItem(k, !!aInt[k])).join('');
         savingsHtml = `
           <h4 style="margin-top:20px;">Savings Accumulation (managed portfolio)</h4>
           <p style="color:var(--text-light);">Markup ${(accum.savings_rate * 100).toFixed(1)}% of risk premium · yield ${(accum.savings_yield_pct * 100).toFixed(2)}% · management fee ${(accum.management_fee_pct_of_aum * 100).toFixed(2)}%/yr.</p>
@@ -6957,18 +7009,25 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         `;
       }
 
+      const method = (ref.reference && ref.reference.rate_method) || '';
+      const tablesVersion = (ref.reference && ref.reference.tables_version) || '—';
       resultsEl.innerHTML = `
+        <div class="rr-headline">
+          <div class="rr-kicker">Risk reference</div>
+          <h3>Any attained age the kernel table covers</h3>
+          <p>${method}</p>
+        </div>
         <p>
-          Source: <a href="${ref.source.url}" target="_blank" rel="noopener noreferrer">${ref.source.document}</a> (${ref.source.version}, ${ref.source.doc_date}).
+          Source: <a href="${ref.source.url}" target="_blank" rel="noopener noreferrer">${ref.source.document}</a> (${ref.source.version}, ${ref.source.doc_date}). Kernel tables <code>${tablesVersion}</code>.
         </p>
         <div class="stats-grid">
           <div class="stat-card"><div class="stat-label">Life Sum</div><div class="stat-value">${fmtCurrency(ref.reference.life_sum)}</div></div>
           <div class="stat-card success"><div class="stat-label">Cumulative Premium</div><div class="stat-value">${fmtCurrency(totals.cumulative_premium)}</div></div>
-          <div class="stat-card warning"><div class="stat-label">Cumulative Expected Loss</div><div class="stat-value">${fmtCurrency(totals.cumulative_expected_loss)}</div></div>
-          <div class="stat-card"><div class="stat-label">Avg Loss Ratio</div><div class="stat-value">${(totals.average_loss_ratio * 100).toFixed(2)}%</div></div>
+          <div class="stat-card warning"><div class="stat-label">Cumulative Expected Loss</div><div class="stat-value">${rrMoney(totals.cumulative_expected_loss)}</div></div>
+          <div class="stat-card"><div class="stat-label">Avg Loss Ratio</div><div class="stat-value">${rrRatePct(totals.average_loss_ratio, 2)}</div></div>
         </div>
         <table class="data-table" style="margin-top:16px;">
-          <thead><tr><th>Year</th><th>Age</th><th>Age Factor</th><th>Annual Premium</th><th>q(x)</th><th>i(x)</th><th>Expected Loss</th><th>Loss Ratio</th></tr></thead>
+          <thead><tr><th>Year</th><th>Age</th><th>Age Factor</th><th>Life Sum</th><th>Disability Sum</th><th>Annual Premium</th><th>q(x)</th><th>i(x)</th><th>Rate source</th><th>Expected Loss</th><th>Loss Ratio</th></tr></thead>
           <tbody>${refRows}</tbody>
         </table>
         ${savingsHtml}
@@ -11993,6 +12052,31 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (row.kind === 'pct') return annualFmtPct(row.value);
       return annualEsc(String(row.value));
     }
+    function annualRevenueHeadline(center) {
+      const headlines = {
+        phins_unified: 'Adjustable life and disability',
+        phinsafe: 'Child catastrophe hedge',
+        health_wallet_supplier_margin: 'Health wallet margin',
+        investments_markup: 'Investments markup',
+        technology_sales: 'Technology sales',
+      };
+      return (center && headlines[center.id]) || (center && center.name) || 'Revenue center';
+    }
+    function annualRevenueState(code) {
+      const labels = {
+        bound: 'Bound snapshot',
+        not_bound: 'Not bound',
+        withheld: 'Withheld',
+        outline_only: 'Outline only',
+        not_issued: 'No financial statement',
+      };
+      return labels[code] || code || '';
+    }
+    function annualRevenueBadgeClass(code) {
+      if (code === 'bound') return 'rc-bound';
+      if (code === 'withheld') return 'rc-withheld';
+      return '';
+    }
     function annualRevenueCentersHtml(block, ccy) {
       const centers = (block && block.centers) || [];
       const method = (block && block.method) || '';
@@ -12000,20 +12084,51 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         return '<h4>B.7 Revenue centers</h4><p><em>Revenue-center outline is not available.</em></p>';
       }
       const cards = centers.map((center) => {
-        const figures = (center.figure_rows && center.figure_rows.length)
-          ? `<table><thead><tr><th>Published figure</th><th class="num">Value</th></tr></thead><tbody>${center.figure_rows.map((row) => `<tr><td>${annualEsc(row.label)}</td><td class="num">${annualRevenueValue(row, ccy)}</td></tr>`).join('')}</tbody></table>`
-          : '<p>No amount is published for this center.</p>';
+        const rows = center.figure_rows || [];
+        const numeric = rows.filter((row) => row.kind === 'money' || row.kind === 'count' || row.kind === 'pct');
+        const textRows = rows.filter((row) => numeric.indexOf(row) < 0);
+        const tiles = numeric.length
+          ? `<div class="rc-tiles">${numeric.map((row) => `<div class="rc-tile"><div class="rc-tile-label">${annualEsc(row.label)}</div><div class="rc-tile-value">${annualRevenueValue(row, ccy)}</div></div>`).join('')}</div>`
+          : '';
+        const meta = textRows.length
+          ? `<p class="rc-meta">${textRows.map((row) => `<strong>${annualEsc(row.label)}:</strong> ${annualRevenueValue(row, ccy)}`).join(' · ')}</p>`
+          : '';
+        const unpublished = numeric.length
+          ? ''
+          : '<div class="rc-unpublished"><strong>No amount is published for this center.</strong>Outline and forecast method only. This filing does not print a missing ledger as zero.</div>';
         const forecast = (center.forecast && center.forecast.length)
           ? `<table><thead><tr><th>Year</th><th>Age</th><th class="num">Premium</th><th class="num">Expected claims</th><th class="num">Savings</th></tr></thead><tbody>${center.forecast.map((row) => `<tr><td>${annualEsc(row.year)}</td><td>${annualEsc(row.age)}</td><td class="num">${row.premium == null ? '' : annualFmtMoney(row.premium, ccy)}</td><td class="num">${row.expected_claims == null ? '' : annualFmtMoney(row.expected_claims, ccy)}</td><td class="num">${row.savings == null ? '' : annualFmtMoney(row.savings, ccy)}</td></tr>`).join('')}</tbody></table>`
           : '';
-        return `<h5>${annualEsc(center.name)}</h5>
-          <p><strong>Reporting:</strong> ${annualEsc(center.reporting || '')}. <strong>Financial reporting:</strong> ${annualEsc(center.financial_reporting || '')}. This center does not issue a financial statement.</p>
-          <p>${annualEsc(center.outline || '')}</p>
-          <p><strong>Forecast.</strong> ${annualEsc(center.forecast_method || '')}</p>
-          ${figures}
-          ${forecast}`;
+        const reporting = center.reporting || '';
+        const financial = center.financial_reporting || '';
+        return `<article class="rc-statement">
+          <header class="rc-head">
+            <div class="rc-kicker">Revenue center</div>
+            <h5>${annualEsc(annualRevenueHeadline(center))}</h5>
+            <div class="rc-legal">${annualEsc(center.name || '')}. This center does not issue a financial statement.</div>
+            <div class="rc-badges">
+              <span class="rc-badge ${annualRevenueBadgeClass(reporting)}">${annualEsc(annualRevenueState(reporting))}</span>
+              <span class="rc-badge ${annualRevenueBadgeClass(financial)}">${annualEsc(annualRevenueState(financial))}</span>
+            </div>
+          </header>
+          <div class="rc-body">
+            <p class="rc-outline">${annualEsc(center.outline || '')}</p>
+            <p><strong>Forecast.</strong> ${annualEsc(center.forecast_method || '')}</p>
+            ${meta}
+            ${tiles}
+            ${unpublished}
+            ${forecast}
+          </div>
+        </article>`;
       }).join('');
-      return `<h4>B.7 Revenue centers</h4><p>${annualEsc(method)}</p>${cards}`;
+      return `<div class="rc-deck">
+        <div class="rc-section-head">
+          <p class="rc-section-kicker">Statement outline</p>
+          <h4>B.7 Revenue centers</h4>
+          <p class="rc-method">${annualEsc(method)}</p>
+        </div>
+        ${cards}
+      </div>`;
     }
     function annualMoneyTable(rows, ccy, lastBold) {
       const body = rows.map((r, ix) => {
@@ -13057,6 +13172,24 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           .exec-tile-navy .exec-tile-value { color: #0e2f63; }
           .exec-badges { margin-top: 10px; font-size: 0.8rem; }
           .filing-badge { display: inline-block; background: #0e2f63; color: #eaf1ff; padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; margin-right: 4px; margin-bottom: 4px; }
+          .rc-deck { margin: 14px 0 8px; }
+          .rc-section-kicker { font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: #c9a04e; font-weight: 700; margin: 0; }
+          .rc-method { background: #f7fafc; border-left: 3px solid #0e2f63; padding: 8px 12px; margin: 0 0 12px; }
+          .rc-statement { border: 1px solid #d7e2f0; border-radius: 10px; overflow: hidden; margin: 0 0 14px; break-inside: avoid; }
+          .rc-head { background: #0e2f63; color: #eaf1ff; padding: 12px 14px; }
+          .rc-head h5 { color: #fff; margin: 2px 0 0; font-size: 1.05rem; }
+          .rc-kicker { color: #f7e2a0; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; }
+          .rc-legal { color: #c5d4ee; font-size: 0.8rem; }
+          .rc-badge { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid #f7e2a0; color: #f7e2a0; margin-right: 6px; }
+          .rc-badge.rc-bound { background: #2f855a; color: #fff; border-color: #2f855a; }
+          .rc-badge.rc-withheld { background: #c53030; color: #fff; border-color: #c53030; }
+          .rc-body { padding: 12px 14px; }
+          .rc-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0; }
+          .rc-tile { background: #f8fbff; border: 1px solid #e2e8f0; border-top: 3px solid #c9a04e; border-radius: 8px; padding: 8px 10px; }
+          .rc-tile-label { font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase; color: #5b6b82; }
+          .rc-tile-value { font-size: 1rem; font-weight: 700; color: #0e2f63; }
+          .rc-unpublished { background: #fffaf0; border: 1px dashed #c9a04e; border-radius: 8px; padding: 12px 14px; color: #744210; }
+          .rc-unpublished strong { display: block; color: #0e2f63; }
           .integrity-ok { color: #2f855a; font-weight: 700; }
           .integrity-bad { color: #c53030; font-weight: 700; }
           @media (max-width: 720px) { .exec-tiles { grid-template-columns: repeat(2, 1fr); } }
@@ -13132,7 +13265,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (p.statements.critical_estimates) sections.push(section('Critical Accounting Estimates', ['Estimate', 'Method'], p.statements.critical_estimates.map(c => [c.label, c.method])));
       if (p.statements.revenue_centers) {
         const rc = p.statements.revenue_centers;
-        sections.push(section('Revenue Centers (B.7)', ['Id', 'Name', 'Kind', 'Reporting', 'FinancialReporting', 'FinancialStatement', 'Outline', 'ForecastMethod'], (rc.centers || []).map(c => [c.id, c.name, c.kind, c.reporting, c.financial_reporting, c.financial_statement ? 'yes' : 'no', c.outline, c.forecast_method])));
+        sections.push(section('Revenue Centers (B.7)', ['Id', 'Headline', 'Name', 'Kind', 'Reporting', 'FinancialReporting', 'FinancialStatement', 'Outline', 'ForecastMethod'], (rc.centers || []).map(c => [c.id, annualRevenueHeadline(c), c.name, c.kind, c.reporting, c.financial_reporting, c.financial_statement ? 'yes' : 'no', c.outline, c.forecast_method])));
         const figureRows = [];
         (rc.centers || []).forEach(c => (c.figure_rows || []).forEach(row => figureRows.push([c.id, row.label, row.kind, row.value])));
         sections.push(section('Revenue Center Figures (published snapshots only)', ['Center', 'Field', 'Kind', 'Value'], figureRows));
@@ -13422,7 +13555,23 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         subHeading('B.7 Revenue centers');
         paragraph(revenueBlock.method || '');
         for (const center of revenueBlock.centers) {
-          paragraph(center.name + '. Reporting: ' + (center.reporting || '') + '. Financial reporting: ' + (center.financial_reporting || '') + '. This center does not issue a financial statement.');
+          const bandH = 46;
+          if (y + bandH + 28 > pageH - margin) { doc.addPage(); y = margin; }
+          const bandW = pageW - margin * 2;
+          doc.setFillColor(...NAVY);
+          doc.roundedRect(margin, y, bandW, bandH, 4, 4, 'F');
+          doc.setFillColor(...GOLD);
+          doc.rect(margin, y, 4, bandH, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(7.5);
+          doc.setTextColor(...GOLD_STRONG);
+          doc.text('REVENUE CENTER', margin + 14, y + 14);
+          doc.setFontSize(13);
+          doc.setTextColor(255, 255, 255);
+          doc.text(annualRevenueHeadline(center), margin + 14, y + 32);
+          y += bandH + 10;
+          doc.setTextColor(...INK);
+          paragraph(center.name + ' · ' + annualRevenueState(center.reporting) + ' · ' + annualRevenueState(center.financial_reporting) + '. This center does not issue a financial statement.');
           paragraph(center.outline || '');
           paragraph('Forecast. ' + (center.forecast_method || ''));
           if (center.figure_rows && center.figure_rows.length) {

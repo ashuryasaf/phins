@@ -171,6 +171,9 @@ def test_dashboard_wires_phinsafe_downloads_and_revenue_centers():
     assert 'PhinSafe rider' in html
     assert 'B.7 Revenue centers' in html
     assert 'annualRevenueCentersHtml' in html
+    assert 'rc-statement' in html
+    assert 'annualRevenueHeadline' in html
+    assert 'No amount is published for this center.' in html
     assert 'buildRevenueCenters' in html
     assert 'Revenue Centers (B.7)' in html
     assert 'Pipeline: ${bound}/4 simulation sources bound' in html

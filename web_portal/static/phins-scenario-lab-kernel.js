@@ -4,6 +4,10 @@
  * Same product, same published tables, same pinned FX as
  * services/aspire_scale_identity.py (quote_market). Lives-mode annual
  * premium is this quote.
+ * Incidence q(x) and i(x) are not priced here. Ages 35–39 stay on the
+ * locked profile; every other age is the kernel bracket in
+ * risk-reference-rates.js and build_risk_reference. This file does not
+ * reprice the Israel book.
  * Public evidence is never rewritten.
  * ==========================================================================*/
 (function (root) {

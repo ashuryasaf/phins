@@ -108,6 +108,154 @@ def test_risk_reference_is_modular_for_any_age_term_lifesum():
     assert ref['data_integrity']['cumulative_loss_check']
 
 
+def test_risk_reference_kernel_rates_cover_any_age():
+    """Published ages stay locked. Every other covered age uses the kernel bracket.
+
+    The age curve is not applied a second time. An age outside every bracket
+    is withheld instead of printed as a zero loss.
+    """
+    store = get_actuarial_store()
+    tables = store.get_current_tables()
+    saved_m = list(tables.get('mortality_rates') or [])
+    saved_d = list(tables.get('disability_incidence_rates') or [])
+    default_m = [
+        {'age_min': 0, 'age_max': 30, 'rate_per_1000': 0.5},
+        {'age_min': 30, 'age_max': 40, 'rate_per_1000': 1.2},
+        {'age_min': 40, 'age_max': 50, 'rate_per_1000': 2.5},
+        {'age_min': 50, 'age_max': 60, 'rate_per_1000': 5.0},
+        {'age_min': 60, 'age_max': 70, 'rate_per_1000': 12.0},
+        {'age_min': 70, 'age_max': 80, 'rate_per_1000': 30.0},
+        {'age_min': 80, 'age_max': 120, 'rate_per_1000': 75.0},
+    ]
+    default_d = [
+        {'age_min': 0, 'age_max': 30, 'rate_per_1000': 2.0},
+        {'age_min': 30, 'age_max': 40, 'rate_per_1000': 4.0},
+        {'age_min': 40, 'age_max': 50, 'rate_per_1000': 8.0},
+        {'age_min': 50, 'age_max': 60, 'rate_per_1000': 15.0},
+        {'age_min': 60, 'age_max': 70, 'rate_per_1000': 30.0},
+        {'age_min': 70, 'age_max': 80, 'rate_per_1000': 50.0},
+        {'age_min': 80, 'age_max': 120, 'rate_per_1000': 80.0},
+    ]
+    locked_q = {35: 0.00133, 36: 0.00141, 37: 0.00150, 38: 0.00160, 39: 0.00171}
+    locked_i = {35: 0.00450, 36: 0.00468, 37: 0.00487, 38: 0.00507, 39: 0.00528}
+    try:
+        tables['mortality_rates'] = default_m
+        tables['disability_incidence_rates'] = default_d
+
+        published = build_risk_reference()
+        for row in published['yearly_projection']:
+            assert row['mortality_qx'] == locked_q[row['age']]
+            assert row['disability_ix'] == locked_i[row['age']]
+            assert row['rate_source'] == 'published_profile'
+            assert row['expected_loss'] > 0
+        assert published['data_integrity']['published_ages_match_locked_profile'] is True
+        assert published['data_integrity']['rates_resolved_for_every_age'] is True
+        assert published['data_integrity']['kernel_rates_match_bracket_identity'] is True
+
+        mixed = build_risk_reference(start_age=30, projection_years=10)
+        for row in mixed['yearly_projection']:
+            if row['age'] < 35:
+                assert row['rate_source'] == 'kernel_table'
+                assert row['mortality_qx'] == 0.0012
+                assert row['disability_ix'] == 0.0040
+            else:
+                assert row['rate_source'] == 'published_profile'
+                assert row['mortality_qx'] == locked_q[row['age']]
+        assert mixed['data_integrity']['kernel_rates_match_bracket_identity'] is True
+        assert mixed['data_integrity']['rates_resolved_for_every_age'] is True
+
+        age42 = build_risk_reference(start_age=42, projection_years=1)['yearly_projection'][0]
+        premium42 = risk_reference_monthly_premiums(42)
+        assert age42['mortality_qx'] == 0.0025
+        assert age42['disability_ix'] == 0.008
+        assert age42['rate_source'] == 'kernel_table'
+        assert age42['annual_premium'] == premium42['annual_premium']
+        assert abs(age42['mortality_qx'] - 0.0025 * premium42['age_factor']) > 1e-6
+        assert age42['life_sum'] == premium42['life_sum']
+        assert age42['disability_sum'] == premium42['disability_sum']
+        assert age42['expected_loss'] == round(
+            0.0025 * age42['life_sum'] + 0.008 * age42['disability_sum'] * 0.55, 2
+        )
+
+        age70 = build_risk_reference(start_age=70, projection_years=1)['yearly_projection'][0]
+        premium70 = risk_reference_monthly_premiums(70)
+        assert age70['mortality_qx'] == 0.030
+        assert age70['disability_ix'] == 0.050
+        assert age70['life_sum'] == premium70['life_sum']
+        assert age70['disability_sum'] == premium70['disability_sum']
+        assert age70['life_monthly'] == premium70['life_monthly']
+        assert age70['expected_loss'] == round(
+            0.030 * age70['life_sum'] + 0.050 * age70['disability_sum'] * 0.55, 2
+        )
+
+        tables['mortality_rates'] = [{'age_min': 0, 'age_max': 30, 'rate_per_1000': 0.5}]
+        missing = build_risk_reference(start_age=42, projection_years=1)
+        row = missing['yearly_projection'][0]
+        assert row['mortality_qx'] is None
+        assert row['mortality_rate_source'] == 'unavailable'
+        assert row['expected_loss'] is None
+        assert row['loss_ratio'] is None
+        assert missing['data_integrity']['rates_resolved_for_every_age'] is False
+        assert missing['data_integrity']['cumulative_loss_check'] is False
+        assert missing['totals']['cumulative_expected_loss'] is None
+        still = build_risk_reference(start_age=35, projection_years=1)['yearly_projection'][0]
+        assert still['mortality_qx'] == 0.00133
+        assert still['rate_source'] == 'published_profile'
+        assert still['expected_loss'] is not None
+    finally:
+        tables['mortality_rates'] = saved_m
+        tables['disability_incidence_rates'] = saved_d
+
+
+def test_presentation_rates_match_kernel_brackets():
+    """Fefferman and Goldsobel share the same lookup as the kernel brackets."""
+    import os
+    import subprocess
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    script = os.path.join(root, 'web_portal', 'static', 'risk-reference-rates.js')
+    node = r'''
+const fs = require('fs');
+const vm = require('vm');
+const sandbox = { window: {} };
+vm.createContext(sandbox);
+vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), sandbox);
+const rates = sandbox.window.phinsReferenceRates;
+const model = {
+  mortality: { 35: 0.00133, 36: 0.00141, 37: 0.00150, 38: 0.00160, 39: 0.00171 },
+  disabilityIncidence: { 35: 0.00450, 36: 0.00468, 37: 0.00487, 38: 0.00507, 39: 0.00528 },
+};
+process.stdout.write(JSON.stringify({
+  a35: rates(35, model),
+  a42: rates(42, model),
+  a70: rates(70, model),
+  a200: rates(200, model),
+}));
+'''
+    proc = subprocess.run(
+        ['node', '-e', node, script],
+        check=True, capture_output=True, text=True,
+    )
+    out = json.loads(proc.stdout)
+    assert out['a35']['qx'] == 0.00133
+    assert out['a35']['ix'] == 0.00450
+    assert out['a35']['source'] == 'published_profile'
+    assert out['a42']['qx'] == 0.0025
+    assert out['a42']['ix'] == 0.008
+    assert out['a42']['source'] == 'kernel_table'
+    assert out['a70']['qx'] == 0.030
+    assert out['a70']['ix'] == 0.050
+    assert out['a200']['qx'] is None
+    assert out['a200']['source'] == 'unavailable'
+    for fname in (
+        'phins-risk-1pager-fefferman.html',
+        'phins-risk-1pager-goldsobel.html',
+    ):
+        html = open(os.path.join(root, 'web_portal', 'static', fname), encoding='utf-8').read()
+        assert '/risk-reference-rates.js' in html
+        assert 'phinsReferenceRates' in html
+        assert 'never shown as zero' in html
+
+
 def test_reserve_calculator_waterfall_consistency():
     sim = _tiny_simulation()
     cfg = _coerce_reserve_config({
