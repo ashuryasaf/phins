@@ -23,6 +23,9 @@ from services.actuarial_service import (
     _coerce_reserve_config,
     apply_savings_allocation,
     build_risk_reference,
+    curtate_life_expectancy,
+    get_risk_reference_profile,
+    resolve_reference_incidence,
     risk_reference_age_factor,
     risk_reference_monthly_premiums,
     get_portfolio_simulator,
@@ -159,6 +162,118 @@ def test_risk_reference_cover_scales_with_chosen_face():
     assert 'bindRiskCoverControls' in dashboard
     assert 'ref.reference.face_amount' in dashboard
     assert 'value="500000"' in dashboard
+
+
+def test_curtate_life_expectancy_sums_survival_and_withholds():
+    """e_x is the sum of survival probabilities. A hole in q(x) is withheld."""
+    def flat(_age):
+        return 0.1
+
+    assert curtate_life_expectancy(40, flat, 42, 1.0) == round(0.9 + 0.81 + 0.729, 4)
+    assert curtate_life_expectancy(40, flat, 42, 2.0) == round(0.8 + 0.64 + 0.512, 4)
+
+    def hole(age):
+        return None if age == 41 else 0.1
+
+    assert curtate_life_expectancy(40, hole, 42, 1.0) is None
+    assert curtate_life_expectancy(40, flat, None, 1.0) is None
+
+
+def test_risk_reference_age_map_matches_tariff_and_disability_expectancy():
+    """The age map is the one-year tariff. Disability years use ADL 10."""
+    ref = build_risk_reference(start_age=35, projection_years=1)
+    age_map = ref['age_map']
+    assert age_map['face_amount'] == 500_000.0
+    assert age_map['age_min'] == 20
+    assert age_map['age_max'] == 85
+    assert age_map['disability_adl'] == 10
+    assert age_map['disability_mortality_multiplier'] == 1.8
+    assert age_map['terminal_age'] == 119
+    by_age = {row['age']: row for row in age_map['rows']}
+    assert set(by_age) == set(range(20, 86))
+
+    published = ref['yearly_projection'][0]
+    row35 = by_age[35]
+    assert row35['annual_premium'] == published['annual_premium']
+    assert row35['expected_loss'] == published['expected_loss']
+    assert row35['mortality_qx'] == 0.00133
+    assert row35['disability_ix'] == 0.00450
+    assert row35['rate_source'] == 'published_profile'
+
+    row42 = by_age[42]
+    one42 = build_risk_reference(start_age=42, projection_years=1)['yearly_projection'][0]
+    assert row42['mortality_qx'] == 0.0025
+    assert row42['disability_ix'] == 0.008
+    assert row42['annual_premium'] == one42['annual_premium']
+    assert row42['expected_loss'] == one42['expected_loss']
+    assert row42['rate_source'] == 'kernel_table'
+
+    premium65 = risk_reference_monthly_premiums(65)
+    assert by_age[65]['annual_premium'] == premium65['annual_premium']
+    assert abs(premium65['life_monthly'] - 50.0) < 0.01
+    assert abs(premium65['disability_monthly'] - 40.0) < 0.01
+    assert by_age[65]['life_sum'] == 125000.0
+    assert by_age[64]['life_sum'] == 500000.0
+
+    row70 = by_age[70]
+    one70 = build_risk_reference(start_age=70, projection_years=1)['yearly_projection'][0]
+    assert row70['expected_loss'] == one70['expected_loss']
+    assert row70['annual_premium'] == one70['annual_premium']
+    assert row70['life_sum'] == 125000.0
+    assert row70['disability_sum'] == 125000.0
+
+    profile = get_risk_reference_profile()
+    tables = get_actuarial_store().get_current_tables()
+    mort = list(tables.get('mortality_rates') or [])
+    dis = list(tables.get('disability_incidence_rates') or [])
+
+    def qx_at(age):
+        return resolve_reference_incidence(age, profile, mort, dis)['mortality_qx']
+
+    assert row70['healthy_curtate_expectancy'] == curtate_life_expectancy(
+        70, qx_at, age_map['terminal_age'], 1.0
+    )
+    assert row70['disability_curtate_expectancy'] == curtate_life_expectancy(
+        70, qx_at, age_map['terminal_age'], 1.8
+    )
+    assert row70['disability_curtate_expectancy'] < row70['healthy_curtate_expectancy']
+    assert all(flag is True for flag in age_map['data_integrity'].values())
+
+    doubled = build_risk_reference(start_age=35, projection_years=1, life_sum=1_000_000)
+    d35 = {row['age']: row for row in doubled['age_map']['rows']}[35]
+    assert abs(d35['annual_premium'] - row35['annual_premium'] * 2) < 1.0
+    assert abs(d35['expected_loss'] - row35['expected_loss'] * 2) < 0.05
+    assert d35['mortality_qx'] == row35['mortality_qx']
+    assert d35['disability_ix'] == row35['disability_ix']
+    assert d35['healthy_curtate_expectancy'] == row35['healthy_curtate_expectancy']
+    assert d35['disability_curtate_expectancy'] == row35['disability_curtate_expectancy']
+
+    saved = list(tables.get('mortality_rates') or [])
+    try:
+        tables['mortality_rates'] = [{'age_min': 0, 'age_max': 30, 'rate_per_1000': 0.5}]
+        broken = build_risk_reference(start_age=42, projection_years=1)['age_map']['rows']
+        broken_by_age = {row['age']: row for row in broken}
+        assert broken_by_age[42]['mortality_qx'] is None
+        assert broken_by_age[42]['expected_loss'] is None
+        assert broken_by_age[42]['healthy_curtate_expectancy'] is None
+        assert broken_by_age[42]['disability_curtate_expectancy'] is None
+        assert broken_by_age[35]['mortality_qx'] == 0.00133
+        assert broken_by_age[35]['healthy_curtate_expectancy'] is None
+    finally:
+        tables['mortality_rates'] = saved
+
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    dashboard = open(
+        os.path.join(root, 'web_portal', 'static', 'actuary-dashboard.html'),
+        encoding='utf-8',
+    ).read()
+    assert 'id="rr-chart-loss"' in dashboard
+    assert 'id="rr-chart-prob"' in dashboard
+    assert 'id="rr-chart-le"' in dashboard
+    assert 'drawRiskReferenceCharts' in dashboard
+    assert 'healthy_curtate_expectancy' in dashboard
+    assert 'disability_curtate_expectancy' in dashboard
 
 
 def test_risk_reference_kernel_rates_cover_any_age():

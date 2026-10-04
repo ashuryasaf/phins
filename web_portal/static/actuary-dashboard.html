@@ -1191,6 +1191,10 @@
     .rr-cover-row { display: grid; grid-template-columns: minmax(180px, 1fr) 180px; gap: 12px; align-items: center; }
     .rr-cover-slider { width: 100%; height: 28px; accent-color: #c9a04e; cursor: pointer; }
     .rr-cover-note { margin: 8px 0 0; color: var(--text-light); font-size: 0.85rem; }
+    .rr-chart-card { margin-top: 16px; border: 1px solid var(--border); border-radius: 10px; padding: 12px 12px 8px; }
+    .rr-chart-card h4 { margin: 0 0 4px; font-size: 0.98rem; }
+    .rr-chart-card p { margin: 0 0 8px; color: var(--text-light); font-size: 0.82rem; }
+    .rr-chart-wrap { position: relative; height: 280px; }
     @media (max-width: 720px) { .rr-cover-row { grid-template-columns: 1fr; } }
     .annual-report-preview .integrity-ok { color: #2f855a; font-weight: 700; }
     .annual-report-preview .integrity-bad { color: #c53030; font-weight: 700; }
@@ -4510,6 +4514,15 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           && (!annuityReserveChart || !annuityVsDepositsChart)) {
         renderAnnuityReserveForecast(annuityReserveLastResponse);
       }
+      if (sectionId === 'risk-reference') {
+        if (typeof Chart !== 'undefined' && riskReferenceLast && !rrLossChart) {
+          drawRiskReferenceCharts(riskReferenceLast);
+        } else {
+          [rrLossChart, rrProbChart, rrLeChart].forEach((chart) => {
+            if (chart) chart.resize();
+          });
+        }
+      }
       if (sectionId === 'ltc-life-research' && window.PhinsLtcLifeResearch) {
         window.PhinsLtcLifeResearch.load();
       }
@@ -7014,8 +7027,107 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         : '<span class="rr-fail">FAIL</span>';
       return `<li>${name}: ${mark}</li>`;
     }
+    let riskReferenceLast = null;
+    let rrLossChart = null;
+    let rrProbChart = null;
+    let rrLeChart = null;
+
+    function destroyRiskReferenceCharts() {
+      [rrLossChart, rrProbChart, rrLeChart].forEach((chart) => {
+        if (chart) chart.destroy();
+      });
+      rrLossChart = null;
+      rrProbChart = null;
+      rrLeChart = null;
+    }
+
+    function rrChartNumber(value) {
+      if (value == null || value === '') return null;
+      const n = Number(value);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function drawRiskReferenceCharts(ref) {
+      destroyRiskReferenceCharts();
+      const map = ref && ref.age_map;
+      if (!map || !Array.isArray(map.rows) || typeof Chart === 'undefined') return;
+      const labels = map.rows.map((row) => String(row.age));
+      const lossCanvas = document.getElementById('rr-chart-loss');
+      const probCanvas = document.getElementById('rr-chart-prob');
+      const leCanvas = document.getElementById('rr-chart-le');
+      const moneyTick = (value) => fmtCurrency(value);
+      const pctTick = (value) => (Number(value) * 100).toFixed(2) + '%';
+      const line = (label, data, color) => ({
+        label,
+        data,
+        borderColor: color,
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0,
+        spanGaps: false,
+      });
+      const baseOptions = (yTitle, yTick, tip) => ({
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom' },
+          tooltip: { mode: 'index', intersect: false, callbacks: { label: tip } },
+        },
+        scales: {
+          x: { title: { display: true, text: 'Age' }, ticks: { maxTicksLimit: 14 } },
+          y: { title: { display: true, text: yTitle }, ticks: yTick ? { callback: yTick } : {} },
+        },
+      });
+      if (lossCanvas) {
+        rrLossChart = new Chart(lossCanvas, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              line('Annual premium', map.rows.map((row) => rrChartNumber(row.annual_premium)), '#0e2f63'),
+              line('Expected loss', map.rows.map((row) => rrChartNumber(row.expected_loss)), '#c9a04e'),
+            ],
+          },
+          options: baseOptions('One-year amount', moneyTick, (ctx) => ` ${ctx.dataset.label}: ${fmtCurrency(ctx.parsed.y)}`),
+        });
+      }
+      if (probCanvas) {
+        rrProbChart = new Chart(probCanvas, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              line('Mortality q(x)', map.rows.map((row) => rrChartNumber(row.mortality_qx)), '#0e2f63'),
+              line('Disability i(x)', map.rows.map((row) => rrChartNumber(row.disability_ix)), '#c45c26'),
+            ],
+          },
+          options: baseOptions('Probability', pctTick, (ctx) => ` ${ctx.dataset.label}: ${pctTick(ctx.parsed.y)}`),
+        });
+      }
+      if (leCanvas) {
+        rrLeChart = new Chart(leCanvas, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              line('Curtate years on pricing q(x)', map.rows.map((row) => rrChartNumber(row.healthy_curtate_expectancy)), '#0e2f63'),
+              line('Curtate years if disabled (ADL 10)', map.rows.map((row) => rrChartNumber(row.disability_curtate_expectancy)), '#c9a04e'),
+            ],
+          },
+          options: baseOptions(
+            'Curtate years',
+            null,
+            (ctx) => ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toFixed(2)} years`,
+          ),
+        });
+      }
+    }
+
     function renderRiskReference(ref) {
       const resultsEl = document.getElementById('risk-reference-results');
+      destroyRiskReferenceCharts();
+      riskReferenceLast = ref || null;
       if (!ref) { resultsEl.innerHTML = '<p>No data.</p>'; return; }
       const totals = ref.totals || {};
       const refRows = (ref.yearly_projection || []).map((row) => `
@@ -7082,6 +7194,20 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const tablesVersion = (ref.reference && ref.reference.tables_version) || '—';
       const face = ref.reference.face_amount;
       const bandAge = ref.reference.disability_band_age || 65;
+      const map = ref.age_map || null;
+      const mult = map ? map.disability_mortality_multiplier : null;
+      const multNote = mult == null
+        ? 'The ADL 10 mortality multiplier is not on the live table, so disability life expectancy is withheld.'
+        : `Disability life expectancy multiplies q(x) by ${Number(mult).toFixed(2)}, the ADL ${map.disability_adl} factor on the live table, and caps the product at 1.`;
+      const mapIntegrity = map
+        ? Object.keys(map.data_integrity || {}).filter((key) => typeof map.data_integrity[key] === 'boolean').map((key) => rrIntegrityItem(key, map.data_integrity[key])).join('')
+        : '<li>age map: <span class="rr-fail">FAIL</span></li>';
+      const mapAt = (age) => (map && map.rows || []).find((row) => row.age === age) || null;
+      const map35 = mapAt(35);
+      const map70 = mapAt(70);
+      const mapAnchor = (map35 && map70)
+        ? `Age 35: premium ${fmtCurrency(map35.annual_premium)}, expected loss ${rrMoney(map35.expected_loss)}, q(x) ${rrRatePct(map35.mortality_qx, 3)}, i(x) ${rrRatePct(map35.disability_ix, 3)}, curtate years if disabled ${map35.disability_curtate_expectancy == null ? '—' : Number(map35.disability_curtate_expectancy).toFixed(2)}. Age 70: premium ${fmtCurrency(map70.annual_premium)}, expected loss ${rrMoney(map70.expected_loss)}, q(x) ${rrRatePct(map70.mortality_qx, 3)}, i(x) ${rrRatePct(map70.disability_ix, 3)}, curtate years if disabled ${map70.disability_curtate_expectancy == null ? '—' : Number(map70.disability_curtate_expectancy).toFixed(2)}.`
+        : '';
       resultsEl.innerHTML = `
         <div class="rr-headline">
           <div class="rr-kicker">Risk reference</div>
@@ -7106,9 +7232,34 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           <tbody>${refRows}</tbody>
         </table>
         ${savingsHtml}
+        <h4 style="margin-top:16px;">Age map on this risk cover</h4>
+        <p style="color:var(--text-light);">
+          ${map ? map.method : 'The age map is not on this response.'}
+          ${multNote}
+          Ages ${map ? map.age_min : '—'}–${map ? map.age_max : '—'}. The table above remains the selected projection.
+          ${mapAnchor}
+        </p>
+        <div class="rr-chart-card">
+          <h4>Age vs premium and expected loss</h4>
+          <p>One-year annual premium and expected loss at each age, on risk cover ${fmtCurrency(face)}.</p>
+          <div class="rr-chart-wrap"><canvas id="rr-chart-loss"></canvas></div>
+        </div>
+        <div class="rr-chart-card">
+          <h4>Mortality and disability probabilities</h4>
+          <p>q(x) and i(x) from the same source as the table. A missing rate is a gap.</p>
+          <div class="rr-chart-wrap"><canvas id="rr-chart-prob"></canvas></div>
+        </div>
+        <div class="rr-chart-card">
+          <h4>Life expectancy if disabled</h4>
+          <p>Curtate years. The gold line is survival under q(x) times the ADL 10 mortality multiplier. The navy line is the same q(x) with no multiplier.</p>
+          <div class="rr-chart-wrap"><canvas id="rr-chart-le"></canvas></div>
+        </div>
+        <h4 style="margin-top:16px;">Age-map integrity</h4>
+        <ul>${mapIntegrity}</ul>
         <h4 style="margin-top:16px;">Data Integrity</h4>
         <ul>${integrityHtml}</ul>
       `;
+      drawRiskReferenceCharts(ref);
     }
 
     // =====================================================================
