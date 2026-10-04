@@ -21416,30 +21416,9 @@ For claims or questions, please contact:
             try:
                 from services.actuarial_service import (
                     build_risk_reference, list_risk_reference_profiles,
+                    risk_reference_query_kwargs,
                 )
-                start_age_raw = qs.get('start_age', [None])[0]
-                years_raw = qs.get('projection_years', [None])[0]
-                life_raw = qs.get('life_sum', [None])[0]
-                profile_id = (qs.get('profile_id', [None])[0] or None)
-
-                def _opt_float(name):
-                    raw = qs.get(name, [None])[0]
-                    if raw is None or raw == '':
-                        return None
-                    try:
-                        return float(raw)
-                    except (TypeError, ValueError):
-                        return None
-
-                reference = build_risk_reference(
-                    start_age=int(start_age_raw) if start_age_raw else None,
-                    projection_years=int(years_raw) if years_raw else None,
-                    life_sum=float(life_raw) if life_raw else None,
-                    profile_id=profile_id,
-                    savings_rate=_opt_float('savings_rate'),
-                    savings_yield_pct=_opt_float('savings_yield_pct'),
-                    management_fee_pct_of_aum=_opt_float('management_fee_pct_of_aum'),
-                )
+                reference = build_risk_reference(**risk_reference_query_kwargs(qs))
                 payload: Dict[str, Any] = {
                     'success': True,
                     'reference': reference,
@@ -21451,6 +21430,35 @@ For claims or questions, please contact:
                     )
                 self._set_json_headers()
                 self.wfile.write(json.dumps(payload).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/actuarial/risk-reference/pdf':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.actuarial_service import (
+                    build_risk_reference, risk_reference_query_kwargs,
+                )
+                from services.risk_reference_pdf import (
+                    render_risk_reference_pdf, risk_reference_document_hash,
+                )
+                reference = build_risk_reference(**risk_reference_query_kwargs(qs))
+                filename, body_bytes = render_risk_reference_pdf(reference)
+                digest = risk_reference_document_hash(reference)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/pdf')
+                self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+                self.send_header('X-Phins-Risk-Reference-Hash', digest)
+                self.send_header('Content-Length', str(len(body_bytes)))
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.send_header('Cache-Control', 'no-store')
+                self.end_headers()
+                self.wfile.write(body_bytes)
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
