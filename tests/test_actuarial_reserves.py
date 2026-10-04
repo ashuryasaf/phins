@@ -10,10 +10,14 @@ These tests are unit-style so they do not depend on the embedded HTTP server.
 
 from __future__ import annotations
 
+import copy
+import io
 import json
+import os
 import threading
 import time
 from http.server import HTTPServer
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import web_portal.server as portal
@@ -28,10 +32,15 @@ from services.actuarial_service import (
     resolve_reference_incidence,
     risk_reference_age_factor,
     risk_reference_monthly_premiums,
+    risk_reference_query_kwargs,
     get_portfolio_simulator,
     get_actuarial_store,
     normalize_uploaded_rate_table,
     apply_uploaded_table_to_store,
+)
+from services.risk_reference_pdf import (
+    render_risk_reference_pdf,
+    risk_reference_document_hash,
 )
 
 
@@ -375,6 +384,84 @@ def test_risk_reference_kernel_rates_cover_any_age():
         tables['disability_incidence_rates'] = saved_d
 
 
+def _pdf_text(pdf_bytes: bytes) -> str:
+    from pypdf import PdfReader
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    return '\n'.join(page.extract_text() or '' for page in reader.pages)
+
+
+def test_risk_reference_pdf_restates_the_forecast_and_hash():
+    """The PDF copies the forecast. A missing loss is withheld, not zero."""
+    ref = build_risk_reference(start_age=35, projection_years=5, life_sum=500_000)
+    digest = risk_reference_document_hash(ref)
+    assert digest == risk_reference_document_hash(copy.deepcopy(ref))
+    filename, pdf = render_risk_reference_pdf(ref)
+    assert filename == 'phins-risk-reference.pdf'
+    assert pdf.startswith(b'%PDF')
+    text = _pdf_text(pdf)
+    flat = ''.join(text.split())
+    assert digest in flat
+    assert '$2,070.00' in text
+    assert '$974.38' in text
+    assert '38.92' in text
+    assert '$1,248.75' in text
+    assert '11.13' in text
+    assert 'PASS' in text
+    from pypdf import PdfReader
+    assert PdfReader(io.BytesIO(pdf)).metadata.subject == digest
+
+    doubled = build_risk_reference(start_age=35, projection_years=5, life_sum=1_000_000)
+    doubled_hash = risk_reference_document_hash(doubled)
+    assert doubled_hash != digest
+    _name, doubled_pdf = render_risk_reference_pdf(doubled)
+    doubled_text = _pdf_text(doubled_pdf)
+    assert '$4,140.00' in doubled_text
+    assert '38.92' in doubled_text
+    assert '11.13' in doubled_text
+    assert doubled_hash in ''.join(doubled_text.split())
+
+    withheld = copy.deepcopy(ref)
+    withheld['yearly_projection'][0]['expected_loss'] = None
+    withheld['yearly_projection'][0]['mortality_qx'] = None
+    withheld['yearly_projection'][0]['loss_ratio'] = None
+    withheld['totals']['cumulative_expected_loss'] = None
+    withheld['totals']['average_loss_ratio'] = None
+    for row in withheld['age_map']['rows']:
+        if row['age'] == 35:
+            row['expected_loss'] = None
+            row['mortality_qx'] = None
+    _name, gap_pdf = render_risk_reference_pdf(withheld)
+    gap_text = _pdf_text(gap_pdf)
+    assert 'withheld' in gap_text
+    assert '$974.38' not in gap_text
+    assert '$0.00' not in gap_text
+    assert risk_reference_document_hash(withheld) != digest
+
+    saved = build_risk_reference(start_age=35, projection_years=5, savings_rate=0.1)
+    savings_pdf_text = _pdf_text(render_risk_reference_pdf(saved)[1])
+    assert 'Savings accumulation' in savings_pdf_text
+    assert risk_reference_document_hash(saved) != digest
+
+    kwargs = risk_reference_query_kwargs({
+        'start_age': ['35'],
+        'projection_years': ['5'],
+        'life_sum': ['1000000'],
+        'savings_rate': [''],
+    })
+    assert kwargs['life_sum'] == 1_000_000.0
+    assert kwargs['savings_rate'] is None
+    assert kwargs['start_age'] == 35
+
+    dashboard = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        'web_portal', 'static', 'actuary-dashboard.html',
+    )
+    html = open(dashboard, encoding='utf-8').read()
+    assert 'downloadRiskReferencePdf' in html
+    assert 'riskReferenceQuery' in html
+    assert 'id="risk-ref-download-pdf"' in html
+
+
 def test_presentation_rates_match_kernel_brackets():
     """Fefferman and Goldsobel share the same lookup as the kernel brackets."""
     import os
@@ -589,6 +676,39 @@ def _get(url: str, token: str | None = None):
     req = Request(url, headers=headers)
     with urlopen(req) as resp:
         return resp.read(), resp.status, dict(resp.getheaders())
+
+
+def test_risk_reference_pdf_route_matches_the_json_forecast():
+    """The download uses the same query as the JSON forecast."""
+    srv = _ServerThread()
+    srv.start()
+    try:
+        time.sleep(0.2)
+        base = f'http://127.0.0.1:{srv.port}'
+        login_body, _, _ = _post_json(base + '/api/login', {
+            'username': 'admin', 'password': 'admin123',
+        })
+        token = json.loads(login_body)['token']
+        query = 'start_age=35&projection_years=5&life_sum=500000'
+        json_body, status, _ = _get(base + '/api/actuarial/risk-reference?' + query, token)
+        assert status == 200
+        reference = json.loads(json_body)['reference']
+        pdf_body, status, headers = _get(base + '/api/actuarial/risk-reference/pdf?' + query, token)
+        assert status == 200
+        assert pdf_body.startswith(b'%PDF')
+        header_map = {key.lower(): value for key, value in headers.items()}
+        assert header_map['content-type'] == 'application/pdf'
+        assert 'phins-risk-reference.pdf' in header_map['content-disposition']
+        assert header_map['x-phins-risk-reference-hash'] == risk_reference_document_hash(reference)
+        assert header_map['cache-control'] == 'no-store'
+        try:
+            _get(base + '/api/actuarial/risk-reference/pdf?' + query)
+            raise AssertionError('anonymous download should be refused')
+        except HTTPError as exc:
+            assert exc.code == 403
+            assert json.loads(exc.read())['error']
+    finally:
+        srv.stop()
 
 
 def test_actuarial_endpoints_end_to_end(tmp_path):

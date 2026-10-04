@@ -4597,6 +4597,42 @@ def build_risk_reference(start_age: Optional[int] = None,
     return payload
 
 
+def risk_reference_query_kwargs(qs: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Inputs shared by the JSON and PDF risk-reference routes.
+
+    Empty values stay ``None`` so ``build_risk_reference`` applies the
+    profile defaults. A non-numeric value raises, the same way the
+    previous inline parser did.
+    """
+    qs = qs or {}
+
+    def first(name: str):
+        raw = qs.get(name, [None])
+        if isinstance(raw, (list, tuple)):
+            raw = raw[0] if raw else None
+        return raw
+
+    def opt_float(name: str):
+        raw = first(name)
+        if raw is None or raw == '':
+            return None
+        return float(raw)
+
+    start_age_raw = first('start_age')
+    years_raw = first('projection_years')
+    life_raw = first('life_sum')
+    profile_raw = first('profile_id')
+    return {
+        'start_age': int(start_age_raw) if start_age_raw else None,
+        'projection_years': int(years_raw) if years_raw else None,
+        'life_sum': float(life_raw) if life_raw else None,
+        'profile_id': profile_raw or None,
+        'savings_rate': opt_float('savings_rate'),
+        'savings_yield_pct': opt_float('savings_yield_pct'),
+        'management_fee_pct_of_aum': opt_float('management_fee_pct_of_aum'),
+    }
+
+
 # Backwards-compatibility aliases for the previous function names. New callers
 # should use ``build_risk_reference``, ``risk_reference_age_factor`` and
 # ``risk_reference_monthly_premiums``.

@@ -2959,10 +2959,12 @@
                 <label class="form-label">Projection Years</label>
                 <input type="number" id="risk-ref-years" class="form-input" value="5" min="1" max="40">
               </div>
-              <div class="form-group" style="display:flex;align-items:flex-end;">
-                <button class="btn btn-primary" onclick="loadRiskReference()">Recalculate</button>
+              <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;">
+                <button class="btn btn-primary" type="button" onclick="loadRiskReference()">Recalculate</button>
+                <button class="btn btn-outline" type="button" id="risk-ref-download-pdf" onclick="downloadRiskReferencePdf()">Download PDF</button>
               </div>
             </div>
+            <p id="risk-ref-pdf-status" style="margin:8px 0 0;color:var(--text-light);"></p>
             <h4 style="margin:12px 0 6px;">Optional Savings Accumulation</h4>
             <p style="color:var(--text-light);">Project the reference policyholder's savings fund alongside the risk forecast: monthly contribution → cumulative AUM with yield and management fee.</p>
             <div class="form-row">
@@ -6959,14 +6961,11 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       });
     }
 
-    async function loadRiskReference() {
-      bindRiskCoverControls();
-      const resultsEl = document.getElementById('risk-reference-results');
-      resultsEl.innerHTML = '<p style="color:var(--text-light);">Loading…</p>';
+    function riskReferenceQuery() {
       const profileSelect = document.getElementById('risk-ref-profile');
-      const startAge = document.getElementById('risk-ref-start-age').value || '';
-      const years = document.getElementById('risk-ref-years').value || '';
-      const life = document.getElementById('risk-ref-life-sum').value || '';
+      const startAge = document.getElementById('risk-ref-start-age')?.value || '';
+      const years = document.getElementById('risk-ref-years')?.value || '';
+      const life = document.getElementById('risk-ref-life-sum')?.value || '';
       const profileId = profileSelect ? profileSelect.value : '';
       const savingsRate = document.getElementById('risk-ref-savings-rate')?.value || '';
       const savingsYield = document.getElementById('risk-ref-savings-yield')?.value || '';
@@ -6981,6 +6980,51 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         if (savingsYield) qs.set('savings_yield_pct', (parseFloat(savingsYield) / 100).toString());
         if (mgmtFee) qs.set('management_fee_pct_of_aum', (parseFloat(mgmtFee) / 100).toString());
       }
+      return qs;
+    }
+
+    async function downloadRiskReferencePdf() {
+      const statusEl = document.getElementById('risk-ref-pdf-status');
+      if (statusEl) statusEl.textContent = 'Preparing the risk-reference PDF…';
+      try {
+        const res = await fetch(`/api/actuarial/risk-reference/pdf?${riskReferenceQuery().toString()}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) {
+          let message = `HTTP ${res.status}`;
+          try {
+            const body = await res.json();
+            message = body.error || message;
+          } catch (err) { /* binary or empty */ }
+          throw new Error(message);
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'phins-risk-reference.pdf';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        const digest = res.headers.get('X-Phins-Risk-Reference-Hash') || '';
+        if (statusEl) {
+          statusEl.textContent = digest
+            ? `Downloaded phins-risk-reference.pdf. Hash ${digest}.`
+            : 'Downloaded phins-risk-reference.pdf.';
+        }
+      } catch (err) {
+        if (statusEl) statusEl.textContent = `PDF download failed: ${err.message}`;
+      }
+    }
+
+    async function loadRiskReference() {
+      bindRiskCoverControls();
+      const resultsEl = document.getElementById('risk-reference-results');
+      resultsEl.innerHTML = '<p style="color:var(--text-light);">Loading…</p>';
+      const profileSelect = document.getElementById('risk-ref-profile');
+      const profileId = profileSelect ? profileSelect.value : '';
+      const qs = riskReferenceQuery();
       try {
         const res = await fetch(`/api/actuarial/risk-reference?${qs.toString()}`, {
           headers: { 'Authorization': `Bearer ${token}` }
