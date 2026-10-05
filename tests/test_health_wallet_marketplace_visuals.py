@@ -76,6 +76,7 @@ def test_supplier_listing_accepts_media_before_save():
 
     legacy = open(os.path.join(ROOT, "web_portal", "static", "supplier-dashboard.js"), encoding="utf-8").read()
     assert "/api/supplier/offers/media/upload" in legacy
+    assert "media upload failed" in legacy
 
 
 def test_wallet_browse_keeps_sibling_categories_distinct():
@@ -88,6 +89,12 @@ def test_wallet_browse_keeps_sibling_categories_distinct():
     assert portal.offer_matches_wallet_browse("pharmacy", "medication") is True
     assert portal.infer_wallet_browse_bucket("home_care") == "homecare"
     assert portal.infer_wallet_browse_bucket("medical_services") == ""
+    # Tab-specific values the alias table does not fold still land on their tab.
+    assert portal.offer_matches_wallet_browse("telehealth", "consultation") is True
+    assert portal.offer_matches_wallet_browse("telehealth", "homecare") is False
+    assert portal.offer_matches_wallet_browse("home_care", "homecare") is True
+    assert portal.offer_matches_wallet_browse("daily_supplies", "supplies") is True
+    assert portal.offer_matches_wallet_browse("daily_supplies", "devices") is False
 
 
 def _get_json(path: str):
