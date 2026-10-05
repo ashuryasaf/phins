@@ -118,6 +118,15 @@ def test_dashboard_preserves_customer_book_bindings():
         assert endpoint in html, f"missing book API {endpoint}"
 
 
+def test_verify_all_counts_the_whole_book_not_the_returned_page():
+    html = _html()
+    assert "function verifyAllTokens(" in html
+    # /api/nft-ledger returns a truncated page; the counts in the toast must
+    # come from the full-book summary, not from the rows that were returned.
+    assert "Number(summary.invalid_tokens)" in html
+    assert "Number(summary.total_tokens)" in html
+
+
 def test_dashboard_loads_book_after_auth_not_at_parse_time():
     html = _html()
     assert "loadBillingDetails()," in html or "loadBillingDetails()" in html

@@ -57987,13 +57987,14 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'customer_id and action_type required'}).encode('utf-8'))
                     return
                 
-                # Customer-logged actions are records, not cash postings. A
-                # wallet_deposit or premium sent here must not move money or
-                # change the ledger totals; those types are minted by the
-                # wallet, billing, and claims pipelines.
+                # Customer-logged actions are records, not cash postings. The
+                # ledger type is always 'customer_action' so a caller cannot
+                # post a wallet_deposit or premium_payment that activity,
+                # integrity, and finance readers would read as real cash; the
+                # requested action stays in metadata.
                 action_tx = record_transaction(
                     customer_id=customer_id,
-                    tx_type=str(action_type)[:80],
+                    tx_type='customer_action',
                     amount=amount,
                     description=str(description or '')[:500],
                     metadata={

@@ -8409,15 +8409,15 @@
         const data = await response.json();
         
         if (response.ok && data.success && data.ledger) {
+          const summary = data.summary || {};
           nftLedgerCache = data.ledger;
-          renderNFTLedger(nftLedgerCache, data.summary || {}, data);
-          let verified = 0;
-          let failed = 0;
-          
-          data.ledger.forEach(nft => {
-            if (nft.integrity && nft.integrity.valid) verified += 1;
-            else failed += 1;
-          });
+          renderNFTLedger(nftLedgerCache, summary, data);
+          // data.ledger is only the newest page; the summary counts every owned token.
+          const total = Number.isFinite(Number(summary.total_tokens))
+            ? Number(summary.total_tokens)
+            : data.ledger.length;
+          const failed = Number(summary.invalid_tokens) || 0;
+          const verified = Math.max(total - failed, 0);
           
           const chainNote = data.chain && data.chain.valid ? ' Chain verified.' : ' Chain check failed.';
           if (failed === 0) {
