@@ -866,18 +866,48 @@ def test_bill_payment_generates_accounting_book_and_invoice_documents():
     assert customer_snapshot['full_name'] == 'Bill Doc Customer'
     assert invoice_payload['tax_year'] == datetime.now().year
     assert invoice_payload['tax_year_summary']['paid_premium_total'] >= 125.0
-    assert invoice_payload['tax_year_summary']['risk_paid_total'] >= 0
-    assert invoice_payload['tax_year_summary']['savings_paid_total'] >= 0
+    assert invoice_payload['tax_year_summary']['premium_paid_tax_year'] >= 125.0
+    assert invoice_payload['tax_year_summary']['risk_paid_total'] > 0
+    assert invoice_payload['tax_year_summary']['savings_paid_total'] > 0
+    assert abs(
+        invoice_payload['tax_year_summary']['paid_premium_total']
+        - invoice_payload['tax_year_summary']['risk_paid_total']
+        - invoice_payload['tax_year_summary']['savings_paid_total']
+    ) <= 0.02
+    assert invoice_payload['policies']
+    assert invoice_payload['policies'][0]['policy_id'] == policy_id
     assert 'verified_balances' in invoice_payload
     assert 'wallet_balance' in invoice_payload['verified_balances']
     assert 'investment_balance' in invoice_payload['verified_balances']
     assert 'savings_usage' in invoice_payload
+
+    statement_docs = [
+        doc for doc in portal.POLICY_DOCUMENTS.values()
+        if doc.get('document_type') == 'tax_year_statement'
+        and doc.get('entity_id') == customer_id
+    ]
+    assert len(statement_docs) == 1
+    statement_bytes = base64.b64decode(statement_docs[0]['data'])
+    assert statement_bytes.startswith(b'%PDF')
+    assert statement_docs[0]['type'] == 'application/pdf'
+    assert statement_docs[0]['name'].endswith('.pdf')
 
     status_hist, hist_resp = _get(base + f'/api/notifications/history?customer_id={customer_id}', token_customer)
     assert status_hist == 200, f"Expected 200, got {status_hist}: {hist_resp}"
     history = hist_resp.get('history', [])
     assert any(item.get('channel') == 'in_app' for item in history)
     assert any(item.get('channel') == 'email' for item in history)
+    tax_notes = [
+        item for item in history
+        if 'tax-year' in str(item.get('subject') or '').lower()
+        or (item.get('metadata') or {}).get('category') == 'tax_year_premium_report'
+    ]
+    assert tax_notes
+    assert any(
+        float((item.get('metadata') or {}).get('paid_premium_total') or 0) >= 125.0
+        for item in tax_notes
+    )
+    assert any((item.get('attachments') or []) for item in tax_notes if item.get('channel') == 'email')
 
     # Re-paying the same bill should not create duplicate generated docs.
     existing_doc_ids = list(portal.BILLING[bill_id].get('document_ids', []))

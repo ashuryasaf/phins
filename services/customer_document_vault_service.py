@@ -95,6 +95,7 @@ _DOC_TYPE_TO_HASHTAG = {
     "billing": "billing",
     "invoice": "billing",
     "payment": "billing",
+    "tax_year_statement": "billing",
     "receipt": "receipt",
     "underwriting": "underwriting",
     "authority": "authority",

@@ -801,6 +801,52 @@ class TemplateEngine:
         return len(missing) == 0, missing
 
 
+def normalize_email_attachment(
+    attachment: Optional[Dict[str, Any]]
+) -> Tuple[str, str, Optional[bytes]]:
+    """Return (filename, content_type, bytes) for a notification attachment."""
+    if not isinstance(attachment, dict):
+        return '', 'application/octet-stream', None
+    filename = str(attachment.get('filename') or attachment.get('name') or 'attachment.bin')
+    content_type = str(attachment.get('content_type') or attachment.get('mime_type') or 'application/octet-stream')
+    payload = attachment.get('content')
+    if isinstance(payload, bytes):
+        return filename, content_type, payload
+    if isinstance(payload, str) and payload:
+        try:
+            import base64
+            return filename, content_type, base64.b64decode(payload, validate=True)
+        except Exception:
+            return filename, content_type, payload.encode('utf-8')
+    encoded = attachment.get('content_b64') or attachment.get('data')
+    if isinstance(encoded, str) and encoded:
+        try:
+            import base64
+            return filename, content_type, base64.b64decode(encoded, validate=True)
+        except Exception:
+            return filename, content_type, None
+    if isinstance(encoded, bytes):
+        return filename, content_type, encoded
+    return filename, content_type, None
+
+
+def build_email_attachment_part(attachment: Optional[Dict[str, Any]]):
+    """Build a MIMEApplication part, or None when the payload is missing."""
+    from email.mime.application import MIMEApplication
+
+    filename, content_type, payload = normalize_email_attachment(attachment)
+    if payload is None:
+        return None
+    subtype = 'octet-stream'
+    if '/' in content_type:
+        subtype = content_type.split('/', 1)[1] or subtype
+    part = MIMEApplication(payload, _subtype=subtype)
+    part.add_header('Content-Disposition', 'attachment', filename=filename)
+    if content_type:
+        part.set_type(content_type)
+    return part
+
+
 # ============================================================================
 # EMAIL PROVIDER ABSTRACTION
 # ============================================================================
@@ -1158,12 +1204,21 @@ class SMTPEmailProvider(EmailProvider):
         )
         reply_to_address = _resolve_reply_to_address(reply_to)
 
-        if html_body:
-            msg = MIMEMultipart('alternative')
-            msg.attach(MIMEText(body, 'plain'))
-            msg.attach(MIMEText(html_body, 'html'))
+        if html_body or attachments:
+            msg = MIMEMultipart('mixed')
+            if html_body:
+                alt = MIMEMultipart('alternative')
+                alt.attach(MIMEText(body, 'plain', 'utf-8'))
+                alt.attach(MIMEText(html_body, 'html', 'utf-8'))
+                msg.attach(alt)
+            else:
+                msg.attach(MIMEText(body, 'plain', 'utf-8'))
+            for attachment in attachments or []:
+                part = build_email_attachment_part(attachment)
+                if part is not None:
+                    msg.attach(part)
         else:
-            msg = MIMEText(body, 'plain')
+            msg = MIMEText(body, 'plain', 'utf-8')
 
         msg['Subject'] = subject
         msg['From'] = f"{from_display} <{from_addr}>"
@@ -1263,6 +1318,17 @@ class MockEmailProvider(EmailProvider):
     ) -> Tuple[bool, Optional[str], Optional[str]]:
         """Mock send - stores email for testing"""
         message_id = generate_id('MOCK_MSG')
+        recorded_attachments = []
+        for attachment in attachments or []:
+            filename, content_type, payload = normalize_email_attachment(attachment)
+            if payload is None:
+                continue
+            recorded_attachments.append({
+                'filename': filename,
+                'content_type': content_type,
+                'size': len(payload),
+                'sha256': hashlib.sha256(payload).hexdigest(),
+            })
         self.sent_emails.append({
             'to': to,
             'subject': subject,
@@ -1270,7 +1336,8 @@ class MockEmailProvider(EmailProvider):
             'html_body': html_body,
             'from_address': from_address,
             'message_id': message_id,
-            'sent_at': datetime.now(timezone.utc).isoformat()
+            'sent_at': datetime.now(timezone.utc).isoformat(),
+            'attachments': recorded_attachments,
         })
         logger.info(f"Mock email sent to {to}: {subject}")
         return True, message_id, None
@@ -3209,7 +3276,8 @@ class NotificationService:
                 to=request.recipient,
                 subject=subject or "PHINS Notification",
                 body=content,
-                html_body=html_content
+                html_body=html_content,
+                attachments=list(request.attachments or []),
             )
             
             return NotificationResult(
@@ -3276,6 +3344,16 @@ class NotificationService:
         content: str
     ) -> None:
         """Record notification in history"""
+        attachment_meta = []
+        for attachment in request.attachments or []:
+            filename, content_type, payload = normalize_email_attachment(attachment)
+            if not filename and payload is None:
+                continue
+            attachment_meta.append({
+                'filename': filename,
+                'content_type': content_type,
+                'size': len(payload) if payload is not None else 0,
+            })
         record = {
             'id': result.notification_id,
             'customer_id': request.customer_id,
@@ -3288,7 +3366,9 @@ class NotificationService:
             'error_code': result.error_code,
             'error_message': result.error_message,
             'sent_at': result.sent_at.isoformat() if result.sent_at else None,
-            'created_at': datetime.now(timezone.utc).isoformat()
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'attachments': attachment_meta,
+            'metadata': dict(request.metadata or {}),
         }
         
         with self._history_lock:
