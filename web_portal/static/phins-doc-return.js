@@ -26,7 +26,7 @@
         adjuster: '/claims-adjuster-dashboard.html',
         accountant: '/accountant-dashboard.html',
         actuary: '/actuary-dashboard.html',
-        supplier: '/supplier-dashboard.html',
+        supplier: '/supplier-portal.html',
         regulator: '/regulator-dashboard.html',
         customer: '/dashboard.html',
         foundation: '/foundation-dashboard.html',

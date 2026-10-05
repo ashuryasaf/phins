@@ -53,7 +53,7 @@ def test_role_homes_match_between_python_and_browser():
     assert js_homes == PIPELINE_DOCUMENT_HOMES
     assert js_homes["admin"] == "/admin.html"
     assert js_homes["manager"] == "/admin.html"
-    assert js_homes["supplier"] == "/supplier-dashboard.html"
+    assert js_homes["supplier"] == "/supplier-portal.html"
     assert js_homes["regulator"] == "/regulator-dashboard.html"
     assert js_homes["customer"] == "/dashboard.html"
     assert js_homes["community"] == "/foundation-dashboard.html"
