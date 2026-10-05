@@ -57,7 +57,11 @@ def build_report(customer_id: str, period_start: date, period_end: date, output:
     stmt = acc.get_customer_statement(customer_id, period_start, period_end)
 
     # Build PDF
-    doc = SimpleDocTemplate(output, pagesize=A4, rightMargin=20*mm, leftMargin=20*mm, topMargin=20*mm, bottomMargin=20*mm)
+    doc = SimpleDocTemplate(
+        output, pagesize=A4, rightMargin=20*mm, leftMargin=20*mm,
+        topMargin=28*mm, bottomMargin=18*mm, title=f"{COMPANY_NAME} - Client Report",
+        author="PHINS",
+    )
     styles = getSampleStyleSheet()
     story: List[Any] = []
 
@@ -85,7 +89,8 @@ def build_report(customer_id: str, period_start: date, period_end: date, output:
 
         t = Table(data, hAlign='LEFT', colWidths=[70*mm, 30*mm, 30*mm, 30*mm, 40*mm])
         t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0e2f63')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
@@ -109,9 +114,15 @@ def build_report(customer_id: str, period_start: date, period_end: date, output:
 
     # Footer with page number
     def _draw_footer(canvas: Any, doc: Any) -> None:
-        """Draw a simple footer on each page. Types use `Any` because ReportLab types
-        are not available to static type checkers in this environment.
+        """Draw the shared letterhead plus the page footer. Types use `Any` because
+        ReportLab types are not available to static type checkers here.
         """
+        from services.phins_pdf_brand import draw_report_bar
+        page_no = getattr(doc, "page", 1)
+        draw_report_bar(
+            canvas, A4, title=f"{COMPANY_NAME} — Client Report",
+            first_page=(page_no == 1), badge="Client statement",
+        )
         canvas.saveState()
         # A4 is a (width, height) tuple from reportlab — ignore the height value
         try:

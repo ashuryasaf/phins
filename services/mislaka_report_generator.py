@@ -448,14 +448,18 @@ def render_mislaka_report_pdf(report_text: str, metadata: Dict[str, Any], title:
 
     base_font, mono_font, bold_font = _register_fonts()
 
+    from services.phins_pdf_brand import draw_report_bar
+
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
         rightMargin=20 * mm,
         leftMargin=20 * mm,
-        topMargin=20 * mm,
-        bottomMargin=20 * mm,
+        topMargin=28 * mm,
+        bottomMargin=18 * mm,
+        title=title,
+        author="PHINS",
     )
 
     styles = getSampleStyleSheet()
@@ -493,10 +497,15 @@ def render_mislaka_report_pdf(report_text: str, metadata: Dict[str, Any], title:
     story.append(Preformatted(report_text, mono_style))
 
     def _draw_footer(canvas, doc_instance) -> None:
+        page_no = getattr(doc_instance, "page", 1)
+        draw_report_bar(
+            canvas, A4, title=title, first_page=(page_no == 1),
+            font=base_font, bold=bold_font, badge="Pension",
+        )
         canvas.saveState()
         width, _ = A4
         footer_hash = metadata.get("data_hash", "")[:16]
-        footer_text = f"Checksum: {footer_hash}... | Page {getattr(doc_instance, 'page', 1)}"
+        footer_text = f"Checksum: {footer_hash}... | Page {page_no}"
         canvas.setFont(base_font, 7)
         canvas.drawRightString(width - (20 * mm), 10 * mm, footer_text)
         canvas.restoreState()

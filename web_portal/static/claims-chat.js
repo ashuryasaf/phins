@@ -512,9 +512,9 @@
             + ' · fraud probability ' + escapeHtml(pipeline.fraud_probability == null ? '' : String(pipeline.fraud_probability))
             + ' · advisory only, the filed amount is unchanged.</p>'
             + '<h4 style="margin-top:16px;">Notice of loss</h4>'
-            + '<iframe class="claim-doc-frame" id="fnol-frame" sandbox="" title="Claim notice of loss"></iframe>'
+            + '<iframe class="claim-doc-frame" id="fnol-frame" sandbox="allow-scripts" title="Claim notice of loss"></iframe>'
             + '<h4 style="margin-top:16px;">Processing record</h4>'
-            + '<iframe class="claim-doc-frame" id="proc-frame" sandbox="" title="Claim processing record"></iframe>'
+            + '<iframe class="claim-doc-frame" id="proc-frame" sandbox="allow-scripts" title="Claim processing record"></iframe>'
             + '<div class="claim-doc-actions">'
             + '<button class="btn-gold" id="download-fnol" type="button">Download notice</button>'
             + '<button class="btn-ghost" id="download-proc" type="button">Download processing record</button>'

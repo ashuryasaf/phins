@@ -17,7 +17,12 @@ def test_shell_includes_logo_gradient_and_wordmark():
     assert "PHINS" in html
     assert "<svg" in html
     assert "alpha" in html
+    assert "Go back" in html
+    assert "Close" in html
+    assert "phinsDocGoBack" in html
     assert html.startswith("<!DOCTYPE html>")
+    # chrome is outside the body block; the caller markup is unchanged
+    assert html.index("<p>alpha</p>") > html.index("phins-doc-body")
 
 
 def test_claim_documents_use_the_shared_letterhead():
@@ -54,6 +59,7 @@ def test_claim_documents_use_the_shared_letterhead():
     for doc in (notice, processing):
         assert "phins-doc-wordmark" in doc
         assert "<svg" in doc
+        assert "phins-doc-back" in doc
         assert "123456782" not in doc
     assert checksum in notice
     assert "+972-50-555-0199" in notice

@@ -196,6 +196,16 @@ PHINS is a Python platform built around:
  `durability_probe` lane (excluded from the customer vault), reads it back,
  deletes it, and re-fingerprints to prove nothing else moved. Any failure
  is reported; the agent never repairs a customer file
+- document chrome (`services/phins_document.py`, `web_portal/static/phins-document.css`,
+ `phins-document.js`, `phins-doc-return.js`): every present and future report
+ uses `render_phins_document` (server) or `PhinsDocument.printReport` /
+ `PhinsDocument.render` (browser), or includes `<script src="/phins-doc-return.js"></script>`.
+ The letterhead is the navy/gold gradient, shield logo, Inter + Space Grotesk.
+ The Go back / Close bar is chrome only (hidden in print and when framed);
+ role homes live in `PIPELINE_DOCUMENT_HOMES` and must stay aligned with
+ `PHINS_DOCUMENT_HOMES`. Same-origin PDF/Markdown opens in a new tab go
+ through `/document-viewer.html` (`phins-doc-open.js`). Do not change
+ figures, checksums, or stored records when adding chrome
 
 Runtime defaults are important:
 

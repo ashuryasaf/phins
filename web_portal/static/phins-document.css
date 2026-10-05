@@ -132,7 +132,67 @@ body {
   padding: 14px 16px;
   margin: 0 0 16px;
 }
+.phins-doc .summary-box {
+  background: var(--phins-ice);
+  border: 1px solid var(--phins-line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin: 0 0 16px;
+}
+.phins-doc .metric-value { font-weight: 700; color: var(--phins-navy); font-size: 18px; }
+.phins-doc .metric-label { font-size: 11px; color: var(--phins-muted); }
+.phins-doc iframe.phins-file-frame {
+  width: 100%;
+  min-height: 70vh;
+  border: 1px solid var(--phins-line);
+  border-radius: 8px;
+  background: #fff;
+}
+/* Leave-document bar. Hidden in print so a saved PDF stays a document. */
+.phins-doc-return {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #fff;
+  border-bottom: 4px solid transparent;
+  border-image: linear-gradient(90deg, #b8893b 0%, #f7e2a0 42%, #e3bf6f 100%) 1;
+  font-family: Inter, "Segoe UI", sans-serif;
+  color: var(--phins-ink);
+}
+.phins-doc-return-note {
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  color: var(--phins-navy);
+}
+.phins-doc-return-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.phins-doc-return button {
+  font-family: Inter, "Segoe UI", sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.phins-doc-back {
+  background: #fff;
+  color: var(--phins-navy);
+  border: 1px solid var(--phins-line);
+}
+.phins-doc-close {
+  background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+  color: #fff;
+  border: 0;
+}
 @media print {
   body { background: #fff; }
   .phins-doc { box-shadow: none; margin: 0; max-width: none; border-radius: 0; }
+  .phins-doc-return { display: none !important; }
+  .phins-doc-body button { display: none !important; }
 }

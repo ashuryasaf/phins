@@ -1173,6 +1173,12 @@
         window.__phinsLegalDoc = inst;
         inst.boot();
       }
+      if (!document.querySelector('script[data-phins-return-src]')) {
+        var ret = document.createElement('script');
+        ret.src = '/phins-doc-return.js';
+        ret.setAttribute('data-phins-return-src', '1');
+        document.head.appendChild(ret);
+      }
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
       else go();
     }

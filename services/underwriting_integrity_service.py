@@ -1093,6 +1093,9 @@ def build_policy_contract(
   </div>
 </body></html>"""
 
+    from services.phins_document import document_return_markup
+    html_doc = html_doc.replace("</body>", document_return_markup() + "</body>", 1)
+
     return {
         "contract_id": f"CONTRACT-{policy.get('id')}",
         "integrity_hash": seal,

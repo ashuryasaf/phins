@@ -249,6 +249,7 @@ def build_html(md_text: str) -> str:
 <style>{CSS}</style>
 </head>
 <body>
+<script src="/phins-doc-return.js"></script>
 <div class="confidential">Confidential - Internal Use Only</div>
 {body}
 </body>

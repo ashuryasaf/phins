@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PHINS document</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/phins-document.css">
+</head>
+<body>
+<article class="phins-doc" id="viewer-doc">
+  <header class="phins-doc-banner">
+    <div class="phins-doc-brand">
+      <div class="phins-doc-logo"><img src="/phins-logo.svg" alt="PHINS emblem" width="52" height="52"></div>
+      <div>
+        <div class="phins-doc-wordmark">PHINS</div>
+        <div class="phins-doc-tagline">Personal Health Insurance &amp; Savings</div>
+      </div>
+    </div>
+    <div class="phins-doc-kicker">Document<span id="viewer-kicker"></span></div>
+  </header>
+  <div class="phins-doc-gold"></div>
+  <div class="phins-doc-body">
+    <h1 id="viewer-title">PHINS document</h1>
+    <p class="sub">The file below is shown as stored. Opening it here keeps a way back.</p>
+    <iframe class="phins-file-frame" id="phins-file-frame" title="Document" hidden></iframe>
+    <p class="note" id="phins-file-error" hidden>This file cannot be embedded. Use Go back or Close to leave this page.</p>
+  </div>
+</article>
+<script src="/phins-doc-return.js"></script>
+<script>
+(function () {
+  var params = new URLSearchParams(location.search);
+  var src = params.get('src') || '';
+  var title = params.get('title') || 'PHINS document';
+  var safe = (src.charAt(0) === '/' && src.charAt(1) !== '/' && src.indexOf('\\') === -1 && src.indexOf('..') === -1)
+    ? src : '';
+  document.title = title;
+  var heading = document.getElementById('viewer-title');
+  var kicker = document.getElementById('viewer-kicker');
+  if (heading) heading.textContent = title;
+  if (kicker) kicker.textContent = title;
+  var frame = document.getElementById('phins-file-frame');
+  var error = document.getElementById('phins-file-error');
+  if (safe && frame) {
+    frame.hidden = false;
+    frame.src = safe;
+  } else if (error) {
+    error.hidden = false;
+  }
+})();
+</script>
+</body>
+</html>
