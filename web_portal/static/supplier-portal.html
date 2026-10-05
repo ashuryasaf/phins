@@ -178,8 +178,8 @@
       background: #dc2626;
     }
     .add-offer-btn {
-      background: var(--primary);
-      color: white;
+      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+      color: #071022;
       border: none;
       padding: 12px 24px;
       font-size: 1rem;
@@ -189,9 +189,23 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      box-shadow: 0 4px 14px rgba(227, 191, 111, 0.35);
     }
     .add-offer-btn:hover {
-      background: #1565c0;
+      filter: brightness(1.05);
+    }
+    /* Shared .btn-primary / .btn-secondary are painted for a dark hero.
+       Inside the offer modal they need the same navy/gold contrast as the wallet. */
+    #offer-modal .btn-primary {
+      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+      color: #071022;
+      border-color: transparent;
+      box-shadow: 0 4px 14px rgba(227, 191, 111, 0.35);
+    }
+    #offer-modal .btn-secondary {
+      background: #ffffff;
+      color: #0e2f63;
+      border-color: rgba(14, 47, 99, 0.28);
     }
     .order-status {
       padding: 4px 10px;
