@@ -8,17 +8,19 @@ override this document.
 
 PHINS is a Python platform built around:
 
-- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~50k lines)
-- optional extension routing in `web_portal/api_extensions.py` (~3450 lines)
+- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~60k lines)
+- optional extension routing in `web_portal/api_extensions.py` (~3980 lines)
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
-  `api_assessment_center.py`)
-- service-layer logic in `services/` (113 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
+  `api_assessment_center.py`, `api_chat_application.py` (chat-style policy
+  intake / "Phin"), `api_claims_chat.py` (public claims chat), and
+  `api_customer_identity.py` (ID + nationality master))
+- service-layer logic in `services/` (126 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (233 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (262 files) and root-level `test_*.py` (11 files)
 - one generalized job queue (`services/agent_job_queue.py`, table
  `document_processing_jobs`, rows keyed by `subject_type`/`subject_id` and
  `submitted_by`; retries, dead-letter, idempotency keys, handler registry —
@@ -154,6 +156,46 @@ PHINS is a Python platform built around:
  `delivery_bidding_sla_tick` self-rescheduling queue row (`ensure_sla_clock`)
  and lazily on read/bid. `/api/delivery/*` is wired through
  `web_portal/api_delivery_bidding.py` with customer/supplier/admin scoping
+- the pricing kernel (`services/pricing_kernel.py`) is the single writer for
+ premium decomposition: `price_policy()` returns a `PremiumComponents` block
+ (annual, monthly, mortality PV, disability PV, savings, expense, profit,
+ deterministic integrity hash) that the portfolio simulator, inline quote /
+ billing pricer, financial reporting service, risk reference, reserve
+ calculator, BI feed and the reconciler all call into. Product rules
+ (`life_only`, `life+ADL`, `life_only_after_65` — disability cut-off, savings
+ rate, life share) live in the kernel registry; age curves
+ (`phins_internal_v2` tables-driven, `risk_reference_v1` the locked published
+ block) and the claim model (`MUTUALLY_EXCLUSIVE` default, `INDEPENDENT`) are
+ parameters. Sandbox, simulator, IFRS 17 waterfall and the actuary dashboard
+ all reprice through it — never through a parallel path
+- chat intake (Phin) is a parallel surface to the classic forms:
+ `services/chat_application_service.py` (+ `chat_application_i18n.py`) runs
+ the conversational state machine, `web_portal/api_chat_application.py`
+ handles OTP + invitation attribution + ledger writes and finalises through
+ a loopback `POST /api/policies/create`, and `services/claims_chat_service.py`
+ + `web_portal/api_claims_chat.py` do the same for claim filing via a
+ loopback into `POST /api/claims/create`. Both routes share the OTP service,
+ enforce staff / owning-customer / resume-code authorization, and leave the
+ policy, underwriting, billing, wallet and pipeline code paths unchanged. A
+ public `/file-a-claim` page never asks the visitor to sign in. ADL-decline
+ or ineligible-quote chats still open a durable
+ `UNDERWRITING_APPLICATIONS` row (`source=chat_adl_referral`) so no lead is
+ lost
+- customer identity master (`services/customer_identity_service.py`,
+ `web_portal/api_customer_identity.py`): the one writer for a customer's
+ national ID + nationality. Public endpoints only expose
+ `/api/identity/countries` and `/api/identity/rules`; customer and admin
+ writes go through `set_identity` / `reconcile_pipeline_identity`, and
+ `/api/admin/customers/identity/report` reports rollout counters. Responses
+ never carry a plaintext ID (see the §10 identity contract)
+- durable document archive (`services/customer_document_vault_service.py`):
+ every application-chat, claim-chat and uploaded policy file is sealed by
+ SHA-256 and filed into a per-entity lane. `services/document_durability_agent.py`
+ is the admin-only durability test — it fingerprints the archive, writes
+ one fixed probe through the normal upload path into the reserved
+ `durability_probe` lane (excluded from the customer vault), reads it back,
+ deletes it, and re-fingerprints to prove nothing else moved. Any failure
+ is reported; the agent never repairs a customer file
 
 Runtime defaults are important:
 
@@ -180,6 +222,10 @@ Preferred file-by-task:
 | Customer messaging / consent / escalation | `services/customer_agent/`, `web_portal/server.py` (`/api/admin/customers/{id}/contact`, `.../consent`, `.../interactions`) |
 | Agent ecosystem API | `web_portal/api_agent_ecosystem.py`, `services/agent_ecosystem_service.py` |
 | Assessment center API | `web_portal/api_assessment_center.py`, `services/assessment_center_service.py` |
+| Chat intake (Phin, policy or claim) | `services/chat_application_service.py` or `services/claims_chat_service.py`, then `web_portal/api_chat_application.py` / `api_claims_chat.py` |
+| Customer identity (ID + nationality) | `services/customer_identity_service.py` (one writer), `web_portal/api_customer_identity.py` |
+| Document archive / durability probe | `services/customer_document_vault_service.py`, `services/document_durability_agent.py` |
+| Premium / reserve / simulator pricing | `services/pricing_kernel.py` (sole writer), then `services/actuarial_service.py` and callers; refresh `tests/test_pricing_kernel.py`, `tests/test_actuarial_reserves.py`, `tests/test_ifrs17_waterfall_identities.py` deliberately |
 | Business rule/workflow | `services/`, then the route or engine that calls it |
 | Database/schema/repository | `database/models.py`, `database/manager.py`, `database/repositories/`, `database/config.py` |
 | Billing/accounting behavior | `billing_engine.py`, `accounting_engine.py`, related tests |
@@ -217,6 +263,9 @@ Preferred file-by-task:
 |  |- api_delivery_bidding.py
 |  |- api_agent_ecosystem.py
 |  |- api_assessment_center.py
+|  |- api_chat_application.py          # Phin chat-style policy intake (loopback into /api/policies/create)
+|  |- api_claims_chat.py               # public claims chat (loopback into /api/claims/create)
+|  |- api_customer_identity.py         # ID + nationality master surface
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
 |                                        # (includes `static/locales/he.json` Hebrew i18n)
@@ -224,19 +273,30 @@ Preferred file-by-task:
 |- prompts/                             # versioned LLM prompt templates (sha256 provenance)
 |  `- assessment/                       # narrative v1 (free text) + v2 (structured); onboarding/service/termination v1
 |- schemas/                             # JSON schemas for structured LLM output
-|- services/                            # 111 service modules
+|- services/                            # 126 service modules
 |  |- agent_eval.py                     # A6 replay / propose_thresholds / golden sets
 |  |- automation/                       # B2 pure rules: quoting, underwriting_gate, fraud, claims_gate, billing_schedule
+|  |- pricing_kernel.py                 # single writer for premium decomposition (PremiumComponents)
+|  |- actuarial_service.py              # tables, reserves, portfolio simulator (reprices via pricing_kernel)
+|  |- phinsafe_rider.py                 # child catastrophe-hedge rider product + projection
 |  |- underwriting_bot/                 # B1 package: report (model+engine), features (analyzers), service
 |  |- underwriting_bot_service.py       # facade re-exporting the package
 |  |- evidence_facts.py                 # B1 shared evidence pipeline (facts_for, bundles, FeatureCache)
 |  |- model_shadow.py                   # B1 shadow scoring + drift monitor (never decides)
-|  |- pension/                          # B5 package: schema (mapping + CompiledFields), parsers (tree + iterparse), cache, report, agent
+|  |- pension/                          # B5 package: schema (mapping + CompiledFields), parsers (tree + iterparse), cache, profile, report, agent
 |  |- pension_data_agent.py             # facade re-exporting the package
-|  |- risk_reports/                     # B9 package: models, parsers (DocumentProcessingService text), analysis, charts, render, service
+|  |- risk_reports/                     # B9 package: models, parsers, analysis, charts, render, service, pdf_export (Hebrew-ready)
 |  |- ai_risk_reports_service.py        # facade (two-way forwarding of AI_REPORTS_DATA_FILE / singleton)
 |  |- customer_agent/                   # B6 package: communication + service_desk facades, interaction_log, consent, escalation
 |  |- customer_communication_agent.py   # shim -> customer_agent.communication
+|  |- chat_application_service.py       # Phin chat state machine (+ chat_application_i18n.py)
+|  |- claims_chat_service.py            # Phin claims chat (loopback into claims pipeline)
+|  |- customer_identity_service.py      # sole writer for personal ID + nationality
+|  |- customer_document_vault_service.py # SHA-256-sealed per-entity archive for chat/intake/claim files
+|  |- document_durability_agent.py      # admin-only archive durability probe (reserved lane)
+|  |- financial_reporting_service.py    # unified books / forecast feeds for accountant & regulator surfaces
+|  |- regulator_outline.py              # read-only outline (admin+actuary readable, reconciles to financial books)
+|  |- regulator_inquiries.py            # inquiry thread stored in agent_artifacts + Business Relations row
 |  |- agent_job_queue.py                # generalized job queue (retry/DLQ/handlers)
 |  |- document_job_worker.py            # document binding over the job queue
 |  |- jobs/                             # agent job adapters (202 routes; worker_context)
@@ -274,7 +334,7 @@ Preferred file-by-task:
 |- scripts/                             # operational utilities
 |  |- run_agent_eval.py                 # golden sets + decision replay CLI
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
-|- tests/                               # 225 test files
+|- tests/                               # 262 test files
 |  `- golden/<agent>/*.json             # frozen agent outputs ({name, input, expected})
 |- docs/
 |  |- platform_data_architecture.md
@@ -371,7 +431,10 @@ When changing or adding an API endpoint:
 2. Check whether the endpoint belongs in `server.py`,
    `web_portal/api_extensions.py`, `web_portal/api_bi_analytics.py`,
    `web_portal/api_delivery_bidding.py`, `web_portal/api_agent_ecosystem.py`,
-   or `web_portal/api_assessment_center.py`.
+   `web_portal/api_assessment_center.py`,
+   `web_portal/api_chat_application.py` (Phin policy intake),
+   `web_portal/api_claims_chat.py` (public claims chat), or
+   `web_portal/api_customer_identity.py` (ID + nationality).
 3. Verify the extension is actually wired; `server.py` imports extension
    dispatchers conditionally and can run without them.
 4. Reuse service-layer logic from `services/` instead of embedding new business
@@ -593,7 +656,11 @@ Operational notes:
   `/api/health`, entrypoint is `./scripts/entrypoint.sh serve`
 - `render.yaml` includes a cron service `phins-monthly-auto-pay`
   (`./scripts/entrypoint.sh cron`, daily `15 6 * * *` catch-up; due day is
-  the 1st and a missed 1st still collects)
+  the 1st and a missed 1st still collects without a second cash posting).
+  Statement bills are the quoted installment (monthly, quarterly at 3% off,
+  or annual on the policy anniversary); auto-pay and outstanding-bill
+  repair settle each cycle exactly once, and `payment_setup.auto_pay=false`
+  (or `billing.auto_pay=false`) is honored before any charge or notification
 - `entrypoint.sh db-init` refuses to seed demo data when
   `PHINS_ENVIRONMENT=production` (forces `POPULATE_DEMO_DATA=false`)
 
@@ -762,4 +829,4 @@ If you update this file again:
 
 ---
 
-Last updated: September 15, 2026
+Last updated: October 5, 2026
