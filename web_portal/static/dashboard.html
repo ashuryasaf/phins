@@ -962,55 +962,78 @@
         </div>
       </div>
       
-      <!-- AI/BI Platform Notice -->
-      <div style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); border-radius: 12px; padding: 16px; margin-bottom: 20px; border-left: 4px solid #4caf50;">
-        <div style="font-weight: 600; color: #2e7d32; margin-bottom: 8px;"> AI-Powered Smart Payments</div>
-        <p style="color: #555; margin: 0; font-size: 0.9rem;">
-          Pay with wallet balance first • Transfer from investments automatically • All transactions secured on NFT & Transaction Ledgers • Real-time balance tracking across all accounts
-        </p>
+      <div class="phins-wallet-note">
+        <strong>Wallet payments stay on the ledger</strong>
+        Pay from the health wallet first. Transfers from investments post before the purchase. Supplier listings settle through the supply-chain order, and every charge is recorded on the transaction ledger.
       </div>
-      
-      <!-- Balance Cards -->
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px;">
-        <div style="background: white; border-radius: 12px; padding: 14px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
-          <div style="font-size: 0.75rem; color: #666; margin-bottom: 4px;"> Health Wallet</div>
-          <div id="balance-wallet" style="font-size: 1.3rem; font-weight: 700; color: #28a745;">$0.00</div>
-          <div style="font-size: 0.7rem; color: #4caf50; margin-top: 4px;">Instant Pay</div>
+
+      <div class="dashboard-stats phins-spectrum-stats phins-wallet-balances">
+        <div class="stat-box">
+          <div class="stat-label">Health Wallet</div>
+          <div class="stat-value" id="balance-wallet">$0.00</div>
+          <div class="stat-change">Instant pay</div>
         </div>
-        <div style="background: white; border-radius: 12px; padding: 14px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
-          <div style="font-size: 0.75rem; color: #666; margin-bottom: 4px;"> Investments</div>
-          <div id="balance-investment" style="font-size: 1.3rem; font-weight: 700; color: #1565c0;">$0.00</div>
-          <div style="font-size: 0.7rem; color: #1976d2; margin-top: 4px;">Transfer Available</div>
+        <div class="stat-box">
+          <div class="stat-label">Investments</div>
+          <div class="stat-value" id="balance-investment">$0.00</div>
+          <div class="stat-change">Transfer available</div>
         </div>
-        <div onclick="addFundsToWallet()" style="background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); border-radius: 12px; padding: 14px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); cursor: pointer; border: 2px dashed #ff9800; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1)'">
-          <div style="font-size: 0.75rem; color: #e65100; margin-bottom: 4px;"> Add Funds</div>
-          <div style="font-size: 1.3rem; font-weight: 700; color: #f57c00;">+$</div>
-          <div style="font-size: 0.7rem; color: #ff9800; margin-top: 4px;">Card, PayPal, Crypto</div>
-        </div>
+        <button type="button" class="stat-box phins-wallet-add" onclick="addFundsToWallet()">
+          <div class="stat-label">Add Funds</div>
+          <div class="stat-value">+$</div>
+          <div class="stat-change">Card, PayPal, crypto</div>
+        </button>
       </div>
-      
-      <!-- Quick Actions -->
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px;">
-        <button onclick="showMedicalCategory('consultation')" class="wallet-quick-btn" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; box-shadow: 0 4px 12px rgba(21, 101, 192, 0.2);">
-           Book Consultation
+
+      <div class="phins-wallet-actions">
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('consultation')">
+          <img src="/marketplace/gp-consult.jpg" alt="Clinic consultation room">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Services</span>
+            <span class="phins-wallet-action-title">Book Consultation</span>
+          </span>
         </button>
-        <button onclick="showMedicalCategory('devices')" class="wallet-quick-btn" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; box-shadow: 0 4px 12px rgba(13, 71, 161, 0.2);">
-           Medical Devices
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('devices')">
+          <img src="/marketplace/wheelchair.jpg" alt="Manual wheelchair">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Equipment</span>
+            <span class="phins-wallet-action-title">Medical Devices</span>
+          </span>
         </button>
-        <button onclick="showMedicalCategory('supplies')" class="wallet-quick-btn" style="background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; box-shadow: 0 4px 12px rgba(66, 165, 245, 0.2);">
-           Daily Supplies
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('supplies')">
+          <img src="/marketplace/wound-care.jpg" alt="Wound care supplies">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Daily care</span>
+            <span class="phins-wallet-action-title">Daily Supplies</span>
+          </span>
         </button>
-        <button onclick="showMedicalCategory('pharmacy')" class="wallet-quick-btn" style="background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; box-shadow: 0 4px 12px rgba(25, 118, 210, 0.2);">
-           Pharmacy
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('pharmacy')">
+          <img src="/marketplace/prescription.jpg" alt="Pharmacy counter">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Medication</span>
+            <span class="phins-wallet-action-title">Pharmacy</span>
+          </span>
         </button>
-        <button onclick="showMedicalCategory('homecare')" class="wallet-quick-btn" style="background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2);">
-           Home Care
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('homecare')">
+          <img src="/marketplace/home-aide.jpg" alt="Home care visit supplies">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">At home</span>
+            <span class="phins-wallet-action-title">Home Care</span>
+          </span>
         </button>
-        <button onclick="showTransferModal()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(123, 31, 162, 0.2);">
-           Transfer Funds
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showTransferModal()">
+          <img src="/marketplace/medical-alert.jpg" alt="Personal medical alert device">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Balances</span>
+            <span class="phins-wallet-action-title">Transfer Funds</span>
+          </span>
         </button>
-        <button onclick="openHealthWalletAISearch()" class="wallet-quick-btn" style="background: linear-gradient(135deg, #00897b 0%, #26a69a 100%); color: white; border: none; padding: 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(0, 137, 123, 0.2);">
-           AI Search Offers
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="openHealthWalletAISearch()">
+          <img src="/marketplace/ai-search.jpg" alt="Search across supplier offers">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Suppliers</span>
+            <span class="phins-wallet-action-title">AI Search Offers</span>
+          </span>
         </button>
       </div>
     </section>
@@ -1018,11 +1041,14 @@
     <!-- Medical Products Marketplace -->
     <section id="medical-marketplace" class="section-content customer-tab" data-collapsible="true" data-collapsed="true" data-tone="light" style="display: none;">
       <div class="section-header" style="display: flex; justify-content: space-between; align-items: center;">
-        <h2 id="marketplace-title"><span class="tab-brand-mark"><img src="/phins-logo.svg" alt=""></span>Medical Products & Services</h2>
-        <button type="button" onclick="closeMarketplace()" aria-label="Close marketplace" style="background: none; border: none; font-size: 0.95rem; cursor: pointer; font-weight: 600;">Close</button>
+        <div>
+          <h2 id="marketplace-title"><span class="tab-brand-mark"><img src="/phins-logo.svg" alt=""></span>Medical Products & Services</h2>
+          <p id="marketplace-subtitle" class="phins-market-sub"></p>
+        </div>
+        <button type="button" class="phins-text-btn" onclick="closeMarketplace()" aria-label="Close marketplace">Close</button>
       </div>
       
-      <div id="product-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; margin-top: 20px;">
+      <div id="product-grid" class="phins-market-grid">
         <!-- Products loaded dynamically -->
       </div>
     </section>
@@ -1036,25 +1062,25 @@
             Search all available offers from registered suppliers and purchase through the same wallet, billing, ledger, and marketplace integrity pipeline.
           </p>
         </div>
-        <button onclick="closeHealthWalletAISearch()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #00695c;"></button>
+        <button type="button" class="phins-text-btn" onclick="closeHealthWalletAISearch()">Close</button>
       </div>
 
-      <div style="margin-top: 16px; display:flex; flex-wrap:wrap; gap:8px;">
-        <button onclick="applyHealthWalletAISuggestion('diabetes supplies')" style="background:#ffffff; border:1px solid #b2dfdb; color:#00695c; padding:8px 12px; border-radius:999px; cursor:pointer; font-weight:600;"> Diabetes supplies</button>
-        <button onclick="applyHealthWalletAISuggestion('home nurse near me')" style="background:#ffffff; border:1px solid #b2dfdb; color:#00695c; padding:8px 12px; border-radius:999px; cursor:pointer; font-weight:600;"> Home nurse near me</button>
-        <button onclick="applyHealthWalletAISuggestion('prescription refill')" style="background:#ffffff; border:1px solid #b2dfdb; color:#00695c; padding:8px 12px; border-radius:999px; cursor:pointer; font-weight:600;"> Prescription refill</button>
-        <button onclick="applyHealthWalletAISuggestion('wheelchair delivery')" style="background:#ffffff; border:1px solid #b2dfdb; color:#00695c; padding:8px 12px; border-radius:999px; cursor:pointer; font-weight:600;"> Wheelchair delivery</button>
-        <button onclick="applyHealthWalletAISuggestion('mental health counseling')" style="background:#ffffff; border:1px solid #b2dfdb; color:#00695c; padding:8px 12px; border-radius:999px; cursor:pointer; font-weight:600;"> Mental health counseling</button>
+      <div class="phins-search-suggest">
+        <button type="button" onclick="applyHealthWalletAISuggestion('diabetes supplies')">Diabetes supplies</button>
+        <button type="button" onclick="applyHealthWalletAISuggestion('home nurse near me')">Home nurse near me</button>
+        <button type="button" onclick="applyHealthWalletAISuggestion('prescription refill')">Prescription refill</button>
+        <button type="button" onclick="applyHealthWalletAISuggestion('wheelchair delivery')">Wheelchair delivery</button>
+        <button type="button" onclick="applyHealthWalletAISuggestion('mental health counseling')">Mental health counseling</button>
       </div>
 
-      <div style="margin-top: 20px; display:grid; grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(120px, 1fr)); gap: 12px;">
-        <input id="health-ai-search-query" type="text" placeholder="Search consultation, pharmacy, equipment, home care, supplier name..." style="padding: 14px 16px; border-radius: 10px; border: 1px solid #b2dfdb; font-size: 14px;">
-        <select id="health-ai-search-item-type" style="padding: 14px 16px; border-radius: 10px; border: 1px solid #b2dfdb; font-size: 14px;">
+      <div class="phins-search-bar">
+        <input id="health-ai-search-query" type="text" placeholder="Search consultation, pharmacy, equipment, home care, supplier name...">
+        <select id="health-ai-search-item-type">
           <option value="">All Types</option>
           <option value="service">Services</option>
           <option value="product">Products</option>
         </select>
-        <select id="health-ai-search-supplier-type" style="padding: 14px 16px; border-radius: 10px; border: 1px solid #b2dfdb; font-size: 14px;">
+        <select id="health-ai-search-supplier-type">
           <option value="">All Supplier Types</option>
           <option value="pharmacy">Pharmacy</option>
           <option value="clinic">Clinic</option>
@@ -1063,21 +1089,21 @@
           <option value="wellness">Wellness</option>
           <option value="delivery">Delivery</option>
         </select>
-        <button onclick="runHealthWalletAISearch()" style="background: linear-gradient(135deg, #00897b 0%, #26a69a 100%); color: white; border: none; padding: 14px 18px; border-radius: 10px; cursor: pointer; font-weight: 700;"> Search</button>
+        <button type="button" onclick="runHealthWalletAISearch()">Search</button>
       </div>
 
-      <div style="margin-top: 12px; display:grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 12px;">
-        <input id="health-ai-search-location-city" type="text" placeholder="City (e.g. Tel Aviv)" style="padding: 14px 16px; border-radius: 10px; border: 1px solid #b2dfdb; font-size: 14px;">
-        <input id="health-ai-search-location-country" type="text" placeholder="Country" style="padding: 14px 16px; border-radius: 10px; border: 1px solid #b2dfdb; font-size: 14px;">
-        <input id="health-ai-search-max-distance" type="number" min="1" step="1" placeholder="Max distance (km)" style="padding: 14px 16px; border-radius: 10px; border: 1px solid #b2dfdb; font-size: 14px;">
+      <div class="phins-search-filters">
+        <input id="health-ai-search-location-city" type="text" placeholder="City (e.g. Tel Aviv)">
+        <input id="health-ai-search-location-country" type="text" placeholder="Country">
+        <input id="health-ai-search-max-distance" type="number" min="1" step="1" placeholder="Min. service radius (km)">
       </div>
 
-      <div id="health-ai-search-recommendation" style="margin-top: 16px; background: rgba(255,255,255,0.85); border: 1px solid rgba(0, 137, 123, 0.12); border-radius: 12px; padding: 16px; color: #255550;">
-        AI recommendation will appear here after search.
+      <div id="health-ai-search-recommendation" class="phins-search-note">
+        AI recommendation will appear here after search. City and country match the supplier's registered address. Service radius uses the radius on that profile and never invents a distance.
       </div>
 
-      <div id="health-ai-search-results" style="margin-top: 20px; display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
-        <div style="grid-column:1/-1; text-align:center; color:#607d8b; padding: 32px 0;">Use AI Search to discover offers from approved suppliers.</div>
+      <div id="health-ai-search-results" class="phins-market-grid">
+        <div class="phins-market-empty">Use AI Search to discover offers from approved suppliers.</div>
       </div>
     </section>
 
@@ -5904,61 +5930,61 @@
     // Medical Products Catalog (enhanced with API integration)
     const medicalProducts = {
       consultation: [
-        { id: 'cons-1', name: ' General Practitioner Visit', price: 75, description: 'In-person or telehealth consultation with a GP', duration: '30 min' },
-        { id: 'cons-2', name: ' Specialist Consultation', price: 150, description: 'Neurologist, cardiologist, or other specialist', duration: '45 min' },
-        { id: 'cons-3', name: ' Telehealth Quick Consult', price: 35, description: '15-minute video call with a nurse practitioner', duration: '15 min' },
-        { id: 'cons-4', name: ' Physical Therapy Session', price: 120, description: 'One-on-one PT session for mobility improvement', duration: '60 min' },
-        { id: 'cons-5', name: ' Mental Health Counseling', price: 100, description: 'Licensed therapist session', duration: '50 min' },
+        { id: 'cons-1', name: 'General Practitioner Visit', price: 75, description: 'In-person or telehealth consultation with a GP', duration: '30 min', image: '/marketplace/gp-consult.jpg' },
+        { id: 'cons-2', name: 'Specialist Consultation', price: 150, description: 'Neurologist, cardiologist, or other specialist', duration: '45 min', image: '/marketplace/specialist-consult.jpg' },
+        { id: 'cons-3', name: 'Telehealth Quick Consult', price: 35, description: '15-minute video call with a nurse practitioner', duration: '15 min', image: '/marketplace/telehealth.jpg' },
+        { id: 'cons-4', name: 'Physical Therapy Session', price: 120, description: 'One-on-one PT session for mobility improvement', duration: '60 min', image: '/marketplace/physical-therapy.jpg' },
+        { id: 'cons-5', name: 'Mental Health Counseling', price: 100, description: 'Licensed therapist session', duration: '50 min', image: '/marketplace/mental-health.jpg' },
       ],
       devices: [
-        { id: 'dev-1', name: ' Standard Wheelchair', price: 450, description: 'Lightweight manual wheelchair with cushion', category: 'Mobility' },
-        { id: 'dev-2', name: ' Walking Cane (Adjustable)', price: 35, description: 'Aluminum adjustable walking cane with rubber tip', category: 'Mobility' },
-        { id: 'dev-3', name: ' Blood Pressure Monitor', price: 65, description: 'Digital automatic BP monitor with memory', category: 'Monitoring' },
-        { id: 'dev-4', name: ' Glucose Monitor Kit', price: 85, description: 'Blood glucose meter with 50 test strips', category: 'Monitoring' },
-        { id: 'dev-5', name: ' Hospital Bed (Adjustable)', price: 1200, description: 'Electric adjustable hospital bed for home use', category: 'Home Care' },
-        { id: 'dev-6', name: ' Shower Chair', price: 75, description: 'Non-slip shower chair with back support', category: 'Bathroom Safety' },
-        { id: 'dev-7', name: ' Walker (Folding)', price: 120, description: 'Folding aluminum walker with wheels', category: 'Mobility' },
-        { id: 'dev-8', name: ' Medical Alert System', price: 199, description: 'Personal emergency response system with fall detection', category: 'Safety' },
+        { id: 'dev-1', name: 'Standard Wheelchair', price: 450, description: 'Lightweight manual wheelchair with cushion', category: 'Mobility', image: '/marketplace/wheelchair.jpg' },
+        { id: 'dev-2', name: 'Walking Cane (Adjustable)', price: 35, description: 'Aluminum adjustable walking cane with rubber tip', category: 'Mobility', image: '/marketplace/walking-cane.jpg' },
+        { id: 'dev-3', name: 'Blood Pressure Monitor', price: 65, description: 'Digital automatic BP monitor with memory', category: 'Monitoring', image: '/marketplace/bp-monitor.jpg' },
+        { id: 'dev-4', name: 'Glucose Monitor Kit', price: 85, description: 'Blood glucose meter with 50 test strips', category: 'Monitoring', image: '/marketplace/glucose-kit.jpg' },
+        { id: 'dev-5', name: 'Hospital Bed (Adjustable)', price: 1200, description: 'Electric adjustable hospital bed for home use', category: 'Home Care', image: '/marketplace/hospital-bed.jpg' },
+        { id: 'dev-6', name: 'Shower Chair', price: 75, description: 'Non-slip shower chair with back support', category: 'Bathroom Safety', image: '/marketplace/shower-chair.jpg' },
+        { id: 'dev-7', name: 'Walker (Folding)', price: 120, description: 'Folding aluminum walker with wheels', category: 'Mobility', image: '/marketplace/walker.jpg' },
+        { id: 'dev-8', name: 'Medical Alert System', price: 199, description: 'Personal emergency response system with fall detection', category: 'Safety', image: '/marketplace/medical-alert.jpg' },
       ],
       supplies: [
-        { id: 'sup-1', name: ' Adult Diapers (Pack of 30)', price: 28, description: 'Premium absorbent incontinence briefs, medium size', size: 'M/L/XL available' },
-        { id: 'sup-2', name: ' Adult Diapers (Pack of 60)', price: 52, description: 'Value pack incontinence briefs', size: 'M/L/XL available' },
-        { id: 'sup-3', name: ' Disposable Bed Pads (50 ct)', price: 35, description: 'Waterproof underpads for bed protection', size: '23x36 inches' },
-        { id: 'sup-4', name: ' Disposable Gloves (100 ct)', price: 15, description: 'Nitrile examination gloves, powder-free', size: 'S/M/L' },
-        { id: 'sup-5', name: ' Wound Care Kit', price: 45, description: 'Complete wound care supplies with bandages and antiseptic', contents: '50+ items' },
-        { id: 'sup-6', name: ' No-Rinse Body Wash', price: 18, description: 'Gentle cleansing foam, no water needed', size: '16 oz' },
-        { id: 'sup-7', name: ' Skin Barrier Cream', price: 22, description: 'Protective moisture barrier cream', size: '4 oz' },
-        { id: 'sup-8', name: ' Bathing Wipes (Pack of 48)', price: 12, description: 'Pre-moistened cleansing cloths', fragrance: 'Unscented' },
+        { id: 'sup-1', name: 'Adult Diapers (Pack of 30)', price: 28, description: 'Premium absorbent incontinence briefs, medium size', size: 'M/L/XL available', image: '/marketplace/incontinence-briefs.jpg' },
+        { id: 'sup-2', name: 'Adult Diapers (Pack of 60)', price: 52, description: 'Value pack incontinence briefs', size: 'M/L/XL available', image: '/marketplace/incontinence-briefs.jpg' },
+        { id: 'sup-3', name: 'Disposable Bed Pads (50 ct)', price: 35, description: 'Waterproof underpads for bed protection', size: '23x36 inches', image: '/marketplace/bed-pads.jpg' },
+        { id: 'sup-4', name: 'Disposable Gloves (100 ct)', price: 15, description: 'Nitrile examination gloves, powder-free', size: 'S/M/L', image: '/marketplace/nitrile-gloves.jpg' },
+        { id: 'sup-5', name: 'Wound Care Kit', price: 45, description: 'Complete wound care supplies with bandages and antiseptic', contents: '50+ items', image: '/marketplace/wound-care.jpg' },
+        { id: 'sup-6', name: 'No-Rinse Body Wash', price: 18, description: 'Gentle cleansing foam, no water needed', size: '16 oz', image: '/marketplace/body-wash.jpg' },
+        { id: 'sup-7', name: 'Skin Barrier Cream', price: 22, description: 'Protective moisture barrier cream', size: '4 oz', image: '/marketplace/barrier-cream.jpg' },
+        { id: 'sup-8', name: 'Bathing Wipes (Pack of 48)', price: 12, description: 'Pre-moistened cleansing cloths', fragrance: 'Unscented', image: '/marketplace/bathing-wipes.jpg' },
       ],
       pharmacy: [
-        { id: 'rx-1', name: ' Prescription Refill Service', price: 10, description: 'Copay for generic medications (up to 30-day supply)', note: 'Rx required' },
-        { id: 'rx-2', name: ' Insulin Supplies', price: 45, description: 'Insulin syringes and alcohol swabs (monthly supply)', note: 'Rx required' },
-        { id: 'rx-3', name: ' First Aid Kit (Complete)', price: 35, description: '200+ piece emergency first aid kit', contents: 'Bandages, antiseptic, tools' },
-        { id: 'rx-4', name: ' Face Masks (Box of 50)', price: 15, description: '3-ply disposable medical masks', certification: 'FDA registered' },
-        { id: 'rx-5', name: ' Hand Sanitizer (1 gallon)', price: 25, description: '70% alcohol hand sanitizer', size: '1 gallon pump' },
+        { id: 'rx-1', name: 'Prescription Refill Service', price: 10, description: 'Copay for generic medications (up to 30-day supply)', note: 'Rx required', image: '/marketplace/prescription.jpg' },
+        { id: 'rx-2', name: 'Insulin Supplies', price: 45, description: 'Insulin syringes and alcohol swabs (monthly supply)', note: 'Rx required', image: '/marketplace/insulin-supplies.jpg' },
+        { id: 'rx-3', name: 'First Aid Kit (Complete)', price: 35, description: '200+ piece emergency first aid kit', contents: 'Bandages, antiseptic, tools', image: '/marketplace/first-aid.jpg' },
+        { id: 'rx-4', name: 'Face Masks (Box of 50)', price: 15, description: '3-ply disposable medical masks', certification: 'FDA registered', image: '/marketplace/face-masks.jpg' },
+        { id: 'rx-5', name: 'Hand Sanitizer (1 gallon)', price: 25, description: '70% alcohol hand sanitizer', size: '1 gallon pump', image: '/marketplace/sanitizer.jpg' },
       ],
       homecare: [
-        { id: 'hc-1', name: ' Home Health Aide (4 hrs)', price: 120, description: 'Personal care assistance at home', duration: '4 hours' },
-        { id: 'hc-2', name: ' Home Health Aide (8 hrs)', price: 220, description: 'Full day personal care assistance', duration: '8 hours' },
-        { id: 'hc-3', name: ' Meal Delivery (Weekly)', price: 85, description: '7 days of nutritious prepared meals', meals: '21 meals' },
-        { id: 'hc-4', name: ' Medical Transportation', price: 45, description: 'Round-trip to medical appointments', distance: 'Up to 25 miles' },
-        { id: 'hc-5', name: ' Home Safety Assessment', price: 150, description: 'Professional home safety evaluation', includes: 'Written report' },
-        { id: 'hc-6', name: ' Light Housekeeping (4 hrs)', price: 80, description: 'Basic cleaning and organization', duration: '4 hours' },
+        { id: 'hc-1', name: 'Home Health Aide (4 hrs)', price: 120, description: 'Personal care assistance at home', duration: '4 hours', image: '/marketplace/home-aide.jpg' },
+        { id: 'hc-2', name: 'Home Health Aide (8 hrs)', price: 220, description: 'Full day personal care assistance', duration: '8 hours', image: '/marketplace/home-aide.jpg' },
+        { id: 'hc-3', name: 'Meal Delivery (Weekly)', price: 85, description: '7 days of nutritious prepared meals', meals: '21 meals', image: '/marketplace/meal-delivery.jpg' },
+        { id: 'hc-4', name: 'Medical Transportation', price: 45, description: 'Round-trip to medical appointments', distance: 'Up to 25 miles', image: '/marketplace/medical-transport.jpg' },
+        { id: 'hc-5', name: 'Home Safety Assessment', price: 150, description: 'Professional home safety evaluation', includes: 'Written report', image: '/marketplace/home-safety.jpg' },
+        { id: 'hc-6', name: 'Light Housekeeping (4 hrs)', price: 80, description: 'Basic cleaning and organization', duration: '4 hours', image: '/marketplace/housekeeping.jpg' },
       ],
       legal: [
-        { id: 'leg-1', name: ' Legal Consultation (30 min)', price: 95, description: 'Policy, claim, and documentation guidance', duration: '30 minutes' },
-        { id: 'leg-2', name: ' Claims Representation', price: 350, description: 'Claim dispute representation and filing support', duration: 'Per case' },
-        { id: 'leg-3', name: ' Contract Review', price: 180, description: 'Legal review of care/service contracts', duration: 'Per contract' }
+        { id: 'leg-1', name: 'Legal Consultation (30 min)', price: 95, description: 'Policy, claim, and documentation guidance', duration: '30 minutes', image: '/marketplace/legal-consult.jpg' },
+        { id: 'leg-2', name: 'Claims Representation', price: 350, description: 'Claim dispute representation and filing support', duration: 'Per case', image: '/marketplace/legal-consult.jpg' },
+        { id: 'leg-3', name: 'Contract Review', price: 180, description: 'Legal review of care/service contracts', duration: 'Per contract', image: '/marketplace/legal-consult.jpg' }
       ]
     };
     
     const categoryTitles = {
-      consultation: ' Medical Consultations',
-      devices: ' Medical Devices & Equipment',
-      supplies: ' Daily Care Supplies',
-      pharmacy: ' Pharmacy & Medications',
-      homecare: ' Home Care Services',
-      legal: ' Legal Services'
+      consultation: 'Medical Consultations',
+      devices: 'Medical Devices & Equipment',
+      supplies: 'Daily Care Supplies',
+      pharmacy: 'Pharmacy & Medications',
+      homecare: 'Home Care Services',
+      legal: 'Legal Services'
     };
     
     // ========== SHOPPING CART SYSTEM ==========
@@ -6023,6 +6049,141 @@
       return score;
     }
 
+    function marketplaceMediaUrl(url) {
+      const value = String(url || '').trim();
+      if (!value || value.includes('..') || /\s/.test(value)) return '';
+      if (value.startsWith('/marketplace/') || value.startsWith('/media-files/supplier-offers/')) return value;
+      if (/^https:\/\/[^\s]+$/i.test(value)) return value;
+      return '';
+    }
+
+    const catalogIllustrationByCategory = {
+      consultation: '/marketplace/gp-consult.jpg',
+      devices: '/marketplace/wheelchair.jpg',
+      supplies: '/marketplace/wound-care.jpg',
+      pharmacy: '/marketplace/prescription.jpg',
+      homecare: '/marketplace/home-aide.jpg',
+      legal: '/marketplace/legal-consult.jpg',
+      medical_services: '/marketplace/gp-consult.jpg',
+      medical_equipment: '/marketplace/wheelchair.jpg',
+      medications: '/marketplace/prescription.jpg',
+      wellness: '/marketplace/mental-health.jpg'
+    };
+
+    function marketplaceDomId(value) {
+      return String(value || '').replace(/[^A-Za-z0-9_-]/g, '');
+    }
+
+    function marketplaceHero(product) {
+      const mediaList = Array.isArray(product.media) ? product.media.filter(Boolean) : [];
+      const supplierImage = mediaList.find(item => item && item.type === 'image' && marketplaceMediaUrl(item.url));
+      const supplierVideo = mediaList.find(item => item && item.type === 'video' && marketplaceMediaUrl(item.url));
+      const ownImage = marketplaceMediaUrl(product.image_url) || marketplaceMediaUrl(product.image);
+      if (supplierImage) {
+        return {
+          type: 'image',
+          url: marketplaceMediaUrl(supplierImage.url),
+          alt: supplierImage.alt_text || product.name || 'Supplier photo',
+          source: 'supplier'
+        };
+      }
+      if (ownImage) {
+        return {
+          type: 'image',
+          url: ownImage,
+          alt: product.name || 'Product',
+          source: product.isSupplierOffer ? 'supplier' : 'demo'
+        };
+      }
+      if (supplierVideo) {
+        return {
+          type: 'video',
+          url: marketplaceMediaUrl(supplierVideo.url),
+          alt: supplierVideo.alt_text || product.name || 'Supplier video',
+          source: 'supplier'
+        };
+      }
+      const fallback = catalogIllustrationByCategory[product.browse_bucket]
+        || catalogIllustrationByCategory[product.normalized_category]
+        || catalogIllustrationByCategory[product.category]
+        || '/marketplace/ai-search.jpg';
+      return { type: 'image', url: fallback, alt: product.name || 'Catalog illustration', source: 'illustration' };
+    }
+
+    function marketplaceBadge(product, hero) {
+      if (!product.isSupplierOffer) return 'Demo catalog';
+      if (hero.source === 'illustration') return 'Illustration';
+      if (hero.type === 'video') return 'Supplier video';
+      return 'Supplier photo';
+    }
+
+    function addIndexedToCart(productId, category) {
+      const product = marketplaceOfferIndex[productId];
+      if (!product) return;
+      addToCart(
+        productId,
+        product.name,
+        Number(product.price) || 0,
+        category,
+        product.isSupplierOffer ? (product.supplier_id || null) : null
+      );
+    }
+
+    function buyIndexedProduct(productId, category) {
+      const product = marketplaceOfferIndex[productId];
+      if (!product) return;
+      purchaseProduct(productId, product.name, Number(product.price) || 0, category, product);
+    }
+
+    function renderMarketplaceCard(product, category) {
+      const hero = marketplaceHero(product);
+      const mediaList = Array.isArray(product.media) ? product.media.filter(Boolean) : [];
+      const photoCount = mediaList.filter(item => item && item.type === 'image').length;
+      const videoCount = mediaList.filter(item => item && item.type === 'video').length;
+      const safeId = marketplaceDomId(product.id);
+      const safeCategory = marketplaceDomId(category || product.browse_bucket || product.category || 'general');
+      const locationBits = [product.supplier_city, product.supplier_country].filter(Boolean);
+      const mediaHtml = hero.type === 'video'
+        ? `<video src="${escapeHtml(hero.url)}" controls preload="metadata" muted playsinline></video>`
+        : `<img src="${escapeHtml(hero.url)}" alt="${escapeHtml(hero.alt || product.name || 'Product')}" loading="lazy">`;
+      const detailBits = [
+        product.duration ? escapeHtml(product.duration) : '',
+        product.size ? escapeHtml(product.size) : '',
+        product.unit ? escapeHtml(String(product.unit).replace(/_/g, ' ')) : '',
+        product.delivery_config && product.delivery_config.mode
+          ? escapeHtml(String(product.delivery_config.mode).replace(/_/g, ' '))
+          : ''
+      ].filter(Boolean);
+      return `
+        <article class="phins-product-card product-card">
+          <div class="phins-product-media">
+            ${mediaHtml}
+            <span class="phins-product-badge">${escapeHtml(marketplaceBadge(product, hero))}</span>
+          </div>
+          <div class="phins-product-body">
+            <div class="phins-product-kicker">${escapeHtml(product.item_type || (product.isSupplierOffer ? 'offer' : 'catalog'))}</div>
+            <h3>${escapeHtml(product.name)}</h3>
+            <p>${escapeHtml(product.description || 'Approved supplier offer')}</p>
+            <div class="phins-chip-row">
+              ${product.supplier_name ? `<span class="phins-chip">${escapeHtml(product.supplier_name)}</span>` : ''}
+              <span class="phins-chip">${escapeHtml(product.normalized_category || product.category || category || 'general')}</span>
+              ${(photoCount + videoCount) ? `<span class="phins-chip">${photoCount} photo${photoCount === 1 ? '' : 's'} · ${videoCount} video${videoCount === 1 ? '' : 's'}</span>` : ''}
+              ${product.supplier_rating > 0 ? `<span class="phins-chip">${Number(product.supplier_rating).toFixed(1)} · ${product.supplier_reviews || 0} reviews</span>` : ''}
+            </div>
+            ${locationBits.length ? `<div class="phins-product-meta">${escapeHtml(locationBits.join(', '))}${product.supplier_service_radius_km ? ` · radius ${escapeHtml(String(product.supplier_service_radius_km))} km` : ''}</div>` : ''}
+            ${detailBits.length ? `<div class="phins-product-meta">${detailBits.join(' · ')}</div>` : ''}
+            <div class="phins-product-foot">
+              <span class="phins-product-price">$${Number(product.price || 0).toFixed(2)}</span>
+              <div class="phins-product-actions">
+                <button type="button" class="phins-btn phins-btn-gold" onclick="addIndexedToCart('${safeId}', '${safeCategory}')">Add to cart</button>
+                <button type="button" class="phins-btn phins-btn-navy" onclick="buyIndexedProduct('${safeId}', '${safeCategory}')">Buy now</button>
+                ${product.isSupplierOffer ? `<button type="button" class="phins-btn phins-btn-quiet" onclick="showMedicalCategory('${safeCategory}')">Open category</button>` : ''}
+              </div>
+            </div>
+          </div>
+        </article>`;
+    }
+
     function renderHealthWalletAISearchResults(results, query, recommendationText) {
       const recommendationEl = document.getElementById('health-ai-search-recommendation');
       const resultsEl = document.getElementById('health-ai-search-results');
@@ -6030,79 +6191,34 @@
 
       recommendationEl.innerHTML = recommendationText || 'AI recommendation will appear here after search.';
       if (!results.length) {
-        resultsEl.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:#607d8b; padding: 32px 0;">No supplier offers matched this AI search yet. Try a broader product, service, category, or supplier name.</div>';
+        resultsEl.innerHTML = '<div class="phins-market-empty">No supplier offers matched this AI search yet. Try a broader product, service, category, or supplier name.</div>';
         return;
       }
 
       marketplaceOfferIndex = {
         ...marketplaceOfferIndex,
-        ...Object.fromEntries(results.map(item => [item.id, item]))
+        ...Object.fromEntries(results.map(item => [item.id, { ...item, isSupplierOffer: true }]))
       };
 
-      resultsEl.innerHTML = results.map(offer => {
-        const mediaList = Array.isArray(offer.media) ? offer.media.filter(Boolean) : [];
-        const heroImage = mediaList.find(m => m && m.type === 'image');
-        const heroVideo = mediaList.find(m => m && m.type === 'video');
-        const fallbackImage = offer.image_url ? { url: offer.image_url, type: 'image', alt_text: offer.name } : null;
-        const heroMedia = heroImage || heroVideo || fallbackImage;
-        const photoCount = mediaList.filter(m => m && m.type === 'image').length;
-        const videoCount = mediaList.filter(m => m && m.type === 'video').length;
-        let mediaBlock = '';
-        if (heroMedia) {
-          if (heroMedia.type === 'video') {
-            mediaBlock = `
-              <div style="position:relative; margin: -2px -2px 12px -2px;">
-                <video src="${escapeHtml(heroMedia.url)}" controls preload="metadata" muted playsinline
-                       style="width:100%; max-height:220px; object-fit:cover; border-radius:10px; background:#000;"></video>
-                <div style="position:absolute; top:8px; left:8px; background:rgba(0,0,0,0.6); color:white; padding:2px 8px; border-radius:999px; font-size:0.72rem; font-weight:600;"> Video</div>
-              </div>`;
-          } else {
-            mediaBlock = `
-              <div style="position:relative; margin: -2px -2px 12px -2px;">
-                <img src="${escapeHtml(heroMedia.url)}" alt="${escapeHtml(heroMedia.alt_text || offer.name || 'Offer media')}"
-                     loading="lazy"
-                     style="width:100%; max-height:220px; object-fit:cover; border-radius:10px;">
-                ${(photoCount + videoCount) > 1 ? `<div style="position:absolute; top:8px; left:8px; background:rgba(0,0,0,0.6); color:white; padding:2px 8px; border-radius:999px; font-size:0.72rem; font-weight:600;"> ${photoCount} •  ${videoCount}</div>` : ''}
-              </div>`;
-          }
-        }
-        return `
-        <div style="background:white; border-radius:14px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,0.08); border:1px solid rgba(0, 137, 123, 0.12);">
-          ${mediaBlock}
-          <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
-            <div>
-              <div style="font-size:0.78rem; color:#00897b; font-weight:700; text-transform:uppercase; margin-bottom:6px;">${escapeHtml(offer.item_type || 'offer')}</div>
-              <h3 style="margin:0 0 8px 0; color:#1f2937; font-size:1rem;">${escapeHtml(offer.name)}</h3>
-            </div>
-            <div style="font-size:1.15rem; font-weight:800; color:#2e7d32;">$${Number(offer.price || 0).toFixed(2)}</div>
-          </div>
-          <div style="color:#546e7a; font-size:0.9rem; margin-bottom:10px;">${escapeHtml(offer.description || 'Approved supplier offer')}</div>
-          <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
-            <span style="background:#e0f2f1; color:#00695c; padding:4px 10px; border-radius:999px; font-size:0.78rem;"> ${escapeHtml(offer.supplier_name || 'Approved Supplier')}</span>
-            <span style="background:#e3f2fd; color:#0d47a1; padding:4px 10px; border-radius:999px; font-size:0.78rem;"> ${escapeHtml(offer.normalized_category || offer.category || 'general')}</span>
-            <span style="background:#f3e5f5; color:#6a1b9a; padding:4px 10px; border-radius:999px; font-size:0.78rem;"> ${(offer.wallet_compatible || []).map(w => escapeHtml(w)).join(', ') || 'health'}</span>
-            ${(photoCount + videoCount) ? `<span style="background:#fff3e0; color:#e65100; padding:4px 10px; border-radius:999px; font-size:0.78rem;"> ${photoCount} photo${photoCount === 1 ? '' : 's'} • ${videoCount} video${videoCount === 1 ? '' : 's'}</span>` : ''}
-          </div>
-          ${offer.delivery_config?.mode ? `<div style="font-size:0.82rem; color:#607d8b; margin-bottom:10px;"> ${escapeHtml(String(offer.delivery_config.mode).replace(/_/g, ' '))}${Number.isFinite(Number(offer.delivery_config.eta_days)) ? ` • ${Number(offer.delivery_config.eta_days)} day(s)` : ''}</div>` : ''}
-          <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            <button onclick="purchaseProduct('${offer.id}', '${escapeHtml(offer.name).replace(/'/g, "\\'")}', ${Number(offer.price || 0)}, '${escapeHtml(offer.normalized_category || offer.category || 'general').replace(/'/g, "\\'")}', marketplaceOfferIndex['${offer.id}'])" style="background:linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color:white; border:none; padding:10px 14px; border-radius:8px; cursor:pointer; font-weight:700;"> Buy with Wallet</button>
-            <button onclick="showMedicalCategory('${escapeHtml(offer.normalized_category || offer.category || 'pharmacy').replace(/'/g, "\\'")}')" style="background:#f5f5f5; color:#37474f; border:none; padding:10px 14px; border-radius:8px; cursor:pointer; font-weight:600;"> Open Category</button>
-          </div>
-        </div>
-      `;
-      }).join('');
+      resultsEl.innerHTML = results.map(offer => renderMarketplaceCard(
+        { ...offer, isSupplierOffer: true },
+        offer.browse_bucket || offer.category || 'general'
+      )).join('');
     }
 
     async function runHealthWalletAISearch() {
       const query = (document.getElementById('health-ai-search-query')?.value || '').trim();
       const itemType = (document.getElementById('health-ai-search-item-type')?.value || '').trim();
       const supplierType = (document.getElementById('health-ai-search-supplier-type')?.value || '').trim();
+      const city = (document.getElementById('health-ai-search-location-city')?.value || '').trim();
+      const country = (document.getElementById('health-ai-search-location-country')?.value || '').trim();
+      const minRadius = (document.getElementById('health-ai-search-max-distance')?.value || '').trim();
       const recommendationEl = document.getElementById('health-ai-search-recommendation');
       const resultsEl = document.getElementById('health-ai-search-results');
       if (!recommendationEl || !resultsEl) return;
 
-      recommendationEl.innerHTML = ' Searching approved supplier offers through the health wallet marketplace...';
-      resultsEl.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:#607d8b; padding: 32px 0;">Loading approved supplier offers...</div>';
+      recommendationEl.innerHTML = 'Searching approved supplier offers through the health wallet marketplace...';
+      resultsEl.innerHTML = '<div class="phins-market-empty">Loading approved supplier offers...</div>';
 
       try {
         const params = new URLSearchParams();
@@ -6110,6 +6226,9 @@
         if (query) params.set('search', query);
         if (itemType) params.set('type', itemType);
         if (supplierType) params.set('supplier_type', supplierType);
+        if (city) params.set('city', city);
+        if (country) params.set('country', country);
+        if (minRadius) params.set('min_radius_km', minRadius);
 
         const response = await fetch(`/api/marketplace/offerings?${params.toString()}`);
         const data = await response.json();
@@ -6594,39 +6713,53 @@
       legal: 'service'
     };
     
+    function setMarketplaceHeading(title, subtitle) {
+      const heading = document.getElementById('marketplace-title');
+      if (heading) {
+        heading.innerHTML = `<span class="tab-brand-mark"><img src="/phins-logo.svg" alt=""></span>${escapeHtml(title)}`;
+      }
+      const sub = document.getElementById('marketplace-subtitle');
+      if (sub) sub.textContent = subtitle || '';
+    }
+
     async function showMedicalCategory(category) {
       const title = categoryTitles[category] || 'Products';
-      
-      document.getElementById('marketplace-title').textContent = title;
+      setMarketplaceHeading(title, 'Loading approved supplier offers...');
       document.getElementById('medical-marketplace').style.display = 'block';
       
       const grid = document.getElementById('product-grid');
-      grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px;"><div class="spinner" style="display: inline-block; width: 40px; height: 40px; border: 4px solid #e0e0e0; border-top-color: #1565c0; border-radius: 50%; animation: spin 1s linear infinite;"></div><p style="margin-top: 12px; color: #666;">Loading offerings from approved suppliers...</p></div>';
+      grid.innerHTML = '<div class="phins-market-empty">Loading offerings from approved suppliers...</div>';
       
       try {
-        // Fetch supplier offerings from API
         const supplierType = categoryToSupplierType[category] || '';
         const itemType = categoryToItemType[category] || '';
         
-        const response = await fetch(`/api/marketplace/offerings?category=${category}&supplier_type=${supplierType}&type=${itemType}&wallet=health`);
+        const response = await fetch(`/api/marketplace/offerings?category=${encodeURIComponent(category)}&supplier_type=${encodeURIComponent(supplierType)}&type=${encodeURIComponent(itemType)}&wallet=health`);
         const data = await response.json();
         
-        // Combine API results with fallback local products
         let products = [];
+        let usingDemoCatalog = false;
         
-        // Add supplier offerings first (from approved suppliers)
         if (data.success && data.items && data.items.length > 0) {
           products = data.items.map(offer => ({
             id: offer.id,
             name: offer.name,
             price: parseFloat(offer.price) || 0,
             description: offer.description || '',
-            category: offer.normalized_category || offer.category,
+            category: offer.category,
+            normalized_category: offer.normalized_category || offer.category,
+            browse_bucket: offer.browse_bucket || category,
             supplier_name: offer.supplier_name,
             supplier_id: offer.supplier_id,
+            supplier_city: offer.supplier_city,
+            supplier_country: offer.supplier_country,
+            supplier_service_radius_km: offer.supplier_service_radius_km,
             supplier_rating: offer.supplier_rating || 0,
             supplier_reviews: offer.supplier_reviews || 0,
             unit: offer.unit,
+            item_type: offer.item_type,
+            image_url: offer.image_url || '',
+            media: Array.isArray(offer.media) ? offer.media : [],
             delivery_config: offer.delivery_config || {},
             billing_config: offer.billing_config || {},
             supplier_approved_on: offer.supplier_approved_on,
@@ -6635,81 +6768,40 @@
           }));
         }
         
-        // Add fallback local products if no supplier offerings
         if (products.length === 0) {
-          products = medicalProducts[category] || [];
+          products = (medicalProducts[category] || []).map(product => ({
+            ...product,
+            isSupplierOffer: false,
+            browse_bucket: category
+          }));
+          usingDemoCatalog = products.length > 0;
         }
         
         if (products.length === 0) {
-          grid.innerHTML = `
-            <div style="grid-column: 1/-1; text-align: center; padding: 60px; background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%); border-radius: 12px;">
-              <div style="font-size: 4rem; margin-bottom: 16px;"></div>
-              <h3 style="color: #333; margin: 0 0 8px 0;">No Offerings Available Yet</h3>
-              <p style="color: #666; margin: 0;">Approved suppliers will soon add products and services in this category.</p>
-              <p style="color: #1565c0; margin-top: 12px; font-size: 0.9rem;">Check back soon or browse other categories!</p>
-            </div>
-          `;
+          setMarketplaceHeading(title, 'Approved suppliers have not listed this category yet.');
+          grid.innerHTML = '<div class="phins-market-empty"><h3>No offerings available yet</h3><p>Approved suppliers will add products and services in this category.</p></div>';
           return;
         }
 
-        // Build index used by checkout payloads.
+        setMarketplaceHeading(
+          title,
+          usingDemoCatalog
+            ? 'Demo catalog. These illustrations are placeholders. A purchase is a wallet catalog charge, not a supplier order, until an approved supplier lists the item.'
+            : 'Approved supplier offers. Checkout uses the offer price on the supply-chain order and ledger. Supplier photos and videos replace the illustration when the listing includes them.'
+        );
+
         marketplaceOfferIndex = {};
         products.forEach(product => {
           marketplaceOfferIndex[product.id] = product;
         });
         
-        grid.innerHTML = products.map(product => `
-          <div class="product-card" style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); position: relative;">
-            ${product.isSupplierOffer ? `
-              <div style="position: absolute; top: 12px; right: 12px; background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%); color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 600;">
-                 Verified Supplier
-              </div>
-            ` : ''}
-            <h3 style="margin: 0 0 8px 0; font-size: 16px; padding-right: ${product.isSupplierOffer ? '100px' : '0'};">${escapeHtml(product.name)}</h3>
-            <p style="color: #666; font-size: 14px; margin: 0 0 12px 0;">${escapeHtml(product.description)}</p>
-            ${product.supplier_name ? `
-              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                <span style="color: #1565c0; font-size: 12px; font-weight: 600;"> ${escapeHtml(product.supplier_name)}</span>
-                ${product.supplier_rating > 0 ? `
-                  <span style="color: #f59e0b; font-size: 12px;"> ${product.supplier_rating.toFixed(1)}</span>
-                  <span style="color: #888; font-size: 11px;">(${product.supplier_reviews} reviews)</span>
-                ` : ''}
-              </div>
-            ` : ''}
-            ${product.duration ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;"> ${product.duration}</p>` : ''}
-            ${product.category && !product.isSupplierOffer ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;"> ${product.category}</p>` : ''}
-            ${product.size ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;"> ${product.size}</p>` : ''}
-            ${product.unit ? `<p style="color: #888; font-size: 12px; margin: 0 0 8px 0;"> ${product.unit.replace(/_/g, ' ')}</p>` : ''}
-            ${product.delivery_config?.mode ? `<p style="color: #888; font-size: 12px; margin: 0 0 6px 0;"> ${String(product.delivery_config.mode).replace(/_/g, ' ')}${Number.isFinite(Number(product.delivery_config.eta_days)) ? ` • ${Number(product.delivery_config.eta_days)} day(s)` : ''}</p>` : ''}
-            ${product.billing_config?.billing_cycle ? `<p style="color: #888; font-size: 12px; margin: 0 0 6px 0;"> ${String(product.billing_config.billing_cycle).replace(/_/g, ' ')}</p>` : ''}
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
-              <span style="font-size: 20px; font-weight: bold; color: #28a745;">$${product.price.toFixed(2)}</span>
-              <div style="display: flex; gap: 8px;">
-                <button onclick="addToCart('${product.id}', '${escapeHtml(product.name).replace(/'/g, "\\'")}', ${product.price}, '${category}', ${product.isSupplierOffer ? `'${product.supplier_id || ''}'` : 'null'})" 
-                        style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px;">
-                   Add to Cart
-                </button>
-              <button onclick="purchaseProduct('${product.id}', '${product.name.replace(/'/g, "\\'")}', ${product.price}, '${category}')" 
-                      style="background: #1565c0; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px;">
-                 Buy Now
-              </button>
-            </div>
-          </div>
-        </div>
-      `).join('');
-      
-      // Scroll to marketplace
-      document.getElementById('medical-marketplace').scrollIntoView({ behavior: 'smooth' });
-    } catch (err) {
-      console.error('Error loading marketplace:', err);
-      grid.innerHTML = `
-        <div style="grid-column: 1/-1; text-align: center; padding: 60px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 12px;">
-          <div style="font-size: 3rem; margin-bottom: 16px;"></div>
-          <h3 style="color: #856404; margin: 0 0 8px 0;">Unable to Load Products</h3>
-          <p style="color: #856404; margin: 0;">Please try again later or contact support.</p>
-        </div>
-      `;
-    }
+        grid.innerHTML = products.map(product => renderMarketplaceCard(product, category)).join('');
+        document.getElementById('medical-marketplace').scrollIntoView({ behavior: 'smooth' });
+      } catch (err) {
+        console.error('Error loading marketplace:', err);
+        setMarketplaceHeading(title, 'The marketplace could not be loaded.');
+        grid.innerHTML = '<div class="phins-market-empty"><h3>Unable to load products</h3><p>Please try again later.</p></div>';
+      }
     }
     
     function closeMarketplace() {
