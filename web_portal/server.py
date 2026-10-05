@@ -7026,8 +7026,11 @@ def record_transaction(
     metadata: Dict[str, Any] = None
 ) -> Dict[str, Any]:
     """Record transaction in master ledger and NFT ledger"""
+    from services.nft_ledger import canonical_metadata
     tx_id = f"TX-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(10000, 99999)}"
-    metadata_dict = metadata if isinstance(metadata, dict) else {}
+    # Snapshot before the seal and the platform hash, so the caller's dict
+    # can keep being updated without rewriting either record.
+    metadata_dict = canonical_metadata(metadata)
 
     transaction = {
         'id': tx_id,
@@ -7040,7 +7043,7 @@ def record_transaction(
         'status': 'completed'
     }
 
-    # Also create NFT token for blockchain record
+    # Seal first so the platform-ledger hash covers nft_token_id.
     nft_token = generate_nft_token(
         customer_id=customer_id,
         transaction_type=tx_type,
@@ -7067,6 +7070,13 @@ def record_transaction(
         ledger_type='transaction',
         timestamp=transaction['timestamp'],
     )
+
+    # Annotation only: outside the NFT seal, so a later platform-ledger
+    # field (document ids, for example) cannot invalidate the customer token.
+    # Readers compare this to entry_hash when both are still the mint-time value.
+    if isinstance(nft_token, dict):
+        nft_token['ledger_entry_hash'] = transaction.get('entry_hash')
+        nft_token['ledger_sequence'] = transaction.get('sequence_no')
 
     # Trigger async save to persist changes
     threading.Thread(target=save_ledger_data, daemon=True).start()
@@ -9133,48 +9143,71 @@ def generate_nft_token(
     transaction_id: str,
     amount: float,
     description: str,
-    metadata: Dict[str, Any] = None
+    metadata: Dict[str, Any] = None,
+    token_id: str = None,
+    created_at: str = None,
 ) -> Dict[str, Any]:
-    """Generate an NFT token for transaction integrity and ledger tracking"""
-    import hashlib
-    token_id = f"NFT-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(10000, 99999)}"
-    
-    # Create transaction hash for integrity
-    hash_data = f"{token_id}{customer_id}{transaction_id}{amount}{datetime.now().isoformat()}"
-    transaction_hash = hashlib.sha256(hash_data.encode()).hexdigest()[:16]
-    
-    # Create verification hash
-    verification_data = json.dumps({
-        'token_id': token_id,
-        'customer_id': customer_id,
-        'transaction_type': transaction_type,
-        'amount': amount
-    }, sort_keys=True)
-    verification_hash = hashlib.sha3_256(verification_data.encode()).hexdigest()[:32]
-    
-    nft_token = {
-        'token_id': token_id,
+    """Mint a PHINS-CHAIN seal for one customer (or platform) transaction.
+
+    The seal is version 2: deterministic over the stored fields, chained to
+    the previous token for the same owner, and stored in ``NFT_LEDGER``.
+    Metadata is snapshotted so a later edit of the caller's dict does not
+    move the hash.
+    """
+    from services.nft_ledger import mint_token
+    return mint_token(
+        NFT_LEDGER,
+        owner_id=customer_id,
+        transaction_type=transaction_type,
+        transaction_id=transaction_id,
+        amount=amount,
+        description=description,
+        metadata=metadata,
+        token_id=token_id,
+        created_at=created_at,
+    )
+
+
+_NFT_STAFF_ROLES = frozenset({
+    'admin', 'underwriter', 'claims', 'claims_adjuster', 'accountant', 'actuary', 'auditor',
+})
+
+
+def _nft_reader_authorized(session: Optional[Dict[str, Any]], owner_id: str) -> Tuple[bool, int, str]:
+    """Customer may read their own seal; staff may read any. Everyone else is refused."""
+    if not session:
+        return False, 401, 'Unauthorized'
+    role = get_effective_role(session)
+    user = get_session_user(session) or {}
+    session_customer = user.get('customer_id') or session.get('customer_id')
+    if role == 'customer':
+        if not session_customer or session_customer != owner_id:
+            return False, 403, 'Access denied - can only view your own data'
+        return True, 200, ''
+    if role in _NFT_STAFF_ROLES:
+        return True, 200, ''
+    return False, 403, 'Access denied'
+
+
+def customer_nft_ledger_view(customer_id: str, *, limit: int = 200) -> Dict[str, Any]:
+    """Dashboard payload: sealed rows, cash summary, and the owner chain."""
+    from services.nft_ledger import present_customer_ledger
+    owned = [
+        nft for nft in NFT_LEDGER.values()
+        if isinstance(nft, dict) and (nft.get('owner_id') or nft.get('customer_id')) == customer_id
+    ]
+    view = present_customer_ledger(owned, limit=limit)
+    view['success'] = True
+    view['customer_id'] = customer_id
+    view['chain_info'] = {
         'chain_type': 'PHINS-CHAIN',
-        'transaction_hash': transaction_hash,
-        'verification_hash': verification_hash,
-        'owner_id': customer_id,
-        'owner_type': 'customer',
-        'transaction_type': transaction_type,
-        'transaction_id': transaction_id,
-        'amount': amount,
-        'description': description,
-        'metadata': metadata or {},
-        'created_at': datetime.now().isoformat(),
-        'status': 'confirmed',
-        'block_number': random.randint(1000000, 9999999),
-        'gas_fee': 0.0,  # No gas fees on PHINS-CHAIN
-        'smart_contract_ref': f"PHINS-SC-{datetime.now().strftime('%Y%m')}-WALLET"
+        'smart_contract': f"PHINS-SC-{datetime.now().strftime('%Y%m')}-LEDGER",
+        'network': 'mainnet',
+        'valid': bool((view.get('chain') or {}).get('valid')),
     }
-    
-    # Store in NFT ledger
-    NFT_LEDGER[token_id] = nft_token
-    
-    return nft_token
+    return view
+
+
 try:
     from services.audit_service import AuditService
     audit = AuditService()
@@ -27492,10 +27525,18 @@ For claims or questions, please contact:
                 if not entry.get('timestamp'):
                     issues.append({'tx_id': tx_id, 'issue': 'Missing timestamp'})
                 
-                # Verify NFT reference exists
-                nft_ref = entry.get('metadata', {}).get('nft_token_id')
+                # Verify NFT reference exists (top-level seal, then legacy metadata).
+                nft_meta = entry.get('metadata') if isinstance(entry.get('metadata'), dict) else {}
+                nft_ref = entry.get('nft_token_id') or nft_meta.get('nft_token_id')
                 if nft_ref and nft_ref not in NFT_LEDGER:
                     issues.append({'tx_id': tx_id, 'issue': f'Missing NFT token reference: {nft_ref}'})
+
+            from services.nft_ledger import collect_integrity_issues
+            for extra in collect_integrity_issues(NFT_LEDGER, TRANSACTION_LEDGER):
+                # The loop above already recorded a missing-token issue.
+                if str(extra.get('issue') or '').startswith('Missing NFT token reference:'):
+                    continue
+                issues.append(extra)
             
             # Cross-reference with billing records
             for bill_id, bill in BILLING.items():
@@ -28898,43 +28939,17 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                 return
             
-            # Get all NFT tokens for this customer
-            customer_nfts = [
-                nft for nft in NFT_LEDGER.values() 
-                if nft.get('owner_id') == customer_id
-            ]
-            customer_nfts.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-            
-            # Calculate summary stats
-            total_deposits = sum(
-                nft.get('amount', 0) for nft in customer_nfts 
-                if nft.get('transaction_type') == 'wallet_deposit'
-            )
-            total_purchases = sum(
-                nft.get('amount', 0) for nft in customer_nfts 
-                if nft.get('transaction_type') == 'medical_purchase'
-            )
-            
+            try:
+                limit = min(int(qs.get('limit', [200])[0]), 500)
+            except (TypeError, ValueError):
+                limit = 200
+            view = customer_nft_ledger_view(customer_id, limit=limit)
             self._set_json_headers()
-            self.wfile.write(json.dumps({
-                'success': True,
-                'customer_id': customer_id,
-                'ledger': customer_nfts[:100],  # Last 100 entries
-                'summary': {
-                    'total_tokens': len(customer_nfts),
-                    'total_deposits': total_deposits,
-                    'total_purchases': total_purchases,
-                    'net_flow': total_deposits - total_purchases
-                },
-                'chain_info': {
-                    'chain_type': 'PHINS-CHAIN',
-                    'smart_contract': f"PHINS-SC-{datetime.now().strftime('%Y%m')}-WALLET",
-                    'network': 'mainnet'
-                }
-            }).encode('utf-8'))
+            self.wfile.write(json.dumps(view).encode('utf-8'))
             return
         
-        # Verify specific NFT token
+        # Verify specific NFT token. The seal is checked server-side; the
+        # token body is returned only to its owner or to staff.
         if path == '/api/nft-ledger/verify':
             token_id = qs.get('token_id', [None])[0]
             
@@ -28944,90 +28959,130 @@ For claims or questions, please contact:
                 return
             
             nft = NFT_LEDGER.get(token_id)
-            if not nft:
+            if not isinstance(nft, dict):
                 self._set_json_headers(404)
                 self.wfile.write(json.dumps({
                     'valid': False,
                     'error': 'Token not found'
                 }).encode('utf-8'))
                 return
-            
-            # Verify the token
-            import hashlib
-            verification_data = json.dumps({
-                'token_id': nft['token_id'],
-                'customer_id': nft['owner_id'],
-                'transaction_type': nft['transaction_type'],
-                'amount': nft['amount']
-            }, sort_keys=True)
-            computed_hash = hashlib.sha3_256(verification_data.encode()).hexdigest()[:32]
-            is_valid = computed_hash == nft.get('verification_hash')
-            
+
+            owner_id = str(nft.get('owner_id') or nft.get('customer_id') or '')
+            allowed, status_code, error = _nft_reader_authorized(session, owner_id)
+            if not allowed:
+                self._set_json_headers(status_code)
+                self.wfile.write(json.dumps({'valid': False, 'error': error}).encode('utf-8'))
+                return
+
+            from services.nft_ledger import verify_token
+            check = verify_token(nft)
+            linked_id = str(nft.get('transaction_id') or '')
+            linked_tx = TRANSACTION_LEDGER.get(linked_id) if linked_id else None
             self._set_json_headers()
             self.wfile.write(json.dumps({
-                'valid': is_valid,
+                'valid': check['valid'],
+                'reason': check['reason'],
                 'token': nft,
+                'ledger_linked': bool(linked_tx),
                 'verification': {
-                    'computed_hash': computed_hash,
-                    'stored_hash': nft.get('verification_hash'),
-                    'match': is_valid
+                    'computed_hash': check.get('computed_hash'),
+                    'stored_hash': check.get('stored_hash'),
+                    'match': check['valid'],
+                    'version': check.get('version'),
                 }
             }).encode('utf-8'))
             return
         
-        # Lookup NFT by block number
+        # Lookup NFT by block number. Scoped to the caller so one customer's
+        # block list is never returned to another.
         if path == '/api/nft-ledger/block':
             block_number = qs.get('block', [None])[0]
-            customer_id = qs.get('customer_id', [None])[0]
-            
+            requested_customer_id = qs.get('customer_id', [None])[0]
+
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
             if not block_number:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Block number required'}).encode('utf-8'))
                 return
             
             try:
-                block_num = int(block_number.replace('#', ''))
-            except:
+                block_num = int(str(block_number).replace('#', ''))
+            except (TypeError, ValueError):
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid block number format'}).encode('utf-8'))
                 return
+
+            role = get_effective_role(session)
+            user = get_session_user(session) or {}
+            session_customer_id = user.get('customer_id') or session.get('customer_id')
+            if role == 'customer':
+                customer_id = session_customer_id
+                if requested_customer_id and requested_customer_id != session_customer_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied - can only view your own data'}).encode('utf-8'))
+                    return
+            elif role in _NFT_STAFF_ROLES:
+                customer_id = requested_customer_id or session_customer_id
+            else:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                return
             
-            # Search for NFT with this block number
             found_nft = None
-            for token_id, nft in NFT_LEDGER.items():
-                if nft.get('block_number') == block_num:
-                    if customer_id and nft.get('owner_id') != customer_id:
-                        continue
-                    found_nft = nft
-                    break
+            for nft in NFT_LEDGER.values():
+                if not isinstance(nft, dict):
+                    continue
+                try:
+                    nft_block = int(nft.get('block_number'))
+                except (TypeError, ValueError):
+                    continue
+                if nft_block != block_num:
+                    continue
+                owner_id = nft.get('owner_id') or nft.get('customer_id')
+                if customer_id and owner_id != customer_id:
+                    continue
+                found_nft = nft
+                break
             
             if not found_nft:
-                # Block not found in current ledger - might be from previous session
                 self._set_json_headers(404)
                 self.wfile.write(json.dumps({
                     'found': False,
                     'block_number': block_num,
                     'error': 'Block not found in current ledger',
-                    'note': 'This block may be from a previous server session. In-memory data is volatile and lost on server restart.',
-                    'suggestion': 'To re-create this deposit, use the deposit feature on the algo trading dashboard',
-                    'current_ledger_blocks': sorted([nft.get('block_number') for nft in NFT_LEDGER.values()])[-10:] if NFT_LEDGER else []
                 }).encode('utf-8'))
                 return
-            
+
+            from services.nft_ledger import verify_token
+            check = verify_token(found_nft)
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'found': True,
                 'block_number': block_num,
                 'token': found_nft,
                 'status': found_nft.get('status', 'unknown'),
+                'valid': check['valid'],
                 'activated': found_nft.get('status') == 'confirmed'
             }).encode('utf-8'))
             return
         
-        # Reactivate/reprocess a deposit by block number (admin tool)
+        # Staff lookup of a deposit seal. Balances are not replayed: crediting
+        # the amount again would double-count a deposit that the wallet and
+        # the platform ledger already recorded.
         if path == '/api/nft-ledger/reactivate':
             block_number = qs.get('block', [None])[0]
             customer_id = qs.get('customer_id', [None])[0]
+
+            if not session or get_effective_role(session) not in _NFT_STAFF_ROLES:
+                self._set_json_headers(403 if session else 401)
+                self.wfile.write(json.dumps({
+                    'success': False,
+                    'error': 'Unauthorized' if not session else 'Staff access required',
+                }).encode('utf-8'))
+                return
             
             if not block_number or not customer_id:
                 self._set_json_headers(400)
@@ -29035,16 +29090,22 @@ For claims or questions, please contact:
                 return
             
             try:
-                block_num = int(block_number.replace('#', ''))
-            except:
+                block_num = int(str(block_number).replace('#', ''))
+            except (TypeError, ValueError):
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid block number format'}).encode('utf-8'))
                 return
             
-            # Search for NFT with this block number
             found_nft = None
-            for token_id, nft in NFT_LEDGER.items():
-                if nft.get('block_number') == block_num and nft.get('owner_id') == customer_id:
+            for nft in NFT_LEDGER.values():
+                if not isinstance(nft, dict):
+                    continue
+                try:
+                    nft_block = int(nft.get('block_number'))
+                except (TypeError, ValueError):
+                    continue
+                owner_id = nft.get('owner_id') or nft.get('customer_id')
+                if nft_block == block_num and owner_id == customer_id:
                     found_nft = nft
                     break
             
@@ -29053,65 +29114,28 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({
                     'success': False,
                     'error': 'Block not found in ledger for this customer',
-                    'note': 'The block may be from a previous session. Use deposit to create a new transaction.'
                 }).encode('utf-8'))
                 return
-            
-            # Check if this is a deposit type transaction
-            tx_type = found_nft.get('transaction_type', '')
-            if 'deposit' not in tx_type.lower() and 'transfer' not in tx_type.lower():
-                self._set_json_headers(400)
-                self.wfile.write(json.dumps({
-                    'success': False,
-                    'error': f'Block #{block_num} is not a deposit transaction (type: {tx_type})',
-                    'token': found_nft
-                }).encode('utf-8'))
-                return
-            
-            # Reactivate the deposit - sync balance
-            amount = found_nft.get('amount', 0)
-            if amount <= 0:
-                self._set_json_headers(400)
-                self.wfile.write(json.dumps({
-                    'success': False,
-                    'error': 'No amount found for this transaction'
-                }).encode('utf-8'))
-                return
-            
-            # Update algo trading balance
-            if unified_balance_enabled:
-                if customer_id not in unified_balance_service.algo_trading_balances:
-                    unified_balance_service.algo_trading_balances[customer_id] = {
-                        'available': amount,
-                        'in_positions': 0,
-                        'total_pnl': 0
-                    }
-                else:
-                    unified_balance_service.algo_trading_balances[customer_id]['available'] += amount
-            
-            if portfolio_tracker_enabled:
-                if customer_id not in portfolio_tracker_service.algo_balances:
-                    portfolio_tracker_service.algo_balances[customer_id] = {
-                        'available': amount,
-                        'in_positions': 0,
-                        'total_pnl': 0
-                    }
-                else:
-                    portfolio_tracker_service.algo_balances[customer_id]['available'] += amount
-            
-            # Mark as reactivated
-            found_nft['reactivated_at'] = datetime.now().isoformat()
-            found_nft['status'] = 'reactivated'
-            
-            save_ledger_data()
-            
+
+            from services.nft_ledger import verify_token
+            check = verify_token(found_nft)
+            linked_id = str(found_nft.get('transaction_id') or '')
+            linked_tx = TRANSACTION_LEDGER.get(linked_id) if linked_id else None
+            # Status is outside the seal. Recording that staff inspected the
+            # block must not credit wallets, algo balances, or the ledger.
+            found_nft['reviewed_at'] = datetime.now().isoformat()
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'success': True,
+                'balance_adjusted': False,
                 'block_number': block_num,
-                'amount_reactivated': amount,
-                'new_algo_balance': unified_balance_service.algo_trading_balances.get(customer_id, {}) if unified_balance_enabled else {},
-                'token': found_nft
+                'amount': found_nft.get('amount'),
+                'valid': check['valid'],
+                'reason': check['reason'],
+                'ledger_linked': bool(linked_tx),
+                'ledger_tx_id': linked_id or None,
+                'token': found_nft,
+                'note': 'Balances were not changed. A deposit is applied only by the wallet pipeline that minted this token.',
             }).encode('utf-8'))
             return
         
@@ -39057,6 +39081,14 @@ For claims or questions, please contact:
             body = ''
         else:
             body = body_bytes.decode('utf-8') if body_bytes else ''
+
+        # Bind the caller once. do_POST assigns ``session`` in many branches,
+        # so a later route that only reads it (customer action, AI log,
+        # investment deposit) otherwise raises UnboundLocalError and never
+        # reaches the ledger.
+        _post_auth = self.headers.get('Authorization', '')
+        _post_bearer = _post_auth[7:] if _post_auth.startswith('Bearer ') else ''
+        session = validate_session(_post_bearer) if _post_bearer else None
         
         # ========== TRADING TERMINAL API (POST) ==========
         if path == '/api/terminal/order':
@@ -47520,21 +47552,9 @@ For claims or questions, please contact:
                             account.allocation_config.investment_pct = dist.get('investment_pct', 60)
                             account.allocation_config.algo_trading_pct = dist.get('algo_trading_pct', 25)
                             
-                            # Record on NFT ledger
-                            if generate_nft_token:
-                                nft = generate_nft_token(
-                                    owner_id=customer_id,
-                                    asset_type="phins_contract",
-                                    metadata={
-                                        'contract_type': 'phins_unified',
-                                        'coverage_amount': data.get('coverage_amount', 100000),
-                                        'coverage_years': coverage_years,
-                                        'allocation': phins_allocation,
-                                        'created_at': datetime.now().isoformat()
-                                    }
-                                )
-                            
-                            # Record transaction
+                            # One sealed customer row. record_transaction mints the NFT;
+                            # a separate mint with the wrong signature used to
+                            # raise and skip this write entirely.
                             if record_transaction:
                                 record_transaction(
                                     customer_id=customer_id,
@@ -47543,7 +47563,11 @@ For claims or questions, please contact:
                                     description=f"PHINS Unified Contract created: ${data.get('coverage_amount', 100000):,.0f} coverage, {coverage_years} years",
                                     metadata={
                                         'policy_id': policy_id,
-                                        'allocation': phins_allocation
+                                        'allocation': phins_allocation,
+                                        'contract_type': 'phins_unified',
+                                        'coverage_amount': data.get('coverage_amount', 100000),
+                                        'coverage_years': coverage_years,
+                                        'cash_event': False,
                                     }
                                 )
                         except Exception as e:
@@ -53827,7 +53851,9 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                     return
                 
-                # Extract allocation parameters
+                # Extract allocation parameters. A body with only customer_id
+                # is the dashboard's read (it posts to load preferences).
+                # That must not rewrite the record or mint a ledger token.
                 allocations = {
                     'savings_pct': data.get('savings_pct'),
                     'risk_pct': data.get('risk_pct'),
@@ -53838,8 +53864,19 @@ For claims or questions, please contact:
                     'bonds_pct': data.get('bonds_pct'),
                     'crypto_pct': data.get('crypto_pct')
                 }
-                # Remove None values
                 allocations = {k: v for k, v in allocations.items() if v is not None}
+                if not allocations:
+                    allocation = get_customer_allocation(customer_id)
+                    distribution = calculate_monthly_distribution(customer_id)
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'customer_id': customer_id,
+                        'allocation': allocation,
+                        'monthly_distribution': distribution,
+                        'recorded': False,
+                    }, default=str).encode('utf-8'))
+                    return
                 
                 # Update allocation
                 updated = update_customer_allocation(customer_id, allocations)
@@ -57925,23 +57962,23 @@ For claims or questions, please contact:
                 user['salt'] = new_hash['salt']
                 USERS[username] = user
                 
-                # Record password change on NFT ledger
+                # Password changes are security events, not cash. One
+                # record_transaction writes the platform ledger and the seal.
                 customer_id = session.get('customer_id', username)
-                nft_token = generate_nft_token(
+                password_tx = record_transaction(
                     customer_id=customer_id,
-                    transaction_type='password_change',
-                    transaction_id=f"PWD-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                    tx_type='password_change',
                     amount=0,
                     description='Password changed',
-                    metadata={'action': 'security_update'}
+                    metadata={'action': 'security_update', 'cash_event': False, 'origin': 'security'}
                 )
-                NFT_LEDGER[nft_token['token_id']] = nft_token
                 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
                     'message': 'Password changed successfully',
-                    'nft_token_id': nft_token['token_id']
+                    'nft_token_id': password_tx.get('nft_token_id'),
+                    'transaction_id': password_tx.get('id'),
                 }).encode('utf-8'))
                 
             except Exception as e:
@@ -57972,26 +58009,31 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'customer_id and action_type required'}).encode('utf-8'))
                     return
                 
-                # Generate NFT token for the action
-                action_id = f"ACT-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
-                nft_token = generate_nft_token(
+                # Customer-logged actions are records, not cash postings. The
+                # ledger type is always 'customer_action' so a caller cannot
+                # post a wallet_deposit or premium_payment that activity,
+                # integrity, and finance readers would read as real cash; the
+                # requested action stays in metadata.
+                action_tx = record_transaction(
                     customer_id=customer_id,
-                    transaction_type=action_type,
-                    transaction_id=action_id,
+                    tx_type='customer_action',
                     amount=amount,
-                    description=description,
+                    description=str(description or '')[:500],
                     metadata={
-                        'action_type': action_type,
-                        'timestamp': data.get('timestamp', datetime.now().isoformat())
+                        'action_type': str(action_type)[:80],
+                        'origin': 'customer_action',
+                        'cash_event': False,
+                        'timestamp': data.get('timestamp', datetime.now().isoformat()),
                     }
                 )
-                NFT_LEDGER[nft_token['token_id']] = nft_token
+                nft_token = NFT_LEDGER.get(action_tx.get('nft_token_id')) or {}
                 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
-                    'action_id': action_id,
-                    'nft_token': nft_token
+                    'action_id': action_tx.get('id'),
+                    'nft_token': nft_token,
+                    'counts_as_cash': False,
                 }).encode('utf-8'))
                 
             except Exception as e:
@@ -58024,60 +58066,31 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                     return
                 
-                # Generate interaction ID
                 interaction_id = f"AI-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
-                
-                # Create NFT token for AI interaction (for data integrity tracking)
-                nft_token = generate_nft_token(
+                # One write: platform ledger + customer seal. The query stays
+                # in metadata and is not treated as cash.
+                interaction_tx = record_transaction(
                     customer_id=customer_id,
-                    transaction_type='ai_interaction',
-                    transaction_id=interaction_id,
+                    tx_type='ai_interaction',
                     amount=0,
-                    description=f"AI Assistant: {intent_type} - {query[:100]}",
+                    description=f"AI Assistant: {str(intent_type)[:80]}",
                     metadata={
                         'intent_type': intent_type,
-                        'query': query[:500],  # Limit query length
+                        'query': query[:500],
                         'source': source,
                         'timestamp': timestamp,
-                        'interaction_id': interaction_id
+                        'interaction_id': interaction_id,
+                        'cash_event': False,
+                        'origin': 'ai_assistant',
                     }
                 )
-                NFT_LEDGER[nft_token['token_id']] = nft_token
-                
-                # Store interaction in TRANSACTION_LEDGER for unified activity log
-                tx_id = f"TX-AI-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
-                platform_event_ledger.append_event(
-                    event_type='ai_interaction',
-                    entity_type='ai_interaction',
-                    entity_id=interaction_id,
-                    customer_id=customer_id,
-                    actor='system',
-                    amount=0.0,
-                    status='completed',
-                    source_system='ai_assistant',
-                    payload={
-                    'tx_id': tx_id,
-                    'customer_id': customer_id,
-                    'type': 'ai_interaction',
-                    'intent': intent_type,
-                    'query': query[:500],
-                    'amount': 0,
-                    'timestamp': timestamp,
-                    'source': source,
-                    'nft_token_id': nft_token['token_id'],
-                    'created_at': datetime.now().isoformat()
-                    },
-                    entry_id=tx_id,
-                    ledger_type='event',
-                    timestamp=timestamp,
-                )
-                threading.Thread(target=save_ledger_data, daemon=True).start()
                 
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'success': True,
                     'interaction_id': interaction_id,
-                    'nft_token_id': nft_token['token_id']
+                    'transaction_id': interaction_tx.get('id'),
+                    'nft_token_id': interaction_tx.get('nft_token_id'),
                 }).encode('utf-8'))
                 
             except Exception as e:
@@ -59361,20 +59374,27 @@ def _seed_startup_demo_fixtures() -> None:
                 timestamp=entry.get('timestamp'),
             )
         
-        # Also populate NFT_LEDGER for blockchain verification
+        # Seal the pipeline markers. Re-seeding must not replace a token that
+        # already verifies, and must not leave an unsealed row on the customer
+        # (or system) chain.
         for entry in sample_ledger:
-            if entry.get('nft_token_id'):
-                NFT_LEDGER[entry['nft_token_id']] = {
-                    'token_id': entry['nft_token_id'],
-                    'customer_id': entry['customer_id'],
-                    'transaction_type': entry['type'],
-                    'transaction_id': entry['id'],
-                    'amount': entry['amount'],
-                    'description': entry['description'],
-                    'timestamp': entry['timestamp'],
-                    'metadata': entry.get('metadata', {}),
-                    'verified': True
-                }
+            token_id = entry.get('nft_token_id')
+            if not token_id:
+                continue
+            existing = NFT_LEDGER.get(token_id)
+            if isinstance(existing, dict) and existing.get('verification_hash'):
+                continue
+            NFT_LEDGER.pop(token_id, None)
+            generate_nft_token(
+                customer_id=entry.get('customer_id') or 'SYSTEM',
+                transaction_type=entry.get('type') or 'pipeline_initialized',
+                transaction_id=entry.get('id') or token_id,
+                amount=entry.get('amount') or 0,
+                description=entry.get('description') or '',
+                metadata={**(entry.get('metadata') or {}), 'cash_event': False, 'origin': 'pipeline_seed'},
+                token_id=token_id,
+                created_at=entry.get('timestamp'),
+            )
         
         print(f"✓ Initialized {len(sample_ledger)} pipeline ledger entries with NFT verification")
         print(f"   - Total ledger entries: {len(TRANSACTION_LEDGER)}")

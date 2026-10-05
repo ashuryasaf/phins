@@ -2745,19 +2745,20 @@ class SupplyChainEcosystemService:
                 "timestamp": now_iso
             })
 
-        # Generate NFT token for order
-        nft_token_id = f"NFT-ORD-{secrets.token_hex(6).upper()}"
-        order["nft_token_id"] = nft_token_id
-
-        self.nft_ledger[nft_token_id] = {
-            "token_id": nft_token_id,
-            "owner_id": customer_id,
-            "asset_type": "order",
-            "asset_id": order_id,
-            "created_at": now_iso,
-            "metadata": {
+        # Customer-facing order seal. Cash is recorded by the marketplace
+        # purchase (medical_purchase) or, when that receipt is absent, by the
+        # marketplace_order transaction below. This token is the order record
+        # and must not be added to money-in / money-out a second time.
+        order_nft = self._mint_nft(
+            owner_id=customer_id,
+            transaction_type="supply_chain_order",
+            transaction_id=order_id,
+            amount=total_amount,
+            description=f"Marketplace order {order_id}: {offer.get('name') or offer_id}",
+            metadata={
                 "supplier_id": supplier_id,
                 "offer_id": offer_id,
+                "order_id": order_id,
                 "total_amount": total_amount,
                 "commission": commission,
                 "supplier_payout": supplier_payout,
@@ -2765,9 +2766,17 @@ class SupplyChainEcosystemService:
                 "external_payment_amount": external_payment_amount,
                 "payment_method": payment_method,
                 "pricing_plan": pricing_plan,
-                "is_b2b": is_b2b
-            }
-        }
+                "is_b2b": is_b2b,
+                "cash_event": False,
+                "origin": "supply_chain",
+            },
+            token_prefix="NFT-ORD",
+            created_at=now_iso,
+            asset_type="order",
+            asset_id=order_id,
+        )
+        nft_token_id = order_nft["token_id"]
+        order["nft_token_id"] = nft_token_id
 
         # Store order
         self.orders[order_id] = order
@@ -3725,6 +3734,45 @@ class SupplyChainEcosystemService:
     # LEDGER AND DATA INTEGRITY
     # =========================================================================
     
+    def _mint_nft(
+        self,
+        *,
+        owner_id: str,
+        transaction_type: str,
+        transaction_id: str,
+        amount: float,
+        description: str,
+        metadata: Dict = None,
+        token_prefix: str = "NFT",
+        created_at: str = None,
+        asset_type: str = None,
+        asset_id: str = None,
+    ) -> Dict[str, Any]:
+        """Mint a verifiable PHINS-CHAIN token into the shared NFT ledger.
+
+        ``asset_type`` / ``asset_id`` stay on the row for existing supply-chain
+        readers and are outside the seal.
+        """
+        from services.nft_ledger import mint_token
+
+        token_id = f"{token_prefix}-{secrets.token_hex(6).upper()}"
+        token = mint_token(
+            self.nft_ledger,
+            owner_id=owner_id,
+            transaction_type=transaction_type,
+            transaction_id=transaction_id,
+            amount=amount,
+            description=description,
+            metadata=metadata or {},
+            token_id=token_id,
+            created_at=created_at,
+        )
+        if asset_type:
+            token["asset_type"] = asset_type
+        if asset_id:
+            token["asset_id"] = asset_id
+        return token
+
     def _record_ledger_entry(self, entry_type: str, supplier_id: str,
                             customer_id: str = None, order_id: str = None,
                             amount: float = 0, commission: float = 0,
@@ -3755,24 +3803,30 @@ class SupplyChainEcosystemService:
         # Calculate and set hash
         entry.entry_hash = entry.calculate_hash(self.secret_key)
         
-        # Generate NFT token
-        nft_token_id = f"NFT-SCL-{secrets.token_hex(6).upper()}"
-        entry.nft_token_id = nft_token_id
-        
-        # Store in NFT ledger
-        self.nft_ledger[nft_token_id] = {
-            "token_id": nft_token_id,
-            "owner_id": "PHINS_PLATFORM",
-            "asset_type": "ledger_entry",
-            "asset_id": entry_id,
-            "created_at": now.isoformat(),
-            "metadata": {
+        # Platform seal for the supply-chain book. Not a customer cash event.
+        platform_nft = self._mint_nft(
+            owner_id="PHINS_PLATFORM",
+            transaction_type="supply_chain_ledger",
+            transaction_id=entry_id,
+            amount=amount,
+            description=description or f"Supply chain {entry_type}",
+            metadata={
                 "entry_type": entry_type,
                 "supplier_id": supplier_id,
+                "customer_id": customer_id,
+                "order_id": order_id,
                 "amount": amount,
-                "hash": entry.entry_hash[:16]
-            }
-        }
+                "hash": (entry.entry_hash or "")[:16],
+                "cash_event": False,
+                "origin": "supply_chain",
+            },
+            token_prefix="NFT-SCL",
+            created_at=now.isoformat(),
+            asset_type="ledger_entry",
+            asset_id=entry_id,
+        )
+        nft_token_id = platform_nft["token_id"]
+        entry.nft_token_id = nft_token_id
         
         # Store entry and update chain
         self.ledger[entry_id] = entry.to_dict()
