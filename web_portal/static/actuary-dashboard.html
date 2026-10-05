@@ -1195,6 +1195,7 @@
     .rr-chart-card h4 { margin: 0 0 4px; font-size: 0.98rem; }
     .rr-chart-card p { margin: 0 0 8px; color: var(--text-light); font-size: 0.82rem; }
     .rr-chart-wrap { position: relative; height: 280px; }
+    .rr-chart-wrap-tall { height: 320px; }
     @media (max-width: 720px) { .rr-cover-row { grid-template-columns: 1fr; } }
     .annual-report-preview .integrity-ok { color: #2f855a; font-weight: 700; }
     .annual-report-preview .integrity-bad { color: #c53030; font-weight: 700; }
@@ -1677,7 +1678,9 @@
           <div class="alert alert-warning">
             This is the unified registry of every life-and-disability rate table the platform uses for premium and simulation —
             global defaults, cohort overrides (e.g. <em>death table for female Caucasian</em>, <em>disability table for Asian men</em>),
-            and the uploaded catalog. Every entry below is downloadable for audit and replaceable from an uploaded table.
+            and the uploaded catalog. Every pricing entry below is downloadable for audit and replaceable from an uploaded table.
+            The ADL 3 disabled life expectancy table is an assumption. It is downloadable and replaceable, and it is not a premium band.
+            Replacing it updates the Risk Reference expectancy chart only. Premiums, q(x), and i(x) stay on the current rate bands.
             Each row carries a deterministic SHA-256 integrity hash so two viewers can confirm they are looking at the exact
             same rate band; the manifest hash on the right-hand summary covers the full registry.
           </div>
@@ -1710,6 +1713,7 @@
                   <option value="">All</option>
                   <option value="mortality_rates">Death (mortality)</option>
                   <option value="disability_incidence_rates">Disability (permanent ADL)</option>
+                  <option value="adl3_disabled_life_expectancy">ADL 3 disabled life expectancy</option>
                 </select>
               </div>
               <div class="form-group">
@@ -1750,9 +1754,10 @@
           <div class="card">
             <div class="card-title">Replace a registry entry</div>
             <p style="color:var(--text-light);margin-bottom:10px;font-size:0.9rem;">
-              Replacing a registry entry uploads a new table and promotes it. For a global entry the rate band is replaced for every customer.
+              Replacing a registry entry uploads a new table and promotes it. For a global pricing entry the rate band is replaced for every customer.
               For a cohort entry the override is re-registered without touching the global rate band, so customers outside the cohort keep their existing pricing.
-              Use the <strong>Replace</strong> button on any row to pre-fill the cohort dimension/value.
+              The ADL 3 expectancy table is global. Replacing it updates remaining years only, and the cohort fields stay blank.
+              Use the <strong>Replace</strong> button on any row to pre-fill the target.
             </p>
             <div class="form-row">
               <div class="form-group">
@@ -1768,6 +1773,7 @@
                 <select id="replace-registry-type" class="form-input">
                   <option value="mortality_rates">mortality_rates</option>
                   <option value="disability_incidence_rates">disability_incidence_rates</option>
+                  <option value="adl3_disabled_life_expectancy">adl3_disabled_life_expectancy</option>
                 </select>
               </div>
               <div class="form-group">
@@ -3246,6 +3252,23 @@
           </div>
 
           <div class="card">
+            <div class="card-title">ADL 3 disabled life expectancy — research table</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              Published remaining years after ADL 3. The average is the research column. It is the same table the Risk Reference chart uses. It is not the closed-form cross-risk expectancy, and Promote does not write it into a premium band.
+            </p>
+            <div class="ltc-table-scroll">
+              <table class="data-table" id="ltc-adl3-le-table">
+                <thead>
+                  <tr>
+                    <th>Age</th><th>Man</th><th>Woman</th><th>Average</th><th>Woman excess</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="5" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
             <div class="card-title">Pricing overlay — download or promote into live tables</div>
             <p style="color:var(--text-light);margin-bottom:12px;">
               Technical rates are upload-compatible (<code>age_min, age_max, rate_per_1000</code>). Stage keeps them for further use without changing quotes. Promote writes a new actuarial sub-version (restore from Version History if needed).
@@ -3263,6 +3286,7 @@
                   <option value="reinsurance_exposure">Reinsurance exposure</option>
                   <option value="coverage_forecast">Coverage forecast</option>
                   <option value="adl_mortality_multipliers">ADL mortality multipliers</option>
+                  <option value="adl3_disabled_life_expectancy">ADL 3 disabled life expectancy (research)</option>
                 </select>
               </div>
               <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
@@ -4520,7 +4544,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         if (typeof Chart !== 'undefined' && riskReferenceLast && !rrLossChart) {
           drawRiskReferenceCharts(riskReferenceLast);
         } else {
-          [rrLossChart, rrProbChart, rrLeChart].forEach((chart) => {
+          [rrLossChart, rrProbChart, rrLeChart, rrAdl3Chart].forEach((chart) => {
             if (chart) chart.resize();
           });
         }
@@ -7075,14 +7099,16 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     let rrLossChart = null;
     let rrProbChart = null;
     let rrLeChart = null;
+    let rrAdl3Chart = null;
 
     function destroyRiskReferenceCharts() {
-      [rrLossChart, rrProbChart, rrLeChart].forEach((chart) => {
+      [rrLossChart, rrProbChart, rrLeChart, rrAdl3Chart].forEach((chart) => {
         if (chart) chart.destroy();
       });
       rrLossChart = null;
       rrProbChart = null;
       rrLeChart = null;
+      rrAdl3Chart = null;
     }
 
     function rrChartNumber(value) {
@@ -7101,16 +7127,18 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const leCanvas = document.getElementById('rr-chart-le');
       const moneyTick = (value) => fmtCurrency(value);
       const pctTick = (value) => (Number(value) * 100).toFixed(2) + '%';
-      const line = (label, data, color) => ({
+      const line = (label, data, color, width) => ({
         label,
         data,
         borderColor: color,
         backgroundColor: 'transparent',
-        borderWidth: 2,
+        borderWidth: width || 2,
         pointRadius: 0,
+        pointHitRadius: 8,
         tension: 0,
         spanGaps: false,
       });
+      const yearTick = (value) => Number(value).toFixed(1);
       const baseOptions = (yTitle, yTick, tip) => ({
         responsive: true,
         maintainAspectRatio: false,
@@ -7149,21 +7177,40 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           options: baseOptions('Probability', pctTick, (ctx) => ` ${ctx.dataset.label}: ${pctTick(ctx.parsed.y)}`),
         });
       }
+      const yearTip = (ctx) => ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toFixed(2)} years`;
       if (leCanvas) {
         rrLeChart = new Chart(leCanvas, {
           type: 'line',
           data: {
             labels,
             datasets: [
-              line('Curtate years on pricing q(x)', map.rows.map((row) => rrChartNumber(row.healthy_curtate_expectancy)), '#0e2f63'),
-              line('Curtate years if disabled (ADL 10)', map.rows.map((row) => rrChartNumber(row.disability_curtate_expectancy)), '#c9a04e'),
+              line('Curtate years on pricing q(x)', map.rows.map((row) => rrChartNumber(row.healthy_curtate_expectancy)), '#0e2f63', 2.5),
             ],
           },
-          options: baseOptions(
-            'Curtate years',
-            null,
-            (ctx) => ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toFixed(2)} years`,
-          ),
+          options: baseOptions('Curtate years', yearTick, yearTip),
+        });
+      }
+      const adlCanvas = document.getElementById('rr-chart-adl3');
+      if (adlCanvas) {
+        const averageYears = map.rows.map((row) => rrChartNumber(row.disability_curtate_expectancy));
+        const maleYears = map.rows.map((row) => rrChartNumber(row.male_years));
+        const femaleYears = map.rows.map((row) => rrChartNumber(row.female_years));
+        const finiteYears = averageYears.concat(maleYears, femaleYears).filter((value) => value != null);
+        const suggestedMax = finiteYears.length ? Math.max.apply(null, finiteYears) * 1.18 : 10;
+        const adlOptions = baseOptions('Remaining years after ADL 3', yearTick, yearTip);
+        adlOptions.scales.y.beginAtZero = true;
+        adlOptions.scales.y.suggestedMax = suggestedMax;
+        rrAdl3Chart = new Chart(adlCanvas, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              line('Published average', averageYears, '#c9a04e', 3),
+              line('Man', maleYears, '#5b6b82', 2),
+              line('Woman', femaleYears, '#c45c26', 2),
+            ],
+          },
+          options: adlOptions,
         });
       }
     }
@@ -7240,9 +7287,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const bandAge = ref.reference.disability_band_age || 65;
       const map = ref.age_map || null;
       const mult = map ? map.disability_mortality_multiplier : null;
-      const multNote = mult == null
-        ? 'The ADL 10 mortality multiplier is not on the live table, so disability life expectancy is withheld.'
-        : `Disability life expectancy multiplies q(x) by ${Number(mult).toFixed(2)}, the ADL ${map.disability_adl} factor on the live table, and caps the product at 1.`;
+      const multNote = 'Healthy years are curtate survival on pricing q(x), on their own chart. Disabled years are the published ADL 3 average, with man and woman on a separate chart. They do not multiply q(x) by the ADL 10 factor.'
+        + (mult == null
+          ? ' The ADL 10 pricing multiplier is not on the live table.'
+          : ` The ADL ${map.disability_adl} pricing multiplier remains ${Number(mult).toFixed(2)} and is not this line.`);
       const mapIntegrity = map
         ? Object.keys(map.data_integrity || {}).filter((key) => typeof map.data_integrity[key] === 'boolean').map((key) => rrIntegrityItem(key, map.data_integrity[key])).join('')
         : '<li>age map: <span class="rr-fail">FAIL</span></li>';
@@ -7250,7 +7298,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const map35 = mapAt(35);
       const map70 = mapAt(70);
       const mapAnchor = (map35 && map70)
-        ? `Age 35: premium ${fmtCurrency(map35.annual_premium)}, expected loss ${rrMoney(map35.expected_loss)}, q(x) ${rrRatePct(map35.mortality_qx, 3)}, i(x) ${rrRatePct(map35.disability_ix, 3)}, curtate years if disabled ${map35.disability_curtate_expectancy == null ? '—' : Number(map35.disability_curtate_expectancy).toFixed(2)}. Age 70: premium ${fmtCurrency(map70.annual_premium)}, expected loss ${rrMoney(map70.expected_loss)}, q(x) ${rrRatePct(map70.mortality_qx, 3)}, i(x) ${rrRatePct(map70.disability_ix, 3)}, curtate years if disabled ${map70.disability_curtate_expectancy == null ? '—' : Number(map70.disability_curtate_expectancy).toFixed(2)}.`
+        ? `Age 35: premium ${fmtCurrency(map35.annual_premium)}, expected loss ${rrMoney(map35.expected_loss)}, q(x) ${rrRatePct(map35.mortality_qx, 3)}, i(x) ${rrRatePct(map35.disability_ix, 3)}, research years if disabled ${map35.disability_curtate_expectancy == null ? '—' : Number(map35.disability_curtate_expectancy).toFixed(2)} (man ${map35.male_years == null ? '—' : Number(map35.male_years).toFixed(2)}, woman ${map35.female_years == null ? '—' : Number(map35.female_years).toFixed(2)}). Age 70: premium ${fmtCurrency(map70.annual_premium)}, expected loss ${rrMoney(map70.expected_loss)}, q(x) ${rrRatePct(map70.mortality_qx, 3)}, i(x) ${rrRatePct(map70.disability_ix, 3)}, research years if disabled ${map70.disability_curtate_expectancy == null ? '—' : Number(map70.disability_curtate_expectancy).toFixed(2)} (man ${map70.male_years == null ? '—' : Number(map70.male_years).toFixed(2)}, woman ${map70.female_years == null ? '—' : Number(map70.female_years).toFixed(2)}).`
         : '';
       resultsEl.innerHTML = `
         <div class="rr-headline">
@@ -7294,9 +7342,14 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           <div class="rr-chart-wrap"><canvas id="rr-chart-prob"></canvas></div>
         </div>
         <div class="rr-chart-card">
-          <h4>Life expectancy if disabled</h4>
-          <p>Curtate years. The gold line is survival under q(x) times the ADL 10 mortality multiplier. The navy line is the same q(x) with no multiplier.</p>
+          <h4>Healthy life expectancy</h4>
+          <p>Navy is curtate years on pricing q(x). This is pricing survival. The disability study is the chart below.</p>
           <div class="rr-chart-wrap"><canvas id="rr-chart-le"></canvas></div>
+        </div>
+        <div class="rr-chart-card">
+          <h4>Remaining years after ADL 3</h4>
+          <p>The axis is remaining years after ADL 3. Gold is the published ADL 3 average. Grey is the man. Rust is the woman. These years do not change the premium.</p>
+          <div class="rr-chart-wrap rr-chart-wrap-tall"><canvas id="rr-chart-adl3"></canvas></div>
         </div>
         <h4 style="margin-top:16px;">Age-map integrity</h4>
         <ul>${mapIntegrity}</ul>
@@ -7656,7 +7709,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const scopeClass = entry.scope === 'cohort' ? 'scope-cohort' : (entry.scope === 'uploaded' ? 'scope-uploaded' : 'scope-global');
       const usedBadge = entry.used_in_pricing
         ? '<span class="tb-badge active" title="Used in premium and simulation">In use</span>'
-        : '<span class="tb-badge idle" title="Uploaded — not yet active">Idle</span>';
+        : (entry.assumption_only
+          ? '<span class="tb-badge idle" title="Assumption table. Not a premium rate band.">Assumption</span>'
+          : '<span class="tb-badge idle" title="Uploaded — not yet active">Idle</span>');
       const scopeBadge = `<span class="tb-badge scope">${escapeHtml(entry.scope)}</span>`;
       const meta = [
         entry.row_count ? `${entry.row_count} rows` : null,
@@ -7711,7 +7766,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       tbody.innerHTML = items.map((entry) => {
         const usedCell = entry.used_in_pricing
           ? '<span class="tb-badge active">In use</span>'
-          : '<span class="tb-badge idle">Idle</span>';
+          : (entry.assumption_only
+            ? '<span class="tb-badge idle">Assumption</span>'
+            : '<span class="tb-badge idle">Idle</span>');
         // Same JSON-stringify-then-HTML-escape pattern as renderTablesBarCard:
         // protects the inline onclick handler from cohort metadata that might
         // contain quotes, backslashes, or other JS-significant characters.
@@ -7836,12 +7893,15 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (typeEl && tableType) typeEl.value = tableType;
       if (dimEl) dimEl.value = scope === 'cohort' ? (cohortDim || '') : '';
       if (valEl) valEl.value = scope === 'cohort' ? (cohortValue || '') : '';
+      const expectancy = tableType === 'adl3_disabled_life_expectancy';
       if (statusEl) {
-        statusEl.textContent = scope === 'cohort'
-          ? `Replacement scoped to cohort ${cohortDim}=${cohortValue} (${tableType}). Pick a file and click Upload & promote.`
-          : (scope === 'global'
-              ? `Replacement scoped to GLOBAL ${tableType}. This will replace the rate band for every customer not matched by a cohort override.`
-              : `Replacement target inferred from upload type. Pick a file and click Upload & promote.`);
+        statusEl.textContent = expectancy
+          ? 'Replacement updates the ADL 3 expectancy table only. Premiums, q(x), and i(x) are not changed. Leave cohort blank. This table is global.'
+          : (scope === 'cohort'
+              ? `Replacement scoped to cohort ${cohortDim}=${cohortValue} (${tableType}). Pick a file and click Upload & promote.`
+              : (scope === 'global'
+                  ? `Replacement scoped to GLOBAL ${tableType}. This will replace the rate band for every customer not matched by a cohort override.`
+                  : `Replacement target inferred from upload type. Pick a file and click Upload & promote.`));
       }
       const fileEl = document.getElementById('replace-registry-file');
       if (fileEl) fileEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -7856,10 +7916,17 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const targetType = (document.getElementById('replace-registry-type')?.value || 'mortality_rates').trim();
       const cohortDim = (document.getElementById('replace-registry-cohort-dim')?.value || '').trim();
       const cohortValue = (document.getElementById('replace-registry-cohort-value')?.value || '').trim();
+      const expectancy = targetType === 'adl3_disabled_life_expectancy';
+      if (expectancy && (cohortDim || cohortValue)) {
+        if (statusEl) statusEl.textContent = 'The ADL 3 expectancy table is global. Leave cohort dimension and value blank.';
+        return;
+      }
       const cohortMode = !!(cohortDim && cohortValue);
-      const confirmMsg = cohortMode
-        ? `Upload "${name}" and register it as a cohort-scoped ${targetType} override for ${cohortDim}=${cohortValue}? The global rate band is preserved.`
-        : `Upload "${name}" and promote it into the GLOBAL ${targetType} rate band? This will replace the band for every customer not matched by a cohort override.`;
+      const confirmMsg = expectancy
+        ? `Upload "${name}" and replace the ADL 3 expectancy table? Premiums, q(x), and i(x) stay on the current rate bands.`
+        : (cohortMode
+            ? `Upload "${name}" and register it as a cohort-scoped ${targetType} override for ${cohortDim}=${cohortValue}? The global rate band is preserved.`
+            : `Upload "${name}" and promote it into the GLOBAL ${targetType} rate band? This will replace the band for every customer not matched by a cohort override.`);
       if (!confirm(confirmMsg)) return;
 
       try {
@@ -7896,7 +7963,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         if (statusEl) {
           statusEl.textContent = useData.mode === 'cohort_override'
             ? `Registered cohort override ${useData.cohort_key} for ${useData.target_table_type} (${useData.rows_applied} rows applied, ${useData.rows_skipped} skipped).`
-            : `Replaced GLOBAL ${useData.target_table_type} (${useData.rows_applied} rows applied, ${useData.rows_skipped} skipped).`;
+            : (useData.mode === 'assumption_replace'
+                ? `Replaced the ADL 3 expectancy table (${useData.rows_applied} rows). Premiums, q(x), and i(x) were not changed.`
+                : `Replaced GLOBAL ${useData.target_table_type} (${useData.rows_applied} rows applied, ${useData.rows_skipped} skipped).`);
         }
         if (fileInput) fileInput.value = '';
         loadTablesRegistry();

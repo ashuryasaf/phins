@@ -234,6 +234,29 @@
     `).join(''));
   }
 
+  function yearsOrDash(value) {
+    if (value == null || value === '') return '—';
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '—';
+    return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function renderAdl3Expectancy(rows) {
+    if (!rows || !rows.length) {
+      fillBody('ltc-adl3-le-table', emptyRow(5, 'No ADL 3 expectancy rows.'));
+      return;
+    }
+    fillBody('ltc-adl3-le-table', rows.map((r) => `
+      <tr>
+        <td>${r.age}</td>
+        <td>${yearsOrDash(r.male_years)}</td>
+        <td>${yearsOrDash(r.female_years)}</td>
+        <td>${yearsOrDash(r.average_years)}</td>
+        <td>${r.female_excess_pct == null || r.female_excess_pct === '' ? '—' : `${r.female_excess_pct}%`}</td>
+      </tr>
+    `).join(''));
+  }
+
   function renderPricing(rows) {
     if (!rows || !rows.length) {
       fillBody('ltc-pricing-table', emptyRow(8, 'No pricing overlay.'));
@@ -342,6 +365,7 @@
     renderCrossRisk(tables.cross_risk_adl_mortality);
     renderExposure(tables.reinsurance_exposure, pack.exposure_totals);
     renderForecast(tables.coverage_forecast);
+    renderAdl3Expectancy(tables.adl3_disabled_life_expectancy);
     renderPricing(tables.pricing_overlay);
     renderCharts(pack);
     renderIntegrity(pack);

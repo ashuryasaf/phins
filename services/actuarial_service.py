@@ -32,6 +32,13 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 import logging
 
+from services.adl3_disabled_life_expectancy import (
+    adl3_disabled_life_expectancy_rows,
+    adl3_row_at,
+    adl3_rows_for_tables,
+    normalize_adl3_expectancy_rows,
+)
+
 logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -645,7 +652,9 @@ class ActuarialTablesStore:
                 {'year_min': 4, 'year_max': 10, 'rate': 0.03},
                 {'year_min': 11, 'year_max': 25, 'rate': 0.02},
                 {'year_min': 26, 'year_max': 100, 'rate': 0.01},
-            ]
+            ],
+            # Remaining years after ADL 3. Disclosure only: not a premium band.
+            'adl3_disabled_life_expectancy': adl3_disabled_life_expectancy_rows(),
         }
         
         # Initialize underwriting config
@@ -1045,7 +1054,8 @@ class ActuarialTablesStore:
         Args:
             table_type: One of 'mortality_rates', 'disability_incidence_rates', 
                        'adl_mortality_multipliers', 'adl_disability_multipliers', 
-                       'adl_benefit_percentages', 'lapse_rates'
+                       'adl_benefit_percentages', 'lapse_rates',
+                       'adl3_disabled_life_expectancy'
             table_data: List of table row data
             user: Username making the change
             
@@ -1055,7 +1065,8 @@ class ActuarialTablesStore:
         valid_types = [
             'mortality_rates', 'disability_incidence_rates',
             'adl_mortality_multipliers', 'adl_disability_multipliers',
-            'adl_benefit_percentages', 'lapse_rates'
+            'adl_benefit_percentages', 'lapse_rates',
+            'adl3_disabled_life_expectancy',
         ]
         
         if table_type not in valid_types:
@@ -1091,6 +1102,15 @@ class ActuarialTablesStore:
                     return {'success': False, 'error': f'{table_type}: benefit_pct is required'}
                 if pct < 0 or pct > 1:
                     return {'success': False, 'error': f'{table_type}: benefit_pct must be 0.0-1.0 (decimal, where 1.0 = 100%), got {pct}'}
+
+        if table_type == 'adl3_disabled_life_expectancy':
+            normalization = normalize_adl3_expectancy_rows(table_data)
+            if not normalization.get('valid'):
+                return {
+                    'success': False,
+                    'error': normalization.get('error') or 'Invalid ADL 3 expectancy rows',
+                }
+            table_data = list(normalization['normalized'])
         
         # Promote the edit to a new active sub-version (never mutate a
         # version other pricing snapshots may be pinned to).
@@ -1233,7 +1253,9 @@ class ActuarialTablesStore:
                 {'year_min': 4, 'year_max': 10, 'rate': 0.03},
                 {'year_min': 11, 'year_max': 25, 'rate': 0.02},
                 {'year_min': 26, 'year_max': 100, 'rate': 0.01},
-            ]
+            ],
+            # Remaining years after ADL 3. Disclosure only: not a premium band.
+            'adl3_disabled_life_expectancy': adl3_disabled_life_expectancy_rows(),
         }
     
     def reset_config_to_default(self, user: str) -> Dict:
@@ -4168,15 +4190,18 @@ def build_risk_reference_age_map(
     age_min: int = RISK_REFERENCE_MAP_AGE_MIN,
     age_max: int = RISK_REFERENCE_MAP_AGE_MAX,
 ) -> Dict[str, Any]:
-    """One-year tariff, incidence, and curtate expectancy at each age.
+    """One-year tariff, incidence, and expectancy at each age.
 
     Premium and expected loss use the risk-reference identity. Healthy
-    curtate years use that same q(x). Disability curtate years use
-    q(x) times the ADL 10 mortality multiplier, capped at 1. A missing
-    rate or a missing multiplier is withheld.
+    years are curtate survival on that q(x). Disabled years are the
+    published ADL 3 research average at that age. The curtate sum of
+    q(x) times the ADL 10 multiplier stays on
+    ``pricing_basis_disabled_curtate`` and is not the plotted line.
+    A missing rate, research age, or multiplier is withheld.
     """
     terminal = _mortality_terminal_age(mort_brackets)
     multiplier = _adl_mortality_multiplier(tables, PERMANENT_DISABILITY_ADL)
+    research_rows = adl3_rows_for_tables(tables)
     mort_sev = float(profile['mortality_severity'])
     dis_sev = float(profile['disability_severity'])
 
@@ -4223,13 +4248,20 @@ def build_risk_reference_age_map(
             withheld_ok = False
         healthy = curtate_life_expectancy(age, qx_at, terminal, 1.0)
         if multiplier is None:
-            disabled = None
+            pricing_basis = None
         else:
-            disabled = curtate_life_expectancy(age, qx_at, terminal, multiplier)
-        if healthy is None or disabled is None:
-            pass
-        elif multiplier is not None and multiplier > 1.0 and disabled > healthy + 1e-9:
-            expectancy_order_ok = False
+            pricing_basis = curtate_life_expectancy(age, qx_at, terminal, multiplier)
+        research = adl3_row_at(research_rows, age)
+        if research is None:
+            male = female = average = excess = None
+        else:
+            male = research['male_years']
+            female = research['female_years']
+            average = research['average_years']
+            excess = research['female_excess_pct']
+        for years in (average, male, female):
+            if healthy is not None and years is not None and years > healthy + 1e-9:
+                expectancy_order_ok = False
         rows.append({
             'age': age,
             'annual_premium': round(annual, 2),
@@ -4241,7 +4273,11 @@ def build_risk_reference_age_map(
             'life_sum': round(life_at_age, 2),
             'disability_sum': round(disability_at_age, 2),
             'healthy_curtate_expectancy': healthy,
-            'disability_curtate_expectancy': disabled,
+            'disability_curtate_expectancy': average,
+            'male_years': male,
+            'female_years': female,
+            'female_excess_pct': excess,
+            'pricing_basis_disabled_curtate': pricing_basis,
         })
     return {
         'age_min': int(age_min),
@@ -4258,17 +4294,24 @@ def build_risk_reference_age_map(
             'q(x) × life sum × mortality severity + i(x) × disability sum × disability severity. '
             'q(x) and i(x) follow the table: published profile where listed, otherwise the kernel bracket. '
             'Healthy curtate years sum survival from that q(x) through the last age the mortality table covers. '
-            'Disability curtate years use the same q(x) times the ADL 10 mortality multiplier, capped at 1. '
-            'A missing rate or a missing multiplier is left blank.'
+            'Disabled years are the published ADL 3 remaining-life average at that age, '
+            'with the man and woman columns from the same study. '
+            'They are not q(x) times the ADL 10 mortality multiplier. '
+            'That curtate comparison is kept as pricing_basis_disabled_curtate and is not the plotted line. '
+            'A missing rate, research age, or multiplier is left blank. Face amount does not change the years.'
         ),
         'rows': rows,
+        'expectancy_source': 'adl3_disabled_life_expectancy',
         'data_integrity': {
             'premium_matches_rounded_monthlies': premium_ok,
             'unresolved_loss_withheld': withheld_ok,
             'disability_expectancy_not_longer_than_healthy': expectancy_order_ok,
+            'research_disabled_years_resolved': all(
+                row['disability_curtate_expectancy'] is not None for row in rows
+            ),
             'disability_expectancy_withheld_without_multiplier': (
                 multiplier is not None
-                or all(row['disability_curtate_expectancy'] is None for row in rows)
+                or all(row['pricing_basis_disabled_curtate'] is None for row in rows)
             ),
         },
     }
@@ -6227,7 +6270,12 @@ COHORT_VALUE_LABELS: Dict[str, str] = {
 TABLE_TYPE_LABELS: Dict[str, str] = {
     'mortality_rates': 'Death (mortality)',
     'disability_incidence_rates': 'Disability (permanent ADL)',
+    'adl3_disabled_life_expectancy': 'ADL 3 disabled life expectancy',
 }
+
+# Disclosure tables. They are not premium bands and must not be promoted
+# through the mortality / disability replace path.
+ASSUMPTION_TABLES = {'adl3_disabled_life_expectancy'}
 
 
 def _humanize_cohort_dim(dim: str) -> str:
@@ -6319,6 +6367,43 @@ def _global_table_entry(table_type: str, store: ActuarialTablesStore) -> Dict[st
         'source_name': None,
         'used_in_pricing': True,
         'usage_label': 'Active in pricing & simulation (default cohort)',
+        'integrity_hash': _hash_table_rows(rows, extra),
+        'rows': rows,
+    }
+
+
+def _assumption_table_entry(table_type: str, store: ActuarialTablesStore) -> Dict[str, Any]:
+    """Global disclosure table. ``used_in_pricing`` stays false."""
+    rows = adl3_rows_for_tables(store.get_current_tables())
+    extra = {
+        'scope': 'global',
+        'table_type': table_type,
+        'tables_version': store.current_version,
+        'assumption_only': True,
+    }
+    return {
+        'id': f'global:{table_type}',
+        'scope': 'global',
+        'table_type': table_type,
+        'cohort_dim': None,
+        'cohort_value': None,
+        'cohort_key': None,
+        'label': 'ADL 3 disabled life expectancy — Global (assumption)',
+        'description': (
+            'Remaining years after ADL 3 from the published research file. '
+            'The Risk Reference expectancy chart reads this table. '
+            'It is not a premium rate band and it does not replace q(x), i(x), '
+            'or the ADL 10 mortality multiplier.'
+        ),
+        'row_count': len(rows),
+        'tables_version': store.current_version,
+        'effective_date': (store.versions.get(store.current_version, {}) or {}).get('effective_date'),
+        'created_by': (store.versions.get(store.current_version, {}) or {}).get('created_by'),
+        'source_table_id': None,
+        'source_name': 'Published ADL 3 remaining-life research',
+        'used_in_pricing': False,
+        'assumption_only': True,
+        'usage_label': 'Assumption only — not a premium rate band',
         'integrity_hash': _hash_table_rows(rows, extra),
         'rows': rows,
     }
@@ -6422,6 +6507,8 @@ def build_rate_tables_registry(uploaded_tables: Optional[List[Dict[str, Any]]] =
 
     for table_type in ('mortality_rates', 'disability_incidence_rates'):
         entries.append(_global_table_entry(table_type, store))
+    for table_type in ('adl3_disabled_life_expectancy',):
+        entries.append(_assumption_table_entry(table_type, store))
 
     with _COHORT_LOCK:
         cohort_overrides_snapshot = {
@@ -6476,9 +6563,20 @@ def get_active_rate_table_rows(scope: str, table_type: str,
     layer; the caller already has the rows in that case.
     """
     table_type = (table_type or '').lower()
+    store = get_actuarial_store()
+    if table_type in ASSUMPTION_TABLES:
+        if scope != 'global':
+            return {'success': False, 'error': f'Unsupported scope for assumption table: {scope}'}
+        entry = _assumption_table_entry(table_type, store)
+        return {
+            'success': True,
+            'rows': entry['rows'],
+            'label': entry['label'],
+            'integrity_hash': entry['integrity_hash'],
+            'filename_stem': f'phins-global-{table_type.replace("_", "-")}-{store.current_version}',
+        }
     if table_type not in SUPPORTED_RATE_BANDS:
         return {'success': False, 'error': f'Unsupported table_type: {table_type}'}
-    store = get_actuarial_store()
     if scope == 'global':
         entry = _global_table_entry(table_type, store)
         return {

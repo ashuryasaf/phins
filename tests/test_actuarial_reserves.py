@@ -189,7 +189,7 @@ def test_curtate_life_expectancy_sums_survival_and_withholds():
 
 
 def test_risk_reference_age_map_matches_tariff_and_disability_expectancy():
-    """The age map is the one-year tariff. Disability years use ADL 10."""
+    """The age map is the one-year tariff. Disabled years are the ADL 3 study."""
     ref = build_risk_reference(start_age=35, projection_years=1)
     age_map = ref['age_map']
     assert age_map['face_amount'] == 500_000.0
@@ -242,10 +242,23 @@ def test_risk_reference_age_map_matches_tariff_and_disability_expectancy():
     assert row70['healthy_curtate_expectancy'] == curtate_life_expectancy(
         70, qx_at, age_map['terminal_age'], 1.0
     )
-    assert row70['disability_curtate_expectancy'] == curtate_life_expectancy(
+    # Plotted disability years are the published research average, not q×1.80.
+    assert row70['disability_curtate_expectancy'] == 4.912557052
+    assert row70['male_years'] == 4.17
+    assert row70['female_years'] == 5.66
+    assert row70['female_excess_pct'] == 36
+    assert row70['pricing_basis_disabled_curtate'] == curtate_life_expectancy(
         70, qx_at, age_map['terminal_age'], 1.8
     )
+    assert row35['disability_curtate_expectancy'] == 5.248615017
+    assert row35['male_years'] == 4.95
+    assert row35['female_years'] == 5.54
+    assert row35['pricing_basis_disabled_curtate'] == curtate_life_expectancy(
+        35, qx_at, age_map['terminal_age'], 1.8
+    )
+    assert abs(row35['disability_curtate_expectancy'] - ((4.95 + 5.54) / 2)) > 1e-6
     assert row70['disability_curtate_expectancy'] < row70['healthy_curtate_expectancy']
+    assert row35['pricing_basis_disabled_curtate'] != row35['disability_curtate_expectancy']
     assert all(flag is True for flag in age_map['data_integrity'].values())
 
     doubled = build_risk_reference(start_age=35, projection_years=1, life_sum=1_000_000)
@@ -256,6 +269,9 @@ def test_risk_reference_age_map_matches_tariff_and_disability_expectancy():
     assert d35['disability_ix'] == row35['disability_ix']
     assert d35['healthy_curtate_expectancy'] == row35['healthy_curtate_expectancy']
     assert d35['disability_curtate_expectancy'] == row35['disability_curtate_expectancy']
+    assert d35['male_years'] == row35['male_years']
+    assert d35['female_years'] == row35['female_years']
+    assert d35['pricing_basis_disabled_curtate'] == row35['pricing_basis_disabled_curtate']
 
     saved = list(tables.get('mortality_rates') or [])
     try:
@@ -265,11 +281,41 @@ def test_risk_reference_age_map_matches_tariff_and_disability_expectancy():
         assert broken_by_age[42]['mortality_qx'] is None
         assert broken_by_age[42]['expected_loss'] is None
         assert broken_by_age[42]['healthy_curtate_expectancy'] is None
-        assert broken_by_age[42]['disability_curtate_expectancy'] is None
+        assert broken_by_age[42]['pricing_basis_disabled_curtate'] is None
+        # Research years do not depend on q(x). A missing kernel rate withholds
+        # the loss, not the published expectancy.
+        assert broken_by_age[42]['disability_curtate_expectancy'] is not None
         assert broken_by_age[35]['mortality_qx'] == 0.00133
         assert broken_by_age[35]['healthy_curtate_expectancy'] is None
+        assert broken_by_age[35]['disability_curtate_expectancy'] == 5.248615017
     finally:
         tables['mortality_rates'] = saved
+
+    saved_research = tables.get('adl3_disabled_life_expectancy')
+    try:
+        tables['adl3_disabled_life_expectancy'] = [
+            row for row in (saved_research or []) if int(row.get('age')) != 50
+        ]
+        holed = {
+            row['age']: row
+            for row in build_risk_reference(start_age=35, projection_years=1)['age_map']['rows']
+        }
+        assert holed[50]['disability_curtate_expectancy'] is None
+        assert holed[50]['male_years'] is None
+        assert holed[50]['expected_loss'] == by_age[50]['expected_loss']
+        assert holed[35]['annual_premium'] == row35['annual_premium']
+        assert holed[35]['mortality_qx'] == 0.00133
+        del tables['adl3_disabled_life_expectancy']
+        filled = {
+            row['age']: row
+            for row in build_risk_reference(start_age=35, projection_years=1)['age_map']['rows']
+        }
+        assert filled[50]['disability_curtate_expectancy'] == by_age[50]['disability_curtate_expectancy']
+    finally:
+        if saved_research is None:
+            tables.pop('adl3_disabled_life_expectancy', None)
+        else:
+            tables['adl3_disabled_life_expectancy'] = saved_research
 
     import os
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -280,9 +326,19 @@ def test_risk_reference_age_map_matches_tariff_and_disability_expectancy():
     assert 'id="rr-chart-loss"' in dashboard
     assert 'id="rr-chart-prob"' in dashboard
     assert 'id="rr-chart-le"' in dashboard
+    assert 'id="rr-chart-adl3"' in dashboard
+    assert 'rr-chart-wrap-tall' in dashboard
     assert 'drawRiskReferenceCharts' in dashboard
     assert 'healthy_curtate_expectancy' in dashboard
     assert 'disability_curtate_expectancy' in dashboard
+    assert 'male_years' in dashboard
+    assert 'female_years' in dashboard
+    assert 'Remaining years after ADL 3' in dashboard
+    assert 'published ADL 3 average' in dashboard
+    assert 'value="adl3_disabled_life_expectancy"' in dashboard
+    assert 'Leave cohort blank' in dashboard
+    assert 'q(x) times the ADL 10 mortality multiplier' not in dashboard
+    assert 'adl3_disabled_life_expectancy' in dashboard
 
 
 def test_risk_reference_kernel_rates_cover_any_age():
@@ -403,9 +459,13 @@ def test_risk_reference_pdf_restates_the_forecast_and_hash():
     assert digest in flat
     assert '$2,070.00' in text
     assert '$974.38' in text
-    assert '38.92' in text
+    assert '5.25' in text
     assert '$1,248.75' in text
-    assert '11.13' in text
+    assert '4.91' in text
+    assert '38.92' not in text
+    assert 'published ADL 3' in text
+    assert 'Healthy life expectancy' in text
+    assert 'Remaining years after ADL 3' in text
     assert 'PASS' in text
     from pypdf import PdfReader
     assert PdfReader(io.BytesIO(pdf)).metadata.subject == digest
@@ -416,8 +476,9 @@ def test_risk_reference_pdf_restates_the_forecast_and_hash():
     _name, doubled_pdf = render_risk_reference_pdf(doubled)
     doubled_text = _pdf_text(doubled_pdf)
     assert '$4,140.00' in doubled_text
-    assert '38.92' in doubled_text
-    assert '11.13' in doubled_text
+    assert '5.25' in doubled_text
+    assert '4.91' in doubled_text
+    assert '38.92' not in doubled_text
     assert doubled_hash in ''.join(doubled_text.split())
 
     withheld = copy.deepcopy(ref)

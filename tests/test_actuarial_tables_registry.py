@@ -29,14 +29,23 @@ from urllib.parse import urlencode
 import pytest
 
 from services.actuarial_service import (
+    RISK_REFERENCE_MAP_AGE_MAX,
+    RISK_REFERENCE_MAP_AGE_MIN,
     SUPPORTED_RATE_BANDS,
     build_cohort_label,
     build_rate_tables_registry,
+    build_risk_reference,
     get_active_rate_table_rows,
+    get_actuarial_store,
     list_cohort_rate_tables,
     normalize_uploaded_rate_table,
     register_cohort_rate_table,
     remove_cohort_rate_table,
+)
+from services.adl3_disabled_life_expectancy import (
+    CHART_AGE_MAX,
+    CHART_AGE_MIN,
+    normalize_adl3_expectancy_rows,
 )
 
 
@@ -63,11 +72,25 @@ def test_registry_includes_global_entries_for_both_rate_bands():
     by_id = {e['id']: e for e in entries}
     assert 'global:mortality_rates' in by_id
     assert 'global:disability_incidence_rates' in by_id
+    assert 'global:adl3_disabled_life_expectancy' in by_id
+    expectancy = by_id['global:adl3_disabled_life_expectancy']
+    assert expectancy['used_in_pricing'] is False
+    assert expectancy['assumption_only'] is True
+    assert expectancy['row_count'] == 110
+    assert 'rows' not in expectancy
     for entry in entries:
-        if entry['scope'] == 'global':
+        if entry['id'] in ('global:mortality_rates', 'global:disability_incidence_rates'):
             assert entry['used_in_pricing'] is True
+        if entry['scope'] == 'global':
             assert entry['integrity_hash'] and len(entry['integrity_hash']) == 64
             assert entry['row_count'] > 0
+    looked = get_active_rate_table_rows('global', 'adl3_disabled_life_expectancy')
+    assert looked['success'] is True
+    assert len(looked['rows']) == 110
+    assert looked['rows'][0]['age'] == 1
+    assert looked['rows'][34]['average_years'] == 5.248615017
+    assert looked['rows'][34]['female_excess_pct'] == 12
+    assert 'adl3_disabled_life_expectancy' not in SUPPORTED_RATE_BANDS
 
 
 def test_registry_surfaces_cohort_overrides_with_friendly_labels():
@@ -171,6 +194,125 @@ def test_get_active_rate_table_rows_returns_global_and_cohort_payloads():
         remove_cohort_rate_table('gender', 'female', 'disability_incidence_rates', 'pytest')
 
 
+def _expectancy_upload_rows(average_at_35=None):
+    """Published rows with the CSV aliases a replacement file would use."""
+    looked = get_active_rate_table_rows('global', 'adl3_disabled_life_expectancy')
+    rows = []
+    for row in looked['rows']:
+        item = {
+            'age': row['age'],
+            'man': row['male_years'],
+            'woman': row['female_years'],
+            'average': row['average_years'],
+            '%+': row['female_excess_pct'],
+        }
+        if average_at_35 is not None and int(row['age']) == 35:
+            item['average'] = average_at_35
+        rows.append(item)
+    return rows
+
+
+def test_adl3_chart_window_matches_the_risk_reference_map():
+    assert CHART_AGE_MIN == 20 == RISK_REFERENCE_MAP_AGE_MIN
+    assert CHART_AGE_MAX == 85 == RISK_REFERENCE_MAP_AGE_MAX
+
+
+def test_normalize_adl3_expectancy_keeps_the_published_average():
+    rows = _expectancy_upload_rows()
+    rows.insert(0, {'age': '', 'man': '', 'woman': '', 'average': '', '%+': ''})
+    parsed = normalize_adl3_expectancy_rows(rows)
+    assert parsed['valid'] is True
+    assert parsed['rows_skipped'] == 1
+    by_age = {row['age']: row for row in parsed['normalized']}
+    age35 = by_age[35]
+    assert age35['average_years'] == 5.248615017
+    assert age35['average_years'] != (age35['male_years'] + age35['female_years']) / 2
+    assert age35['female_excess_pct'] == 12
+    assert by_age[5]['female_excess_pct'] == 23
+    assert parsed['normalized'][0]['age'] == 1
+    assert by_age[110]['age'] == 110
+
+    percent = normalize_adl3_expectancy_rows([
+        {**row, '%+': '12%' if row['age'] == 35 else row['%+']}
+        for row in rows
+        if row.get('age') != ''
+    ])
+    assert percent['valid'] is True
+    assert {row['age']: row for row in percent['normalized']}[35]['female_excess_pct'] == 12
+
+    fraction = normalize_adl3_expectancy_rows([
+        {**row, '%+': 0.12 if row['age'] == 35 else row['%+']}
+        for row in rows
+        if row.get('age') != ''
+    ])
+    assert fraction['valid'] is False
+    assert fraction['reason'] == 'percent_not_integer'
+
+    duplicated = [dict(row) for row in rows if row.get('age') != '']
+    duplicated.append(dict(duplicated[0]))
+    duplicate = normalize_adl3_expectancy_rows(duplicated)
+    assert duplicate['valid'] is False
+    assert duplicate['reason'] == 'duplicate_age'
+
+    brackets = normalize_adl3_expectancy_rows([
+        {'age_min': 30, 'age_max': 40, 'rate_per_1000': 1.2},
+    ])
+    assert brackets['valid'] is False
+    assert brackets['reason'] == 'no_valid_rows'
+
+    window = [row for row in rows if row.get('age') != '' and int(row['age']) != 40]
+    incomplete = normalize_adl3_expectancy_rows(window)
+    assert incomplete['valid'] is False
+    assert incomplete['reason'] == 'chart_window_incomplete'
+
+
+def test_replace_adl3_expectancy_leaves_pricing_unchanged():
+    store = get_actuarial_store()
+    tables = store.get_current_tables()
+    saved = [dict(row) for row in tables['adl3_disabled_life_expectancy']]
+    mortality = [dict(row) for row in tables['mortality_rates']]
+    disability = [dict(row) for row in tables['disability_incidence_rates']]
+    multipliers = [dict(row) for row in tables['adl_mortality_multipliers']]
+    version_before = store.current_version
+    before = {
+        row['age']: row
+        for row in build_risk_reference(start_age=35, projection_years=1)['age_map']['rows']
+    }
+    rejected = store.update_current_tables(
+        'adl3_disabled_life_expectancy',
+        [{'age_min': 0, 'age_max': 30, 'rate_per_1000': 1.2}],
+        'pytest',
+    )
+    assert rejected['success'] is False
+    assert store.current_version == version_before
+    cohort = register_cohort_rate_table(
+        'gender', 'female', 'adl3_disabled_life_expectancy',
+        [{'age': 35, 'male_years': 1, 'female_years': 1, 'average_years': 1}],
+        'pytest',
+    )
+    assert cohort['success'] is False
+    try:
+        replacement = _expectancy_upload_rows(average_at_35=6.5)
+        result = store.update_current_tables('adl3_disabled_life_expectancy', replacement, 'pytest')
+        assert result['success'] is True
+        current = store.get_current_tables()
+        assert current['mortality_rates'] == mortality
+        assert current['disability_incidence_rates'] == disability
+        assert current['adl_mortality_multipliers'] == multipliers
+        after = {
+            row['age']: row
+            for row in build_risk_reference(start_age=35, projection_years=1)['age_map']['rows']
+        }
+        assert after[35]['disability_curtate_expectancy'] == 6.5
+        assert after[35]['annual_premium'] == before[35]['annual_premium']
+        assert after[35]['mortality_qx'] == 0.00133
+        assert after[35]['expected_loss'] == before[35]['expected_loss']
+        assert after[35]['pricing_basis_disabled_curtate'] == before[35]['pricing_basis_disabled_curtate']
+    finally:
+        restored = store.update_current_tables('adl3_disabled_life_expectancy', saved, 'pytest')
+        assert restored['success'] is True
+
+
 # ----------------------------------------------------------------------------
 # HTTP integration tests against the embedded server (root conftest)
 # ----------------------------------------------------------------------------
@@ -213,11 +355,13 @@ def test_registry_endpoint_returns_global_entries(admin_token):
     payload = json.loads(body)
     assert payload['success'] is True
     summary = payload['summary']
-    assert summary['global'] == 2
+    assert summary['global'] == 3
     assert summary['used_in_pricing'] >= 2
     by_id = {e['id']: e for e in payload['items']}
     assert 'global:mortality_rates' in by_id
     assert 'global:disability_incidence_rates' in by_id
+    assert 'global:adl3_disabled_life_expectancy' in by_id
+    assert by_id['global:adl3_disabled_life_expectancy']['used_in_pricing'] is False
     # Manifest hash must be a 64-char hex string covering the whole registry.
     manifest = payload['integrity']['manifest_hash']
     assert isinstance(manifest, str) and len(manifest) == 64
@@ -337,6 +481,66 @@ def test_registry_download_rejects_unsupported_scope(admin_token):
         assert False, 'expected HTTPError for invalid scope'
     except urllib.error.HTTPError as exc:
         assert exc.code == 400
+
+
+def test_use_endpoint_replaces_adl3_expectancy_without_repricing(admin_token):
+    import urllib.error
+    import web_portal.server as portal
+    from security.vault import encrypt_json
+
+    store = get_actuarial_store()
+    saved = [dict(row) for row in store.get_current_tables()['adl3_disabled_life_expectancy']]
+    upload_id = 'AT-ADL3-REPLACE-1'
+    rows = _expectancy_upload_rows(average_at_35=6.25)
+    blob = encrypt_json(rows).to_json() if encrypt_json else json.dumps(
+        {'scheme': 'plain', 'ciphertext': json.dumps(rows)}
+    )
+    portal.ACTUARIAL_TABLES[upload_id] = {
+        'id': upload_id,
+        'name': 'ADL 3 expectancy replacement',
+        'table_type': 'adl3_disabled_life_expectancy',
+        'payload': blob,
+    }
+    try:
+        try:
+            _post_json(
+                _base_url() + '/api/actuarial/uploaded-tables/use',
+                {
+                    'table_id': upload_id,
+                    'target_table_type': 'adl3_disabled_life_expectancy',
+                    'cohort_dim': 'gender',
+                    'cohort_value': 'female',
+                },
+                admin_token,
+            )
+            raise AssertionError('cohort replace should be refused')
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 400
+            payload = json.loads(exc.read().decode('utf-8'))
+            assert payload['error'] == 'The ADL 3 expectancy table is global. Leave the cohort blank.'
+
+        body, status, _ = _post_json(
+            _base_url() + '/api/actuarial/uploaded-tables/use',
+            {
+                'table_id': upload_id,
+                'target_table_type': 'adl3_disabled_life_expectancy',
+            },
+            admin_token,
+        )
+        assert status == 200, body
+        promoted = json.loads(body)
+        assert promoted['mode'] == 'assumption_replace'
+        assert promoted['rows_applied'] == 110
+        after = {
+            row['age']: row
+            for row in build_risk_reference(start_age=35, projection_years=1)['age_map']['rows']
+        }
+        assert after[35]['disability_curtate_expectancy'] == 6.25
+        assert after[35]['annual_premium'] == 2070.0
+        assert after[35]['mortality_qx'] == 0.00133
+    finally:
+        portal.ACTUARIAL_TABLES.pop(upload_id, None)
+        store.update_current_tables('adl3_disabled_life_expectancy', saved, 'pytest')
 
 
 def test_registry_rejects_requests_without_credentials():

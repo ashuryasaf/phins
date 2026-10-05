@@ -136,6 +136,7 @@ COPY = {
             'coverage_forecast': 'Forecast — coverage-type mix and hedge stack',
             'pricing_overlay': 'Pricing overlay — technical rates for analysis',
             'adl_mortality_multipliers': 'ADL mortality multipliers',
+            'adl3_disabled_life_expectancy': 'ADL 3 disabled life expectancy (research)',
             'mortality_rates': 'Life mortality rates (upload format)',
             'disability_incidence_rates': '3+ADL disability rates (upload format)',
         },
@@ -199,6 +200,7 @@ COPY = {
         },
         'headers': {
             'year': 'Year',
+            'age': 'Age',
             'era': 'Era',
             'life_premium_index': 'Life idx',
             'ltc3_premium_index': '3+ADL idx',
@@ -262,6 +264,10 @@ COPY = {
             'multiplier': 'Multiplier',
             'trigger': 'Trigger',
             'note': 'Note',
+            'male_years': 'Man',
+            'female_years': 'Woman',
+            'average_years': 'Average',
+            'female_excess_pct': 'Woman excess %',
         },
     },
     'he': {
@@ -300,6 +306,7 @@ COPY = {
             'coverage_forecast': 'תחזית — תמהיל סוגי כיסוי ומחסנית גידור',
             'pricing_overlay': 'שכבת תמחור — שיעורים טכניים לניתוח',
             'adl_mortality_multipliers': 'מכפילי תמותה לפי פעולות יומיום',
+            'adl3_disabled_life_expectancy': 'תוחלת חיים בנכות 3+ פעולות יומיום (מחקר)',
             'mortality_rates': 'שיעורי תמותת חיים (תבנית העלאה)',
             'disability_incidence_rates': 'שיעורי נכות 3+ פעולות יומיום (תבנית העלאה)',
         },
@@ -362,6 +369,7 @@ COPY = {
         },
         'headers': {
             'year': 'שנה',
+            'age': 'גיל',
             'era': 'תקופה',
             'life_premium_index': 'מדד חיים',
             'ltc3_premium_index': 'מדד 3+',
@@ -425,6 +433,10 @@ COPY = {
             'multiplier': 'מכפיל',
             'trigger': 'הפעלה',
             'note': 'הערה',
+            'male_years': 'גבר',
+            'female_years': 'אישה',
+            'average_years': 'ממוצע',
+            'female_excess_pct': 'עודף אישה %',
         },
     },
 }
@@ -505,6 +517,9 @@ PDF_TABLE_GROUPS: Dict[str, List[List[str]]] = {
     ],
     'adl_mortality_multipliers': [
         ['adl', 'multiplier', 'trigger', 'note'],
+    ],
+    'adl3_disabled_life_expectancy': [
+        ['age', 'male_years', 'female_years', 'average_years', 'female_excess_pct'],
     ],
     'mortality_rates': [
         ['age_min', 'age_max', 'rate_per_1000'],
