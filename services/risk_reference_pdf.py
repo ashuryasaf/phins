@@ -188,13 +188,14 @@ def _line_chart(
     series: Sequence[Tuple[str, str, Sequence[Optional[float]]]],
     usable: float,
     y_tick,
+    height: float = 168.0,
 ) -> Any:
     """Polyline chart. A missing value breaks the line and is not drawn as zero."""
     from reportlab.graphics.shapes import Drawing, Line, PolyLine, Rect, String
     from reportlab.lib import colors
 
     width = float(usable)
-    height = 168.0
+    height = float(height)
     drawing = Drawing(width, height)
     left, right, top, bottom = 48.0, 10.0, 18.0, 22.0
     plot_w = max(10.0, width - left - right)
@@ -505,17 +506,36 @@ def render_risk_reference_pdf(reference: Dict[str, Any]) -> Tuple[str, bytes]:
         usable,
         _axis_pct,
     ))
-    story.append(Paragraph('Life expectancy if disabled', h2))
+    story.append(Paragraph('Healthy life expectancy', h2))
+    story.append(para(
+        'Navy is curtate years on pricing q(x). This is pricing survival. '
+        'The disability study is the next chart.',
+        meta,
+    ))
     story.append(_line_chart(
         ages,
         [
             ('Healthy q(x)', PHINS_NAVY, series_values('healthy_curtate_expectancy')),
+        ],
+        usable,
+        _axis_years,
+    ))
+    story.append(Paragraph('Remaining years after ADL 3', h2))
+    story.append(para(
+        'The axis is remaining years after ADL 3. Gold is the published ADL 3 average. '
+        'Grey is the man. Rust is the woman. These years do not change the premium.',
+        meta,
+    ))
+    story.append(_line_chart(
+        ages,
+        [
             ('ADL 3 average', PHINS_GOLD, series_values('disability_curtate_expectancy')),
             ('ADL 3 man', PHINS_GREY, series_values('male_years')),
             ('ADL 3 woman', '#c45c26', series_values('female_years')),
         ],
         usable,
-        _axis_years,
+        lambda value: f'{value:.1f}',
+        height=210.0,
     ))
 
     story.append(Paragraph('Age-map table', h2))

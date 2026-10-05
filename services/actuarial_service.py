@@ -36,6 +36,7 @@ from services.adl3_disabled_life_expectancy import (
     adl3_disabled_life_expectancy_rows,
     adl3_row_at,
     adl3_rows_for_tables,
+    normalize_adl3_expectancy_rows,
 )
 
 logger = logging.getLogger(__name__)
@@ -1053,7 +1054,8 @@ class ActuarialTablesStore:
         Args:
             table_type: One of 'mortality_rates', 'disability_incidence_rates', 
                        'adl_mortality_multipliers', 'adl_disability_multipliers', 
-                       'adl_benefit_percentages', 'lapse_rates'
+                       'adl_benefit_percentages', 'lapse_rates',
+                       'adl3_disabled_life_expectancy'
             table_data: List of table row data
             user: Username making the change
             
@@ -1063,7 +1065,8 @@ class ActuarialTablesStore:
         valid_types = [
             'mortality_rates', 'disability_incidence_rates',
             'adl_mortality_multipliers', 'adl_disability_multipliers',
-            'adl_benefit_percentages', 'lapse_rates'
+            'adl_benefit_percentages', 'lapse_rates',
+            'adl3_disabled_life_expectancy',
         ]
         
         if table_type not in valid_types:
@@ -1099,6 +1102,15 @@ class ActuarialTablesStore:
                     return {'success': False, 'error': f'{table_type}: benefit_pct is required'}
                 if pct < 0 or pct > 1:
                     return {'success': False, 'error': f'{table_type}: benefit_pct must be 0.0-1.0 (decimal, where 1.0 = 100%), got {pct}'}
+
+        if table_type == 'adl3_disabled_life_expectancy':
+            normalization = normalize_adl3_expectancy_rows(table_data)
+            if not normalization.get('valid'):
+                return {
+                    'success': False,
+                    'error': normalization.get('error') or 'Invalid ADL 3 expectancy rows',
+                }
+            table_data = list(normalization['normalized'])
         
         # Promote the edit to a new active sub-version (never mutate a
         # version other pricing snapshots may be pinned to).

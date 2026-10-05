@@ -326,11 +326,17 @@ def test_risk_reference_age_map_matches_tariff_and_disability_expectancy():
     assert 'id="rr-chart-loss"' in dashboard
     assert 'id="rr-chart-prob"' in dashboard
     assert 'id="rr-chart-le"' in dashboard
+    assert 'id="rr-chart-adl3"' in dashboard
+    assert 'rr-chart-wrap-tall' in dashboard
     assert 'drawRiskReferenceCharts' in dashboard
     assert 'healthy_curtate_expectancy' in dashboard
     assert 'disability_curtate_expectancy' in dashboard
-    assert 'Research average years after ADL 3' in dashboard
+    assert 'male_years' in dashboard
+    assert 'female_years' in dashboard
+    assert 'Remaining years after ADL 3' in dashboard
     assert 'published ADL 3 average' in dashboard
+    assert 'value="adl3_disabled_life_expectancy"' in dashboard
+    assert 'Leave cohort blank' in dashboard
     assert 'q(x) times the ADL 10 mortality multiplier' not in dashboard
     assert 'adl3_disabled_life_expectancy' in dashboard
 
@@ -458,6 +464,8 @@ def test_risk_reference_pdf_restates_the_forecast_and_hash():
     assert '4.91' in text
     assert '38.92' not in text
     assert 'published ADL 3' in text
+    assert 'Healthy life expectancy' in text
+    assert 'Remaining years after ADL 3' in text
     assert 'PASS' in text
     from pypdf import PdfReader
     assert PdfReader(io.BytesIO(pdf)).metadata.subject == digest

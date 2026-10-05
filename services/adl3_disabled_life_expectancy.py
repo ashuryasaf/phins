@@ -12,11 +12,23 @@ This table does not price q(x), i(x), or the ADL 10 mortality multiplier.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+import math
+from typing import Any, Dict, List, Optional, Tuple
 
 TABLE_NAME = 'adl3_disabled_life_expectancy'
 AGE_MIN = 1
 AGE_MAX = 110
+# Chart window for the Risk Reference age map. Kept here so this module
+# does not import actuarial_service. Tests assert these equal
+# RISK_REFERENCE_MAP_AGE_MIN / RISK_REFERENCE_MAP_AGE_MAX.
+CHART_AGE_MIN = 20
+CHART_AGE_MAX = 85
+
+_MALE_KEYS = ('male_years', 'man')
+_FEMALE_KEYS = ('female_years', 'woman')
+_AVERAGE_KEYS = ('average_years', 'average')
+_PERCENT_KEYS = ('female_excess_pct', '%+')
+_EXPECTANCY_KEYS = _MALE_KEYS + _FEMALE_KEYS + _AVERAGE_KEYS
 
 # age, male_years, female_years, average_years, female_excess_pct
 _ROWS = (
@@ -203,3 +215,181 @@ def ensure_adl3_table(versions: Optional[Dict[str, Any]]) -> None:
         if isinstance(stored, list) and stored:
             continue
         version[TABLE_NAME] = adl3_disabled_life_expectancy_rows()
+
+
+def _indexed_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    indexed: Dict[str, Any] = {}
+    for key, value in row.items():
+        name = str(key).replace('\ufeff', '').strip().lower()
+        indexed[name] = value
+    return indexed
+
+
+def _first_present(indexed: Dict[str, Any], keys: Tuple[str, ...]) -> Any:
+    for key in keys:
+        if key not in indexed:
+            continue
+        value = indexed[key]
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        return value
+    return None
+
+
+def _parse_age(value: Any) -> Optional[int]:
+    try:
+        number = float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or number < 0 or abs(number - round(number)) > 1e-9:
+        return None
+    return int(round(number))
+
+
+def _parse_years(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    text = str(value).strip().replace(',', '')
+    if not text:
+        return None
+    try:
+        number = float(text)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or number < 0:
+        return None
+    return number
+
+
+def _parse_percent(value: Any) -> Tuple[Optional[int], Optional[str]]:
+    """Published sex gap as a whole-number percent. Absent stays None.
+
+    ``12`` and ``12%`` store as 12. A fraction such as 0.12 is rejected
+    so it is not treated as twelve percent or rounded away.
+    """
+    if value is None:
+        return None, None
+    text = str(value).strip()
+    if text == '':
+        return None, None
+    if text.endswith('%'):
+        text = text[:-1].strip()
+    try:
+        number = float(text)
+    except (TypeError, ValueError):
+        return None, 'invalid_percent'
+    if not math.isfinite(number) or abs(number - round(number)) > 1e-9:
+        return None, 'percent_not_integer'
+    percent = int(round(number))
+    if percent < 0 or percent > 500:
+        return None, 'invalid_percent'
+    return percent, None
+
+
+def _invalid_expectancy(reason: str, error: str, rows_in: int = 0, skipped: int = 0) -> Dict[str, Any]:
+    return {
+        'valid': False,
+        'reason': reason,
+        'error': error,
+        'normalized': [],
+        'rows_in': rows_in,
+        'rows_normalized': 0,
+        'rows_skipped': skipped,
+    }
+
+
+def normalize_adl3_expectancy_rows(rows: Any) -> Dict[str, Any]:
+    """Normalize a replacement ADL 3 expectancy table.
+
+    The published average is stored as given. It is not recomputed from
+    man and woman. Ages 20 through 85 are required so the Risk Reference
+    chart stays complete. Ages outside that window are kept. A duplicate
+    age is an error. Blank rows are skipped. Rate-bracket rows with no
+    expectancy columns are not a valid replacement.
+    """
+    if isinstance(rows, dict):
+        nested = rows.get('data') if rows.get('data') is not None else rows.get('rows')
+        rows = nested
+    if not isinstance(rows, list):
+        return _invalid_expectancy('rows_must_be_list', 'Expectancy rows must be a list.')
+
+    normalized: List[Dict[str, Any]] = []
+    seen = set()
+    skipped = 0
+    for raw in rows:
+        if not isinstance(raw, dict):
+            skipped += 1
+            continue
+        indexed = _indexed_row(raw)
+        if _first_present(indexed, _EXPECTANCY_KEYS) is None:
+            skipped += 1
+            continue
+        age = _parse_age(_first_present(indexed, ('age',)))
+        male = _parse_years(_first_present(indexed, _MALE_KEYS))
+        female = _parse_years(_first_present(indexed, _FEMALE_KEYS))
+        average = _parse_years(_first_present(indexed, _AVERAGE_KEYS))
+        if age is None or male is None or female is None or average is None:
+            return _invalid_expectancy(
+                'invalid_years',
+                'Each expectancy row needs an age and finite man, woman, and average years of at least 0.',
+                rows_in=len(rows),
+                skipped=skipped,
+            )
+        percent, percent_error = _parse_percent(_first_present(indexed, _PERCENT_KEYS))
+        if percent_error:
+            return _invalid_expectancy(
+                percent_error,
+                'The sex-gap percent is a whole number such as 12 or 12%, not a fraction such as 0.12.',
+                rows_in=len(rows),
+                skipped=skipped,
+            )
+        if age in seen:
+            return _invalid_expectancy(
+                'duplicate_age',
+                f'duplicate_age: age {age} appears more than once.',
+                rows_in=len(rows),
+                skipped=skipped,
+            )
+        seen.add(age)
+        normalized.append({
+            'age': age,
+            'male_years': male,
+            'female_years': female,
+            'average_years': average,
+            'female_excess_pct': percent,
+        })
+
+    if not normalized:
+        return _invalid_expectancy(
+            'no_valid_rows',
+            'No expectancy rows were found. A rate band cannot replace this table.',
+            rows_in=len(rows),
+            skipped=skipped,
+        )
+
+    missing = [age for age in range(CHART_AGE_MIN, CHART_AGE_MAX + 1) if age not in seen]
+    if missing:
+        shown = ', '.join(str(age) for age in missing[:8])
+        extra = '' if len(missing) <= 8 else f' (+{len(missing) - 8} more)'
+        return _invalid_expectancy(
+            'chart_window_incomplete',
+            (
+                f'Expectancy replacement must include every age from {CHART_AGE_MIN} '
+                f'through {CHART_AGE_MAX}. Missing {shown}{extra}.'
+            ),
+            rows_in=len(rows),
+            skipped=skipped,
+        )
+
+    normalized.sort(key=lambda row: row['age'])
+    return {
+        'valid': True,
+        'reason': None,
+        'error': None,
+        'normalized': normalized,
+        'rows_in': len(rows),
+        'rows_normalized': len(normalized),
+        'rows_skipped': skipped,
+    }

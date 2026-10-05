@@ -36475,7 +36475,8 @@ For claims or questions, please contact:
         # =====================================================================
         # ACTUARIAL: Promote an uploaded table into the central rate store
         # POST body: { table_id, target_table_type }
-        # target_table_type: 'mortality_rates' or 'disability_incidence_rates'
+        # target_table_type: mortality_rates, disability_incidence_rates,
+        # or adl3_disabled_life_expectancy (global assumption only)
         # =====================================================================
         if path == '/api/actuarial/uploaded-tables/use':
             auth_header = self.headers.get('Authorization', '')
@@ -36496,9 +36497,13 @@ For claims or questions, please contact:
 
             table_id = str(payload.get('table_id') or '').strip()
             target_type = str(payload.get('target_table_type') or '').strip().lower()
-            if not table_id or target_type not in {'mortality_rates', 'disability_incidence_rates'}:
+            rate_targets = {'mortality_rates', 'disability_incidence_rates'}
+            assumption_targets = {'adl3_disabled_life_expectancy'}
+            if not table_id or target_type not in rate_targets | assumption_targets:
                 self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'table_id and target_table_type (mortality_rates|disability_incidence_rates) are required'}).encode('utf-8'))
+                self.wfile.write(json.dumps({
+                    'error': 'table_id and target_table_type (mortality_rates|disability_incidence_rates|adl3_disabled_life_expectancy) are required',
+                }).encode('utf-8'))
                 return
 
             try:
@@ -36536,6 +36541,50 @@ For claims or questions, please contact:
                     apply_uploaded_table_to_store,
                     register_cohort_rate_table,
                 )
+                from services.adl3_disabled_life_expectancy import normalize_adl3_expectancy_rows
+
+                actor = (session or {}).get('username', 'admin')
+                cohort_dim = str(payload.get('cohort_dim') or '').strip().lower()
+                cohort_value = str(payload.get('cohort_value') or '').strip().lower()
+                if target_type == 'adl3_disabled_life_expectancy':
+                    if cohort_dim or cohort_value:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'The ADL 3 expectancy table is global. Leave the cohort blank.',
+                        }).encode('utf-8'))
+                        return
+                    normalization = normalize_adl3_expectancy_rows(rows)
+                    if not normalization.get('valid'):
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': normalization.get('error') or 'Uploaded table cannot be normalized into the expectancy table',
+                        }).encode('utf-8'))
+                        return
+                    result = apply_uploaded_table_to_store(target_type, normalization['normalized'], actor)
+                    if not result.get('success'):
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': result.get('error', 'Apply failed')}).encode('utf-8'))
+                        return
+                    if audit:
+                        try:
+                            audit.log(actor, 'apply', 'actuarial_table', table_id, {
+                                'target_table_type': target_type,
+                                'rows_applied': normalization['rows_normalized'],
+                                'mode': 'assumption_replace',
+                            })
+                        except Exception:
+                            pass
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'mode': 'assumption_replace',
+                        'target_table_type': target_type,
+                        'rows_applied': normalization['rows_normalized'],
+                        'rows_skipped': normalization['rows_skipped'],
+                        'applied_table_id': table_id,
+                    }).encode('utf-8'))
+                    return
+
                 normalization = normalize_uploaded_rate_table(target_type, rows)
                 if not normalization.get('valid'):
                     self._set_json_headers(400)
@@ -36545,9 +36594,6 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
 
-                actor = (session or {}).get('username', 'admin')
-                cohort_dim = str(payload.get('cohort_dim') or '').strip().lower()
-                cohort_value = str(payload.get('cohort_value') or '').strip().lower()
                 source_name = None
                 try:
                     if USE_DATABASE and database_enabled:
