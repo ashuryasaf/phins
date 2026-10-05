@@ -1156,7 +1156,7 @@ class RiskReportGenerator:
 </html>'''
 
         from services.phins_document import document_return_markup
-        html_content = html_content.replace("</body>", document_return_markup() + "</body>", 1)
+        html_content = html_content.replace("<body>", "<body>\n" + document_return_markup(), 1)
         return html_content
     
     def generate_text_report(self, report: ComprehensiveRiskReport) -> str:

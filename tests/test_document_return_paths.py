@@ -8,7 +8,11 @@ payload is sealed, and the pages a person can open into a new tab.
 import re
 from pathlib import Path
 
-from services.phins_document import PIPELINE_DOCUMENT_HOMES, render_phins_document
+from services.phins_document import (
+    PIPELINE_DOCUMENT_HOMES,
+    document_return_markup,
+    render_phins_document,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "web_portal" / "static"
@@ -49,7 +53,7 @@ def test_role_homes_match_between_python_and_browser():
     assert js_homes == PIPELINE_DOCUMENT_HOMES
     assert js_homes["admin"] == "/admin.html"
     assert js_homes["manager"] == "/admin.html"
-    assert js_homes["supplier"] == "/supplier-portal.html"
+    assert js_homes["supplier"] == "/supplier-dashboard.html"
     assert js_homes["regulator"] == "/regulator-dashboard.html"
     assert js_homes["customer"] == "/dashboard.html"
     assert js_homes["community"] == "/foundation-dashboard.html"
@@ -84,14 +88,20 @@ def test_print_windows_use_the_shared_letterhead():
     assert "phins-doc-return.js" in helper
 
 
-def test_generators_add_return_chrome_after_the_document_body():
+def test_generators_add_return_chrome_at_the_top_of_the_document_body():
     contract = _read(ROOT / "services" / "underwriting_integrity_service.py")
     risk = _read(ROOT / "services" / "risk_report_generator.py")
     for source in (contract, risk):
-        assert "document_return_markup()" in source
-        assert source.index("document_return_markup()") > source.index("</body>")
+        assert '"<body>\\n" + document_return_markup()' in source
     # the policy seal is the payload hash, computed before the HTML shell
     assert contract.index("seal = _integrity_hash(body)") < contract.index("html_doc = f")
+
+
+def test_inlined_return_script_never_closes_its_script_element():
+    # HTML ignores JS comments: a literal end tag anywhere in the helper would
+    # close the inlined <script> and print the rest of it as page text.
+    assert "</script" not in _read(STATIC / "phins-doc-return.js")
+    assert document_return_markup().count("</script>") == 1
 
 
 def test_standalone_documents_include_the_return_script():

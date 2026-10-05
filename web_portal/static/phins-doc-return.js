@@ -3,7 +3,10 @@
    (or the markup from services/phins_document.py, which inlines it) so the
    page is never a dead end. Chrome only: it does not read or rewrite document
    data. Future generated documents call PhinsDocument.printReport /
-   render_phins_document, or add <script src="/phins-doc-return.js"></script>.
+   render_phins_document, or load /phins-doc-return.js with a script tag.
+   This file is also inlined inside a script element, so it must never
+   contain a literal script tag: the HTML parser would close the element
+   there and print the rest of this source as page text.
    Set data-phins-return="off" on <body> when the page already has its own
    Go back and Close controls that call phinsDocGoBack / phinsDocClose. */
 (function (global) {
@@ -23,7 +26,7 @@
         adjuster: '/claims-adjuster-dashboard.html',
         accountant: '/accountant-dashboard.html',
         actuary: '/actuary-dashboard.html',
-        supplier: '/supplier-portal.html',
+        supplier: '/supplier-dashboard.html',
         regulator: '/regulator-dashboard.html',
         customer: '/dashboard.html',
         foundation: '/foundation-dashboard.html',
