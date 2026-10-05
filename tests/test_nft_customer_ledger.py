@@ -374,3 +374,48 @@ def test_reactivate_does_not_credit_balances(nft_customer):
             assert portal.unified_balance_service.algo_trading_balances[customer_id]["available"] == 10
     finally:
         portal.SESSIONS.pop(admin, None)
+
+
+def test_allocation_read_does_not_mint_and_save_does(nft_customer):
+    portal, customer_id, token = nft_customer
+
+    status, body = _request(
+        "/api/customer/allocation",
+        token=token,
+        method="POST",
+        payload={"customer_id": customer_id},
+    )
+    assert status == 200, body
+    assert body["recorded"] is False
+    assert body["allocation"]["savings_pct"] == 50.0
+
+    status, ledger = _request(f"/api/nft-ledger?customer_id={customer_id}", token=token)
+    assert status == 200, ledger
+    assert ledger["summary"]["total_tokens"] == 0
+
+    status, saved = _request(
+        "/api/customer/allocation",
+        token=token,
+        method="POST",
+        payload={
+            "customer_id": customer_id,
+            "savings_pct": 30,
+            "risk_pct": 70,
+            "index_pct": 50,
+            "bonds_pct": 40,
+            "crypto_pct": 10,
+        },
+    )
+    assert status == 200, saved
+    assert saved["success"] is True
+
+    status, ledger = _request(f"/api/nft-ledger?customer_id={customer_id}", token=token)
+    assert status == 200, ledger
+    assert ledger["summary"]["total_tokens"] == 1
+    assert ledger["summary"]["total_inflows"] == 0
+    assert ledger["summary"]["total_outflows"] == 0
+    row = ledger["ledger"][0]
+    assert row["transaction_type"] == "allocation_updated"
+    assert row["amount"] == 0
+    assert row["direction"] == "neutral"
+    assert row["integrity"]["valid"] is True

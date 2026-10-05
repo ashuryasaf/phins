@@ -9259,13 +9259,8 @@
       if (!cid) return;
       
       try {
-        const response = await fetch('/api/customer/allocation', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`
-          },
-          body: JSON.stringify({ customer_id: cid })
+        const response = await fetch(`/api/customer/allocation?customer_id=${encodeURIComponent(cid)}`, {
+          headers: bookAuthHeaders()
         });
         
         if (response.ok) {

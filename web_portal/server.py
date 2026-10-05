@@ -53842,7 +53842,9 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                     return
                 
-                # Extract allocation parameters
+                # Extract allocation parameters. A body with only customer_id
+                # is the dashboard's read (it posts to load preferences).
+                # That must not rewrite the record or mint a ledger token.
                 allocations = {
                     'savings_pct': data.get('savings_pct'),
                     'risk_pct': data.get('risk_pct'),
@@ -53853,8 +53855,19 @@ For claims or questions, please contact:
                     'bonds_pct': data.get('bonds_pct'),
                     'crypto_pct': data.get('crypto_pct')
                 }
-                # Remove None values
                 allocations = {k: v for k, v in allocations.items() if v is not None}
+                if not allocations:
+                    allocation = get_customer_allocation(customer_id)
+                    distribution = calculate_monthly_distribution(customer_id)
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'customer_id': customer_id,
+                        'allocation': allocation,
+                        'monthly_distribution': distribution,
+                        'recorded': False,
+                    }, default=str).encode('utf-8'))
+                    return
                 
                 # Update allocation
                 updated = update_customer_allocation(customer_id, allocations)
