@@ -208,6 +208,167 @@ def test_basic_premiums_follow_the_active_kernel_version():
     assert second["pricing"]["basic_premiums"]["rows"][1]["annual_premium"] != age_40
     assert second["pricing"]["versions"][0]["integrity_hash"] != first["pricing"]["versions"][0]["integrity_hash"]
     assert second["pricing"]["current_version"] == store.current_version
+    current_series = next(group for group in second["pricing"]["version_pricing"]["groups"] if group["is_current"])
+    assert current_series["rows"][1]["cumulative"] == second["pricing"]["basic_premiums"]["rows"][1]["annual_premium"]
+    assert current_series["rows"][1]["cumulative"] != first["pricing"]["version_pricing"]["groups"][0]["rows"][1]["cumulative"]
+
+
+def _clone_catalog_version(store, new_id, mutate=None):
+    import copy
+
+    payload = copy.deepcopy(store.versions[store.current_version])
+    payload["version"] = new_id
+    payload["status"] = "archived"
+    payload["parent_version"] = store.current_version
+    if mutate:
+        mutate(payload)
+    store.versions[new_id] = payload
+    return payload
+
+
+def _reprice_catalog_version(store, version_id):
+    from services.pricing_kernel import (
+        PricingCustomer,
+        get_product,
+        price_policy,
+        pricing_config_from_underwriting,
+    )
+    from services.regulator_outline import (
+        REFERENCE_ADL,
+        REFERENCE_AGES,
+        REFERENCE_COVERAGE,
+        REFERENCE_PRODUCT_ID,
+        REFERENCE_TERM_YEARS,
+        _table_set_for_version,
+    )
+
+    table_set = _table_set_for_version(version_id, store.versions[version_id])
+    config = pricing_config_from_underwriting(store.config)
+    product = get_product(REFERENCE_PRODUCT_ID)
+    priced = []
+    for age in REFERENCE_AGES:
+        priced.append(price_policy(
+            PricingCustomer(
+                age=int(age),
+                coverage=REFERENCE_COVERAGE,
+                term_years=REFERENCE_TERM_YEARS,
+                adl_level=REFERENCE_ADL,
+                smoking_status="nonsmoker",
+            ),
+            product,
+            table_set,
+            config,
+        ))
+    return priced
+
+
+def test_identical_catalog_vectors_share_one_line_and_match_the_kernel():
+    store = _store()
+    _clone_catalog_version(store, "V2.0.1")
+
+    def change_lapse(payload):
+        payload["lapse_rates"] = [{"year": 1, "rate": 0.5}]
+
+    _clone_catalog_version(store, "V2.0.2", change_lapse)
+    outline = build_regulator_outline(actuarial_store=store)
+    pricing = outline["pricing"]["version_pricing"]
+    assert pricing["version_count"] == 3
+    assert pricing["distinct_vectors"] == 1
+    assert [group["label"] for group in pricing["groups"]] == ["V2.0 · V2.0.1 · V2.0.2"]
+    group = pricing["groups"][0]
+    assert group["is_current"] is True
+    assert group["rows"][0]["cumulative_change"] is None
+    hashes = {member["version"]: member["integrity_hash"] for member in group["versions"]}
+    assert hashes["V2.0"] == store._version_integrity_hash("V2.0")
+    assert hashes["V2.0.2"] != hashes["V2.0"]
+    premium_hashes = {member["version"]: member["premium_integrity_hashes"] for member in group["versions"]}
+    assert premium_hashes["V2.0"] != premium_hashes["V2.0.1"]
+    basic = outline["pricing"]["basic_premiums"]["rows"]
+    assert [row["cumulative"] for row in group["rows"]] == [row["annual_premium"] for row in basic]
+    for member in group["versions"]:
+        priced = _reprice_catalog_version(store, member["version"])
+        assert [item.integrity_hash for item in priced] == member["premium_integrity_hashes"]
+        for row, item in zip(group["rows"], priced):
+            assert row["life"] == round(item.mortality_premium_annual, 2)
+            assert row["disability"] == round(item.disability_premium_annual, 2)
+            assert row["savings"] == round(item.savings_premium_annual, 2)
+            assert row["expense"] == round(item.expense_loading_annual, 2)
+            assert row["profit"] == round(item.profit_margin_annual, 2)
+            assert row["risk"] == round(item.risk_premium_annual, 2)
+            assert row["cumulative"] == round(item.annual_premium, 2)
+            assert row["monthly"] == round(item.monthly_premium, 2)
+            assert abs((row["life"] + row["disability"]) - row["risk"]) <= 0.01
+            assert abs((row["risk"] + row["savings"] + row["expense"] + row["profit"]) - row["cumulative"]) <= 0.02
+
+
+def test_changed_catalog_version_is_its_own_line():
+    store = _store()
+
+    def raise_mortality(payload):
+        for row in payload["mortality_rates"]:
+            if row["age_min"] <= 40 < row["age_max"]:
+                row["rate_per_1000"] = 80
+
+    _clone_catalog_version(store, "V2.1", raise_mortality)
+
+    def same_as_changed(payload):
+        raise_mortality(payload)
+
+    _clone_catalog_version(store, "V2.2", same_as_changed)
+    outline = build_regulator_outline(actuarial_store=store)
+    pricing = outline["pricing"]["version_pricing"]
+    assert [group["label"] for group in pricing["groups"]] == ["V2.0", "V2.1 · V2.2"]
+    current, changed = pricing["groups"]
+    assert current["is_current"] is True
+    assert changed["is_current"] is False
+    assert current["rows"][1]["cumulative"] == outline["pricing"]["basic_premiums"]["rows"][1]["annual_premium"]
+    assert changed["rows"][1]["life"] != current["rows"][1]["life"]
+    assert changed["rows"][1]["cumulative"] != current["rows"][1]["cumulative"]
+    assert changed["rows"][1]["cumulative_change"] == round(
+        changed["rows"][1]["cumulative"] - current["rows"][1]["cumulative"], 2
+    )
+    assert changed["rows"][0]["cumulative_change"] == round(
+        changed["rows"][0]["cumulative"] - current["rows"][0]["cumulative"], 2
+    )
+    assert {member["version"] for member in changed["versions"]} == {"V2.1", "V2.2"}
+    priced = _reprice_catalog_version(store, "V2.1")
+    assert changed["versions"][0]["premium_integrity_hashes"] == [item.integrity_hash for item in priced]
+    assert [row["cumulative"] for row in changed["rows"]] == [round(item.annual_premium, 2) for item in priced]
+
+
+def test_catalog_version_without_rates_is_refused():
+    store = _store()
+    store.versions["V9.0"] = {"version": "V9.0", "status": "archived", "mortality_rates": []}
+    with pytest.raises(RegulatorIntegrityError):
+        build_regulator_outline(actuarial_store=store)
+
+
+def test_catalog_pricing_refuses_components_that_do_not_add_up(monkeypatch):
+    store = _store()
+
+    class _FakePremium:
+        eligible = True
+        integrity_checks = {"components_sum_to_total": True}
+        integrity_hash = "abc12345"
+        annual_premium = 100
+        monthly_premium = 8.33
+        risk_premium_annual = 10
+        mortality_premium_annual = 40
+        disability_premium_annual = 40
+        savings_premium_annual = 0
+        expense_loading_annual = 0
+        profit_margin_annual = 0
+
+    def fake_price(customer, product, tables, config, **kwargs):
+        priced = _FakePremium()
+        priced.age = int(customer.age)
+        priced.tables_version = tables.version
+        priced.config_version = config.version
+        return priced
+
+    monkeypatch.setattr("services.pricing_kernel.price_policy", fake_price)
+    with pytest.raises(RegulatorIntegrityError):
+        build_regulator_outline(actuarial_store=store)
 
 
 def test_outline_omits_underwriting_score_detail_and_keeps_the_tariff():
@@ -275,6 +436,15 @@ def test_regulator_dashboard_captions_omit_score_detail():
     assert "disability_incidence_rates" in text
     assert "underwriting decisions by status." in text
     assert "not a customer quote." in text
+    assert "versions with the same price vector share one line," in text
+    assert "cumulative is the kernel annual premium." in text
+    assert "within two cents of the cumulative premium" in text
+    assert "chart-version-life" in text
+    assert "chart-version-disability" in text
+    assert "chart-version-savings" in text
+    assert "chart-version-cumulative" in text
+    assert "version pricing does not reconcile to the kernel." in text
+    assert "tension: 0" in text
 
 
 def test_divergent_books_are_refused():
@@ -519,6 +689,13 @@ def test_regulator_login_lands_on_the_outline():
     assert payload["access"] == "read_only"
     assert payload["pricing"]["current_version"]
     assert payload["pricing"]["basic_premiums"]["rows"]
+    catalog = payload["pricing"]["version_pricing"]
+    assert catalog["version_count"] == len(payload["pricing"]["versions"])
+    assert catalog["distinct_vectors"] == len(catalog["groups"])
+    current_series = next(group for group in catalog["groups"] if group["is_current"])
+    assert [row["cumulative"] for row in current_series["rows"]] == [
+        row["annual_premium"] for row in payload["pricing"]["basic_premiums"]["rows"]
+    ]
     assert payload["integrity"]["reconciled"] is True
     blob = outline.text.lower()
     assert "cust-" not in blob

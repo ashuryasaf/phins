@@ -168,6 +168,13 @@
     .sub { color: var(--text-light); font-size: 0.84rem; margin: 4px 0 10px; line-height: 1.4; }
     .metric-card .sub { color: #d6e4ff; }
     .chart-box { position: relative; height: var(--chart-h); margin: 8px 0 12px; }
+    .version-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin: 8px 0 4px; }
+    .version-grid h3 {
+      font-family: 'Space Grotesk', Inter, sans-serif;
+      font-size: 0.84rem; letter-spacing: 0.04em; color: var(--primary); margin: 0;
+    }
+    .delta-up { color: #c05621; font-weight: 600; }
+    .delta-down { color: #276749; font-weight: 600; }
     table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
     th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--border); }
     th {
@@ -182,7 +189,7 @@
     .cred-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; align-items: end; }
     #cred-status { margin-top: 8px; }
     @media (max-width: 860px) {
-      .studio-grid, .split { grid-template-columns: 1fr; }
+      .studio-grid, .split, .version-grid { grid-template-columns: 1fr; }
       .hero .pill { margin-left: 0; }
     }
     @media print {
@@ -391,6 +398,186 @@
         }
       });
     }
+    function cents(value) {
+      return Math.round(Number(value) * 100);
+    }
+    function versionPricingIntact(pricing) {
+      var catalog = pricing.version_pricing;
+      var basicBlock = pricing.basic_premiums || {};
+      var basic = basicBlock.rows || [];
+      var listed = pricing.versions || [];
+      if (!catalog || !Array.isArray(catalog.groups) || !catalog.groups.length) return false;
+      if (!Array.isArray(catalog.ages) || catalog.ages.length !== basic.length || !basic.length) return false;
+      if (catalog.product_id !== basicBlock.product_id) return false;
+      if (catalog.profile !== basicBlock.profile) return false;
+      if (cents(catalog.coverage) !== cents(basicBlock.coverage)) return false;
+      if (Number(catalog.term_years) !== Number(basicBlock.term_years)) return false;
+      if (String(catalog.config_version || '') !== String(pricing.config_version || '')) return false;
+      var coverIds = (catalog.covers || []).map(function (cover) { return cover && cover.id; });
+      if (coverIds.join(',') !== 'life,disability,savings,cumulative') return false;
+      if (catalog.distinct_vectors !== catalog.groups.length) return false;
+      if (catalog.version_count !== listed.length) return false;
+      var listedById = {};
+      listed.forEach(function (row) { listedById[String(row.version)] = row; });
+      var seen = {};
+      var currentGroup = null;
+      for (var g = 0; g < catalog.groups.length; g++) {
+        var group = catalog.groups[g];
+        if (!group || !Array.isArray(group.rows) || group.rows.length !== catalog.ages.length) return false;
+        if (!Array.isArray(group.versions) || !group.versions.length) return false;
+        if (group.label !== group.versions.map(function (member) { return member.version; }).join(' · ')) return false;
+        var groupHasCurrent = false;
+        for (var v = 0; v < group.versions.length; v++) {
+          var member = group.versions[v];
+          var id = String(member.version);
+          if (seen[id] || !listedById[id]) return false;
+          seen[id] = true;
+          if (String(member.integrity_hash || '') !== String(listedById[id].integrity_hash || '')) return false;
+          if (!!member.is_current !== !!listedById[id].is_current) return false;
+          if (!Array.isArray(member.premium_integrity_hashes) || member.premium_integrity_hashes.length !== catalog.ages.length) return false;
+          if (member.premium_integrity_hashes.some(function (hash) { return !hash || String(hash).length < 8; })) return false;
+          if (member.is_current) groupHasCurrent = true;
+        }
+        if (!!group.is_current !== groupHasCurrent) return false;
+        if (group.is_current) {
+          if (currentGroup) return false;
+          currentGroup = group;
+        }
+        for (var r = 0; r < group.rows.length; r++) {
+          var row = group.rows[r];
+          if (Number(row.age) !== Number(catalog.ages[r]) || Number(row.age) !== Number(basic[r].age)) return false;
+          if (String(row.config_version || '') !== String(catalog.config_version || '')) return false;
+          var fields = ['life', 'disability', 'savings', 'expense', 'profit', 'risk', 'cumulative', 'monthly'];
+          for (var f = 0; f < fields.length; f++) {
+            if (!isFinite(Number(row[fields[f]]))) return false;
+          }
+          var riskSplit = cents(row.life) + cents(row.disability) - cents(row.risk);
+          var gap = cents(row.risk) + cents(row.savings) + cents(row.expense) + cents(row.profit) - cents(row.cumulative);
+          if (Math.abs(riskSplit) > 1 || Math.abs(gap) > 2) return false;
+          if (Number(row.risk_split_cents) !== riskSplit || Number(row.cumulative_gap_cents) !== gap) return false;
+          if (g === 0) {
+            if (row.cumulative_change != null) return false;
+          } else if (cents(row.cumulative_change) !== cents(row.cumulative) - cents(catalog.groups[g - 1].rows[r].cumulative)) {
+            return false;
+          }
+        }
+      }
+      if (!currentGroup || Object.keys(seen).length !== listed.length) return false;
+      for (var a = 0; a < basic.length; a++) {
+        var published = basic[a];
+        var current = currentGroup.rows[a];
+        if (cents(current.cumulative) !== cents(published.annual_premium)) return false;
+        if (cents(current.monthly) !== cents(published.monthly_premium)) return false;
+        if (cents(current.risk) !== cents(published.risk_premium_annual)) return false;
+        if (cents(current.savings) !== cents(published.savings_premium_annual)) return false;
+        if (cents(current.expense) !== cents(published.expense_loading_annual)) return false;
+        if (cents(current.profit) !== cents(published.profit_margin_annual)) return false;
+        if (String(published.tables_version || '') !== String(pricing.current_version || '')) return false;
+        if (String(published.config_version || '') !== String(catalog.config_version || '')) return false;
+      }
+      return true;
+    }
+    function versionCatalogHtml(pricing, versionRows) {
+      var intact = versionPricingIntact(pricing);
+      var catalog = pricing.version_pricing || {};
+      var charts = '';
+      var priceTable = '';
+      if (intact) {
+        charts = '<p class="sub">Kernel premiums by cover for each catalog version on the published standard nonsmoker tariff; versions with the same price vector share one line, and cumulative is the kernel annual premium.</p>' +
+          '<div class="version-grid">' + catalog.covers.map(function (cover) {
+            return '<div><h3>' + esc(cover.label) + '</h3><div class="chart-box"><canvas id="chart-version-' + cover.id + '" data-label="' + esc(cover.label) + ' premium by catalog version"></canvas></div></div>';
+          }).join('') + '</div>' +
+          '<table><thead><tr><th>Versions</th><th>Age</th><th>Life</th><th>Disability</th><th>Savings</th><th>Expense</th><th>Profit</th><th>Cumulative</th><th>Change</th></tr></thead><tbody>' +
+          catalog.groups.map(function (group) {
+            return group.rows.map(function (row) {
+              var change = row.cumulative_change;
+              var changeClass = '';
+              if (change != null && Number(change) > 0) changeClass = ' class="delta-up"';
+              else if (change != null && Number(change) < 0) changeClass = ' class="delta-down"';
+              return '<tr><td>' + esc(group.label) + '</td><td>' + esc(row.age) + '</td><td>' + money(row.life) + '</td><td>' + money(row.disability) + '</td><td>' + money(row.savings) + '</td><td>' + money(row.expense) + '</td><td>' + money(row.profit) + '</td><td>' + money(row.cumulative) + '</td><td' + changeClass + '>' + signedMoney(change) + '</td></tr>';
+            }).join('');
+          }).join('') + '</tbody></table>' +
+          '<p class="note">Life, disability, savings, expense, and profit are the kernel components. Their rounded sum stays within two cents of the cumulative premium, and that residual is sealed on each row.</p>';
+      } else {
+        charts = '<p class="error">Version pricing does not reconcile to the kernel. The chart is withheld.</p>';
+      }
+      priceTable = charts +
+        '<table><thead><tr><th>Version</th><th>Status</th><th>Integrity</th></tr></thead><tbody>' + versionRows + '</tbody></table>';
+      return priceTable;
+    }
+    function signedMoney(value) {
+      if (value == null || value === '') return '—';
+      var n = Number(value);
+      if (!isFinite(n)) return '—';
+      return (n > 0 ? '+' : '') + money(n);
+    }
+    function drawVersionCharts(pricing) {
+      var catalog = pricing.version_pricing;
+      var strokes = [
+        { color: '#0e2f63', dash: [] },
+        { color: '#c05621', dash: [7, 4] },
+        { color: '#2b6cb0', dash: [2, 3] },
+        { color: '#b7791f', dash: [] },
+        { color: '#0f766e', dash: [10, 4] },
+        { color: '#6b46c1', dash: [4, 3] }
+      ];
+      var labels = catalog.ages.map(function (age) { return String(age); });
+      catalog.covers.forEach(function (cover) {
+        var canvasId = 'chart-version-' + cover.id;
+        var canvas = document.getElementById(canvasId);
+        if (!canvas || !window.Chart) return;
+        if (charts[canvasId]) { charts[canvasId].destroy(); charts[canvasId] = null; }
+        var datasets = catalog.groups.map(function (group, index) {
+          var stroke = strokes[index % strokes.length];
+          var several = catalog.groups.length > 1;
+          return {
+            label: group.label + (several && group.is_current ? ' (current)' : ''),
+            data: group.rows.map(function (row) { return Number(row[cover.id]); }),
+            borderColor: stroke.color,
+            backgroundColor: stroke.color,
+            borderDash: stroke.dash,
+            borderWidth: group.is_current ? 3 : 2,
+            pointRadius: group.is_current ? 4 : 3,
+            pointHoverRadius: 6,
+            tension: 0,
+            fill: false
+          };
+        });
+        charts[canvasId] = new Chart(canvas, {
+          type: 'line',
+          data: { labels: labels, datasets: datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { display: true, position: 'bottom', labels: { boxWidth: 28, font: { size: 11 } } },
+              tooltip: {
+                callbacks: {
+                  label: function (ctx) {
+                    var value = Number(ctx.parsed.y);
+                    return ctx.dataset.label + ': ' + value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                  }
+                }
+              }
+            },
+            scales: {
+              x: { title: { display: true, text: 'Age' } },
+              y: {
+                beginAtZero: false,
+                title: { display: true, text: 'Annual premium' },
+                afterDataLimits: function (scale) {
+                  if (scale.max === scale.min) {
+                    scale.max += 1;
+                    scale.min -= 1;
+                  }
+                }
+              }
+            }
+          }
+        });
+      });
+    }
     function objectEntries(obj) {
       return Object.keys(obj || {}).map(function (key) { return [key, Number(obj[key] || 0)]; });
     }
@@ -451,7 +638,7 @@
         premiumRows + '</tbody></table></div></div>' +
         '<h2>Basic mortality rates</h2><table><thead><tr><th>Age band</th><th>Rate per 1,000</th></tr></thead><tbody>' + bands + '</tbody></table>' +
         '<h2>Basic disability rates</h2><table><thead><tr><th>Age band</th><th>Rate per 1,000</th></tr></thead><tbody>' + disabilityBands + '</tbody></table>' +
-        '<h2>Version catalog</h2><table><thead><tr><th>Version</th><th>Status</th><th>Integrity</th></tr></thead><tbody>' + versions + '</tbody></table>';
+        '<h2>Version catalog</h2>' + versionCatalogHtml(pricing, versions);
 
       document.getElementById('underwriting').innerHTML =
         '<h2>Underwriting decisions</h2><p class="sub">Underwriting decisions by status.</p>' +
@@ -536,6 +723,7 @@
         '<table><thead><tr><th>Source</th><th>Count</th></tr></thead><tbody>' + pairs(integrity.source_counts) + '</tbody></table>';
 
       drawChart('chart-pricing', premiums.map(function (row) { return String(row.age); }), premiums.map(function (row) { return Number(row.annual_premium || 0); }), 'Annual premium');
+      if (versionPricingIntact(pricing)) drawVersionCharts(pricing);
       var uwEntries = objectEntries(uw.by_status);
       drawChart('chart-underwriting', uwEntries.map(function (row) { return row[0]; }), uwEntries.map(function (row) { return row[1]; }), 'Decisions');
       var claimEntries = objectEntries(claims.by_status);
@@ -620,11 +808,12 @@
       if (!outline) return;
       var ids = selectedIds();
       var images = '';
-      ['chart-pricing', 'chart-underwriting', 'chart-claims', 'chart-investments', 'chart-health', 'chart-agents', 'chart-billing'].forEach(function (id) {
+      ['chart-pricing', 'chart-version-life', 'chart-version-disability', 'chart-version-savings', 'chart-version-cumulative', 'chart-underwriting', 'chart-claims', 'chart-investments', 'chart-health', 'chart-agents', 'chart-billing'].forEach(function (id) {
         var canvas = document.getElementById(id);
         var section = canvas && canvas.closest('section');
         if (!canvas || !section || ids.indexOf(section.id) < 0 || section.hidden) return;
-        images += '<figure><figcaption>' + esc(section.id) + '</figcaption><img alt="" src="' + canvas.toDataURL('image/png') + '"></figure>';
+        var caption = canvas.getAttribute('data-label') || section.id;
+        images += '<figure><figcaption>' + esc(caption) + '</figcaption><img alt="" src="' + canvas.toDataURL('image/png') + '"></figure>';
       });
       var tables = ids.map(function (id) {
         var node = document.getElementById(id);

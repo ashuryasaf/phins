@@ -81,6 +81,8 @@ note right of P
   current tables version
   config version
   version catalog + integrity hash
+  kernel price vector by cover
+  (identical vectors share one line)
   published basic premiums
   (standard nonsmoker tariff)
 end note
