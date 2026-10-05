@@ -268,4 +268,4 @@ def test_email_provider_records_pdf_attachment():
     assert email['attachments'][0]['sha256'] == hashlib.sha256(pdf).hexdigest()
     history = service.get_history(customer_id='CUST-TAX-STMT')
     assert history[-1]['attachments'][0]['filename'] == 'PHINS_Tax_Year_Statement_2026.pdf'
-    assert history[-1]['content'] == 'Statement attached'
+    assert 'content' not in history[-1]

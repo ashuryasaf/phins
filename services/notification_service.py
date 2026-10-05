@@ -3360,7 +3360,6 @@ class NotificationService:
             'channel': request.channel.value,
             'recipient_hash': hash_identifier(request.recipient),
             'subject': subject,
-            'content': content,
             'content_hash': hashlib.sha256(content.encode()).hexdigest(),
             'status': result.status.value,
             'provider_message_id': result.provider_message_id,

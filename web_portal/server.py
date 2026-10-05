@@ -14693,16 +14693,20 @@ def _upsert_customer_tax_year_statement(
 
     tax_year = report_payload.get('tax_year')
     file_name = statement_filename(tax_year, customer_id)
+    statement_hash = str(
+        (report_payload.get('integrity') or {}).get('statement_sha256')
+        or _tax_year_statement_sha256(report_payload)
+    )
+    existing = _document_exists_for_entity('customer', customer_id, file_name)
+    if existing and existing.get('statement_sha256') == statement_hash:
+        existing['statement_payload'] = report_payload
+        existing['statement_sha256'] = statement_hash
+        return existing, False
     pdf_bytes = render_tax_year_statement_pdf(report_payload)
     if not pdf_bytes:
         raise ValueError('Tax-year statement PDF was empty')
     checksum = hashlib.sha256(pdf_bytes).hexdigest()
     file_data_b64 = base64.b64encode(pdf_bytes).decode('ascii')
-    existing = _document_exists_for_entity('customer', customer_id, file_name)
-    if existing and existing.get('sha256') == checksum:
-        existing['statement_payload'] = report_payload
-        existing['statement_sha256'] = (report_payload.get('integrity') or {}).get('statement_sha256')
-        return existing, False
     if existing:
         existing['data'] = file_data_b64
         existing['sha256'] = checksum
@@ -14711,7 +14715,7 @@ def _upsert_customer_tax_year_statement(
         existing['updated_at'] = datetime.now().isoformat()
         existing['description'] = f"PHINS tax-year premium statement {tax_year}"
         existing['statement_payload'] = report_payload
-        existing['statement_sha256'] = (report_payload.get('integrity') or {}).get('statement_sha256')
+        existing['statement_sha256'] = statement_hash
         return existing, True
     doc = store_policy_document(
         file_name=file_name,
@@ -14725,7 +14729,7 @@ def _upsert_customer_tax_year_statement(
         owner_customer_id=customer_id,
     )
     doc['statement_payload'] = report_payload
-    doc['statement_sha256'] = (report_payload.get('integrity') or {}).get('statement_sha256')
+    doc['statement_sha256'] = statement_hash
     return doc, True
 
 
