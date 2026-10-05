@@ -1222,6 +1222,9 @@
           <span id="ledger-chain-badge" style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); color: white; padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">
              PHINS-CHAIN
           </span>
+          <span id="ledger-chain-status" style="background: #eceff1; color: #455a64; padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">
+            Checking chain
+          </span>
           <span id="ledger-token-count" style="background: #e8f5e9; color: #2e7d32; padding: 8px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">
             0 Tokens
           </span>
@@ -1231,18 +1234,21 @@
       <!-- Ledger Summary Cards -->
       <div id="ledger-summary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
         <div style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-          <div style="font-size: 0.85rem; color: #546e7a; margin-bottom: 4px;"> Total Deposits</div>
+          <div style="font-size: 0.85rem; color: #546e7a; margin-bottom: 4px;"> Money in</div>
           <div id="ledger-total-deposits" style="font-size: 1.5rem; font-weight: 700; color: #2e7d32;">$0.00</div>
         </div>
         <div style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-          <div style="font-size: 0.85rem; color: #546e7a; margin-bottom: 4px;"> Total Purchases</div>
+          <div style="font-size: 0.85rem; color: #546e7a; margin-bottom: 4px;"> Money out</div>
           <div id="ledger-total-purchases" style="font-size: 1.5rem; font-weight: 700; color: #1565c0;">$0.00</div>
         </div>
         <div style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-          <div style="font-size: 0.85rem; color: #546e7a; margin-bottom: 4px;"> Net Flow</div>
+          <div style="font-size: 0.85rem; color: #546e7a; margin-bottom: 4px;"> Net flow</div>
           <div id="ledger-net-flow" style="font-size: 1.5rem; font-weight: 700; color: #0d47a1;">$0.00</div>
         </div>
       </div>
+      <p id="ledger-cash-note" style="margin: -8px 0 16px 0; color: #607d8b; font-size: 0.82rem;">
+        Money in and money out count each external cash movement once. Premium allocations, order seals, and logged actions stay on the chain and are not added again.
+      </p>
 
       <!-- NFT Ledger Table -->
       <div class="table-card" style="background: white; border-radius: 12px; overflow: hidden;">
@@ -8043,7 +8049,7 @@
       try {
         // Get NFT and transaction ledgers
         const [nftResponse, txResponse] = await Promise.all([
-          fetch(`/api/nft-ledger?customer_id=${cid}`),
+          fetch(`/api/nft-ledger?customer_id=${encodeURIComponent(cid)}`, { headers: bookAuthHeaders() }),
           fetch('/api/unified-payment/history', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -8201,30 +8207,86 @@
     }
 
     // ========== NFT LEDGER FUNCTIONS ==========
-    
+    let nftLedgerCache = [];
+
+    function ledgerMoney(value) {
+      const amount = Number(value);
+      return Number.isFinite(amount) ? amount : 0;
+    }
+
+    function ledgerTypeLabel(nft) {
+      const raw = String((nft && (nft.transaction_type || nft.asset_type)) || 'record');
+      return raw.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+    }
+
+    function ledgerAmountView(nft) {
+      const amount = Math.abs(ledgerMoney(nft && nft.amount));
+      const text = `$${amount.toFixed(2)}`;
+      if (!nft || !nft.counts_as_cash || nft.direction === 'neutral') {
+        return { text, color: '#546e7a' };
+      }
+      if (nft.direction === 'in') return { text: `+${text}`, color: '#2e7d32' };
+      return { text: `-${text}`, color: '#c62828' };
+    }
+
+    function escapeLedgerText(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     async function loadNFTLedger() {
       const cid = customerId || sessionStorage.getItem('customer_id') || '';
       try {
-        const response = await fetch(`/api/nft-ledger?customer_id=${cid}`, { headers: bookAuthHeaders() });
+        const response = await fetch(`/api/nft-ledger?customer_id=${encodeURIComponent(cid)}`, { headers: bookAuthHeaders() });
         const data = await response.json();
-        
-        if (data.success) {
-          renderNFTLedger(data.ledger, data.summary);
+        if (response.ok && data.success) {
+          nftLedgerCache = Array.isArray(data.ledger) ? data.ledger : [];
+          renderNFTLedger(nftLedgerCache, data.summary || {}, data);
         } else {
-          renderNFTLedger([], {});
+          nftLedgerCache = [];
+          renderNFTLedger([], {}, data);
         }
       } catch (err) {
         console.error('Error loading NFT ledger:', err);
-        renderNFTLedger([], {});
+        nftLedgerCache = [];
+        renderNFTLedger([], {}, {});
       }
     }
     
-    function renderNFTLedger(ledger, summary) {
-      // Update summary cards
-      document.getElementById('ledger-token-count').textContent = `${summary.total_tokens || 0} Tokens`;
-      document.getElementById('ledger-total-deposits').textContent = `$${(summary.total_deposits || 0).toFixed(2)}`;
-      document.getElementById('ledger-total-purchases').textContent = `$${(summary.total_purchases || 0).toFixed(2)}`;
-      document.getElementById('ledger-net-flow').textContent = `$${(summary.net_flow || 0).toFixed(2)}`;
+    function renderNFTLedger(ledger, summary, payload) {
+      const summarySafe = summary || {};
+      const moneyIn = ledgerMoney(summarySafe.total_inflows != null ? summarySafe.total_inflows : summarySafe.total_deposits);
+      const moneyOut = ledgerMoney(summarySafe.total_outflows != null ? summarySafe.total_outflows : summarySafe.total_purchases);
+      const netFlow = ledgerMoney(summarySafe.net_flow != null ? summarySafe.net_flow : (moneyIn - moneyOut));
+      document.getElementById('ledger-token-count').textContent = `${summarySafe.total_tokens || 0} Tokens`;
+      document.getElementById('ledger-total-deposits').textContent = `$${moneyIn.toFixed(2)}`;
+      document.getElementById('ledger-total-purchases').textContent = `$${moneyOut.toFixed(2)}`;
+      const netEl = document.getElementById('ledger-net-flow');
+      netEl.textContent = `${netFlow < 0 ? '-' : ''}$${Math.abs(netFlow).toFixed(2)}`;
+      netEl.style.color = netFlow < 0 ? '#c62828' : '#0d47a1';
+
+      const chainEl = document.getElementById('ledger-chain-status');
+      const chain = (payload && payload.chain) || {};
+      if (chainEl) {
+        const checked = Number(chain.checked || 0);
+        if (!summarySafe.total_tokens) {
+          chainEl.textContent = 'No tokens yet';
+          chainEl.style.background = '#eceff1';
+          chainEl.style.color = '#455a64';
+        } else if (chain.valid) {
+          chainEl.textContent = checked ? `Chain verified (${checked})` : 'Chain verified';
+          chainEl.style.background = '#e8f5e9';
+          chainEl.style.color = '#2e7d32';
+        } else {
+          chainEl.textContent = 'Chain check failed';
+          chainEl.style.background = '#ffebee';
+          chainEl.style.color = '#c62828';
+        }
+      }
       
       const tbody = document.getElementById('nft-ledger-table');
       
@@ -8232,43 +8294,54 @@
         tbody.innerHTML = `
           <tr>
             <td colspan="8" style="text-align: center; color: #666; padding: 40px;">
-              <div style="font-size: 2rem; margin-bottom: 8px;"></div>
-              No blockchain transactions yet. Your transactions will appear here as NFT tokens.
+              No blockchain transactions yet. Premiums, claims, wallet deposits, and purchases appear here as sealed tokens.
             </td>
           </tr>
         `;
         return;
       }
+
+      const truncated = summarySafe.truncated
+        ? `<tr><td colspan="8" style="text-align:center;color:#607d8b;padding:10px;">Showing the latest ${ledger.length} of ${summarySafe.total_tokens} tokens. Totals include the full book.</td></tr>`
+        : '';
       
-      tbody.innerHTML = ledger.map(nft => {
-        const date = new Date(nft.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const time = new Date(nft.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-        const typeIcon = nft.transaction_type === 'wallet_deposit' ? '' : nft.transaction_type === 'medical_purchase' ? '' : '';
-        const typeColor = nft.transaction_type === 'wallet_deposit' ? '#28a745' : '#1565c0';
-        const amountPrefix = nft.transaction_type === 'wallet_deposit' ? '+' : '-';
-        const amountColor = nft.transaction_type === 'wallet_deposit' ? '#28a745' : '#dc3545';
+      tbody.innerHTML = truncated + ledger.map(nft => {
+        const created = nft.created_at ? new Date(nft.created_at) : null;
+        const date = created && !Number.isNaN(created.getTime())
+          ? created.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          : '';
+        const time = created && !Number.isNaN(created.getTime())
+          ? created.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+          : '';
+        const typeColor = nft.direction === 'in' ? '#2e7d32' : (nft.direction === 'out' ? '#1565c0' : '#546e7a');
+        const amountView = ledgerAmountView(nft);
+        const tokenId = String(nft.token_id || '');
+        const txHash = String(nft.transaction_hash || '');
+        const sealed = nft.integrity && nft.integrity.valid;
+        const verifyLabel = sealed ? 'Verified' : 'Verify';
+        const verifyBorder = sealed ? '#2e7d32' : '#ef6c00';
         
         return `
           <tr>
             <td>
-              <span style="font-family: monospace; font-size: 0.85rem; background: #f5f5f5; padding: 4px 8px; border-radius: 4px;">${nft.token_id.substring(0, 16)}...</span>
+              <span style="font-family: monospace; font-size: 0.85rem; background: #f5f5f5; padding: 4px 8px; border-radius: 4px;" title="${escapeLedgerText(tokenId)}">${escapeLedgerText(tokenId.slice(0, 16))}${tokenId.length > 16 ? '...' : ''}</span>
             </td>
             <td>
-              <span style="color: ${typeColor}; font-weight: 500;">${typeIcon} ${nft.transaction_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+              <span style="color: ${typeColor}; font-weight: 500;">${escapeLedgerText(ledgerTypeLabel(nft))}</span>
             </td>
-            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;">${nft.description}</td>
-            <td style="font-weight: 600; color: ${amountColor};">${amountPrefix}$${nft.amount.toFixed(2)}</td>
+            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;">${escapeLedgerText(nft.description || '')}</td>
+            <td style="font-weight: 600; color: ${amountView.color};">${amountView.text}</td>
             <td>
-              <span style="font-family: monospace; font-size: 0.8rem; color: #666;" title="${nft.transaction_hash}">${nft.transaction_hash.substring(0, 8)}...</span>
+              <span style="font-family: monospace; font-size: 0.8rem; color: #666;" title="${escapeLedgerText(txHash)}">${escapeLedgerText(txHash.slice(0, 8))}${txHash ? '...' : ''}</span>
             </td>
-            <td style="font-family: monospace; color: #666;">#${nft.block_number}</td>
+            <td style="font-family: monospace; color: #666;">${nft.block_number === '' || nft.block_number == null ? '' : '#' + escapeLedgerText(nft.block_number)}</td>
             <td>
-              <div style="font-size: 0.85rem;">${date}</div>
-              <div style="font-size: 0.75rem; color: #666;">${time}</div>
+              <div style="font-size: 0.85rem;">${escapeLedgerText(date)}</div>
+              <div style="font-size: 0.75rem; color: #666;">${escapeLedgerText(time)}</div>
             </td>
             <td>
-              <button onclick="verifyToken('${nft.token_id}')" style="background: none; border: 1px solid #28a745; color: #28a745; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">
-                 Verify
+              <button onclick="verifyToken('${escapeLedgerText(tokenId)}')" style="background: none; border: 1px solid ${verifyBorder}; color: ${verifyBorder}; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">
+                 ${verifyLabel}
               </button>
             </td>
           </tr>
@@ -8278,13 +8351,13 @@
     
     async function verifyToken(tokenId) {
       try {
-        const response = await fetch(`/api/nft-ledger/verify?token_id=${tokenId}`);
+        const response = await fetch(`/api/nft-ledger/verify?token_id=${encodeURIComponent(tokenId)}`, { headers: bookAuthHeaders() });
         const data = await response.json();
         
         if (data.valid) {
-          showNotification(` Token ${tokenId.substring(0, 12)}... verified successfully!`, 'success');
+          showNotification(`Token ${String(tokenId).slice(0, 12)}... verified successfully.`, 'success');
         } else {
-          showNotification(` Token verification failed: ${data.error || 'Invalid hash'}`, 'error');
+          showNotification(`Token verification failed: ${data.reason || data.error || 'Invalid hash'}`, 'error');
         }
       } catch (err) {
         showNotification('Error verifying token', 'error');
@@ -8302,25 +8375,22 @@
     
     function exportLedger() {
       const cid = customerId || sessionStorage.getItem('customer_id') || '';
-      const rows = [['Token ID', 'Type', 'Description', 'Amount', 'Tx Hash', 'Block #', 'Timestamp', 'Status']];
-      const tbody = document.getElementById('nft-ledger-table');
-      tbody.querySelectorAll('tr').forEach(row => {
-        const cells = row.querySelectorAll('td');
-        if (cells.length >= 7) {
-          rows.push([
-            cells[0].textContent.trim(),
-            cells[1].textContent.trim(),
-            cells[2].textContent.trim(),
-            cells[3].textContent.trim(),
-            cells[4].textContent.trim(),
-            cells[5].textContent.trim(),
-            cells[6].textContent.trim(),
-            'Confirmed'
-          ]);
-        }
+      const rows = [['Token ID', 'Type', 'Direction', 'Description', 'Amount', 'Tx Hash', 'Block #', 'Timestamp', 'Seal']];
+      (nftLedgerCache || []).forEach(nft => {
+        rows.push([
+          nft.token_id || '',
+          nft.transaction_type || '',
+          nft.direction || '',
+          nft.description || '',
+          nft.amount == null ? '' : nft.amount,
+          nft.transaction_hash || '',
+          nft.block_number == null ? '' : nft.block_number,
+          nft.created_at || '',
+          nft.integrity && nft.integrity.valid ? 'valid' : (nft.integrity && nft.integrity.reason) || 'unsealed'
+        ]);
       });
       
-      const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+      const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -8335,28 +8405,28 @@
       const cid = customerId || sessionStorage.getItem('customer_id') || '';
       
       try {
-        const response = await fetch(`/api/nft-ledger?customer_id=${cid}`, { headers: bookAuthHeaders() });
+        const response = await fetch(`/api/nft-ledger?customer_id=${encodeURIComponent(cid)}`, { headers: bookAuthHeaders() });
         const data = await response.json();
         
-        if (data.success && data.ledger) {
+        if (response.ok && data.success && data.ledger) {
+          nftLedgerCache = data.ledger;
+          renderNFTLedger(nftLedgerCache, data.summary || {}, data);
           let verified = 0;
           let failed = 0;
           
-          for (const nft of data.ledger) {
-            const verifyResp = await fetch(`/api/nft-ledger/verify?token_id=${nft.token_id}`);
-            const verifyData = await verifyResp.json();
-            if (verifyData.valid) {
-              verified++;
-            } else {
-              failed++;
-            }
-          }
+          data.ledger.forEach(nft => {
+            if (nft.integrity && nft.integrity.valid) verified += 1;
+            else failed += 1;
+          });
           
+          const chainNote = data.chain && data.chain.valid ? ' Chain verified.' : ' Chain check failed.';
           if (failed === 0) {
-            showNotification(` All ${verified} tokens verified successfully!`, 'success');
+            showNotification(`All ${verified} tokens verified.${chainNote}`, 'success');
           } else {
-            showNotification(` ${verified} verified, ${failed} failed verification`, 'warning');
+            showNotification(`${verified} verified, ${failed} failed verification.${chainNote}`, 'warning');
           }
+        } else {
+          showNotification(data.error || 'Could not verify the ledger', 'error');
         }
       } catch (err) {
         showNotification('Error verifying tokens', 'error');
