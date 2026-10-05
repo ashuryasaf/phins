@@ -155,8 +155,9 @@ async function createOffer() {
     return;
   }
 
+  let res;
   try {
-    const res = await apiPost('/api/supplier/offers/upsert', {
+    res = await apiPost('/api/supplier/offers/upsert', {
       supplier_id: supplier_id || undefined,
       category,
       name,
@@ -165,9 +166,18 @@ async function createOffer() {
       currency,
       active
     });
-    const fileInput = document.getElementById('offer-media-file');
-    const altInput = document.getElementById('offer-media-alt');
-    const file = fileInput && fileInput.files && fileInput.files[0];
+  } catch (e) {
+    msg.textContent = `Create failed: ${e.message}`;
+    msg.className = 'text-danger';
+    return;
+  }
+
+  // The offer is already saved, so a media failure must not read as a create
+  // failure or the supplier retries the form and gets a duplicate listing.
+  const fileInput = document.getElementById('offer-media-file');
+  const altInput = document.getElementById('offer-media-alt');
+  const file = fileInput && fileInput.files && fileInput.files[0];
+  try {
     if (file && res.id) {
       const dataUrl = await new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -187,11 +197,11 @@ async function createOffer() {
     }
     msg.textContent = file ? `Created ${res.id} with media` : `Created: ${res.id}`;
     msg.className = 'text-success';
-    await refreshOffers();
   } catch (e) {
-    msg.textContent = `Create failed: ${e.message}`;
+    msg.textContent = `Created ${res.id}, media upload failed: ${e.message}`;
     msg.className = 'text-danger';
   }
+  await refreshOffers();
 }
 
 function statusBadge(status) {

@@ -1121,21 +1121,14 @@ def offer_matches_wallet_browse(offer_category: Any, requested: Any) -> bool:
     requested_raw = marketplace_raw_category(requested)
     if not requested_raw:
         return True
-    if normalize_marketplace_category(offer_category) != normalize_marketplace_category(requested_raw):
-        return False
-    specific = WALLET_BROWSE_SPECIFIC.get(requested_raw)
-    if not specific:
-        return True
-    offer_raw = marketplace_raw_category(offer_category)
-    siblings: set = set()
-    for bucket, values in WALLET_BROWSE_SPECIFIC.items():
-        if bucket == requested_raw:
-            continue
-        if normalize_marketplace_category(bucket) == normalize_marketplace_category(requested_raw):
-            siblings |= values
-    if offer_raw in siblings and offer_raw not in specific:
-        return False
-    return True
+    offer_bucket = infer_wallet_browse_bucket(offer_category)
+    requested_bucket = infer_wallet_browse_bucket(requested_raw)
+    # Two tab-specific categories only match when they name the same tab, even
+    # when the alias table does not fold one of them onto a canonical bucket.
+    if offer_bucket and requested_bucket:
+        return offer_bucket == requested_bucket
+    offer_canonical = normalize_marketplace_category(offer_bucket or offer_category)
+    return offer_canonical == normalize_marketplace_category(requested_bucket or requested_raw)
 
 
 def supplier_type_matches(supplier_type: Any, requested: Any) -> bool:
