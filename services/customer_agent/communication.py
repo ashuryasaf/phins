@@ -382,11 +382,11 @@ class CustomerCommunicationAgent:
 
         return f"""
 <html>
-<body style="margin:0;background:#f4f7fd;font-family:Arial,sans-serif;color:#102342;">
-  <div style="max-width:860px;margin:24px auto;background:#ffffff;border:1px solid #dae4f7;border-radius:16px;overflow:hidden;">
-    <div style="padding:30px;background:linear-gradient(120deg,#0b1730,#2455b5);color:#ffffff;">
-      <div style="font-size:12px;letter-spacing:2px;opacity:0.8;">PHINS CUSTOMER EXECUTIVE BRIEF</div>
-      <h1 style="margin:8px 0 0 0;font-size:28px;">Welcome, {customer_name}</h1>
+<body style="margin:0;background:#e8eef6;font-family:Inter,'Segoe UI',sans-serif;color:#12284c;">
+  <div style="max-width:860px;margin:24px auto;background:#ffffff;border:1px solid #d5deea;border-radius:16px;overflow:hidden;">
+    <div style="padding:30px;background:linear-gradient(135deg,#060d1f 0%,#0e2f63 46%,#123f82 100%);color:#ffffff;">
+      <div style="font-family:'Space Grotesk',Inter,sans-serif;font-size:12px;letter-spacing:2px;opacity:0.84;">PHINS · Personal Health Insurance &amp; Savings</div>
+      <h1 style="margin:8px 0 0 0;font-size:28px;font-family:'Space Grotesk',Inter,sans-serif;">Welcome, {customer_name}</h1>
       <p style="margin:8px 0 0 0;opacity:0.9;">Branded portfolio intelligence for your first PHINS session.</p>
     </div>
     <div style="padding:26px;">

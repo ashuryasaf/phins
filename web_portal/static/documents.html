@@ -9,9 +9,10 @@
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f4f8; }
 
     .phins-header {
-      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
+      background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
       color: white;
-      box-shadow: 0 2px 12px rgba(13,71,161,0.3);
+      box-shadow: 0 2px 12px rgba(6,13,31,0.3);
+      border-bottom: 4px solid #c9a04e;
       position: sticky; top: 0; z-index: 100;
     }
     .phins-header-inner {
@@ -234,10 +235,13 @@
     }
     .modal-header {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 1rem 1.25rem; border-bottom: 1px solid #e8edf2;
+      padding: 1rem 1.25rem;
+      background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+      color: #fff;
+      border-bottom: 4px solid #c9a04e;
     }
-    .modal-title { font-weight: 600; color: #1a237e; font-size: 1rem; }
-    .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #546e7a; }
+    .modal-title { font-weight: 600; color: #fff; font-size: 1rem; font-family: "Space Grotesk", Inter, sans-serif; }
+    .modal-close { background: transparent; border: 1px solid rgba(255,255,255,0.45); color: #fff; border-radius: 8px; padding: 6px 12px; font-weight: 600; cursor: pointer; }
     .modal-body { flex: 1; overflow: auto; padding: 1rem; display: flex; align-items: center; justify-content: center; }
     .modal-body img { max-width: 100%; max-height: 70vh; border-radius: 8px; }
     .modal-body iframe { width: 100%; height: 70vh; border: none; }
@@ -268,7 +272,7 @@
   <div class="modal-box">
     <div class="modal-header">
       <span class="modal-title" id="modal-title">Viewing file</span>
-      <button class="modal-close" onclick="closeViewer()"></button>
+      <button class="modal-close" type="button" onclick="closeViewer()">Close</button>
     </div>
     <div class="modal-body" id="modal-body"></div>
     <div class="modal-footer">
@@ -1081,48 +1085,90 @@
     return res.json();
   }
 
+  function presentDocument(name, mimeType, rawData) {
+    currentViewDoc = { name: name, type: mimeType, data: rawData };
+    document.getElementById('modal-title').textContent = name;
+    const body = document.getElementById('modal-body');
+    body.innerHTML = '';
+
+    let payload = String(rawData || '');
+    let mime = mimeType || 'application/octet-stream';
+    if (payload.startsWith('data:')) {
+      const match = payload.match(/^data:([^;,]+)?(?:;[^,]*)?,(.*)$/);
+      if (match) {
+        mime = match[1] || mime;
+        payload = match[2] || '';
+      }
+    }
+    const dataUrl = payload.startsWith('data:')
+      ? payload
+      : `data:${mime};base64,${payload}`;
+    const ext = (String(name || '').split('.').pop() || '').toLowerCase();
+    const imgExts = ['png','jpg','jpeg','gif','bmp','webp','svg'];
+    const pdfExt  = ext === 'pdf' || mime === 'application/pdf';
+    const textExts = ['txt','csv','xml','json','xsd'];
+
+    if (imgExts.includes(ext) || mime.startsWith('image/')) {
+      const img = document.createElement('img');
+      img.src = dataUrl;
+      img.alt = name;
+      body.appendChild(img);
+    } else if (pdfExt) {
+      const iframe = document.createElement('iframe');
+      iframe.src = dataUrl;
+      iframe.title = name;
+      body.appendChild(iframe);
+    } else if (textExts.includes(ext) || mime.startsWith('text/')) {
+      try {
+        const text = atob(payload);
+        const pre = document.createElement('pre');
+        pre.textContent = text;
+        body.appendChild(pre);
+      } catch {
+        body.innerHTML = '<div style="color:#546e7a;text-align:center;padding:2rem;">Preview not available for this file type.<br>Use the Download button below.</div>';
+      }
+    } else if (!payload) {
+      body.innerHTML = '<div style="color:#546e7a;text-align:center;padding:2rem;">This record has no file bytes to preview.</div>';
+    } else {
+      body.innerHTML = '<div style="color:#546e7a;text-align:center;padding:2rem;">Preview not available for this file type.<br>Use the Download button below.</div>';
+    }
+
+    document.getElementById('modal-download-btn').onclick = () => {
+      if (payload) triggerDownload(dataUrl, name);
+    };
+    document.getElementById('viewer-modal').classList.add('open');
+  }
+
   async function viewDocument(docId, name, mimeType) {
     try {
       const json = await fetchDocData(docId);
-      currentViewDoc = json;
-      document.getElementById('modal-title').textContent = name;
-
-      const body = document.getElementById('modal-body');
-      body.innerHTML = '';
-
-      const dataUrl = `data:${json.type || mimeType || 'application/octet-stream'};base64,${json.data}`;
-      const ext = (name.split('.').pop() || '').toLowerCase();
-      const imgExts = ['png','jpg','jpeg','gif','bmp','webp','svg'];
-      const pdfExt  = ext === 'pdf';
-      const textExts = ['txt','csv','xml','json','xsd'];
-
-      if (imgExts.includes(ext)) {
-        const img = document.createElement('img');
-        img.src = dataUrl;
-        img.alt = name;
-        body.appendChild(img);
-      } else if (pdfExt) {
-        const iframe = document.createElement('iframe');
-        iframe.src = dataUrl;
-        body.appendChild(iframe);
-      } else if (textExts.includes(ext)) {
-        try {
-          const text = atob(json.data);
-          const pre = document.createElement('pre');
-          pre.textContent = text;
-          body.appendChild(pre);
-        } catch {
-          body.innerHTML = '<div style="color:#546e7a;text-align:center;padding:2rem;">Preview not available for this file type.<br>Use the Download button below.</div>';
-        }
-      } else {
-        body.innerHTML = '<div style="color:#546e7a;text-align:center;padding:2rem;">Preview not available for this file type.<br>Use the Download button below.</div>';
-      }
-
-      document.getElementById('modal-download-btn').onclick = () => triggerDownload(dataUrl, name);
-      document.getElementById('viewer-modal').classList.add('open');
+      presentDocument(name, json.type || mimeType, json.data);
     } catch (e) {
       showStatus('error', ' Could not load document: ' + e.message);
     }
+  }
+
+  async function openVaultDocument(url, name) {
+    try {
+      let fetchUrl = url || '';
+      if (!fetchUrl || fetchUrl === '#') throw new Error('No file address');
+      if (fetchUrl.indexOf('/api/doc-service/view') !== -1 && fetchUrl.indexOf('include_data=') === -1) {
+        fetchUrl += (fetchUrl.indexOf('?') === -1 ? '?' : '&') + 'include_data=true';
+      }
+      const res = await API(fetchUrl);
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || 'Could not open document');
+      presentDocument(json.name || name, json.type || json.mime_type || '', json.data || '');
+    } catch (e) {
+      showStatus('error', ' Could not open document: ' + e.message);
+    }
+  }
+
+  function onVaultOpenClick(event) {
+    const btn = event.target.closest('[data-vault-open]');
+    if (!btn) return;
+    event.preventDefault();
+    openVaultDocument(btn.getAttribute('data-vault-open'), btn.getAttribute('data-vault-name'));
   }
 
   async function downloadDocument(docId, name) {
@@ -1370,7 +1416,7 @@
               <td style="white-space:nowrap;font-size:0.78rem;">${formatDate(d.uploaded_at)}</td>
               <td style="white-space:nowrap;">
                 ${d.has_data
-                  ? `<a class="btn-sm btn-view" href="${escHtml(d.view_url || '#')}" target="_blank" rel="noopener">Open</a>`
+                  ? `<button type="button" class="btn-sm btn-view" data-vault-open="${escHtml(d.view_url || '')}" data-vault-name="${escHtml(d.name || 'Document')}">Open</button>`
                   : '<span style="color:#bbb;font-size:0.78rem;">—</span>'}
               </td>
             </tr>`).join('')}
@@ -1452,7 +1498,7 @@
                 <td>${integrityBadge(d.integrity_status)}</td>
                 <td style="white-space:nowrap;font-size:0.78rem;">${formatDate(d.uploaded_at)}</td>
                 <td>${d.has_data
-                  ? `<a class="btn-sm btn-view" href="${escHtml(d.view_url || '#')}" target="_blank" rel="noopener">Open</a>`
+                  ? `<button type="button" class="btn-sm btn-view" data-vault-open="${escHtml(d.view_url || '')}" data-vault-name="${escHtml(d.name || 'Document')}">Open</button>`
                   : '—'}</td>
               </tr>`).join('')}
           </tbody>
@@ -1583,6 +1629,10 @@
   }
 
   /* ── Init ── */
+  ['durable-container', 'archive-container'].forEach((id) => {
+    const node = document.getElementById(id);
+    if (node) node.addEventListener('click', onVaultOpenClick);
+  });
   checkAuth().then(async () => {
     // Load documents into "My Uploaded Documents" tab on startup. Awaiting
     // is critical here: loadDocuments() sets IS_ADMIN from the API response,

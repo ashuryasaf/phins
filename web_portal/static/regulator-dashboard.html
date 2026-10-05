@@ -7,6 +7,7 @@
   <title>PHINS Regulation View</title>
   <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="/phins-document.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
     :root {
@@ -804,7 +805,7 @@
       });
       downloadBlob('phins-regulator-tables.csv', 'text/csv', chunks.join('\n'));
     }
-    function downloadReport() {
+    async function downloadReport() {
       if (!outline) return;
       var ids = selectedIds();
       var images = '';
@@ -822,10 +823,21 @@
       }).join('');
       var summary = document.getElementById('summary');
       var summaryHtml = summary ? '<section><h2>Summary</h2>' + summary.innerHTML + '</section>' : '';
-      var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>PHINS regulation report</title>' +
-        '<style>body{font-family:Inter,sans-serif;color:#1a365d;padding:24px}h1{letter-spacing:.12em}table{border-collapse:collapse;width:100%;margin:8px 0 18px}th,td{border-bottom:1px solid #e2e8f0;padding:6px;text-align:left}th{background:linear-gradient(90deg,#f7e2a0,#e3f2fd)}img{max-width:640px} .hash{word-break:break-all;font-family:monospace}</style></head><body>' +
-        '<h1>PHINS</h1><p>Regulation report · ' + esc(outline.generated_at) + '</p>' +
-        '<p class="hash">' + esc((outline.integrity || {}).outline_sha256) + '</p>' + summaryHtml + images + tables + '</body></html>';
+      var hash = '<p class="hash">' + esc((outline.integrity || {}).outline_sha256) + '</p>';
+      var body = hash + summaryHtml + images + tables;
+      var html;
+      if (window.PhinsDocument) {
+        html = await PhinsDocument.render({
+          title: 'PHINS regulation report',
+          eyebrow: 'Regulation report',
+          subtitle: outline.generated_at || '',
+          body: body,
+          footer: 'PHINS regulation outline. Figures and the outline checksum match the on-screen book.'
+        });
+      } else {
+        html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>PHINS regulation report</title></head><body>'
+          + '<h1>PHINS</h1><p>Regulation report · ' + esc(outline.generated_at) + '</p>' + body + '</body></html>';
+      }
       downloadBlob('phins-regulator-report.html', 'text/html', html);
     }
 

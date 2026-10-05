@@ -1,4 +1,12 @@
 (() => {
+  // Same-origin PDF and Markdown opens keep a Go back / Close bar.
+  if (typeof document !== "undefined" && !document.querySelector('script[src="/phins-doc-open.js"]')) {
+    const openScript = document.createElement("script");
+    openScript.src = "/phins-doc-open.js";
+    openScript.async = true;
+    (document.head || document.documentElement).appendChild(openScript);
+  }
+
   // ── Defensive auth-fetch shim ───────────────────────────────────────────
   //
   // Several pages (dashboard.html, etc.) issue raw `fetch('/api/...')` calls

@@ -1652,14 +1652,20 @@ class AssessmentCenterService:
             except ImportError as exc:
                 raise RuntimeError("reportlab is required for PDF export") from exc
             import io as _io
+            from services.phins_pdf_brand import PHINS_NAVY, page_callbacks
             buf = _io.BytesIO()
             doc = SimpleDocTemplate(
                 buf, pagesize=A4,
                 leftMargin=14 * mm, rightMargin=14 * mm,
-                topMargin=14 * mm, bottomMargin=14 * mm,
+                topMargin=28 * mm, bottomMargin=16 * mm,
+                title="PHINS assessment export",
+                author="PHINS",
             )
             styles = getSampleStyleSheet()
-            heading = ParagraphStyle("Heading", parent=styles["Title"], fontSize=15, leading=18)
+            heading = ParagraphStyle(
+                "Heading", parent=styles["Title"], fontSize=15, leading=18,
+                textColor=colors.HexColor(PHINS_NAVY),
+            )
             meta = ParagraphStyle("Meta", parent=styles["Normal"], fontSize=8, textColor=colors.grey)
             story: List[Any] = [
                 Paragraph(self._pdf_safe(title), heading),
@@ -1674,7 +1680,7 @@ class AssessmentCenterService:
                 ]
                 table = Table(truncated, repeatRows=1)
                 table.setStyle(TableStyle([
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1565c0")),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                     ("FONTSIZE", (0, 0), (-1, -1), 7),
                     ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cfd8dc")),
@@ -1691,7 +1697,11 @@ class AssessmentCenterService:
                     ))
             else:
                 story.append(Paragraph("No tabular data available for this analysis.", meta))
-            doc.build(story)
+            on_first, on_later = page_callbacks(
+                A4, title=str(title or "Assessment export"), badge="Assessment",
+                footer_note="PHINS assessment export. Rows match the analysis download.",
+            )
+            doc.build(story, onFirstPage=on_first, onLaterPages=on_later)
             return buf.getvalue(), "application/pdf", f"{slug}.pdf"
 
         raise ValueError(f"Unsupported export_format: {export_format!r}")

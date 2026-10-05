@@ -24153,27 +24153,32 @@ For claims or questions, please contact:
                 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, HRFlowable
                 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
                 from io import BytesIO
+                from services.phins_pdf_brand import (
+                    PHINS_GOLD, PHINS_NAVY, PHINS_NAVY_MID, page_callbacks,
+                )
                 
                 buffer = BytesIO()
                 doc = SimpleDocTemplate(buffer, pagesize=letter, 
                                        rightMargin=0.75*inch, leftMargin=0.75*inch,
-                                       topMargin=0.75*inch, bottomMargin=0.75*inch)
+                                       topMargin=1.15*inch, bottomMargin=0.7*inch,
+                                       title='PHINS Policy Document',
+                                       author='PHINS')
                 
                 styles = getSampleStyleSheet()
                 
                 # Custom styles
                 title_style = ParagraphStyle('Title', parent=styles['Heading1'], 
                                             fontSize=24, alignment=TA_CENTER, 
-                                            textColor=colors.HexColor('#0d47a1'),
+                                            textColor=colors.HexColor(PHINS_NAVY),
                                             spaceAfter=20)
                 subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], 
                                                fontSize=12, alignment=TA_CENTER, 
                                                textColor=colors.HexColor('#546e7a'),
                                                spaceAfter=30)
                 section_style = ParagraphStyle('Section', parent=styles['Heading2'], 
-                                              fontSize=14, textColor=colors.HexColor('#1565c0'),
+                                              fontSize=14, textColor=colors.HexColor(PHINS_NAVY_MID),
                                               spaceBefore=20, spaceAfter=10,
-                                              borderColor=colors.HexColor('#1565c0'),
+                                              borderColor=colors.HexColor(PHINS_NAVY_MID),
                                               borderWidth=1, borderPadding=5)
                 normal_style = ParagraphStyle('CustomNormal', parent=styles['Normal'], 
                                              fontSize=10, leading=14)
@@ -24185,9 +24190,9 @@ For claims or questions, please contact:
                 story = []
                 
                 # Header
-                story.append(Paragraph("🛡️ PHINS INSURANCE COMPANY", title_style))
+                story.append(Paragraph("PHINS INSURANCE COMPANY", title_style))
                 story.append(Paragraph("COMPREHENSIVE POLICY DOCUMENT", subtitle_style))
-                story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#1565c0')))
+                story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor(PHINS_GOLD)))
                 story.append(Spacer(1, 20))
                 
                 # Document Info Table
@@ -24281,7 +24286,7 @@ For claims or questions, please contact:
                     ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
                     ('FONTSIZE', (0, 0), (-1, -1), 9),
                     ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#546e7a')),
-                    ('TEXTCOLOR', (1, 1), (1, 1), colors.HexColor('#1565c0')),  # Coverage amount in blue
+                    ('TEXTCOLOR', (1, 1), (1, 1), colors.HexColor(PHINS_NAVY_MID)),  # Coverage amount in navy
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
                     ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fafcff')),
                 ]))
@@ -24426,7 +24431,7 @@ For claims or questions, please contact:
                         bill_table.setStyle(TableStyle([
                             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                             ('FONTSIZE', (0, 0), (-1, -1), 8),
-                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1565c0')),
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
                             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
                             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
                             ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e0e0e0')),
@@ -24457,7 +24462,7 @@ For claims or questions, please contact:
                         claim_table.setStyle(TableStyle([
                             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                             ('FONTSIZE', (0, 0), (-1, -1), 8),
-                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1565c0')),
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(PHINS_NAVY)),
                             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
                             ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
                             ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e0e0e0')),
@@ -24497,7 +24502,7 @@ For claims or questions, please contact:
                     ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
                     ('FONTSIZE', (0, 0), (-1, -1), 9),
                     ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#546e7a')),
-                    ('TEXTCOLOR', (1, 1), (1, 1), colors.HexColor('#1565c0')),
+                    ('TEXTCOLOR', (1, 1), (1, 1), colors.HexColor(PHINS_NAVY_MID)),
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
                     ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fafcff')),
                 ]))
@@ -24505,7 +24510,7 @@ For claims or questions, please contact:
                 story.append(Spacer(1, 20))
                 
                 # Terms & Conditions Footer
-                story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#1565c0')))
+                story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor(PHINS_GOLD)))
                 story.append(Spacer(1, 10))
                 
                 terms_style = ParagraphStyle('Terms', parent=styles['Normal'], fontSize=8, 
@@ -24525,8 +24530,12 @@ For claims or questions, please contact:
                 """
                 story.append(Paragraph(terms_text, terms_style))
                 
-                # Build PDF
-                doc.build(story)
+                # Build PDF. Letterhead is chrome; the story figures are unchanged.
+                on_first, on_later = page_callbacks(
+                    letter, title='PHINS Policy Document', badge='Policy',
+                    footer_note='PHINS policy summary. Figures match the policy record.',
+                )
+                doc.build(story, onFirstPage=on_first, onLaterPages=on_later)
                 
                 # Return PDF
                 pdf_content = buffer.getvalue()

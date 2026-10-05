@@ -13,7 +13,7 @@
   --green-1:    #4caf50;
   --amber-1:    #f59e0b;
   --red-1:      #dc2626;
-  --gradient-hdr:  linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+  --gradient-hdr:  linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
   --gradient-logo: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
   /* first-level document brand palette (matches phins-logo.svg + investor PDFs) */
   --brand-navy: #0e2f63;
@@ -46,7 +46,8 @@ body {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
-  box-shadow: 0 2px 12px rgba(13,71,161,0.3);
+  box-shadow: 0 2px 12px rgba(6,13,31,0.28);
+  border-bottom: 4px solid var(--brand-gold);
 }
 .ld-logo-row { display: flex; align-items: center; gap: 10px; }
 .ld-logo-icon {

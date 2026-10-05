@@ -1161,7 +1161,7 @@
             <div class="vo-header">
                 <h2>️ Voice-Over Script Library</h2>
                 <div class="vo-actions">
-                    <a class="btn btn-secondary" href="/voiceover/Phins_VoiceOver_Script_EN_HE.pdf" target="_blank" rel="noopener">️ Open PDF</a>
+                    <a class="btn btn-secondary" href="/document-viewer.html?src=%2Fvoiceover%2FPhins_VoiceOver_Script_EN_HE.pdf&amp;title=Voice-over%20script">Open PDF</a>
                     <a class="btn btn-secondary" href="/voiceover/Phins_VoiceOver_Script_EN_HE.pdf" download>⬇️ PDF</a>
                     <a class="btn btn-primary" href="/voiceover/Phins_VoiceOver_Script_EN_HE.docx" download>⬇️ Word (.docx)</a>
                 </div>
@@ -3034,7 +3034,16 @@ Notes:
             } else if (media.type === 'image') {
                 container.innerHTML = `<img src="${escHtml(media.url || media.data || '')}" alt="${escHtml(media.name)}">`;
             } else {
-                container.innerHTML = `<div style="text-align:center;padding:40px;"><div style="font-size:4rem;"></div><p>${escHtml(media.name)}</p><a href="${escHtml(media.url || media.data || '')}" target="_blank" class="btn btn-primary" style="margin-top:20px;">Open Document</a></div>`;
+                const rawDoc = media.url || media.data || '';
+                const sameOrigin = rawDoc.charAt(0) === '/' && rawDoc.charAt(1) !== '/' && rawDoc.indexOf('..') === -1;
+                if (sameOrigin) {
+                    const viewer = '/document-viewer.html?src=' + encodeURIComponent(rawDoc) + '&title=' + encodeURIComponent(media.name || 'Document');
+                    container.innerHTML = `<div style="text-align:center;padding:40px;"><p>${escHtml(media.name)}</p><a href="${escHtml(viewer)}" class="btn btn-primary" style="margin-top:20px;">Open document</a></div>`;
+                } else if (rawDoc.indexOf('data:') === 0) {
+                    container.innerHTML = `<iframe title="${escHtml(media.name || 'Document')}" src="${escHtml(rawDoc)}" style="width:100%;height:70vh;border:0;"></iframe>`;
+                } else {
+                    container.innerHTML = `<div style="text-align:center;padding:40px;"><p>${escHtml(media.name)}</p><p>Preview is not available for this file. Use Go back or Close on the page that opened it.</p></div>`;
+                }
             }
             
             const safeId = escHtml(media.id);
