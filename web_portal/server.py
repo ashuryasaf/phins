@@ -12,6 +12,7 @@ for mobile-friendly web UI or to be used by a simple mobile app prototype.
 """
 import json
 import os
+import html
 import urllib.parse as urlparse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import sys
@@ -14176,49 +14177,289 @@ def _build_customer_personal_details(customer_id: str) -> Dict[str, Any]:
     }
 
 
+TAX_YEAR_STATEMENT_ACTION_TYPES = {
+    'premium_payment',
+    'premium_payment_ledger',
+    'bill_payment',
+    'auto_pay_execution',
+}
+UNASSIGNED_POLICY_SHEET_ID = 'UNASSIGNED'
+
+
+def _money_text(amount: Any) -> str:
+    return f"${safe_float(amount, 0.0):,.2f}"
+
+
+def _round_money(amount: Any) -> float:
+    return round(safe_float(amount, 0.0), 2)
+
+
+def _timestamp_in_tax_year(value: Any, tax_year: int) -> bool:
+    return str(value or '').startswith(str(tax_year))
+
+
+def _bill_tax_year_stamp(bill: Dict[str, Any]) -> str:
+    return str(bill.get('paid_date') or bill.get('updated_date') or bill.get('created_date') or '')
+
+
+def _policy_allocation_pcts(policy: Optional[Dict[str, Any]], customer_id: str) -> Tuple[float, float]:
+    """Return (risk_pct, savings_pct) that sum to 100."""
+    allocation = get_customer_allocation(customer_id)
+    risk_pct = safe_float(allocation.get('risk_pct'), 50.0)
+    savings_pct = safe_float(allocation.get('savings_pct'), 50.0)
+    if isinstance(policy, dict):
+        policy_risk = safe_float(policy.get('risk_allocation'), 0.0)
+        policy_savings = safe_float(policy.get('savings_allocation'), 0.0)
+        if policy_risk > 0 or policy_savings > 0:
+            if abs((policy_risk + policy_savings) - 100.0) <= 0.05:
+                risk_pct = policy_risk
+                savings_pct = policy_savings
+            elif policy_risk > 0:
+                risk_pct = min(100.0, policy_risk)
+                savings_pct = round(100.0 - risk_pct, 2)
+    total = risk_pct + savings_pct
+    if abs(total - 100.0) > 0.05 and total > 0:
+        risk_pct = round(risk_pct / total * 100.0, 2)
+        savings_pct = round(100.0 - risk_pct, 2)
+    return risk_pct, savings_pct
+
+
+def _split_premium_components(premium: float, risk_pct: float, savings_pct: float) -> Tuple[float, float]:
+    """Split a paid premium so risk + savings equals the premium exactly."""
+    premium = _round_money(premium)
+    savings = _round_money(premium * (safe_float(savings_pct, 0.0) / 100.0))
+    if savings > premium:
+        savings = premium
+    risk = _round_money(premium - savings)
+    return risk, savings
+
+
+def _canonical_tax_year_statement_block(report: Dict[str, Any]) -> Dict[str, Any]:
+    """Numeric block hashed onto the statement. Chrome never changes these figures."""
+    summary = report.get('tax_year_summary') or report.get('premium_summary') or {}
+    policies = []
+    for item in report.get('policies') or []:
+        if not isinstance(item, dict):
+            continue
+        policies.append({
+            'policy_id': item.get('policy_id'),
+            'paid_premium_total': _round_money(item.get('paid_premium_total')),
+            'risk_paid_total': _round_money(item.get('risk_paid_total')),
+            'savings_paid_total': _round_money(item.get('savings_paid_total')),
+            'paid_bill_count': int(item.get('paid_bill_count') or 0),
+            'bill_ids': list(item.get('bill_ids') or []),
+        })
+    return {
+        'tax_year': report.get('tax_year') or summary.get('tax_year'),
+        'customer_id': (report.get('personal_details') or {}).get('customer_id'),
+        'paid_premium_total': _round_money(summary.get('paid_premium_total')),
+        'risk_paid_total': _round_money(summary.get('risk_paid_total')),
+        'savings_paid_total': _round_money(summary.get('savings_paid_total')),
+        'paid_bill_count': int(summary.get('paid_bill_count') or 0),
+        'policy_count': int(summary.get('policy_count') or len(policies)),
+        'policies': policies,
+    }
+
+
+def _tax_year_statement_sha256(report: Dict[str, Any]) -> str:
+    block = _canonical_tax_year_statement_block(report)
+    canonical = json.dumps(block, sort_keys=True, separators=(',', ':'), default=str)
+    return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+
+
+def _empty_policy_sheet(policy_id: str, policy: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    record = policy if isinstance(policy, dict) else {}
+    monthly = _policy_monthly_premium(record) if record else 0.0
+    annual = _round_money(record.get('annual_premium') if record else 0.0)
+    if annual <= 0 and monthly > 0:
+        annual = _round_money(monthly * 12.0)
+    return {
+        'policy_id': policy_id,
+        'type': record.get('type') or record.get('policy_type') or ('unassigned' if policy_id == UNASSIGNED_POLICY_SHEET_ID else 'policy'),
+        'status': record.get('status') or ('unassigned' if policy_id == UNASSIGNED_POLICY_SHEET_ID else ''),
+        'product_id': record.get('product_id'),
+        'coverage_amount': _round_money(record.get('coverage_amount')),
+        'monthly_premium': _round_money(monthly),
+        'annual_premium': annual,
+        'billing_frequency': _policy_billing_frequency(record) if record else '',
+        'start_date': record.get('start_date') or record.get('created_date') or record.get('created_at'),
+        'created_date': record.get('created_date') or record.get('created_at'),
+        'paid_premium_total': 0.0,
+        'risk_paid_total': 0.0,
+        'savings_paid_total': 0.0,
+        'paid_bill_count': 0,
+        'bill_ids': [],
+        'bills': [],
+        'ledger_transaction_ids': [],
+    }
+
+
 def _build_tax_year_premium_report(
     customer_id: str,
     action_amount: float,
     metadata: Optional[Dict[str, Any]] = None,
     reference_datetime: Optional[datetime] = None
 ) -> Dict[str, Any]:
-    """Build an elaborated tax-year premium report with verified balances and allocations."""
+    """Build one customer tax-year statement with a sheet for every policy.
+
+    Paid premium is billed collections in the tax year plus explicitly unbilled
+    ledger remainder. Risk/savings come from ledger allocations when present,
+    otherwise from the policy/customer split so the three figures stay
+    reconcilable. Unified totals are the sum of the policy sheets.
+    """
     now = reference_datetime or datetime.now()
     tax_year = _current_tax_year(now)
     metadata_dict = dict(metadata or {})
     personal_details = _build_customer_personal_details(customer_id)
+    customer_allocation = get_customer_allocation(customer_id)
+
+    policy_sheets: Dict[str, Dict[str, Any]] = {}
+    for policy_id, policy in POLICIES.items():
+        if not isinstance(policy, dict) or policy.get('customer_id') != customer_id:
+            continue
+        sheet_id = str(policy.get('id') or policy_id)
+        policy_sheets[sheet_id] = _empty_policy_sheet(sheet_id, policy)
 
     tax_year_bills = []
-    for bill in BILLING.values():
-        if bill.get('customer_id') != customer_id:
+    billed_by_policy: Dict[str, float] = {}
+    for bill_id, bill in BILLING.items():
+        if not isinstance(bill, dict) or bill.get('customer_id') != customer_id:
             continue
-        paid_date = str(bill.get('paid_date') or bill.get('created_date') or '')
-        if not paid_date.startswith(str(tax_year)):
+        amount_paid = _round_money(bill.get('amount_paid', 0.0))
+        if amount_paid <= 0:
+            continue
+        if not _timestamp_in_tax_year(_bill_tax_year_stamp(bill), tax_year):
             continue
         tax_year_bills.append(bill)
+        policy_id = str(bill.get('policy_id') or '').strip() or UNASSIGNED_POLICY_SHEET_ID
+        if policy_id not in policy_sheets:
+            policy_sheets[policy_id] = _empty_policy_sheet(policy_id, POLICIES.get(policy_id))
+        sheet = policy_sheets[policy_id]
+        billed_by_policy[policy_id] = _round_money(billed_by_policy.get(policy_id, 0.0) + amount_paid)
+        sheet['paid_premium_total'] = _round_money(sheet['paid_premium_total'] + amount_paid)
+        sheet['paid_bill_count'] = int(sheet['paid_bill_count']) + 1
+        bill_ref = str(bill.get('id') or bill_id)
+        if bill_ref and bill_ref not in sheet['bill_ids']:
+            sheet['bill_ids'].append(bill_ref)
+        sheet['bills'].append({
+            'id': bill_ref,
+            'paid_date': bill.get('paid_date') or bill.get('updated_date') or bill.get('created_date'),
+            'created_date': bill.get('created_date'),
+            'due_date': bill.get('due_date'),
+            'amount': _round_money(bill.get('amount', bill.get('amount_due', 0.0))),
+            'amount_paid': amount_paid,
+            'status': bill.get('status'),
+        })
 
+    paid_bill_ids = {
+        str(bill.get('id') or '')
+        for bill in tax_year_bills
+        if bill.get('id')
+    }
     premium_ledger_entries = []
+    ledger_alloc_by_policy: Dict[str, Dict[str, float]] = {}
     for tx in TRANSACTION_LEDGER.values():
-        if tx.get('customer_id') != customer_id:
+        if not isinstance(tx, dict) or tx.get('customer_id') != customer_id:
             continue
         tx_type = get_transaction_type(tx)
         if tx_type not in PREMIUM_LEDGER_TX_TYPES:
             continue
-        timestamp = str(tx.get('timestamp') or '')
-        if not timestamp.startswith(str(tax_year)):
+        timestamp = str(tx.get('timestamp') or tx.get('created_at') or '')
+        if not _timestamp_in_tax_year(timestamp, tax_year):
             continue
         premium_ledger_entries.append(tx)
-
-    premium_paid_tax_year = round(sum(safe_float(bill.get('amount_paid', 0.0), 0.0) for bill in tax_year_bills), 2)
-    risk_paid_tax_year = 0.0
-    savings_paid_tax_year = 0.0
-    for tx in premium_ledger_entries:
         meta = tx.get('metadata', {}) if isinstance(tx.get('metadata'), dict) else {}
-        amount = safe_float(tx.get('amount', 0.0), 0.0)
-        savings_component = safe_float(meta.get('savings_allocation', 0.0), 0.0)
-        risk_component = safe_float(meta.get('risk_allocation', amount - savings_component), 0.0)
-        risk_paid_tax_year += risk_component
-        savings_paid_tax_year += savings_component
+        policy_id = str(meta.get('policy_id') or tx.get('policy_id') or '').strip()
+        if policy_id in ('', 'MULTI'):
+            linked_bill = str(meta.get('bill_id') or '').strip()
+            linked_bill_record = BILLING.get(linked_bill) if linked_bill else None
+            if isinstance(linked_bill_record, dict) and linked_bill_record.get('policy_id'):
+                policy_id = str(linked_bill_record.get('policy_id'))
+            else:
+                policy_id = UNASSIGNED_POLICY_SHEET_ID
+        if policy_id not in policy_sheets:
+            policy_sheets[policy_id] = _empty_policy_sheet(policy_id, POLICIES.get(policy_id))
+        tx_id = str(tx.get('id') or '')
+        if tx_id and tx_id not in policy_sheets[policy_id]['ledger_transaction_ids']:
+            policy_sheets[policy_id]['ledger_transaction_ids'].append(tx_id)
+
+        has_explicit_alloc = (
+            meta.get('savings_allocation') is not None
+            or meta.get('risk_allocation') is not None
+        )
+        if has_explicit_alloc:
+            savings_component = _round_money(meta.get('savings_allocation', 0.0))
+            if meta.get('risk_allocation') is not None:
+                risk_component = _round_money(meta.get('risk_allocation', 0.0))
+            else:
+                risk_component = _round_money(safe_float(tx.get('amount', 0.0), 0.0) - savings_component)
+            bucket = ledger_alloc_by_policy.setdefault(policy_id, {'risk': 0.0, 'savings': 0.0})
+            bucket['risk'] = _round_money(bucket['risk'] + risk_component)
+            bucket['savings'] = _round_money(bucket['savings'] + savings_component)
+
+        linked_bill_id = str(meta.get('bill_id') or '').strip()
+        bills_updated = [
+            str(item) for item in (meta.get('bills_updated') or []) if item
+        ]
+        billed_already = (
+            (linked_bill_id and linked_bill_id in paid_bill_ids)
+            or any(bill_ref in paid_bill_ids for bill_ref in bills_updated)
+        )
+        unbilled = meta.get('unbilled_premium_amount')
+        if billed_already:
+            extra = _round_money(unbilled) if unbilled is not None else 0.0
+        elif tx_type == 'premium_payment' and unbilled is not None:
+            extra = _round_money(unbilled)
+        elif not linked_bill_id and not bills_updated:
+            extra = _round_money(abs(safe_float(tx.get('amount', 0.0), 0.0)))
+        else:
+            extra = 0.0
+        if extra > 0:
+            policy_sheets[policy_id]['paid_premium_total'] = _round_money(
+                policy_sheets[policy_id]['paid_premium_total'] + extra
+            )
+
+    for policy_id, sheet in policy_sheets.items():
+        policy = POLICIES.get(policy_id) if policy_id != UNASSIGNED_POLICY_SHEET_ID else None
+        risk_pct, savings_pct = _policy_allocation_pcts(policy, customer_id)
+        sheet['risk_pct'] = risk_pct
+        sheet['savings_pct'] = savings_pct
+        ledger_alloc = ledger_alloc_by_policy.get(policy_id)
+        premium = _round_money(sheet['paid_premium_total'])
+        if ledger_alloc and (ledger_alloc['risk'] or ledger_alloc['savings']):
+            risk = _round_money(ledger_alloc['risk'])
+            savings = _round_money(ledger_alloc['savings'])
+            allocated = _round_money(risk + savings)
+            if premium > 0 and allocated <= 0:
+                risk, savings = _split_premium_components(premium, risk_pct, savings_pct)
+            elif premium > 0 and abs(allocated - premium) > 0.02:
+                # Keep ledger evidence, then place any unpaid residual on risk
+                # so the sheet still reconciles to premium paid.
+                residual = _round_money(premium - allocated)
+                if residual > 0:
+                    risk = _round_money(risk + residual)
+                elif residual < 0 and abs(residual) <= premium:
+                    # Over-allocated ledger: scale to the billed premium.
+                    risk, savings = _split_premium_components(premium, risk_pct, savings_pct)
+        else:
+            risk, savings = _split_premium_components(premium, risk_pct, savings_pct)
+        sheet['risk_paid_total'] = risk
+        sheet['savings_paid_total'] = savings
+        sheet['bills'] = sorted(
+            sheet['bills'],
+            key=lambda item: str(item.get('paid_date') or ''),
+        )
+
+    ordered_sheets = [
+        policy_sheets[key]
+        for key in sorted(policy_sheets, key=lambda item: (item == UNASSIGNED_POLICY_SHEET_ID, item))
+        if key != UNASSIGNED_POLICY_SHEET_ID or _round_money(policy_sheets[key]['paid_premium_total']) > 0
+    ]
+
+    paid_premium_total = _round_money(sum(sheet['paid_premium_total'] for sheet in ordered_sheets))
+    risk_paid_total = _round_money(sum(sheet['risk_paid_total'] for sheet in ordered_sheets))
+    savings_paid_total = _round_money(sum(sheet['savings_paid_total'] for sheet in ordered_sheets))
+    residual = _round_money(paid_premium_total - risk_paid_total - savings_paid_total)
 
     verified_balances = {}
     if integrity_service_enabled and integrity_service:
@@ -14229,63 +14470,66 @@ def _build_tax_year_premium_report(
 
     investment_account = INVESTMENT_ACCOUNTS.get(customer_id, {})
     wallet = HEALTH_WALLETS.get(customer_id, {})
-    allocation = get_customer_allocation(customer_id)
+    balance_block = {
+        'wallet_balance': _round_money(wallet.get('balance', 0.0)),
+        'investment_balance': _round_money(investment_account.get('balance', 0.0)),
+        'index_balance': _round_money(investment_account.get('index_balance', 0.0)),
+        'bonds_balance': _round_money(investment_account.get('bonds_balance', 0.0)),
+        'crypto_balance': _round_money(investment_account.get('crypto_balance', 0.0)),
+        'verified_total_savings': _round_money(verified_balances.get('total_savings', 0.0)),
+        'verified_wallet_balance': _round_money(verified_balances.get('wallet_balance', 0.0)),
+        'verified_investment_balance': _round_money(verified_balances.get('investment_balance', 0.0)),
+        'verified_algo_trading_balance': _round_money(verified_balances.get('algo_trading_balance', 0.0)),
+    }
 
     premium_summary = {
         'tax_year': tax_year,
-        'paid_premium_total': round(premium_paid_tax_year, 2),
-        'current_action_amount': round(safe_float(action_amount, 0.0), 2),
-        'risk_paid_total': round(risk_paid_tax_year, 2),
-        'savings_paid_total': round(savings_paid_tax_year, 2),
+        'paid_premium_total': paid_premium_total,
+        'premium_paid_tax_year': paid_premium_total,
+        'current_action_amount': _round_money(action_amount),
+        'risk_paid_total': risk_paid_total,
+        'risk_paid_tax_year': risk_paid_total,
+        'savings_paid_total': savings_paid_total,
+        'savings_paid_tax_year': savings_paid_total,
         'paid_bill_count': len(tax_year_bills),
+        'policy_count': len(ordered_sheets),
         'premium_ledger_entries_count': len(premium_ledger_entries),
     }
-    return {
+    report = {
         'document_standard': 'PHINS_TAX_YEAR_PREMIUM_REPORT_V1',
+        'statement_standard': 'PHINS_CUSTOMER_TAX_YEAR_STATEMENT_V2',
         'tax_year': tax_year,
+        'currency': 'USD',
         'generated_at': now.isoformat(),
         'personal_details': personal_details,
         'premium_summary': premium_summary,
         'tax_year_summary': premium_summary,
-        'verified_balances': {
-            'wallet_balance': round(safe_float(wallet.get('balance', 0.0), 0.0), 2),
-            'investment_balance': round(safe_float(investment_account.get('balance', 0.0), 0.0), 2),
-            'index_balance': round(safe_float(investment_account.get('index_balance', 0.0), 0.0), 2),
-            'bonds_balance': round(safe_float(investment_account.get('bonds_balance', 0.0), 0.0), 2),
-            'crypto_balance': round(safe_float(investment_account.get('crypto_balance', 0.0), 0.0), 2),
-            'verified_total_savings': round(safe_float(verified_balances.get('total_savings', 0.0), 0.0), 2),
-            'verified_wallet_balance': round(safe_float(verified_balances.get('wallet_balance', 0.0), 0.0), 2),
-            'verified_investment_balance': round(safe_float(verified_balances.get('investment_balance', 0.0), 0.0), 2),
-            'verified_algo_trading_balance': round(safe_float(verified_balances.get('algo_trading_balance', 0.0), 0.0), 2),
-        },
-        'savings_usage': {
-            'wallet_balance': round(safe_float(wallet.get('balance', 0.0), 0.0), 2),
-            'investment_balance': round(safe_float(investment_account.get('balance', 0.0), 0.0), 2),
-            'index_balance': round(safe_float(investment_account.get('index_balance', 0.0), 0.0), 2),
-            'bonds_balance': round(safe_float(investment_account.get('bonds_balance', 0.0), 0.0), 2),
-            'crypto_balance': round(safe_float(investment_account.get('crypto_balance', 0.0), 0.0), 2),
-            'verified_total_savings': round(safe_float(verified_balances.get('total_savings', 0.0), 0.0), 2),
-            'verified_wallet_balance': round(safe_float(verified_balances.get('wallet_balance', 0.0), 0.0), 2),
-            'verified_investment_balance': round(safe_float(verified_balances.get('investment_balance', 0.0), 0.0), 2),
-            'verified_algo_trading_balance': round(safe_float(verified_balances.get('algo_trading_balance', 0.0), 0.0), 2),
-        },
+        'policies': ordered_sheets,
+        'verified_balances': dict(balance_block),
+        'savings_usage': dict(balance_block),
         'allocation_profile': {
-            'savings_pct': allocation.get('savings_pct'),
-            'risk_pct': allocation.get('risk_pct'),
-            'wallet_pct': allocation.get('wallet_pct'),
-            'investment_pct': allocation.get('investment_pct'),
-            'algo_pct': allocation.get('algo_pct'),
+            'savings_pct': customer_allocation.get('savings_pct'),
+            'risk_pct': customer_allocation.get('risk_pct'),
+            'wallet_pct': customer_allocation.get('wallet_pct'),
+            'investment_pct': customer_allocation.get('investment_pct'),
+            'algo_pct': customer_allocation.get('algo_pct'),
         },
         'supporting_records': {
             'bill_ids': [str(bill.get('id') or '') for bill in tax_year_bills if bill.get('id')],
             'ledger_transaction_ids': [str(tx.get('id') or '') for tx in premium_ledger_entries if tx.get('id')],
+            'policy_ids': [sheet.get('policy_id') for sheet in ordered_sheets],
         },
         'integrity': {
             'verified_balances_available': bool(verified_balances),
             'integrity_valid': bool(verified_balances.get('integrity_valid', False)) if verified_balances else None,
+            'policies_sum_matches_unified': True,
+            'premium_equals_risk_plus_savings': abs(residual) <= 0.02,
+            'residual_unallocated': residual,
         },
         'source_metadata': metadata_dict,
     }
+    report['integrity']['statement_sha256'] = _tax_year_statement_sha256(report)
+    return report
 
 
 def _build_tokenized_invoice_payload(
@@ -14351,30 +14595,187 @@ def _record_customer_notification_center_event(
         return None
 
 
+def _tax_year_summary_totals(report_payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Read statement totals using current keys, with legacy aliases as fallback."""
+    summary = report_payload.get('tax_year_summary') or report_payload.get('premium_summary') or {}
+    paid = summary.get('paid_premium_total')
+    if paid is None:
+        paid = summary.get('premium_paid_tax_year', 0.0)
+    risk = summary.get('risk_paid_total')
+    if risk is None:
+        risk = summary.get('risk_paid_tax_year', 0.0)
+    savings = summary.get('savings_paid_total')
+    if savings is None:
+        savings = summary.get('savings_paid_tax_year', 0.0)
+    policies = list(report_payload.get('policies') or [])
+    return {
+        'paid_premium_total': _round_money(paid),
+        'risk_paid_total': _round_money(risk),
+        'savings_paid_total': _round_money(savings),
+        'paid_bill_count': int(summary.get('paid_bill_count') or 0),
+        'policy_count': int(summary.get('policy_count') or len(policies)),
+        'policy_ids': [
+            str(item.get('policy_id'))
+            for item in policies
+            if isinstance(item, dict) and item.get('policy_id')
+        ],
+    }
+
+
+def _tax_year_statement_message(
+    customer_name: str,
+    tax_year: Any,
+    totals: Dict[str, Any],
+    filename: str,
+    digest: str,
+) -> Tuple[str, str]:
+    """Plain-text and HTML customer copy for the attached annual statement."""
+    policy_ids = [item for item in totals.get('policy_ids') or [] if item != UNASSIGNED_POLICY_SHEET_ID]
+    policy_label = ', '.join(policy_ids) if policy_ids else 'no issued policies yet'
+    safe_name = html.escape(str(customer_name or ''))
+    safe_year = html.escape(str(tax_year or ''))
+    safe_filename = html.escape(str(filename or ''))
+    safe_digest = html.escape(str(digest or 'n/a'))
+    safe_policies = html.escape(policy_label)
+    content = (
+        f"Hello {customer_name},\n\n"
+        f"Your PHINS annual premium statement for tax year {tax_year} is attached as a PDF "
+        f"({filename}). It is one document for your customer record: a unified year-to-date "
+        f"statement on the first sheet and a separate sheet for each policy.\n\n"
+        f"Premium paid in {tax_year}: {_money_text(totals.get('paid_premium_total'))}\n"
+        f"  • Risk coverage: {_money_text(totals.get('risk_paid_total'))}\n"
+        f"  • Savings: {_money_text(totals.get('savings_paid_total'))}\n"
+        f"Policies on this statement: {int(totals.get('policy_count') or 0)} ({policy_label})\n"
+        f"Bills settled: {int(totals.get('paid_bill_count') or 0)}\n\n"
+        f"You can also download the same PDF from PHINS → Documents.\n"
+        f"Statement integrity: {digest or 'n/a'}\n\n"
+        f"— PHINS"
+    )
+    html_content = f"""<html><body style="margin:0;padding:0;background:#eef3fb;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef3fb;padding:24px 0;">
+<tr><td align="center">
+<table role="presentation" width="640" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border:1px solid #d5deee;font-family:Arial,Helvetica,sans-serif;color:#1a202c;">
+<tr><td style="background:linear-gradient(135deg,#060d1f 0%,#0e2f63 45%,#123f82 100%);padding:22px 28px;color:#eaf1ff;">
+<div style="color:#f7e2a0;font-size:22px;font-weight:700;letter-spacing:0.08em;">PHINS</div>
+<div style="font-size:12px;margin-top:4px;">Personal Health Insurance &amp; Savings · AI-Operated Insurance Platform</div>
+<div style="margin-top:12px;font-size:16px;font-weight:600;">Tax Year {safe_year} Premium Statement</div>
+</td></tr>
+<tr><td style="height:4px;background:linear-gradient(90deg,#b8893b 0%,#f7e2a0 40%,#e3bf6f 70%,#4fd8ff 100%);font-size:0;line-height:0;">&nbsp;</td></tr>
+<tr><td style="padding:24px 28px;">
+<p style="margin:0 0 12px 0;">Hello {safe_name},</p>
+<p style="margin:0 0 16px 0;">Your annual premium statement is attached as a single PDF. The first sheet is the unified customer total; each following sheet is one policy.</p>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 16px 0;">
+<tr>
+<td style="background:#0e2f63;color:#f7e2a0;padding:12px;width:33%;"><div style="font-size:11px;color:#eaf1ff;">Premium paid</div><div style="font-size:18px;font-weight:700;">{_money_text(totals.get('paid_premium_total'))}</div></td>
+<td style="background:#123f82;color:#f7e2a0;padding:12px;width:33%;"><div style="font-size:11px;color:#eaf1ff;">Risk</div><div style="font-size:18px;font-weight:700;">{_money_text(totals.get('risk_paid_total'))}</div></td>
+<td style="background:#0a1f4a;color:#f7e2a0;padding:12px;width:34%;"><div style="font-size:11px;color:#eaf1ff;">Savings</div><div style="font-size:18px;font-weight:700;">{_money_text(totals.get('savings_paid_total'))}</div></td>
+</tr>
+</table>
+<p style="margin:0 0 8px 0;"><strong>Policies:</strong> {int(totals.get('policy_count') or 0)} ({safe_policies})</p>
+<p style="margin:0 0 8px 0;"><strong>Bills settled:</strong> {int(totals.get('paid_bill_count') or 0)}</p>
+<p style="margin:0 0 8px 0;"><strong>Attachment:</strong> {safe_filename}</p>
+<p style="margin:16px 0 0 0;font-size:12px;color:#5b6b82;">Integrity {safe_digest} · Download again from PHINS → Documents</p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>"""
+    return content, html_content
+
+
+def _upsert_customer_tax_year_statement(
+    customer_id: str,
+    report_payload: Dict[str, Any],
+    uploaded_by: str = 'billing_system',
+) -> Tuple[Optional[Dict[str, Any]], bool]:
+    """Store or refresh the single customer tax-year PDF. Returns (doc, changed)."""
+    from services.tax_year_statement_pdf import render_tax_year_statement_pdf, statement_filename
+
+    tax_year = report_payload.get('tax_year')
+    file_name = statement_filename(tax_year, customer_id)
+    pdf_bytes = render_tax_year_statement_pdf(report_payload)
+    if not pdf_bytes:
+        raise ValueError('Tax-year statement PDF was empty')
+    checksum = hashlib.sha256(pdf_bytes).hexdigest()
+    file_data_b64 = base64.b64encode(pdf_bytes).decode('ascii')
+    existing = _document_exists_for_entity('customer', customer_id, file_name)
+    if existing and existing.get('sha256') == checksum:
+        existing['statement_payload'] = report_payload
+        existing['statement_sha256'] = (report_payload.get('integrity') or {}).get('statement_sha256')
+        return existing, False
+    if existing:
+        existing['data'] = file_data_b64
+        existing['sha256'] = checksum
+        existing['size'] = len(pdf_bytes)
+        existing['type'] = 'application/pdf'
+        existing['updated_at'] = datetime.now().isoformat()
+        existing['description'] = f"PHINS tax-year premium statement {tax_year}"
+        existing['statement_payload'] = report_payload
+        existing['statement_sha256'] = (report_payload.get('integrity') or {}).get('statement_sha256')
+        return existing, True
+    doc = store_policy_document(
+        file_name=file_name,
+        mime_type='application/pdf',
+        file_data_b64=file_data_b64,
+        entity_type='customer',
+        entity_id=customer_id,
+        document_type='tax_year_statement',
+        description=f"PHINS tax-year premium statement {tax_year}",
+        uploaded_by=uploaded_by,
+        owner_customer_id=customer_id,
+    )
+    doc['statement_payload'] = report_payload
+    doc['statement_sha256'] = (report_payload.get('integrity') or {}).get('statement_sha256')
+    return doc, True
+
+
 def notify_customer_tax_year_report_available(
     customer_id: str,
     report_payload: Dict[str, Any],
     document_ids: List[str],
-    subject_prefix: str = 'PHINS tax-year premium report'
+    subject_prefix: str = 'PHINS tax-year premium statement',
+    statement_document: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Notify customers in dashboard history and by email when a premium report is generated."""
+    """Notify customers with the unified tax-year PDF attached."""
     customer = get_customer_with_fallback(customer_id) or CUSTOMERS.get(customer_id) or {}
-    personal = report_payload.get('personal_details', {})
-    premium_summary = report_payload.get('premium_summary', {})
+    personal = report_payload.get('personal_details', {}) or {}
     tax_year = report_payload.get('tax_year')
     customer_name = personal.get('full_name') or customer.get('name') or customer_id
+    totals = _tax_year_summary_totals(report_payload)
+    digest = str((report_payload.get('integrity') or {}).get('statement_sha256') or '')
+    filename = str((statement_document or {}).get('name') or f'PHINS_Tax_Year_Statement_{tax_year}.pdf')
     subject = f"{subject_prefix} {tax_year}" if tax_year else subject_prefix
-    content = (
-        f"Hello {customer_name}, your PHINS premium report for tax year {tax_year} is available. "
-        f"Premium paid: ${safe_float(premium_summary.get('premium_paid_tax_year', 0.0), 0.0):,.2f}. "
-        f"Risk: ${safe_float(premium_summary.get('risk_paid_tax_year', 0.0), 0.0):,.2f}. "
-        f"Savings: ${safe_float(premium_summary.get('savings_paid_tax_year', 0.0), 0.0):,.2f}. "
-        f"Related document IDs: {', '.join(document_ids)}."
+    content, html_content = _tax_year_statement_message(
+        customer_name, tax_year, totals, filename, digest,
     )
+    statement_ids = [str(item) for item in document_ids if item]
+    if statement_document and statement_document.get('id'):
+        statement_id = str(statement_document.get('id'))
+        if statement_id not in statement_ids:
+            statement_ids.insert(0, statement_id)
+    attachments: List[Dict[str, Any]] = []
+    raw_pdf = None
+    if statement_document and statement_document.get('data'):
+        try:
+            raw_pdf = base64.b64decode(statement_document.get('data'), validate=True)
+        except Exception:
+            raw_pdf = None
+    if raw_pdf:
+        attachments.append({
+            'filename': filename,
+            'content_type': 'application/pdf',
+            'content': raw_pdf,
+        })
     metadata = {
         'category': 'tax_year_premium_report',
-        'document_ids': list(document_ids),
+        'document_ids': statement_ids,
         'tax_year': tax_year,
+        'attachment_filename': filename if attachments else None,
+        'statement_sha256': digest,
+        'paid_premium_total': totals['paid_premium_total'],
+        'risk_paid_total': totals['risk_paid_total'],
+        'savings_paid_total': totals['savings_paid_total'],
+        'policy_count': totals['policy_count'],
     }
 
     notification_events = []
@@ -14403,8 +14804,10 @@ def notify_customer_tax_year_report_available(
                 recipient=email,
                 subject=subject,
                 content=content,
+                html_content=html_content,
                 customer_id=customer_id,
                 priority=NotificationPriority.HIGH,
+                attachments=attachments,
                 metadata=metadata,
             ))
             notification_events.append({'channel': 'email', **email_result.to_dict()})
@@ -14414,7 +14817,10 @@ def notify_customer_tax_year_report_available(
     return {
         'subject': subject,
         'content': content,
+        'html_content': html_content,
         'events': notification_events,
+        'attachment_filename': filename if attachments else None,
+        'document_ids': statement_ids,
     }
 
 
@@ -14739,16 +15145,36 @@ def generate_action_accounting_documents(
             _append_unique_document_link(tx, doc.get('id', ''))
 
     report_notification = None
-    invoice_doc = next((doc for doc in generated_docs if doc.get('document_type') == 'invoice'), None)
-    if invoice_doc:
+    statement_info = None
+    if str(action_type or '') in TAX_YEAR_STATEMENT_ACTION_TYPES:
         try:
-            report_payload = json.loads(base64.b64decode(invoice_doc.get('data', '')).decode('utf-8'))
-            report_notification = notify_customer_tax_year_report_available(
+            report_payload = _build_tax_year_premium_report(
+                customer_id=customer_id,
+                action_amount=amount,
+                metadata=metadata,
+            )
+            statement_doc, statement_changed = _upsert_customer_tax_year_statement(
                 customer_id=customer_id,
                 report_payload=report_payload,
-                document_ids=[doc.get('id') for doc in generated_docs if doc.get('id')],
+                uploaded_by=uploaded_by,
             )
-        except Exception:
+            if statement_doc:
+                statement_info = {
+                    'id': statement_doc.get('id'),
+                    'name': statement_doc.get('name'),
+                    'sha256': statement_doc.get('sha256'),
+                    'statement_sha256': statement_doc.get('statement_sha256'),
+                    'changed': statement_changed,
+                }
+            if statement_doc and statement_changed:
+                report_notification = notify_customer_tax_year_report_available(
+                    customer_id=customer_id,
+                    report_payload=report_payload,
+                    document_ids=[statement_doc.get('id')] if statement_doc.get('id') else [],
+                    statement_document=statement_doc,
+                )
+        except Exception as statement_err:
+            print(f"[tax-year-statement] Failed to issue customer PDF: {statement_err}")
             report_notification = None
 
     return {
@@ -14764,6 +15190,7 @@ def generate_action_accounting_documents(
             for doc in generated_docs
         ],
         'report_notification': report_notification,
+        'tax_year_statement': statement_info,
     }
 
 
