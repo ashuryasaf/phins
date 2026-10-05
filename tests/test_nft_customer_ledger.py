@@ -329,9 +329,20 @@ def test_customer_action_does_not_inflate_cash_or_balances(nft_customer):
     assert status == 200
     assert ledger["summary"]["total_inflows"] == 0
     assert ledger["summary"]["total_deposits"] == 0
-    logged = next(item for item in ledger["ledger"] if item["transaction_type"] == "wallet_deposit")
+    logged = next(item for item in ledger["ledger"] if item["token_id"] == body["nft_token"]["token_id"])
+    assert logged["transaction_type"] == "customer_action"
+    assert logged["metadata"]["action_type"] == "wallet_deposit"
     assert logged["direction"] == "neutral"
     assert logged["integrity"]["valid"] is True
+
+    # The platform ledger must not gain a wallet_deposit row a finance or
+    # activity reader keying on ``type`` would treat as real cash.
+    posted = portal.TRANSACTION_LEDGER[body["action_id"]]
+    assert posted["type"] == "customer_action"
+    assert not [
+        tx for tx in portal.TRANSACTION_LEDGER.values()
+        if tx.get("customer_id") == customer_id and tx.get("type") == "wallet_deposit"
+    ]
 
 
 def test_reactivate_does_not_credit_balances(nft_customer):
