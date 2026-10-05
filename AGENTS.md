@@ -794,6 +794,15 @@ referenced files, commands, paths, and ports still exist.
 - Structured LLM output is validated twice (provider against the schema,
   service against its own evidence); a reply that fails is replaced by the
   deterministic result with `fallback_reason` recorded, never used as-is.
+- Dashboard hierarchy (`security/access_hierarchy.py`): a customer session
+  cannot call `/api/admin/` or open a staff dashboard, and a staff session
+  cannot open the customer dashboard (`/dashboard.html`,
+  `/savings-portfolio.html`, `/algo-trading.html`) or move that customer's
+  private money (health wallet, savings trades, pipeline deposit/settings).
+  Assessments, reports, billing, documents, and claims review stay shared;
+  row scope is still the caller's own customer id unless the role is
+  operational staff. `/api/access/surface` is what the injected
+  `ui-clarity.js` consults before it renders a dashboard.
 - A customer's personal ID number has exactly one writer:
   `services/customer_identity_service.py` (`set_identity` /
   `reconcile_pipeline_identity`). Records, responses, audit rows and ledger

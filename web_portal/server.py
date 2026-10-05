@@ -12800,6 +12800,7 @@ REGULATOR_API_ALLOW = frozenset({
     '/api/regulator/outline',
     '/api/regulator/inquiries',
     '/api/session/validate',
+    '/api/access/surface',
 })
 REGULATOR_WRITE_ALLOW = frozenset({
     '/api/logout',
@@ -13515,6 +13516,25 @@ def get_effective_role(session: dict[str, str] | None) -> str:
         return ''
     user = get_session_user(session) or {}
     return (user.get('role') or session.get('role') or '').lower()
+
+
+def is_operational_staff_role(role: str) -> bool:
+    """True for roles that may see the book (assessments, reports, billing, claims)."""
+    from security.access_hierarchy import is_operational_staff
+    return is_operational_staff(role)
+
+
+def scope_customer_record(session: dict[str, str] | None,
+                          requested_customer_id: str | None,
+                          resource_type: str = 'data'):
+    """Own-row scope for a customer, staff read for operational roles.
+
+    Anonymous test-mode probes keep the requested id so existing honesty
+    checks of empty pipelines still run. A real session is always scoped.
+    """
+    if not session and PHINS_TEST_MODE:
+        return True, requested_customer_id, None
+    return authorize_customer_data(session, requested_customer_id, resource_type)
 
 
 def authorize_customer_data(session: dict[str, str] | None, 
@@ -18139,7 +18159,36 @@ class PortalHandler(BaseHTTPRequestHandler):
         except Exception:
             return None
 
-    def _enforce_customer_write(self, target_customer_id: Any, resource: str = 'account') -> bool:
+    def _discard_unread_body(self) -> None:
+        """Drain a request body so a denial does not desync a keep-alive socket."""
+        try:
+            length = int(self.headers.get('Content-Length', 0) or 0)
+        except (TypeError, ValueError):
+            return
+        remaining = max(0, length)
+        while remaining > 0:
+            chunk = self.rfile.read(min(65536, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+
+    def _deny_cross_surface(self, session: dict[str, str] | None, method: str, path: str) -> bool:
+        """Deny customer→admin and staff→customer-private API calls.
+
+        Returns True when a 403 has been written and the caller must return.
+        """
+        from security.access_hierarchy import api_denial
+        message = api_denial(get_effective_role(session), method, path)
+        if not message:
+            return False
+        if method in ('POST', 'PUT', 'DELETE', 'PATCH'):
+            self._discard_unread_body()
+        self._set_json_headers(403)
+        self.wfile.write(json.dumps({'error': message}).encode('utf-8'))
+        return True
+
+    def _enforce_customer_write(self, target_customer_id: Any, resource: str = 'account',
+                                allow_staff: bool = True) -> bool:
         """Guard a customer-scoped write against cross-tenant access.
 
         Premortem risk #1 (cross-tenant writes): many money-movement POST routes
@@ -18149,8 +18198,11 @@ class PortalHandler(BaseHTTPRequestHandler):
 
         * Authentication is required outside test mode (mirrors the read routes).
         * A ``customer`` may only write to their own ``customer_id``.
-        * Staff roles (admin/accountant/...) and tokenless test-mode callers are
-          unaffected.
+        * Operational staff may write only when ``allow_staff`` is set (billing
+          and pipeline allocation). Customer-private money movement passes
+          ``allow_staff=False``.
+        * Tokenless test-mode callers stay allowed so legacy probes keep working.
+        * Every other authenticated role is denied.
 
         Returns ``True`` if the request may proceed. On denial it writes the
         appropriate 401/403 JSON response and returns ``False`` so callers can
@@ -18161,12 +18213,20 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._set_json_headers(401)
             self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
             return False
+        if not session and PHINS_TEST_MODE:
+            return True
         user = get_session_user(session) or {}
         role = (
             user.get('role')
             or (session.get('role') if session else '')
             or ''
         ).lower()
+        if is_operational_staff_role(role):
+            if allow_staff:
+                return True
+            self._set_json_headers(403)
+            self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+            return False
         if role == 'customer':
             session_customer_id = (
                 user.get('customer_id')
@@ -18184,7 +18244,10 @@ class PortalHandler(BaseHTTPRequestHandler):
                     {'error': f'Access denied - you can only modify your own {resource}'}
                 ).encode('utf-8'))
                 return False
-        return True
+            return True
+        self._set_json_headers(403)
+        self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+        return False
 
     def _resolve_reports_user_context(
         self,
@@ -18971,6 +19034,29 @@ For claims or questions, please contact:
                     'error': 'Regulation viewer is limited to the read-only outline',
                 }).encode('utf-8'))
                 return
+
+        # Customer sessions stay off /api/admin. Staff sessions stay off
+        # customer-private money movement. Shared tools (assessments, reports,
+        # billing) are not in that deny list.
+        if path.startswith('/api/') and self._deny_cross_surface(session, 'GET', path):
+            return
+
+        if path == '/api/access/surface':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            from security.access_hierarchy import surface_decision
+            requested = (qs.get('path', ['/'])[0] or '/')
+            decision = surface_decision(get_effective_role(session), requested)
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'allowed': bool(decision.get('allowed')),
+                'redirect': decision.get('redirect'),
+                'surface': decision.get('surface'),
+                'role': decision.get('role'),
+            }).encode('utf-8'))
+            return
 
         # Confidential share-link management (staff). Listed before the gate so
         # the JSON API itself is never treated as a confidential HTML document.
@@ -23977,11 +24063,26 @@ For claims or questions, please contact:
             role = (user.get('role') or session.get('role', '') if session else '').lower() or ('admin' if not session else '')
             session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
 
+            if role == 'customer' and not session_customer_id:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Customer session invalid'}).encode('utf-8'))
+                return
+            if role != 'customer' and not is_operational_staff_role(role):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                return
+
             policy_id = qs.get('id', [None])[0]
             if policy_id:
                 policy = POLICIES.get(policy_id)
-                # Customers can only view their own policies
-                if policy and (role != 'customer' or (session_customer_id and policy.get('customer_id') == session_customer_id)):
+                owns_policy = bool(
+                    role == 'customer'
+                    and session_customer_id
+                    and policy
+                    and policy.get('customer_id') == session_customer_id
+                )
+                # Customers see their own policy. Operational staff see the book.
+                if policy and (owns_policy or is_operational_staff_role(role)):
                     self._set_json_headers()
                     self.wfile.write(json.dumps(policy).encode('utf-8'))
                 else:
@@ -24040,12 +24141,26 @@ For claims or questions, please contact:
             session_customer_id = (user.get('customer_id') or session.get('customer_id')) if session else None
             
             # Get specific application by ID
+            if role == 'customer' and not session_customer_id:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Customer session invalid'}).encode('utf-8'))
+                return
+            if role != 'customer' and not is_operational_staff_role(role):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                return
+
             app_id = qs.get('id', [None])[0]
             if app_id:
                 app = UNDERWRITING_APPLICATIONS.get(app_id)
                 if app:
-                    # Customers can only view their own applications
-                    if role != 'customer' or (session_customer_id and app.get('customer_id') == session_customer_id):
+                    owns_app = bool(
+                        role == 'customer'
+                        and session_customer_id
+                        and app.get('customer_id') == session_customer_id
+                    )
+                    # Customers see their own application. Staff review the book.
+                    if owns_app or is_operational_staff_role(role):
                         self._set_json_headers()
                         self.wfile.write(json.dumps(app).encode('utf-8'))
                     else:
@@ -24062,8 +24177,7 @@ For claims or questions, please contact:
                 if role == 'customer':
                     if session_customer_id and app.get('customer_id') == session_customer_id:
                         all_apps.append(app)
-                else:
-                    # Admins, underwriters, actuaries can see all
+                elif is_operational_staff_role(role):
                     all_apps.append(app)
             
             # Enrich with customer info
@@ -24820,15 +24934,25 @@ For claims or questions, please contact:
             role = (user.get('role') or session.get('role', '') if session else '').lower() or ('admin' if not session else '')
             session_customer_id = user.get('customer_id') or (session.get('customer_id') if session else None)
 
+            if role == 'customer' and not session_customer_id:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Customer session invalid'}).encode('utf-8'))
+                return
+            if role != 'customer' and not is_operational_staff_role(role):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                return
+
             claim_id = qs.get('id', [None])[0]
             status = qs.get('status', [None])[0]
             
             if claim_id:
                 claim = CLAIMS.get(claim_id)
-                if claim and (role != 'customer' or (session_customer_id and (
+                owns_claim = bool(claim and role == 'customer' and session_customer_id and (
                     claim.get('customer_id') == session_customer_id or
                     (claim.get('policy_id') and POLICIES.get(claim.get('policy_id'), {}).get('customer_id') == session_customer_id)
-                ))):
+                ))
+                if claim and (owns_claim or is_operational_staff_role(role)):
                     payload = dict(claim)
                     try:
                         from services.financial_unification_service import claim_cash_by_id
@@ -26596,6 +26720,10 @@ For claims or questions, please contact:
                         self._set_json_headers(403)
                         self.wfile.write(json.dumps({'error': 'Access denied - you can only access your own customer data'}).encode('utf-8'))
                         return
+                elif not is_operational_staff_role(role):
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                    return
                     
                 # Use enhanced fallback function for robust customer retrieval
                 customer = get_customer_with_fallback(requested_customer_id)
@@ -26655,10 +26783,14 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'customer_id is required'}).encode('utf-8'))
                 return
 
-            # Non-customer roles can request arbitrary customer_id; customers cannot.
+            # Customers cannot request another id. Only operational staff may.
             if role == 'customer' and requested_customer_id and requested_customer_id != customer_id:
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                return
+            if role != 'customer' and not is_operational_staff_role(role):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
                 return
 
             customer = get_customer_with_fallback(customer_id)
@@ -29406,13 +29538,18 @@ For claims or questions, please contact:
             
             requested_customer_id = qs.get('customer_id', [''])[0]
             
-            # Customers can only access their own accounts
+            # Customers can only access their own accounts. Staff may read them
+            # while running the pipeline; other roles may not.
             if role == 'customer':
                 customer_id = session_customer_id
                 if requested_customer_id and requested_customer_id != session_customer_id:
                     self._set_json_headers(403)
                     self.wfile.write(json.dumps({'error': 'Access denied - can only view your own accounts'}).encode('utf-8'))
                     return
+            elif not is_operational_staff_role(role):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
+                return
             else:
                 customer_id = requested_customer_id
             
@@ -32014,6 +32151,12 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                 return
+            authorized, scoped_id, scope_error = scope_customer_record(session, customer_id, 'savings pipeline')
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': scope_error or 'Access denied'}).encode('utf-8'))
+                return
+            customer_id = scoped_id or customer_id
             
             analytics = savings_pipeline_service.get_pipeline_analytics(customer_id)
             self._set_json_headers()
@@ -32032,6 +32175,12 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                 return
+            authorized, scoped_id, scope_error = scope_customer_record(session, customer_id, 'savings pipeline')
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': scope_error or 'Access denied'}).encode('utf-8'))
+                return
+            customer_id = scoped_id or customer_id
             
             recommendation = savings_pipeline_service.get_ai_recommendation(customer_id)
             self._set_json_headers()
@@ -32043,6 +32192,14 @@ For claims or questions, please contact:
             if not savings_pipeline_enabled:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Savings pipeline service unavailable'}).encode('utf-8'))
+                return
+            if not session and not PHINS_TEST_MODE:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            if session and not is_operational_staff_role(get_effective_role(session)):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied'}).encode('utf-8'))
                 return
             
             summary = savings_pipeline_service.get_pipeline_summary()
@@ -32062,6 +32219,12 @@ For claims or questions, please contact:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                 return
+            authorized, scoped_id, scope_error = scope_customer_record(session, customer_id, 'savings pipeline')
+            if not authorized:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': scope_error or 'Access denied'}).encode('utf-8'))
+                return
+            customer_id = scoped_id or customer_id
             
             account = savings_pipeline_service.get_or_create_account(customer_id)
             from dataclasses import asdict
@@ -35057,6 +35220,11 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': error}).encode('utf-8'))
                     return
+
+        if path.startswith('/api/') and self._deny_cross_surface(
+            _session_from_authorization(self), 'POST', path
+        ):
+            return
 
         # Confidential unlock + share-link APIs (admin password / share password).
         if path.startswith('/api/confidential/'):
@@ -52091,7 +52259,7 @@ For claims or questions, please contact:
                 payment_method = data.get('payment_method', 'card_on_file')
 
                 # SECURITY: a customer may only deposit into their own wallet.
-                if not self._enforce_customer_write(customer_id, 'health wallet'):
+                if not self._enforce_customer_write(customer_id, 'health wallet', allow_staff=False):
                     return
 
                 if amount < 1 or amount > 100000:
@@ -52161,7 +52329,7 @@ For claims or questions, please contact:
                 customer_id = data.get('customer_id', 'CUST001')
 
                 # SECURITY: a customer may only spend from their own wallet.
-                if not self._enforce_customer_write(customer_id, 'health wallet'):
+                if not self._enforce_customer_write(customer_id, 'health wallet', allow_staff=False):
                     return
 
                 product_id = data.get('offer_id') or data.get('product_id')
@@ -53552,7 +53720,7 @@ For claims or questions, please contact:
                     return
 
                 # SECURITY: only the account owner (or staff) may withdraw.
-                if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account'):
+                if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account', allow_staff=False):
                     return
                 
                 result = portfolio_service.withdraw(account_id, amount, reason)
@@ -53590,7 +53758,7 @@ For claims or questions, please contact:
                     return
 
                 # SECURITY: only the account owner (or staff) may invest its funds.
-                if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account'):
+                if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account', allow_staff=False):
                     return
                 
                 # SYNC: Get the account and sync its balance with INVESTMENT_ACCOUNTS
@@ -53665,7 +53833,7 @@ For claims or questions, please contact:
                     return
 
                 # SECURITY: only the account owner (or staff) may sell its assets.
-                if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account'):
+                if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account', allow_staff=False):
                     return
                 
                 result = portfolio_service.sell_asset(account_id, symbol, quantity)
@@ -54874,7 +55042,7 @@ For claims or questions, please contact:
                     return
 
                 # SECURITY: only the owner (or staff) may transfer to algo balance.
-                if not self._enforce_customer_write(customer_id, 'algo balance'):
+                if not self._enforce_customer_write(customer_id, 'algo balance', allow_staff=False):
                     return
                 
                 # ========== PRE-TRANSFER SYNC ==========
@@ -55014,7 +55182,7 @@ For claims or questions, please contact:
                     return
 
                 # SECURITY: only the owner (or staff) may withdraw from algo balance.
-                if not self._enforce_customer_write(customer_id, 'algo balance'):
+                if not self._enforce_customer_write(customer_id, 'algo balance', allow_staff=False):
                     return
                 
                 # ========== PRE-WITHDRAWAL SYNC ==========
@@ -55153,7 +55321,7 @@ For claims or questions, please contact:
                     return
 
                 # SECURITY: only the owner (or staff) may deposit to algo balance.
-                if not self._enforce_customer_write(customer_id, 'algo balance'):
+                if not self._enforce_customer_write(customer_id, 'algo balance', allow_staff=False):
                     return
                 
                 # ========== SYNC ALL ACCOUNTS BEFORE TRANSFER ==========
@@ -55470,7 +55638,7 @@ For claims or questions, please contact:
                     return
 
                 # SECURITY: only the owner (or staff) may move funds between their accounts.
-                if not self._enforce_customer_write(customer_id, 'portfolio'):
+                if not self._enforce_customer_write(customer_id, 'portfolio', allow_staff=False):
                     return
                 
                 # Handle different transfer directions
@@ -55527,6 +55695,8 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'customer_id and positive amount required'}).encode('utf-8'))
                     return
+                if not self._enforce_customer_write(customer_id, 'savings pipeline', allow_staff=False):
+                    return
                 
                 result = savings_pipeline_service.deposit_to_pipeline(
                     customer_id=customer_id,
@@ -55569,6 +55739,9 @@ For claims or questions, please contact:
                 if not customer_id:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                    return
+                # Staff run this from the admin pipeline. Customers only move their own cash.
+                if not self._enforce_customer_write(customer_id, 'savings pipeline', allow_staff=True):
                     return
                 
                 result = savings_pipeline_service.allocate_cash_balance(
@@ -55614,6 +55787,8 @@ For claims or questions, please contact:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                     return
+                if not self._enforce_customer_write(customer_id, 'savings pipeline', allow_staff=False):
+                    return
                 
                 account = savings_pipeline_service.get_or_create_account(customer_id)
                 
@@ -55657,6 +55832,15 @@ For claims or questions, please contact:
             if not savings_pipeline_enabled:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': 'Savings pipeline service unavailable'}).encode('utf-8'))
+                return
+            market_session = self._get_session()
+            if not is_operational_staff_role(get_effective_role(market_session)) and not (
+                not market_session and PHINS_TEST_MODE
+            ):
+                self._set_json_headers(403 if market_session else 401)
+                self.wfile.write(json.dumps({
+                    'error': 'Access denied' if market_session else 'Unauthorized',
+                }).encode('utf-8'))
                 return
             
             try:
@@ -56423,7 +56607,7 @@ For claims or questions, please contact:
                     return
 
                 # SECURITY: only the owner (or staff) may sweep a wallet to pay bills.
-                if not self._enforce_customer_write(customer_id, 'wallet'):
+                if not self._enforce_customer_write(customer_id, 'wallet', allow_staff=False):
                     return
                 
                 # Get customer's health wallet
@@ -57303,7 +57487,7 @@ For claims or questions, please contact:
 
             # SECURITY: a customer may only withdraw their own credit (and never to
             # another customer's account / attacker-supplied bank details).
-            if not self._enforce_customer_write(customer_id, 'billing credit'):
+            if not self._enforce_customer_write(customer_id, 'billing credit', allow_staff=False):
                 return
             
             if not billing_credit_enabled or not billing_credit_service:
@@ -57358,7 +57542,7 @@ For claims or questions, please contact:
                 return
 
             # SECURITY: a customer may only move their own credit to their wallet.
-            if not self._enforce_customer_write(customer_id, 'billing credit'):
+            if not self._enforce_customer_write(customer_id, 'billing credit', allow_staff=False):
                 return
             
             if not billing_credit_enabled or not billing_credit_service:
@@ -58674,6 +58858,9 @@ For claims or questions, please contact:
         session = validate_session(token) if token else None
         user_agent = self.headers.get('User-Agent', '')
 
+        if path.startswith('/api/') and self._deny_cross_surface(session, 'PUT', path):
+            return
+
         # Meeting summary-notes admin API (staff) — edit / finalize a note.
         if path.startswith('/api/meetings/notes/'):
             notes_body = self._read_meeting_notes_body()
@@ -58765,6 +58952,9 @@ For claims or questions, please contact:
         auth_header = self.headers.get('Authorization', '')
         token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
         session = validate_session(token) if token else None
+
+        if path.startswith('/api/') and self._deny_cross_surface(session, 'DELETE', path):
+            return
 
         # Confidential share revoke
         if path.startswith('/api/confidential/shares/'):
