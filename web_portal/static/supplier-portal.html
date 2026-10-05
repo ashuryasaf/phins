@@ -8,6 +8,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PHINS - Supplier Portal</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/phins-theme.css">
   <style>
     .portal-header {
       display: flex;
@@ -75,6 +76,14 @@
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
       gap: 16px;
+    }
+    .offer-card .offer-visual {
+      width: calc(100% + 32px);
+      margin: -16px -16px 12px;
+      height: 140px;
+      object-fit: cover;
+      display: block;
+      background: #0d1b3e;
     }
     .offer-card {
       background: var(--bg-card);
@@ -585,7 +594,16 @@
           </div>
           <div class="form-group">
             <label>Category *</label>
-            <input type="text" id="offer-category" required placeholder="e.g., Consultation">
+            <select id="offer-category" required>
+              <option value="consultation">Book Consultation</option>
+              <option value="devices">Medical Devices</option>
+              <option value="supplies">Daily Supplies</option>
+              <option value="pharmacy">Pharmacy</option>
+              <option value="homecare">Home Care</option>
+              <option value="legal">Legal Services</option>
+              <option value="wellness">Wellness</option>
+              <option value="other">Other</option>
+            </select>
           </div>
         </div>
         
@@ -678,11 +696,12 @@
             </span>
           </label>
           <div id="offer-media-help" style="font-size:0.82rem; color:#607d8b; margin-bottom:8px;">
-            Save the offer first, then upload up to 8 visuals: jpg/png/webp/gif (≤10&nbsp;MB)
-            or mp4/webm/mov (≤50&nbsp;MB). Add an alt-text caption to each so the AI search can rank it.
+            Add up to 8 photos or videos with this listing. Files chosen before the offer is saved
+            upload as soon as the offer is created. jpg/png/webp/gif (≤10&nbsp;MB) or mp4/webm/mov (≤50&nbsp;MB).
+            Alt text is stored with the file and used by health-wallet search. It does not change the price.
           </div>
           <div id="offer-media-gallery" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:10px;"></div>
-          <div id="offer-media-controls" style="display:none; align-items:center; gap:10px; flex-wrap:wrap;">
+          <div id="offer-media-controls" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
             <input type="file" id="offer-media-file"
                    accept=".jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.mov,image/*,video/*"
                    style="flex:1 1 240px;">
@@ -1071,9 +1090,14 @@
           const mediaList = Array.isArray(offer.media) ? offer.media : [];
           const photoCount = mediaList.filter(m => m && m.type === 'image').length;
           const videoCount = mediaList.filter(m => m && m.type === 'video').length;
+          const hero = mediaList.find(m => m && m.type === 'image' && String(m.url || '').startsWith('/media-files/supplier-offers/'));
+          const visual = hero
+            ? hero.url
+            : (String(offer.image_url || '').startsWith('/media-files/supplier-offers/') ? offer.image_url : '');
 
           return `
             <div class="offer-card ${offer.active ? '' : 'inactive'}">
+              ${visual ? `<img class="offer-visual" src="${esc(visual)}" alt="${esc(offer.name || 'Offer photo')}">` : ''}
               <div class="type-badge ${offer.item_type}">${offer.item_type}</div>
               <h4>${esc(offer.name)}</h4>
               <div class="category">${esc(offer.category)}</div>
@@ -1160,29 +1184,82 @@
 
     // Offer Modal Functions
     let currentOfferMedia = [];
+    let pendingOfferMedia = [];
 
     function setOfferMediaControlsVisible(offerId) {
       const controls = document.getElementById('offer-media-controls');
       const help = document.getElementById('offer-media-help');
-      if (!controls) return;
-      if (offerId) {
-        controls.style.display = 'flex';
-        if (help) {
-          help.textContent = 'Upload up to 8 visuals: jpg/png/webp/gif (≤10 MB) or mp4/webm/mov (≤50 MB). Add an alt-text caption to each so the AI search can rank it.';
-        }
-      } else {
-        controls.style.display = 'none';
+      if (controls) controls.style.display = 'flex';
+      if (!help) return;
+      help.textContent = offerId
+        ? 'Upload up to 8 visuals now: jpg/png/webp/gif (≤10 MB) or mp4/webm/mov (≤50 MB). Alt text is stored with the file for health-wallet search and does not change the price.'
+        : 'Choose photos or videos now. They upload with this listing as soon as you save the offer. jpg/png/webp/gif (≤10 MB) or mp4/webm/mov (≤50 MB).';
+    }
+
+    function ensureOfferCategoryOption(value) {
+      const select = document.getElementById('offer-category');
+      if (!select) return;
+      const raw = String(value || '').trim();
+      if (!raw) {
+        select.value = 'consultation';
+        return;
       }
+      const exists = Array.from(select.options).some(option => option.value === raw);
+      if (!exists) {
+        const option = document.createElement('option');
+        option.value = raw;
+        option.textContent = raw;
+        select.appendChild(option);
+      }
+      select.value = raw;
+    }
+
+    function validateOfferMediaFile(file) {
+      if (!file) return { ok: false, error: 'Choose a photo or video to upload.' };
+      const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime'];
+      if (file.type && !allowed.includes(file.type) && !/\.(jpe?g|png|webp|gif|mp4|webm|mov)$/i.test(file.name)) {
+        return { ok: false, error: 'Unsupported file type. Use jpg, png, webp, gif, mp4, webm, or mov.' };
+      }
+      const isVideo = (file.type || '').startsWith('video/') || /\.(mp4|webm|mov)$/i.test(file.name);
+      const max = isVideo ? 50 * 1024 * 1024 : 10 * 1024 * 1024;
+      if (file.size > max) {
+        return { ok: false, error: `File too large. Max ${isVideo ? '50' : '10'} MB.` };
+      }
+      return { ok: true, isVideo };
+    }
+
+    function readOfferMediaFile(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('File read failed'));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function postOfferMediaFile(offerId, file, altText) {
+      const dataUrl = await readOfferMediaFile(file);
+      const base64 = String(dataUrl).split(',')[1] || '';
+      return apiPost('/api/supplier/offers/media/upload', {
+        offer_id: offerId,
+        filename: file.name,
+        content_type: file.type || undefined,
+        alt_text: altText || undefined,
+        data: base64
+      });
+    }
+
+    function clearPendingOfferMedia() {
+      pendingOfferMedia.forEach(item => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+      pendingOfferMedia = [];
     }
 
     function renderOfferMediaGallery() {
       const gallery = document.getElementById('offer-media-gallery');
       if (!gallery) return;
-      if (!currentOfferMedia.length) {
-        gallery.innerHTML = '<div style="font-size:0.82rem; color:#90a4ae;">No photos or videos yet.</div>';
-        return;
-      }
-      gallery.innerHTML = currentOfferMedia.map(media => {
+      const saved = currentOfferMedia.map(media => {
         const safeUrl = esc(media.url || '');
         const safeAlt = esc(media.alt_text || media.filename || 'Offer media');
         const safeId = esc(media.id || '');
@@ -1200,9 +1277,34 @@
             <button type="button" class="btn-sm btn-toggle"
                     style="position:absolute; top:4px; right:4px; padding:2px 6px; font-size:0.72rem;"
                     onclick="deleteOfferMedia('${safeId}')" title="Remove media">×</button>
-          </div>
-        `;
-      }).join('');
+          </div>`;
+      });
+      const queued = pendingOfferMedia.map(media => {
+        const safeUrl = esc(media.previewUrl || '');
+        const isVideo = media.type === 'video';
+        const preview = isVideo
+          ? `<video src="${safeUrl}" muted playsinline preload="metadata"
+                   style="width:120px; height:90px; object-fit:cover; border-radius:8px; background:#000;"></video>`
+          : `<img src="${safeUrl}" alt="${esc(media.alt_text || media.filename || 'Queued photo')}"
+                  style="width:120px; height:90px; object-fit:cover; border-radius:8px;">`;
+        return `
+          <div style="position:relative; width:120px;">
+            ${preview}
+            <div style="font-size:0.72rem; color:#1565c0; margin-top:4px;">Queued · ${esc(media.alt_text || (isVideo ? 'Video' : 'Photo'))}</div>
+            <button type="button" class="btn-sm btn-toggle"
+                    style="position:absolute; top:4px; right:4px; padding:2px 6px; font-size:0.72rem;"
+                    onclick="removePendingOfferMedia('${esc(media.localId)}')" title="Remove queued media">×</button>
+          </div>`;
+      });
+      const markup = saved.concat(queued).join('');
+      gallery.innerHTML = markup || '<div style="font-size:0.82rem; color:#90a4ae;">No photos or videos yet.</div>';
+    }
+
+    function removePendingOfferMedia(localId) {
+      const item = pendingOfferMedia.find(media => media.localId === localId);
+      if (item && item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      pendingOfferMedia = pendingOfferMedia.filter(media => media.localId !== localId);
+      renderOfferMediaGallery();
     }
 
     function setOfferMediaStatus(message, isError) {
@@ -1214,50 +1316,43 @@
 
     async function uploadOfferMedia() {
       const offerId = document.getElementById('offer-id').value;
-      if (!offerId) {
-        setOfferMediaStatus('Save the offer first, then upload media.', true);
-        return;
-      }
       const fileInput = document.getElementById('offer-media-file');
       const altInput = document.getElementById('offer-media-alt');
       const button = document.getElementById('offer-media-upload-btn');
       const file = fileInput && fileInput.files && fileInput.files[0];
-      if (!file) {
-        setOfferMediaStatus('Choose a photo or video to upload.', true);
+      const check = validateOfferMediaFile(file);
+      if (!check.ok) {
+        setOfferMediaStatus(check.error, true);
         return;
       }
-      const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime'];
-      if (file.type && !allowed.includes(file.type) && !/\.(jpe?g|png|webp|gif|mp4|webm|mov)$/i.test(file.name)) {
-        setOfferMediaStatus('Unsupported file type. Use jpg, png, webp, gif, mp4, webm, or mov.', true);
-        return;
-      }
-      const isVideo = (file.type || '').startsWith('video/') || /\.(mp4|webm|mov)$/i.test(file.name);
-      const max = isVideo ? 50 * 1024 * 1024 : 10 * 1024 * 1024;
-      if (file.size > max) {
-        setOfferMediaStatus(`File too large. Max ${isVideo ? '50' : '10'} MB.`, true);
+      const altText = (altInput && altInput.value.trim()) || '';
+      if (!offerId) {
+        if (currentOfferMedia.length + pendingOfferMedia.length >= 8) {
+          setOfferMediaStatus('Media gallery limit reached (maximum 8 items per offer).', true);
+          return;
+        }
+        pendingOfferMedia = [...pendingOfferMedia, {
+          localId: `pending-${Date.now()}-${pendingOfferMedia.length}`,
+          file,
+          type: check.isVideo ? 'video' : 'image',
+          filename: file.name,
+          alt_text: altText,
+          previewUrl: URL.createObjectURL(file)
+        }];
+        renderOfferMediaGallery();
+        setOfferMediaStatus('Queued. This file uploads when you save the offer.', false);
+        if (fileInput) fileInput.value = '';
+        if (altInput) altInput.value = '';
         return;
       }
       try {
         if (button) button.disabled = true;
         setOfferMediaStatus('Uploading…', false);
-        const dataUrl = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = () => reject(new Error('File read failed'));
-          reader.readAsDataURL(file);
-        });
-        const base64 = String(dataUrl).split(',')[1] || '';
-        const result = await apiPost('/api/supplier/offers/media/upload', {
-          offer_id: offerId,
-          filename: file.name,
-          content_type: file.type || undefined,
-          alt_text: (altInput && altInput.value.trim()) || undefined,
-          data: base64
-        });
+        const result = await postOfferMediaFile(offerId, file, altText);
         if (result && result.media) {
           currentOfferMedia = [...currentOfferMedia, result.media];
           renderOfferMediaGallery();
-          setOfferMediaStatus('Uploaded. Customers can now find this offer through visual cues in the Health Wallet AI search.', false);
+          setOfferMediaStatus('Uploaded. Customers can now see this photo or video in the health wallet.', false);
           await loadOffers();
         }
         if (fileInput) fileInput.value = '';
@@ -1296,7 +1391,7 @@
         document.getElementById('offer-name').value = '';
         document.getElementById('offer-description').value = '';
         document.getElementById('offer-type').value = 'service';
-        document.getElementById('offer-category').value = '';
+        ensureOfferCategoryOption('consultation');
         document.getElementById('offer-price').value = '';
         document.getElementById('offer-currency').value = 'USD';
         document.getElementById('offer-unit').value = 'per_item';
@@ -1310,6 +1405,7 @@
           cb.checked = cb.value === 'health';
         });
         currentOfferMedia = [];
+        clearPendingOfferMedia();
       }
 
       setOfferMediaStatus('', false);
@@ -1337,7 +1433,8 @@
         document.getElementById('offer-name').value = offer.name || '';
         document.getElementById('offer-description').value = offer.description || '';
         document.getElementById('offer-type').value = offer.item_type || 'service';
-        document.getElementById('offer-category').value = offer.category || '';
+        ensureOfferCategoryOption(offer.category || 'consultation');
+        clearPendingOfferMedia();
         document.getElementById('offer-price').value = offer.price || '';
         document.getElementById('offer-currency').value = offer.currency || 'USD';
         document.getElementById('offer-unit').value = offer.unit || 'per_item';
@@ -1419,18 +1516,33 @@
         
         const result = await apiPost('/api/supplier/offers/upsert', payload);
         const savedId = (result && result.id) || offerId;
-        await loadOffers();
-        if (!offerId && savedId) {
-          // Re-open the modal in edit mode so the supplier can immediately add
-          // photos/videos to the freshly created offer (media uploads require
-          // an offer_id to persist).
+        const queued = pendingOfferMedia.slice();
+        let failedUploads = 0;
+        if (savedId && queued.length) {
           document.getElementById('offer-id').value = savedId;
-          setOfferMediaControlsVisible(true);
-          setOfferMediaStatus('Offer saved. Add photos or videos so customers find it in the Health Wallet AI search.', false);
-        } else {
-          closeOfferModal();
-          alert('Offer updated successfully');
+          for (const item of queued) {
+            try {
+              const uploaded = await postOfferMediaFile(savedId, item.file, item.alt_text);
+              if (uploaded && uploaded.media) {
+                currentOfferMedia = [...currentOfferMedia, uploaded.media];
+              }
+            } catch (err) {
+              failedUploads += 1;
+            }
+          }
+          clearPendingOfferMedia();
+          renderOfferMediaGallery();
         }
+        await loadOffers();
+        if (failedUploads) {
+          setOfferMediaControlsVisible(savedId);
+          setOfferMediaStatus(`Offer saved. ${failedUploads} file${failedUploads === 1 ? '' : 's'} did not upload. Add them again from this listing.`, true);
+          return;
+        }
+        closeOfferModal();
+        alert(queued.length
+          ? 'Offer saved with photos and videos. Customers will see them in the health wallet.'
+          : 'Offer saved successfully');
       } catch (e) {
         alert('Failed to save offer: ' + e.message);
       }

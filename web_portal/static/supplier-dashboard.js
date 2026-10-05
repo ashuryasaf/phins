@@ -165,7 +165,27 @@ async function createOffer() {
       currency,
       active
     });
-    msg.textContent = `Created: ${res.id}`;
+    const fileInput = document.getElementById('offer-media-file');
+    const altInput = document.getElementById('offer-media-alt');
+    const file = fileInput && fileInput.files && fileInput.files[0];
+    if (file && res.id) {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('File read failed'));
+        reader.readAsDataURL(file);
+      });
+      await apiPost('/api/supplier/offers/media/upload', {
+        offer_id: res.id,
+        filename: file.name,
+        content_type: file.type || undefined,
+        alt_text: (altInput && altInput.value.trim()) || undefined,
+        data: String(dataUrl).split(',')[1] || ''
+      });
+      if (fileInput) fileInput.value = '';
+      if (altInput) altInput.value = '';
+    }
+    msg.textContent = file ? `Created ${res.id} with media` : `Created: ${res.id}`;
     msg.className = 'text-success';
     await refreshOffers();
   } catch (e) {

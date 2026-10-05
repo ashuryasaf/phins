@@ -1073,6 +1073,83 @@ def normalize_marketplace_category(value: Any) -> str:
     return MARKETPLACE_CATEGORY_ALIASES.get(raw, raw)
 
 
+def marketplace_raw_category(value: Any) -> str:
+    """Lowercase category text before alias folding."""
+    return str(value or '').strip().lower().replace(' ', '_').replace('-', '_')
+
+
+# Wallet tabs that share a canonical category (consultation/homecare, devices/supplies).
+# A specific raw category stays on its own tab. A canonical-only value such as
+# ``medical_services`` remains visible on both sibling tabs so older offers are
+# not hidden. Prices and ledger categories are unchanged.
+WALLET_BROWSE_SPECIFIC: Dict[str, set] = {
+    'consultation': {'consultation', 'consult', 'telehealth', 'gp'},
+    'homecare': {'homecare', 'home_care', 'home_health', 'homehealth'},
+    'devices': {'devices', 'device'},
+    'supplies': {'supplies', 'supply', 'daily_supplies'},
+    'pharmacy': {'pharmacy', 'medication', 'medications', 'rx', 'medicine'},
+    'legal': {'legal', 'legal_service', 'legal_services', 'law'},
+}
+
+# Dashboard supplier-type query values grouped onto the live ecosystem types.
+# ``clinic`` still matches ``supplier_type=clinic`` exactly; the group only
+# expands the wallet-tab aliases.
+SUPPLIER_TYPE_BROWSE_GROUPS: Dict[str, set] = {
+    'healthcare_provider': {
+        'healthcare_provider', 'doctor', 'clinic', 'hospital', 'laboratory', 'wellness',
+    },
+    'equipment_supplier': {'equipment_supplier', 'equipment'},
+    'legal_service': {'legal_service', 'lawyer'},
+    'pharmacy': {'pharmacy'},
+    'delivery': {'delivery'},
+}
+
+
+def infer_wallet_browse_bucket(category: Any) -> str:
+    """Return the wallet tab for a stored category, or '' when it is shared."""
+    raw = marketplace_raw_category(category)
+    if not raw:
+        return ''
+    for bucket, specific in WALLET_BROWSE_SPECIFIC.items():
+        if raw == bucket or raw in specific:
+            return bucket
+    return ''
+
+
+def offer_matches_wallet_browse(offer_category: Any, requested: Any) -> bool:
+    """True when an offer belongs on the requested wallet category tab."""
+    requested_raw = marketplace_raw_category(requested)
+    if not requested_raw:
+        return True
+    if normalize_marketplace_category(offer_category) != normalize_marketplace_category(requested_raw):
+        return False
+    specific = WALLET_BROWSE_SPECIFIC.get(requested_raw)
+    if not specific:
+        return True
+    offer_raw = marketplace_raw_category(offer_category)
+    siblings: set = set()
+    for bucket, values in WALLET_BROWSE_SPECIFIC.items():
+        if bucket == requested_raw:
+            continue
+        if normalize_marketplace_category(bucket) == normalize_marketplace_category(requested_raw):
+            siblings |= values
+    if offer_raw in siblings and offer_raw not in specific:
+        return False
+    return True
+
+
+def supplier_type_matches(supplier_type: Any, requested: Any) -> bool:
+    """Match a supplier type, expanding wallet-tab aliases onto ecosystem types."""
+    requested_raw = marketplace_raw_category(requested)
+    if not requested_raw:
+        return True
+    actual = marketplace_raw_category(supplier_type)
+    group = SUPPLIER_TYPE_BROWSE_GROUPS.get(requested_raw)
+    if group:
+        return actual in group
+    return actual == requested_raw
+
+
 def parse_wallet_compatible(raw_wallets: Any) -> List[str]:
     """Parse wallet compatibility from list/json/string into normalized list."""
     wallets = raw_wallets
@@ -22362,10 +22439,19 @@ For claims or questions, please contact:
                 wallet_type = (qs.get('wallet', [None])[0] or '').strip().lower() or 'health'
                 search = (qs.get('search', [None])[0] or '').strip().lower() or None
                 supplier_type = (qs.get('supplier_type', [None])[0] or '').strip().lower() or None
+                city_filter = (qs.get('city', [None])[0] or '').strip().lower() or None
+                country_filter = (qs.get('country', [None])[0] or '').strip().lower() or None
+                min_radius_km = None
+                radius_raw = (qs.get('min_radius_km', [None])[0] or '').strip()
+                if radius_raw:
+                    try:
+                        parsed_radius = float(radius_raw)
+                        if parsed_radius > 0:
+                            min_radius_km = parsed_radius
+                    except Exception:
+                        min_radius_km = None
                 page_raw = qs.get('page', ['1'])[0]
                 limit_raw = qs.get('limit', ['50'])[0]
-                category_filter = normalize_marketplace_category(category)
-                
                 try:
                     page = max(1, int(page_raw))
                     limit = max(1, min(100, int(limit_raw)))
@@ -22390,9 +22476,12 @@ For claims or questions, please contact:
                 filtered_offers = []
                 for offer in all_offers:
                     offer_category = normalize_marketplace_category(offer.get('category'))
+                    supplier = approved_suppliers.get(offer.get('supplier_id'), {})
 
-                    # Category filter
-                    if category_filter and offer_category != category_filter:
+                    # Category filter. Sibling wallet tabs that share a canonical
+                    # bucket (consultation vs home care, devices vs supplies) stay
+                    # distinct when the stored category says so.
+                    if category and not offer_matches_wallet_browse(offer.get('category'), category):
                         continue
                     
                     # Item type filter (service/product)
@@ -22408,11 +22497,25 @@ For claims or questions, please contact:
                     if wallet_type and wallet_type not in [w.lower() for w in (wallet_compatible or [])]:
                         continue
                     
-                    # Supplier type filter
-                    if supplier_type:
-                        supplier = approved_suppliers.get(offer.get('supplier_id'))
-                        if not supplier or (supplier.get('supplier_type') or '').lower() != supplier_type:
-                            continue
+                    # Supplier type filter. Wallet tabs pass healthcare_provider /
+                    # equipment_supplier, which also cover clinic, hospital, and
+                    # equipment records from the supply-chain type list.
+                    if supplier_type and not supplier_type_matches(supplier.get('supplier_type'), supplier_type):
+                        continue
+
+                    # Location filters use the supplier's registered address only.
+                    # A missing city or country does not match a filter, and a
+                    # missing service radius is left visible rather than assigned
+                    # a guessed distance.
+                    if city_filter and city_filter not in str(supplier.get('city') or '').lower():
+                        continue
+                    if country_filter and country_filter not in str(supplier.get('country') or '').lower():
+                        continue
+                    if min_radius_km is not None:
+                        recorded_radius = supplier.get('service_radius_km')
+                        if recorded_radius is not None and str(recorded_radius).strip() != '':
+                            if safe_float(recorded_radius, 0.0) < min_radius_km:
+                                continue
                     
                     # Normalize media list once for both search and enrichment.
                     media_list_raw = offer.get('media')
@@ -22449,6 +22552,10 @@ For claims or questions, please contact:
                     enriched_offer['normalized_category'] = offer_category
                     enriched_offer['supplier_name'] = supplier.get('company_name', 'Unknown Supplier')
                     enriched_offer['supplier_type'] = supplier.get('supplier_type', 'other')
+                    enriched_offer['supplier_city'] = supplier.get('city') or None
+                    enriched_offer['supplier_country'] = supplier.get('country') or None
+                    enriched_offer['supplier_service_radius_km'] = supplier.get('service_radius_km')
+                    enriched_offer['browse_bucket'] = infer_wallet_browse_bucket(offer.get('category'))
                     enriched_offer['supplier_rating'] = supplier.get('average_rating', 0.0)
                     enriched_offer['supplier_reviews'] = supplier.get('total_reviews', 0)
                     enriched_offer['supplier_approved_on'] = supplier.get('approval_date')
@@ -28637,27 +28744,27 @@ For claims or questions, please contact:
             
             products = {
                 'consultation': [
-                    {'id': 'cons-1', 'name': 'General Practitioner Visit', 'price': 75, 'category': 'consultation'},
-                    {'id': 'cons-2', 'name': 'Specialist Consultation', 'price': 150, 'category': 'consultation'},
-                    {'id': 'cons-3', 'name': 'Telehealth Quick Consult', 'price': 35, 'category': 'consultation'},
+                    {'id': 'cons-1', 'name': 'General Practitioner Visit', 'price': 75, 'category': 'consultation', 'image_url': '/marketplace/gp-consult.jpg'},
+                    {'id': 'cons-2', 'name': 'Specialist Consultation', 'price': 150, 'category': 'consultation', 'image_url': '/marketplace/specialist-consult.jpg'},
+                    {'id': 'cons-3', 'name': 'Telehealth Quick Consult', 'price': 35, 'category': 'consultation', 'image_url': '/marketplace/telehealth.jpg'},
                 ],
                 'devices': [
-                    {'id': 'dev-1', 'name': 'Standard Wheelchair', 'price': 450, 'category': 'devices'},
-                    {'id': 'dev-2', 'name': 'Walking Cane', 'price': 35, 'category': 'devices'},
-                    {'id': 'dev-3', 'name': 'Blood Pressure Monitor', 'price': 65, 'category': 'devices'},
+                    {'id': 'dev-1', 'name': 'Standard Wheelchair', 'price': 450, 'category': 'devices', 'image_url': '/marketplace/wheelchair.jpg'},
+                    {'id': 'dev-2', 'name': 'Walking Cane', 'price': 35, 'category': 'devices', 'image_url': '/marketplace/walking-cane.jpg'},
+                    {'id': 'dev-3', 'name': 'Blood Pressure Monitor', 'price': 65, 'category': 'devices', 'image_url': '/marketplace/bp-monitor.jpg'},
                 ],
                 'supplies': [
-                    {'id': 'sup-1', 'name': 'Adult Diapers (30 ct)', 'price': 28, 'category': 'supplies'},
-                    {'id': 'sup-2', 'name': 'Adult Diapers (60 ct)', 'price': 52, 'category': 'supplies'},
-                    {'id': 'sup-3', 'name': 'Disposable Bed Pads', 'price': 35, 'category': 'supplies'},
+                    {'id': 'sup-1', 'name': 'Adult Diapers (30 ct)', 'price': 28, 'category': 'supplies', 'image_url': '/marketplace/incontinence-briefs.jpg'},
+                    {'id': 'sup-2', 'name': 'Adult Diapers (60 ct)', 'price': 52, 'category': 'supplies', 'image_url': '/marketplace/incontinence-briefs.jpg'},
+                    {'id': 'sup-3', 'name': 'Disposable Bed Pads', 'price': 35, 'category': 'supplies', 'image_url': '/marketplace/bed-pads.jpg'},
                 ],
                 'pharmacy': [
-                    {'id': 'rx-1', 'name': 'Prescription Refill', 'price': 10, 'category': 'pharmacy'},
-                    {'id': 'rx-2', 'name': 'First Aid Kit', 'price': 35, 'category': 'pharmacy'},
+                    {'id': 'rx-1', 'name': 'Prescription Refill', 'price': 10, 'category': 'pharmacy', 'image_url': '/marketplace/prescription.jpg'},
+                    {'id': 'rx-2', 'name': 'First Aid Kit', 'price': 35, 'category': 'pharmacy', 'image_url': '/marketplace/first-aid.jpg'},
                 ],
                 'homecare': [
-                    {'id': 'hc-1', 'name': 'Home Health Aide (4 hrs)', 'price': 120, 'category': 'homecare'},
-                    {'id': 'hc-2', 'name': 'Meal Delivery (Weekly)', 'price': 85, 'category': 'homecare'},
+                    {'id': 'hc-1', 'name': 'Home Health Aide (4 hrs)', 'price': 120, 'category': 'homecare', 'image_url': '/marketplace/home-aide.jpg'},
+                    {'id': 'hc-2', 'name': 'Meal Delivery (Weekly)', 'price': 85, 'category': 'homecare', 'image_url': '/marketplace/meal-delivery.jpg'},
                 ]
             }
             

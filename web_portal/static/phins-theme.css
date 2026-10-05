@@ -700,3 +700,336 @@
     max-width: calc(100vw - 24px);
   }
 }
+
+/* ==========================================================================
+   Health wallet marketplace
+   --------------------------------------------------------------------------
+   Opt-in visual layer for the customer health wallet, the demo catalog,
+   and approved-supplier offer cards. Same navy glass, spectrum accent,
+   and Space Grotesk numerals as the overview tiles.
+   ========================================================================== */
+
+.phins-wallet-note {
+  background: rgba(7, 15, 34, 0.96);
+  color: rgba(234, 241, 255, 0.82);
+  border: 1px solid var(--phins-line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.phins-wallet-note strong {
+  display: block;
+  margin-bottom: 4px;
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #ffffff;
+}
+.phins-wallet-balances.phins-spectrum-stats {
+  margin-bottom: 16px !important;
+}
+.phins-wallet-balances .phins-wallet-add {
+  cursor: pointer;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+}
+.phins-wallet-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 12px;
+}
+.phins-wallet-actions > *:nth-child(12n + 1) { --tile-accent: #4fd8ff; }
+.phins-wallet-actions > *:nth-child(12n + 2) { --tile-accent: #64b5ff; }
+.phins-wallet-actions > *:nth-child(12n + 3) { --tile-accent: #7fb2ff; }
+.phins-wallet-actions > *:nth-child(12n + 4) { --tile-accent: #9d8cff; }
+.phins-wallet-actions > *:nth-child(12n + 5) { --tile-accent: #6fe0b8; }
+.phins-wallet-actions > *:nth-child(12n + 6) { --tile-accent: #e3bf6f; }
+.phins-wallet-actions > *:nth-child(12n + 7) { --tile-accent: #58d6de; }
+.phins-wallet-action {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--phins-line);
+  border-radius: 14px;
+  background: rgba(7, 15, 34, 0.96);
+  color: var(--phins-ink);
+  cursor: pointer;
+  text-align: left;
+  box-shadow: 0 4px 18px rgba(2, 8, 23, 0.28);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.phins-wallet-action::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--tile-accent, #7fb2ff) 0%, transparent 88%);
+  z-index: 1;
+}
+.phins-wallet-action:hover {
+  transform: translateY(-2px);
+  border-color: rgba(127, 178, 255, 0.4);
+  box-shadow: 0 10px 26px rgba(2, 8, 23, 0.42);
+}
+.phins-wallet-action img {
+  width: 100%;
+  height: 92px;
+  object-fit: cover;
+  display: block;
+  background: #0d1b3e;
+}
+.phins-wallet-action-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px 12px;
+}
+.phins-wallet-action-kicker {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tile-accent, #7fb2ff);
+}
+.phins-wallet-action-title {
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: #ffffff;
+  line-height: 1.2;
+}
+.phins-market-sub {
+  margin: 6px 0 0;
+  color: #4e6080;
+  font-size: 0.92rem;
+  max-width: 68ch;
+}
+.phins-text-btn {
+  background: transparent;
+  border: 1px solid rgba(13, 71, 161, 0.25);
+  color: #0d47a1;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.phins-market-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+.phins-product-card {
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border: 1px solid rgba(13, 71, 161, 0.12);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(13, 71, 161, 0.08);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.phins-product-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 32px rgba(13, 71, 161, 0.14);
+}
+.phins-product-media {
+  position: relative;
+  background: #0d1b3e;
+  min-height: 168px;
+}
+.phins-product-media img,
+.phins-product-media video {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  display: block;
+}
+.phins-product-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(6, 13, 31, 0.82);
+  color: #ffffff;
+  border: 1px solid rgba(227, 191, 111, 0.55);
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.phins-product-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 14px 16px;
+  flex: 1;
+}
+.phins-product-kicker {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #1565c0;
+}
+.phins-product-card h3 {
+  margin: 0;
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #10233f;
+  line-height: 1.25;
+}
+.phins-product-card p {
+  margin: 0;
+  color: #54657a;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+.phins-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.phins-chip {
+  background: #eef4ff;
+  color: #0d47a1;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.phins-product-meta {
+  color: #607086;
+  font-size: 0.78rem;
+}
+.phins-product-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+.phins-product-price {
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: #0d47a1;
+}
+.phins-product-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.phins-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.phins-btn-gold {
+  background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%);
+  color: #071022;
+}
+.phins-btn-navy {
+  background: #0d1b3e;
+  color: #ffffff;
+}
+.phins-btn-quiet {
+  background: #f4f7fb;
+  color: #24344d;
+}
+.phins-market-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 36px 16px;
+  color: #54657a;
+  background: #f7faff;
+  border: 1px dashed rgba(13, 71, 161, 0.2);
+  border-radius: 14px;
+}
+.phins-search-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.phins-search-suggest button,
+.phins-search-bar input,
+.phins-search-bar select,
+.phins-search-bar button {
+  font: inherit;
+}
+.phins-search-suggest button {
+  background: #ffffff;
+  border: 1px solid rgba(13, 71, 161, 0.18);
+  color: #0d47a1;
+  padding: 8px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.phins-search-bar {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(120px, 1fr));
+  gap: 10px;
+}
+.phins-search-bar input,
+.phins-search-bar select,
+.phins-search-filters input {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(13, 71, 161, 0.18);
+  font-size: 14px;
+  background: #ffffff;
+}
+.phins-search-bar button {
+  background: #0d1b3e;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.phins-search-filters {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  gap: 10px;
+}
+.phins-search-note {
+  margin-top: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(13, 71, 161, 0.12);
+  border-radius: 12px;
+  padding: 14px 16px;
+  color: #24344d;
+}
+@media screen and (max-width: 800px) {
+  .phins-search-bar,
+  .phins-search-filters {
+    grid-template-columns: 1fr;
+  }
+  .phins-wallet-action img {
+    height: 72px;
+  }
+}
