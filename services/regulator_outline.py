@@ -349,14 +349,154 @@ def _rate_rows(rows: Any) -> List[Dict[str, Any]]:
     return cleaned
 
 
+# Published cents must reconcile on the dashboard. These tolerances are the
+# only slack between independently rounded kernel components and the rounded
+# annual premium. The dashboard withholds the chart if the same bounds fail.
+_RISK_SPLIT_GAP_CENTS = 1
+_CUMULATIVE_GAP_CENTS = 2
+
+_COVERS = (
+    {"id": "life", "label": "Life", "kernel_field": "mortality_premium_annual"},
+    {"id": "disability", "label": "Disability", "kernel_field": "disability_premium_annual"},
+    {"id": "savings", "label": "Savings", "kernel_field": "savings_premium_annual"},
+    {"id": "cumulative", "label": "Cumulative", "kernel_field": "annual_premium"},
+)
+
+_VECTOR_FIELDS = (
+    "life", "disability", "savings", "expense", "profit", "risk", "cumulative", "monthly",
+)
+
+def _cents(value: Any) -> int:
+    """Integer cents for an already-rounded premium. Equality uses this, never floats."""
+    return int(round(float(value) * 100))
+
+
+def _version_sort_key(key: str) -> tuple:
+    parts = []
+    for piece in str(key).upper().lstrip("V").split("."):
+        try:
+            parts.append(int(piece))
+        except (TypeError, ValueError):
+            parts.append(0)
+    return tuple(parts)
+
+
+def _copy_rate_table(version_id: str, payload: Mapping[str, Any], key: str, *, required: bool) -> List[Dict[str, Any]]:
+    raw = payload.get(key, [] if not required else None)
+    if raw is None and not required:
+        raw = []
+    if not isinstance(raw, list) or (required and not raw):
+        raise RegulatorIntegrityError(f"catalog version {version_id} cannot be priced without {key}")
+    rows = []
+    for item in raw:
+        if not isinstance(item, Mapping):
+            raise RegulatorIntegrityError(f"catalog version {version_id} has a non-row in {key}")
+        rows.append(dict(item))
+    if required and not rows:
+        raise RegulatorIntegrityError(f"catalog version {version_id} cannot be priced without {key}")
+    return rows
+
+
+def _table_set_for_version(version_id: str, payload: Mapping[str, Any]) -> Any:
+    """Kernel table snapshot for one catalog version. Does not read the live tables."""
+    from services.pricing_kernel import TableSet, get_age_curve
+
+    return TableSet(
+        mortality_rates=_copy_rate_table(version_id, payload, "mortality_rates", required=True),
+        disability_incidence_rates=_copy_rate_table(
+            version_id, payload, "disability_incidence_rates", required=True
+        ),
+        adl_mortality_multipliers=_copy_rate_table(
+            version_id, payload, "adl_mortality_multipliers", required=True
+        ),
+        adl_disability_multipliers=_copy_rate_table(
+            version_id, payload, "adl_disability_multipliers", required=True
+        ),
+        adl_benefit_percentages=_copy_rate_table(
+            version_id, payload, "adl_benefit_percentages", required=True
+        ),
+        lapse_rates=_copy_rate_table(version_id, payload, "lapse_rates", required=False),
+        age_curve=get_age_curve("identity"),
+        version=str(version_id),
+    )
+
+
+def _price_vector(rows: Sequence[Mapping[str, Any]]) -> tuple:
+    parts = []
+    for row in rows:
+        for key in _VECTOR_FIELDS:
+            parts.append(_cents(row[key]))
+    return tuple(parts)
+
+
+def _cover_row_from_priced(priced: Any, *, config_version: str) -> Dict[str, Any]:
+    """Published cover premiums for one reference age. Values are the kernel's."""
+    checks = getattr(priced, "integrity_checks", None) or {}
+    if not checks or any(value is not True for value in checks.values()):
+        raise RegulatorIntegrityError("kernel integrity checks failed for a catalog premium")
+    premium_hash = str(getattr(priced, "integrity_hash", "") or "")
+    if len(premium_hash) < 8:
+        raise RegulatorIntegrityError("kernel premium is missing its integrity hash")
+    if not bool(getattr(priced, "eligible", False)):
+        raise RegulatorIntegrityError("kernel declined the published reference tariff")
+    row = {
+        "age": int(priced.age),
+        "life": _round2(priced.mortality_premium_annual),
+        "disability": _round2(priced.disability_premium_annual),
+        "savings": _round2(priced.savings_premium_annual),
+        "expense": _round2(priced.expense_loading_annual),
+        "profit": _round2(priced.profit_margin_annual),
+        "risk": _round2(priced.risk_premium_annual),
+        "cumulative": _round2(priced.annual_premium),
+        "monthly": _round2(priced.monthly_premium),
+        "config_version": str(priced.config_version),
+        "premium_integrity_hash": premium_hash,
+    }
+    if row["config_version"] != str(config_version):
+        raise RegulatorIntegrityError("kernel premium is not on the active config version")
+    risk_split = _cents(row["life"]) + _cents(row["disability"]) - _cents(row["risk"])
+    cumulative_gap = (
+        _cents(row["risk"]) + _cents(row["savings"]) + _cents(row["expense"]) + _cents(row["profit"])
+        - _cents(row["cumulative"])
+    )
+    if abs(risk_split) > _RISK_SPLIT_GAP_CENTS or abs(cumulative_gap) > _CUMULATIVE_GAP_CENTS:
+        raise RegulatorIntegrityError("catalog premium components do not reconcile to the kernel total")
+    row["risk_split_cents"] = risk_split
+    row["cumulative_gap_cents"] = cumulative_gap
+    return row
+
+
+def _basic_premium_row(priced: Any) -> Dict[str, Any]:
+    return {
+        "age": int(priced.age),
+        "coverage": REFERENCE_COVERAGE,
+        "term_years": REFERENCE_TERM_YEARS,
+        "smoking_status": "nonsmoker",
+        "annual_premium": _round2(priced.annual_premium),
+        "monthly_premium": _round2(priced.monthly_premium),
+        "risk_premium_annual": _round2(priced.risk_premium_annual),
+        "savings_premium_annual": _round2(priced.savings_premium_annual),
+        "expense_loading_annual": _round2(priced.expense_loading_annual),
+        "profit_margin_annual": _round2(priced.profit_margin_annual),
+        "eligible": bool(priced.eligible),
+        "tables_version": str(priced.tables_version),
+        "config_version": str(priced.config_version),
+    }
+
+
 def kernel_pricing_outline(store: Any) -> Dict[str, Any]:
-    """Active version, published rate bands, and basic premiums from the kernel."""
+    """Active version, published rate bands, and basic premiums from the kernel.
+
+    Every catalog version is priced with ``price_policy`` on that version's
+    own rate tables and the active pricing config. The current version's
+    basic-premium rows are that same pricing, not a second calculation.
+    Versions whose published price vector matches to the cent share one series.
+    """
     from services.pricing_kernel import (
         PricingCustomer,
         get_product,
         price_policy,
         pricing_config_from_underwriting,
-        table_set_from_store,
     )
 
     current = str(getattr(store, "current_version", "") or "")
@@ -372,50 +512,158 @@ def kernel_pricing_outline(store: Any) -> Dict[str, Any]:
             integrity = store._version_integrity_hash(version_id)
         versions.append({
             "version": str(version_id),
-            "status": payload.get("status"),
+            "status": payload.get("status") if payload.get("status") is None else str(payload.get("status")),
             "is_current": str(version_id) == current,
             "effective_date": payload.get("effective_date"),
             "parent_version": payload.get("parent_version"),
             "integrity_hash": integrity,
         })
     versions.sort(key=lambda item: (not item["is_current"], str(item["version"])))
+    if not any(item["is_current"] for item in versions):
+        raise RegulatorIntegrityError("version catalog has no active tables version")
 
-    table_set = table_set_from_store(store)
     pricing_config = pricing_config_from_underwriting(config)
     product = get_product(REFERENCE_PRODUCT_ID)
+    priced_by_version: Dict[str, List[Any]] = {}
+    published_by_version: Dict[str, List[Dict[str, Any]]] = {}
+    for item in sorted(versions, key=lambda entry: _version_sort_key(entry["version"])):
+        version_id = item["version"]
+        payload = catalog.get(version_id)
+        if not isinstance(payload, Mapping):
+            raise RegulatorIntegrityError(f"catalog version {version_id} is missing its rate tables")
+        table_set = _table_set_for_version(version_id, payload)
+        priced_rows = []
+        published_rows = []
+        for age in REFERENCE_AGES:
+            priced = price_policy(
+                PricingCustomer(
+                    age=int(age),
+                    coverage=REFERENCE_COVERAGE,
+                    term_years=REFERENCE_TERM_YEARS,
+                    adl_level=REFERENCE_ADL,
+                    smoking_status="nonsmoker",
+                ),
+                product,
+                table_set,
+                pricing_config,
+            )
+            if str(priced.tables_version) != version_id:
+                raise RegulatorIntegrityError("kernel premium is not on the catalog tables version")
+            if str(priced.config_version) != config_version:
+                raise RegulatorIntegrityError("kernel premium is not on the active config version")
+            if int(priced.age) != int(age):
+                raise RegulatorIntegrityError("kernel premium age does not match the reference tariff")
+            published_rows.append(_cover_row_from_priced(priced, config_version=config_version))
+            priced_rows.append(priced)
+        if [row["age"] for row in published_rows] != [int(age) for age in REFERENCE_AGES]:
+            raise RegulatorIntegrityError("catalog premium ages do not match the reference tariff")
+        priced_by_version[version_id] = priced_rows
+        published_by_version[version_id] = published_rows
+
+    current_priced = priced_by_version.get(current)
+    if not current_priced:
+        raise RegulatorIntegrityError("kernel premium is not on the active tables version")
     premiums = []
-    for age in REFERENCE_AGES:
-        priced = price_policy(
-            PricingCustomer(
-                age=int(age),
-                coverage=REFERENCE_COVERAGE,
-                term_years=REFERENCE_TERM_YEARS,
-                adl_level=REFERENCE_ADL,
-                smoking_status="nonsmoker",
-            ),
-            product,
-            table_set,
-            pricing_config,
-        )
+    for priced in current_priced:
         if str(priced.tables_version) != current:
             raise RegulatorIntegrityError("kernel premium is not on the active tables version")
-        if str(priced.config_version) != config_version:
-            raise RegulatorIntegrityError("kernel premium is not on the active config version")
-        premiums.append({
-            "age": int(age),
-            "coverage": REFERENCE_COVERAGE,
-            "term_years": REFERENCE_TERM_YEARS,
-            "smoking_status": "nonsmoker",
-            "annual_premium": _round2(priced.annual_premium),
-            "monthly_premium": _round2(priced.monthly_premium),
-            "risk_premium_annual": _round2(priced.risk_premium_annual),
-            "savings_premium_annual": _round2(priced.savings_premium_annual),
-            "expense_loading_annual": _round2(priced.expense_loading_annual),
-            "profit_margin_annual": _round2(priced.profit_margin_annual),
-            "eligible": bool(priced.eligible),
-            "tables_version": str(priced.tables_version),
-            "config_version": str(priced.config_version),
-        })
+        premiums.append(_basic_premium_row(priced))
+    current_published = published_by_version[current]
+    for basic, cover in zip(premiums, current_published):
+        if (
+            _cents(basic["annual_premium"]) != _cents(cover["cumulative"])
+            or _cents(basic["monthly_premium"]) != _cents(cover["monthly"])
+            or _cents(basic["risk_premium_annual"]) != _cents(cover["risk"])
+            or _cents(basic["savings_premium_annual"]) != _cents(cover["savings"])
+            or _cents(basic["expense_loading_annual"]) != _cents(cover["expense"])
+            or _cents(basic["profit_margin_annual"]) != _cents(cover["profit"])
+            or basic["config_version"] != cover["config_version"]
+        ):
+            raise RegulatorIntegrityError("basic premiums diverge from the current catalog vector")
+
+    groups: List[Dict[str, Any]] = []
+    group_index: Dict[tuple, int] = {}
+    for item in sorted(versions, key=lambda entry: _version_sort_key(entry["version"])):
+        version_id = item["version"]
+        rows = published_by_version[version_id]
+        vector = _price_vector(rows)
+        member = {
+            "version": version_id,
+            "status": item["status"],
+            "is_current": bool(item["is_current"]),
+            "integrity_hash": item["integrity_hash"],
+            "premium_integrity_hashes": [row["premium_integrity_hash"] for row in rows],
+        }
+        if len(member["premium_integrity_hashes"]) != len(REFERENCE_AGES):
+            raise RegulatorIntegrityError("catalog premium hashes do not cover the reference ages")
+        slot = group_index.get(vector)
+        if slot is None:
+            shared_rows = []
+            for row in rows:
+                shared = {key: row[key] for key in (
+                    "age", "life", "disability", "savings", "expense", "profit",
+                    "risk", "cumulative", "monthly", "config_version",
+                    "risk_split_cents", "cumulative_gap_cents",
+                )}
+                shared_rows.append(shared)
+            group_index[vector] = len(groups)
+            groups.append({
+                "label": version_id,
+                "is_current": bool(item["is_current"]),
+                "versions": [member],
+                "rows": shared_rows,
+            })
+            continue
+        if _price_vector(groups[slot]["rows"]) != vector:
+            raise RegulatorIntegrityError("catalog versions were grouped on a mismatched price vector")
+        groups[slot]["versions"].append(member)
+        groups[slot]["is_current"] = groups[slot]["is_current"] or bool(item["is_current"])
+
+    seen_versions = []
+    current_groups = 0
+    previous_cumulative: Optional[Dict[int, int]] = None
+    for group in groups:
+        label = " · ".join(member["version"] for member in group["versions"])
+        group["label"] = label
+        if group["is_current"]:
+            current_groups += 1
+        if not any(member["is_current"] for member in group["versions"]) and group["is_current"]:
+            raise RegulatorIntegrityError("a price series is marked current without a current version")
+        if any(member["is_current"] for member in group["versions"]) and not group["is_current"]:
+            raise RegulatorIntegrityError("the current catalog version is not on the current price series")
+        for member in group["versions"]:
+            seen_versions.append(member["version"])
+            if member["is_current"] != (member["version"] == current):
+                raise RegulatorIntegrityError("catalog current flag does not match the active version")
+        for row in group["rows"]:
+            age = int(row["age"])
+            if previous_cumulative is None:
+                row["cumulative_change"] = None
+            else:
+                delta = _cents(row["cumulative"]) - previous_cumulative[age]
+                row["cumulative_change"] = 0.0 if delta == 0 else delta / 100.0
+        previous_cumulative = {int(row["age"]): _cents(row["cumulative"]) for row in group["rows"]}
+
+    if current_groups != 1:
+        raise RegulatorIntegrityError("version pricing must contain exactly one current series")
+    expected_versions = [
+        item["version"] for item in sorted(versions, key=lambda entry: _version_sort_key(entry["version"]))
+    ]
+    if sorted(seen_versions, key=_version_sort_key) != expected_versions or len(seen_versions) != len(expected_versions):
+        raise RegulatorIntegrityError("version pricing does not list each catalog version once")
+
+    version_pricing = {
+        "product_id": product.id,
+        "profile": "published_standard_nonsmoker",
+        "coverage": REFERENCE_COVERAGE,
+        "term_years": REFERENCE_TERM_YEARS,
+        "config_version": config_version,
+        "ages": [int(age) for age in REFERENCE_AGES],
+        "covers": [dict(cover) for cover in _COVERS],
+        "distinct_vectors": len(groups),
+        "version_count": len(versions),
+        "groups": groups,
+    }
 
     current_payload = catalog.get(current) or {}
     return {
@@ -442,6 +690,7 @@ def kernel_pricing_outline(store: Any) -> Dict[str, Any]:
             "term_years": REFERENCE_TERM_YEARS,
             "rows": premiums,
         },
+        "version_pricing": version_pricing,
     }
 
 
