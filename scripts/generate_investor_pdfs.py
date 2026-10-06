@@ -99,8 +99,12 @@ DOCUMENTS = [
      'Herzog Fox Neeman & Co. Advocates'),
     ('investor-docs/regulatory-preruling-avi-ovadia-brief.md',
      'investor-docs/regulatory-preruling-avi-ovadia-brief.pdf',
-     'PHINS — Regulatory Pre-Ruling Meeting Brief (Date TBA) · '
-     'Mr. Avi Ovadia, Capital Market, Insurance & Savings Authority'),
+     'PHINS — Regulatory Pre-Ruling Meeting Brief (12 October 2026) · '
+     'Mr. Avi Ovadia, Capital Market, Insurance & Savings Authority, Jerusalem'),
+    ('investor-docs/regulatory-preruling-avi-ovadia-brief-he.md',
+     'investor-docs/regulatory-preruling-avi-ovadia-brief-he.pdf',
+     'פינס — תדריך פרה-רולינג (12 באוקטובר 2026, ירושלים) · '
+     'מר אבי עובדיה, רשות שוק ההון, ביטוח וחיסכון'),
     ('investor-docs/fintl-vc-meeting-5aug-brief.md',
      'investor-docs/fintl-vc-meeting-5aug-brief.pdf',
      'PHINS — Fintl VC Meeting Brief (5 August 2026) · '
@@ -146,6 +150,7 @@ DOCUMENTS = [
 # mirrored table columns so the logical first column sits on the right.
 RTL_DOCUMENTS = {
     'investor-docs/israel-regulatory-application-he.md',
+    'investor-docs/regulatory-preruling-avi-ovadia-brief-he.md',
     'investor-docs/aspire-invest-meeting-sep2026-brief-he.md',
     'investor-docs/aspire-invest-business-plan-sep2026-he.md',
     'investor-docs/aspire-invest-nda-sep2026-he.md',
