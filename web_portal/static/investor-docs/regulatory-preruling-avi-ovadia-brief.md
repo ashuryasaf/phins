@@ -135,7 +135,7 @@ The household gap sits beside that public finding. On the Authority's cost figur
 
 ## Where the filed PHINS contract fits
 
-The contract in the Israel regulatory application memorandum (Hebrew canonical, Draft 3.1; English companion) is a **pure-risk** life policy. It has **no savings component, no cash value, and no surrender value**. An optional savings add-on exists on the platform and is **excluded from the filing**. If it is offered in Israel it is to be filed separately through a properly licensed entity. That exclusion is an advantage in this meeting, because the Authority is now talking about savings and insurance together, and the filing already refuses to hide savings inside the risk policy.
+The contract in the Israel regulatory application memorandum (Hebrew canonical, Draft 3.1; English companion; Section 15 is the 12 October 2026 supplement and leaves Sections 1–5 unchanged) is a **pure-risk** life policy. It has **no savings component, no cash value, and no surrender value**. An optional savings add-on exists on the platform and is **excluded from the filing**. If it is offered in Israel it is to be filed separately through a properly licensed entity. That exclusion is an advantage in this meeting, because the Authority is now talking about savings and insurance together, and the filing already refuses to hide savings inside the risk policy.
 
 | Filed term (Draft 3.1) | What it is |
 |---|---|
@@ -259,7 +259,7 @@ implies for any private product offered to the younger cohort.
 | Globes, same publication cycle | 6.7 million adults 18+; 5.2 million insured; about 2.7 million via Clalit; threshold to be set; accumulation about 300,000–600,000 NIS; target benefit about 5,000 / 10,000 for up to five years. |
 | ICE, 5 October 2026 | Same direction; legislation; 85 percent; costs; about 40 months. |
 | Bizportal, December 2025 | Earlier outline only. A band of roughly 50 to 60. Not the 4 October publication. |
-| Israel regulatory application memorandum, Draft 3.1 | The contract terms in the fit table. Hebrew canonical, English companion. |
+| Israel regulatory application memorandum, Draft 3.1, Section 15 | The contract terms in the fit table, plus the 12 October 2026 supervision supplement. Hebrew canonical, English companion. Sections 1–5 are unchanged. |
 | PHINS business plan | Canonical IL planning model. This brief does not restate a valuation. |
 
 ---
