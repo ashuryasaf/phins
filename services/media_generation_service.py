@@ -3,7 +3,9 @@ Provider-backed media generation service for PHINS.
 
 Supports prompt-based video generation using external providers and a small,
 provider-neutral contract for submitting jobs, polling status, and downloading
-completed files.
+completed files. Gemini/Veo, Kling, and Replicate share that contract. Replicate
+output is downloaded immediately and the caller checksums the bytes; the API
+token never leaves this process.
 
 Supports two Kling API routing profiles:
 
@@ -31,11 +33,12 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from security.network import validated_urlopen
 
@@ -98,11 +101,26 @@ _KLING_EVOLINK_BASE_URL = "https://api.evolink.ai"
 _KLING_EVOLINK_GENERATIONS_PATH = "/v1/videos/generations"
 _KLING_EVOLINK_TASK_PATH_PREFIX = "/v1/tasks/"
 
+# Official Replicate text-to-video models. Operators override the list with
+# REPLICATE_VIDEO_MODELS (comma-separated owner/name or owner/name:version).
+_DEFAULT_REPLICATE_MODELS = (
+    "google/veo-3.1-fast",
+    "google/veo-3.1",
+    "bytedance/seedance-2.0",
+)
+_REPLICATE_MODEL_RE = re.compile(
+    r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?/"
+    r"[a-z0-9](?:[a-z0-9._-]{0,80}[a-z0-9])?"
+    r"(?::[a-f0-9]{8,80})?$"
+)
+_REPLICATE_ASPECTS = {"16:9", "9:16", "1:1"}
+_REPLICATE_RESOLUTIONS = {"480p", "720p", "1080p"}
+
 
 class MediaGenerationService:
     """Thin provider abstraction over real video generation APIs."""
 
-    SUPPORTED_PROVIDERS = {"gemini", "kling"}
+    SUPPORTED_PROVIDERS = {"gemini", "kling", "replicate"}
     DEFAULT_PROVIDER_MODELS = {
         "gemini": ["veo-3.1-generate-preview", "veo-3-fast-preview"],
         "kling": [
@@ -111,6 +129,7 @@ class MediaGenerationService:
             "kling-v3-text-to-video",
             "kling-v3-image-to-video",
         ],
+        "replicate": list(_DEFAULT_REPLICATE_MODELS),
     }
 
     def __init__(self) -> None:
@@ -131,6 +150,11 @@ class MediaGenerationService:
         self._kling_base_url = os.environ.get("KLING_API_BASE_URL", default_base).strip().rstrip("/")
         self._kling_text_to_video_path = os.environ.get("KLING_TEXT_TO_VIDEO_PATH", default_t2v).strip()
         self._kling_image_to_video_path = os.environ.get("KLING_IMAGE_TO_VIDEO_PATH", default_i2v).strip()
+        self._replicate_api_token = os.environ.get("REPLICATE_API_TOKEN", "").strip()
+        self._replicate_base_url = os.environ.get(
+            "REPLICATE_API_BASE_URL", "https://api.replicate.com"
+        ).strip().rstrip("/")
+        self._replicate_models = self._configured_replicate_models()
 
     def supported_provider_config(self) -> Dict[str, Dict[str, Any]]:
         """Return provider availability and public configuration hints."""
@@ -146,6 +170,12 @@ class MediaGenerationService:
                 "label": "Kling",
                 "base_url": self._kling_base_url,
                 "models": list(self.DEFAULT_PROVIDER_MODELS["kling"]),
+            },
+            "replicate": {
+                "enabled": bool(self._replicate_api_token),
+                "label": "Replicate",
+                "model": self._replicate_models[0] if self._replicate_models else "",
+                "models": list(self._replicate_models),
             },
         }
 
@@ -190,6 +220,20 @@ class MediaGenerationService:
                 attribution=attribution,
             )
 
+        if provider_name == "replicate":
+            return self._submit_replicate_video(
+                prompt=prompt,
+                title=title,
+                model=model,
+                aspect_ratio=aspect_ratio,
+                duration_seconds=duration_seconds,
+                resolution=resolution,
+                image_data_url=image_data_url,
+                callback_url=callback_url,
+                metadata=metadata or {},
+                attribution=attribution,
+            )
+
         return self._submit_kling_video(
             prompt=prompt,
             title=title,
@@ -215,6 +259,11 @@ class MediaGenerationService:
             return self._poll_gemini_video(provider_job_id=provider_job_id)
         if provider_name == "kling":
             return self._poll_kling_video(provider_job_id=provider_job_id, provider_state=provider_state or {})
+        if provider_name == "replicate":
+            return self._poll_replicate_video(
+                provider_job_id=provider_job_id,
+                provider_state=provider_state or {},
+            )
         raise MediaGenerationError(f"Unsupported video provider: {provider}")
 
     def download_generated_video(
@@ -239,11 +288,29 @@ class MediaGenerationService:
             headers = {"x-goog-api-key": self._gemini_api_key}
         elif provider_name == "kling":
             headers = {"Authorization": self._kling_authorization_header()}
+        elif provider_name == "replicate":
+            if not self._replicate_api_token:
+                raise MediaGenerationError("REPLICATE_API_TOKEN is not configured")
+            headers = {"Authorization": f"Bearer {self._replicate_api_token}"}
         else:
             raise MediaGenerationError(f"Unsupported video provider: {provider}")
 
         request = urllib.request.Request(download_url, headers=headers, method="GET")
-        with validated_urlopen(request, timeout=300, allowed_schemes=("https",)) as response:
+        try:
+            response_ctx = validated_urlopen(request, timeout=300, allowed_schemes=("https",))
+        except urllib.error.HTTPError as exc:
+            # api.replicate.com file URLs require the bearer token. Public
+            # replicate.delivery URLs sometimes reject that header; retry
+            # those once without it. A rejection from the API host stands.
+            host = (parsed.hostname or "").lower()
+            if provider_name == "replicate" and exc.code in {401, 403} and host.endswith("replicate.delivery"):
+                request = urllib.request.Request(download_url, method="GET")
+                response_ctx = validated_urlopen(request, timeout=300, allowed_schemes=("https",))
+            elif provider_name == "replicate":
+                raise MediaGenerationError(f"Replicate download failed with HTTP {exc.code}") from exc
+            else:
+                raise
+        with response_ctx as response:
             content_type = response.headers.get("Content-Type", "video/mp4").split(";", 1)[0].strip() or "video/mp4"
 
             if stream_to_path:
@@ -270,6 +337,349 @@ class MediaGenerationService:
             "content_type": content_type,
             "size": len(video_bytes),
         }
+
+    def cancel_video_generation(self, *, provider: str, provider_job_id: str) -> None:
+        """Best-effort cancel of a provider prediction. Replicate is the only
+        provider with a cancel route wired here; other providers are a no-op."""
+        if str(provider or "").strip().lower() != "replicate":
+            return
+        if not self._replicate_api_token or not str(provider_job_id or "").strip():
+            return
+        url = (
+            f"{self._replicate_base_url}/v1/predictions/"
+            f"{urllib.parse.quote(str(provider_job_id).strip(), safe='')}/cancel"
+        )
+        request = urllib.request.Request(
+            url,
+            data=b"{}",
+            headers={
+                "Authorization": f"Bearer {self._replicate_api_token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        self._read_json_with_diagnostics(
+            request,
+            timeout=20,
+            provider_label="Replicate",
+            operation="cancel",
+        )
+
+    def probe_replicate_account(self) -> Dict[str, Any]:
+        """GET /v1/account. Returns ok/http_status/detail and never the token or account body."""
+        if not self._replicate_api_token:
+            return {"ok": False, "http_status": 0, "detail": "token_missing"}
+        url = f"{self._replicate_base_url}/v1/account"
+        request = urllib.request.Request(
+            url,
+            headers={"Authorization": f"Bearer {self._replicate_api_token}"},
+            method="GET",
+        )
+        try:
+            with validated_urlopen(request, timeout=8, allowed_schemes=("https",)) as response:
+                response.read()
+                status = int(getattr(response, "status", 200) or 200)
+            return {"ok": 200 <= status < 300, "http_status": status, "detail": "accepted"}
+        except urllib.error.HTTPError as exc:
+            status = int(getattr(exc, "code", 0) or 0)
+            detail = "rejected" if status in {401, 403} else "http_error"
+            return {"ok": False, "http_status": status, "detail": detail}
+        except Exception:
+            return {"ok": False, "http_status": 0, "detail": "unreachable"}
+
+    def _submit_replicate_video(
+        self,
+        *,
+        prompt: str,
+        title: str,
+        model: str,
+        aspect_ratio: str,
+        duration_seconds: int,
+        resolution: str,
+        image_data_url: str,
+        callback_url: str,
+        metadata: Dict[str, Any],
+        attribution: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        if not self._replicate_api_token:
+            raise MediaGenerationError("REPLICATE_API_TOKEN is not configured")
+
+        owner, name, version = self._split_replicate_model(model)
+        if not owner or not name:
+            raise MediaGenerationError(f"Invalid Replicate model: {model or '(default)'}")
+
+        model_label = f"{owner}/{name}" + (f":{version}" if version else "")
+        model_input = self._replicate_input(
+            prompt=prompt,
+            model_label=model_label,
+            aspect_ratio=aspect_ratio,
+            duration_seconds=duration_seconds,
+            resolution=resolution,
+            image_data_url=image_data_url,
+        )
+        body: Dict[str, Any] = {"input": model_input}
+        if version:
+            body["version"] = version
+            url = f"{self._replicate_base_url}/v1/predictions"
+        else:
+            url = (
+                f"{self._replicate_base_url}/v1/models/"
+                f"{urllib.parse.quote(owner, safe='')}/"
+                f"{urllib.parse.quote(name, safe='')}/predictions"
+            )
+        # Replicate has no free-form metadata field. The callback URL already
+        # carries the PHINS job id. Only documented input keys are sent, so an
+        # unknown field cannot 422 the prediction. ``metadata`` stays on the
+        # PHINS job record.
+        _ = metadata
+        callback = str(callback_url or "").strip()
+        if callback.startswith("https://"):
+            body["webhook"] = callback
+            body["webhook_events_filter"] = ["completed"]
+
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(body).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self._replicate_api_token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        response_body = self._read_json_with_diagnostics(
+            request,
+            timeout=60,
+            provider_label="Replicate",
+            operation="submit",
+            attribution=attribution,
+        )
+        prediction_id = str(response_body.get("id") or "").strip()
+        if not prediction_id:
+            raise MediaGenerationError("Replicate generation did not return a prediction id")
+        urls = response_body.get("urls") if isinstance(response_body.get("urls"), dict) else {}
+        get_url = str(urls.get("get") or "").strip() or (
+            f"{self._replicate_base_url}/v1/predictions/{urllib.parse.quote(prediction_id, safe='')}"
+        )
+        return {
+            "provider": "replicate",
+            "provider_job_id": prediction_id,
+            "status": "queued",
+            "message": f"Submitted to Replicate ({model_label}) for \"{title}\"",
+            "provider_state": {
+                "prediction_id": prediction_id,
+                "get_url": get_url,
+                "model": model_label,
+            },
+        }
+
+    def _poll_replicate_video(
+        self,
+        *,
+        provider_job_id: str,
+        provider_state: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if not self._replicate_api_token:
+            raise MediaGenerationError("REPLICATE_API_TOKEN is not configured")
+        if not provider_job_id:
+            raise MediaGenerationError("Replicate prediction id is required")
+        status_url = str(provider_state.get("get_url") or "").strip()
+        if not status_url:
+            status_url = (
+                f"{self._replicate_base_url}/v1/predictions/"
+                f"{urllib.parse.quote(provider_job_id, safe='')}"
+            )
+        request = urllib.request.Request(
+            status_url,
+            headers={"Authorization": f"Bearer {self._replicate_api_token}"},
+            method="GET",
+        )
+        body = self._read_json_with_diagnostics(
+            request,
+            timeout=60,
+            provider_label="Replicate",
+            operation="poll",
+        )
+        normalized = self.normalize_replicate_prediction(body)
+        state = normalized.get("provider_state") if isinstance(normalized.get("provider_state"), dict) else {}
+        state["get_url"] = status_url
+        state["model"] = str(provider_state.get("model") or "")
+        normalized["provider_state"] = state
+        return normalized
+
+    def _split_replicate_model(self, model: str) -> Tuple[str, str, str]:
+        selected = str(model or "").strip() or (self._replicate_models[0] if self._replicate_models else "")
+        if not self.replicate_model_id_ok(selected):
+            return "", "", ""
+        version = ""
+        if ":" in selected:
+            selected, version = selected.split(":", 1)
+        owner, _, name = selected.partition("/")
+        return owner, name, version
+
+    def _replicate_input(
+        self,
+        *,
+        prompt: str,
+        model_label: str,
+        aspect_ratio: str,
+        duration_seconds: int,
+        resolution: str,
+        image_data_url: str,
+    ) -> Dict[str, Any]:
+        """Only fields shared by the official video models. Unknown keys 422."""
+        model_input: Dict[str, Any] = {"prompt": str(prompt or "")}
+        aspect = str(aspect_ratio or "").strip()
+        if aspect in _REPLICATE_ASPECTS:
+            model_input["aspect_ratio"] = aspect
+        model_input["duration"] = self._replicate_duration(model_label, duration_seconds)
+        selected_resolution = str(resolution or "").strip().lower()
+        if selected_resolution in _REPLICATE_RESOLUTIONS:
+            model_input["resolution"] = selected_resolution
+        image_value = str(image_data_url or "").strip()
+        if image_value.startswith(("https://", "http://", "data:")):
+            model_input["image"] = image_value
+        return model_input
+
+    @staticmethod
+    def _replicate_duration(model_label: str, duration_seconds: int) -> int:
+        requested = int(duration_seconds or 8)
+        if "veo" in str(model_label or "").lower():
+            # Veo accepts 4, 6, or 8 seconds. Snap so a blueprint default of 8
+            # is sent as-is and nearby values do not 422.
+            return min((4, 6, 8), key=lambda choice: (abs(choice - requested), choice))
+        return max(1, min(requested, 15))
+
+    @staticmethod
+    def _configured_replicate_models() -> list:
+        raw = os.environ.get("REPLICATE_VIDEO_MODELS", "").strip()
+        if not raw:
+            return list(_DEFAULT_REPLICATE_MODELS)
+        models = []
+        for part in raw.split(","):
+            candidate = part.strip()
+            if candidate and MediaGenerationService.replicate_model_id_ok(candidate):
+                models.append(candidate)
+        return models or list(_DEFAULT_REPLICATE_MODELS)
+
+    @staticmethod
+    def replicate_model_id_ok(model: str) -> bool:
+        return bool(_REPLICATE_MODEL_RE.match(str(model or "").strip()))
+
+    @staticmethod
+    def extract_media_url(value: Any) -> str:
+        """First HTTPS (or HTTP) media URL in a Replicate ``output`` value."""
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith(("https://", "http://")):
+                return text
+            return ""
+        if isinstance(value, list):
+            urls = [MediaGenerationService.extract_media_url(item) for item in value]
+            urls = [url for url in urls if url]
+            for url in urls:
+                lowered = url.lower()
+                if ".mp4" in lowered or "video" in lowered:
+                    return url
+            return urls[0] if urls else ""
+        if isinstance(value, dict):
+            for key in ("video", "url", "mp4", "path"):
+                found = MediaGenerationService.extract_media_url(value.get(key))
+                if found:
+                    return found
+        return ""
+
+    @staticmethod
+    def normalize_replicate_prediction(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Map a Replicate prediction object onto the PHINS poll/webhook shape.
+
+        ``succeeded`` without a file URL is a failure: the caller must not
+        checksum an empty body or mark the job complete.
+        """
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+        if not isinstance(data, dict):
+            data = {}
+        status = str(data.get("status") or "").strip().lower()
+        prediction_id = str(data.get("id") or "").strip()
+        error = data.get("error")
+        if isinstance(error, dict):
+            error_text = str(error.get("message") or error.get("detail") or "").strip()
+        else:
+            error_text = str(error or "").strip()
+        output_url = MediaGenerationService.extract_media_url(data.get("output"))
+        state = {
+            "prediction_id": prediction_id,
+            "status": status,
+            "output_url": output_url,
+            "error": error_text,
+        }
+        if status in {"starting", "processing"}:
+            return {
+                "status": "processing",
+                "message": "Replicate is still generating the video.",
+                "provider_job_id": prediction_id,
+                "download_url": "",
+                "provider_state": state,
+            }
+        if status in {"failed", "canceled", "cancelled"}:
+            return {
+                "status": "failed",
+                "error": error_text or "Replicate generation failed",
+                "message": error_text or "Replicate generation failed",
+                "provider_job_id": prediction_id,
+                "provider_state": state,
+            }
+        if status == "succeeded":
+            if not output_url:
+                return {
+                    "status": "failed",
+                    "error": "Replicate completed without a downloadable video URL",
+                    "message": "Replicate completed without a downloadable video URL",
+                    "provider_job_id": prediction_id,
+                    "provider_state": state,
+                }
+            return {
+                "status": "completed",
+                "message": "Replicate video is ready.",
+                "provider_job_id": prediction_id,
+                "download_url": output_url,
+                "provider_state": state,
+            }
+        return {
+            "status": "processing",
+            "message": f"Replicate video status: {status or 'unknown'}",
+            "provider_job_id": prediction_id,
+            "download_url": "",
+            "provider_state": state,
+        }
+
+    @staticmethod
+    def verify_replicate_webhook_signature(secret: str, headers: Any, raw_body: bytes) -> bool:
+        """Verify a Replicate (Svix) webhook signature. The secret is ``whsec_`` + base64 key."""
+        raw_secret = str(secret or "").strip()
+        if not raw_secret.startswith("whsec_"):
+            return False
+        try:
+            secret_bytes = base64.b64decode(raw_secret.split("_", 1)[1])
+        except Exception:
+            return False
+        if not secret_bytes:
+            return False
+        webhook_id = str(headers.get("webhook-id") or "").strip()
+        webhook_timestamp = str(headers.get("webhook-timestamp") or "").strip()
+        signature_header = str(headers.get("webhook-signature") or "").strip()
+        if not webhook_id or not webhook_timestamp or not signature_header:
+            return False
+        try:
+            body_text = raw_body.decode("utf-8")
+        except UnicodeDecodeError:
+            return False
+        signed = f"{webhook_id}.{webhook_timestamp}.{body_text}".encode("utf-8")
+        expected = base64.b64encode(hmac.new(secret_bytes, signed, hashlib.sha256).digest()).decode("ascii")
+        for part in signature_header.split():
+            version, _, signature = part.partition(",")
+            if version == "v1" and signature and hmac.compare_digest(signature, expected):
+                return True
+        return False
 
     def _submit_gemini_video(
         self,

@@ -215,6 +215,8 @@ def test_video_providers_diagnose_reports_missing_credentials(monkeypatch):
     monkeypatch.delenv("KLING_API_KEY", raising=False)
     monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
     monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
+    monkeypatch.delenv("REPLICATE_API_TOKEN", raising=False)
+    monkeypatch.delenv("REPLICATE_WEBHOOK_SIGNING_SECRET", raising=False)
 
     diag = portal.diagnose_media_video_providers()
     assert diag["any_connected"] is False
@@ -228,6 +230,10 @@ def test_video_providers_diagnose_reports_missing_credentials(monkeypatch):
     # Env presence flags must NEVER leak the actual secret values
     assert diag["providers"]["gemini"]["env_vars"]["GEMINI_API_KEY"] is False
     assert diag["providers"]["kling"]["env_vars"]["KLING_API_KEY"] is False
+    assert diag["providers"]["replicate"]["enabled"] is False
+    assert "REPLICATE_API_TOKEN" in diag["providers"]["replicate"]["reason"]
+    assert diag["providers"]["replicate"]["env_vars"]["REPLICATE_API_TOKEN"] is False
+    assert "r8_" not in json.dumps(diag)
 
 
 def test_video_providers_diagnose_reports_connected_providers(monkeypatch):

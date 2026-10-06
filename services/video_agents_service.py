@@ -548,6 +548,7 @@ class VideoAgentsService:
                 "providers": {
                     "gemini": {"enabled": False, "label": "Gemini / Veo", "models": []},
                     "kling": {"enabled": False, "label": "Kling", "models": []},
+                    "replicate": {"enabled": False, "label": "Replicate", "models": []},
                 },
                 "default_provider": "gemini",
                 "pipeline_types": sorted(SUPPORTED_PIPELINE_TYPES),
@@ -559,7 +560,7 @@ class VideoAgentsService:
 
         # Determine default provider (prefer first enabled)
         default_provider = "gemini"
-        for name in ("gemini", "kling"):
+        for name in ("gemini", "kling", "replicate"):
             if provider_config.get(name, {}).get("enabled"):
                 default_provider = name
                 break
@@ -1160,6 +1161,12 @@ class VideoAgentsService:
                 download_url = str(
                     data.get("url") or data.get("video_url") or data.get("download_url") or ""
                 ).strip()
+            if not download_url:
+                try:
+                    from services.media_generation_service import MediaGenerationService
+                    download_url = MediaGenerationService.extract_media_url(data.get("output"))
+                except Exception:
+                    download_url = ""
 
             updated = _job_store.mark_terminal(job_id, {
                 "status": "completed",
@@ -1178,7 +1185,7 @@ class VideoAgentsService:
                 return updated
             return _job_store.get(job_id)
 
-        if status_value in {"failed", "error", "cancelled", "aborted", "rejected"}:
+        if status_value in {"failed", "error", "cancelled", "canceled", "aborted", "rejected"}:
             error_msg = str(
                 data.get("error_message") or data.get("message") or "Provider reported failure via webhook."
             )
