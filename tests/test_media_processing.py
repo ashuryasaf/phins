@@ -841,10 +841,14 @@ def test_kling_submit_uses_documented_base_url_callback_and_mode(monkeypatch):
     assert captured["url"] == "https://api.klingapi.com/v1/videos/text2video"
     assert captured["headers"]["Authorization"] == "Bearer api-key-1"
     assert captured["body"]["model"] == "kling-v2.6-pro"
+    # Aggregator hosts still read ``model``. The Open Platform reads
+    # ``model_name`` and rejects a body that omits it (HTTP 400
+    # "model_name is required"). Send the official id on this path too.
+    assert captured["body"]["model_name"] == "kling-v2-6"
     # Kling's official API rejects the long-form value "professional" with
     # HTTP 400 — the documented values are "std" / "pro".
     assert captured["body"]["mode"] == "pro"
-    assert captured["body"]["duration"] == 10
+    assert captured["body"]["duration"] == "10"
     assert captured["body"]["callBackUrl"].startswith("https://phins.example.com/api/provider/media-processing/callback")
 
 
@@ -1008,6 +1012,8 @@ def test_kling_submit_routes_kling_v3_through_evolink_unified_endpoint(monkeypat
     assert result["provider_job_id"] == "evolink-task-7"
     assert captured["url"] == "https://api.evolink.ai/v1/videos/generations"
     assert captured["body"]["model"] == "kling-v3-text-to-video"
+    # EvoLink's unified route reads ``model``, not the Open Platform field.
+    assert "model_name" not in captured["body"]
     # EvoLink uses image_start, not the legacy "image" key.
     assert captured["body"]["image_start"] == "https://example.com/portrait.jpg"
     assert "image" not in captured["body"]
@@ -1016,6 +1022,189 @@ def test_kling_submit_routes_kling_v3_through_evolink_unified_endpoint(monkeypat
     # The status_url returned for later polling should target /v1/tasks/{id}.
     status_url = result["provider_state"]["status_url"]
     assert status_url == "https://api.evolink.ai/v1/tasks/evolink-task-7"
+
+
+def test_kling_official_host_submits_model_name_and_polls_submit_resource(monkeypatch):
+    """Open Platform hosts reject bodies that only carry ``model``.
+
+    ``kling-v2.6-pro`` is the PHINS picker id. The Open Platform model is
+    ``kling-v2-6`` with ``mode=pro`` and duration ``"5"`` or ``"10"``.
+    Polling stays on ``/v1/videos/text2video/{task_id}`` (or image2video).
+    """
+    monkeypatch.setenv("KLING_API_BASE_URL", "https://api-singapore.klingai.com")
+    monkeypatch.setenv("KLING_ACCESS_KEY", "access-key-official")
+    monkeypatch.setenv("KLING_SECRET_KEY", "secret-key-official")
+    monkeypatch.delenv("KLING_API_KEY", raising=False)
+    monkeypatch.delenv("KLING_API_PROFILE", raising=False)
+    monkeypatch.delenv("KLING_TEXT_TO_VIDEO_PATH", raising=False)
+    monkeypatch.delenv("KLING_IMAGE_TO_VIDEO_PATH", raising=False)
+
+    captured = {}
+
+    def _fake_urlopen(request, timeout=0, allowed_schemes=()):
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        captured["headers"] = dict(request.header_items())
+        return _FakeUrlopenResponse(json.dumps({
+            "code": 0,
+            "message": "SUCCEED",
+            "data": {"task_id": "official-task-9", "task_status": "submitted"},
+        }).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _fake_urlopen)
+
+    service = media_generation_service.MediaGenerationService()
+    assert service.supported_provider_config()["kling"]["api_schema"] == "official"
+    result = service.submit_video_generation(
+        provider="kling",
+        prompt="A calm claims explainer for policyholders",
+        title="Official Kling submit",
+        model="kling-v2.6-pro",
+        aspect_ratio="9:16",
+        duration_seconds=8,
+        callback_url="https://phins.example.com/api/provider/media-processing/callback?job_id=1&token=abc",
+    )
+
+    assert result["provider_job_id"] == "official-task-9"
+    assert captured["url"] == "https://api-singapore.klingai.com/v1/videos/text2video"
+    assert captured["headers"]["Authorization"].startswith("Bearer ")
+    assert captured["body"]["model_name"] == "kling-v2-6"
+    assert "model" not in captured["body"]
+    assert captured["body"]["mode"] == "pro"
+    assert captured["body"]["duration"] == "10"
+    assert captured["body"]["aspect_ratio"] == "9:16"
+    assert result["provider_state"]["status_url"] == (
+        "https://api-singapore.klingai.com/v1/videos/text2video/official-task-9"
+    )
+    assert result["provider_state"]["official_schema"] is True
+    # Stored provider_state keeps the picker id so retries and the admin
+    # badge still show the model the operator chose.
+    assert result["provider_state"]["model"] == "kling-v2.6-pro"
+
+
+def test_kling_official_image_submit_polls_image2video_resource(monkeypatch):
+    monkeypatch.setenv("KLING_API_BASE_URL", "https://api.klingai.com")
+    monkeypatch.setenv("KLING_API_KEY", "official-bearer")
+    monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
+    monkeypatch.delenv("KLING_API_PROFILE", raising=False)
+
+    captured = {}
+
+    def _fake_urlopen(request, timeout=0, allowed_schemes=()):
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return _FakeUrlopenResponse(json.dumps({
+            "code": 0,
+            "data": {"task_id": "img-task-3"},
+        }).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _fake_urlopen)
+
+    service = media_generation_service.MediaGenerationService()
+    result = service.submit_video_generation(
+        provider="kling",
+        prompt="Animate the portrait",
+        title="Official image to video",
+        model="kling-v2.6-std",
+        duration_seconds=5,
+        image_data_url="https://example.com/portrait.jpg",
+    )
+
+    assert captured["url"] == "https://api.klingai.com/v1/videos/image2video"
+    assert captured["body"]["model_name"] == "kling-v2-6"
+    assert captured["body"]["mode"] == "std"
+    assert captured["body"]["duration"] == "5"
+    assert captured["body"]["image"] == "https://example.com/portrait.jpg"
+    assert result["provider_state"]["status_url"] == (
+        "https://api.klingai.com/v1/videos/image2video/img-task-3"
+    )
+
+
+def test_kling_official_host_keeps_v3_on_platform_instead_of_evolink(monkeypatch):
+    """A kling-v3 pick must not leave an Open Platform host for EvoLink."""
+    monkeypatch.setenv("KLING_API_BASE_URL", "https://api.klingai.com")
+    monkeypatch.setenv("KLING_API_PROFILE", "official")
+    monkeypatch.setenv("KLING_API_KEY", "official-v3-key")
+    monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
+
+    captured = {}
+
+    def _fake_urlopen(request, timeout=0, allowed_schemes=()):
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return _FakeUrlopenResponse(json.dumps({"code": 0, "data": {"task_id": "v3-task"}}).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _fake_urlopen)
+
+    service = media_generation_service.MediaGenerationService()
+    service.submit_video_generation(
+        provider="kling",
+        prompt="Version three on the official host",
+        title="Official v3",
+        model="kling-v3-text-to-video",
+    )
+
+    assert captured["url"] == "https://api.klingai.com/v1/videos/text2video"
+    assert captured["body"]["model_name"] == "kling-v3"
+    assert "api.evolink.ai" not in captured["url"]
+
+
+def test_kling_submit_rejects_nonzero_business_code_without_storing_a_task(monkeypatch):
+    """HTTP 200 with code != 0 is a refusal. Do not record a provider task id."""
+    monkeypatch.setenv("KLING_API_KEY", "business-code-key")
+    monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
+    monkeypatch.delenv("KLING_API_BASE_URL", raising=False)
+
+    def _fake_urlopen(request, timeout=0, allowed_schemes=()):
+        return _FakeUrlopenResponse(json.dumps({
+            "code": 1201,
+            "message": "model_name is required",
+            "request_id": "req-1201",
+        }).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _fake_urlopen)
+
+    service = media_generation_service.MediaGenerationService()
+    try:
+        service.submit_video_generation(
+            provider="kling",
+            prompt="Should not be stored",
+            title="Business code",
+            model="kling-v2.6-pro",
+        )
+    except media_generation_service.MediaGenerationError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Expected MediaGenerationError for non-zero Kling code")
+
+    assert "model_name is required" in message
+    assert "did not return a task id" not in message
+
+
+def test_kling_poll_nonzero_business_code_is_failed_not_processing(monkeypatch):
+    monkeypatch.setenv("KLING_API_KEY", "poll-business-code")
+    monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
+
+    def _fake_urlopen(request, timeout=0, allowed_schemes=()):
+        return _FakeUrlopenResponse(json.dumps({
+            "code": 1201,
+            "message": "model_name is required",
+        }).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _fake_urlopen)
+
+    service = media_generation_service.MediaGenerationService()
+    result = service.poll_video_generation(
+        provider="kling",
+        provider_job_id="task-stale",
+        provider_state={"status_url": "https://api.klingapi.com/v1/videos/task-stale"},
+    )
+    assert result["status"] == "failed"
+    assert "model_name is required" in result["error"]
 
 
 def test_kling_submit_mode_field_uses_short_form_per_official_api(monkeypatch):
