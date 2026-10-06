@@ -1,16 +1,20 @@
 """
-Static-integrity tests for the Authority pre-ruling meeting pack (date TBA).
+Static-integrity tests for the Authority pre-ruling meeting pack
+(12 October 2026, Jerusalem).
 
 The pack expands the Regulatory Meeting 27.7 outline into a regulator-facing
 pre-ruling agenda pinned to the IL pitch dashboard:
 - 60 minutes (hard timebox) with Mr. Avi Ovadia — Capital Market, Insurance &
-  Savings Authority. Scope: pre-ruling on the PHINS insurance product; PHINS
-  as a functional MGA (underwriting, billing, claims, actuary) acting as the
-  managerial and operational bridge between a designated Israeli insurance
-  company and an investment company (savings add-on risk — TBA); distribution
-  (direct sales, collaborations, agents); adjustable actuarial methods; future
-  steps (technology, policy, B2B contracts); and the future option to expand
-  to other markets and become an insurance company.
+  Savings Authority, in Jerusalem on 12 October 2026. Scope: pre-ruling on
+  the PHINS insurance product; PHINS as a functional MGA (underwriting,
+  billing, claims, actuary) acting as the managerial and operational bridge
+  between a designated Israeli insurance company and an investment company
+  (savings add-on risk — TBA); distribution (direct sales, collaborations,
+  agents); adjustable actuarial methods; future steps (technology, policy,
+  B2B contracts); and the future option to expand to other markets and
+  become an insurance company. The market case is sourced to Circular
+  2023-1-11, the State Comptroller (June 2026) and the 4 October 2026
+  publication cycle. Disputed figures stay side by side.
 
 These tests read the shipped static assets (no server required) and assert:
 - the pitch dashboard carries the pre-ruling section with a timeboxed
@@ -30,6 +34,8 @@ REPO = Path(__file__).resolve().parents[1]
 STATIC = REPO / "web_portal" / "static"
 BRIEF_MD = STATIC / "investor-docs" / "regulatory-preruling-avi-ovadia-brief.md"
 BRIEF_PDF = STATIC / "investor-docs" / "regulatory-preruling-avi-ovadia-brief.pdf"
+BRIEF_HE_MD = STATIC / "investor-docs" / "regulatory-preruling-avi-ovadia-brief-he.md"
+BRIEF_HE_PDF = STATIC / "investor-docs" / "regulatory-preruling-avi-ovadia-brief-he.pdf"
 
 
 def _read(p: Path) -> str:
@@ -49,10 +55,12 @@ def test_pitch_dashboard_preruling_section():
     # counterparty and regulator contact
     assert "Capital Market, Insurance &amp; Savings Authority" in pd
     assert "Avi Ovadia" in pd
-    # 60-minute framing, date still open
+    # 60-minute framing, meeting set
     assert "60 minutes" in pd
     assert "60-minute" in pd
-    assert "Date TBA" in pd
+    assert "12 October 2026" in pd
+    assert "Jerusalem" in pd
+    assert "Date TBA" not in pd.split('id="regulatory-preruling-avi-ovadia"', 1)[1].split("</section>", 1)[0]
 
 
 def test_preruling_scope_topics():
@@ -152,6 +160,9 @@ def test_diary_seeds_preruling_meeting():
             "Capital Market, Insurance & Savings Authority") in pd
     assert "60 min" in pd
     assert "/investor-docs/regulatory-preruling-avi-ovadia-brief.pdf" in pd
+    assert 'date: "2026-10-12"' in pd
+    assert "Jerusalem — Capital Market, Insurance & Savings Authority" in pd
+    assert "regulatory-preruling-avi-ovadia-brief-he.pdf" in pd
 
 
 # ---------------------------------------------------------------------------
@@ -173,10 +184,16 @@ def test_generator_includes_preruling_brief():
     outs = {pdf for _src, pdf, _title in mod.DOCUMENTS}
     assert "investor-docs/regulatory-preruling-avi-ovadia-brief.md" in srcs
     assert "investor-docs/regulatory-preruling-avi-ovadia-brief.pdf" in outs
-    # brief stays LTR-only so regeneration never needs the Hebrew/bidi path
+    assert "investor-docs/regulatory-preruling-avi-ovadia-brief-he.md" in srcs
+    assert "investor-docs/regulatory-preruling-avi-ovadia-brief-he.pdf" in outs
+    # English brief stays LTR-only so regeneration never needs the Hebrew/bidi path.
+    # The Hebrew companion is an RTL document.
     assert ("investor-docs/regulatory-preruling-avi-ovadia-brief.md"
             not in mod.RTL_DOCUMENTS)
+    assert ("investor-docs/regulatory-preruling-avi-ovadia-brief-he.md"
+            in mod.RTL_DOCUMENTS)
     assert not mod._source_has_hebrew(str(BRIEF_MD))
+    assert mod._source_has_hebrew(str(BRIEF_HE_MD))
 
 
 def test_generator_check_passes():
@@ -203,6 +220,14 @@ def test_preruling_brief_markdown_carries_the_pack():
                     "48–55", "55–60"):
         assert timebox in md, f"missing timebox: {timebox}"
     assert "/investor-docs/israel-regulatory-application-he.pdf" in md
+    assert "12 October 2026" in md
+    assert "Jerusalem" in md
+    assert "2035" in md
+    assert "5.2 million" in md
+    assert "2023-1-11" in md
+    assert "The age cut is not 50, and it is not yet a statute." in md
+    assert "already insolvent" not in md.lower()
+    assert "insolvent now" in md  # spoken guardrail, quoted as a line not to cross
 
 
 def test_preruling_brief_pdf_is_valid():
@@ -248,3 +273,66 @@ def test_dashboard_offers_preruling_brief_pdf():
     # an explicit downloadable PDF link is present
     assert ('/investor-docs/regulatory-preruling-avi-ovadia-brief.pdf"'
             ' target="_blank" rel="noopener" class="exec-dl-btn" download') in pd
+
+
+def test_preruling_research_panels_and_charts():
+    pd = _read(STATIC / "pitch-dashboard.html")
+    section = pd.split('id="regulatory-preruling-avi-ovadia"', 1)[1]
+    section = section.split("</section>", 1)[0]
+    for panel in ("reg-preruling-research", "reg-preruling-nii-chart",
+                  "reg-preruling-gap-chart", "reg-preruling-cohorts",
+                  "reg-preruling-circular", "reg-preruling-alignment",
+                  "reg-preruling-ask", "reg-preruling-sources",
+                  "reg-preruling-he"):
+        assert f'id="{panel}"' in section, f"missing panel {panel}"
+    assert section.count("<svg") >= 3
+    assert 'dir="rtl"' in section
+    assert "lang=\"he\"" in section
+    # sourced figures, kept side by side where the record disagrees
+    for needle in ("5.2 million", "2035", "2023-1-11", "4 of 6",
+                   "3+ ADL", "5,500", "5,000", "21.1", "180,000",
+                   "392,000", "8,195", "20,711", "Siudit",
+                   "December 2026"):
+        assert needle in section, f"dashboard research missing {needle}"
+    assert "A cut at age 50 is not stated in the 4 October 2026 reporting." in section
+    assert "does not record the National Insurance fund as empty" in section
+    assert "insolvent now" not in section.lower()
+    assert "already insolvent" not in section.lower()
+    assert "regulatory-preruling-avi-ovadia-brief-he.pdf" in section
+
+
+def test_hebrew_brief_carries_the_sourced_case():
+    md = BRIEF_HE_MD.read_text(encoding="utf-8")
+    for needle in ("12 באוקטובר 2026", "ירושלים", "אבי עובדיה",
+                   "5.2", "2035", "2023-1-11", "55", "סיעודית",
+                   "4 מתוך 6", "3+", "דצמבר 2026", "180", "392",
+                   "21.1", "10 מיליארד"):
+        assert needle in md, f"Hebrew brief missing {needle}"
+    assert "רף הגיל אינו 50, והוא עדיין אינו חוק." in md
+    assert "חדל פירעון ביום הפגישה" in md
+    assert "אינו בתוקף" in md
+
+
+def test_hebrew_brief_pdf_is_valid_and_keeps_digits():
+    assert BRIEF_HE_PDF.is_file(), "Hebrew meeting brief PDF was not generated"
+    data = BRIEF_HE_PDF.read_bytes()
+    assert data[:5] == b"%PDF-"
+    assert b"%%EOF" in data[-2048:]
+    assert len(data) > 8192
+    PdfReader = None
+    for name in ("pypdf", "PyPDF2"):
+        try:
+            PdfReader = importlib.import_module(name).PdfReader
+            break
+        except Exception:
+            continue
+    if PdfReader is None:
+        pytest.skip("no PDF text-extraction library available")
+    reader = PdfReader(str(BRIEF_HE_PDF))
+    text = "\n".join((page.extract_text() or "") for page in reader.pages)
+    # Hebrew is bidi-reordered in the PDF; digits survive visual order.
+    # Hyphenated circular numbers and decimals can be reordered by the bidi
+    # pass; these tokens were checked to survive extraction.
+    for needle in ("2035", "5.2", "2026", "2023", "PHINS", "55"):
+        assert needle in text, f"Hebrew PDF missing {needle}"
+    assert len(reader.pages) >= 4
