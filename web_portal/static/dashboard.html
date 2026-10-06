@@ -4739,7 +4739,7 @@
     async function loadPipelineInfo() {
       if (!customerId) return;
       try {
-        const response = await fetch(`/api/pipeline/analytics?customer_id=${customerId}`);
+        const response = await fetch(`/api/pipeline/analytics?customer_id=${customerId}`, { headers: bookAuthHeaders() });
         const data = await response.json();
         console.log('Pipeline data loaded:', data);
       } catch (err) {

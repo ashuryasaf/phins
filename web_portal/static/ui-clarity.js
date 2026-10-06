@@ -275,29 +275,46 @@
   }
 
   function detectContext() {
+    // The signed-in role decides the surface. A customer on a staff URL does
+    // not gain admin actions, and a staff account on the customer dashboard
+    // does not inherit that customer's private quick actions.
     const role = getSessionRole();
-    const path = (window.location.pathname || "").toLowerCase();
-    const hasAdminAssistant =
-      typeof window.adminAssistantProcessQuery === "function" ||
-      typeof window.adminAssistantQuickAction === "function";
-    const hasCustomerAssistant =
-      typeof window.processAIQuery === "function" ||
-      typeof window.quickAIAction === "function";
-    const hasSupplierSession =
-      typeof window.currentSupplier === "object" ||
-      path.includes("/supplier-portal") ||
-      path.includes("/supplier-dashboard");
-
-    if (hasAdminAssistant || isStaffPath(path) || isAdminRole(role)) {
+    if (isAdminRole(role)) {
       return "admin";
     }
-    if (hasSupplierSession || isSupplierRole(role)) {
+    if (isSupplierRole(role)) {
       return "supplier";
     }
-    if (hasCustomerAssistant || path.includes("/dashboard")) {
+    if (role === "customer") {
       return "customer";
     }
     return "generic";
+  }
+
+  async function enforceSurface() {
+    const token = getSessionToken();
+    if (!token) return true;
+    try {
+      const response = await fetch(
+        "/api/access/surface?path=" + encodeURIComponent(window.location.pathname || "/"),
+        { headers: { Authorization: "Bearer " + token } }
+      );
+      if (!response.ok) return true;
+      const decision = await response.json().catch(() => ({}));
+      const redirect = String(decision?.redirect || "");
+      const here = window.location.pathname || "/";
+      if (decision && decision.allowed === false && redirect && redirect !== here) {
+        window.location.replace(redirect);
+        return false;
+      }
+    } catch {
+      if (getSessionRole() === "customer" && isStaffPath(window.location.pathname)) {
+        window.location.replace("/dashboard.html");
+        return false;
+      }
+      return true;
+    }
+    return true;
   }
 
   function setFloatingStatus(message, kind = "info") {
@@ -368,7 +385,6 @@
         { id: "admin_accounting", label: "Accountant", query: "open accountant dashboard", requiresAdmin: true, url: "/accountant-dashboard.html" },
         { id: "admin_actuary", label: "Actuary", query: "open actuary dashboard", requiresAdmin: true, url: "/actuary-dashboard.html" },
         { id: "admin_portfolio_simulation", label: "Actuary Sim", query: "run portfolio simulation", requiresAdmin: true, url: "/actuary-dashboard.html" },
-        { id: "admin_investments", label: "Investments", query: "open savings portfolio dashboard", requiresAdmin: true, url: "/savings-portfolio.html" },
         { id: "admin_ai_bi", label: "AI + BI", query: "run ai bi insights", requiresAdmin: true, url: "/admin.html" },
         { id: "admin_media", label: "Media", query: "open admin media dashboard", requiresAdmin: true, url: "/admin-media.html" },
         { id: "admin_foundations", label: "Foundations", query: "open admin foundations dashboard", requiresAdmin: true, url: "/admin-foundations.html" },
@@ -610,7 +626,7 @@
     }
 
     const adminInput = document.getElementById("admin-ai-query-input");
-    if (adminInput && typeof window.adminAssistantProcessQuery === "function") {
+    if (adminInput && isAdminRole(getSessionRole()) && typeof window.adminAssistantProcessQuery === "function") {
       adminInput.value = query;
       callIfFunction(window.adminAssistantProcessQuery);
       setFloatingStatus("Dispatched to admin assistant.", "info");
@@ -725,6 +741,9 @@
     const adminOnlyCommand =
       q.includes("admin") ||
       q.includes("underwriter") ||
+      q.includes("underwriting") ||
+      q.includes("media dashboard") ||
+      q.includes("foundations") ||
       q.includes("claims adjuster") ||
       q.includes("accountant") ||
       q.includes("actuary") ||
@@ -737,6 +756,15 @@
 
     if (adminOnlyCommand && !isAdminRole(role)) {
       setFloatingStatus("Admin role required for this command.", "warning");
+      return true;
+    }
+
+    if (q.includes("supplier") && !isSupplierRole(role) && !isAdminRole(role)) {
+      setFloatingStatus("Supplier role required for this command.", "warning");
+      return true;
+    }
+    if (q.includes("supplier") && isAdminRole(role)) {
+      window.location.href = "/admin-supplier-dashboard.html";
       return true;
     }
 
@@ -833,6 +861,10 @@
       return true;
     }
     if (q.includes("savings portfolio") || q.includes("investments dashboard")) {
+      if (role !== "customer") {
+        setFloatingStatus("A staff account cannot open a customer's savings portfolio.", "warning");
+        return true;
+      }
       window.location.href = "/savings-portfolio.html";
       return true;
     }
@@ -858,6 +890,22 @@
       return true;
     }
     if (q.includes("claim") || q.includes("policy") || q.includes("wallet") || q.includes("customer")) {
+      if (isAdminRole(role)) {
+        if (q.includes("wallet")) {
+          setFloatingStatus("A staff account cannot open a customer's wallet.", "warning");
+          return true;
+        }
+        if (q.includes("claim")) {
+          window.location.href = "/claims-adjuster-dashboard.html";
+          return true;
+        }
+        window.location.href = "/customer-management.html";
+        return true;
+      }
+      if (role && role !== "customer") {
+        setFloatingStatus("That dashboard is not available for this account.", "warning");
+        return true;
+      }
       window.location.href = "/dashboard.html";
       return true;
     }
@@ -1198,6 +1246,8 @@
     runCleanup(document);
 
     const onPublicPage = isPublicPage(window.location.pathname);
+    const stayOnPage = await enforceSurface();
+    if (!stayOnPage) return;
     const authAllowed = onPublicPage ? false : await resolveFloatingAuth();
     if (authAllowed) {
       ensureFloatingBar();

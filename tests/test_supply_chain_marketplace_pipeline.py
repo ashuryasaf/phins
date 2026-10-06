@@ -415,7 +415,6 @@ def test_all_approved_supplier_offers_propagate_to_wallet_marketplace_and_ledger
                     "category": "medication" if idx == 1 else "home_care",
                     "allow_credit_fallback": False,
                 },
-                token=admin_token,
             )
             assert status == 200
             assert purchase_result.get("success") is True
@@ -1934,7 +1933,6 @@ def test_dashboard_health_wallet_ai_search_flow_uses_supplier_offers_and_preserv
                 "provider": "Searchable Care Clinic",
                 "allow_credit_fallback": False,
             },
-            token=admin_token,
         )
         assert status == 200
         assert purchase_result.get("success") is True
