@@ -1920,6 +1920,7 @@ Notes:
         };
         let pendingUseId = '';
         let useSaveInFlight = false;
+        let mediaLibraryReady = false;
         let disclosureVersionLabel = 'light';
         // Landing URLs still served when no asset id is stored. A full save
         // must leave those slots out unless the operator changes the select.
@@ -2123,6 +2124,7 @@ Notes:
                 if (response.ok) {
                     const data = await response.json();
                     mediaAssets = Array.isArray(data) ? data : (data.assets || []);
+                    mediaLibraryReady = true;
                     renderMediaGrid();
                     updateStats();
                     populateAssignmentSelects();
@@ -2205,24 +2207,34 @@ Notes:
             });
             if (Object.prototype.hasOwnProperty.call(body, 'hero_video_id')) {
                 if (body.hero_video_id) {
-                    body.video_url = getMediaUrl(assignments.hero_video);
+                    const resolved = getMediaUrl(assignments.hero_video);
+                    if (resolved) body.video_url = resolved;
                 } else if (legacyHeroVideoUrl && placementTouched.hero_video) {
                     // The operator cleared a URL-only hero. Clear the URL itself.
                     // An empty asset id is not a clear when no asset was stored.
                     body.video_url = '';
                     delete body.hero_video_id;
-                } else {
+                } else if (placementTouched.hero_video) {
+                    body.clear_hero_video = true;
                     body.video_url = '';
+                } else {
+                    // The select is empty because this save did not touch it.
+                    // Leave the stored hero alone.
+                    delete body.hero_video_id;
                 }
             }
             if (Object.prototype.hasOwnProperty.call(body, 'video_poster_id')) {
                 if (body.video_poster_id) {
-                    body.video_poster = getMediaUrl(assignments.video_poster);
+                    const resolvedPoster = getMediaUrl(assignments.video_poster);
+                    if (resolvedPoster) body.video_poster = resolvedPoster;
                 } else if (legacyVideoPosterUrl && placementTouched.video_poster) {
                     body.video_poster = '';
                     delete body.video_poster_id;
-                } else {
+                } else if (placementTouched.video_poster) {
+                    body.clear_video_poster = true;
                     body.video_poster = '';
+                } else {
+                    delete body.video_poster_id;
                 }
             }
             const touchesDisclosure = !slotKeys
@@ -2234,25 +2246,12 @@ Notes:
             return body;
         }
 
-        function clearStaleAssignments(slotKeys) {
-            const keys = slotKeys || Object.keys(assignments);
-            const staleRefs = [];
-            keys.forEach(key => {
-                const id = assignments[key];
-                if (id && !mediaAssets.find(m => m.id === id)) {
-                    staleRefs.push(key);
-                    assignments[key] = '';
-                }
-            });
-            return staleRefs;
-        }
-
         async function persistAssignments(slotKeys, extraBody) {
-            const token = getToken();
-            const staleRefs = clearStaleAssignments(slotKeys);
-            if (!slotKeys && staleRefs.length > 0) {
-                showToast(`Cleared ${staleRefs.length} stale assignment(s): ${staleRefs.join(', ')}`, 'info');
+            if (!mediaLibraryReady) {
+                showToast('Media library is still loading. Wait, then save again.', 'error');
+                return false;
             }
+            const token = getToken();
             const body = placementPayload(slotKeys);
             if (extraBody) Object.assign(body, extraBody);
             const response = await fetch('/api/design/settings', {

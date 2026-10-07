@@ -2794,6 +2794,26 @@ def get_media_asset_playback_url(asset_id: str) -> str:
     return media_asset_url(asset)
 
 
+def public_asset_playback_url(asset_id: str, stored_url: str = '') -> str:
+    """Resolve a placement for a public page without writing DESIGN_SETTINGS.
+
+    A library row with its own address wins. A blank asset address must not
+    hide a URL that is still stored for that placement. When both are blank,
+    the row still has a stable media-files path.
+    """
+    stored = str(stored_url or '').strip()
+    asset_id = str(asset_id or '').strip()
+    asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
+    if not isinstance(asset, dict):
+        return stored
+    live = media_asset_url(asset)
+    if live:
+        return live
+    if stored:
+        return stored
+    return build_internal_media_file_url(asset_id, str(asset.get('name') or asset_id))
+
+
 # The platform chrome is deep navy, gold, Inter, and Space Grotesk.
 # These two colors are that palette. Older installs stored the previous
 # blue/orange defaults; those values mean "use the platform palette".
@@ -20690,34 +20710,19 @@ For claims or questions, please contact:
             if require_role(session, ['admin', 'media']):
                 self.wfile.write(json.dumps(DESIGN_SETTINGS).encode('utf-8'))
             else:
-                hero_video_url = ''
-                video_poster_url = ''
-                hero_background_url = ''
-                promo_banner_url = ''
                 hero_video_id = DESIGN_SETTINGS.get('hero_video_id', '')
                 video_poster_id = DESIGN_SETTINGS.get('video_poster_id', '')
                 hero_background_id = DESIGN_SETTINGS.get('hero_background_id', '')
                 promo_banner_id = DESIGN_SETTINGS.get('promo_banner_id', '')
 
-                if hero_video_id and hero_video_id in MEDIA_ASSETS:
-                    media = MEDIA_ASSETS[hero_video_id]
-                    hero_video_url = media.get('url') or media.get('data', '')
-                elif DESIGN_SETTINGS.get('video_url'):
-                    hero_video_url = DESIGN_SETTINGS.get('video_url', '')
-
-                if video_poster_id and video_poster_id in MEDIA_ASSETS:
-                    media = MEDIA_ASSETS[video_poster_id]
-                    video_poster_url = media.get('url') or media.get('data', '')
-                elif DESIGN_SETTINGS.get('video_poster'):
-                    video_poster_url = DESIGN_SETTINGS.get('video_poster', '')
-
-                if hero_background_id and hero_background_id in MEDIA_ASSETS:
-                    media = MEDIA_ASSETS[hero_background_id]
-                    hero_background_url = media.get('url') or media.get('data', '')
-
-                if promo_banner_id and promo_banner_id in MEDIA_ASSETS:
-                    media = MEDIA_ASSETS[promo_banner_id]
-                    promo_banner_url = media.get('url') or media.get('data', '')
+                hero_video_url = public_asset_playback_url(
+                    hero_video_id, DESIGN_SETTINGS.get('video_url', '')
+                )
+                video_poster_url = public_asset_playback_url(
+                    video_poster_id, DESIGN_SETTINGS.get('video_poster', '')
+                )
+                hero_background_url = public_asset_playback_url(hero_background_id)
+                promo_banner_url = public_asset_playback_url(promo_banner_id)
 
                 show_video = DESIGN_SETTINGS.get('show_video', True)
                 public_settings = {
@@ -36943,23 +36948,33 @@ For claims or questions, please contact:
                 # storage) since the dashboard was last loaded.
                 if 'hero_video_id' in data:
                     hero_id = str(DESIGN_SETTINGS.get('hero_video_id') or '')
+                    explicit_hero_clear = data.get('clear_hero_video') is True
                     if hero_id:
                         DESIGN_SETTINGS['video_url'] = get_media_asset_playback_url(hero_id)
-                    elif previous_hero_id:
-                        # An asset-backed hero was removed. Drop its derived URL
-                        # even if the client also sent a leftover address.
+                    elif previous_hero_id and (
+                        explicit_hero_clear or previous_hero_id not in MEDIA_ASSETS
+                    ):
+                        # The operator cleared the slot, or the asset is gone.
+                        # Drop the derived URL even if the client also sent a
+                        # leftover address.
                         DESIGN_SETTINGS['video_url'] = ''
                     else:
-                        # No asset was assigned. An empty id must not erase a
-                        # landing URL that is still the hero.
+                        # An empty id from a form that never loaded the library
+                        # must not drop a hero whose asset is still on file,
+                        # and must not erase a URL-only landing video.
+                        DESIGN_SETTINGS['hero_video_id'] = previous_hero_id
                         DESIGN_SETTINGS['video_url'] = previous_video_url
                 if 'video_poster_id' in data:
                     poster_id = str(DESIGN_SETTINGS.get('video_poster_id') or '')
+                    explicit_poster_clear = data.get('clear_video_poster') is True
                     if poster_id:
                         DESIGN_SETTINGS['video_poster'] = get_media_asset_playback_url(poster_id)
-                    elif previous_poster_id:
+                    elif previous_poster_id and (
+                        explicit_poster_clear or previous_poster_id not in MEDIA_ASSETS
+                    ):
                         DESIGN_SETTINGS['video_poster'] = ''
                     else:
+                        DESIGN_SETTINGS['video_poster_id'] = previous_poster_id
                         DESIGN_SETTINGS['video_poster'] = previous_video_poster
 
                 for nested_key in ['designSettings', 'layoutSettings', 'brandSettings']:

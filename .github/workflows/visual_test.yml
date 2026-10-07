@@ -6,12 +6,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-# Cancel in-flight runs when the same ref is pushed again. main is never
-# cancelled mid-run so the post-merge artifact upload always finishes.
-# A hung main run is bounded by timeout-minutes below, so it cannot pin
-# the next production deploy for hours.
+# Pull requests cancel an older run of the same ref. main is never
+# cancelled mid-run. Each main commit has its own group, so a hung run
+# cannot queue the next production check behind it.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}${{ github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
