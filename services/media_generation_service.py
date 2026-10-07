@@ -7,19 +7,27 @@ completed files. Gemini/Veo, Kling, and Replicate share that contract. Replicate
 output is downloaded immediately and the caller checksums the bytes; the API
 token never leaves this process.
 
-Supports two Kling API routing profiles:
+Supports three Kling API routing profiles:
 
-- ``direct`` (default): talks to the official Kling API at
-  ``https://api.klingapi.com`` using the ``/v1/videos/text2video`` and
-  ``/v1/videos/image2video`` endpoints with the ``image`` field for image
-  inputs.  This is what the existing PHINS deployments use.
-- ``evolink-v3``: talks to the EvoLink unified Kling routes documented at
-  https://evolink.ai/blog/how-to-access-kling-ai-api-complete-tutorial
-  (``POST /v1/videos/generations`` + ``GET /v1/tasks/{task_id}``).  This
-  profile uses the ``image_start`` field for image-to-video and is picked
-  automatically when the requested model starts with ``kling-v3``,
-  ``kling-o1``, or ``kling-o3``.  It can also be forced with the env var
-  ``KLING_API_PROFILE=evolink-v3``.
+- ``klingapi`` (default host ``https://api.klingapi.com``): the aggregator
+  contract.  Submits to ``/v1/videos/text2video`` and
+  ``/v1/videos/image2video`` with the aggregator ``model`` id (for example
+  ``kling-v2.6-pro``) and polls ``GET /v1/videos/{task_id}``.
+- ``official``: the Kling Open Platform (``api.klingai.com`` and
+  ``api-singapore.klingai.com``).  The same paths are used, but the body
+  must include ``model_name`` (for example ``kling-v2-6``) plus ``mode``
+  ``std``/``pro`` and a string ``duration`` of ``"5"`` or ``"10"``.
+  Omitting ``model_name`` is rejected with HTTP 400
+  ``model_name is required``.  Polling is
+  ``GET /v1/videos/text2video/{task_id}`` or ``image2video``.  Selected
+  when the base host ends in ``klingai.com`` or
+  ``KLING_API_PROFILE=official``.
+- ``evolink-v3``: EvoLink's unified routes
+  (https://evolink.ai/blog/how-to-access-kling-ai-api-complete-tutorial):
+  ``POST /v1/videos/generations`` + ``GET /v1/tasks/{task_id}``, with
+  ``image_start`` for image input.  Picked automatically for ``kling-v3``,
+  ``kling-o1``, and ``kling-o3`` unless the configured host is the official
+  Open Platform.  Force it with ``KLING_API_PROFILE=evolink-v3``.
 
 Both profiles share the same async pattern: submit a task, store the
 ``task_id``, poll until terminal, save the resulting video promptly because
@@ -101,20 +109,34 @@ _KLING_EVOLINK_BASE_URL = "https://api.evolink.ai"
 _KLING_EVOLINK_GENERATIONS_PATH = "/v1/videos/generations"
 _KLING_EVOLINK_TASK_PATH_PREFIX = "/v1/tasks/"
 
-# Official Replicate text-to-video models. Operators override the list with
-# REPLICATE_VIDEO_MODELS (comma-separated owner/name or owner/name:version).
-_DEFAULT_REPLICATE_MODELS = (
-    "google/veo-3.1-fast",
-    "google/veo-3.1",
-    "bytedance/seedance-2.0",
-)
-_REPLICATE_MODEL_RE = re.compile(
-    r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?/"
-    r"[a-z0-9](?:[a-z0-9._-]{0,80}[a-z0-9])?"
-    r"(?::[a-f0-9]{8,80})?$"
-)
-_REPLICATE_ASPECTS = {"16:9", "9:16", "1:1"}
-_REPLICATE_RESOLUTIONS = {"480p", "720p", "1080p"}
+# PHINS UI / aggregator ids -> Kling Open Platform ``model_name`` values.
+# Quality (pro/std) is carried in the separate ``mode`` field, not the name.
+_KLING_OFFICIAL_MODEL_NAMES = {
+    "kling-v1": "kling-v1",
+    "kling-v1-5": "kling-v1-5",
+    "kling-v1.5": "kling-v1-5",
+    "kling-v1-6": "kling-v1-6",
+    "kling-v1.6": "kling-v1-6",
+    "kling-v2-master": "kling-v2-master",
+    "kling-v2-1": "kling-v2-1",
+    "kling-v2.1": "kling-v2-1",
+    "kling-v2-1-master": "kling-v2-1-master",
+    "kling-v2.1-master": "kling-v2-1-master",
+    "kling-v2-5-turbo": "kling-v2-5-turbo",
+    "kling-v2.5-turbo": "kling-v2-5-turbo",
+    "kling-v2-6": "kling-v2-6",
+    "kling-v2.6": "kling-v2-6",
+    "kling-v2.6-pro": "kling-v2-6",
+    "kling-v2.6-std": "kling-v2-6",
+    "kling-v2-6-pro": "kling-v2-6",
+    "kling-v2-6-std": "kling-v2-6",
+    "kling-v3": "kling-v3",
+    "kling-v3-text-to-video": "kling-v3",
+    "kling-v3-image-to-video": "kling-v3",
+    "kling-video-o1": "kling-video-o1",
+    "kling-o1": "kling-video-o1",
+    "kling-o3": "kling-v3",
+}
 
 
 class MediaGenerationService:
@@ -169,6 +191,7 @@ class MediaGenerationService:
                 "enabled": self._kling_credentials_available(),
                 "label": "Kling",
                 "base_url": self._kling_base_url,
+                "api_schema": self._kling_public_schema_name(),
                 "models": list(self.DEFAULT_PROVIDER_MODELS["kling"]),
             },
             "replicate": {
@@ -840,12 +863,40 @@ class MediaGenerationService:
         # untruncated prompt is preserved in metadata for traceability.
         safe_prompt = self._clamp_kling_prompt(prompt)
         evolink_profile = self._kling_use_evolink_profile(selected_model)
-        body: Dict[str, Any] = {
-            "model": selected_model,
-            "prompt": safe_prompt,
-            "aspect_ratio": aspect_ratio or "16:9",
-            "duration": self._normalize_kling_duration(duration_seconds),
-        }
+        official_schema = (not evolink_profile) and self._kling_use_official_schema()
+        duration_value = self._normalize_kling_duration(duration_seconds)
+        official_model = self._official_kling_model_name(selected_model)
+        # The Open Platform rejects a body that only has ``model`` with
+        # HTTP 400 ``model_name is required``.  Aggregators still read
+        # ``model``.  Sending the official id under ``model_name`` on every
+        # direct submit satisfies both contracts without rewriting stored jobs.
+        if evolink_profile:
+            body: Dict[str, Any] = {
+                "model": selected_model,
+                "prompt": safe_prompt,
+                "aspect_ratio": aspect_ratio or "16:9",
+                "duration": duration_value,
+            }
+        elif official_schema:
+            body = {
+                "model_name": official_model,
+                "prompt": safe_prompt,
+                "aspect_ratio": aspect_ratio or "16:9",
+                # Open Platform duration is the string enum "5" / "10".
+                "duration": str(duration_value),
+            }
+        else:
+            body = {
+                "model": selected_model,
+                "model_name": official_model,
+                "prompt": safe_prompt,
+                "aspect_ratio": aspect_ratio or "16:9",
+                # Same string enum as the Open Platform. The live validator
+                # behind the aggregator host is the one that returns
+                # "model_name is required"; it also rejects a numeric duration
+                # after that field is present.
+                "duration": str(duration_value),
+            }
         mode = self._kling_generation_mode(selected_model)
         if mode and not evolink_profile:
             # EvoLink's unified route doesn't accept the legacy "mode" field;
@@ -903,6 +954,12 @@ class MediaGenerationService:
             attribution=attribution,
         )
 
+        business_error = self._kling_business_error(response_body)
+        if business_error:
+            # A 200 with a non-zero business code is a rejection.  Do not
+            # store a task id for a job the provider refused.
+            raise MediaGenerationError(f"Kling submit failed: {business_error}")
+
         data = response_body.get("data") if isinstance(response_body.get("data"), dict) else response_body
         provider_job_id = str(
             response_body.get("task_id")
@@ -919,7 +976,11 @@ class MediaGenerationService:
         if evolink_profile:
             status_url = f"{base_url}{_KLING_EVOLINK_TASK_PATH_PREFIX}{urllib.parse.quote(provider_job_id, safe='')}"
         else:
-            status_url = self._build_kling_status_url(provider_job_id)
+            status_url = self._build_kling_status_url(
+                provider_job_id,
+                model_name=selected_model,
+                endpoint_path=endpoint_path if official_schema else "",
+            )
 
         return {
             "provider": "kling",
@@ -930,6 +991,9 @@ class MediaGenerationService:
                 "submit_response": response_body,
                 "status_url": status_url,
                 "model": selected_model,
+                "model_name": str(body.get("model_name") or official_model),
+                "endpoint_path": endpoint_path,
+                "official_schema": official_schema,
                 "evolink_profile": evolink_profile,
             },
         }
@@ -945,7 +1009,14 @@ class MediaGenerationService:
         if not provider_job_id:
             raise MediaGenerationError("Kling provider job id is required")
 
-        status_url = str(provider_state.get("status_url") or self._build_kling_status_url(provider_job_id, model_name=str(provider_state.get("model") or ""))).strip()
+        status_url = str(
+            provider_state.get("status_url")
+            or self._build_kling_status_url(
+                provider_job_id,
+                model_name=str(provider_state.get("model") or ""),
+                endpoint_path=str(provider_state.get("endpoint_path") or ""),
+            )
+        ).strip()
         request = urllib.request.Request(
             status_url,
             headers={"Authorization": self._kling_authorization_header()},
@@ -957,6 +1028,18 @@ class MediaGenerationService:
             provider_label="Kling",
             operation="poll",
         )
+
+        business_error = self._kling_business_error(body)
+        if business_error:
+            return {
+                "status": "failed",
+                "error": business_error,
+                "provider_job_id": provider_job_id,
+                "provider_state": {
+                    "status_url": status_url,
+                    "last_poll": body,
+                },
+            }
 
         data = body.get("data") if isinstance(body.get("data"), dict) else body
         status_value = str(
@@ -1023,19 +1106,91 @@ class MediaGenerationService:
             },
         }
 
-    def _build_kling_status_url(self, provider_job_id: str, model_name: str = "") -> str:
+    def _build_kling_status_url(self, provider_job_id: str, model_name: str = "", endpoint_path: str = "") -> str:
         encoded_id = urllib.parse.quote(provider_job_id, safe="")
-        # EvoLink polls at /v1/tasks/{task_id}; the direct Kling API exposes
-        # /v1/videos/{task_id}.  We mirror whichever profile this service is
-        # configured for so a single provider_state can survive across restarts.
+        # EvoLink polls at /v1/tasks/{task_id}.  The Open Platform polls the
+        # same resource that accepted the task (/v1/videos/text2video/{id}
+        # or image2video).  The aggregator polls /v1/videos/{task_id}.
         if self._kling_use_evolink_profile(model_name):
             return f"{self._kling_base_url}{_KLING_EVOLINK_TASK_PATH_PREFIX}{encoded_id}"
+        if self._kling_use_official_schema():
+            resource = str(endpoint_path or "/v1/videos/text2video").strip() or "/v1/videos/text2video"
+            if not resource.startswith("/"):
+                resource = f"/{resource}"
+            return f"{self._kling_base_url}{resource.rstrip('/')}/{encoded_id}"
         return f"{self._kling_base_url}/v1/videos/{encoded_id}"
 
     @staticmethod
     def _normalize_kling_duration(duration_seconds: int) -> int:
         requested_seconds = int(duration_seconds or 5)
         return 5 if requested_seconds <= 5 else 10
+
+    def _kling_api_host(self) -> str:
+        return urllib.parse.urlparse(self._kling_base_url).netloc.lower()
+
+    def _kling_use_official_schema(self) -> bool:
+        """Return True when submits must use the Open Platform ``model_name`` contract.
+
+        That contract is what answers HTTP 400 ``model_name is required`` when
+        a body only carries the aggregator ``model`` field.  Duration on this
+        contract is the string enum ``"5"`` / ``"10"``, and task polling stays
+        on the submit resource.
+        """
+        profile = self._kling_profile
+        if profile in {"official", "klingai", "official-v1"}:
+            return True
+        if profile in {"klingapi", "aggregator", "direct", "evolink-v3"}:
+            return False
+        host = self._kling_api_host()
+        if host.endswith("klingai.com"):
+            return True
+        return False
+
+    def _kling_public_schema_name(self) -> str:
+        """Operator-facing schema label. Never includes credentials."""
+        if self._kling_profile == "evolink-v3" or self._kling_base_url.rstrip("/") == _KLING_EVOLINK_BASE_URL:
+            return "evolink"
+        if self._kling_use_official_schema():
+            return "official"
+        return "klingapi"
+
+    @staticmethod
+    def _official_kling_model_name(model_name: str) -> str:
+        """Map a PHINS / aggregator model id onto an Open Platform ``model_name``."""
+        normalized = str(model_name or "").strip().lower()
+        if normalized in _KLING_OFFICIAL_MODEL_NAMES:
+            return _KLING_OFFICIAL_MODEL_NAMES[normalized]
+        converted = normalized.replace(".", "-")
+        for suffix in ("-professional", "-standard", "-pro", "-std"):
+            if converted.endswith(suffix):
+                stem = converted[: -len(suffix)]
+                if stem:
+                    converted = stem
+                break
+        return _KLING_OFFICIAL_MODEL_NAMES.get(converted, converted or "kling-v2-6")
+
+    @staticmethod
+    def _kling_business_error(body: Dict[str, Any]) -> str:
+        """Return the provider message when a JSON body carries a non-zero code.
+
+        Kling answers some rejections as HTTP 200 ``{"code": 1201, "message": ...}``.
+        ``code`` 0 (and 200) means the call was accepted.  Missing ``code`` is
+        the aggregator success shape and is not an error.
+        """
+        if not isinstance(body, dict):
+            return ""
+        code = body.get("code")
+        if isinstance(code, str) and code.strip().lstrip("-").isdigit():
+            try:
+                code = int(code.strip())
+            except ValueError:
+                return ""
+        if isinstance(code, bool) or not isinstance(code, int):
+            return ""
+        if code in (0, 200):
+            return ""
+        message = str(body.get("message") or body.get("msg") or "").strip()
+        return message or f"Kling error code {code}"
 
     @staticmethod
     def _kling_generation_mode(model_name: str) -> str:
@@ -1058,6 +1213,11 @@ class MediaGenerationService:
         """Return True when the Kling request should target EvoLink's unified routes."""
         if self._kling_profile == "evolink-v3":
             return True
+        # A configured Open Platform host must stay on that host.  Auto-routing
+        # kling-v3 to EvoLink would drop the caller's credentials and skip
+        # model_name, which is the field that host requires.
+        if self._kling_use_official_schema():
+            return False
         if self._kling_base_url.rstrip("/") == _KLING_EVOLINK_BASE_URL:
             return True
         if _KLING_EVOLINK_GENERATIONS_PATH in self._kling_text_to_video_path:

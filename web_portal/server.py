@@ -4441,12 +4441,19 @@ def media_video_provider_capabilities() -> Dict[str, Any]:
     for provider_name, config in provider_config.items():
         if not isinstance(config, dict):
             continue
-        providers[str(provider_name)] = {
+        entry = {
             'enabled': bool(config.get('enabled')),
             'label': str(config.get('label') or str(provider_name).title()),
             'default_model': str(config.get('model') or ''),
             'models': [str(model) for model in (config.get('models') or []) if str(model).strip()],
         }
+        base_url = str(config.get('base_url') or '').strip()
+        api_schema = str(config.get('api_schema') or '').strip()
+        if base_url:
+            entry['base_url'] = base_url
+        if api_schema:
+            entry['api_schema'] = api_schema
+        providers[str(provider_name)] = entry
     default_provider = next(
         (name for name, config in providers.items() if config.get('enabled')),
         (next(iter(providers.keys()), DEFAULT_MEDIA_VIDEO_PROVIDER)),
@@ -4521,12 +4528,22 @@ def diagnose_media_video_providers() -> Dict[str, Any]:
         if gemini_enabled else
         'GEMINI_API_KEY environment variable is not set on the server.'
     )
+    kling_schema = str(providers_caps.get('kling', {}).get('api_schema') or '').strip()
+    kling_base_url = str(providers_caps.get('kling', {}).get('base_url') or '').strip()
     if kling_enabled:
         kling_reason = (
             'Connected via KLING_API_KEY (bearer token).'
             if kling_api_key_present else
             'Connected via KLING_ACCESS_KEY + KLING_SECRET_KEY (HS256 JWT).'
         )
+        if kling_schema == 'official':
+            kling_reason += ' Submit contract: Kling Open Platform (model_name, duration "5"/"10").'
+        elif kling_schema == 'evolink':
+            kling_reason += ' Submit contract: EvoLink unified generations route.'
+        elif kling_schema == 'klingapi':
+            kling_reason += ' Submit contract: aggregator (model + model_name).'
+        if kling_base_url:
+            kling_reason += f' Base URL: {kling_base_url}.'
     else:
         missing_parts = []
         if not kling_api_key_present:
@@ -4574,6 +4591,8 @@ def diagnose_media_video_providers() -> Dict[str, Any]:
                 'label': str(providers_caps.get('kling', {}).get('label', 'Kling')),
                 'models': list(providers_caps.get('kling', {}).get('models') or []),
                 'default_model': str(providers_caps.get('kling', {}).get('default_model', '')),
+                'base_url': kling_base_url,
+                'api_schema': kling_schema,
                 'reason': kling_reason,
                 'env_vars': {
                     'KLING_API_KEY': kling_api_key_present,

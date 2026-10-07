@@ -156,6 +156,70 @@ def test_branded_letterhead_assets_and_masthead():
         assert callable(on_first) and callable(on_later)
 
 
+def test_preruling_supplement_keeps_draft_31_and_sources():
+    """Section 15 is the 12 October 2026 annex. It must not replace the
+    Draft 3.1 contract, and it must keep the public disagreements that
+    the meeting brief already locked."""
+    en = EN_MD.read_text(encoding="utf-8")
+    he = HE_MD.read_text(encoding="utf-8")
+
+    for needle in (
+        "## 15. Pre-ruling supplement — 12 October 2026",
+        "Sections 1–5 are unchanged",
+        "phins_pure_risk_adjustable",
+        "phins_hybrid_savings",
+        "savings_rate",
+        "100,000",
+        "not a customer quote",
+        "4.41",
+        "5.55",
+        "3.42",
+        "5.15",
+        "does not price q(x)",
+        "q(x) × 1.80",
+        "2035",
+        "5.2 million",
+        "2023-1-11",
+        "The age cut is not 50, and it is not yet a statute.",
+        "The proposal is not destined, and it is not in force.",
+        "does not record the National Insurance fund as empty on the meeting date",
+        "identity_mismatch",
+        "SUSPICIOUS_EVIDENCE_CONTRADICTION",
+        "price_policy()",
+    ):
+        assert needle in en, f"EN supplement missing {needle!r}"
+    assert "already insolvent" not in en.lower()
+
+    for needle in (
+        "## 15. נספח פרה-רולינג — 12 באוקטובר 2026",
+        "סעיפים 1–5 ללא שינוי",
+        "phins_pure_risk_adjustable",
+        "phins_hybrid_savings",
+        "100,000",
+        "4.41",
+        "5.55",
+        "3.42",
+        "5.15",
+        "2035",
+        "5.2",
+        "2023-1-11",
+        "רף הגיל אינו 50, והוא עדיין אינו חוק.",
+        "המתווה אינו גזירה, והוא אינו בתוקף.",
+        "אינו רושם את קרן הביטוח הלאומי כריקה ביום הפגישה",
+        "identity_mismatch",
+        "SUSPICIOUS_EVIDENCE_CONTRADICTION",
+        "price_policy()",
+        "טיוטה 3.1",
+    ):
+        assert needle in he, f"HE supplement missing {needle!r}"
+    assert "חדל פירעון ביום הפגישה" not in he
+
+    # the pitch section that carries the application must name the supplement
+    pd = (STATIC / "pitch-dashboard.html").read_text(encoding="utf-8")
+    assert "Section 15 dated 12 October 2026" in pd
+    assert "Sections 1–5 are unchanged." in pd
+
+
 def test_dashboard_links_documents_with_downloadable_pdfs():
     pd = (STATIC / "pitch-dashboard.html").read_text(encoding="utf-8")
     assert "/investor-docs/israel-regulatory-application-en.pdf" in pd
