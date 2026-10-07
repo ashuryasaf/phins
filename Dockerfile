@@ -19,12 +19,7 @@ WORKDIR /build
 
 # We compile a few sdists (psycopg, psycopg2-binary, cryptography, Pillow, etc.). Most
 # arrive as manylinux wheels, but having gcc available avoids slow surprises.
-RUN printf '%s\n' \
-        'Acquire::http::Timeout "30";' \
-        'Acquire::https::Timeout "30";' \
-        'Acquire::Retries "3";' \
-        > /etc/apt/apt.conf.d/99timeout \
-    && apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         libffi-dev \
         libssl-dev \
@@ -58,12 +53,7 @@ FROM python:3.12-slim AS runtime
 #                       enrichment already degrades when ffmpeg is absent
 #                       (see document_processing_service._ffmpeg_available).
 #                       Rebuild with --build-arg INSTALL_FFMPEG=1 to include it.
-RUN printf '%s\n' \
-        'Acquire::http::Timeout "30";' \
-        'Acquire::https::Timeout "30";' \
-        'Acquire::Retries "3";' \
-        > /etc/apt/apt.conf.d/99timeout \
-    && apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         tesseract-ocr \
         tesseract-ocr-eng \
