@@ -548,6 +548,7 @@ class VideoAgentsService:
                 "providers": {
                     "gemini": {"enabled": False, "label": "Gemini / Veo", "models": []},
                     "kling": {"enabled": False, "label": "Kling", "models": []},
+                    "replicate": {"enabled": False, "label": "Replicate", "models": []},
                 },
                 "default_provider": "gemini",
                 "pipeline_types": sorted(SUPPORTED_PIPELINE_TYPES),
@@ -559,7 +560,7 @@ class VideoAgentsService:
 
         # Determine default provider (prefer first enabled)
         default_provider = "gemini"
-        for name in ("gemini", "kling"):
+        for name in ("gemini", "kling", "replicate"):
             if provider_config.get(name, {}).get("enabled"):
                 default_provider = name
                 break
@@ -1160,25 +1161,40 @@ class VideoAgentsService:
                 download_url = str(
                     data.get("url") or data.get("video_url") or data.get("download_url") or ""
                 ).strip()
+            if not download_url:
+                try:
+                    from services.media_generation_service import MediaGenerationService
+                    download_url = MediaGenerationService.extract_media_url(data.get("output"))
+                except Exception:
+                    download_url = ""
 
-            updated = _job_store.mark_terminal(job_id, {
-                "status": "completed",
-                "progress_pct": 100,
-                "download_url": download_url,
-                "message": "Completed via webhook callback.",
-                "completed_at": datetime.now(timezone.utc).isoformat(),
-                "provider_state": {**job.get("provider_state", {}), "webhook": webhook_payload},
-            })
-            if updated is not None:
-                _audit_video_event('video_job_completed', job_id, {
-                    'campaign_id': job.get('campaign_id'),
-                    'provider': job.get('provider'),
-                    'has_download_url': bool(download_url),
+            if download_url:
+                updated = _job_store.mark_terminal(job_id, {
+                    "status": "completed",
+                    "progress_pct": 100,
+                    "download_url": download_url,
+                    "message": "Completed via webhook callback.",
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "provider_state": {**job.get("provider_state", {}), "webhook": webhook_payload},
                 })
-                return updated
-            return _job_store.get(job_id)
+                if updated is not None:
+                    _audit_video_event('video_job_completed', job_id, {
+                        'campaign_id': job.get('campaign_id'),
+                        'provider': job.get('provider'),
+                        'has_download_url': bool(download_url),
+                    })
+                    return updated
+                return _job_store.get(job_id)
 
-        if status_value in {"failed", "error", "cancelled", "aborted", "rejected"}:
+            # Success without a file is a failure: completing the job would
+            # leave an operator with an asset nobody can download or play.
+            status_value = "failed"
+            data = {
+                **data,
+                "error_message": "Provider reported success without a downloadable video URL.",
+            }
+
+        if status_value in {"failed", "error", "cancelled", "canceled", "aborted", "rejected"}:
             error_msg = str(
                 data.get("error_message") or data.get("message") or "Provider reported failure via webhook."
             )

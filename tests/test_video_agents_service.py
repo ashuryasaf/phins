@@ -49,6 +49,7 @@ class TestVideoAgentsService:
             assert caps["service_available"] is False
             assert caps["providers"]["gemini"]["enabled"] is False
             assert caps["providers"]["kling"]["enabled"] is False
+            assert caps["providers"]["replicate"]["enabled"] is False
             assert "pipeline_types" in caps
         finally:
             mod.MEDIA_GENERATION_AVAILABLE = original

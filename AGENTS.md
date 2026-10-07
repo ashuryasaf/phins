@@ -549,7 +549,12 @@ Environment variables commonly used:
  `DEFAULT_MEDIA_VIDEO_PROVIDER`, `PHINS_MEDIA_INLINE_MAX_BYTES`,
  `PHINS_MAX_MEDIA_UPLOAD_SIZE` (0 = no HTTP cap),
  `PHINS_DEFAULT_MEDIA_ASSET_MAX_BYTES` (scanner/disk cap, default 2GB)
-- **Video agents (B8):** `VIDEO_AGENTS_COMPLETION_MODE` (`webhook` default,
+- **Video agents (B8):** `REPLICATE_API_TOKEN` enables Replicate beside
+ Gemini and Kling (Growth Agent and Video Agents). Optional
+ `REPLICATE_VIDEO_MODELS` (comma-separated `owner/name`) and
+ `REPLICATE_WEBHOOK_SIGNING_SECRET` (`whsec_…`; when unset the per-job
+ callback token authenticates the webhook). Completed files are downloaded
+ immediately and SHA-256 checksummed. `VIDEO_AGENTS_COMPLETION_MODE` (`webhook` default,
  `poll`; webhook resolves to poll without a `WEBHOOK_BASE_URL`),
  `VIDEO_AGENTS_POLL_TIMEOUT` (fail a job still in flight after this many
  seconds, default 1800), `MEDIA_WEBHOOK_REPLAY_WINDOW_SECONDS` (callback

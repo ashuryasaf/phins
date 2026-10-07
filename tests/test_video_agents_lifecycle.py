@@ -807,6 +807,18 @@ class TestServiceMirror:
         again = svc.handle_webhook(job["id"], {"status": "failed", "data": {"error_message": "nope"}})
         assert again["status"] == "completed"
 
+    def test_webhook_success_without_a_file_fails_the_job(self, mod, monkeypatch):
+        monkeypatch.setattr(mod, "_WEBHOOK_FALLBACK_SECONDS", 0)
+        svc = mod.VideoAgentsService()
+        job = svc.submit_video_job(campaign_id="MKT-S-5b", provider="gemini", pipeline_type="introductions",
+                                   poll_mode="webhook", callback_url="https://hooks.example/cb")
+        # The provider reports success with no output file; a completed job
+        # with an empty download_url could never be saved or played.
+        empty = svc.handle_webhook(job["id"], {"status": "succeeded", "data": {"output": None}})
+        assert empty["status"] == "failed"
+        assert empty["download_url"] == ""
+        assert "downloadable video URL" in empty["error"]
+
     def test_rearm_in_flight_jobs(self, mod, monkeypatch):
         monkeypatch.setattr(mod, "_WEBHOOK_FALLBACK_SECONDS", 0)
         monkeypatch.setattr(mod, "_POLL_INITIAL_DELAY", 0.05)
@@ -829,3 +841,84 @@ class TestServiceMirror:
         health = mod._video_agents_health()
         assert health["completion"]["default_mode"] in {"webhook", "poll"}
         assert isinstance(health["pollers_armed"], int)
+
+
+def test_replicate_webhook_checksums_once_and_rejects_a_foreign_prediction(server, stub, monkeypatch):
+    """A Replicate callback is authenticated by the per-job token, the file
+    bytes are checksummed, a replay does not write a second asset, and a
+    different prediction id does not touch the job."""
+    monkeypatch.delenv("REPLICATE_WEBHOOK_SIGNING_SECRET", raising=False)
+    job_id = "mjob-replicate-integrity"
+    token = "replicate-job-token"
+    prediction_id = "pred-integrity-1"
+    portal.MEDIA_PROCESSING_JOBS[job_id] = {
+        "id": job_id,
+        "job_kind": "video_generation",
+        "campaign_id": "MKT-REPLICATE",
+        "blueprint_index": 0,
+        "asset_name": "Story disclaimer",
+        "provider": "replicate",
+        "provider_job_id": prediction_id,
+        "provider_state": {},
+        "status": "processing",
+        "progress_pct": 40,
+        "requested_at": datetime.now().isoformat(),
+        "requested_by": "admin",
+        "auto_publish_to_hero": False,
+        "generated_asset_id": "",
+        "download_url": "",
+        "callback_token": token,
+        "callback_path": f"/api/provider/media-processing/callback?job_id={job_id}&token={token}",
+        "webhook_deliveries": [],
+    }
+    monkeypatch.setattr(portal, "get_media_generation_service", lambda: stub)
+    body = {
+        "id": prediction_id,
+        "status": "succeeded",
+        "output": "https://replicate.delivery/example/story.mp4",
+        "error": None,
+    }
+    try:
+        mismatch, mismatch_body = _json_request(
+            server.base + f"/api/provider/media-processing/callback?job_id={job_id}&token={token}",
+            method="POST",
+            payload={"id": "pred-other", "status": "succeeded", "output": "https://replicate.delivery/example/other.mp4"},
+        )
+        assert mismatch == 409
+        assert portal.MEDIA_PROCESSING_JOBS[job_id]["status"] == "processing"
+        assert _assets_for_job(job_id) == []
+
+        refused, _ = _json_request(
+            server.base + f"/api/provider/media-processing/callback?job_id={job_id}&token=wrong",
+            method="POST",
+            payload=body,
+        )
+        assert refused == 403
+        assert portal.MEDIA_PROCESSING_JOBS[job_id]["status"] == "processing"
+
+        status, resp = _json_request(
+            server.base + portal.MEDIA_PROCESSING_JOBS[job_id]["callback_path"],
+            method="POST",
+            payload=body,
+        )
+        assert status == 200, resp
+        job = portal.MEDIA_PROCESSING_JOBS[job_id]
+        assert job["status"] == "completed"
+        assets = _assets_for_job(job_id)
+        assert len(assets) == 1
+        assert assets[0]["checksum"] == hashlib.sha256(_STUB_VIDEO_BYTES).hexdigest()
+        assert assets[0]["metadata"]["provider"] == "replicate"
+        assert len(stub.downloads) == 1
+
+        replay, replay_body = _json_request(
+            server.base + job["callback_path"],
+            method="POST",
+            payload=body,
+        )
+        assert replay == 409
+        assert "Replayed" in replay_body["error"]
+        assert len(_assets_for_job(job_id)) == 1
+        assert len(stub.downloads) == 1
+        assert portal.MEDIA_PROCESSING_JOBS[job_id]["status"] == "completed"
+    finally:
+        portal.MEDIA_PROCESSING_JOBS.pop(job_id, None)

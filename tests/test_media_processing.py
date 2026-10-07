@@ -727,6 +727,7 @@ def test_marketing_video_provider_capabilities_endpoint():
         assert "default_provider" in capabilities
         assert "gemini" in capabilities["providers"]
         assert "kling" in capabilities["providers"]
+        assert "replicate" in capabilities["providers"]
         assert isinstance(capabilities["providers"]["gemini"]["models"], list)
         assert isinstance(capabilities["providers"]["kling"]["models"], list)
     finally:

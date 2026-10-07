@@ -3360,6 +3360,34 @@ def complete_media_subtitle_job(job: Dict[str, Any], payload: Dict[str, Any]) ->
     return asset, track
 
 
+def replicate_callback_auth_error(
+    headers: Any,
+    raw_body: bytes,
+    callback_token: str,
+    expected_token: str,
+) -> str:
+    """Authenticate a Replicate webhook that cannot send PHINS's shared secret.
+
+    The per-job token embedded in the callback URL is required. When
+    ``REPLICATE_WEBHOOK_SIGNING_SECRET`` is set, the Svix signature must
+    verify as well. Returns an error string, or '' when the delivery is allowed.
+    """
+    token_ok = bool(expected_token) and secrets.compare_digest(
+        str(callback_token or ''), str(expected_token)
+    )
+    signing_secret = str(os.environ.get('REPLICATE_WEBHOOK_SIGNING_SECRET') or '').strip()
+    if signing_secret:
+        from services.media_generation_service import MediaGenerationService
+        if not MediaGenerationService.verify_replicate_webhook_signature(signing_secret, headers, raw_body):
+            return 'Invalid Replicate webhook signature'
+        if expected_token and not token_ok:
+            return 'Invalid callback token'
+        return ''
+    if token_ok:
+        return ''
+    return 'Invalid callback token'
+
+
 def verify_media_provider_callback(headers: Any, raw_body: bytes, payload: Dict[str, Any]) -> bool:
     """Accept either shared-secret or HMAC-signed provider callbacks."""
     provided_secret = (
@@ -3437,6 +3465,7 @@ def media_webhook_delivery_fingerprint(headers: Any, raw_body: bytes) -> str:
         headers.get('X-Media-Nonce')
         or headers.get('X-Webhook-Nonce')
         or headers.get('X-Webhook-Id')
+        or headers.get('webhook-id')
         or headers.get('X-Delivery-Id')
         or ''
     ).strip()
@@ -3465,6 +3494,7 @@ def check_media_webhook_replay(
     stamp = _parse_webhook_timestamp(
         headers.get('X-Media-Timestamp')
         or headers.get('X-Webhook-Timestamp')
+        or headers.get('webhook-timestamp')
         or (payload.get('timestamp') if isinstance(payload, dict) else None)
     )
     if stamp is not None and abs(current - stamp) > window:
@@ -3575,7 +3605,15 @@ def build_media_video_prompt(campaign_id: str, blueprint: Dict[str, Any], prompt
     if isinstance(storyboard, list) and storyboard:
         prompt_parts.append('Storyboard: ' + ' '.join(str(item).strip() for item in storyboard if str(item).strip()))
     prompt = '. '.join(part for part in prompt_parts if part)
-    return prompt or f"Marketing video for campaign {campaign_id}"
+    if not prompt:
+        prompt = f"Marketing video for campaign {campaign_id}"
+    # Same sentence for every provider so the request fingerprint covers the
+    # disclaimer the model is asked to show. Campaign plan hashes are untouched.
+    disclaimer = (
+        "On-screen disclaimer: this video is general information and not "
+        "personalized insurance, investment, or medical advice."
+    )
+    return f"{prompt}. {disclaimer}"
 
 
 def media_video_request_fingerprint(
@@ -3920,6 +3958,18 @@ def enqueue_media_video_submission(job_id: str, *, poll_delay_seconds: int = 1) 
 
 def cancel_media_video_job(job: Dict[str, Any], cancelled_by: str) -> Dict[str, Any]:
     """Mark a queued or processing video job as cancelled."""
+    provider_name = str(job.get('provider') or '').strip().lower()
+    provider_job_id = str(job.get('provider_job_id') or '').strip()
+    if provider_name == 'replicate' and provider_job_id:
+        try:
+            service = get_media_generation_service()
+            cancel = getattr(service, 'cancel_video_generation', None)
+            if callable(cancel):
+                cancel(provider=provider_name, provider_job_id=provider_job_id)
+        except Exception:
+            # Local cancel still stands if Replicate cannot be reached. A late
+            # callback cannot reopen a terminal job.
+            pass
     job['status'] = 'cancelled'
     job['provider_status'] = 'cancelled'
     job['completed_at'] = datetime.now().isoformat()
@@ -4381,6 +4431,11 @@ def media_video_provider_capabilities() -> Dict[str, Any]:
                     'kling-v3-image-to-video',
                 ],
             },
+            'replicate': {
+                'enabled': bool(os.environ.get('REPLICATE_API_TOKEN', '').strip()),
+                'label': 'Replicate',
+                'models': ['google/veo-3.1-fast', 'google/veo-3.1', 'bytedance/seedance-2.0'],
+            },
         }
     providers: Dict[str, Dict[str, Any]] = {}
     for provider_name, config in provider_config.items():
@@ -4424,8 +4479,23 @@ def validate_media_video_provider_selection(provider: str, provider_model: str =
         return selected_provider, f'Selected provider "{selected_provider}" is not connected'
     available_models = [str(model) for model in (provider_config.get('models') or []) if str(model).strip()]
     if selected_model and available_models and selected_model not in available_models:
+        if selected_provider == 'replicate':
+            from services.media_generation_service import MediaGenerationService
+            if MediaGenerationService.replicate_model_id_ok(selected_model):
+                return selected_provider, ''
         return selected_provider, f'Invalid model "{selected_model}" for provider "{selected_provider}"'
     return selected_provider, ''
+
+
+def _replicate_live_check_enabled() -> bool:
+    """Live GET /v1/account from diagnose. Off under PHINS_TEST_MODE unless forced."""
+    forced = str(os.environ.get('PHINS_REPLICATE_LIVE_CHECK') or '').strip().lower()
+    if forced in {'1', 'true', 'yes'}:
+        return True
+    if forced in {'0', 'false', 'no'}:
+        return False
+    test_mode = str(os.environ.get('PHINS_TEST_MODE') or '').strip().lower()
+    return test_mode not in {'1', 'true', 'yes'}
 
 
 def diagnose_media_video_providers() -> Dict[str, Any]:
@@ -4441,6 +4511,8 @@ def diagnose_media_video_providers() -> Dict[str, Any]:
     kling_access_present = bool(os.environ.get('KLING_ACCESS_KEY', '').strip())
     kling_secret_present = bool(os.environ.get('KLING_SECRET_KEY', '').strip())
     kling_signed_pair = kling_access_present and kling_secret_present
+    replicate_token_present = bool(os.environ.get('REPLICATE_API_TOKEN', '').strip())
+    replicate_signing_secret_present = bool(os.environ.get('REPLICATE_WEBHOOK_SIGNING_SECRET', '').strip())
 
     capabilities = media_video_provider_capabilities()
     providers_caps = capabilities.get('providers') if isinstance(capabilities, dict) else {}
@@ -4449,6 +4521,7 @@ def diagnose_media_video_providers() -> Dict[str, Any]:
 
     gemini_enabled = bool(providers_caps.get('gemini', {}).get('enabled'))
     kling_enabled = bool(providers_caps.get('kling', {}).get('enabled'))
+    replicate_enabled = bool(providers_caps.get('replicate', {}).get('enabled')) and replicate_token_present
 
     gemini_reason = (
         'Connected via GEMINI_API_KEY. Ready for prompt-to-video generation.'
@@ -4482,6 +4555,25 @@ def diagnose_media_video_providers() -> Dict[str, Any]:
             if missing_parts else 'Kling configuration is incomplete.'
         )
 
+    replicate_live: Dict[str, Any] = {}
+    if replicate_token_present and _replicate_live_check_enabled():
+        try:
+            replicate_live = get_media_generation_service().probe_replicate_account()
+        except Exception:
+            replicate_live = {'ok': False, 'http_status': 0, 'detail': 'unreachable'}
+        if replicate_live.get('detail') == 'rejected':
+            replicate_enabled = False
+    if not replicate_token_present:
+        replicate_reason = 'REPLICATE_API_TOKEN environment variable is not set on the server.'
+    elif replicate_live.get('ok'):
+        replicate_reason = 'Connected via REPLICATE_API_TOKEN. Replicate accepted the token.'
+    elif replicate_live.get('detail') == 'rejected':
+        replicate_reason = 'REPLICATE_API_TOKEN was rejected by Replicate.'
+    elif replicate_live:
+        replicate_reason = 'REPLICATE_API_TOKEN is set. Live check did not complete.'
+    else:
+        replicate_reason = 'Connected via REPLICATE_API_TOKEN. Ready for prompt-to-video generation.'
+
     return {
         'providers': {
             'gemini': {
@@ -4508,9 +4600,25 @@ def diagnose_media_video_providers() -> Dict[str, Any]:
                     'KLING_SECRET_KEY': kling_secret_present,
                 },
             },
+            'replicate': {
+                'enabled': replicate_enabled,
+                'label': str(providers_caps.get('replicate', {}).get('label', 'Replicate')),
+                'models': list(providers_caps.get('replicate', {}).get('models') or []),
+                'default_model': str(providers_caps.get('replicate', {}).get('default_model') or providers_caps.get('replicate', {}).get('model') or ''),
+                'reason': replicate_reason,
+                'live_check': {
+                    'ok': bool(replicate_live.get('ok')),
+                    'http_status': int(replicate_live.get('http_status') or 0),
+                    'detail': str(replicate_live.get('detail') or ''),
+                },
+                'env_vars': {
+                    'REPLICATE_API_TOKEN': replicate_token_present,
+                    'REPLICATE_WEBHOOK_SIGNING_SECRET': replicate_signing_secret_present,
+                },
+            },
         },
         'default_provider': str(capabilities.get('default_provider') or DEFAULT_MEDIA_VIDEO_PROVIDER),
-        'any_connected': gemini_enabled or kling_enabled,
+        'any_connected': gemini_enabled or kling_enabled or replicate_enabled,
         'media_callback_base_url_configured': bool(configured_media_callback_base_url()),
         # What a submission without an explicit poll_mode will do on this server.
         'default_completion_mode': resolve_media_video_completion_mode('', configured_media_callback_base_url()),
@@ -11143,8 +11251,10 @@ try:
     _startup_provider_config = _startup_media_service.supported_provider_config()
     _gemini_status = _startup_provider_config.get('gemini', {})
     _kling_status = _startup_provider_config.get('kling', {})
+    _replicate_status = _startup_provider_config.get('replicate', {})
     _gemini_enabled = _gemini_status.get('enabled', False)
     _kling_enabled = _kling_status.get('enabled', False)
+    _replicate_enabled = _replicate_status.get('enabled', False)
     if _gemini_enabled:
         print(f"✓ Gemini/Veo video generation enabled (model: {_gemini_status.get('model', 'default')})")
     else:
@@ -11153,7 +11263,11 @@ try:
         print(f"✓ Kling video generation enabled (base: {_kling_status.get('base_url', 'default')})")
     else:
         print("⚠️  Kling video generation not connected (set KLING_API_KEY or KLING_ACCESS_KEY + KLING_SECRET_KEY)")
-    _provider_count = sum(1 for p in [_gemini_enabled, _kling_enabled] if p)
+    if _replicate_enabled:
+        print(f"✓ Replicate video generation enabled (model: {_replicate_status.get('model', 'default')})")
+    else:
+        print("⚠️  Replicate video generation not connected (set REPLICATE_API_TOKEN)")
+    _provider_count = sum(1 for p in [_gemini_enabled, _kling_enabled, _replicate_enabled] if p)
     print(f"✓ Video Agents: {_provider_count} provider(s) connected for /video-agents.html")
 except Exception as _vp_err:
     print(f"⚠️  Video generation provider check failed: {_vp_err}")
@@ -37597,8 +37711,9 @@ For claims or questions, please contact:
                     'reason': 'provider_not_configured' if 'not connected' in provider_error else 'provider_invalid',
                     'diagnostics': diagnose_media_video_providers(),
                     'hint': (
-                        'No video provider is configured on the server. Set GEMINI_API_KEY '
-                        'or KLING_API_KEY (or KLING_ACCESS_KEY + KLING_SECRET_KEY) and retry.'
+                        'No video provider is configured on the server. Set GEMINI_API_KEY, '
+                        'KLING_API_KEY (or KLING_ACCESS_KEY + KLING_SECRET_KEY), or '
+                        'REPLICATE_API_TOKEN and retry.'
                     ),
                 }).encode('utf-8'))
                 return
@@ -37737,8 +37852,9 @@ For claims or questions, please contact:
                     'reason': 'provider_not_configured' if 'not connected' in provider_error else 'provider_invalid',
                     'diagnostics': diagnose_media_video_providers(),
                     'hint': (
-                        'No video provider is configured on the server. Set GEMINI_API_KEY '
-                        'or KLING_API_KEY (or KLING_ACCESS_KEY + KLING_SECRET_KEY) and retry.'
+                        'No video provider is configured on the server. Set GEMINI_API_KEY, '
+                        'KLING_API_KEY (or KLING_ACCESS_KEY + KLING_SECRET_KEY), or '
+                        'REPLICATE_API_TOKEN and retry.'
                     ),
                 }).encode('utf-8'))
                 return
@@ -37980,27 +38096,54 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
                 return
 
-            if not verify_media_provider_callback(self.headers, raw_body, data):
+            signature_ok = verify_media_provider_callback(self.headers, raw_body, data)
+            query = urlparse.parse_qs(parsed.query)
+            job_id = str(data.get('job_id') or query.get('job_id', [''])[0]).strip()
+            provider_job_id = str(data.get('provider_job_id') or data.get('id') or '').strip()
+            callback_token = str(query.get('token', [''])[0]).strip()
+            job = find_media_processing_job(job_id=job_id, provider_job_id=provider_job_id) if (signature_ok or callback_token or job_id) else None
+            provider_name = str((job or {}).get('provider') or '').strip().lower()
+            job_kind_preview = str((job or {}).get('job_kind') or '')
+            replicate_video = (
+                bool(job)
+                and bool(callback_token)
+                and provider_name == 'replicate'
+                and job_kind_preview == 'video_generation'
+            )
+
+            if not signature_ok and not replicate_video:
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Invalid media provider signature'}).encode('utf-8'))
                 return
-
-            job_id = str(data.get('job_id') or urlparse.parse_qs(parsed.query).get('job_id', [''])[0]).strip()
-            provider_job_id = str(data.get('provider_job_id') or '').strip()
-            job = find_media_processing_job(job_id=job_id, provider_job_id=provider_job_id)
             if not job:
                 self._set_json_headers(404)
                 self.wfile.write(json.dumps({'error': 'Media processing job not found'}).encode('utf-8'))
                 return
 
-            callback_token = str(urlparse.parse_qs(parsed.query).get('token', [''])[0]).strip()
             expected_token = str(job.get('callback_token') or '').strip()
-            if expected_token and not secrets.compare_digest(callback_token, expected_token):
+            if replicate_video and not signature_ok:
+                auth_error = replicate_callback_auth_error(self.headers, raw_body, callback_token, expected_token)
+                if auth_error:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': auth_error}).encode('utf-8'))
+                    return
+            elif expected_token and not secrets.compare_digest(callback_token, expected_token):
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Invalid callback token'}).encode('utf-8'))
                 return
 
             job_kind = str(job.get('job_kind') or 'subtitle')
+            if job_kind == 'video_generation' and str(job.get('provider') or '').strip().lower() == 'replicate':
+                incoming_id = str(data.get('id') or '').strip()
+                expected_id = str(job.get('provider_job_id') or '').strip()
+                if incoming_id and expected_id and incoming_id != expected_id:
+                    self._set_json_headers(409)
+                    self.wfile.write(json.dumps({
+                        'error': 'Replicate prediction id does not match this job',
+                        'job_id': job.get('id'),
+                        'status': job.get('status'),
+                    }).encode('utf-8'))
+                    return
             with media_job_lock(str(job.get('id') or '')):
                 # Replay protection runs before any state change: a repeated
                 # delivery (same nonce/body) or a stale timestamp is refused
@@ -38022,15 +38165,20 @@ For claims or questions, please contact:
 
                 if job_kind == 'video_generation':
                     already_terminal = str(job.get('status') or '').lower() in MEDIA_VIDEO_TERMINAL_STATUSES
-                    asset = finalize_media_video_job(job, {
-                        'status': str(data.get('status') or data.get('state') or 'completed'),
-                        'provider_job_id': provider_job_id or str(job.get('provider_job_id') or ''),
-                        'download_url': str(data.get('download_url') or data.get('url') or '').strip(),
-                        'duration': data.get('duration'),
-                        'message': data.get('message') or 'Provider webhook completed the generated video.',
-                        'provider_state': data,
-                        'error': data.get('error'),
-                    })
+                    if str(job.get('provider') or '').strip().lower() == 'replicate':
+                        from services.media_generation_service import MediaGenerationService
+                        completion = MediaGenerationService.normalize_replicate_prediction(data)
+                    else:
+                        completion = {
+                            'status': str(data.get('status') or data.get('state') or 'completed'),
+                            'provider_job_id': provider_job_id or str(job.get('provider_job_id') or ''),
+                            'download_url': str(data.get('download_url') or data.get('url') or '').strip(),
+                            'duration': data.get('duration'),
+                            'message': data.get('message') or 'Provider webhook completed the generated video.',
+                            'provider_state': data,
+                            'error': data.get('error'),
+                        }
+                    asset = finalize_media_video_job(job, completion)
                     save_ledger_data()
                     self._set_json_headers(200)
                     self.wfile.write(json.dumps({

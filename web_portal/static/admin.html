@@ -2216,6 +2216,7 @@
           <select id="mkt-video-provider" style="width:100%;margin-top:4px;padding:8px;border-radius:7px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.12);color:white;">
             <option value="gemini">Gemini / Veo</option>
             <option value="kling">Kling</option>
+            <option value="replicate">Replicate</option>
           </select>
         </div>
         <div>
@@ -5580,7 +5581,13 @@
       }
       const referenceImage = selectedMarketingReferenceImage();
       const pollMode = selectedMarketingPollMode();
-      const providerModel = selectedMarketingVideoModel();
+      let providerModel = selectedMarketingVideoModel();
+      if (providerOverride) {
+        const allowedModels = marketingProviderConfig(provider)?.models || [];
+        if (providerModel && allowedModels.length && !allowedModels.includes(providerModel)) {
+          providerModel = '';
+        }
+      }
       const autoPublishToHero = selectedMarketingAutoHero();
 
       try {
@@ -5694,6 +5701,7 @@
 
       const geminiEnabled = isMarketingProviderEnabled('gemini');
       const klingEnabled = isMarketingProviderEnabled('kling');
+      const replicateEnabled = isMarketingProviderEnabled('replicate');
       const selectedProviderEnabled = isMarketingProviderEnabled(selectedMarketingVideoProvider());
       const videosHtml = renderMarketingList(campaign.ai_video_blueprints, (item, index) => {
         const job = latestVideoJobForBlueprint(index);
@@ -5711,6 +5719,7 @@
               <button ${selectedProviderEnabled ? '' : 'disabled'} onclick="generateMarketingBlueprintVideo(${index})" style="background:#42a5f5;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;${selectedProviderEnabled ? '' : 'opacity:0.5;cursor:not-allowed;'}">Generate with selected provider</button>
               <button ${geminiEnabled ? '' : 'disabled'} onclick="generateMarketingBlueprintVideo(${index}, 'gemini')" style="background:#1976d2;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;${geminiEnabled ? '' : 'opacity:0.5;cursor:not-allowed;'}">Veo / Gemini${geminiEnabled ? '' : ' (not configured)'}</button>
               <button ${klingEnabled ? '' : 'disabled'} onclick="generateMarketingBlueprintVideo(${index}, 'kling')" style="background:#7c4dff;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;${klingEnabled ? '' : 'opacity:0.5;cursor:not-allowed;'}">Kling${klingEnabled ? '' : ' (not configured)'}</button>
+              <button ${replicateEnabled ? '' : 'disabled'} onclick="generateMarketingBlueprintVideo(${index}, 'replicate')" style="background:#0f766e;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;${replicateEnabled ? '' : 'opacity:0.5;cursor:not-allowed;'}">Replicate${replicateEnabled ? '' : ' (not configured)'}</button>
               ${job && job.status === 'failed' ? `<button onclick="retryMarketingVideoJob('${job.id}')" style="background:#ffb300;color:#10203a;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Retry</button>` : ''}
               ${job && ['queued', 'processing'].includes(String(job.status || '').toLowerCase()) ? `<button onclick="cancelMarketingVideoJob('${job.id}')" style="background:#ef5350;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Cancel</button>` : ''}
             </div>
