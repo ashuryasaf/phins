@@ -5,7 +5,7 @@ These models define the database schema for all core entities in the system.
 Supports both SQLite (development) and PostgreSQL (production).
 """
 
-from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, Text, ForeignKey, Enum as SQLEnum, UniqueConstraint, Index
+from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, Text, ForeignKey, Enum as SQLEnum, UniqueConstraint, Index, LargeBinary
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -3212,3 +3212,27 @@ class VideoJob(Base):
 
     def to_dict(self):
         return json.loads(self.payload_json) if self.payload_json else {}
+
+
+class MediaLibraryBlob(Base):
+    """Checksummed bytes for a media-library video, image, or document.
+
+    Disk under the media storage directory is a cache. This table is what
+    survives a process restart and a new deploy when no volume is mounted.
+    ``sha256`` is the digest of ``payload``. A different checksum is never
+    written over an existing row; removal is an explicit delete.
+
+    This is a NEW table - it does not modify any existing data.
+    """
+    __tablename__ = 'media_library_blobs'
+
+    asset_id = Column(String(120), primary_key=True)
+    sha256 = Column(String(64), nullable=False)
+    size_bytes = Column(Integer, nullable=False, default=0)
+    mime_type = Column(String(160), nullable=False, default='application/octet-stream')
+    asset_type = Column(String(40), nullable=False, default='', index=True)
+    payload = Column(LargeBinary, nullable=False)
+    record_json = Column(Text, nullable=False)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+                          nullable=False, index=True)

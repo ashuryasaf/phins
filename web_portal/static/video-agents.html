@@ -687,7 +687,6 @@
                     ? 'rgba(239,83,80,0.24)'
                     : 'rgba(66,165,245,0.24)';
             const progress = Math.max(0, Math.min(100, Number(job.progress_pct || 0)));
-            const downloadUrl = String(job.download_url || '').trim();
             const checksum = shortChecksum(job.asset_checksum || '');
             const sizeLabel = formatBytes(job.asset_size || 0);
             const integrityLine = (status === 'completed' && (checksum || sizeLabel))
@@ -719,7 +718,8 @@
                     </div>
                     <div class="job-actions">
                         ${job.generated_asset_id ? `<a class="small-btn open" href="/admin-media.html">Open in Media</a>` : ''}
-                        ${status === 'completed' && downloadUrl ? `<a class="small-btn open" href="${escapeHtml(downloadUrl)}" download> Download Video</a>` : ''}
+                        ${status === 'completed' && job.generated_asset_id ? `<button class="small-btn open" onclick="downloadVideoAgentAsset('${escapeHtml(job.generated_asset_id)}')">Download Video</button>` : ''}
+                        ${job.error ? `<div class="job-meta" style="margin-top:6px;">${escapeHtml(job.error)}</div>` : ''}
                         ${status === 'completed' && job.generated_asset_id ? `<button class="small-btn open" onclick="verifyVideoAgentJob('${job.id}')">Verify Integrity</button>` : ''}
                         ${status === 'completed' && job.generated_asset_id && !implementedLive ? `<button class="small-btn open" onclick="publishVideoAgentJob('${job.id}')"> Implement on phins.ai</button>` : ''}
                         ${implementedLive ? `<a class="small-btn open" href="/" target="_blank" rel="noopener">Open Landing Page</a>` : ''}
@@ -790,6 +790,37 @@
             } catch (err) {
                 if (!silent) setStatus(`Failed to load video jobs: ${err.message}`, 'error');
                 return [];
+            }
+        }
+
+        async function downloadVideoAgentAsset(assetId) {
+            try {
+                const response = await fetch(`/api/media/${encodeURIComponent(assetId)}/download`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!response.ok) {
+                    let message = `Download failed (${response.status})`;
+                    try {
+                        const data = await response.json();
+                        if (data && data.error) message = data.error;
+                    } catch (err) {}
+                    setStatus(message, 'error');
+                    return;
+                }
+                const blob = await response.blob();
+                const job = videoAgentJobs.find(item => item.generated_asset_id === assetId);
+                const filename = (job && job.asset_name) || `${assetId}.mp4`;
+                const objectUrl = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = objectUrl;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(objectUrl);
+                setStatus(`Downloaded ${filename}.`, 'success');
+            } catch (err) {
+                setStatus(`Download failed: ${err.message}`, 'error');
             }
         }
 

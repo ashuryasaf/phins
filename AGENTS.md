@@ -548,7 +548,18 @@ Environment variables commonly used:
 - **Media:** `MEDIA_PROVIDER_WEBHOOK_SECRET`, `DEFAULT_MEDIA_SUBTITLE_PROVIDER`,
  `DEFAULT_MEDIA_VIDEO_PROVIDER`, `PHINS_MEDIA_INLINE_MAX_BYTES`,
  `PHINS_MAX_MEDIA_UPLOAD_SIZE` (0 = no HTTP cap),
- `PHINS_DEFAULT_MEDIA_ASSET_MAX_BYTES` (scanner/disk cap, default 2GB)
+ `PHINS_DEFAULT_MEDIA_ASSET_MAX_BYTES` (scanner/disk cap, default 2GB),
+ `PHINS_MEDIA_STORAGE_DIR` (disk cache; default is
+ `RAILWAY_VOLUME_MOUNT_PATH/phins_media_assets` or `/data/phins_media_assets`
+ when that directory is writable, otherwise the temp dir),
+ `PHINS_MEDIA_DB_MAX_BYTES` (database copy cap, default 256 MiB, `0` disables
+ the byte copy). With the database on, video and image bytes (and other
+ media-library files) are stored in `media_library_blobs` with SHA-256
+ checked on read. A checksum clash is not overwritten. `DELETE /api/media/{id}`
+ (admin or media) and supplier-offer media delete remove that blob and the
+ cache file. `/media-files/{asset_id}/...` resolves the asset's real file,
+ restoring it from the database when the cache is gone. Playback stays
+ public; the authenticated download is `GET /api/media/{id}/download`.
 - **Video agents (B8):** `REPLICATE_API_TOKEN` enables Replicate beside
  Gemini and Kling (Growth Agent and Video Agents). Optional
  `REPLICATE_VIDEO_MODELS` (comma-separated `owner/name`) and

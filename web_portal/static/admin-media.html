@@ -2704,6 +2704,37 @@ Notes:
             return `${baseName}_${language}.srt`;
         }
 
+        async function downloadMediaFile(assetId) {
+            const media = mediaAssets.find(item => item.id === assetId);
+            const token = getToken();
+            try {
+                const response = await fetch(`/api/media/${encodeURIComponent(assetId)}/download`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!response.ok) {
+                    let message = `Download failed (${response.status})`;
+                    try {
+                        const data = await response.json();
+                        if (data && data.error) message = data.error;
+                    } catch (err) {}
+                    showToast(message, 'error');
+                    return;
+                }
+                const blob = await response.blob();
+                const filename = (media && media.name) || `${assetId}`;
+                const objectUrl = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = objectUrl;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(objectUrl);
+            } catch (err) {
+                showToast('Download failed: ' + err.message, 'error');
+            }
+        }
+
         async function downloadSubtitleTrack(media, latestTrack) {
             if (!latestTrack || !latestTrack.download_url) {
                 showToast('No downloadable subtitle track is available yet.', 'error');
@@ -2802,6 +2833,7 @@ Notes:
                     <div class="media-actions">
                         <button class="media-action-btn use" onclick="useMedia('${safeId}')">Use</button>
                         <button class="media-action-btn preview" onclick="previewMedia('${safeId}')">️</button>
+                        <button class="media-action-btn download" onclick="downloadMediaFile('${safeId}')">Download</button>
                         <button class="media-action-btn delete" onclick="deleteMedia('${safeId}')">️</button>
                     </div>
                     ${media.type === 'video' ? `
