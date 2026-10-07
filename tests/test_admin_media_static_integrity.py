@@ -77,6 +77,30 @@ def test_index_html_applies_design_colors():
     assert "primary_color" in content
     assert "accent_color" in content
     assert "--ds-primary" in content
+    assert "builtinPrimary" in content
+    assert "--ds-primary: #060d1f" in content
+    assert "defaultAccent = '#e3bf6f'" in content
+
+
+def test_admin_media_defaults_to_the_unified_palette():
+    content = ADMIN_MEDIA_PATH.read_text(encoding="utf-8")
+    assert "primaryColor: PLATFORM_PRIMARY" in content
+    assert "PLATFORM_PRIMARY = '#060d1f'" in content
+    assert "PLATFORM_ACCENT = '#e3bf6f'" in content
+    assert "displayFont: 'Space Grotesk'" in content
+    assert 'id="opt-display-font"' in content
+    assert 'value="shield"' in content
+    assert "PHINS shield" in content
+    assert "function resolveColor(" in content
+    assert "primary_color: designSettings.primaryColor" in content
+    assert "accent_color: designSettings.accentColor" in content
+    assert "selectColor('primary', '#060d1f'" in content
+    assert "selectColor('accent', '#e3bf6f'" in content
+    assert "selectColor('primary', '#1565c0'" not in content
+    assert "selectColor('accent', '#42a5f5'" not in content
+    assert "selectColor('primary', '#0d47a1'" not in content
+    assert "selectColor('accent', '#ff6b35'" not in content
+    assert "persistAssignments(null);" in content
 
 
 def test_index_html_applies_hero_background():
@@ -114,6 +138,7 @@ def test_login_page_applies_branding():
     assert "/api/design/settings" in content
     assert "primary_color" in content
     assert "hero_background_url" in content
+    assert "p !== '#060d1f'" in content
 
 
 def test_register_page_applies_branding():
@@ -121,3 +146,4 @@ def test_register_page_applies_branding():
     assert "applyBranding" in content
     assert "/api/design/settings" in content
     assert "primary_color" in content
+    assert "p !== '#060d1f'" in content

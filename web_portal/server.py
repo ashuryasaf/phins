@@ -2794,6 +2794,28 @@ def get_media_asset_playback_url(asset_id: str) -> str:
     return media_asset_url(asset)
 
 
+# The platform chrome is deep navy, gold, Inter, and Space Grotesk.
+# These two colors are that palette. Older installs stored the previous
+# blue/orange defaults; those values mean "use the platform palette".
+PLATFORM_PRIMARY_COLOR = '#060d1f'
+PLATFORM_ACCENT_COLOR = '#e3bf6f'
+LEGACY_PLATFORM_PRIMARY = frozenset({'', '#0d47a1', '#1565c0'})
+LEGACY_PLATFORM_ACCENT = frozenset({'', '#ff6b35', '#42a5f5'})
+
+
+def canonical_platform_color(value: Any, *, kind: str) -> str:
+    """Return the color a public page should apply.
+
+    A blank value or a historical default becomes the unified navy or gold.
+    Any other hex is an operator choice and is returned unchanged. This does
+    not write DESIGN_SETTINGS.
+    """
+    color = str(value or '').strip().lower()
+    if kind == 'primary':
+        return PLATFORM_PRIMARY_COLOR if color in LEGACY_PLATFORM_PRIMARY else color
+    return PLATFORM_ACCENT_COLOR if color in LEGACY_PLATFORM_ACCENT else color
+
+
 def normalize_apply_disclosure_version_label(value: Any, default: str = 'light') -> str:
     """Keep the apply-form disclosure version label short and display-safe."""
     label = str(value or '').strip().lower()
@@ -20706,8 +20728,12 @@ For claims or questions, please contact:
                     'show_contact': DESIGN_SETTINGS.get('show_contact', True),
                     'show_quote_form': DESIGN_SETTINGS.get('show_quote_form', False),
                     'show_products': DESIGN_SETTINGS.get('show_products', False),
-                    'primary_color': DESIGN_SETTINGS.get('primary_color', '#0d47a1'),
-                    'accent_color': DESIGN_SETTINGS.get('accent_color', '#ff6b35'),
+                    'primary_color': canonical_platform_color(
+                        DESIGN_SETTINGS.get('primary_color', '#0d47a1'), kind='primary'
+                    ),
+                    'accent_color': canonical_platform_color(
+                        DESIGN_SETTINGS.get('accent_color', '#ff6b35'), kind='accent'
+                    ),
                     'hero_background_url': hero_background_url,
                     'promo_banner_url': promo_banner_url,
                     'apply_disclosure_version_label': normalize_apply_disclosure_version_label(

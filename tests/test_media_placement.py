@@ -259,6 +259,91 @@ def test_delete_clears_only_the_placements_that_used_the_asset():
         srv.stop()
 
 
+def test_canonical_platform_color_maps_legacy_defaults_only():
+    assert portal.canonical_platform_color("#0d47a1", kind="primary") == "#060d1f"
+    assert portal.canonical_platform_color("#1565C0", kind="primary") == "#060d1f"
+    assert portal.canonical_platform_color("", kind="primary") == "#060d1f"
+    assert portal.canonical_platform_color("#060d1f", kind="primary") == "#060d1f"
+    assert portal.canonical_platform_color("#1a237e", kind="primary") == "#1a237e"
+    assert portal.canonical_platform_color("#ff6b35", kind="accent") == "#e3bf6f"
+    assert portal.canonical_platform_color("#42a5f5", kind="accent") == "#e3bf6f"
+    assert portal.canonical_platform_color("#e3bf6f", kind="accent") == "#e3bf6f"
+    assert portal.canonical_platform_color("#ff9800", kind="accent") == "#ff9800"
+
+
+def test_public_palette_is_unified_without_rewriting_stored_colors():
+    """Legacy blue/orange defaults are served as navy/gold. A read never
+    rewrites DESIGN_SETTINGS, and a media-only save leaves colors alone.
+    """
+    srv = _ServerThread()
+    srv.start()
+    _warm(srv.base)
+    token = "phins_test_place_palette"
+    _admin(token)
+    saved_primary = portal.DESIGN_SETTINGS.get("primary_color")
+    saved_accent = portal.DESIGN_SETTINGS.get("accent_color")
+    saved_contact = portal.DESIGN_SETTINGS.get("show_contact", True)
+    try:
+        portal.DESIGN_SETTINGS["primary_color"] = "#0d47a1"
+        portal.DESIGN_SETTINGS["accent_color"] = "#ff6b35"
+        status, public = _request(srv.base + "/api/design/settings")
+        assert status == 200
+        assert public["primary_color"] == "#060d1f"
+        assert public["accent_color"] == "#e3bf6f"
+        assert portal.DESIGN_SETTINGS["primary_color"] == "#0d47a1"
+        assert portal.DESIGN_SETTINGS["accent_color"] == "#ff6b35"
+
+        status, admin = _request(srv.base + "/api/design/settings", token=token)
+        assert status == 200
+        assert admin["primary_color"] == "#0d47a1"
+        assert admin["accent_color"] == "#ff6b35"
+
+        portal.DESIGN_SETTINGS["primary_color"] = "#1565c0"
+        portal.DESIGN_SETTINGS["accent_color"] = "#42a5f5"
+        status, public = _request(srv.base + "/api/design/settings")
+        assert status == 200
+        assert public["primary_color"] == "#060d1f"
+        assert public["accent_color"] == "#e3bf6f"
+        assert portal.DESIGN_SETTINGS["primary_color"] == "#1565c0"
+        assert portal.DESIGN_SETTINGS["accent_color"] == "#42a5f5"
+
+        portal.DESIGN_SETTINGS["primary_color"] = "#1a237e"
+        portal.DESIGN_SETTINGS["accent_color"] = "#ff9800"
+        status, public = _request(srv.base + "/api/design/settings")
+        assert status == 200
+        assert public["primary_color"] == "#1a237e"
+        assert public["accent_color"] == "#ff9800"
+        assert portal.DESIGN_SETTINGS["primary_color"] == "#1a237e"
+
+        status, _ = _request(
+            srv.base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={"show_contact": saved_contact},
+        )
+        assert status == 200
+        assert portal.DESIGN_SETTINGS["primary_color"] == "#1a237e"
+        assert portal.DESIGN_SETTINGS["accent_color"] == "#ff9800"
+
+        status, body = _request(
+            srv.base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={"primary_color": "#060d1f", "accent_color": "#e3bf6f"},
+        )
+        assert status == 200, body
+        assert portal.DESIGN_SETTINGS["primary_color"] == "#060d1f"
+        assert portal.DESIGN_SETTINGS["accent_color"] == "#e3bf6f"
+        status, public = _request(srv.base + "/api/design/settings")
+        assert public["primary_color"] == "#060d1f"
+        assert public["accent_color"] == "#e3bf6f"
+    finally:
+        portal.DESIGN_SETTINGS["primary_color"] = saved_primary
+        portal.DESIGN_SETTINGS["accent_color"] = saved_accent
+        portal.DESIGN_SETTINGS["show_contact"] = saved_contact
+        srv.stop()
+
+
 def test_missing_placement_asset_resolves_to_an_empty_public_url():
     saved = _snapshot()
     try:

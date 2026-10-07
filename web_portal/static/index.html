@@ -16,7 +16,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --ds-primary: #0d47a1;
+      --ds-primary: #060d1f;
       --ds-accent: #e3bf6f;
       --ds-accent-strong: #f7e2a0;
       --ds-accent-shadow: rgba(227, 191, 111, 0.35);
@@ -347,7 +347,8 @@
     }
 
     function applyDesignColors(settings) {
-      const defaultPrimary = '#0d47a1';
+      const defaultPrimary = '#060d1f';
+      const builtinPrimary = new Set(['#0d47a1', '#060d1f']);
       const defaultAccent = '#e3bf6f';
       // The platform's legacy accent default; treat it as "not customized"
       // so the landing page keeps its gold accent unless an admin picks a
@@ -365,7 +366,7 @@
       root.style.setProperty('--ds-accent-shadow', `${accent}59`);
       root.style.setProperty('--ds-accent-shadow-hover', `${accent}80`);
 
-      if (primary !== defaultPrimary) {
+      if (!builtinPrimary.has(primary)) {
         const glowSoft = mixHexColors(primary, '#000000', 0.35);
         const backdrop = document.querySelector('.backdrop');
         if (backdrop) {

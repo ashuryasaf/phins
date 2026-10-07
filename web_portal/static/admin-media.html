@@ -4,14 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PHINS Admin - Media & Design Settings</title>
+    <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/styles.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+            background:
+                radial-gradient(1000px 520px at 85% -10%, rgba(21, 68, 155, 0.55), transparent 60%),
+                radial-gradient(720px 420px at 8% 110%, rgba(227, 191, 111, 0.14), transparent 62%),
+                #060d1f;
             min-height: 100vh;
             color: white;
         }
@@ -40,7 +44,7 @@
         .logo-icon {
             width: 36px;
             height: 36px;
-            background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
+            background: transparent;
             border-radius: 8px;
             display: flex;
             align-items: center;
@@ -76,10 +80,10 @@
         }
         .btn-secondary:hover { background: rgba(255,255,255,0.2); }
         .btn-primary {
-            background: linear-gradient(135deg, #42a5f5 0%, #1976d2 100%);
-            color: white;
+            background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+            color: #071022;
         }
-        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(66, 165, 245, 0.4); }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(227, 191, 111, 0.4); }
         .btn-danger {
             background: linear-gradient(135deg, #ef5350 0%, #e53935 100%);
             color: white;
@@ -118,8 +122,8 @@
             color: white;
         }
         .main-tab.active {
-            background: rgba(255,255,255,0.2);
-            color: white;
+            background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+            color: #071022;
         }
         
         /* Stats Bar - Compact */
@@ -151,7 +155,8 @@
         
         /* Upload Section */
         .upload-section {
-            background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+            background: rgba(11, 23, 48, 0.72);
+            border: 1px solid rgba(227, 191, 111, 0.35);
             border-radius: 12px;
             padding: 16px;
             margin-bottom: 16px;
@@ -320,8 +325,9 @@
             transition: all 0.2s;
         }
         .filter-btn.active {
-            background: linear-gradient(135deg, #42a5f5 0%, #1976d2 100%);
+            background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
             border-color: transparent;
+            color: #071022;
         }
         .filter-btn:hover { background: rgba(255,255,255,0.2); }
         
@@ -422,8 +428,8 @@
             transition: all 0.2s;
         }
         .media-action-btn.use {
-            background: linear-gradient(135deg, #42a5f5 0%, #1976d2 100%);
-            color: white;
+            background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+            color: #071022;
         }
         .media-action-btn.preview {
             background: rgba(255,255,255,0.1);
@@ -437,7 +443,8 @@
         
         /* Landing Page Assignments - Compact */
         .assignments-section {
-            background: linear-gradient(135deg, #2e7d32 0%, #4caf50 100%);
+            background: rgba(11, 23, 48, 0.72);
+            border: 1px solid rgba(227, 191, 111, 0.45);
             border-radius: 12px;
             padding: 16px;
             margin-bottom: 16px;
@@ -449,8 +456,10 @@
             gap: 8px;
             font-size: 1rem;
         }
-        .apply-disclosure-assignments {
-            background: linear-gradient(135deg, #0d2a5c 0%, #14509e 100%);
+        .apply-disclosure-assignments,
+        .chat-disclaimer-assignments {
+            background: rgba(11, 23, 48, 0.72);
+            border: 1px solid rgba(227, 191, 111, 0.45);
         }
         .assignment-grid {
             display: grid;
@@ -480,7 +489,7 @@
             font-size: 0.85rem;
             cursor: pointer;
         }
-        .assignment-select option { background: #1565c0; color: white; }
+        .assignment-select option { background: #0b1730; color: white; }
         .assignment-status {
             margin-top: 6px;
             font-size: 0.75rem;
@@ -490,8 +499,10 @@
         }
         .assignment-status.active { color: #fff; }
         .assignment-status.inactive { color: rgba(255,255,255,0.6); }
-        .chat-disclaimer-assignments {
-            background: linear-gradient(135deg, #4a148c 0%, #6a1b9a 100%);
+        .page-title,
+        .assignments-section h2,
+        .design-section h2 {
+            font-family: 'Space Grotesk', 'Inter', sans-serif;
         }
         .placement-chips {
             display: flex;
@@ -737,7 +748,8 @@
         
         /* ========== DESIGN SETTINGS PANEL ========== */
         .design-section {
-            background: linear-gradient(135deg, #5c6bc0 0%, #3949ab 100%);
+            background: rgba(11, 23, 48, 0.72);
+            border: 1px solid rgba(227, 191, 111, 0.45);
             border-radius: 12px;
             padding: 16px;
             margin-bottom: 16px;
@@ -795,7 +807,7 @@
             border-color: rgba(255,255,255,0.4);
         }
         .design-option select option {
-            background: #3949ab;
+            background: #0b1730;
             color: white;
         }
         .color-swatches {
@@ -886,7 +898,7 @@
             width: 14px;
             height: 14px;
             border-radius: 50%;
-            background: #42a5f5;
+            background: #e3bf6f;
             cursor: pointer;
         }
         .range-value {
@@ -1573,25 +1585,26 @@ Notes:
                         <div class="design-option">
                             <label>Primary Color</label>
                             <div class="color-swatches">
-                                <div class="color-swatch selected" style="background: #1565c0;" onclick="selectColor('primary', '#1565c0', this)"></div>
-                                <div class="color-swatch" style="background: #7c3aed;" onclick="selectColor('primary', '#7c3aed', this)"></div>
-                                <div class="color-swatch" style="background: #059669;" onclick="selectColor('primary', '#059669', this)"></div>
-                                <div class="color-swatch" style="background: #dc2626;" onclick="selectColor('primary', '#dc2626', this)"></div>
-                                <div class="color-swatch" style="background: #d97706;" onclick="selectColor('primary', '#d97706', this)"></div>
-                                <div class="color-swatch" style="background: #0891b2;" onclick="selectColor('primary', '#0891b2', this)"></div>
-                                <div class="color-swatch" style="background: #be185d;" onclick="selectColor('primary', '#be185d', this)"></div>
-                                <div class="color-swatch" style="background: #374151;" onclick="selectColor('primary', '#374151', this)"></div>
+                                <div class="color-swatch selected" data-kind="primary" data-color="#060d1f" style="background: #060d1f; box-shadow: inset 0 0 0 1px rgba(227,191,111,0.7);" onclick="selectColor('primary', '#060d1f', this)"></div>
+                                <div class="color-swatch" data-kind="primary" data-color="#1976d2" style="background: #1976d2;" onclick="selectColor('primary', '#1976d2', this)"></div>
+                                <div class="color-swatch" data-kind="primary" data-color="#7c3aed" style="background: #7c3aed;" onclick="selectColor('primary', '#7c3aed', this)"></div>
+                                <div class="color-swatch" data-kind="primary" data-color="#059669" style="background: #059669;" onclick="selectColor('primary', '#059669', this)"></div>
+                                <div class="color-swatch" data-kind="primary" data-color="#dc2626" style="background: #dc2626;" onclick="selectColor('primary', '#dc2626', this)"></div>
+                                <div class="color-swatch" data-kind="primary" data-color="#d97706" style="background: #d97706;" onclick="selectColor('primary', '#d97706', this)"></div>
+                                <div class="color-swatch" data-kind="primary" data-color="#0891b2" style="background: #0891b2;" onclick="selectColor('primary', '#0891b2', this)"></div>
+                                <div class="color-swatch" data-kind="primary" data-color="#be185d" style="background: #be185d;" onclick="selectColor('primary', '#be185d', this)"></div>
+                                <div class="color-swatch" data-kind="primary" data-color="#374151" style="background: #374151;" onclick="selectColor('primary', '#374151', this)"></div>
                             </div>
                         </div>
                         <div class="design-option">
                             <label>Accent Color</label>
                             <div class="color-swatches">
-                                <div class="color-swatch selected" style="background: #42a5f5;" onclick="selectColor('accent', '#42a5f5', this)"></div>
-                                <div class="color-swatch" style="background: #a78bfa;" onclick="selectColor('accent', '#a78bfa', this)"></div>
-                                <div class="color-swatch" style="background: #34d399;" onclick="selectColor('accent', '#34d399', this)"></div>
-                                <div class="color-swatch" style="background: #fbbf24;" onclick="selectColor('accent', '#fbbf24', this)"></div>
-                                <div class="color-swatch" style="background: #f472b6;" onclick="selectColor('accent', '#f472b6', this)"></div>
-                                <div class="color-swatch" style="background: #60a5fa;" onclick="selectColor('accent', '#60a5fa', this)"></div>
+                                <div class="color-swatch selected" data-kind="accent" data-color="#e3bf6f" style="background: #e3bf6f;" onclick="selectColor('accent', '#e3bf6f', this)"></div>
+                                <div class="color-swatch" data-kind="accent" data-color="#a78bfa" style="background: #a78bfa;" onclick="selectColor('accent', '#a78bfa', this)"></div>
+                                <div class="color-swatch" data-kind="accent" data-color="#34d399" style="background: #34d399;" onclick="selectColor('accent', '#34d399', this)"></div>
+                                <div class="color-swatch" data-kind="accent" data-color="#fbbf24" style="background: #fbbf24;" onclick="selectColor('accent', '#fbbf24', this)"></div>
+                                <div class="color-swatch" data-kind="accent" data-color="#f472b6" style="background: #f472b6;" onclick="selectColor('accent', '#f472b6', this)"></div>
+                                <div class="color-swatch" data-kind="accent" data-color="#60a5fa" style="background: #60a5fa;" onclick="selectColor('accent', '#60a5fa', this)"></div>
                             </div>
                         </div>
                     </div>
@@ -1635,12 +1648,19 @@ Notes:
                         <div class="design-option">
                             <label>Font Family</label>
                             <select id="opt-font" onchange="updateDesignOption('fontFamily', this.value)">
-                                <option value="Inter">Inter (Default)</option>
+                                <option value="Inter" selected>Inter (Default)</option>
                                 <option value="Roboto">Roboto</option>
                                 <option value="Open Sans">Open Sans</option>
                                 <option value="Poppins">Poppins</option>
                                 <option value="Montserrat">Montserrat</option>
                                 <option value="system-ui">System Default</option>
+                            </select>
+                        </div>
+                        <div class="design-option">
+                            <label>Display Font</label>
+                            <select id="opt-display-font" onchange="updateDesignOption('displayFont', this.value)">
+                                <option value="Space Grotesk" selected>Space Grotesk (Default)</option>
+                                <option value="Inter">Inter</option>
                             </select>
                         </div>
                         <div class="design-option">
@@ -1774,14 +1794,7 @@ Notes:
                         <div class="design-option">
                             <label>Logo Icon</label>
                             <select id="opt-logo-icon" onchange="updateBrandOption('logoIcon', this.value)">
-                                <option value="️" selected>️ Shield</option>
-                                <option value=""> Bank</option>
-                                <option value=""> Briefcase</option>
-                                <option value=""> Star</option>
-                                <option value=""> Lock</option>
-                                <option value="️">️ Heart</option>
-                                <option value=""> Hospital</option>
-                                <option value=""> Premium</option>
+                                <option value="shield" selected>PHINS shield</option>
                             </select>
                         </div>
                     </div>
@@ -1908,14 +1921,19 @@ Notes:
         let pendingUseId = '';
         let useSaveInFlight = false;
         let disclosureVersionLabel = 'light';
+        const PLATFORM_PRIMARY = '#060d1f';
+        const PLATFORM_ACCENT = '#e3bf6f';
+        const LEGACY_PRIMARY = ['#0d47a1', '#1565c0'];
+        const LEGACY_ACCENT = ['#ff6b35', '#42a5f5'];
         let designSettings = {
-            primaryColor: '#1565c0',
-            accentColor: '#42a5f5',
+            primaryColor: PLATFORM_PRIMARY,
+            accentColor: PLATFORM_ACCENT,
             darkMode: false,
             animations: true,
             compactMode: false,
             showIcons: true,
             fontFamily: 'Inter',
+            displayFont: 'Space Grotesk',
             fontSize: 14,
             lineHeight: 1.5
         };
@@ -1933,7 +1951,7 @@ Notes:
         let brandSettings = {
             companyName: 'PHINS',
             tagline: 'Safe Assurance',
-            logoIcon: '️',
+            logoIcon: 'shield',
             copyright: '© 2026 PHINS Insurance',
             showSocial: true,
             showContact: true,
@@ -2390,6 +2408,20 @@ Notes:
             console.log('Brand option updated:', key, value);
         }
         
+        function resolveColor(candidates, legacy, fallback) {
+            for (const value of candidates) {
+                const color = String(value || '').trim().toLowerCase();
+                if (/^#[0-9a-f]{6}$/.test(color) && legacy.indexOf(color) === -1) return color;
+            }
+            return fallback;
+        }
+
+        function markColorSwatches(kind, color) {
+            document.querySelectorAll('.color-swatch[data-kind="' + kind + '"]').forEach(swatch => {
+                swatch.classList.toggle('selected', swatch.dataset.color === color);
+            });
+        }
+
         async function loadDesignSettings() {
             const token = getToken();
             try {
@@ -2398,7 +2430,8 @@ Notes:
                 });
                 if (response.ok) {
                     const settings = await response.json();
-                    // Apply loaded settings to form
+                    // Apply loaded settings to form. The admin response is the
+                    // stored record, including historical blue/orange defaults.
                     if (settings.designSettings) {
                         designSettings = { ...designSettings, ...settings.designSettings };
                     }
@@ -2408,6 +2441,21 @@ Notes:
                     if (settings.brandSettings) {
                         brandSettings = { ...brandSettings, ...settings.brandSettings };
                     }
+                    designSettings.primaryColor = resolveColor(
+                        [settings.primary_color, settings.designSettings && settings.designSettings.primaryColor],
+                        LEGACY_PRIMARY,
+                        PLATFORM_PRIMARY
+                    );
+                    designSettings.accentColor = resolveColor(
+                        [settings.accent_color, settings.designSettings && settings.designSettings.accentColor],
+                        LEGACY_ACCENT,
+                        PLATFORM_ACCENT
+                    );
+                    if (!designSettings.displayFont) designSettings.displayFont = 'Space Grotesk';
+                    if (!designSettings.fontFamily) designSettings.fontFamily = 'Inter';
+                    // The live emblem is the shield. Older emoji choices are
+                    // display-only until Save All writes the brand record.
+                    if (brandSettings.logoIcon !== 'shield') brandSettings.logoIcon = 'shield';
                     applySettingsToForm();
                 }
             } catch (e) {
@@ -2421,11 +2469,17 @@ Notes:
             const animations = document.getElementById('opt-animations');
             const compact = document.getElementById('opt-compact');
             const icons = document.getElementById('opt-icons');
+            const font = document.getElementById('opt-font');
+            const displayFont = document.getElementById('opt-display-font');
             
             if (darkMode) darkMode.checked = designSettings.darkMode;
             if (animations) animations.checked = designSettings.animations;
             if (compact) compact.checked = designSettings.compactMode;
             if (icons) icons.checked = designSettings.showIcons;
+            if (font && designSettings.fontFamily) font.value = designSettings.fontFamily;
+            if (displayFont) displayFont.value = designSettings.displayFont || 'Space Grotesk';
+            markColorSwatches('primary', designSettings.primaryColor);
+            markColorSwatches('accent', designSettings.accentColor);
             
             // Apply layout settings
             const navPos = document.getElementById('opt-nav-position');
@@ -2445,7 +2499,7 @@ Notes:
             
             if (companyName) companyName.value = brandSettings.companyName;
             if (tagline) tagline.value = brandSettings.tagline;
-            if (logoIcon) logoIcon.value = brandSettings.logoIcon;
+            if (logoIcon) logoIcon.value = 'shield';
         }
         
         async function saveAllSettings() {
@@ -2453,6 +2507,8 @@ Notes:
             useSaveInFlight = true;
             try {
                 const ok = await persistAssignments(null, {
+                    primary_color: designSettings.primaryColor,
+                    accent_color: designSettings.accentColor,
                     designSettings: designSettings,
                     layoutSettings: layoutSettings,
                     brandSettings: brandSettings
