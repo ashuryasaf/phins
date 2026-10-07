@@ -1168,22 +1168,31 @@ class VideoAgentsService:
                 except Exception:
                     download_url = ""
 
-            updated = _job_store.mark_terminal(job_id, {
-                "status": "completed",
-                "progress_pct": 100,
-                "download_url": download_url,
-                "message": "Completed via webhook callback.",
-                "completed_at": datetime.now(timezone.utc).isoformat(),
-                "provider_state": {**job.get("provider_state", {}), "webhook": webhook_payload},
-            })
-            if updated is not None:
-                _audit_video_event('video_job_completed', job_id, {
-                    'campaign_id': job.get('campaign_id'),
-                    'provider': job.get('provider'),
-                    'has_download_url': bool(download_url),
+            if download_url:
+                updated = _job_store.mark_terminal(job_id, {
+                    "status": "completed",
+                    "progress_pct": 100,
+                    "download_url": download_url,
+                    "message": "Completed via webhook callback.",
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "provider_state": {**job.get("provider_state", {}), "webhook": webhook_payload},
                 })
-                return updated
-            return _job_store.get(job_id)
+                if updated is not None:
+                    _audit_video_event('video_job_completed', job_id, {
+                        'campaign_id': job.get('campaign_id'),
+                        'provider': job.get('provider'),
+                        'has_download_url': bool(download_url),
+                    })
+                    return updated
+                return _job_store.get(job_id)
+
+            # Success without a file is a failure: completing the job would
+            # leave an operator with an asset nobody can download or play.
+            status_value = "failed"
+            data = {
+                **data,
+                "error_message": "Provider reported success without a downloadable video URL.",
+            }
 
         if status_value in {"failed", "error", "cancelled", "canceled", "aborted", "rejected"}:
             error_msg = str(

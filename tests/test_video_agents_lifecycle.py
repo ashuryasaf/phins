@@ -807,6 +807,18 @@ class TestServiceMirror:
         again = svc.handle_webhook(job["id"], {"status": "failed", "data": {"error_message": "nope"}})
         assert again["status"] == "completed"
 
+    def test_webhook_success_without_a_file_fails_the_job(self, mod, monkeypatch):
+        monkeypatch.setattr(mod, "_WEBHOOK_FALLBACK_SECONDS", 0)
+        svc = mod.VideoAgentsService()
+        job = svc.submit_video_job(campaign_id="MKT-S-5b", provider="gemini", pipeline_type="introductions",
+                                   poll_mode="webhook", callback_url="https://hooks.example/cb")
+        # The provider reports success with no output file; a completed job
+        # with an empty download_url could never be saved or played.
+        empty = svc.handle_webhook(job["id"], {"status": "succeeded", "data": {"output": None}})
+        assert empty["status"] == "failed"
+        assert empty["download_url"] == ""
+        assert "downloadable video URL" in empty["error"]
+
     def test_rearm_in_flight_jobs(self, mod, monkeypatch):
         monkeypatch.setattr(mod, "_WEBHOOK_FALLBACK_SECONDS", 0)
         monkeypatch.setattr(mod, "_POLL_INITIAL_DELAY", 0.05)
