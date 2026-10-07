@@ -6,13 +6,13 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-# A newer push cancels the previous run, including on main. Railway waits
-# on this check before it promotes a deploy, so a hung apt-get on an older
-# main commit must not keep production on the previous release. The S3
-# upload below is best-effort and is not the deploy gate.
+# Cancel in-flight runs when the same ref is pushed again. main is never
+# cancelled mid-run so the post-merge artifact upload always finishes.
+# A hung main run is bounded by timeout-minutes below, so it cannot pin
+# the next production deploy for hours.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   generate-and-upload:
