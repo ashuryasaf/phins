@@ -344,6 +344,83 @@ def test_public_palette_is_unified_without_rewriting_stored_colors():
         srv.stop()
 
 
+def test_save_keeps_a_url_only_landing_hero():
+    """A full save that posts an empty hero id must not erase a landing video
+    that was stored only as video_url. Removing an asset id still clears the
+    derived URL, and an explicit video_url clear still works.
+    """
+    srv = _ServerThread()
+    srv.start()
+    _warm(srv.base)
+    token = "phins_test_place_legacy_hero"
+    _admin(token)
+    saved = _snapshot()
+    chat_id = "media-place-legacy-chat"
+    hero_id = "media-place-legacy-asset"
+    try:
+        _asset(chat_id, "video", "/media-files/media-place-legacy-chat/chat.mp4")
+        _asset(hero_id, "video", "/media-files/media-place-legacy-asset/hero.mp4")
+        portal.DESIGN_SETTINGS["hero_video_id"] = ""
+        portal.DESIGN_SETTINGS["video_url"] = "https://cdn.example.com/live-hero.mp4"
+        portal.DESIGN_SETTINGS["video_poster_id"] = ""
+        portal.DESIGN_SETTINGS["video_poster"] = "https://cdn.example.com/live-poster.jpg"
+        portal.DESIGN_SETTINGS["apply_chat_disclaimer_video_id"] = ""
+
+        status, body = _request(
+            srv.base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={
+                "hero_video_id": "",
+                "video_poster_id": "",
+                "video_url": "",
+                "video_poster": "",
+                "apply_chat_disclaimer_video_id": chat_id,
+            },
+        )
+        assert status == 200, body
+        assert portal.DESIGN_SETTINGS["video_url"] == "https://cdn.example.com/live-hero.mp4"
+        assert portal.DESIGN_SETTINGS["video_poster"] == "https://cdn.example.com/live-poster.jpg"
+        assert portal.DESIGN_SETTINGS["hero_video_id"] == ""
+        assert portal.DESIGN_SETTINGS["apply_chat_disclaimer_video_id"] == chat_id
+
+        status, public = _request(srv.base + "/api/design/settings")
+        assert status == 200
+        assert public["video_url"] == "https://cdn.example.com/live-hero.mp4"
+        assert public["video_poster"] == "https://cdn.example.com/live-poster.jpg"
+        assert public["apply_chat_disclaimer_video_url"] == "/media-files/media-place-legacy-chat/chat.mp4"
+
+        status, body = _request(
+            srv.base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={"video_url": "", "video_poster": ""},
+        )
+        assert status == 200, body
+        assert portal.DESIGN_SETTINGS["video_url"] == ""
+        assert portal.DESIGN_SETTINGS["video_poster"] == ""
+
+        portal.DESIGN_SETTINGS["hero_video_id"] = hero_id
+        portal.DESIGN_SETTINGS["video_url"] = "/media-files/media-place-legacy-asset/hero.mp4"
+        status, body = _request(
+            srv.base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={
+                "hero_video_id": "",
+                "video_url": "https://cdn.example.com/ghost.mp4",
+            },
+        )
+        assert status == 200, body
+        assert portal.DESIGN_SETTINGS["hero_video_id"] == ""
+        assert portal.DESIGN_SETTINGS["video_url"] == ""
+    finally:
+        portal.MEDIA_ASSETS.pop(chat_id, None)
+        portal.MEDIA_ASSETS.pop(hero_id, None)
+        _restore(saved)
+        srv.stop()
+
+
 def test_missing_placement_asset_resolves_to_an_empty_public_url():
     saved = _snapshot()
     try:

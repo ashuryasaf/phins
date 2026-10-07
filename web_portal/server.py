@@ -36912,6 +36912,11 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
 
+                previous_hero_id = str(DESIGN_SETTINGS.get('hero_video_id') or '')
+                previous_poster_id = str(DESIGN_SETTINGS.get('video_poster_id') or '')
+                previous_video_url = str(DESIGN_SETTINGS.get('video_url') or '')
+                previous_video_poster = str(DESIGN_SETTINGS.get('video_poster') or '')
+
                 for key in ['video_url', 'video_poster', 'tagline', 'primary_color', 'accent_color',
                            'show_video', 'show_contact', 'show_quote_form', 'show_products', 'show_underwriting']:
                     if key in data:
@@ -36937,17 +36942,25 @@ For claims or questions, please contact:
                 # if the asset was re-stored (e.g. moved from inline to file
                 # storage) since the dashboard was last loaded.
                 if 'hero_video_id' in data:
-                    hero_id = DESIGN_SETTINGS.get('hero_video_id') or ''
+                    hero_id = str(DESIGN_SETTINGS.get('hero_video_id') or '')
                     if hero_id:
                         DESIGN_SETTINGS['video_url'] = get_media_asset_playback_url(hero_id)
-                    else:
+                    elif previous_hero_id:
+                        # An asset-backed hero was removed. Drop its derived URL
+                        # even if the client also sent a leftover address.
                         DESIGN_SETTINGS['video_url'] = ''
+                    else:
+                        # No asset was assigned. An empty id must not erase a
+                        # landing URL that is still the hero.
+                        DESIGN_SETTINGS['video_url'] = previous_video_url
                 if 'video_poster_id' in data:
-                    poster_id = DESIGN_SETTINGS.get('video_poster_id') or ''
+                    poster_id = str(DESIGN_SETTINGS.get('video_poster_id') or '')
                     if poster_id:
                         DESIGN_SETTINGS['video_poster'] = get_media_asset_playback_url(poster_id)
-                    else:
+                    elif previous_poster_id:
                         DESIGN_SETTINGS['video_poster'] = ''
+                    else:
+                        DESIGN_SETTINGS['video_poster'] = previous_video_poster
 
                 for nested_key in ['designSettings', 'layoutSettings', 'brandSettings']:
                     if nested_key in data and isinstance(data[nested_key], dict):

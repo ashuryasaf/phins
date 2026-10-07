@@ -1921,6 +1921,11 @@ Notes:
         let pendingUseId = '';
         let useSaveInFlight = false;
         let disclosureVersionLabel = 'light';
+        // Landing URLs still served when no asset id is stored. A full save
+        // must leave those slots out unless the operator changes the select.
+        let legacyHeroVideoUrl = '';
+        let legacyVideoPosterUrl = '';
+        const placementTouched = { hero_video: false, video_poster: false };
         const PLATFORM_PRIMARY = '#060d1f';
         const PLATFORM_ACCENT = '#e3bf6f';
         const LEGACY_PRIMARY = ['#0d47a1', '#1565c0'];
@@ -2164,6 +2169,16 @@ Notes:
                     assignments[slot.key] = settings[slot.field] || '';
                 }
             });
+            if (Object.prototype.hasOwnProperty.call(settings, 'video_url')
+                || Object.prototype.hasOwnProperty.call(settings, 'hero_video_id')) {
+                legacyHeroVideoUrl = settings.hero_video_id ? '' : (settings.video_url || '');
+            }
+            if (Object.prototype.hasOwnProperty.call(settings, 'video_poster')
+                || Object.prototype.hasOwnProperty.call(settings, 'video_poster_id')) {
+                legacyVideoPosterUrl = settings.video_poster_id ? '' : (settings.video_poster || '');
+            }
+            placementTouched.hero_video = false;
+            placementTouched.video_poster = false;
             if (Object.prototype.hasOwnProperty.call(settings, 'apply_disclosure_version_label')) {
                 disclosureVersionLabel = settings.apply_disclosure_version_label || 'light';
             }
@@ -2171,18 +2186,44 @@ Notes:
             if (versionSelect) versionSelect.value = disclosureVersionLabel;
         }
 
+        function keepsUrlOnlyLanding(slotKey) {
+            if (placementTouched[slotKey]) return false;
+            if (slotKey === 'hero_video') return !assignments.hero_video && !!legacyHeroVideoUrl;
+            if (slotKey === 'video_poster') return !assignments.video_poster && !!legacyVideoPosterUrl;
+            return false;
+        }
+
         function placementPayload(slotKeys) {
             const keys = slotKeys || PLACEMENT_SLOTS.map(slot => slot.key);
             const body = {};
             PLACEMENT_SLOTS.forEach(slot => {
                 if (keys.indexOf(slot.key) === -1) return;
+                // A landing URL held without an asset id is still live. Leave
+                // that slot out so saving another placement cannot blank it.
+                if (keepsUrlOnlyLanding(slot.key)) return;
                 body[slot.field] = assignments[slot.key] || '';
             });
-            if (keys.indexOf('hero_video') !== -1) {
-                body.video_url = getMediaUrl(assignments.hero_video);
+            if (Object.prototype.hasOwnProperty.call(body, 'hero_video_id')) {
+                if (body.hero_video_id) {
+                    body.video_url = getMediaUrl(assignments.hero_video);
+                } else if (legacyHeroVideoUrl && placementTouched.hero_video) {
+                    // The operator cleared a URL-only hero. Clear the URL itself.
+                    // An empty asset id is not a clear when no asset was stored.
+                    body.video_url = '';
+                    delete body.hero_video_id;
+                } else {
+                    body.video_url = '';
+                }
             }
-            if (keys.indexOf('video_poster') !== -1) {
-                body.video_poster = getMediaUrl(assignments.video_poster);
+            if (Object.prototype.hasOwnProperty.call(body, 'video_poster_id')) {
+                if (body.video_poster_id) {
+                    body.video_poster = getMediaUrl(assignments.video_poster);
+                } else if (legacyVideoPosterUrl && placementTouched.video_poster) {
+                    body.video_poster = '';
+                    delete body.video_poster_id;
+                } else {
+                    body.video_poster = '';
+                }
             }
             const touchesDisclosure = !slotKeys
                 || keys.indexOf('apply_disclosure_video') !== -1
@@ -3157,6 +3198,9 @@ Notes:
             const select = document.getElementById(`assign-${type.replace(/_/g, '-')}`);
             if (!select) return;
             assignments[type] = select.value;
+            if (Object.prototype.hasOwnProperty.call(placementTouched, type)) {
+                placementTouched[type] = true;
+            }
             updateAssignmentUI();
         }
 
@@ -3264,6 +3308,10 @@ Notes:
                 return;
             }
             const previous = {};
+            const previousTouched = {
+                hero_video: placementTouched.hero_video,
+                video_poster: placementTouched.video_poster
+            };
             const changed = [];
             slots.forEach(slot => {
                 const on = checked.has(slot.key);
@@ -3271,10 +3319,16 @@ Notes:
                 if (on && current !== media.id) {
                     previous[slot.key] = current;
                     assignments[slot.key] = media.id;
+                    if (Object.prototype.hasOwnProperty.call(placementTouched, slot.key)) {
+                        placementTouched[slot.key] = true;
+                    }
                     changed.push(slot.key);
                 } else if (!on && current === media.id) {
                     previous[slot.key] = current;
                     assignments[slot.key] = '';
+                    if (Object.prototype.hasOwnProperty.call(placementTouched, slot.key)) {
+                        placementTouched[slot.key] = true;
+                    }
                     changed.push(slot.key);
                 }
             });
@@ -3290,6 +3344,8 @@ Notes:
                 const ok = await persistAssignments(changed);
                 if (!ok) {
                     Object.keys(previous).forEach(key => { assignments[key] = previous[key]; });
+                    placementTouched.hero_video = previousTouched.hero_video;
+                    placementTouched.video_poster = previousTouched.video_poster;
                     updateAssignmentUI();
                     populateAssignmentSelects();
                     renderMediaGrid();
@@ -3303,6 +3359,8 @@ Notes:
                 showToast(media.name + ' saved for ' + names.join(', '), 'success');
             } catch (e) {
                 Object.keys(previous).forEach(key => { assignments[key] = previous[key]; });
+                placementTouched.hero_video = previousTouched.hero_video;
+                placementTouched.video_poster = previousTouched.video_poster;
                 updateAssignmentUI();
                 populateAssignmentSelects();
                 showToast('Error: ' + e.message, 'error');
