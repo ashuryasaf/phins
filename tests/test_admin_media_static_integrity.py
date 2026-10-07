@@ -32,16 +32,43 @@ def test_admin_media_preview_subtitle_uses_download_handler():
 
 def test_admin_media_sends_design_settings_on_save():
     content = ADMIN_MEDIA_PATH.read_text(encoding="utf-8")
-    assert "hero_background_id:" in content
-    assert "promo_banner_id:" in content
-    assert "apply_disclosure_video_id:" in content
-    assert "apply_disclosure_control_video_id:" in content
-    assert "apply_disclosure_version_label:" in content
-    assert "promoteApplyDisclosureControl" in content
-    assert "Upload the apply disclosure video here" in content
-    assert "Upload the cut in the library above first" in content
-    assert "designSettings:" in content
-    assert "brandSettings:" in content
+    for token in (
+        "hero_video_id",
+        "hero_background_id",
+        "video_poster_id",
+        "promo_banner_id",
+        "apply_disclosure_video_id",
+        "apply_disclosure_control_video_id",
+        "apply_chat_disclaimer_video_id",
+        "claims_chat_disclaimer_video_id",
+        "apply_disclosure_version_label",
+        "function persistAssignments",
+        "function confirmUseAllocation",
+        "Save Changes",
+        "promoteApplyDisclosureControl",
+        "Upload the apply disclosure video here",
+        "Upload the cut in the library above first",
+        "designSettings:",
+        "brandSettings:",
+    ):
+        assert token in content, token
+
+
+def test_chat_welcome_screens_mount_assigned_disclaimer():
+    root = ADMIN_MEDIA_PATH.parents[0]
+    apply_chat = (root / "apply-chat.html").read_text(encoding="utf-8")
+    claims_chat = (root / "claims-chat.html").read_text(encoding="utf-8")
+    public_claim = (root / "file-a-claim.html").read_text(encoding="utf-8")
+    player = (root / "media-disclaimer.js").read_text(encoding="utf-8")
+
+    assert 'data-url-field="apply_chat_disclaimer_video_url"' in apply_chat
+    assert 'data-url-field="claims_chat_disclaimer_video_url"' in claims_chat
+    assert 'data-url-field="claims_chat_disclaimer_video_url"' in public_claim
+    for page in (apply_chat, claims_chat, public_claim):
+        assert 'src="/media-disclaimer.js"' in page
+        assert "data-media-disclaimer" in page
+    assert "method: 'POST'" not in player
+    assert "/api/design/settings" in player
 
 
 def test_index_html_applies_design_colors():
@@ -70,6 +97,15 @@ def test_index_html_applies_section_visibility():
     assert "applySectionVisibility" in content
     assert "show_video" in content
     assert "show_contact" in content
+
+
+def test_index_html_mounts_assigned_hero_video():
+    content = INDEX_PATH.read_text(encoding="utf-8")
+    assert 'id="video"' in content
+    assert 'id="hero-video"' in content
+    assert "function applyHeroVideo(" in content
+    assert "settings.video_url" in content
+    assert "applyHeroVideo(settings)" in content
 
 
 def test_login_page_applies_branding():

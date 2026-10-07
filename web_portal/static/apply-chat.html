@@ -55,6 +55,11 @@
                     <div class="welcome-point"><strong>Pause any time</strong><span>unique resume code</span></div>
                 </div>
                 <div class="welcome-invite" id="welcome-invite" hidden></div>
+                <div class="chat-disclaimer" data-media-disclaimer data-url-field="apply_chat_disclaimer_video_url" hidden>
+                    <p class="chat-disclaimer-label">Video disclaimer</p>
+                    <video controls playsinline preload="metadata"></video>
+                    <p class="chat-disclaimer-note">A short product disclaimer from PHINS. It does not replace the questions Phin asks.</p>
+                </div>
                 <button type="button" class="btn-gold btn-lg" id="start-btn">Start my application</button>
                 <button type="button" class="link-btn" id="show-resume-btn">I have a resume code</button>
                 <form class="resume-form" id="resume-form" hidden>
@@ -93,6 +98,7 @@
            accept="image/*,application/pdf,.doc,.docx">
 
     <script src="apply-suggest.js"></script>
+    <script src="/media-disclaimer.js"></script>
     <script src="apply-chat.js"></script>
 </body>
 </html>

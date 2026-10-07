@@ -55,6 +55,11 @@
                     <div class="welcome-point"><strong>Signed</strong><span>notice of loss</span></div>
                 </div>
                 <p class="welcome-sub" id="auth-note">No account sign-in. An email that is not on a PHINS policy cannot start a claim.</p>
+                <div class="chat-disclaimer" data-media-disclaimer data-url-field="claims_chat_disclaimer_video_url" hidden>
+                    <p class="chat-disclaimer-label">Video disclaimer</p>
+                    <video controls playsinline preload="metadata"></video>
+                    <p class="chat-disclaimer-note">A short claims disclaimer from PHINS. It does not replace the questions Phin asks.</p>
+                </div>
                 <button type="button" class="btn-gold btn-lg" id="start-btn">Start my claim</button>
                 <button type="button" class="link-btn" id="show-resume-btn">I have a resume code</button>
                 <form class="resume-form" id="resume-form" hidden>
@@ -85,6 +90,7 @@
     <input type="file" id="audio-file-input" hidden accept="audio/*">
     <input type="file" id="video-file-input" hidden accept="video/*">
     <script src="apply-suggest.js"></script>
+    <script src="/media-disclaimer.js"></script>
     <script src="claims-chat.js"></script>
 </body>
 </html>

@@ -2464,6 +2464,8 @@ DESIGN_SETTINGS: Dict[str, Any] = {
     'apply_disclosure_video_id': '',
     'apply_disclosure_control_video_id': '',
     'apply_disclosure_version_label': 'light',
+    'apply_chat_disclaimer_video_id': '',
+    'claims_chat_disclaimer_video_id': '',
     'updated_at': None,
     'updated_by': None
 }
@@ -2800,6 +2802,69 @@ def normalize_apply_disclosure_version_label(value: Any, default: str = 'light')
     cleaned = ''.join(ch if (ch.isalnum() or ch in ('-', '_', ' ')) else '' for ch in label)
     cleaned = ' '.join(cleaned.split())[:32]
     return cleaned or default
+
+
+# Slots the media dashboard can allocate. The kind is enforced on every
+# write (Use and Save Changes) so a photo cannot be stored as a video
+# placement, and a missing id cannot be stored at all.
+MEDIA_PLACEMENT_SLOTS = {
+    'hero_video_id': 'video',
+    'hero_background_id': 'image',
+    'video_poster_id': 'image',
+    'promo_banner_id': 'image',
+    'apply_disclosure_video_id': 'video',
+    'apply_disclosure_control_video_id': 'video',
+    'apply_chat_disclaimer_video_id': 'video',
+    'claims_chat_disclaimer_video_id': 'video',
+}
+
+# Public playback fields resolved from the asset record at read time.
+MEDIA_PLACEMENT_PUBLIC_URLS = {
+    'apply_disclosure_video_id': 'apply_disclosure_video_url',
+    'apply_chat_disclaimer_video_id': 'apply_chat_disclaimer_video_url',
+    'claims_chat_disclaimer_video_id': 'claims_chat_disclaimer_video_url',
+}
+
+
+def media_placement_ref_errors(data: Dict[str, Any]) -> list:
+    """Return slot keys whose value is not empty and not a matching asset.
+
+    An empty string or null clears the slot. Any other value must be the id
+    of a library asset whose type matches the slot (video or image).
+    """
+    invalid = []
+    for ref_key, expected_kind in MEDIA_PLACEMENT_SLOTS.items():
+        if ref_key not in data:
+            continue
+        ref_val = data.get(ref_key)
+        if ref_val in ('', None):
+            continue
+        asset = MEDIA_ASSETS.get(ref_val) if isinstance(ref_val, str) else None
+        actual = str((asset or {}).get('type') or '').strip().lower()
+        if asset is None or actual != expected_kind:
+            invalid.append(ref_key)
+    return invalid
+
+
+def clear_media_placement_refs(asset_id: str) -> None:
+    """Drop every placement that pointed at a deleted asset."""
+    for key in MEDIA_PLACEMENT_SLOTS:
+        if DESIGN_SETTINGS.get(key) == asset_id:
+            DESIGN_SETTINGS[key] = ''
+            if key == 'hero_video_id':
+                DESIGN_SETTINGS['video_url'] = ''
+            elif key == 'video_poster_id':
+                DESIGN_SETTINGS['video_poster'] = ''
+
+
+def public_placement_video_urls() -> Dict[str, str]:
+    """Resolve chat and apply disclosure playback URLs from current assets."""
+    urls = {}
+    for slot_key, public_key in MEDIA_PLACEMENT_PUBLIC_URLS.items():
+        urls[public_key] = get_media_asset_playback_url(
+            str(DESIGN_SETTINGS.get(slot_key) or '')
+        )
+    return urls
 
 
 def ensure_media_storage_dir() -> None:
@@ -20632,9 +20697,6 @@ For claims or questions, please contact:
                     media = MEDIA_ASSETS[promo_banner_id]
                     promo_banner_url = media.get('url') or media.get('data', '')
 
-                apply_disclosure_video_id = DESIGN_SETTINGS.get('apply_disclosure_video_id', '')
-                apply_disclosure_video_url = get_media_asset_playback_url(apply_disclosure_video_id)
-
                 show_video = DESIGN_SETTINGS.get('show_video', True)
                 public_settings = {
                     'video_url': hero_video_url if show_video else '',
@@ -20648,11 +20710,11 @@ For claims or questions, please contact:
                     'accent_color': DESIGN_SETTINGS.get('accent_color', '#ff6b35'),
                     'hero_background_url': hero_background_url,
                     'promo_banner_url': promo_banner_url,
-                    'apply_disclosure_video_url': apply_disclosure_video_url,
                     'apply_disclosure_version_label': normalize_apply_disclosure_version_label(
                         DESIGN_SETTINGS.get('apply_disclosure_version_label', 'light')
                     ),
                 }
+                public_settings.update(public_placement_video_urls())
                 self.wfile.write(json.dumps(public_settings).encode('utf-8'))
             return
         
@@ -36812,31 +36874,26 @@ For claims or questions, please contact:
             try:
                 data = json.loads(body)
 
-                asset_ref_keys = [
-                    'hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id',
-                    'apply_disclosure_video_id', 'apply_disclosure_control_video_id',
-                ]
-                invalid_refs = []
-                for ref_key in asset_ref_keys:
-                    if ref_key not in data:
-                        continue
-                    ref_val = data.get(ref_key)
-                    if ref_val not in ('', None) and (not isinstance(ref_val, str) or ref_val not in MEDIA_ASSETS):
-                        invalid_refs.append(ref_key)
+                invalid_refs = media_placement_ref_errors(data)
                 if invalid_refs:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({
-                        'error': f'Invalid media asset references: {", ".join(invalid_refs)}. References must be empty or use existing asset IDs.',
+                        'error': (
+                            f'Invalid media asset references: {", ".join(invalid_refs)}. '
+                            'Each placement must be empty or an existing asset of the matching type.'
+                        ),
                         'invalid_refs': invalid_refs
                     }).encode('utf-8'))
                     return
 
                 for key in ['video_url', 'video_poster', 'tagline', 'primary_color', 'accent_color',
-                           'show_video', 'show_contact', 'show_quote_form', 'show_products', 'show_underwriting',
-                           'hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id',
-                           'apply_disclosure_video_id', 'apply_disclosure_control_video_id']:
+                           'show_video', 'show_contact', 'show_quote_form', 'show_products', 'show_underwriting']:
                     if key in data:
                         DESIGN_SETTINGS[key] = data[key]
+                for key in MEDIA_PLACEMENT_SLOTS:
+                    if key in data:
+                        ref_val = data.get(key)
+                        DESIGN_SETTINGS[key] = '' if ref_val in ('', None) else ref_val
                 if 'apply_disclosure_version_label' in data:
                     DESIGN_SETTINGS['apply_disclosure_version_label'] = (
                         normalize_apply_disclosure_version_label(
@@ -36846,9 +36903,9 @@ For claims or questions, please contact:
                     )
 
                 # Data integrity: when admin assigns a media asset to the
-                # landing page (hero video / video poster) via /admin-media.html
-                # "Save All", derive the stored URL authoritatively from the
-                # asset ID instead of trusting whatever URL the client cached.
+                # landing page (hero video / video poster) via Use or Save
+                # Changes, derive the stored URL from the asset ID instead of
+                # trusting whatever URL the client cached.
                 # This keeps DESIGN_SETTINGS in sync with MEDIA_ASSETS, so the
                 # landing page (https://www.phins.ai/) never plays a stale URL
                 # if the asset was re-stored (e.g. moved from inline to file
@@ -59934,16 +59991,7 @@ For claims or questions, please contact:
                     for jid in orphaned_job_ids:
                         MEDIA_PROCESSING_JOBS.pop(jid, None)
 
-                    for key in [
-                        'hero_video_id', 'hero_background_id', 'video_poster_id', 'promo_banner_id',
-                        'apply_disclosure_video_id', 'apply_disclosure_control_video_id',
-                    ]:
-                        if DESIGN_SETTINGS.get(key) == asset_id:
-                            DESIGN_SETTINGS[key] = ''
-                            if key == 'hero_video_id':
-                                DESIGN_SETTINGS['video_url'] = ''
-                            elif key == 'video_poster_id':
-                                DESIGN_SETTINGS['video_poster'] = ''
+                    clear_media_placement_refs(asset_id)
 
                     save_ledger_data()
                     
