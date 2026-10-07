@@ -266,6 +266,11 @@ class MediaGenerationService:
             )
         raise MediaGenerationError(f"Unsupported video provider: {provider}")
 
+    def _is_replicate_api_host(self, hostname: str) -> bool:
+        """True only for the configured Replicate API host."""
+        api_host = (urllib.parse.urlparse(self._replicate_base_url).hostname or "").lower()
+        return bool(api_host) and (hostname or "").lower() == api_host
+
     def download_generated_video(
         self,
         *,
@@ -291,7 +296,12 @@ class MediaGenerationService:
         elif provider_name == "replicate":
             if not self._replicate_api_token:
                 raise MediaGenerationError("REPLICATE_API_TOKEN is not configured")
-            headers = {"Authorization": f"Bearer {self._replicate_api_token}"}
+            # A prediction or webhook payload can name any host, so the bearer
+            # token only ever goes to the API host. Delivery URLs are public
+            # and need no credential.
+            headers = {}
+            if self._is_replicate_api_host(parsed.hostname):
+                headers["Authorization"] = f"Bearer {self._replicate_api_token}"
         else:
             raise MediaGenerationError(f"Unsupported video provider: {provider}")
 
@@ -299,17 +309,9 @@ class MediaGenerationService:
         try:
             response_ctx = validated_urlopen(request, timeout=300, allowed_schemes=("https",))
         except urllib.error.HTTPError as exc:
-            # api.replicate.com file URLs require the bearer token. Public
-            # replicate.delivery URLs sometimes reject that header; retry
-            # those once without it. A rejection from the API host stands.
-            host = (parsed.hostname or "").lower()
-            if provider_name == "replicate" and exc.code in {401, 403} and host.endswith("replicate.delivery"):
-                request = urllib.request.Request(download_url, method="GET")
-                response_ctx = validated_urlopen(request, timeout=300, allowed_schemes=("https",))
-            elif provider_name == "replicate":
+            if provider_name == "replicate":
                 raise MediaGenerationError(f"Replicate download failed with HTTP {exc.code}") from exc
-            else:
-                raise
+            raise
         with response_ctx as response:
             content_type = response.headers.get("Content-Type", "video/mp4").split(";", 1)[0].strip() or "video/mp4"
 

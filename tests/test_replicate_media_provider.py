@@ -183,7 +183,29 @@ def test_download_bytes_match_the_checksum_of_what_was_stored(monkeypatch, tmp_p
     assert stored == payload
     assert downloaded["size"] == len(payload)
     assert hashlib.sha256(stored).hexdigest() == hashlib.sha256(payload).hexdigest()
-    assert seen_auth["header"] == "Bearer r8_test_token_value"
+    assert seen_auth["header"] is None
+
+
+def test_the_api_token_only_reaches_the_replicate_api_host(monkeypatch, tmp_path):
+    service = _service(monkeypatch)
+    seen_auth: Dict[str, Any] = {}
+
+    def fake_open(request, timeout=300, allowed_schemes=("https",)):
+        seen_auth[request.full_url] = request.get_header("Authorization")
+        return _Body(b"bytes")
+
+    monkeypatch.setattr("services.media_generation_service.validated_urlopen", fake_open)
+    for url in (
+        "https://api.replicate.com/v1/files/abc/download",
+        "https://attacker.example/collect.mp4",
+    ):
+        service.download_generated_video(
+            provider="replicate",
+            download_url=url,
+            stream_to_path=str(tmp_path / "out.mp4"),
+        )
+    assert seen_auth["https://api.replicate.com/v1/files/abc/download"] == "Bearer r8_test_token_value"
+    assert seen_auth["https://attacker.example/collect.mp4"] is None
 
 
 def test_replicate_webhook_signature_round_trip():
