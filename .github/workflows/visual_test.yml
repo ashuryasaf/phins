@@ -6,15 +6,18 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-# Cancel in-flight runs when the same ref is pushed again. main is never
-# cancelled mid-run so the post-merge artifact upload always finishes.
+# A newer push cancels the previous run, including on main. Railway waits
+# on this check before it promotes a deploy, so a hung apt-get on an older
+# main commit must not keep production on the previous release. The S3
+# upload below is best-effort and is not the deploy gate.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: true
 
 jobs:
   generate-and-upload:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -30,7 +33,14 @@ jobs:
             requirements.txt
 
       - name: Install system deps (poppler for pdf2image)
+        timeout-minutes: 3
+        continue-on-error: true
         run: |
+          sudo tee /etc/apt/apt.conf.d/99timeout >/dev/null <<'EOF'
+          Acquire::http::Timeout "20";
+          Acquire::https::Timeout "20";
+          Acquire::Retries "2";
+          EOF
           sudo apt-get update
           sudo apt-get install -y poppler-utils || true
 
