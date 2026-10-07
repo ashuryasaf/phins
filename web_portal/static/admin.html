@@ -5408,14 +5408,51 @@
       `;
     }
 
+    async function downloadMarketingVideoAsset(assetId) {
+      try {
+        const response = await fetch(`/api/media/${encodeURIComponent(assetId)}/download`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) {
+          let message = `Download failed (${response.status})`;
+          try {
+            const data = await response.json();
+            if (data && data.error) message = data.error;
+          } catch (err) {}
+          setMarketingStatus(message, 'error');
+          return;
+        }
+        const blob = await response.blob();
+        const job = latestMarketingVideoJobs.find(item => item.generated_asset_id === assetId);
+        const filename = (job && (job.asset_name || job.name)) || `${assetId}.mp4`;
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(objectUrl);
+      } catch (err) {
+        if (typeof setMarketingStatus === 'function') {
+          setMarketingStatus(`Download failed: ${err.message}`, 'error');
+        }
+      }
+    }
+
     function renderVideoJobSummary(job) {
       if (!job) return '';
       const parts = [];
       if (job.provider) parts.push(`Provider: ${escapeMarketingHtml(String(job.provider).toUpperCase())}`);
       if (job.provider_model) parts.push(`Model: ${escapeMarketingHtml(job.provider_model)}`);
       if (job.message) parts.push(escapeMarketingHtml(job.message));
+      if (job.error) parts.push(`Error: ${escapeMarketingHtml(job.error)}`);
       if (job.generated_asset_id) {
         parts.push(`<a href="/admin-media.html" style="color:#c5e1ff;text-decoration:none;">Open generated asset</a>`);
+      }
+      if (String(job.status || '').toLowerCase() === 'completed' && job.generated_asset_id) {
+        const assetId = escapeMarketingHtml(job.generated_asset_id);
+        parts.push(`<button type="button" onclick="downloadMarketingVideoAsset('${assetId}')" style="background:none;border:0;padding:0;color:#c5e1ff;cursor:pointer;">Download video</button>`);
       }
       return `<div style="font-size:0.74rem;opacity:0.9;margin-top:8px;line-height:1.45;">${parts.join(' &middot; ')}</div>${renderVideoJobProgress(job)}`;
     }

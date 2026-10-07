@@ -2476,10 +2476,26 @@ MEDIA_PROCESSING_JOBS: Dict[str, Dict[str, Any]] = {}
 MEDIA_PROVIDER_WEBHOOK_SECRET = os.environ.get('MEDIA_PROVIDER_WEBHOOK_SECRET', 'phins-dev-webhook-secret')
 DEFAULT_MEDIA_SUBTITLE_PROVIDER = os.environ.get('DEFAULT_MEDIA_SUBTITLE_PROVIDER', 'bridge')
 DEFAULT_MEDIA_VIDEO_PROVIDER = os.environ.get('DEFAULT_MEDIA_VIDEO_PROVIDER', 'gemini')
-MEDIA_STORAGE_DIR = os.environ.get(
-    'PHINS_MEDIA_STORAGE_DIR',
-    os.path.join(tempfile.gettempdir(), 'phins_media_assets'),
-)
+def resolve_media_storage_dir() -> str:
+    """Prefer an operator path, then a mounted volume, then the temp directory.
+
+    A Railway volume (or ``/data``) survives a new deploy. The temp directory
+    does not. Byte durability when there is no volume comes from the database
+    blob store, which restores into this directory on read.
+    """
+    explicit = str(os.environ.get('PHINS_MEDIA_STORAGE_DIR') or '').strip()
+    if explicit:
+        return explicit
+    for candidate in (
+        str(os.environ.get('RAILWAY_VOLUME_MOUNT_PATH') or '').strip(),
+        '/data',
+    ):
+        if candidate and os.path.isdir(candidate) and os.access(candidate, os.W_OK):
+            return os.path.join(candidate, 'phins_media_assets')
+    return os.path.join(tempfile.gettempdir(), 'phins_media_assets')
+
+
+MEDIA_STORAGE_DIR = resolve_media_storage_dir()
 MEDIA_INLINE_MAX_BYTES = safe_int(os.environ.get('PHINS_MEDIA_INLINE_MAX_BYTES', 5 * 1024 * 1024), 5 * 1024 * 1024)
 
 
@@ -2743,6 +2759,8 @@ def serialize_media_asset(asset: Dict[str, Any]) -> Dict[str, Any]:
     """Strip internal processing secrets and subtitle payloads from media responses."""
     payload = dict(asset)
     payload.pop('file_path', None)
+    payload.pop('provider_recover_attempted', None)
+    payload.pop('_record_sync', None)
     processing = asset.get('processing')
     if isinstance(processing, dict):
         payload['processing'] = dict(processing)
@@ -2842,6 +2860,627 @@ def persist_media_asset_payload(asset: Dict[str, Any]) -> Dict[str, Any]:
     asset['format'] = asset.get('format') or mime_type
     asset['size'] = safe_int(asset.get('size') or len(payload_bytes), len(payload_bytes))
     return asset
+
+
+_MEDIA_RECORD_SKIP = {
+    'file_path',
+    'data',
+    'durable_error',
+    'provider_recover_attempted',
+    '_record_sync',
+}
+
+
+def _media_durable_enabled() -> bool:
+    """True when media bytes can be written to the database."""
+    return bool(USE_DATABASE and database_enabled)
+
+
+def _media_path_within_storage(file_path: str) -> bool:
+    """True when ``file_path`` is the storage root or a file inside it."""
+    if not file_path:
+        return False
+    try:
+        abs_file = os.path.abspath(file_path)
+        abs_root = os.path.abspath(MEDIA_STORAGE_DIR)
+    except (OSError, ValueError):
+        return False
+    return abs_file == abs_root or abs_file.startswith(abs_root + os.sep)
+
+
+def _media_record_for_store(asset: Dict[str, Any]) -> Dict[str, Any]:
+    """JSON record stored beside the bytes. Paths and inline payloads stay out."""
+    record: Dict[str, Any] = {}
+    for key, value in asset.items():
+        if key in _MEDIA_RECORD_SKIP or str(key).startswith('_'):
+            continue
+        record[key] = value
+    record['data'] = ''
+    record['stored_externally'] = bool(asset.get('file_path') or asset.get('stored_externally'))
+    return record
+
+
+def _assign_media_cache_path(asset: Dict[str, Any]) -> str:
+    """Return the on-disk cache path for an asset, without writing the file."""
+    existing = str(asset.get('file_path') or '').strip()
+    if existing and _media_path_within_storage(existing):
+        return existing
+    asset_id = str(asset.get('id') or 'media').strip() or 'media'
+    filename = str(asset.get('name') or asset_id).strip() or asset_id
+    stem = safe_ascii_filename_stem(filename, fallback=asset_id)
+    return os.path.join(MEDIA_STORAGE_DIR, f'{asset_id}-{stem}')
+
+
+def _write_verified_media_bytes(dest_path: str, payload: bytes, expected_sha: str) -> None:
+    """Write bytes atomically and keep the file only when the digest matches."""
+    from services.media_library_store import MediaLibraryIntegrityError
+
+    ensure_media_storage_dir()
+    parent = os.path.dirname(dest_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    tmp_path = dest_path + '.part'
+    try:
+        with open(tmp_path, 'wb') as handle:
+            handle.write(payload)
+        actual = _compute_file_checksum(tmp_path)
+        if actual != str(expected_sha or '').strip().lower():
+            raise MediaLibraryIntegrityError('written media checksum mismatch')
+        os.replace(tmp_path, dest_path)
+    except Exception:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _bytes_for_durable_seal(asset: Dict[str, Any]) -> Optional[bytes]:
+    """Read library bytes when they match the recorded checksum."""
+    from services.media_library_store import media_db_max_bytes
+
+    expected = str(asset.get('checksum') or '').strip().lower()
+    file_path = str(asset.get('file_path') or '').strip()
+    payload: Optional[bytes] = None
+    if file_path and os.path.isfile(file_path) and _media_path_within_storage(file_path):
+        size = os.path.getsize(file_path)
+        cap = media_db_max_bytes()
+        if cap and size > cap:
+            asset['durable'] = False
+            asset['durable_error'] = 'Media exceeds the durable storage cap'
+            return None
+        try:
+            actual = _compute_file_checksum(file_path)
+        except OSError:
+            actual = ''
+        if expected and actual and actual != expected:
+            asset['durable'] = False
+            asset['durable_error'] = 'Media checksum mismatch'
+            return None
+        try:
+            with open(file_path, 'rb') as handle:
+                payload = handle.read()
+        except OSError:
+            payload = None
+        if payload is not None and not expected:
+            asset['checksum'] = compute_media_checksum(payload)
+    elif str(asset.get('data') or '').startswith('data:'):
+        try:
+            payload, mime = decode_media_data_url(str(asset.get('data') or ''))
+        except Exception:
+            payload = None
+            mime = ''
+        if payload:
+            cap = media_db_max_bytes()
+            if cap and len(payload) > cap:
+                asset['durable'] = False
+                asset['durable_error'] = 'Media exceeds the durable storage cap'
+                return None
+            actual = compute_media_checksum(payload)
+            if expected and actual != expected:
+                asset['durable'] = False
+                asset['durable_error'] = 'Media checksum mismatch'
+                return None
+            if not asset.get('format') and mime:
+                asset['format'] = mime
+            if not expected:
+                asset['checksum'] = actual
+    return payload
+
+
+def persist_durable_media_asset(asset: Dict[str, Any], *, with_bytes: bool = True) -> None:
+    """Copy a library asset into the database when the database is on.
+
+    A failed write is recorded on the asset and the in-memory copy is kept.
+    A checksum clash is never overwritten.
+    """
+    if not isinstance(asset, dict) or not _media_durable_enabled():
+        return
+    asset_id = str(asset.get('id') or '').strip()
+    if not asset_id:
+        return
+    from services.media_library_store import (
+        MediaLibraryIntegrityError,
+        MediaLibraryStoreError,
+        media_db_max_bytes,
+        seal_asset,
+        update_asset_record,
+    )
+
+    if media_db_max_bytes() <= 0:
+        asset['durable'] = False
+        asset['durable_error'] = 'Durable media byte storage is disabled'
+        return
+
+    record = _media_record_for_store(asset)
+    try:
+        if not with_bytes and asset.get('durable'):
+            sha = str(asset.get('checksum') or '').strip().lower()
+            if not sha:
+                with_bytes = True
+            else:
+                try:
+                    record['checksum'] = sha
+                    update_asset_record(asset_id, record, sha)
+                    asset['durable'] = True
+                    asset.pop('durable_error', None)
+                    return
+                except MediaLibraryStoreError:
+                    with_bytes = True
+        if not with_bytes:
+            return
+        payload = _bytes_for_durable_seal(asset)
+        if not payload:
+            return
+        record = _media_record_for_store(asset)
+        sha = seal_asset(asset_id, payload, record)
+        asset['checksum'] = sha
+        asset['durable'] = True
+        asset.pop('durable_error', None)
+    except MediaLibraryIntegrityError:
+        asset['durable'] = False
+        asset['durable_error'] = 'Media checksum mismatch'
+    except MediaLibraryStoreError:
+        asset['durable'] = False
+        asset['durable_error'] = 'Durable media write failed'
+    except Exception as exc:
+        asset['durable'] = False
+        asset['durable_error'] = 'Durable media write failed'
+        print(f"[MEDIA] Durable write failed for {asset_id}: {type(exc).__name__}")
+
+
+def delete_durable_media(asset_id: str) -> None:
+    """Remove the database copy. A missing row is already gone.
+
+    Raises MediaLibraryStoreError when the database is on and the delete
+    cannot be committed, so the caller can leave the library record in place.
+    """
+    if not _media_durable_enabled():
+        return
+    from services.media_library_store import MediaLibraryStoreError, delete_asset
+
+    try:
+        delete_asset(str(asset_id or '').strip())
+    except MediaLibraryStoreError:
+        raise
+    except Exception as exc:
+        raise MediaLibraryStoreError('durable media delete failed') from exc
+
+
+def _restore_media_asset_from_durable_store(asset: Dict[str, Any]) -> Dict[str, str]:
+    """Materialize a database blob onto the cache path after the digest matches."""
+    if not _media_durable_enabled():
+        return {'path': '', 'error': ''}
+    asset_id = str(asset.get('id') or '').strip()
+    if not asset_id:
+        return {'path': '', 'error': ''}
+    from services.media_library_store import MediaLibraryIntegrityError, load_asset
+
+    try:
+        row = load_asset(asset_id)
+    except Exception as exc:
+        print(f"[MEDIA] Durable read failed for {asset_id}: {type(exc).__name__}")
+        return {'path': '', 'error': ''}
+    if not row:
+        return {'path': '', 'error': ''}
+    if row.get('corrupt'):
+        return {'path': '', 'error': 'checksum_mismatch'}
+    expected = str(asset.get('checksum') or '').strip().lower()
+    sha = str(row.get('sha256') or '').lower()
+    if expected and sha != expected:
+        return {'path': '', 'error': 'checksum_mismatch'}
+    payload = row.get('payload') or b''
+    if not payload:
+        return {'path': '', 'error': 'missing'}
+    dest = _assign_media_cache_path(asset)
+    try:
+        _write_verified_media_bytes(dest, payload, sha)
+    except MediaLibraryIntegrityError:
+        return {'path': '', 'error': 'checksum_mismatch'}
+    except OSError as exc:
+        print(f"[MEDIA] Cache restore failed for {asset_id}: {type(exc).__name__}")
+        return {'path': '', 'error': ''}
+    asset['file_path'] = dest
+    asset['checksum'] = sha
+    asset['stored_externally'] = True
+    asset['data'] = ''
+    asset['durable'] = True
+    asset.pop('durable_error', None)
+    if not asset.get('url'):
+        asset['url'] = build_internal_media_file_url(asset_id, str(asset.get('name') or asset_id))
+    return {'path': dest, 'error': '', 'mime': _library_media_mime(asset)}
+
+
+def _library_media_mime(asset: Dict[str, Any]) -> str:
+    mime = str(asset.get('format') or asset.get('mime_type') or '').split(';', 1)[0].strip().lower()
+    if mime:
+        return mime
+    if asset.get('type') == 'video':
+        return 'video/mp4'
+    if asset.get('type') == 'image':
+        return 'image/jpeg'
+    return 'application/octet-stream'
+
+
+def _provider_output_url_for_asset(asset_id: str) -> str:
+    """HTTPS provider URL saved on the generating job, if one is still recorded."""
+    from services.media_generation_service import MediaGenerationService
+
+    for job in MEDIA_PROCESSING_JOBS.values():
+        if not isinstance(job, dict):
+            continue
+        if str(job.get('generated_asset_id') or '') != asset_id:
+            continue
+        direct = str(job.get('provider_output_url') or '').strip()
+        if direct.startswith('https://'):
+            return direct
+        state = job.get('provider_state')
+        if isinstance(state, dict):
+            found = MediaGenerationService.extract_media_url(state.get('output'))
+            if str(found or '').startswith('https://'):
+                return str(found)
+    return ''
+
+
+def _recover_media_from_provider(asset: Dict[str, Any]) -> Dict[str, str]:
+    """Re-fetch a provider file once when the local copy and the database copy are gone."""
+    if str(asset.get('type') or '') != 'video':
+        return {'path': '', 'error': ''}
+    if asset.get('provider_recover_attempted'):
+        return {'path': '', 'error': ''}
+    asset_id = str(asset.get('id') or '').strip()
+    url = _provider_output_url_for_asset(asset_id)
+    if not url.startswith('https://'):
+        return {'path': '', 'error': ''}
+    asset['provider_recover_attempted'] = True
+    provider = ''
+    for job in MEDIA_PROCESSING_JOBS.values():
+        if isinstance(job, dict) and str(job.get('generated_asset_id') or '') == asset_id:
+            provider = str(job.get('provider') or '')
+            break
+    dest = _assign_media_cache_path(asset)
+    try:
+        downloaded = get_media_generation_service().download_generated_video(
+            provider=provider,
+            download_url=url,
+            stream_to_path=dest,
+        )
+    except Exception as exc:
+        print(f"[MEDIA] Provider recovery failed for {asset_id}: {type(exc).__name__}")
+        return {'path': '', 'error': ''}
+    file_path = str((downloaded or {}).get('file_path') or dest).strip()
+    if not file_path or not os.path.isfile(file_path) or not _media_path_within_storage(file_path):
+        return {'path': '', 'error': ''}
+    try:
+        actual = _compute_file_checksum(file_path)
+    except OSError:
+        return {'path': '', 'error': ''}
+    expected = str(asset.get('checksum') or '').strip().lower()
+    if expected and actual != expected:
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+        return {'path': '', 'error': 'checksum_mismatch'}
+    asset['file_path'] = file_path
+    asset['checksum'] = actual
+    asset['stored_externally'] = True
+    asset['data'] = ''
+    asset['size'] = os.path.getsize(file_path)
+    asset['url'] = asset.get('url') or build_internal_media_file_url(asset_id, str(asset.get('name') or asset_id))
+    persist_durable_media_asset(asset)
+    return {'path': file_path, 'error': '', 'mime': _library_media_mime(asset)}
+
+
+def ensure_media_asset_file(asset: Dict[str, Any]) -> Dict[str, str]:
+    """Return a checksum-checked cache path, restoring from the database when needed.
+
+    ``error`` is empty, ``missing``, or ``checksum_mismatch``. A mismatched
+    file is never returned.
+    """
+    if not isinstance(asset, dict):
+        return {'path': '', 'error': 'missing'}
+    expected = str(asset.get('checksum') or '').strip().lower()
+    file_path = str(asset.get('file_path') or '').strip()
+    local_mismatch = False
+    if file_path and os.path.isfile(file_path) and _media_path_within_storage(file_path):
+        try:
+            actual = _compute_file_checksum(file_path)
+        except OSError:
+            actual = ''
+        if actual and (not expected or actual == expected):
+            if not expected:
+                asset['checksum'] = actual
+            if _media_durable_enabled() and not asset.get('durable') and not asset.get('durable_error'):
+                persist_durable_media_asset(asset)
+            return {'path': file_path, 'error': '', 'mime': _library_media_mime(asset)}
+        if actual and expected and actual != expected:
+            local_mismatch = True
+
+    restored = _restore_media_asset_from_durable_store(asset)
+    if restored.get('path') or restored.get('error') == 'checksum_mismatch':
+        return restored
+
+    data_url = str(asset.get('data') or '').strip()
+    if data_url.startswith('data:'):
+        try:
+            payload, _mime = decode_media_data_url(data_url)
+        except Exception:
+            payload = b''
+        if payload:
+            actual = compute_media_checksum(payload)
+            if expected and actual != expected:
+                return {'path': '', 'error': 'checksum_mismatch', 'mime': ''}
+            dest = _assign_media_cache_path(asset)
+            try:
+                _write_verified_media_bytes(dest, payload, actual)
+            except Exception:
+                return {'path': '', 'error': 'missing', 'mime': ''}
+            asset['file_path'] = dest
+            asset['checksum'] = actual
+            asset['stored_externally'] = True
+            asset['data'] = ''
+            asset['url'] = asset.get('url') or build_internal_media_file_url(
+                str(asset.get('id') or ''),
+                str(asset.get('name') or asset.get('id') or ''),
+            )
+            persist_durable_media_asset(asset)
+            return {'path': dest, 'error': '', 'mime': _library_media_mime(asset)}
+
+    if not local_mismatch:
+        recovered = _recover_media_from_provider(asset)
+        if recovered.get('path') or recovered.get('error') == 'checksum_mismatch':
+            return recovered
+
+    if local_mismatch:
+        return {'path': '', 'error': 'checksum_mismatch', 'mime': ''}
+    return {'path': '', 'error': 'missing', 'mime': ''}
+
+
+def _restore_supplier_media_file(rel: str) -> Dict[str, str]:
+    """Restore one supplier-offer image or video when the offer still lists it."""
+    parts = [part for part in str(rel or '').split('/') if part]
+    if len(parts) != 3 or parts[0] != 'supplier-offers':
+        return {'path': '', 'error': ''}
+    offer_id, filename = parts[1], parts[2]
+    if not offer_id or not filename or '..' in filename or '/' in filename:
+        return {'path': '', 'error': ''}
+    offer = SUPPLIER_OFFERS.get(offer_id) if 'SUPPLIER_OFFERS' in globals() else None
+    if not isinstance(offer, dict):
+        return {'path': '', 'error': ''}
+    media_list = offer.get('media') or []
+    if isinstance(media_list, str):
+        try:
+            media_list = json.loads(media_list)
+        except json.JSONDecodeError:
+            media_list = []
+    if not isinstance(media_list, list):
+        return {'path': '', 'error': ''}
+    stem = filename.rsplit('.', 1)[0]
+    item = next(
+        (entry for entry in media_list if isinstance(entry, dict) and str(entry.get('id') or '') == stem),
+        None,
+    )
+    if not item or not _media_durable_enabled():
+        return {'path': '', 'error': ''}
+    from services.media_library_store import MediaLibraryIntegrityError, load_asset
+
+    try:
+        row = load_asset(stem)
+    except Exception as exc:
+        print(f"[MEDIA] Durable read failed for {stem}: {type(exc).__name__}")
+        return {'path': '', 'error': ''}
+    if not row or row.get('corrupt'):
+        return {'path': '', 'error': 'checksum_mismatch' if row and row.get('corrupt') else ''}
+    expected = str(item.get('sha256') or '').strip().lower()
+    sha = str(row.get('sha256') or '').lower()
+    if expected and sha != expected:
+        return {'path': '', 'error': 'checksum_mismatch'}
+    payload = row.get('payload') or b''
+    if not payload:
+        return {'path': '', 'error': ''}
+    dest = os.path.normpath(os.path.join(MEDIA_STORAGE_DIR, 'supplier-offers', offer_id, filename))
+    if not _media_path_within_storage(dest):
+        return {'path': '', 'error': ''}
+    try:
+        _write_verified_media_bytes(dest, payload, sha)
+    except (MediaLibraryIntegrityError, OSError):
+        return {'path': '', 'error': 'checksum_mismatch'}
+    mime = str(item.get('mime_type') or '').split(';', 1)[0].strip().lower()
+    return {'path': dest, 'error': '', 'mime': mime}
+
+
+def _library_asset_for_media_rel(rel: str) -> Optional[Dict[str, Any]]:
+    """Find the library asset addressed by a ``/media-files/`` remainder.
+
+    The public URL is ``{asset_id}/{name}``. The cache file is a single
+    ``{asset_id}-{stem}`` path, which is also accepted so a direct hit still
+    goes through the checksum check.
+    """
+    rel = str(rel or '').lstrip('/')
+    asset_id = rel.split('/', 1)[0] if rel else ''
+    asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
+    if isinstance(asset, dict):
+        return asset
+    if rel and '/' not in rel:
+        for candidate_id, candidate in MEDIA_ASSETS.items():
+            if not isinstance(candidate, dict):
+                continue
+            base = os.path.basename(str(candidate.get('file_path') or ''))
+            if rel == base or rel.startswith(f'{candidate_id}-'):
+                return candidate
+    return None
+
+
+def resolve_public_media_file(rel: str) -> Dict[str, str]:
+    """Map a ``/media-files/`` remainder onto a real, checksum-checked file."""
+    rel = str(rel or '').lstrip('/')
+    asset = _library_asset_for_media_rel(rel)
+    if isinstance(asset, dict):
+        resolved = ensure_media_asset_file(asset)
+        if not resolved.get('mime'):
+            resolved = dict(resolved)
+            resolved['mime'] = _library_media_mime(asset)
+        return resolved
+    return _restore_supplier_media_file(rel)
+
+
+def seal_supplier_offer_media(media_item: Dict[str, Any], payload: bytes, offer_id: str) -> None:
+    """Store supplier-offer image or video bytes beside the media library."""
+    if not isinstance(media_item, dict) or not payload or not _media_durable_enabled():
+        return
+    media_id = str(media_item.get('id') or '').strip()
+    if not media_id:
+        return
+    record = {
+        'id': media_id,
+        'name': str(media_item.get('filename') or media_id),
+        'type': str(media_item.get('type') or ''),
+        'format': str(media_item.get('mime_type') or 'application/octet-stream'),
+        'size': len(payload),
+        'checksum': str(media_item.get('sha256') or ''),
+        'url': str(media_item.get('url') or ''),
+        'lane': 'supplier_offer',
+        'offer_id': str(offer_id or ''),
+        'stored_externally': True,
+        'data': '',
+    }
+    from services.media_library_store import MediaLibraryIntegrityError, MediaLibraryStoreError, seal_asset
+
+    try:
+        seal_asset(media_id, payload, record)
+    except (MediaLibraryIntegrityError, MediaLibraryStoreError) as exc:
+        print(f"[MEDIA] Durable supplier media write failed for {media_id}: {type(exc).__name__}")
+
+
+def _seal_present_supplier_media() -> None:
+    """Copy supplier media that is still on disk into the database."""
+    if not _media_durable_enabled() or 'SUPPLIER_OFFERS' not in globals():
+        return
+    for offer_id, offer in list(SUPPLIER_OFFERS.items()):
+        if not isinstance(offer, dict):
+            continue
+        media_list = offer.get('media') or []
+        if isinstance(media_list, str):
+            try:
+                media_list = json.loads(media_list)
+            except json.JSONDecodeError:
+                continue
+        if not isinstance(media_list, list):
+            continue
+        for item in media_list:
+            if not isinstance(item, dict):
+                continue
+            rel = str(item.get('url') or '')
+            if not rel.startswith('/media-files/'):
+                continue
+            rel_path = rel[len('/media-files/'):].lstrip('/')
+            disk_path = os.path.normpath(os.path.join(MEDIA_STORAGE_DIR, rel_path))
+            if not _media_path_within_storage(disk_path) or not os.path.isfile(disk_path):
+                continue
+            try:
+                with open(disk_path, 'rb') as handle:
+                    payload = handle.read()
+            except OSError:
+                continue
+            expected = str(item.get('sha256') or '').strip().lower()
+            if expected and compute_media_checksum(payload) != expected:
+                print(f"[MEDIA] Skipping supplier media {item.get('id')}: checksum mismatch")
+                continue
+            seal_supplier_offer_media(item, payload, str(offer_id))
+
+
+def hydrate_media_library() -> int:
+    """Load durable media metadata into the library. Bytes are restored on read."""
+    if not _media_durable_enabled():
+        return 0
+    from services.media_library_store import list_asset_records
+
+    try:
+        rows = list_asset_records()
+    except Exception as exc:
+        print(f"[MEDIA] Durable library list failed: {type(exc).__name__}")
+        return 0
+    restored = 0
+    seen = set()
+    for row in rows:
+        asset_id = str(row.get('asset_id') or '').strip()
+        record = row.get('record') if isinstance(row.get('record'), dict) else {}
+        sha = str(row.get('sha256') or '').lower()
+        if not asset_id or not sha:
+            continue
+        seen.add(asset_id)
+        if record.get('lane') == 'supplier_offer':
+            continue
+        existing = MEDIA_ASSETS.get(asset_id)
+        if isinstance(existing, dict):
+            existing_sha = str(existing.get('checksum') or '').lower()
+            if existing_sha and existing_sha != sha:
+                existing['durable_error'] = 'Durable checksum does not match the library record'
+                continue
+            file_path = str(existing.get('file_path') or '').strip()
+            if file_path and os.path.isfile(file_path) and _media_path_within_storage(file_path):
+                try:
+                    actual = _compute_file_checksum(file_path)
+                except OSError:
+                    actual = ''
+                if actual == sha:
+                    existing['checksum'] = sha
+                    existing['durable'] = True
+                    existing.pop('durable_error', None)
+                    restored += 1
+                    continue
+            existing['checksum'] = sha
+            existing['durable'] = True
+            existing['stored_externally'] = True
+            existing.pop('durable_error', None)
+            restored += 1
+            continue
+        asset = dict(record)
+        asset['id'] = asset_id
+        asset['checksum'] = sha
+        asset['durable'] = True
+        asset['data'] = ''
+        asset['stored_externally'] = True
+        asset.pop('file_path', None)
+        if not asset.get('url'):
+            asset['url'] = build_internal_media_file_url(asset_id, str(asset.get('name') or asset_id))
+        MEDIA_ASSETS[asset_id] = asset
+        restored += 1
+    for asset_id, asset in list(MEDIA_ASSETS.items()):
+        if asset_id in seen or not isinstance(asset, dict):
+            continue
+        if asset.get('type') not in ('video', 'image', 'document'):
+            continue
+        persist_durable_media_asset(asset)
+        if asset.get('durable'):
+            restored += 1
+    try:
+        _seal_present_supplier_media()
+    except Exception as exc:
+        print(f"[MEDIA] Supplier media seal skipped: {type(exc).__name__}")
+    return restored
 
 
 def infer_media_asset_filename(asset: Dict[str, Any], fallback_stem: str = 'media_asset') -> str:
@@ -3356,6 +3995,7 @@ def complete_media_subtitle_job(job: Dict[str, Any], payload: Dict[str, Any]) ->
     job['message'] = str(payload.get('message') or 'Subtitle track completed and ready for download.')
     job['subtitle_track_id'] = track.get('id')
     update_media_processing_state(asset, job, job['message'])
+    persist_durable_media_asset(asset, with_bytes=not bool(asset.get('durable')))
     save_ledger_data()
     return asset, track
 
@@ -4115,6 +4755,10 @@ def _finalize_media_video_job_locked(job: Dict[str, Any], poll_result: Dict[str,
             except OSError:
                 pass
     MEDIA_ASSETS[asset_id] = asset
+    provider_output_url = str(download_url or '').strip()
+    if provider_output_url.startswith('https://'):
+        job['provider_output_url'] = provider_output_url
+    persist_durable_media_asset(asset)
     job['generated_asset_id'] = asset_id
     job['status'] = 'completed'
     job['progress_pct'] = 100
@@ -4656,7 +5300,15 @@ def verify_media_video_job_integrity(job: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     stored_checksum = str(asset.get('checksum') or '').strip().lower()
-    file_path = str(asset.get('file_path') or '').strip()
+    ensured = ensure_media_asset_file(asset)
+    if ensured.get('error') == 'checksum_mismatch':
+        return {
+            'verified': False,
+            'asset_id': asset_id,
+            'reason': 'SHA-256 does not match the stored checksum — file may be corrupted or tampered.',
+            'verified_at': datetime.now().isoformat(),
+        }
+    file_path = str(ensured.get('path') or asset.get('file_path') or '').strip()
 
     if file_path and os.path.isfile(file_path):
         try:
@@ -18824,7 +19476,29 @@ For claims or questions, please contact:
             self.send_header('Cache-Control', 'no-cache')
         self.end_headers()
 
-    def _serve_media_file(self, file_path: str) -> None:
+    def _serve_binary_file(self, file_path: str, content_type: str) -> None:
+        """Stream a stored image or document with its real media type."""
+        from security.headers import static_asset_security_headers
+
+        size = os.path.getsize(file_path)
+        mime = str(content_type or 'application/octet-stream').split(';', 1)[0].strip() or 'application/octet-stream'
+        self.send_response(200)
+        self.send_header('Content-Type', mime)
+        self.send_header('Content-Length', str(size))
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        for name, value in static_asset_security_headers():
+            self.send_header(name, value)
+        self.end_headers()
+        with open(file_path, 'rb') as fh:
+            remaining = size
+            while remaining > 0:
+                chunk = fh.read(min(256 * 1024, remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
+
+    def _serve_media_file(self, file_path: str, content_type: str = '') -> None:
         """Serve MP4/WebM with a real media type, Content-Length, and Range.
 
         iOS Safari (and Android Chrome WebView) will not play theater clips
@@ -18835,7 +19509,10 @@ For claims or questions, please contact:
 
         size = os.path.getsize(file_path)
         lowered = file_path.lower()
-        if lowered.endswith('.webm'):
+        explicit = str(content_type or '').split(';', 1)[0].strip().lower()
+        if explicit.startswith('video/'):
+            content_type = explicit
+        elif lowered.endswith('.webm'):
             content_type = 'video/webm'
         elif lowered.endswith('.mov'):
             content_type = 'video/quicktime'
@@ -20016,11 +20693,16 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Media asset not found'}).encode('utf-8'))
                     return
 
-                file_path = str(asset.get('file_path') or '').strip()
-                mime_type = str(asset.get('format') or 'application/octet-stream').split(';', 1)[0].strip() or 'application/octet-stream'
+                resolved = ensure_media_asset_file(asset)
+                if resolved.get('error') == 'checksum_mismatch':
+                    self._set_json_headers(409)
+                    self.wfile.write(json.dumps({'error': 'Media checksum mismatch'}).encode('utf-8'))
+                    return
+                file_path = str(resolved.get('path') or '').strip()
+                mime_type = str(resolved.get('mime') or asset.get('format') or 'application/octet-stream').split(';', 1)[0].strip() or 'application/octet-stream'
                 filename = infer_media_asset_filename(asset, fallback_stem=asset_id)
 
-                if file_path and os.path.isfile(file_path):
+                if file_path and os.path.isfile(file_path) and _media_path_within_storage(file_path):
                     file_size = os.path.getsize(file_path)
                     self.send_response(200)
                     self.send_header('Content-Type', mime_type)
@@ -35203,6 +35885,36 @@ For claims or questions, please contact:
             self.send_error(400, 'Invalid path')
             return
 
+        library_mime = ''
+        if path.startswith('/media-files/'):
+            media_rel = path[len('/media-files/'):].lstrip('/')
+            if not os.path.isfile(file_path):
+                resolved_media = resolve_public_media_file(media_rel)
+                if resolved_media.get('error') == 'checksum_mismatch':
+                    self.send_error(409, 'Media checksum mismatch')
+                    return
+                if resolved_media.get('path'):
+                    candidate = os.path.abspath(resolved_media['path'])
+                    storage_root = os.path.abspath(MEDIA_STORAGE_DIR)
+                    if candidate != storage_root and not candidate.startswith(storage_root + os.sep):
+                        self.send_error(403, 'Access Denied')
+                        return
+                    file_path = candidate
+                    library_mime = str(resolved_media.get('mime') or '')
+            else:
+                library_asset = _library_asset_for_media_rel(media_rel)
+                if isinstance(library_asset, dict):
+                    resolved_media = ensure_media_asset_file(library_asset)
+                    if resolved_media.get('error') == 'checksum_mismatch':
+                        self.send_error(409, 'Media checksum mismatch')
+                        return
+                    if resolved_media.get('path'):
+                        candidate = os.path.abspath(resolved_media['path'])
+                        storage_root = os.path.abspath(MEDIA_STORAGE_DIR)
+                        if candidate == storage_root or candidate.startswith(storage_root + os.sep):
+                            file_path = candidate
+                            library_mime = str(resolved_media.get('mime') or _library_media_mime(library_asset))
+
         if os.path.isdir(file_path):
             index_path = os.path.join(file_path, 'index.html')
             if os.path.isfile(index_path):
@@ -35210,6 +35922,12 @@ For claims or questions, please contact:
 
         if os.path.isfile(file_path):
             try:
+                if library_mime:
+                    if library_mime.startswith('video/'):
+                        self._serve_media_file(file_path, content_type=library_mime)
+                    else:
+                        self._serve_binary_file(file_path, library_mime)
+                    return
                 if file_path.lower().endswith(('.mp4', '.webm', '.mov')):
                     self._serve_media_file(file_path)
                     return
@@ -36284,6 +37002,7 @@ For claims or questions, please contact:
                         }
                     }
                     MEDIA_ASSETS[asset_id] = asset
+                    persist_durable_media_asset(asset)
                     created_assets.append({
                         'id': asset_id,
                         'name': asset.get('name'),
@@ -38387,6 +39106,7 @@ For claims or questions, please contact:
                     'stored_externally': True,
                 }
                 MEDIA_ASSETS[asset_id] = asset
+                persist_durable_media_asset(asset)
                 save_ledger_data()
 
                 self._set_json_headers(201)
@@ -38494,6 +39214,7 @@ For claims or questions, please contact:
 
                 asset = persist_media_asset_payload(asset)
                 MEDIA_ASSETS[asset_id] = asset
+                persist_durable_media_asset(asset)
 
                 save_ledger_data()
 
@@ -43215,6 +43936,8 @@ For claims or questions, please contact:
                     except Exception:
                         pass
 
+                seal_supplier_offer_media(media_item, file_bytes, offer_id)
+
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({
                     'success': True,
@@ -43280,6 +44003,13 @@ For claims or questions, please contact:
                     if removed_item is None:
                         self._set_json_headers(404)
                         self.wfile.write(json.dumps({'error': 'Media not found on this offer'}).encode('utf-8'))
+                        return
+                    from services.media_library_store import MediaLibraryStoreError
+                    try:
+                        delete_durable_media(media_id)
+                    except MediaLibraryStoreError:
+                        self._set_json_headers(503)
+                        self.wfile.write(json.dumps({'error': 'Durable media delete failed'}).encode('utf-8'))
                         return
                     offer['media'] = new_list
                     if offer.get('image_url') == removed_item.get('url'):
@@ -59169,6 +59899,15 @@ For claims or questions, please contact:
                 asset_id = parts[3]
                 
                 if asset_id in MEDIA_ASSETS:
+                    from services.media_library_store import MediaLibraryStoreError
+                    try:
+                        delete_durable_media(asset_id)
+                    except MediaLibraryStoreError:
+                        self._set_json_headers(503)
+                        self.wfile.write(json.dumps({
+                            'error': 'Durable media delete failed',
+                        }).encode('utf-8'))
+                        return
                     deleted = MEDIA_ASSETS.pop(asset_id)
 
                     file_path = str(deleted.get('file_path') or '').strip()
@@ -59946,6 +60685,14 @@ def run_server(port: int = PORT) -> None:
         except Exception as _hyd_exc:
             print(f"   ⚠️  Ledger DB hydration skipped: {_hyd_exc}")
 
+    if USE_DATABASE and database_enabled:
+        try:
+            media_restored = hydrate_media_library()
+            if media_restored:
+                print(f"🎞️  Media library: {media_restored} durable video/image record(s) restored")
+        except Exception as _media_exc:
+            print(f"   ⚠️  Media library restore skipped: {type(_media_exc).__name__}")
+
     # Sync algo trading data that was staged by load_ledger_data().
     # This MUST happen after load_ledger_data() and after services are
     # initialized at import time — both conditions are met here.
@@ -60256,6 +61003,10 @@ def bootstrap_runtime_state_for_command() -> None:
             _repair_hydrated_ledger_chain(verbose=False)
         except Exception as _hyd_exc:
             print(f"   ⚠️  Ledger DB hydration skipped: {_hyd_exc}")
+        try:
+            hydrate_media_library()
+        except Exception as _media_exc:
+            print(f"   ⚠️  Media library restore skipped: {type(_media_exc).__name__}")
 
     try:
         sync_loaded_algo_data()
