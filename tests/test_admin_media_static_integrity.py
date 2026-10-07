@@ -54,6 +54,16 @@ def test_admin_media_sends_design_settings_on_save():
         assert token in content, token
 
 
+def test_admin_media_keeps_a_url_only_landing_hero_on_save():
+    content = ADMIN_MEDIA_PATH.read_text(encoding="utf-8")
+
+    assert "function keepsUrlOnlyLanding(" in content
+    assert "legacyHeroVideoUrl = settings.hero_video_id ? '' : (settings.video_url || '')" in content
+    assert "legacyVideoPosterUrl = settings.video_poster_id ? '' : (settings.video_poster || '')" in content
+    assert "if (keepsUrlOnlyLanding(slot.key)) return;" in content
+    assert "placementTouched[type] = true" in content
+
+
 def test_chat_welcome_screens_mount_assigned_disclaimer():
     root = ADMIN_MEDIA_PATH.parents[0]
     apply_chat = (root / "apply-chat.html").read_text(encoding="utf-8")

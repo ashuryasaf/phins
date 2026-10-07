@@ -2281,9 +2281,9 @@ def test_design_settings_post_derives_video_url_from_asset_id():
 
 
 def test_design_settings_post_clears_video_url_when_id_cleared():
-    """Sending an empty hero_video_id must wipe the stored video_url, even if
-    the client also sent a non-empty URL. This prevents the landing page from
-    keeping a "ghost" video after an admin un-assigns it."""
+    """Clearing an asset-backed hero wipes video_url, even if the client also
+    sent a non-empty URL. A URL with no asset id is a different record and is
+    covered by the placement tests."""
     port = 8317
     srv = ServerThread(port)
     srv.start()
@@ -2295,9 +2295,9 @@ def test_design_settings_post_clears_video_url_when_id_cleared():
     _inject_session(token, "clear_admin", "admin")
 
     try:
-        portal.DESIGN_SETTINGS["hero_video_id"] = ""
+        portal.DESIGN_SETTINGS["hero_video_id"] = "media-cleared-hero"
         portal.DESIGN_SETTINGS["video_url"] = "https://cdn.example.com/leftover.mp4"
-        portal.DESIGN_SETTINGS["video_poster_id"] = ""
+        portal.DESIGN_SETTINGS["video_poster_id"] = "media-cleared-poster"
         portal.DESIGN_SETTINGS["video_poster"] = "https://cdn.example.com/leftover.jpg"
 
         status, resp = _json_request(
@@ -2319,6 +2319,8 @@ def test_design_settings_post_clears_video_url_when_id_cleared():
         assert portal.DESIGN_SETTINGS["video_url"] == ""
         assert portal.DESIGN_SETTINGS["video_poster"] == ""
     finally:
+        portal.DESIGN_SETTINGS["hero_video_id"] = ""
+        portal.DESIGN_SETTINGS["video_poster_id"] = ""
         portal.DESIGN_SETTINGS["video_url"] = ""
         portal.DESIGN_SETTINGS["video_poster"] = ""
         srv.stop()
