@@ -16,7 +16,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --ds-primary: #0d47a1;
+      --ds-primary: #060d1f;
       --ds-accent: #e3bf6f;
       --ds-accent-strong: #f7e2a0;
       --ds-accent-shadow: rgba(227, 191, 111, 0.35);
@@ -217,6 +217,17 @@
     }
     .hero-cta:hover { border-color: rgba(227, 191, 111, 0.75); box-shadow: 0 0 34px rgba(127, 178, 255, 0.22); transform: translateY(-2px); }
     .hero-cta:hover::before { transform: translateX(100%); }
+    .hero-video {
+      margin: 28px auto 0;
+      max-width: 640px;
+    }
+    .hero-video video {
+      width: 100%;
+      max-height: 360px;
+      border-radius: 16px;
+      background: #000;
+      border: 1px solid var(--line);
+    }
 
     /* Entrance choreography */
     .rise { opacity: 0; transform: translateY(22px); animation: rise-in 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; }
@@ -289,6 +300,9 @@
           <a href="/solutions.html" class="hero-cta">Explore Solutions</a>
           <a href="/login.html" class="hero-cta">Login</a>
         </div>
+        <div id="video" class="hero-video" hidden>
+          <video id="hero-video" controls playsinline preload="metadata"></video>
+        </div>
       </div>
     </section>
   </main>
@@ -333,7 +347,8 @@
     }
 
     function applyDesignColors(settings) {
-      const defaultPrimary = '#0d47a1';
+      const defaultPrimary = '#060d1f';
+      const builtinPrimary = new Set(['#0d47a1', '#060d1f']);
       const defaultAccent = '#e3bf6f';
       // The platform's legacy accent default; treat it as "not customized"
       // so the landing page keeps its gold accent unless an admin picks a
@@ -351,7 +366,7 @@
       root.style.setProperty('--ds-accent-shadow', `${accent}59`);
       root.style.setProperty('--ds-accent-shadow-hover', `${accent}80`);
 
-      if (primary !== defaultPrimary) {
+      if (!builtinPrimary.has(primary)) {
         const glowSoft = mixHexColors(primary, '#000000', 0.35);
         const backdrop = document.querySelector('.backdrop');
         if (backdrop) {
@@ -398,6 +413,38 @@
       }
     }
 
+    function isPlayableMediaUrl(url) {
+      if (typeof url !== 'string') return false;
+      const value = url.trim();
+      if (!value) return false;
+      if (value.indexOf('data:video/') === 0 || value.indexOf('data:image/') === 0) return true;
+      if (value.charAt(0) === '/' && value.charAt(1) !== '/' && value.indexOf('..') === -1) return true;
+      return /^https?:\/\//i.test(value);
+    }
+
+    function applyHeroVideo(settings) {
+      const section = document.getElementById('video');
+      const video = document.getElementById('hero-video');
+      if (!section || !video) return;
+      const show = settings.show_video !== false;
+      const url = String(settings.video_url || '').trim();
+      const poster = String(settings.video_poster || '').trim();
+      if (!show || !isPlayableMediaUrl(url)) {
+        video.removeAttribute('src');
+        video.removeAttribute('poster');
+        section.hidden = true;
+        return;
+      }
+      video.addEventListener('error', function () {
+        video.removeAttribute('src');
+        section.hidden = true;
+      }, { once: true });
+      if (isPlayableMediaUrl(poster)) video.poster = poster;
+      else video.removeAttribute('poster');
+      video.src = url;
+      section.hidden = false;
+    }
+
     function applySectionVisibility(settings) {
       var videoSection = document.getElementById('video');
       if (videoSection) {
@@ -417,6 +464,7 @@
 
           applyDesignColors(settings);
           applySectionVisibility(settings);
+          applyHeroVideo(settings);
 
           if (settings.hero_background_url) {
             applyHeroBackground(settings.hero_background_url);

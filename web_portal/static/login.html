@@ -588,8 +588,8 @@
         if (!r.ok) return;
         var s = await r.json();
         var backdrop = document.querySelector('.auth-backdrop');
-        var p = normalizeHexColor(s.primary_color, '#0d47a1');
-        if (p && p !== '#0d47a1' && backdrop) {
+        var p = normalizeHexColor(s.primary_color, '#060d1f');
+        if (p && p !== '#0d47a1' && p !== '#060d1f' && backdrop) {
           backdrop.style.background =
             'radial-gradient(1000px 600px at 80% -10%, ' + p + '8c, transparent 60%),' +
             'radial-gradient(800px 520px at 8% 110%, ' + p + '59, transparent 60%),' +

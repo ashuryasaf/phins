@@ -4,14 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PHINS Admin - Media & Design Settings</title>
+    <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/styles.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+            background:
+                radial-gradient(1000px 520px at 85% -10%, rgba(21, 68, 155, 0.55), transparent 60%),
+                radial-gradient(720px 420px at 8% 110%, rgba(227, 191, 111, 0.14), transparent 62%),
+                #060d1f;
             min-height: 100vh;
             color: white;
         }
@@ -40,7 +44,7 @@
         .logo-icon {
             width: 36px;
             height: 36px;
-            background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
+            background: transparent;
             border-radius: 8px;
             display: flex;
             align-items: center;
@@ -76,10 +80,10 @@
         }
         .btn-secondary:hover { background: rgba(255,255,255,0.2); }
         .btn-primary {
-            background: linear-gradient(135deg, #42a5f5 0%, #1976d2 100%);
-            color: white;
+            background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+            color: #071022;
         }
-        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(66, 165, 245, 0.4); }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(227, 191, 111, 0.4); }
         .btn-danger {
             background: linear-gradient(135deg, #ef5350 0%, #e53935 100%);
             color: white;
@@ -118,8 +122,8 @@
             color: white;
         }
         .main-tab.active {
-            background: rgba(255,255,255,0.2);
-            color: white;
+            background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+            color: #071022;
         }
         
         /* Stats Bar - Compact */
@@ -151,7 +155,8 @@
         
         /* Upload Section */
         .upload-section {
-            background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+            background: rgba(11, 23, 48, 0.72);
+            border: 1px solid rgba(227, 191, 111, 0.35);
             border-radius: 12px;
             padding: 16px;
             margin-bottom: 16px;
@@ -320,8 +325,9 @@
             transition: all 0.2s;
         }
         .filter-btn.active {
-            background: linear-gradient(135deg, #42a5f5 0%, #1976d2 100%);
+            background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
             border-color: transparent;
+            color: #071022;
         }
         .filter-btn:hover { background: rgba(255,255,255,0.2); }
         
@@ -422,8 +428,8 @@
             transition: all 0.2s;
         }
         .media-action-btn.use {
-            background: linear-gradient(135deg, #42a5f5 0%, #1976d2 100%);
-            color: white;
+            background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+            color: #071022;
         }
         .media-action-btn.preview {
             background: rgba(255,255,255,0.1);
@@ -437,7 +443,8 @@
         
         /* Landing Page Assignments - Compact */
         .assignments-section {
-            background: linear-gradient(135deg, #2e7d32 0%, #4caf50 100%);
+            background: rgba(11, 23, 48, 0.72);
+            border: 1px solid rgba(227, 191, 111, 0.45);
             border-radius: 12px;
             padding: 16px;
             margin-bottom: 16px;
@@ -449,8 +456,10 @@
             gap: 8px;
             font-size: 1rem;
         }
-        .apply-disclosure-assignments {
-            background: linear-gradient(135deg, #0d2a5c 0%, #14509e 100%);
+        .apply-disclosure-assignments,
+        .chat-disclaimer-assignments {
+            background: rgba(11, 23, 48, 0.72);
+            border: 1px solid rgba(227, 191, 111, 0.45);
         }
         .assignment-grid {
             display: grid;
@@ -480,7 +489,7 @@
             font-size: 0.85rem;
             cursor: pointer;
         }
-        .assignment-select option { background: #1565c0; color: white; }
+        .assignment-select option { background: #0b1730; color: white; }
         .assignment-status {
             margin-top: 6px;
             font-size: 0.75rem;
@@ -490,6 +499,37 @@
         }
         .assignment-status.active { color: #fff; }
         .assignment-status.inactive { color: rgba(255,255,255,0.6); }
+        .page-title,
+        .assignments-section h2,
+        .design-section h2 {
+            font-family: 'Space Grotesk', 'Inter', sans-serif;
+        }
+        .placement-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            padding: 0 10px 8px;
+        }
+        .placement-chip {
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            padding: 2px 6px;
+            border-radius: 999px;
+            background: rgba(76, 175, 80, 0.28);
+            color: #d9ffe4;
+        }
+        .use-slot-list { display: grid; gap: 8px; }
+        .use-slot-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.08);
+            font-size: 0.9rem;
+        }
+        .use-slot-option input { width: 16px; height: 16px; }
 
         /* Voice-Over Script Library */
         .voiceover-section {
@@ -708,7 +748,8 @@
         
         /* ========== DESIGN SETTINGS PANEL ========== */
         .design-section {
-            background: linear-gradient(135deg, #5c6bc0 0%, #3949ab 100%);
+            background: rgba(11, 23, 48, 0.72);
+            border: 1px solid rgba(227, 191, 111, 0.45);
             border-radius: 12px;
             padding: 16px;
             margin-bottom: 16px;
@@ -766,7 +807,7 @@
             border-color: rgba(255,255,255,0.4);
         }
         .design-option select option {
-            background: #3949ab;
+            background: #0b1730;
             color: white;
         }
         .color-swatches {
@@ -857,7 +898,7 @@
             width: 14px;
             height: 14px;
             border-radius: 50%;
-            background: #42a5f5;
+            background: #e3bf6f;
             cursor: pointer;
         }
         .range-value {
@@ -1142,6 +1183,7 @@
                     <button class="filter-btn" onclick="filterMedia('video', event)">Videos</button>
                     <button class="filter-btn" onclick="filterMedia('image', event)">️ Images</button>
                     <button class="filter-btn" onclick="filterMedia('document', event)">Documents</button>
+                    <button class="filter-btn" onclick="filterMedia('placed', event)">In use</button>
                 </div>
             </div>
             
@@ -1376,6 +1418,7 @@ Notes:
                 </div>
             </div>
             <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-primary" onclick="saveAllAssignments()">Save Changes</button>
                 <a href="/" target="_blank" class="btn btn-secondary">️ Preview</a>
             </div>
         </section>
@@ -1417,8 +1460,41 @@ Notes:
                 </div>
             </div>
             <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
-                <button type="button" class="btn btn-primary" onclick="promoteApplyDisclosureControl()">Promote control to live</button>
+                <button type="button" class="btn btn-primary" onclick="saveAllAssignments()">Save Changes</button>
+                <button type="button" class="btn btn-secondary" onclick="promoteApplyDisclosureControl()">Promote control to live</button>
                 <a href="/apply.html" target="_blank" class="btn btn-secondary">Preview apply form</a>
+            </div>
+        </section>
+
+        <section class="assignments-section chat-disclaimer-assignments">
+            <h2>Chat video disclaimers</h2>
+            <p style="margin: -6px 0 14px; font-size: 0.82rem; color: rgba(255,255,255,0.82);">
+                Use a library video, or choose it here and press Save Changes. The application chat and the claims chat play it on the welcome screen. The chat record itself is not changed.
+            </p>
+            <div class="assignment-grid">
+                <div class="assignment-card">
+                    <div class="assignment-label">Application chat</div>
+                    <select id="assign-apply-chat-disclaimer" class="assignment-select" onchange="updateAssignment('apply_chat_disclaimer')">
+                        <option value="">-- No video --</option>
+                    </select>
+                    <div class="assignment-status" id="status-apply-chat-disclaimer">
+                        <span></span> Not set
+                    </div>
+                </div>
+                <div class="assignment-card">
+                    <div class="assignment-label">Claims chat</div>
+                    <select id="assign-claims-chat-disclaimer" class="assignment-select" onchange="updateAssignment('claims_chat_disclaimer')">
+                        <option value="">-- No video --</option>
+                    </select>
+                    <div class="assignment-status" id="status-claims-chat-disclaimer">
+                        <span></span> Not set
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-primary" onclick="saveAllAssignments()">Save Changes</button>
+                <a href="/apply-chat.html" target="_blank" class="btn btn-secondary">Preview application chat</a>
+                <a href="/file-a-claim.html" target="_blank" class="btn btn-secondary">Preview claims chat</a>
             </div>
         </section>
 
@@ -1509,25 +1585,26 @@ Notes:
                         <div class="design-option">
                             <label>Primary Color</label>
                             <div class="color-swatches">
-                                <div class="color-swatch selected" style="background: #1565c0;" onclick="selectColor('primary', '#1565c0', this)"></div>
-                                <div class="color-swatch" style="background: #7c3aed;" onclick="selectColor('primary', '#7c3aed', this)"></div>
-                                <div class="color-swatch" style="background: #059669;" onclick="selectColor('primary', '#059669', this)"></div>
-                                <div class="color-swatch" style="background: #dc2626;" onclick="selectColor('primary', '#dc2626', this)"></div>
-                                <div class="color-swatch" style="background: #d97706;" onclick="selectColor('primary', '#d97706', this)"></div>
-                                <div class="color-swatch" style="background: #0891b2;" onclick="selectColor('primary', '#0891b2', this)"></div>
-                                <div class="color-swatch" style="background: #be185d;" onclick="selectColor('primary', '#be185d', this)"></div>
-                                <div class="color-swatch" style="background: #374151;" onclick="selectColor('primary', '#374151', this)"></div>
+                                <div class="color-swatch selected" data-kind="primary" data-color="#060d1f" style="background: #060d1f; box-shadow: inset 0 0 0 1px rgba(227,191,111,0.7);" onclick="selectColor('primary', '#060d1f', this)"></div>
+                                <div class="color-swatch" data-kind="primary" data-color="#1976d2" style="background: #1976d2;" onclick="selectColor('primary', '#1976d2', this)"></div>
+                                <div class="color-swatch" data-kind="primary" data-color="#7c3aed" style="background: #7c3aed;" onclick="selectColor('primary', '#7c3aed', this)"></div>
+                                <div class="color-swatch" data-kind="primary" data-color="#059669" style="background: #059669;" onclick="selectColor('primary', '#059669', this)"></div>
+                                <div class="color-swatch" data-kind="primary" data-color="#dc2626" style="background: #dc2626;" onclick="selectColor('primary', '#dc2626', this)"></div>
+                                <div class="color-swatch" data-kind="primary" data-color="#d97706" style="background: #d97706;" onclick="selectColor('primary', '#d97706', this)"></div>
+                                <div class="color-swatch" data-kind="primary" data-color="#0891b2" style="background: #0891b2;" onclick="selectColor('primary', '#0891b2', this)"></div>
+                                <div class="color-swatch" data-kind="primary" data-color="#be185d" style="background: #be185d;" onclick="selectColor('primary', '#be185d', this)"></div>
+                                <div class="color-swatch" data-kind="primary" data-color="#374151" style="background: #374151;" onclick="selectColor('primary', '#374151', this)"></div>
                             </div>
                         </div>
                         <div class="design-option">
                             <label>Accent Color</label>
                             <div class="color-swatches">
-                                <div class="color-swatch selected" style="background: #42a5f5;" onclick="selectColor('accent', '#42a5f5', this)"></div>
-                                <div class="color-swatch" style="background: #a78bfa;" onclick="selectColor('accent', '#a78bfa', this)"></div>
-                                <div class="color-swatch" style="background: #34d399;" onclick="selectColor('accent', '#34d399', this)"></div>
-                                <div class="color-swatch" style="background: #fbbf24;" onclick="selectColor('accent', '#fbbf24', this)"></div>
-                                <div class="color-swatch" style="background: #f472b6;" onclick="selectColor('accent', '#f472b6', this)"></div>
-                                <div class="color-swatch" style="background: #60a5fa;" onclick="selectColor('accent', '#60a5fa', this)"></div>
+                                <div class="color-swatch selected" data-kind="accent" data-color="#e3bf6f" style="background: #e3bf6f;" onclick="selectColor('accent', '#e3bf6f', this)"></div>
+                                <div class="color-swatch" data-kind="accent" data-color="#a78bfa" style="background: #a78bfa;" onclick="selectColor('accent', '#a78bfa', this)"></div>
+                                <div class="color-swatch" data-kind="accent" data-color="#34d399" style="background: #34d399;" onclick="selectColor('accent', '#34d399', this)"></div>
+                                <div class="color-swatch" data-kind="accent" data-color="#fbbf24" style="background: #fbbf24;" onclick="selectColor('accent', '#fbbf24', this)"></div>
+                                <div class="color-swatch" data-kind="accent" data-color="#f472b6" style="background: #f472b6;" onclick="selectColor('accent', '#f472b6', this)"></div>
+                                <div class="color-swatch" data-kind="accent" data-color="#60a5fa" style="background: #60a5fa;" onclick="selectColor('accent', '#60a5fa', this)"></div>
                             </div>
                         </div>
                     </div>
@@ -1571,12 +1648,19 @@ Notes:
                         <div class="design-option">
                             <label>Font Family</label>
                             <select id="opt-font" onchange="updateDesignOption('fontFamily', this.value)">
-                                <option value="Inter">Inter (Default)</option>
+                                <option value="Inter" selected>Inter (Default)</option>
                                 <option value="Roboto">Roboto</option>
                                 <option value="Open Sans">Open Sans</option>
                                 <option value="Poppins">Poppins</option>
                                 <option value="Montserrat">Montserrat</option>
                                 <option value="system-ui">System Default</option>
+                            </select>
+                        </div>
+                        <div class="design-option">
+                            <label>Display Font</label>
+                            <select id="opt-display-font" onchange="updateDesignOption('displayFont', this.value)">
+                                <option value="Space Grotesk" selected>Space Grotesk (Default)</option>
+                                <option value="Inter">Inter</option>
                             </select>
                         </div>
                         <div class="design-option">
@@ -1710,14 +1794,7 @@ Notes:
                         <div class="design-option">
                             <label>Logo Icon</label>
                             <select id="opt-logo-icon" onchange="updateBrandOption('logoIcon', this.value)">
-                                <option value="️" selected>️ Shield</option>
-                                <option value=""> Bank</option>
-                                <option value=""> Briefcase</option>
-                                <option value=""> Star</option>
-                                <option value=""> Lock</option>
-                                <option value="️">️ Heart</option>
-                                <option value=""> Hospital</option>
-                                <option value=""> Premium</option>
+                                <option value="shield" selected>PHINS shield</option>
                             </select>
                         </div>
                     </div>
@@ -1795,6 +1872,23 @@ Notes:
         </div>
     </div>
     
+    <div class="modal-overlay" id="use-modal">
+        <div class="modal-content" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3 id="use-modal-title">Use asset</h3>
+                <button class="modal-close" type="button" onclick="closeUseModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <p id="use-modal-copy" style="margin-top:0;"></p>
+                <div id="use-slot-list" class="use-slot-list"></div>
+                <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
+                    <button type="button" class="btn btn-primary" id="use-confirm-btn" onclick="confirmUseAllocation()">Use</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeUseModal()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Container -->
     <div class="toast-container" id="toast-container"></div>
     
@@ -1804,23 +1898,42 @@ Notes:
         let currentFilter = 'all';
         let currentMainTab = 'media';
         let growthBridgeCampaign = null;
+        const PLACEMENT_SLOTS = [
+            { key: 'hero_video', field: 'hero_video_id', kind: 'video', label: 'Landing page hero video', chip: 'Landing' },
+            { key: 'hero_background', field: 'hero_background_id', kind: 'image', label: 'Landing page background', chip: 'Background' },
+            { key: 'video_poster', field: 'video_poster_id', kind: 'image', label: 'Landing page thumbnail', chip: 'Poster' },
+            { key: 'promo_banner', field: 'promo_banner_id', kind: 'image', label: 'Landing page banner', chip: 'Banner' },
+            { key: 'apply_disclosure_video', field: 'apply_disclosure_video_id', kind: 'video', label: 'Apply form disclosure', chip: 'Apply form' },
+            { key: 'apply_disclosure_control', field: 'apply_disclosure_control_video_id', kind: 'video', label: 'Apply form control cut', chip: 'Control' },
+            { key: 'apply_chat_disclaimer', field: 'apply_chat_disclaimer_video_id', kind: 'video', label: 'Application chat disclaimer', chip: 'Apply chat' },
+            { key: 'claims_chat_disclaimer', field: 'claims_chat_disclaimer_video_id', kind: 'video', label: 'Claims chat disclaimer', chip: 'Claims chat' }
+        ];
         let assignments = {
             hero_video: '',
             hero_background: '',
             video_poster: '',
             promo_banner: '',
             apply_disclosure_video: '',
-            apply_disclosure_control: ''
+            apply_disclosure_control: '',
+            apply_chat_disclaimer: '',
+            claims_chat_disclaimer: ''
         };
+        let pendingUseId = '';
+        let useSaveInFlight = false;
         let disclosureVersionLabel = 'light';
+        const PLATFORM_PRIMARY = '#060d1f';
+        const PLATFORM_ACCENT = '#e3bf6f';
+        const LEGACY_PRIMARY = ['#0d47a1', '#1565c0'];
+        const LEGACY_ACCENT = ['#ff6b35', '#42a5f5'];
         let designSettings = {
-            primaryColor: '#1565c0',
-            accentColor: '#42a5f5',
+            primaryColor: PLATFORM_PRIMARY,
+            accentColor: PLATFORM_ACCENT,
             darkMode: false,
             animations: true,
             compactMode: false,
             showIcons: true,
             fontFamily: 'Inter',
+            displayFont: 'Space Grotesk',
             fontSize: 14,
             lineHeight: 1.5
         };
@@ -1838,7 +1951,7 @@ Notes:
         let brandSettings = {
             companyName: 'PHINS',
             tagline: 'Safe Assurance',
-            logoIcon: '️',
+            logoIcon: 'shield',
             copyright: '© 2026 PHINS Insurance',
             showSocial: true,
             showContact: true,
@@ -2032,65 +2145,110 @@ Notes:
                 });
                 if (response.ok) {
                     const settings = await response.json();
-                    assignments.hero_video = settings.hero_video_id || settings.video_url || '';
-                    assignments.hero_background = settings.hero_background_id || '';
-                    assignments.video_poster = settings.video_poster_id || settings.video_poster || '';
-                    assignments.promo_banner = settings.promo_banner_id || '';
-                    assignments.apply_disclosure_video = settings.apply_disclosure_video_id || '';
-                    assignments.apply_disclosure_control = settings.apply_disclosure_control_video_id || '';
-                    disclosureVersionLabel = settings.apply_disclosure_version_label || 'light';
+                    applyServerAssignments(settings);
                     const versionSelect = document.getElementById('apply-disclosure-version-label');
                     if (versionSelect) versionSelect.value = disclosureVersionLabel;
                     updateAssignmentUI();
+                    populateAssignmentSelects();
+                    renderMediaGrid();
                 }
             } catch (e) {
                 console.warn('Could not load assignments:', e);
             }
         }
         
-        async function saveAllAssignments() {
-            const token = getToken();
+        function applyServerAssignments(settings) {
+            if (!settings) return;
+            PLACEMENT_SLOTS.forEach(slot => {
+                if (Object.prototype.hasOwnProperty.call(settings, slot.field)) {
+                    assignments[slot.key] = settings[slot.field] || '';
+                }
+            });
+            if (Object.prototype.hasOwnProperty.call(settings, 'apply_disclosure_version_label')) {
+                disclosureVersionLabel = settings.apply_disclosure_version_label || 'light';
+            }
+            const versionSelect = document.getElementById('apply-disclosure-version-label');
+            if (versionSelect) versionSelect.value = disclosureVersionLabel;
+        }
 
+        function placementPayload(slotKeys) {
+            const keys = slotKeys || PLACEMENT_SLOTS.map(slot => slot.key);
+            const body = {};
+            PLACEMENT_SLOTS.forEach(slot => {
+                if (keys.indexOf(slot.key) === -1) return;
+                body[slot.field] = assignments[slot.key] || '';
+            });
+            if (keys.indexOf('hero_video') !== -1) {
+                body.video_url = getMediaUrl(assignments.hero_video);
+            }
+            if (keys.indexOf('video_poster') !== -1) {
+                body.video_poster = getMediaUrl(assignments.video_poster);
+            }
+            const touchesDisclosure = !slotKeys
+                || keys.indexOf('apply_disclosure_video') !== -1
+                || keys.indexOf('apply_disclosure_control') !== -1;
+            if (touchesDisclosure) {
+                body.apply_disclosure_version_label = disclosureVersionLabel;
+            }
+            return body;
+        }
+
+        function clearStaleAssignments(slotKeys) {
+            const keys = slotKeys || Object.keys(assignments);
             const staleRefs = [];
-            for (const [key, id] of Object.entries(assignments)) {
+            keys.forEach(key => {
+                const id = assignments[key];
                 if (id && !mediaAssets.find(m => m.id === id)) {
                     staleRefs.push(key);
                     assignments[key] = '';
                 }
-            }
-            if (staleRefs.length > 0) {
+            });
+            return staleRefs;
+        }
+
+        async function persistAssignments(slotKeys, extraBody) {
+            const token = getToken();
+            const staleRefs = clearStaleAssignments(slotKeys);
+            if (!slotKeys && staleRefs.length > 0) {
                 showToast(`Cleared ${staleRefs.length} stale assignment(s): ${staleRefs.join(', ')}`, 'info');
             }
+            const body = placementPayload(slotKeys);
+            if (extraBody) Object.assign(body, extraBody);
+            const response = await fetch('/api/design/settings', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(body)
+            });
+            if (!response.ok) {
+                let message = 'Failed to save assignments';
+                try {
+                    const err = await response.json();
+                    if (err && err.error) message = err.error;
+                } catch (e) { /* keep the fallback */ }
+                showToast(message, 'error');
+                return false;
+            }
+            const saved = await response.json();
+            if (saved && saved.settings) applyServerAssignments(saved.settings);
+            updateAssignmentUI();
+            populateAssignmentSelects();
+            renderMediaGrid();
+            return true;
+        }
 
+        async function saveAllAssignments() {
+            if (useSaveInFlight) return;
+            useSaveInFlight = true;
             try {
-                const response = await fetch('/api/design/settings', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        hero_video_id: assignments.hero_video,
-                        hero_background_id: assignments.hero_background,
-                        video_poster_id: assignments.video_poster,
-                        promo_banner_id: assignments.promo_banner,
-                        apply_disclosure_video_id: assignments.apply_disclosure_video,
-                        apply_disclosure_control_video_id: assignments.apply_disclosure_control,
-                        apply_disclosure_version_label: disclosureVersionLabel,
-                        video_url: getMediaUrl(assignments.hero_video),
-                        video_poster: getMediaUrl(assignments.video_poster)
-                    })
-                });
-                
-                if (response.ok) {
-                    showToast('Assignments saved!', 'success');
-                    updateAssignmentUI();
-                    populateAssignmentSelects();
-                } else {
-                    showToast('Failed to save assignments', 'error');
-                }
+                const ok = await persistAssignments(null);
+                if (ok) showToast('Assignments saved', 'success');
             } catch (e) {
                 showToast('Error: ' + e.message, 'error');
+            } finally {
+                useSaveInFlight = false;
             }
         }
 
@@ -2250,6 +2408,20 @@ Notes:
             console.log('Brand option updated:', key, value);
         }
         
+        function resolveColor(candidates, legacy, fallback) {
+            for (const value of candidates) {
+                const color = String(value || '').trim().toLowerCase();
+                if (/^#[0-9a-f]{6}$/.test(color) && legacy.indexOf(color) === -1) return color;
+            }
+            return fallback;
+        }
+
+        function markColorSwatches(kind, color) {
+            document.querySelectorAll('.color-swatch[data-kind="' + kind + '"]').forEach(swatch => {
+                swatch.classList.toggle('selected', swatch.dataset.color === color);
+            });
+        }
+
         async function loadDesignSettings() {
             const token = getToken();
             try {
@@ -2258,7 +2430,8 @@ Notes:
                 });
                 if (response.ok) {
                     const settings = await response.json();
-                    // Apply loaded settings to form
+                    // Apply loaded settings to form. The admin response is the
+                    // stored record, including historical blue/orange defaults.
                     if (settings.designSettings) {
                         designSettings = { ...designSettings, ...settings.designSettings };
                     }
@@ -2268,6 +2441,21 @@ Notes:
                     if (settings.brandSettings) {
                         brandSettings = { ...brandSettings, ...settings.brandSettings };
                     }
+                    designSettings.primaryColor = resolveColor(
+                        [settings.primary_color, settings.designSettings && settings.designSettings.primaryColor],
+                        LEGACY_PRIMARY,
+                        PLATFORM_PRIMARY
+                    );
+                    designSettings.accentColor = resolveColor(
+                        [settings.accent_color, settings.designSettings && settings.designSettings.accentColor],
+                        LEGACY_ACCENT,
+                        PLATFORM_ACCENT
+                    );
+                    if (!designSettings.displayFont) designSettings.displayFont = 'Space Grotesk';
+                    if (!designSettings.fontFamily) designSettings.fontFamily = 'Inter';
+                    // The live emblem is the shield. Older emoji choices are
+                    // display-only until Save All writes the brand record.
+                    if (brandSettings.logoIcon !== 'shield') brandSettings.logoIcon = 'shield';
                     applySettingsToForm();
                 }
             } catch (e) {
@@ -2281,11 +2469,17 @@ Notes:
             const animations = document.getElementById('opt-animations');
             const compact = document.getElementById('opt-compact');
             const icons = document.getElementById('opt-icons');
+            const font = document.getElementById('opt-font');
+            const displayFont = document.getElementById('opt-display-font');
             
             if (darkMode) darkMode.checked = designSettings.darkMode;
             if (animations) animations.checked = designSettings.animations;
             if (compact) compact.checked = designSettings.compactMode;
             if (icons) icons.checked = designSettings.showIcons;
+            if (font && designSettings.fontFamily) font.value = designSettings.fontFamily;
+            if (displayFont) displayFont.value = designSettings.displayFont || 'Space Grotesk';
+            markColorSwatches('primary', designSettings.primaryColor);
+            markColorSwatches('accent', designSettings.accentColor);
             
             // Apply layout settings
             const navPos = document.getElementById('opt-nav-position');
@@ -2305,45 +2499,25 @@ Notes:
             
             if (companyName) companyName.value = brandSettings.companyName;
             if (tagline) tagline.value = brandSettings.tagline;
-            if (logoIcon) logoIcon.value = brandSettings.logoIcon;
+            if (logoIcon) logoIcon.value = 'shield';
         }
         
         async function saveAllSettings() {
-            const token = getToken();
+            if (useSaveInFlight) return;
+            useSaveInFlight = true;
             try {
-                // Save all settings
-                const response = await fetch('/api/design/settings', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        // Media assignments
-                        hero_video_id: assignments.hero_video,
-                        hero_background_id: assignments.hero_background,
-                        video_poster_id: assignments.video_poster,
-                        promo_banner_id: assignments.promo_banner,
-                        apply_disclosure_video_id: assignments.apply_disclosure_video,
-                        apply_disclosure_control_video_id: assignments.apply_disclosure_control,
-                        apply_disclosure_version_label: disclosureVersionLabel,
-                        video_url: getMediaUrl(assignments.hero_video),
-                        video_poster: getMediaUrl(assignments.video_poster),
-                        // Design settings
-                        designSettings: designSettings,
-                        layoutSettings: layoutSettings,
-                        brandSettings: brandSettings
-                    })
+                const ok = await persistAssignments(null, {
+                    primary_color: designSettings.primaryColor,
+                    accent_color: designSettings.accentColor,
+                    designSettings: designSettings,
+                    layoutSettings: layoutSettings,
+                    brandSettings: brandSettings
                 });
-                
-                if (response.ok) {
-                    showToast(' All settings saved!', 'success');
-                    updateAssignmentUI();
-                } else {
-                    showToast('Failed to save settings', 'error');
-                }
+                if (ok) showToast('All settings saved', 'success');
             } catch (e) {
                 showToast('Error: ' + e.message, 'error');
+            } finally {
+                useSaveInFlight = false;
             }
         }
         
@@ -2795,7 +2969,10 @@ Notes:
             const emptyState = document.getElementById('empty-state');
             
             let filtered = mediaAssets;
-            if (currentFilter !== 'all') {
+            if (currentFilter === 'placed') {
+                const used = placedAssetIds();
+                filtered = mediaAssets.filter(m => used.has(m.id));
+            } else if (currentFilter !== 'all') {
                 filtered = mediaAssets.filter(m => m.type === currentFilter);
             }
             
@@ -2830,6 +3007,7 @@ Notes:
                         </div>
                         ${renderSubtitleSummary(media)}
                     </div>
+                    ${renderPlacementChips(media.id)}
                     <div class="media-actions">
                         <button class="media-action-btn use" onclick="useMedia('${safeId}')">Use</button>
                         <button class="media-action-btn preview" onclick="previewMedia('${safeId}')">️</button>
@@ -2933,38 +3111,46 @@ Notes:
             document.getElementById('stat-storage').textContent = formatFileSize(totalSize + pinnedSize);
         }
         
+        function placedAssetIds() {
+            const used = new Set();
+            PLACEMENT_SLOTS.forEach(slot => {
+                if (assignments[slot.key]) used.add(assignments[slot.key]);
+            });
+            return used;
+        }
+
+        function renderPlacementChips(assetId) {
+            const chips = PLACEMENT_SLOTS
+                .filter(slot => assignments[slot.key] === assetId)
+                .map(slot => `<span class="placement-chip">${escHtml(slot.chip)}</span>`)
+                .join('');
+            if (!chips) return '';
+            return `<div class="placement-chips">${chips}</div>`;
+        }
+
+        function selectForSlot(slot) {
+            return document.getElementById('assign-' + slot.key.replace(/_/g, '-'));
+        }
+
+        function emptyOptionForSlot(slot) {
+            if (slot.key === 'hero_video') return '-- No Video --';
+            if (slot.key === 'video_poster') return '-- Auto Generate --';
+            if (slot.key === 'apply_disclosure_video') return '-- Light in-page version --';
+            if (slot.kind === 'video') return '-- No video --';
+            return '-- None --';
+        }
+
         function populateAssignmentSelects() {
-            const videoSelect = document.getElementById('assign-hero-video');
-            const bgSelect = document.getElementById('assign-hero-background');
-            const posterSelect = document.getElementById('assign-video-poster');
-            const bannerSelect = document.getElementById('assign-promo-banner');
-            const disclosureLiveSelect = document.getElementById('assign-apply-disclosure-video');
-            const disclosureControlSelect = document.getElementById('assign-apply-disclosure-control');
-            
             const videos = mediaAssets.filter(m => m.type === 'video');
-            const videoOptions = videos.map(v => `<option value="${escHtml(v.id)}">${escHtml(v.name)}</option>`).join('');
-            videoSelect.innerHTML = '<option value="">-- No Video --</option>' + videoOptions;
-            
             const images = mediaAssets.filter(m => m.type === 'image');
-            bgSelect.innerHTML = '<option value="">-- No Image --</option>' +
-                images.map(i => `<option value="${escHtml(i.id)}">${escHtml(i.name)}</option>`).join('');
-            posterSelect.innerHTML = '<option value="">-- Auto Generate --</option>' +
-                images.map(i => `<option value="${escHtml(i.id)}">${escHtml(i.name)}</option>`).join('');
-            bannerSelect.innerHTML = '<option value="">-- No Banner --</option>' +
-                images.map(i => `<option value="${escHtml(i.id)}">${escHtml(i.name)}</option>`).join('');
-            if (disclosureLiveSelect) {
-                disclosureLiveSelect.innerHTML = '<option value="">-- Light in-page version --</option>' + videoOptions;
-            }
-            if (disclosureControlSelect) {
-                disclosureControlSelect.innerHTML = '<option value="">-- None --</option>' + videoOptions;
-            }
-            
-            videoSelect.value = assignments.hero_video;
-            bgSelect.value = assignments.hero_background;
-            posterSelect.value = assignments.video_poster;
-            bannerSelect.value = assignments.promo_banner;
-            if (disclosureLiveSelect) disclosureLiveSelect.value = assignments.apply_disclosure_video;
-            if (disclosureControlSelect) disclosureControlSelect.value = assignments.apply_disclosure_control;
+            PLACEMENT_SLOTS.forEach(slot => {
+                const select = selectForSlot(slot);
+                if (!select) return;
+                const pool = slot.kind === 'video' ? videos : images;
+                select.innerHTML = `<option value="">${escHtml(emptyOptionForSlot(slot))}</option>` +
+                    pool.map(item => `<option value="${escHtml(item.id)}">${escHtml(item.name)}</option>`).join('');
+                select.value = assignments[slot.key] || '';
+            });
         }
         
         function updateAssignment(type) {
@@ -2996,15 +3182,15 @@ Notes:
         }
         
         function updateAssignmentUI() {
-            ['hero_video', 'hero_background', 'video_poster', 'promo_banner', 'apply_disclosure_video', 'apply_disclosure_control'].forEach(key => {
-                const statusEl = document.getElementById(`status-${key.replace(/_/g, '-')}`);
+            PLACEMENT_SLOTS.forEach(slot => {
+                const statusEl = document.getElementById(`status-${slot.key.replace(/_/g, '-')}`);
                 if (!statusEl) return;
-                const value = assignments[key];
+                const value = assignments[slot.key];
                 if (value) {
                     const media = mediaAssets.find(m => m.id === value);
-                    statusEl.innerHTML = `<span></span> ${media ? media.name : 'Configured'}`;
+                    statusEl.innerHTML = `<span></span> ${escHtml(media ? media.name : 'Configured')}`;
                     statusEl.className = 'assignment-status active';
-                } else if (key === 'apply_disclosure_video') {
+                } else if (slot.key === 'apply_disclosure_video') {
                     statusEl.innerHTML = '<span></span> Light in-page version';
                     statusEl.className = 'assignment-status inactive';
                 } else {
@@ -3025,20 +3211,105 @@ Notes:
             return media ? (media.url || media.data || '') : '';
         }
         
+        function slotsForMedia(media) {
+            return PLACEMENT_SLOTS.filter(slot => slot.kind === media.type);
+        }
+
         function useMedia(id) {
             const media = mediaAssets.find(m => m.id === id);
             if (!media) return;
-            
-            if (media.type === 'video') {
-                document.getElementById('assign-hero-video').value = id;
-                assignments.hero_video = id;
-            } else if (media.type === 'image') {
-                document.getElementById('assign-hero-background').value = id;
-                assignments.hero_background = id;
+            const slots = slotsForMedia(media);
+            if (!slots.length) {
+                showToast('Documents stay in the library. They are not placed on a page.', 'info');
+                return;
             }
-            
-            updateAssignmentUI();
-            showToast(`${media.name} selected for landing page`, 'success');
+            pendingUseId = id;
+            const title = document.getElementById('use-modal-title');
+            const copy = document.getElementById('use-modal-copy');
+            const list = document.getElementById('use-slot-list');
+            if (title) title.textContent = 'Use ' + media.name;
+            if (copy) {
+                copy.textContent = media.type === 'video'
+                    ? 'Choose where this video plays. Use saves the placement now.'
+                    : 'Choose where this photo is used. Use saves the placement now.';
+            }
+            if (list) {
+                list.innerHTML = slots.map(slot => {
+                    const checked = assignments[slot.key] === id ? ' checked' : '';
+                    return `<label class="use-slot-option"><input type="checkbox" value="${escHtml(slot.key)}"${checked}> ${escHtml(slot.label)}</label>`;
+                }).join('');
+            }
+            const modal = document.getElementById('use-modal');
+            if (modal) modal.classList.add('active');
+        }
+
+        function closeUseModal() {
+            pendingUseId = '';
+            const modal = document.getElementById('use-modal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        async function confirmUseAllocation() {
+            const media = mediaAssets.find(m => m.id === pendingUseId);
+            if (!media || useSaveInFlight) return;
+            const list = document.getElementById('use-slot-list');
+            const checked = new Set(
+                Array.from(list ? list.querySelectorAll('input:checked') : [])
+                    .map(input => input.value)
+            );
+            const slots = slotsForMedia(media);
+            const alreadyPlaced = slots.some(slot => assignments[slot.key] === media.id);
+            if (!checked.size && !alreadyPlaced) {
+                showToast('Choose where to use this asset', 'error');
+                return;
+            }
+            const previous = {};
+            const changed = [];
+            slots.forEach(slot => {
+                const on = checked.has(slot.key);
+                const current = assignments[slot.key] || '';
+                if (on && current !== media.id) {
+                    previous[slot.key] = current;
+                    assignments[slot.key] = media.id;
+                    changed.push(slot.key);
+                } else if (!on && current === media.id) {
+                    previous[slot.key] = current;
+                    assignments[slot.key] = '';
+                    changed.push(slot.key);
+                }
+            });
+            if (!changed.length) {
+                closeUseModal();
+                showToast(media.name + ' is already placed there', 'info');
+                return;
+            }
+            useSaveInFlight = true;
+            const confirmBtn = document.getElementById('use-confirm-btn');
+            if (confirmBtn) confirmBtn.disabled = true;
+            try {
+                const ok = await persistAssignments(changed);
+                if (!ok) {
+                    Object.keys(previous).forEach(key => { assignments[key] = previous[key]; });
+                    updateAssignmentUI();
+                    populateAssignmentSelects();
+                    renderMediaGrid();
+                    return;
+                }
+                const names = changed.map(key => {
+                    const slot = PLACEMENT_SLOTS.find(item => item.key === key);
+                    return slot ? slot.chip : key;
+                });
+                closeUseModal();
+                showToast(media.name + ' saved for ' + names.join(', '), 'success');
+            } catch (e) {
+                Object.keys(previous).forEach(key => { assignments[key] = previous[key]; });
+                updateAssignmentUI();
+                populateAssignmentSelects();
+                showToast('Error: ' + e.message, 'error');
+            } finally {
+                useSaveInFlight = false;
+                if (confirmBtn) confirmBtn.disabled = false;
+            }
         }
         
         function previewMedia(id) {
