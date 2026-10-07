@@ -345,9 +345,11 @@ def test_public_palette_is_unified_without_rewriting_stored_colors():
 
 
 def test_save_keeps_a_url_only_landing_hero():
-    """A full save that posts an empty hero id must not erase a landing video
-    that was stored only as video_url. Removing an asset id still clears the
-    derived URL, and an explicit video_url clear still works.
+    """A full save that posts an empty hero id must not erase a landing video.
+
+    A URL-only hero stays. An empty id also stays when that asset is still in
+    the library, unless the operator sends clear_hero_video. An explicit
+    video_url clear, with the asset id omitted, still removes a URL-only file.
     """
     srv = _ServerThread()
     srv.start()
@@ -412,11 +414,87 @@ def test_save_keeps_a_url_only_landing_hero():
             },
         )
         assert status == 200, body
+        assert portal.DESIGN_SETTINGS["hero_video_id"] == hero_id
+        assert portal.DESIGN_SETTINGS["video_url"] == "/media-files/media-place-legacy-asset/hero.mp4"
+
+        status, body = _request(
+            srv.base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={
+                "hero_video_id": "",
+                "video_url": "https://cdn.example.com/ghost.mp4",
+                "clear_hero_video": True,
+            },
+        )
+        assert status == 200, body
         assert portal.DESIGN_SETTINGS["hero_video_id"] == ""
         assert portal.DESIGN_SETTINGS["video_url"] == ""
     finally:
         portal.MEDIA_ASSETS.pop(chat_id, None)
         portal.MEDIA_ASSETS.pop(hero_id, None)
+        _restore(saved)
+        srv.stop()
+
+
+def test_public_hero_keeps_a_stored_url_when_the_asset_address_is_blank():
+    """A library row with an empty url must not hide the stored landing file.
+
+    The read does not write DESIGN_SETTINGS. When neither address is stored,
+    the public page still receives the asset's media-files path.
+    """
+    srv = _ServerThread()
+    srv.start()
+    _warm(srv.base)
+    saved = _snapshot()
+    hero_id = "media-place-blank-url"
+    poster_id = "media-place-blank-poster"
+    try:
+        portal.MEDIA_ASSETS[hero_id] = {
+            "id": hero_id,
+            "name": "Families_Testimonial_Narrative_60s.mp4",
+            "type": "video",
+            "url": "",
+            "data": "",
+            "source": "upload",
+        }
+        portal.MEDIA_ASSETS[poster_id] = {
+            "id": poster_id,
+            "name": "families-poster.jpg",
+            "type": "image",
+            "url": "",
+            "data": "",
+            "source": "upload",
+        }
+        stored = "/media-files/media-40d2f1aee39e/Families_Testimonial_Narrative_60s_mp4"
+        portal.DESIGN_SETTINGS["hero_video_id"] = hero_id
+        portal.DESIGN_SETTINGS["video_url"] = stored
+        portal.DESIGN_SETTINGS["video_poster_id"] = poster_id
+        portal.DESIGN_SETTINGS["video_poster"] = "/media-files/poster.jpg"
+        portal.DESIGN_SETTINGS["show_video"] = True
+
+        status, public = _request(srv.base + "/api/design/settings")
+        assert status == 200
+        assert public["video_url"] == stored
+        assert public["video_poster"] == "/media-files/poster.jpg"
+        assert portal.DESIGN_SETTINGS["video_url"] == stored
+        assert portal.DESIGN_SETTINGS["hero_video_id"] == hero_id
+
+        portal.DESIGN_SETTINGS["video_url"] = ""
+        portal.DESIGN_SETTINGS["video_poster"] = ""
+        status, public = _request(srv.base + "/api/design/settings")
+        assert status == 200
+        assert public["video_url"] == portal.build_internal_media_file_url(
+            hero_id, "Families_Testimonial_Narrative_60s.mp4"
+        )
+        assert public["video_poster"] == portal.build_internal_media_file_url(
+            poster_id, "families-poster.jpg"
+        )
+        assert portal.DESIGN_SETTINGS["video_url"] == ""
+        assert portal.DESIGN_SETTINGS["video_poster"] == ""
+    finally:
+        portal.MEDIA_ASSETS.pop(hero_id, None)
+        portal.MEDIA_ASSETS.pop(poster_id, None)
         _restore(saved)
         srv.stop()
 

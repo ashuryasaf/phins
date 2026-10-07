@@ -62,6 +62,10 @@ def test_admin_media_keeps_a_url_only_landing_hero_on_save():
     assert "legacyVideoPosterUrl = settings.video_poster_id ? '' : (settings.video_poster || '')" in content
     assert "if (keepsUrlOnlyLanding(slot.key)) return;" in content
     assert "placementTouched[type] = true" in content
+    assert "mediaLibraryReady" in content
+    assert "clear_hero_video" in content
+    assert "clear_video_poster" in content
+    assert "clearStaleAssignments" not in content
 
 
 def test_chat_welcome_screens_mount_assigned_disclaimer():
