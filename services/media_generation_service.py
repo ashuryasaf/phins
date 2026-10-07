@@ -109,6 +109,21 @@ _KLING_EVOLINK_BASE_URL = "https://api.evolink.ai"
 _KLING_EVOLINK_GENERATIONS_PATH = "/v1/videos/generations"
 _KLING_EVOLINK_TASK_PATH_PREFIX = "/v1/tasks/"
 
+# Official Replicate text-to-video models. Operators override the list with
+# REPLICATE_VIDEO_MODELS (comma-separated owner/name or owner/name:version).
+_DEFAULT_REPLICATE_MODELS = (
+    "google/veo-3.1-fast",
+    "google/veo-3.1",
+    "bytedance/seedance-2.0",
+)
+_REPLICATE_MODEL_RE = re.compile(
+    r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?/"
+    r"[a-z0-9](?:[a-z0-9._-]{0,80}[a-z0-9])?"
+    r"(?::[a-f0-9]{8,80})?$"
+)
+_REPLICATE_ASPECTS = {"16:9", "9:16", "1:1"}
+_REPLICATE_RESOLUTIONS = {"480p", "720p", "1080p"}
+
 # PHINS UI / aggregator ids -> Kling Open Platform ``model_name`` values.
 # Quality (pro/std) is carried in the separate ``mode`` field, not the name.
 _KLING_OFFICIAL_MODEL_NAMES = {
