@@ -202,6 +202,37 @@ def test_missing_cache_is_restored_from_the_durable_blob(monkeypatch):
         portal.MEDIA_ASSETS.pop(asset["id"], None)
 
 
+def test_warm_cache_is_served_without_reading_the_durable_blob(monkeypatch):
+    # After a restart the hydrated record has no file_path, but the cache file
+    # name is deterministic, so the volume copy must answer on its own.
+    asset = _seed_video("media-durablevid06")
+    asset.pop("file_path", None)
+    reads = []
+
+    def _enabled():
+        return True
+
+    def _load(asset_id):
+        reads.append(asset_id)
+        return None
+
+    monkeypatch.setattr(portal, "_media_durable_enabled", _enabled)
+    monkeypatch.setattr("services.media_library_store.load_asset", _load)
+    srv = _ServerThread()
+    srv.start()
+    try:
+        _warm(srv.base)
+        status, body, content_type = _get(srv.base + asset["url"])
+        assert status == 200
+        assert body == _VIDEO
+        assert content_type.startswith("video/mp4")
+        assert reads == []
+        assert asset["file_path"].endswith(f"{asset['id']}-story_mp4")
+    finally:
+        srv.stop()
+        portal.MEDIA_ASSETS.pop(asset["id"], None)
+
+
 def test_failed_durable_delete_leaves_the_library_record(monkeypatch):
     asset = _seed_video("media-durablevid05")
     token = "phins_media_delete_token"

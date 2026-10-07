@@ -3203,6 +3203,11 @@ def ensure_media_asset_file(asset: Dict[str, Any]) -> Dict[str, str]:
         return {'path': '', 'error': 'missing'}
     expected = str(asset.get('checksum') or '').strip().lower()
     file_path = str(asset.get('file_path') or '').strip()
+    # A hydrated record carries no path, but the cache file name is
+    # deterministic, so a warm volume still answers without a database read.
+    inferred_path = not file_path
+    if inferred_path:
+        file_path = _assign_media_cache_path(asset)
     local_mismatch = False
     if file_path and os.path.isfile(file_path) and _media_path_within_storage(file_path):
         try:
@@ -3212,10 +3217,11 @@ def ensure_media_asset_file(asset: Dict[str, Any]) -> Dict[str, str]:
         if actual and (not expected or actual == expected):
             if not expected:
                 asset['checksum'] = actual
+            asset['file_path'] = file_path
             if _media_durable_enabled() and not asset.get('durable') and not asset.get('durable_error'):
                 persist_durable_media_asset(asset)
             return {'path': file_path, 'error': '', 'mime': _library_media_mime(asset)}
-        if actual and expected and actual != expected:
+        if actual and expected and actual != expected and not inferred_path:
             local_mismatch = True
 
     restored = _restore_media_asset_from_durable_store(asset)
