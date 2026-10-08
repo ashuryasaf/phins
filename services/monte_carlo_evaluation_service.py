@@ -488,18 +488,13 @@ def _load_phins_context() -> Dict[str, Any]:
 # Synthetic population
 # ─────────────────────────────────────────────────────────────────────────────
 
-_ADL_WEIGHTS_BY_AGE = (
-    (26, [70, 15, 8, 4, 2, 1, 0, 0, 0, 0]),
-    (46, [50, 20, 15, 8, 4, 2, 1, 0, 0, 0]),
-    (200, [30, 20, 20, 15, 8, 4, 2, 1, 0, 0]),
-)
-
-
-def _adl_for_age(rng: random.Random, age: int) -> int:
-    for limit, weights in _ADL_WEIGHTS_BY_AGE:
-        if age < limit:
-            return rng.choices(range(1, 11), weights=weights)[0]
-    return 1
+def _adl_for_age(rng: random.Random, age: int, tables: Optional[Dict[str, Any]] = None) -> int:
+    """Same applicant mix the portfolio simulator draws."""
+    from services.actuarial_service import portfolio_adl_weights
+    weights = portfolio_adl_weights(age, tables)
+    if sum(weights) <= 0.0:
+        return 1
+    return rng.choices(range(1, 11), weights=weights)[0]
 
 
 def _generate_population(rng: random.Random, n: int, ctx: Dict[str, Any],
@@ -516,7 +511,7 @@ def _generate_population(rng: random.Random, n: int, ctx: Dict[str, Any],
         u = rng.random()
         smoking = "current" if u < 0.15 else "former" if u < 0.25 else "never"
         gender = "male" if rng.random() < 0.49 else "female"
-        adl = _adl_for_age(rng, age)
+        adl = _adl_for_age(rng, age, store.get_current_tables())
         bmi = round(max(16.0, min(50.0, rng.gauss(26.5, 4.5))), 1)
         conditions: List[Dict[str, Any]] = []
         for name, base, slope in _CONDITION_CATALOG:
@@ -659,6 +654,12 @@ def evaluate_risk_assessment(rng: random.Random, lives: List[Dict[str, Any]],
     for r in recs:
         rec_mix[r] = rec_mix.get(r, 0) + 1
     rec_mix = {k: round(v / n, 4) for k, v in sorted(rec_mix.items())}
+    # Independent 4-decimal rounding can leave the shares 0.0001 short of 1.
+    if rec_mix:
+        drift = round(1.0 - sum(rec_mix.values()), 4)
+        if drift:
+            last = next(reversed(rec_mix))
+            rec_mix[last] = round(rec_mix[last] + drift, 4)
     base_rates = ctx["assumptions"]["automation_base_rates"]["underwriting"]
 
     return {

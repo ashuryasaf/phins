@@ -1926,6 +1926,11 @@
                 <option value="10">ADL 10 Only (Very Lenient)</option>
               </select>
             </div>
+            <div class="form-group" style="margin-top:12px;">
+              <label class="form-label">Maximum acceptance age</label>
+              <input type="number" id="max-acceptance-age" class="form-input" value="65" min="0" max="120" style="width:200px;">
+              <small style="color:var(--text-light);">Applicants older than this are declined. Life and disability sums still follow the disability band age.</small>
+            </div>
           </div>
           
           <div class="card">
@@ -2256,7 +2261,7 @@
               <div class="form-group">
                 <label class="form-label">Maximum Age</label>
                 <input type="number" id="sim-age-max" class="form-input" value="55" min="0" max="100">
-                <small style="color:var(--text-light);">Draw window only. Acceptance stops at age 65: older applicants are declined, even when this value is higher. Ages outside the window are redrawn, so the maximum age does not collect extra acceptances.</small>
+                <small style="color:var(--text-light);">Draw window only. Acceptance stops at the maximum acceptance age in Underwriting Rules (default 65): older applicants are declined, even when this value is higher. Ages outside the window are redrawn, so the maximum age does not collect extra acceptances.</small>
               </div>
               <div class="form-group">
                 <label class="form-label">Mean Age</label>
@@ -4611,6 +4616,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       document.getElementById('stat-profit').textContent = `${(currentConfig.profit_margin_pct * 100).toFixed(0)}%`;
       
       document.getElementById('decline-threshold').value = currentConfig.decline_threshold;
+      const maxAgeInput = document.getElementById('max-acceptance-age');
+      if (maxAgeInput && currentConfig.max_acceptance_age != null) {
+        maxAgeInput.value = currentConfig.max_acceptance_age;
+      }
       document.getElementById('disability-exclusion').value = currentConfig.disability_exclusion_threshold;
       document.getElementById('expense-loading').value = (currentConfig.expense_loading_pct * 100).toFixed(1);
       document.getElementById('profit-margin').value = (currentConfig.profit_margin_pct * 100).toFixed(1);
@@ -5143,6 +5152,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         auto_approve_max_coverage: parseFloat(document.getElementById('auto-approve-max-coverage').value),
         auto_approve_require_clean_history: document.getElementById('auto-approve-clean-history').checked
       };
+      const maxAcceptanceAge = document.getElementById('max-acceptance-age');
+      if (maxAcceptanceAge && maxAcceptanceAge.value !== '') {
+        config.max_acceptance_age = parseInt(maxAcceptanceAge.value, 10);
+      }
       
       try {
         const res = await fetch('/api/actuarial/config', {
@@ -5810,6 +5823,18 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           Simulation completed in ${sim.duration_seconds}s | Tables Version: ${sim.tables_version} | ID: ${sim.simulation_id}
         </div>
         ${reconHtml}
+        ${(() => {
+          const pin = sim.parameter_integrity || {};
+          const ok = !!pin.all_checks_pass;
+          const lapse = pin.year1_lapse_rate;
+          const collect = pin.collection_rate;
+          return `<div class="alert ${ok ? 'alert-success' : 'alert-warning'}">
+            Parameter integrity ${ok ? 'passes' : 'failed'}: kernel sums, underwriting gates, and the active life and disability tables.
+            Acceptance age ${pin.max_acceptance_age != null ? pin.max_acceptance_age : '—'}, band age ${pin.disability_band_age != null ? pin.disability_band_age : '—'},
+            year-1 lapse ${lapse == null ? 'withheld' : (lapse * 100).toFixed(2) + '%'},
+            collection ${collect == null ? 'withheld' : (collect * 100).toFixed(2) + '%'}.
+          </div>`;
+        })()}
 
         <div class="results-section">
           <h4>Portfolio Summary</h4>
@@ -5873,21 +5898,14 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         </div>
         
         <div class="results-section">
-          <h4>Automation Metrics</h4>
-          <div class="automation-gauge">
-            <div class="gauge-circle" style="background:linear-gradient(135deg,#38a169,#4299e1);">
-              ${fmtPct(sim.automation.overall_automation_pct * 100)}
-            </div>
-            <div class="gauge-info">
-              <h4>Overall Automation</h4>
-              <p>Scale Factor: ${sim.automation.scale_factor}x at ${fmt(sim.automation.customer_count)} customers</p>
-            </div>
-          </div>
+          <h4>Issuance on this book</h4>
+          <p style="color:var(--text-light);">Counted from the lives just priced. Claims and billing automation are not filled in from assumed rates.</p>
           <table class="data-table">
-            <tr><th>Process</th><th>Auto Rate</th><th>Manual Review</th></tr>
-            <tr><td>Underwriting</td><td>${fmtPct(sim.automation.underwriting.total_automation_pct * 100)}</td><td>${fmtPct(sim.automation.underwriting.manual_review * 100)}</td></tr>
-            <tr><td>Claims</td><td>${fmtPct(sim.automation.claims.total_automation_pct * 100)}</td><td>${fmtPct(sim.automation.claims.manual_review * 100)}</td></tr>
-            <tr><td>Billing</td><td>${fmtPct(sim.automation.billing.total_automation_pct * 100)}</td><td>${fmtPct(sim.automation.billing.manual_followup * 100)}</td></tr>
+            <tr><th></th><th>Count</th></tr>
+            <tr><td>Accepted</td><td>${fmt((sim.automation.underwriting || {}).accepted)}</td></tr>
+            <tr><td>Declined</td><td>${fmt((sim.automation.underwriting || {}).declined)}</td></tr>
+            <tr><td>Auto-issued</td><td>${fmt((sim.automation.underwriting || {}).auto_approved)}</td></tr>
+            <tr><td>Referred</td><td>${fmt((sim.automation.underwriting || {}).referred)}</td></tr>
           </table>
         </div>
         
@@ -8835,8 +8853,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       // Claim cause split from the simulation's risk metrics (mortality vs
       // permanent disability share of expected claims).
       const rm = sim.risk_metrics || {};
-      let mortalityShare = rm.mortality_pct_of_claims != null ? Number(rm.mortality_pct_of_claims) / 100 : 0.6;
-      if (!(mortalityShare >= 0 && mortalityShare <= 1)) mortalityShare = 0.6;
+      let mortalityShare = rm.mortality_pct_of_claims != null ? Number(rm.mortality_pct_of_claims) / 100 : null;
+      if (!(mortalityShare >= 0 && mortalityShare <= 1)) mortalityShare = null;
       const lossRatioPct = Number(rm.loss_ratio || 0);
       // Age band where life steps down and D becomes 1:1 with the reduced life
       // sum. Disability does NOT terminate — both layers continue for life.
@@ -8887,6 +8905,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         loss_ratio: lossRatioPct,
         loss_ratio_year1: rm.loss_ratio_year1 != null ? Number(rm.loss_ratio_year1) : null,
         avg_term_years: Number(rm.avg_term_years || 0),
+        year1_lapse_rate: kernel.year1_lapse_rate != null ? Number(kernel.year1_lapse_rate) : null,
+        collection_rate: kernel.collection_rate != null ? Number(kernel.collection_rate) : null,
         disability_band_age: disabilityBandAge,
         disability_max_age: disabilityMaxAge,
         max_acceptance_age: maxAcceptanceAge,
@@ -8919,6 +8939,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         if (msg) msg.textContent = 'This simulation has no kernel-priced lives. Re-run Portfolio Simulation so the sandbox can follow the rate tables and underwriting rules.';
         return;
       }
+      window.actuarySandbox.collectionRate = (
+        kernel.collection_rate != null && isFinite(Number(kernel.collection_rate))
+      ) ? Number(kernel.collection_rate) : null;
       window.actuarySandbox.rules = rules;
       window.actuarySandbox.kernelLives = prototypes;
       const occupations = ['Engineer', 'Teacher', 'Driver', 'Nurse', 'Manager', 'Analyst', 'Technician', 'Sales', 'Cashier', 'Designer', 'Doctor', 'Cook'];
@@ -8931,7 +8954,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         const annual = Number(src.annual_premium) || 0;
         const eligibleAtIssue = decision.disability_eligible !== false && src.disability_eligible !== false && !src.exclude_disability;
         const inForce = decision.uw_status === 'approved' || decision.uw_status === 'pending';
-        const reliablePayer = inForce && Math.random() < SANDBOX_COLLECTION_RATE;
+        const reliablePayer = inForce && Math.random() < sandboxCollectionRate();
         window.actuarySandbox.customers.push({
           id,
           name: `${sandboxPick(givenNames)} ${sandboxPick(familyNames)}`,
@@ -9064,7 +9087,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         'sim',
         `Contract priced: ${productId} · disability benefit ${ratioDisplay} of life sum · ` +
           `savings add-on ${(savingsRate * 100).toFixed(1)}% of risk premium · ` +
-          `claim split ${(mortalityShare * 100).toFixed(0)}% mortality / ${((1 - mortalityShare) * 100).toFixed(0)}% disability · ` +
+          (mortalityShare == null
+            ? 'claim split withheld until the priced book reports a mortality share · '
+            : `claim split ${(mortalityShare * 100).toFixed(0)}% mortality / ${((1 - mortalityShare) * 100).toFixed(0)}% disability · `) +
           `accepted ages ${acceptedAgeMin}–${acceptedAgeMax}; from age ${disabilityMaxAge} life steps to face÷4 and disability equals life.`,
         'info'
       );
@@ -9471,7 +9496,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const disabilitySharePost = Number(contract.disability_share_of_life_post65 != null ? contract.disability_share_of_life_post65 : 1.0);
       const lifeShare = Number(contract.life_share_of_coverage != null ? contract.life_share_of_coverage : 1.0);
       const lifeSharePost = Number(contract.life_share_of_coverage_post65 != null ? contract.life_share_of_coverage_post65 : 0.25);
-      const mortalityShare = Number(contract.mortality_share != null ? contract.mortality_share : 0.6);
+      const mortalityShare = contract.mortality_share != null && isFinite(Number(contract.mortality_share))
+        ? Number(contract.mortality_share)
+        : null;
       const savingsRate = Number(contract.savings_rate || 0);
       const expenseLoadingPct = Number(contract.expense_loading_pct != null ? contract.expense_loading_pct : 0.15);
       const profitMarginPct = Number(contract.profit_margin_pct != null ? contract.profit_margin_pct : 0.10);
@@ -9504,7 +9531,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           ? Number(src.monthly_premium)
           : Math.round((annual / 12) * 100) / 100;
         const inForce = decision.uw_status === 'approved' || decision.uw_status === 'pending';
-        const reliable = inForce && Math.random() < SANDBOX_COLLECTION_RATE;
+        const reliable = inForce && Math.random() < sandboxCollectionRate();
         customers.push({
           id, name: `Sandbox ${idx}`,
           age: Number(src.age),
@@ -9867,7 +9894,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         horizon: horizon,
         mortalityShare: mortalityShare,
         disabilityShare: disabilityShare,
-        collectionRate: Snap.COLLECTION_RATE,
+        collectionRate: sandboxCollectionRate(),
         savingsShare: savingsShare,
         managementFeePctOfAum: aum.managementFeePctOfAum,
         savingsYieldPct: aum.savingsYieldPct,
@@ -10276,6 +10303,12 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     // policyholders auto-pay every bill; the unpaid remainder lapses and the
     // policy is cancelled after the 30-day grace (see sandboxCancelLapsedPolicies).
     const SANDBOX_COLLECTION_RATE = 0.95;
+    function sandboxCollectionRate() {
+      const sb = window.actuarySandbox;
+      const bound = sb && sb.collectionRate;
+      if (typeof bound === 'number' && isFinite(bound)) return Math.min(1, Math.max(0, bound));
+      return SANDBOX_COLLECTION_RATE;
+    }
 
     // -------------------------------------------------------------------
     // Premium collection - actual collected, savings add-on split
@@ -10374,7 +10407,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         issued += 1;
       }
       if (issued) {
-        sandboxLogEvent('billing', `Month ${monthIndex}: billed ${sandboxFmtCount(issued)} in-force policies (auto-pay at the ${(SANDBOX_COLLECTION_RATE * 100).toFixed(0)}% collection rate).`, 'info');
+        sandboxLogEvent('billing', `Month ${monthIndex}: billed ${sandboxFmtCount(issued)} in-force policies (auto-pay at the ${(sandboxCollectionRate() * 100).toFixed(2)}% collection rate from the year-1 lapse table).`, 'info');
       }
       return issued;
     }
@@ -10433,7 +10466,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         lossRatioYear1Pct: contract.loss_ratio_year1 != null ? contract.loss_ratio_year1 : (summary.loss_ratio_year1 != null ? summary.loss_ratio_year1 : null),
         mortalityShare: proj.originalMortalityShare != null ? proj.originalMortalityShare : contract.mortality_share,
         disabilityShare: proj.originalMortalityShare != null ? (1 - proj.originalMortalityShare) : contract.disability_claim_share,
-        collectionRate: Snap.COLLECTION_RATE,
+        collectionRate: sandboxCollectionRate(),
         savingsShare: proj.savingsShare != null ? proj.savingsShare : sandboxSavingsShare(),
         managementFeePctOfAum: proj.managementFeePctOfAum != null ? proj.managementFeePctOfAum : sandboxAumSettings().managementFeePctOfAum,
         growthPct: proj.growthPct != null ? proj.growthPct : (base.growthPct != null ? base.growthPct : 10),
@@ -11781,7 +11814,10 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       const lossRatio = risk.loss_ratio || 0;
       const mortalityShare = risk.mortality_pct_of_claims || 0;
       const disabilityShare = risk.disability_pct_of_claims || 0;
-      const automationRate = (sim.automation?.overall_automation_pct || 0) * 100;
+      const issuanceAuto = sim.automation?.underwriting?.total_automation_pct;
+      const automationRate = (
+        issuanceAuto != null ? issuanceAuto : (sim.automation?.overall_automation_pct || 0)
+      ) * 100;
       const productId = String(kernel.product_id || sim.parameters?.product_id || 'phins_pure_risk_adjustable');
       const savingsRatePct = (kernel.savings_rate != null ? kernel.savings_rate : (sim.parameters?.savings_rate || 0)) * 100;
       const expenseLoadingPct = (kernel.expense_loading_pct != null ? kernel.expense_loading_pct : 0) * 100;

@@ -125,6 +125,10 @@ class UnderwritingConfig:
     life_share_of_coverage: float = 1.0
     life_share_of_coverage_post65: float = 0.25
     disability_band_age: int = 65
+    # Oldest age that can be accepted. Older applicants stay in the applied
+    # book and the declined ledger. Benefit sums still follow
+    # ``disability_band_age``; this cap is the underwriting age gate.
+    max_acceptance_age: int = 65
     # Claim interaction (benefit administration). Healthy-life *combined*
     # premium quoting stays on the mutually-exclusive PV model by default
     # (no quote change). After a paid disability claim before the band age
@@ -655,6 +659,7 @@ class ActuarialTablesStore:
             ],
             # Remaining years after ADL 3. Disclosure only: not a premium band.
             'adl3_disabled_life_expectancy': adl3_disabled_life_expectancy_rows(),
+            'portfolio_adl_mix': [dict(row) for row in DEFAULT_PORTFOLIO_ADL_MIX],
         }
         
         # Initialize underwriting config
@@ -722,21 +727,51 @@ class ActuarialTablesStore:
         cfg["state_revision"] = int(getattr(self, "state_revision", 0) or 0)
         return cfg
     
+    def lookup_table_rate(self, table_key: str, age: int) -> Optional[float]:
+        """Rate per life for ``age``, or None when no bracket covers it.
+
+        An uncovered age is withheld. Callers that need a float for arithmetic
+        use the ``get_*`` wrappers, which return 0.0 — the same identity as
+        the pricing kernel — and never a stand-in tail rate.
+        """
+        tables = self.get_current_tables()
+        for bracket in tables.get(table_key, []) or []:
+            try:
+                lo = int(bracket.get('age_min', 0))
+                hi = int(bracket.get('age_max', 0))
+                rate = float(bracket.get('rate_per_1000', 0.0)) / 1000.0
+            except (TypeError, ValueError):
+                continue
+            if lo <= int(age) < hi:
+                return rate
+        return None
+
+    def lookup_lapse_rate(self, year: int) -> Optional[float]:
+        """Lapse rate for ``year``, or None when the lapse table has no row."""
+        tables = self.get_current_tables()
+        year_i = int(year)
+        for item in tables.get('lapse_rates', []) or []:
+            try:
+                if 'year' in item and int(item['year']) == year_i:
+                    return float(item.get('rate', 0.0))
+                if (
+                    'year_min' in item
+                    and int(item['year_min']) <= year_i <= int(item.get('year_max', 0))
+                ):
+                    return float(item.get('rate', 0.0))
+            except (TypeError, ValueError):
+                continue
+        return None
+
     def get_mortality_rate(self, age: int) -> float:
-        """Get mortality rate for age (per 1000)"""
-        tables = self.get_current_tables()
-        for bracket in tables.get('mortality_rates', []):
-            if bracket['age_min'] <= age < bracket['age_max']:
-                return bracket['rate_per_1000'] / 1000.0
-        return 0.075  # Default for very old ages
-    
+        """Mortality q(x) from the active table. Uncovered ages are 0."""
+        rate = self.lookup_table_rate('mortality_rates', age)
+        return 0.0 if rate is None else rate
+
     def get_disability_rate(self, age: int) -> float:
-        """Get disability incidence rate for age (per 1000)"""
-        tables = self.get_current_tables()
-        for bracket in tables.get('disability_incidence_rates', []):
-            if bracket['age_min'] <= age < bracket['age_max']:
-                return bracket['rate_per_1000'] / 1000.0
-        return 0.08
+        """Disability incidence i(x) from the active table. Uncovered ages are 0."""
+        rate = self.lookup_table_rate('disability_incidence_rates', age)
+        return 0.0 if rate is None else rate
     
     def get_adl_mortality_multiplier(self, adl: int) -> float:
         """Get mortality multiplier for ADL level"""
@@ -763,17 +798,12 @@ class ActuarialTablesStore:
         for item in tables.get('adl_benefit_percentages', []):
             if item['adl'] == adl:
                 return item['benefit_pct']
-        return 0.35
-    
+        return 0.0
+
     def get_lapse_rate(self, year: int) -> float:
-        """Get lapse rate for policy year"""
-        tables = self.get_current_tables()
-        for item in tables.get('lapse_rates', []):
-            if 'year' in item and item['year'] == year:
-                return item['rate']
-            if 'year_min' in item and item['year_min'] <= year <= item['year_max']:
-                return item['rate']
-        return 0.01
+        """Lapse rate for a policy year. A year the table does not list is 0."""
+        rate = self.lookup_lapse_rate(year)
+        return 0.0 if rate is None else rate
     
     @staticmethod
     def _version_major_minor(version_key: str) -> float:
@@ -901,6 +931,8 @@ class ActuarialTablesStore:
             )
         if 'disability_band_age' in updates:
             self.config.disability_band_age = max(1, min(120, int(updates['disability_band_age'])))
+        if 'max_acceptance_age' in updates:
+            self.config.max_acceptance_age = max(0, min(120, int(updates['max_acceptance_age'])))
         if 'pre65_disability_continues_policy' in updates:
             self.config.pre65_disability_continues_policy = bool(
                 updates['pre65_disability_continues_policy']
@@ -1256,6 +1288,7 @@ class ActuarialTablesStore:
             ],
             # Remaining years after ADL 3. Disclosure only: not a premium band.
             'adl3_disabled_life_expectancy': adl3_disabled_life_expectancy_rows(),
+            'portfolio_adl_mix': [dict(row) for row in DEFAULT_PORTFOLIO_ADL_MIX],
         }
     
     def reset_config_to_default(self, user: str) -> Dict:
@@ -1853,8 +1886,102 @@ class AutomationMetrics:
 # applicant draw window. A life older than this is declined: it stays in
 # the applied histogram and the declined ledger, and it never enters the
 # accepted book, the premium totals, or the accepted bars. Age 65 itself
-# is still acceptable.
+# is still acceptable. UnderwritingConfig.max_acceptance_age overrides this
+# when an actuary saves a different cap.
 MAX_ACCEPTANCE_AGE = 65
+
+# Applicant score mix (ADL 1..10) by age. Zero weight on the impaired
+# scores is opened by portfolio_adl_weights from the live disability
+# incidence table, so a higher i(x) produces a larger decline tail.
+DEFAULT_PORTFOLIO_ADL_MIX: Tuple[Dict[str, Any], ...] = (
+    {'age_max': 26, 'weights': [70, 15, 8, 4, 2, 1, 0, 0, 0, 0]},
+    {'age_max': 46, 'weights': [50, 20, 15, 8, 4, 2, 1, 0, 0, 0]},
+    {'age_max': 200, 'weights': [30, 20, 20, 15, 8, 4, 2, 1, 0, 0]},
+)
+
+
+def acceptance_age_cap(config: Any, default: int = MAX_ACCEPTANCE_AGE) -> int:
+    """Underwriting acceptance age. Falls back to the module ceiling."""
+    raw = getattr(config, 'max_acceptance_age', None) if config is not None else None
+    try:
+        cap = int(raw) if raw is not None else int(default)
+    except (TypeError, ValueError):
+        cap = int(default)
+    return max(0, min(120, cap))
+
+
+def portfolio_adl_weights(age: int, tables: Optional[Dict[str, Any]] = None,
+                          reference_age: int = 30) -> List[float]:
+    """ADL 1..10 draw weights for one applicant age.
+
+    The versioned ``portfolio_adl_mix`` is the base. When that mix leaves
+    the impaired scores (8, 9, 10) at zero, a share of the healthier mass
+    moves onto those scores in proportion to how far this age's disability
+    incidence sits above the reference age. Changing the disability table
+    changes who can be declined. An actuary who already set those three
+    weights keeps them.
+    """
+    rows = []
+    if isinstance(tables, dict):
+        raw_rows = tables.get('portfolio_adl_mix') or []
+        if isinstance(raw_rows, list):
+            rows = raw_rows
+    if not rows:
+        rows = list(DEFAULT_PORTFOLIO_ADL_MIX)
+    chosen: Optional[List[float]] = None
+    age_i = int(age)
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            limit = int(row.get('age_max', 10 ** 9))
+        except (TypeError, ValueError):
+            continue
+        weights = row.get('weights') or []
+        if age_i < limit and len(weights) == 10:
+            chosen = [max(0.0, float(w)) for w in weights]
+            break
+    if chosen is None:
+        for row in reversed(rows):
+            if isinstance(row, dict) and len(row.get('weights') or []) == 10:
+                chosen = [max(0.0, float(w)) for w in row['weights']]
+                break
+    if not chosen:
+        chosen = [1.0] + [0.0] * 9
+    if any(chosen[i] > 0.0 for i in range(7, 10)):
+        return chosen
+
+    def _ix(at_age: int) -> Optional[float]:
+        for bracket in (tables or {}).get('disability_incidence_rates') or []:
+            try:
+                lo = int(bracket.get('age_min', 0))
+                hi = int(bracket.get('age_max', 0))
+                rate = float(bracket.get('rate_per_1000', 0.0))
+            except (TypeError, ValueError):
+                continue
+            if lo <= int(at_age) < hi:
+                return rate
+        return None
+
+    q_age = _ix(age_i)
+    q_ref = _ix(reference_age)
+    tilt = 0.0
+    if q_age is not None and q_ref is not None and q_ref > 0.0:
+        tilt = min(0.20, max(0.0, (q_age / q_ref - 1.0) * 0.04))
+    if tilt <= 0.0:
+        return chosen
+    donor = sum(chosen[:7])
+    if donor <= 0.0:
+        return chosen
+    move = donor * tilt
+    scale = (donor - move) / donor
+    tilted = list(chosen)
+    for index in range(7):
+        tilted[index] *= scale
+    each = move / 3.0
+    for index in range(7, 10):
+        tilted[index] += each
+    return tilted
 
 # Kernel-priced lives kept on the simulation so the sandbox and the random
 # lifecycle clone real prices instead of inventing a second premium. The
@@ -2368,8 +2495,11 @@ class PortfolioSimulator:
             'auto_approved_above_max_coverage': 0,
             'disability_priced_when_excluded': 0,
             'year1_claims_mismatch': 0,
+            'benefit_sum_mismatch': 0,
+            'accepted_without_table_rate': 0,
         }
         uw_cfg = self.tables.config
+        acceptance_cap = acceptance_age_cap(uw_cfg)
 
         # Financial totals
         totals = {
@@ -2452,8 +2582,15 @@ class PortfolioSimulator:
             coverage_now = float(customer['coverage'])
             if adl_level >= int(uw_cfg.decline_threshold):
                 rule_breaks['accepted_adl_at_or_above_decline'] += 1
-            if age_years > MAX_ACCEPTANCE_AGE:
+            if age_years > acceptance_cap:
                 rule_breaks['accepted_above_max_age'] += 1
+            if not premium.get('sums_match_parameters'):
+                rule_breaks['benefit_sum_mismatch'] += 1
+            if (
+                self.tables.lookup_table_rate('mortality_rates', age_years) is None
+                or self.tables.lookup_table_rate('disability_incidence_rates', age_years) is None
+            ):
+                rule_breaks['accepted_without_table_rate'] += 1
             adl_limit = (uw_cfg.coverage_limits or {}).get(adl_level)
             if adl_limit is not None and coverage_now > float(adl_limit) + 0.01:
                 rule_breaks['accepted_above_adl_coverage_limit'] += 1
@@ -2603,8 +2740,7 @@ class PortfolioSimulator:
             
             customers.append(customer)
         
-        # Calculate automation metrics
-        automation = AutomationMetrics.calculate_automation_rates(params.customer_count)
+        # Issuance from this book. Claims and billing mixes are not invented.
         
         # Calculate risk metrics
         accepted_count = len(customers)
@@ -2757,7 +2893,7 @@ class PortfolioSimulator:
             age_std=float(params.age_std),
             age_min=int(params.age_min),
             age_max=int(params.age_max),
-            max_acceptance_age=MAX_ACCEPTANCE_AGE,
+            max_acceptance_age=acceptance_cap,
         )
 
         result = {
@@ -2811,7 +2947,10 @@ class PortfolioSimulator:
             'accepted_money_integrity': accepted_money['integrity'],
             'risk_metrics': risk_metrics,
             'profitability': profitability,
-            'automation': automation,
+            'automation': self._issuance_automation(
+                params, accepted_count, declined['count'],
+                auto_approved_count, referred_count,
+            ),
             
             # Integration points for future development
             'integration_ready': {
@@ -2840,6 +2979,14 @@ class PortfolioSimulator:
                 'savings_formula': str(getattr(params, 'savings_formula', 'risk_premium_markup')),
                 'claim_model': 'mutually_exclusive',
                 'tables_version': self.tables.current_version,
+                'year1_lapse_rate': (
+                    None if self.tables.lookup_lapse_rate(1) is None
+                    else round(float(self.tables.lookup_lapse_rate(1)), 6)
+                ),
+                'collection_rate': (
+                    None if self.tables.lookup_lapse_rate(1) is None
+                    else round(max(0.0, 1.0 - float(self.tables.lookup_lapse_rate(1))), 6)
+                ),
                 'expense_loading_pct': self.tables.config.expense_loading_pct,
                 'profit_margin_pct': self.tables.config.profit_margin_pct,
                 'discount_rate': self.tables.config.discount_rate,
@@ -2919,6 +3066,9 @@ class PortfolioSimulator:
                 },
             },
         }
+        result['parameter_integrity'] = self._prove_parameter_integrity(
+            priced_sample, params, result['rule_integrity'],
+        )
         result['reinsurance_program'] = calculate_reinsurance_program(result, self.tables)
         # Pre-compute savings vs insurance allocation breakdown so the
         # dashboard, reserve projection, and reports all agree on the split.
@@ -2939,7 +3089,7 @@ class PortfolioSimulator:
             'loadings': {
                 str(k): float(v) for k, v in (cfg.loadings or {}).items()
             },
-            'max_acceptance_age': MAX_ACCEPTANCE_AGE,
+            'max_acceptance_age': acceptance_age_cap(cfg),
             'auto_approve_enabled': bool(cfg.auto_approve_enabled),
             'auto_approve_max_adl': int(cfg.auto_approve_max_adl),
             'auto_approve_min_age': int(cfg.auto_approve_min_age),
@@ -2965,6 +3115,8 @@ class PortfolioSimulator:
             'auto_approved_respects_max_coverage': breaks['auto_approved_above_max_coverage'] == 0,
             'excluded_disability_has_zero_pv': breaks['disability_priced_when_excluded'] == 0,
             'year1_claims_match_kernel_probabilities': breaks['year1_claims_mismatch'] == 0,
+            'benefit_sums_match_parameters': breaks.get('benefit_sum_mismatch', 0) == 0,
+            'priced_ages_have_table_rates': breaks.get('accepted_without_table_rate', 0) == 0,
             'priced_sample_within_cap': len(priced_sample) <= PRICED_LIFE_SAMPLE_CAP,
         }
         flags['all_checks_pass'] = all(flags.values())
@@ -3030,7 +3182,7 @@ class PortfolioSimulator:
                 ethnicity = eth
                 break
         
-        # ADL (based on age)
+        # ADL mix from the versioned portfolio table, tilted by i(x).
         adl = self._generate_adl_for_age(age)
         
         return {
@@ -3044,18 +3196,125 @@ class PortfolioSimulator:
         }
     
     def _generate_adl_for_age(self, age: int) -> int:
-        """Generate ADL level based on age (younger = healthier)"""
-        if age < 26:
-            # Young - mostly ADL 1-3
-            weights = [70, 15, 8, 4, 2, 1, 0, 0, 0, 0]
-        elif age < 46:
-            # Adult - mixed
-            weights = [50, 20, 15, 8, 4, 2, 1, 0, 0, 0]
-        else:
-            # Mature - more spread
-            weights = [30, 20, 20, 15, 8, 4, 2, 1, 0, 0]
-        
+        """Draw an internal score from the versioned mix and the disability table."""
+        weights = portfolio_adl_weights(age, self.tables.get_current_tables())
+        if sum(weights) <= 0.0:
+            return 1
         return random.choices(range(1, 11), weights=weights)[0]
+
+    def _issuance_automation(self, params: 'SimulationParams', accepted: int,
+                             declined: int, auto_approved: int, referred: int) -> Dict[str, Any]:
+        """Underwriting issuance counted on this book.
+
+        Claims and billing percentages are left unobserved. The historical
+        scaled base rates are a separate pipeline report; they are not
+        attached to a simulated portfolio.
+        """
+        requested = max(0, int(getattr(params, 'customer_count', 0) or 0))
+        decided = int(accepted) + int(declined)
+        enabled = bool(self.tables.config.auto_approve_enabled)
+        return {
+            'source': 'simulation_issuance',
+            'scale_factor': None,
+            'customer_count': requested,
+            'overall_automation_pct': None,
+            'underwriting': {
+                'source': 'observed_simulation',
+                'accepted': int(accepted),
+                'declined': int(declined),
+                'auto_approved': int(auto_approved),
+                'referred': int(referred),
+                'decline_rate': round(int(declined) / requested, 4) if requested else None,
+                'auto_approve_rate': (
+                    round(int(auto_approved) / decided, 4) if enabled and decided else None
+                ),
+                'total_automation_pct': (
+                    round(int(auto_approved) / decided, 4) if enabled and decided else None
+                ),
+                'manual_review': (
+                    round(int(referred) / decided, 4) if enabled and decided else None
+                ),
+            },
+            'claims': {
+                'source': 'not_observed',
+                'total_automation_pct': None,
+                'manual_review': None,
+            },
+            'billing': {
+                'source': 'not_observed',
+                'total_automation_pct': None,
+                'manual_followup': None,
+            },
+        }
+
+    def _prove_parameter_integrity(self, priced_sample: List[Dict],
+                                   params: 'SimulationParams',
+                                   rule_flags: Dict[str, Any]) -> Dict[str, Any]:
+        """Reprice a spread of the reservoir and compare it to the snapshot.
+
+        Benefit sums, year-1 identity, and the underwriting gates are counted
+        on the whole accepted book. The reprice proves the stored hash still
+        matches the kernel for the lives the sandbox will clone.
+        """
+        sample = list(priced_sample or [])
+        if len(sample) <= 24:
+            probe = sample
+        else:
+            step = max(1, len(sample) // 24)
+            probe = sample[::step][:24]
+        repriced = 0
+        hash_matches = 0
+        premium_matches = 0
+        for life in probe:
+            customer = {
+                'age': int(life['age']),
+                'gender': life.get('gender'),
+                'smoking_status': life.get('smoking_status') or 'nonsmoker',
+                'ethnicity': life.get('ethnicity'),
+                'coverage': float(life['coverage']),
+                'term': int(life['term']),
+                'adl': int(life['adl']),
+            }
+            uw = {
+                'accepted': True,
+                'loading': float(life.get('loading') or 0.0),
+                'exclude_disability': bool(life.get('exclude_disability')),
+            }
+            again = self._calculate_premium(customer, uw, params)
+            repriced += 1
+            if again.get('integrity_hash') == life.get('integrity_hash'):
+                hash_matches += 1
+            if abs(float(again['annual_premium']) - float(life['annual_premium'])) < 0.02:
+                premium_matches += 1
+        lapse = self.tables.lookup_lapse_rate(1)
+        collection = None if lapse is None else round(max(0.0, 1.0 - float(lapse)), 6)
+        checks = {
+            'underwriting_gates': bool(rule_flags.get('all_checks_pass')),
+            'benefit_sums_match_contract_or_product': bool(
+                rule_flags.get('benefit_sums_match_parameters')
+            ),
+            'table_rates_cover_accepted_ages': bool(
+                rule_flags.get('priced_ages_have_table_rates')
+            ),
+            'repriced_hashes_match': hash_matches == repriced,
+            'repriced_premiums_match': premium_matches == repriced,
+            'collection_rate_is_lapse_complement': collection is not None,
+            'automation_is_observed_issuance': True,
+        }
+        return {
+            'tables_version': self.tables.current_version,
+            'config_version': str(getattr(self.tables.config, 'config_version', '') or ''),
+            'product_id': str(getattr(params, 'product_id', '') or ''),
+            'age_curve_id': str(getattr(params, 'age_curve_id', 'identity') or 'identity'),
+            'max_acceptance_age': acceptance_age_cap(self.tables.config),
+            'disability_band_age': int(getattr(self.tables.config, 'disability_band_age', 65) or 65),
+            'year1_lapse_rate': None if lapse is None else round(float(lapse), 6),
+            'collection_rate': collection,
+            'repriced_lives': repriced,
+            'benefit_sum_basis': 'contract_benefit_sums_from_config',
+            'checks': checks,
+            'all_checks_pass': all(checks.values()),
+        }
     
     def _check_underwriting(self, customer: Dict) -> Dict:
         """Check if customer passes underwriting"""
@@ -3067,10 +3326,11 @@ class PortfolioSimulator:
         # Acceptance stops at MAX_ACCEPTANCE_AGE even when the simulation
         # draw window (age_max) extends past it. The life is still counted
         # as applied and as declined.
-        if age > MAX_ACCEPTANCE_AGE:
+        acceptance_cap = acceptance_age_cap(config)
+        if age > acceptance_cap:
             return {
                 'accepted': False,
-                'reason': f'Age exceeds maximum acceptance age {MAX_ACCEPTANCE_AGE}',
+                'reason': f'Age exceeds maximum acceptance age {acceptance_cap}',
                 'reason_code': 'age',
             }
 
@@ -3107,14 +3367,10 @@ class PortfolioSimulator:
                             params: Optional['SimulationParams'] = None) -> Dict:
         """Price one simulated customer via the central pricing kernel.
 
-        The kernel is the single source of truth for actuarial pricing.
-        With default parameters (``savings_rate=0.5``,
-        ``savings_yield_pct=0.0``, ``savings_formula='straight_line'``,
-        ``product_id='phins_hybrid_savings'``, ``age_curve_id='identity'``,
-        ``claim_model=MUTUALLY_EXCLUSIVE``) the kernel reproduces the
-        legacy simulator math bit-for-bit. Changing the savings rate,
-        savings yield, product, or age curve actually feeds through into
-        every priced customer instead of being a post-hoc relabel.
+        Savings, product, age curve, demographic factors, and the
+        age-banded life and disability sums all come from ``params`` and
+        the live underwriting config. A product with no disability benefit
+        stamps a zero disability sum.
         """
         pk = self._pk
         params = params if params is not None else SimulationParams()
@@ -3162,6 +3418,16 @@ class PortfolioSimulator:
         )
 
         checks = components.integrity_checks or {}
+        expected_sums = contract_benefit_sums_from_config(
+            float(customer['coverage']), int(customer['age']), self.tables.config,
+        )
+        life_ok = abs(float(components.life_sum_used) - float(expected_sums['life_sum'])) < 0.05
+        if float(getattr(product, 'disability_share', 0.0) or 0.0) <= 0.0:
+            disability_ok = abs(float(components.disability_sum_used)) < 0.05
+        else:
+            disability_ok = abs(
+                float(components.disability_sum_used) - float(expected_sums['disability_sum'])
+            ) < 0.05
         return {
             'annual_premium': components.annual_premium,
             'monthly_premium': components.monthly_premium,
@@ -3178,6 +3444,7 @@ class PortfolioSimulator:
             'disability_sum': components.disability_sum_used,
             'benefit_pct': components.benefit_pct_used,
             'year1_identity_holds': bool(checks.get('year1_claims_match_kernel_probabilities')),
+            'sums_match_parameters': bool(life_ok and disability_ok),
             'expected_claims_by_year': list(components.expected_claims_by_year or []),
             'integrity_hash': components.integrity_hash,
             'product_id': components.product_id,
@@ -5678,6 +5945,9 @@ class ReserveCalculator:
             'savings_allocation': savings_allocation,
             'csm_reconciliation': csm_reconciliation,
             'data_integrity': {
+                'portfolio_parameters_match_kernel': bool(
+                    (simulation.get('parameter_integrity') or {}).get('all_checks_pass', True)
+                ),
                 'profit_waterfall_consistent': all(identity_checks),
                 'dividends_within_after_tax': all(
                     row['dividends'] <= row['after_tax_profit'] + 0.5 for row in yearly
