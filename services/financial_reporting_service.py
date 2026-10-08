@@ -100,132 +100,14 @@ def _coerce_forecast_factor(name: str, value: Any) -> Tuple[float, str]:
     return number, 'request'
 
 
-# ==============================================================================
-# ACTUARIAL CONSTANTS & TABLES (V2 - Corrected Risk Model)
-# ==============================================================================
-# 
-# IMPORTANT: This model uses ADDITIVE risk pricing, not multiplicative.
-# Premium = Mortality_Risk + Disability_Risk + Savings + Expenses
-#
-# Previous model flaw: combined_factor = age_factor × adl_multiplier
-# Corrected model: separate mortality and disability risk calculations
-# ==============================================================================
-
-# Mortality rates by age bracket (per 1000 lives per year)
-# Source: Standard mortality tables adjusted for insurance population
-MORTALITY_RATES = {
-    (0, 30): 0.5,
-    (30, 40): 1.2,
-    (40, 50): 2.5,
-    (50, 60): 5.0,
-    (60, 70): 12.0,
-    (70, 80): 30.0,
-    (80, 100): 75.0,
-}
-
-# DISABILITY INCIDENCE RATES by age bracket (per 1000 lives per year)
-# Source: Industry data for severe disability (2+ ADLs impaired)
-# This is SEPARATE from mortality - represents probability of becoming disabled
-DISABILITY_INCIDENCE_RATES = {
-    (0, 30): 2.0,     # Younger people - lower disability incidence
-    (30, 40): 4.0,
-    (40, 50): 8.0,
-    (50, 60): 15.0,
-    (60, 70): 30.0,
-    (70, 80): 50.0,
-    (80, 100): 80.0,
-}
-
-# ADL MORTALITY multipliers (1-10 scale, 5 is baseline)
-# These adjust MORTALITY risk based on current ADL status
-# Higher ADL = slightly higher mortality due to health conditions
-ADL_MORTALITY_MULTIPLIERS = {
-    1: 0.8,    # Very healthy - lower mortality
-    2: 0.85,
-    3: 0.9,
-    4: 0.95,
-    5: 1.0,    # Baseline
-    6: 1.1,
-    7: 1.2,
-    8: 1.35,
-    9: 1.5,
-    10: 1.8,   # Severely impaired - higher mortality
-}
-
-# ADL DISABILITY INCIDENCE multipliers (1-10 scale, 5 is baseline)
-# CRITICAL: This is the key correction - ADL level predicts DISABILITY claims
-# Someone with higher ADL is MORE likely to progress to claiming disability benefits
-ADL_DISABILITY_INCIDENCE_MULTIPLIERS = {
-    1: 0.3,    # Very healthy - low progression to disability claim
-    2: 0.5,
-    3: 0.7,
-    4: 0.9,
-    5: 1.0,    # Baseline
-    6: 1.5,    # Already showing signs - elevated risk
-    7: 2.0,    # Moderate impairment - high progression risk
-    8: 3.0,    # Significant impairment - very high risk
-    9: 5.0,    # Severe - near-certain to claim
-    10: 8.0,   # Total dependence - will claim immediately
-}
-
-# ADL BENEFIT PERCENTAGES - what % of coverage is paid for disability claim
-# This determines the SIZE of the claim based on severity
-ADL_BENEFIT_PERCENTAGES = {
-    1: 0.0,    # Independent - no disability benefit
-    2: 0.0,
-    3: 0.0,
-    4: 0.25,   # Mild impairment - 25% of coverage
-    5: 0.25,
-    6: 0.50,   # Moderate impairment - 50% of coverage
-    7: 0.50,
-    8: 0.85,   # Severe impairment - 85% of coverage
-    9: 1.0,    # Near-total - 100% of coverage
-    10: 1.0,   # Total dependence - 100% of coverage
-}
-
-# UNDERWRITING RESTRICTIONS by ADL level
-# ADL 7+: Apply special loading or decline
-ADL_UNDERWRITING_RULES = {
-    1: {'accept': True, 'loading': 0.0, 'max_coverage': None},
-    2: {'accept': True, 'loading': 0.0, 'max_coverage': None},
-    3: {'accept': True, 'loading': 0.0, 'max_coverage': None},
-    4: {'accept': True, 'loading': 0.0, 'max_coverage': None},
-    5: {'accept': True, 'loading': 0.0, 'max_coverage': None},
-    6: {'accept': True, 'loading': 0.15, 'max_coverage': 1_000_000},  # 15% loading
-    7: {'accept': True, 'loading': 0.30, 'max_coverage': 750_000},   # 30% loading, reduced coverage
-    8: {'accept': True, 'loading': 0.50, 'max_coverage': 500_000, 'exclude_disability': True},  # 50% loading, exclude disability
-    9: {'accept': False, 'loading': None, 'max_coverage': None, 'reason': 'ADL too high'},  # Decline
-    10: {'accept': False, 'loading': None, 'max_coverage': None, 'reason': 'ADL too high'},  # Decline
-}
-
-# Legacy alias for backward compatibility (use ADL_MORTALITY_MULTIPLIERS instead)
-ADL_RISK_MULTIPLIERS = ADL_MORTALITY_MULTIPLIERS
-
-# Lapse rates by policy year
-LAPSE_RATES = {
-    1: 0.08,   # 8% lapse in year 1
-    2: 0.05,
-    3: 0.04,
-    (4, 10): 0.03,
-    (11, 25): 0.02,
-    (26, 100): 0.01,
-}
-
-# Investment return assumptions (annual)
+# Mortality, disability, ADL multipliers, lapse, and underwriting gates are
+# read from ActuarialTablesStore. This module does not keep a second copy.
+# Investment-return scenarios are projection assumptions, not a rate table.
 INVESTMENT_RETURNS = {
     'conservative': 0.04,   # 4% annual
     'moderate': 0.06,       # 6% annual
     'aggressive': 0.08,     # 8% annual
 }
-
-# Discount rate for present value calculations
-DISCOUNT_RATE = 0.035  # 3.5% annual
-
-# Expense loading as percentage of risk premium
-EXPENSE_LOADING_PCT = 0.15  # 15%
-
-# Profit margin target (added to break-even premium)
-PROFIT_MARGIN_PCT = 0.10  # 10% target profit margin
 
 
 try:
@@ -347,117 +229,120 @@ class FinancialReportingService:
             return None
 
     def get_mortality_rate(self, age: int) -> float:
-        """Get base mortality rate for given age from the actuarial store."""
+        """Mortality q(x) from the actuarial store. Uncovered ages are 0."""
         store = self._actuarial_store()
-        if store is not None:
-            try:
-                return float(store.get_mortality_rate(age))
-            except Exception:
-                pass
-        for (low, high), rate in MORTALITY_RATES.items():
-            if low <= age < high:
-                return rate / 1000.0
-        return 0.075  # Default for very old ages
-    
+        if store is None:
+            return 0.0
+        try:
+            return float(store.get_mortality_rate(age))
+        except Exception:
+            return 0.0
+
     def get_disability_incidence_rate(self, age: int) -> float:
-        """Get disability incidence rate for given age from the actuarial store."""
+        """Disability incidence i(x) from the actuarial store. Uncovered ages are 0."""
         store = self._actuarial_store()
-        if store is not None:
-            try:
-                return float(store.get_disability_rate(age))
-            except Exception:
-                pass
-        for (low, high), rate in DISABILITY_INCIDENCE_RATES.items():
-            if low <= age < high:
-                return rate / 1000.0
-        return 0.08  # Default for very old ages
-    
+        if store is None:
+            return 0.0
+        try:
+            return float(store.get_disability_rate(age))
+        except Exception:
+            return 0.0
+
     def get_adl_mortality_multiplier(self, adl_level: int) -> float:
-        """Get MORTALITY risk multiplier based on ADL level (1-10)"""
+        """Mortality multiplier for an internal score, from the actuarial store."""
         adl_level = max(1, min(10, adl_level))
         store = self._actuarial_store()
-        if store is not None:
-            try:
-                return float(store.get_adl_mortality_multiplier(adl_level))
-            except Exception:
-                pass
-        return ADL_MORTALITY_MULTIPLIERS.get(adl_level, 1.0)
-    
+        if store is None:
+            return 1.0
+        try:
+            return float(store.get_adl_mortality_multiplier(adl_level))
+        except Exception:
+            return 1.0
+
     def get_adl_disability_incidence_multiplier(self, adl_level: int) -> float:
-        """Get DISABILITY INCIDENCE multiplier based on ADL level (1-10)
-        
-        This is the critical factor - higher ADL means MORE likely to claim disability.
-        """
+        """Disability incidence multiplier for an internal score, from the store."""
         adl_level = max(1, min(10, adl_level))
         store = self._actuarial_store()
-        if store is not None:
-            try:
-                return float(store.get_adl_disability_multiplier(adl_level))
-            except Exception:
-                pass
-        return ADL_DISABILITY_INCIDENCE_MULTIPLIERS.get(adl_level, 1.0)
-    
+        if store is None:
+            return 1.0
+        try:
+            return float(store.get_adl_disability_multiplier(adl_level))
+        except Exception:
+            return 1.0
+
     def get_adl_benefit_percentage(self, adl_level: int) -> float:
-        """Get disability benefit percentage based on ADL level
-        
-        Returns the % of coverage paid out for disability claim at this ADL level.
-        """
+        """ADL benefit percentage from the actuarial store. Missing rows are 0."""
         adl_level = max(1, min(10, adl_level))
         store = self._actuarial_store()
-        if store is not None:
-            try:
-                return float(store.get_adl_benefit_pct(adl_level))
-            except Exception:
-                pass
-        return ADL_BENEFIT_PERCENTAGES.get(adl_level, 0.35)  # Default 35% avg
+        if store is None:
+            return 0.0
+        try:
+            return float(store.get_adl_benefit_pct(adl_level))
+        except Exception:
+            return 0.0
     
     def get_adl_multiplier(self, adl_level: int) -> float:
         """Legacy method - returns mortality multiplier for backward compatibility"""
         return self.get_adl_mortality_multiplier(adl_level)
     
     def get_lapse_rate(self, policy_year: int) -> float:
-        """Get lapse rate for given policy year from the actuarial store."""
+        """Lapse rate from the actuarial store. A missing year is 0."""
         store = self._actuarial_store()
-        if store is not None:
-            try:
-                return float(store.get_lapse_rate(policy_year))
-            except Exception:
-                pass
-        if policy_year in LAPSE_RATES:
-            return LAPSE_RATES[policy_year]
-        for key, rate in LAPSE_RATES.items():
-            if isinstance(key, tuple) and key[0] <= policy_year <= key[1]:
-                return rate
-        return 0.01
-    
-    def check_underwriting_eligibility(self, adl_level: int, coverage: float) -> Dict[str, Any]:
-        """Check if customer is eligible for coverage based on ADL level (NEW)"""
-        adl_level = max(1, min(10, adl_level))
-        rules = ADL_UNDERWRITING_RULES.get(adl_level, ADL_UNDERWRITING_RULES[5])
-        
+        if store is None:
+            return 0.0
+        try:
+            return float(store.get_lapse_rate(policy_year))
+        except Exception:
+            return 0.0
+
+    def _underwriting_config(self):
+        store = self._actuarial_store()
+        return getattr(store, 'config', None) if store is not None else None
+
+    def check_underwriting_eligibility(self, adl_level: int, coverage: float,
+                                       age: Optional[int] = None) -> Dict[str, Any]:
+        """Eligibility from the live underwriting config, the same gates as the simulator."""
+        adl_level = max(1, min(10, int(adl_level)))
+        cfg = self._underwriting_config()
         result = {
-            'eligible': rules['accept'],
+            'eligible': False,
             'adl_level': adl_level,
             'requested_coverage': coverage,
+            'approved_coverage': 0,
+            'loading': None,
+            'exclude_disability': False,
+            'coverage_reduced': False,
         }
-        
-        if not rules['accept']:
-            result['decline_reason'] = rules.get('reason', 'ADL level too high for coverage')
-            result['approved_coverage'] = 0
-            result['loading'] = None
+        if cfg is None:
+            result['decline_reason'] = 'underwriting_config_unavailable'
+            return result
+        if age is not None:
+            from services.actuarial_service import acceptance_age_cap
+            cap = acceptance_age_cap(cfg)
+            if int(age) > cap:
+                result['decline_reason'] = f'Age exceeds maximum acceptance age {cap}'
+                return result
+        if adl_level >= int(cfg.decline_threshold):
+            result['decline_reason'] = (
+                f'ADL {adl_level} exceeds threshold {int(cfg.decline_threshold)}'
+            )
+            return result
+        limits = cfg.coverage_limits or {}
+        max_cov = limits.get(adl_level)
+        if max_cov is None:
+            max_cov = limits.get(str(adl_level))
+        loading = (cfg.loadings or {}).get(adl_level, (cfg.loadings or {}).get(str(adl_level), 0.0))
+        result['eligible'] = True
+        result['loading'] = float(loading or 0.0)
+        result['exclude_disability'] = adl_level >= int(cfg.disability_exclusion_threshold)
+        if max_cov is not None and float(coverage) > float(max_cov):
+            result['approved_coverage'] = float(max_cov)
+            result['coverage_reduced'] = True
+            result['reduction_reason'] = (
+                f'ADL {adl_level} limited to ${float(max_cov):,.0f} coverage'
+            )
         else:
-            max_cov = rules.get('max_coverage')
-            result['loading'] = rules.get('loading', 0)
-            result['exclude_disability'] = rules.get('exclude_disability', False)
-            
-            if max_cov and coverage > max_cov:
-                result['approved_coverage'] = max_cov
-                result['coverage_reduced'] = True
-                result['reduction_reason'] = f'ADL {adl_level} limited to ${max_cov:,} coverage'
-            else:
-                result['approved_coverage'] = coverage
-                result['coverage_reduced'] = False
-        
+            result['approved_coverage'] = float(coverage)
         return result
     
     def calculate_premium(self, coverage: float, age: int, adl_level: int,
@@ -478,8 +363,8 @@ class FinancialReportingService:
             term_years: Policy term in years
             include_profit_margin: Whether to add profit margin (default True)
         """
-        # Check underwriting eligibility first
-        uw_check = self.check_underwriting_eligibility(adl_level, coverage)
+        # Check underwriting eligibility first (live config, including age).
+        uw_check = self.check_underwriting_eligibility(adl_level, coverage, age=int(age))
         if not uw_check['eligible']:
             return {
                 'annual_premium': 0,
@@ -599,9 +484,14 @@ class FinancialReportingService:
         - Surrender value
         """
         premium_calc = self.calculate_premium(coverage, age, adl_level, savings_pct, term_years)
+        if not premium_calc.get('eligible'):
+            # Declined quotes (age gate, ADL, unavailable kernel) have no
+            # premium breakdown to project.
+            return []
         annual_premium = premium_calc['annual_premium']
         risk_component = premium_calc['risk_component']
         savings_component = premium_calc['savings_component']
+        approved_face = float(premium_calc.get('coverage') or coverage)
         
         investment_return = INVESTMENT_RETURNS.get(investment_profile, 0.06)
         
@@ -624,11 +514,12 @@ class FinancialReportingService:
             surrender_penalty = 0.15 if year < 3 else 0.05 if year < 5 else 0.0
             cash_value = savings_fund * (1 - surrender_penalty)
             
-            # Death benefit (coverage + accumulated savings)
-            death_benefit = coverage + savings_fund
-            
-            # Living benefit (if ADL claim - payout structure)
-            adl_claim_payout = self._calculate_adl_benefit(coverage, adl_level, year)
+            # Attained-age life and disability sums from Pricing Parameters.
+            sums = self._benefit_sums(approved_face, age + year - 1)
+            death_benefit = sums['life_sum'] + savings_fund
+            adl_claim_payout = self._calculate_adl_benefit(
+                approved_face, adl_level, year, issue_age=age,
+            )
             
             projections.append({
                 'year': year,
@@ -646,23 +537,28 @@ class FinancialReportingService:
         
         return projections
     
-    def _calculate_adl_benefit(self, coverage: float, adl_level: int, policy_year: int) -> float:
+    def _benefit_sums(self, coverage: float, age: int) -> Dict[str, float]:
+        from services.actuarial_service import contract_benefit_sums_from_config
+        return contract_benefit_sums_from_config(coverage, int(age), self._underwriting_config())
+
+    def _calculate_adl_benefit(self, coverage: float, adl_level: int, policy_year: int,
+                               issue_age: Optional[int] = None) -> float:
+        """Disability sum at the attained age from the contract bands.
+
+        Exclusion and decline follow the live underwriting config. Without an
+        issue age the pre-band sums apply.
         """
-        Calculate ADL claim benefit based on impairment level.
-        
-        ADL 1-3: No benefit (independent)
-        ADL 4-5: 25% of coverage as monthly benefit for 24 months
-        ADL 6-7: 50% of coverage as lump sum OR monthly for 60 months
-        ADL 8+: 100% of coverage as lump sum
-        """
-        if adl_level <= 3:
+        cfg = self._underwriting_config()
+        level = int(adl_level)
+        if cfg is not None and level >= int(cfg.disability_exclusion_threshold):
             return 0.0
-        elif adl_level <= 5:
-            return coverage * 0.25  # Partial benefit
-        elif adl_level <= 7:
-            return coverage * 0.50  # Moderate benefit
+        if cfg is not None and level >= int(cfg.decline_threshold):
+            return 0.0
+        if issue_age is None:
+            attained = 0
         else:
-            return coverage  # Full benefit
+            attained = int(issue_age) + max(0, int(policy_year) - 1)
+        return float(self._benefit_sums(coverage, attained)['disability_sum'])
     
     # ==========================================================================
     # LUMP SUM CALCULATIONS
@@ -670,22 +566,29 @@ class FinancialReportingService:
     
     def calculate_lump_sum_options(self, coverage: float, savings_pct: float,
                                    adl_level: int, years_paid: int,
-                                   total_premiums_paid: float) -> Dict[str, Any]:
+                                   total_premiums_paid: float,
+                                   age: Optional[int] = None) -> Dict[str, Any]:
         """
-        Calculate various lump sum payout options for a policy.
+        Lump-sum options using the attained-age life sum, not a share of face.
         """
         savings_accumulated = total_premiums_paid * savings_pct * 1.06 ** years_paid
-        
+        # Attained age follows the projection convention: issue_age + policy_year - 1.
+        attained = int(age) + max(0, int(years_paid) - 1) if age is not None else 0
+        life_sum = float(self._benefit_sums(coverage, attained)['life_sum'])
+        insured = life_sum + savings_accumulated
+
         options = {
-            'death_benefit_lump_sum': round(coverage + savings_accumulated, 2),
-            'terminal_illness_lump_sum': round(coverage * 0.9, 2),  # 90% accelerated
-            'adl_claim_lump_sum': round(self._calculate_adl_benefit(coverage, adl_level, years_paid), 2),
+            'death_benefit_lump_sum': round(insured, 2),
+            'terminal_illness_lump_sum': round(life_sum * 0.9, 2),
+            'adl_claim_lump_sum': round(self._calculate_adl_benefit(
+                coverage, adl_level, years_paid, issue_age=age,
+            ), 2),
             'surrender_value': round(savings_accumulated * (0.95 if years_paid >= 5 else 0.85), 2),
-            'maturity_value': round(coverage * 0.5 + savings_accumulated, 2),  # At term end
+            'maturity_value': round(insured, 2),
             'annuity_conversion': {
-                '10_year': round((coverage + savings_accumulated) / 120, 2),  # Monthly for 10 years
-                '20_year': round((coverage + savings_accumulated) / 240, 2),  # Monthly for 20 years
-                'lifetime': round((coverage + savings_accumulated) / 300, 2),  # Estimated lifetime
+                '10_year': round(insured / 120, 2),
+                '20_year': round(insured / 240, 2),
+                'lifetime': round(insured / 300, 2),
             }
         }
         
@@ -977,7 +880,7 @@ class FinancialReportingService:
         years_paid = term_years // 2
         total_premiums = premium_breakdown['annual_premium'] * years_paid
         lump_sum_options = self.calculate_lump_sum_options(
-            coverage, savings_pct, adl_level, years_paid, total_premiums
+            coverage, savings_pct, adl_level, years_paid, total_premiums, age=age,
         )
         
         from services.adl_mapping import INTERNAL_UNDERWRITING_SCORE_DISCLAIMER

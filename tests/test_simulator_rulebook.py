@@ -249,3 +249,60 @@ console.log('ok');
     )
     assert proc.returncode == 0, proc.stderr or proc.stdout
     assert 'ok' in proc.stdout
+
+
+def test_parameter_integrity_binds_kernel_tables_and_lapse():
+    """One simulation proves sums, gates, table coverage, and the lapse complement."""
+    from services.actuarial_service import contract_benefit_sums_from_config
+
+    result = _run(age_max=70, count=40)
+    pin = result['parameter_integrity']
+    assert pin['all_checks_pass'] is True
+    assert pin['checks']['repriced_hashes_match'] is True
+    assert pin['checks']['benefit_sums_match_contract_or_product'] is True
+    assert pin['max_acceptance_age'] == result['underwriting_rules']['max_acceptance_age']
+    kernel = result['pricing_kernel']
+    assert pin['year1_lapse_rate'] == kernel['year1_lapse_rate']
+    assert pin['collection_rate'] == kernel['collection_rate']
+    assert abs(pin['collection_rate'] - (1.0 - pin['year1_lapse_rate'])) < 1e-9
+    store = get_actuarial_store()
+    for life in result['priced_lives']:
+        expected = contract_benefit_sums_from_config(life['coverage'], life['age'], store.config)
+        assert abs(life['life_sum'] - expected['life_sum']) < 0.05
+        assert life['age'] <= pin['max_acceptance_age']
+    auto = result['automation']
+    assert auto['source'] == 'simulation_issuance'
+    assert auto['claims']['source'] == 'not_observed'
+    assert auto['billing']['source'] == 'not_observed'
+    assert auto['underwriting']['accepted'] == result['portfolio_summary']['accepted_customers']
+
+
+def test_uncovered_age_has_no_stand_in_tail_rate():
+    store = get_actuarial_store()
+    assert store.lookup_table_rate('mortality_rates', 120) is None
+    assert store.get_mortality_rate(120) == 0.0
+    assert store.lookup_table_rate('disability_incidence_rates', 120) is None
+    assert store.get_disability_rate(120) == 0.0
+    assert store.get_mortality_rate(45) > 0.0
+
+
+def test_financial_reporting_uses_contract_sums_and_age_gate():
+    from services.financial_reporting_service import FinancialReportingService
+
+    store = get_actuarial_store()
+    svc = FinancialReportingService(
+        policies={}, claims={}, billing={}, customers={}, underwriting={},
+    )
+    too_old = svc.check_underwriting_eligibility(3, 200_000, age=66)
+    assert too_old['eligible'] is False
+    young = svc.check_underwriting_eligibility(3, 200_000, age=40)
+    assert young['eligible'] is True
+    projections = svc.project_policy_value(
+        coverage=200_000, age=64, adl_level=3, savings_pct=0.0, term_years=2,
+    )
+    # Year 1 is still under the band age: life sum is the face.
+    assert abs(projections[0]['death_benefit'] - 200_000) < 1.0
+    # Year 2 is age 65: life steps to face / 4. Savings are zero in this quote.
+    assert abs(projections[1]['death_benefit'] - 50_000) < 1.0
+    assert svc.get_mortality_rate(130) == 0.0
+    assert store.get_lapse_rate(1) == svc.get_lapse_rate(1)
