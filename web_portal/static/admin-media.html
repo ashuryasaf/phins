@@ -457,7 +457,9 @@
             font-size: 1rem;
         }
         .apply-disclosure-assignments,
-        .chat-disclaimer-assignments {
+        .chat-disclaimer-assignments,
+        .login-page-assignments,
+        .solutions-page-assignments {
             background: rgba(11, 23, 48, 0.72);
             border: 1px solid rgba(227, 191, 111, 0.45);
         }
@@ -1423,6 +1425,104 @@ Notes:
             </div>
         </section>
 
+        <section class="assignments-section login-page-assignments">
+            <h2>Login page</h2>
+            <p style="margin: -6px 0 14px; font-size: 0.82rem; color: rgba(255,255,255,0.82);">
+                Assign a photo or video the same way as the landing hero. Password and verification questions stay on the login form and are not changed.
+            </p>
+            <div class="assignment-grid">
+                <div class="assignment-card">
+                    <div class="assignment-label">Hero Video</div>
+                    <select id="assign-login-hero-video" class="assignment-select" onchange="updateAssignment('login_hero_video')">
+                        <option value="">-- No Video --</option>
+                    </select>
+                    <div class="assignment-status" id="status-login-hero-video">
+                        <span></span> Not set
+                    </div>
+                </div>
+                <div class="assignment-card">
+                    <div class="assignment-label">Background</div>
+                    <select id="assign-login-background" class="assignment-select" onchange="updateAssignment('login_background')">
+                        <option value="">-- None --</option>
+                    </select>
+                    <div class="assignment-status" id="status-login-background">
+                        <span></span> Not set
+                    </div>
+                </div>
+                <div class="assignment-card">
+                    <div class="assignment-label">Thumbnail</div>
+                    <select id="assign-login-thumbnail" class="assignment-select" onchange="updateAssignment('login_thumbnail')">
+                        <option value="">-- Auto --</option>
+                    </select>
+                    <div class="assignment-status" id="status-login-thumbnail">
+                        <span></span> Not set
+                    </div>
+                </div>
+                <div class="assignment-card">
+                    <div class="assignment-label">Banner</div>
+                    <select id="assign-login-banner" class="assignment-select" onchange="updateAssignment('login_banner')">
+                        <option value="">-- None --</option>
+                    </select>
+                    <div class="assignment-status" id="status-login-banner">
+                        <span></span> Not set
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-primary" onclick="saveAllAssignments()">Save Changes</button>
+                <a href="/login.html" target="_blank" class="btn btn-secondary">Preview login</a>
+            </div>
+        </section>
+
+        <section class="assignments-section solutions-page-assignments">
+            <h2>Solutions page</h2>
+            <p style="margin: -6px 0 14px; font-size: 0.82rem; color: rgba(255,255,255,0.82);">
+                Assign a photo or video for the solutions hero. Inquiry form data and preview theaters are not changed.
+            </p>
+            <div class="assignment-grid">
+                <div class="assignment-card">
+                    <div class="assignment-label">Hero Video</div>
+                    <select id="assign-solutions-hero-video" class="assignment-select" onchange="updateAssignment('solutions_hero_video')">
+                        <option value="">-- No Video --</option>
+                    </select>
+                    <div class="assignment-status" id="status-solutions-hero-video">
+                        <span></span> Not set
+                    </div>
+                </div>
+                <div class="assignment-card">
+                    <div class="assignment-label">Background</div>
+                    <select id="assign-solutions-background" class="assignment-select" onchange="updateAssignment('solutions_background')">
+                        <option value="">-- None --</option>
+                    </select>
+                    <div class="assignment-status" id="status-solutions-background">
+                        <span></span> Not set
+                    </div>
+                </div>
+                <div class="assignment-card">
+                    <div class="assignment-label">Thumbnail</div>
+                    <select id="assign-solutions-thumbnail" class="assignment-select" onchange="updateAssignment('solutions_thumbnail')">
+                        <option value="">-- Auto --</option>
+                    </select>
+                    <div class="assignment-status" id="status-solutions-thumbnail">
+                        <span></span> Not set
+                    </div>
+                </div>
+                <div class="assignment-card">
+                    <div class="assignment-label">Banner</div>
+                    <select id="assign-solutions-banner" class="assignment-select" onchange="updateAssignment('solutions_banner')">
+                        <option value="">-- None --</option>
+                    </select>
+                    <div class="assignment-status" id="status-solutions-banner">
+                        <span></span> Not set
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-primary" onclick="saveAllAssignments()">Save Changes</button>
+                <a href="/solutions.html" target="_blank" class="btn btn-secondary">Preview solutions</a>
+            </div>
+        </section>
+
         <section class="assignments-section apply-disclosure-assignments">
             <h2>Apply form disclosure video</h2>
             <p style="margin: -6px 0 14px; font-size: 0.82rem; color: rgba(255,255,255,0.82);">
@@ -1903,6 +2003,14 @@ Notes:
             { key: 'hero_background', field: 'hero_background_id', kind: 'image', label: 'Landing page background', chip: 'Background' },
             { key: 'video_poster', field: 'video_poster_id', kind: 'image', label: 'Landing page thumbnail', chip: 'Poster' },
             { key: 'promo_banner', field: 'promo_banner_id', kind: 'image', label: 'Landing page banner', chip: 'Banner' },
+            { key: 'login_hero_video', field: 'login_hero_video_id', kind: 'video', label: 'Login page hero video', chip: 'Login' },
+            { key: 'login_background', field: 'login_background_id', kind: 'image', label: 'Login page background', chip: 'Login bg' },
+            { key: 'login_thumbnail', field: 'login_thumbnail_id', kind: 'image', label: 'Login page thumbnail', chip: 'Login poster' },
+            { key: 'login_banner', field: 'login_banner_id', kind: 'image', label: 'Login page banner', chip: 'Login banner' },
+            { key: 'solutions_hero_video', field: 'solutions_hero_video_id', kind: 'video', label: 'Solutions page hero video', chip: 'Solutions' },
+            { key: 'solutions_background', field: 'solutions_background_id', kind: 'image', label: 'Solutions page background', chip: 'Solutions bg' },
+            { key: 'solutions_thumbnail', field: 'solutions_thumbnail_id', kind: 'image', label: 'Solutions page thumbnail', chip: 'Solutions poster' },
+            { key: 'solutions_banner', field: 'solutions_banner_id', kind: 'image', label: 'Solutions page banner', chip: 'Solutions banner' },
             { key: 'apply_disclosure_video', field: 'apply_disclosure_video_id', kind: 'video', label: 'Apply form disclosure', chip: 'Apply form' },
             { key: 'apply_disclosure_control', field: 'apply_disclosure_control_video_id', kind: 'video', label: 'Apply form control cut', chip: 'Control' },
             { key: 'apply_chat_disclaimer', field: 'apply_chat_disclaimer_video_id', kind: 'video', label: 'Application chat disclaimer', chip: 'Apply chat' },
@@ -1913,6 +2021,14 @@ Notes:
             hero_background: '',
             video_poster: '',
             promo_banner: '',
+            login_hero_video: '',
+            login_background: '',
+            login_thumbnail: '',
+            login_banner: '',
+            solutions_hero_video: '',
+            solutions_background: '',
+            solutions_thumbnail: '',
+            solutions_banner: '',
             apply_disclosure_video: '',
             apply_disclosure_control: '',
             apply_chat_disclaimer: '',

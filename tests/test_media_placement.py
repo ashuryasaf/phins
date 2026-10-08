@@ -24,6 +24,14 @@ _SLOT_KEYS = (
     "apply_disclosure_control_video_id",
     "apply_chat_disclaimer_video_id",
     "claims_chat_disclaimer_video_id",
+    "login_hero_video_id",
+    "login_background_id",
+    "login_thumbnail_id",
+    "login_banner_id",
+    "solutions_hero_video_id",
+    "solutions_background_id",
+    "solutions_thumbnail_id",
+    "solutions_banner_id",
     "video_url",
     "video_poster",
 )
@@ -499,16 +507,161 @@ def test_public_hero_keeps_a_stored_url_when_the_asset_address_is_blank():
         srv.stop()
 
 
+def test_login_and_solutions_slots_are_independent_of_landing():
+    """Assigning login or solutions media must leave the landing hero alone."""
+    srv = _ServerThread()
+    srv.start()
+    _warm(srv.base)
+    token = "phins_test_place_pages"
+    _admin(token)
+    saved = _snapshot()
+    landing_video = "media-place-landing-video"
+    login_video = "media-place-login-video"
+    solutions_photo = "media-place-solutions-photo"
+    try:
+        _asset(landing_video, "video", "/media-files/media-place-landing-video/hero.mp4")
+        _asset(login_video, "video", "/media-files/media-place-login-video/login.mp4")
+        _asset(solutions_photo, "image", "/media-files/media-place-solutions-photo/bg.jpg")
+
+        status, _ = _request(
+            srv.base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={"hero_video_id": landing_video},
+        )
+        assert status == 200
+        assert portal.DESIGN_SETTINGS["hero_video_id"] == landing_video
+
+        status, body = _request(
+            srv.base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={
+                "login_hero_video_id": login_video,
+                "solutions_background_id": solutions_photo,
+            },
+        )
+        assert status == 200, body
+        assert portal.DESIGN_SETTINGS["hero_video_id"] == landing_video
+        assert portal.DESIGN_SETTINGS["login_hero_video_id"] == login_video
+        assert portal.DESIGN_SETTINGS["solutions_background_id"] == solutions_photo
+        assert portal.DESIGN_SETTINGS["login_background_id"] == saved.get("login_background_id", "")
+        assert portal.DESIGN_SETTINGS["solutions_hero_video_id"] == saved.get(
+            "solutions_hero_video_id", ""
+        )
+
+        status, public = _request(srv.base + "/api/design/settings")
+        assert status == 200
+        assert public["login_hero_video_url"] == "/media-files/media-place-login-video/login.mp4"
+        assert public["solutions_background_url"] == "/media-files/media-place-solutions-photo/bg.jpg"
+        assert "login_hero_video_id" not in public
+        assert "solutions_background_id" not in public
+        assert public["login_background_url"] == ""
+        assert public["solutions_hero_video_url"] == ""
+    finally:
+        for asset_id in (landing_video, login_video, solutions_photo):
+            portal.MEDIA_ASSETS.pop(asset_id, None)
+        _restore(saved)
+        srv.stop()
+
+
+def test_login_and_solutions_reject_wrong_type_without_writing():
+    srv = _ServerThread()
+    srv.start()
+    _warm(srv.base)
+    token = "phins_test_place_pages_type"
+    _admin(token)
+    saved = _snapshot()
+    photo_id = "media-place-page-photo"
+    video_id = "media-place-page-video"
+    try:
+        _asset(photo_id, "image", "/media-files/media-place-page-photo/bg.jpg")
+        _asset(video_id, "video", "/media-files/media-place-page-video/keep.mp4")
+        portal.DESIGN_SETTINGS["login_hero_video_id"] = video_id
+        portal.DESIGN_SETTINGS["solutions_banner_id"] = ""
+
+        status, body = _request(
+            srv.base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={
+                "login_hero_video_id": photo_id,
+                "solutions_banner_id": video_id,
+            },
+        )
+        assert status == 400
+        assert "login_hero_video_id" in body.get("invalid_refs", [])
+        assert "solutions_banner_id" in body.get("invalid_refs", [])
+        assert portal.DESIGN_SETTINGS["login_hero_video_id"] == video_id
+        assert portal.DESIGN_SETTINGS["solutions_banner_id"] == ""
+    finally:
+        portal.MEDIA_ASSETS.pop(photo_id, None)
+        portal.MEDIA_ASSETS.pop(video_id, None)
+        _restore(saved)
+        srv.stop()
+
+
+def test_delete_clears_login_and_solutions_slots_only():
+    srv = _ServerThread()
+    srv.start()
+    _warm(srv.base)
+    token = "phins_test_place_pages_delete"
+    _admin(token)
+    saved = _snapshot()
+    shared_id = "media-place-page-shared"
+    other_id = "media-place-page-other"
+    try:
+        _asset(shared_id, "image", "/media-files/media-place-page-shared/bg.jpg")
+        _asset(other_id, "image", "/media-files/media-place-page-other/banner.jpg")
+        status, _ = _request(
+            srv.base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={
+                "login_background_id": shared_id,
+                "solutions_banner_id": shared_id,
+                "login_banner_id": other_id,
+            },
+        )
+        assert status == 200
+
+        status, _ = _request(
+            srv.base + f"/api/media/{shared_id}",
+            method="DELETE",
+            token=token,
+        )
+        assert status == 200
+        assert portal.DESIGN_SETTINGS["login_background_id"] == ""
+        assert portal.DESIGN_SETTINGS["solutions_banner_id"] == ""
+        assert portal.DESIGN_SETTINGS["login_banner_id"] == other_id
+
+        status, public = _request(srv.base + "/api/design/settings")
+        assert status == 200
+        assert public["login_background_url"] == ""
+        assert public["solutions_banner_url"] == ""
+        assert public["login_banner_url"] == "/media-files/media-place-page-other/banner.jpg"
+    finally:
+        portal.MEDIA_ASSETS.pop(shared_id, None)
+        portal.MEDIA_ASSETS.pop(other_id, None)
+        _restore(saved)
+        srv.stop()
+
+
 def test_missing_placement_asset_resolves_to_an_empty_public_url():
     saved = _snapshot()
     try:
         portal.DESIGN_SETTINGS["apply_chat_disclaimer_video_id"] = "deleted-chat-video"
         portal.DESIGN_SETTINGS["claims_chat_disclaimer_video_id"] = "deleted-claim-video"
+        portal.DESIGN_SETTINGS["login_hero_video_id"] = "deleted-login-video"
+        portal.DESIGN_SETTINGS["solutions_banner_id"] = "deleted-solutions-banner"
         urls = portal.public_placement_video_urls()
         assert urls["apply_chat_disclaimer_video_url"] == ""
         assert urls["claims_chat_disclaimer_video_url"] == ""
         assert urls["apply_disclosure_video_url"] == portal.get_media_asset_playback_url(
             str(saved.get("apply_disclosure_video_id") or "")
         )
+        page_urls = portal.public_page_media_urls()
+        assert page_urls["login_hero_video_url"] == ""
+        assert page_urls["solutions_banner_url"] == ""
     finally:
         _restore(saved)

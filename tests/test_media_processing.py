@@ -1939,6 +1939,16 @@ def test_public_design_settings_includes_colors_and_background():
         assert resp.get('show_products') is not None
         assert 'hero_background_url' in resp
         assert 'promo_banner_url' in resp
+        assert 'login_hero_video_url' in resp
+        assert 'login_background_url' in resp
+        assert 'login_thumbnail_url' in resp
+        assert 'login_banner_url' in resp
+        assert 'solutions_hero_video_url' in resp
+        assert 'solutions_background_url' in resp
+        assert 'solutions_thumbnail_url' in resp
+        assert 'solutions_banner_url' in resp
+        assert 'login_hero_video_id' not in resp
+        assert 'solutions_background_id' not in resp
     finally:
         portal.DESIGN_SETTINGS['primary_color'] = '#0d47a1'
         portal.DESIGN_SETTINGS['accent_color'] = '#ff6b35'

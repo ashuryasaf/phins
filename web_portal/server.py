@@ -2466,6 +2466,14 @@ DESIGN_SETTINGS: Dict[str, Any] = {
     'apply_disclosure_version_label': 'light',
     'apply_chat_disclaimer_video_id': '',
     'claims_chat_disclaimer_video_id': '',
+    'login_hero_video_id': '',
+    'login_background_id': '',
+    'login_thumbnail_id': '',
+    'login_banner_id': '',
+    'solutions_hero_video_id': '',
+    'solutions_background_id': '',
+    'solutions_thumbnail_id': '',
+    'solutions_banner_id': '',
     'updated_at': None,
     'updated_by': None
 }
@@ -2858,6 +2866,14 @@ MEDIA_PLACEMENT_SLOTS = {
     'apply_disclosure_control_video_id': 'video',
     'apply_chat_disclaimer_video_id': 'video',
     'claims_chat_disclaimer_video_id': 'video',
+    'login_hero_video_id': 'video',
+    'login_background_id': 'image',
+    'login_thumbnail_id': 'image',
+    'login_banner_id': 'image',
+    'solutions_hero_video_id': 'video',
+    'solutions_background_id': 'image',
+    'solutions_thumbnail_id': 'image',
+    'solutions_banner_id': 'image',
 }
 
 # Public playback fields resolved from the asset record at read time.
@@ -2904,6 +2920,30 @@ def public_placement_video_urls() -> Dict[str, str]:
     urls = {}
     for slot_key, public_key in MEDIA_PLACEMENT_PUBLIC_URLS.items():
         urls[public_key] = get_media_asset_playback_url(
+            str(DESIGN_SETTINGS.get(slot_key) or '')
+        )
+    return urls
+
+
+# Public photo/video URLs for login and solutions. Resolved at read time
+# from the live asset so a stale client cache cannot drift the page.
+PAGE_MEDIA_PUBLIC_URLS = {
+    'login_hero_video_id': 'login_hero_video_url',
+    'login_background_id': 'login_background_url',
+    'login_thumbnail_id': 'login_thumbnail_url',
+    'login_banner_id': 'login_banner_url',
+    'solutions_hero_video_id': 'solutions_hero_video_url',
+    'solutions_background_id': 'solutions_background_url',
+    'solutions_thumbnail_id': 'solutions_thumbnail_url',
+    'solutions_banner_id': 'solutions_banner_url',
+}
+
+
+def public_page_media_urls() -> Dict[str, str]:
+    """Resolve login and solutions placement URLs without writing settings."""
+    urls = {}
+    for slot_key, public_key in PAGE_MEDIA_PUBLIC_URLS.items():
+        urls[public_key] = public_asset_playback_url(
             str(DESIGN_SETTINGS.get(slot_key) or '')
         )
     return urls
@@ -7022,6 +7062,8 @@ def load_ledger_data():
                 print(f"  - Media Processing Jobs: {len(MEDIA_PROCESSING_JOBS)} jobs loaded from persistence")
             if loaded_design:
                 DESIGN_SETTINGS.update(loaded_design)
+                for slot_key in MEDIA_PLACEMENT_SLOTS:
+                    DESIGN_SETTINGS.setdefault(slot_key, '')
                 print(f"  - Design Settings: Loaded (video: {'✓' if DESIGN_SETTINGS.get('hero_video_id') or DESIGN_SETTINGS.get('video_url') else '✗'})")
         
         # Load Invitation Codes and Registered Customers (v1.7+)
@@ -19578,7 +19620,7 @@ For claims or questions, please contact:
             self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
             self.send_header('Pragma', 'no-cache')
             self.send_header('Expires', '0')
-        elif lowered.endswith('/login.js') or lowered.endswith('/login.html'):
+        elif lowered.endswith('/login.js') or lowered.endswith('/login.html') or lowered.endswith('/page-surface-media.js'):
             self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
             self.send_header('Pragma', 'no-cache')
         elif lowered.endswith('.html'):
@@ -20746,6 +20788,7 @@ For claims or questions, please contact:
                     ),
                 }
                 public_settings.update(public_placement_video_urls())
+                public_settings.update(public_page_media_urls())
                 self.wfile.write(json.dumps(public_settings).encode('utf-8'))
             return
         

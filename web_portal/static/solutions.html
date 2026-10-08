@@ -218,6 +218,33 @@
       width: 4px; height: 4px; transform: rotate(45deg);
       background: rgba(227, 191, 111, 0.6);
     }
+    .hero-video {
+      margin: 36px auto 0;
+      max-width: 640px;
+    }
+    .hero-video video {
+      width: 100%;
+      max-height: 360px;
+      border-radius: 16px;
+      background: #000;
+      border: 1px solid var(--line);
+    }
+    .page-promo-banner {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      text-align: center;
+      padding: 0;
+      background: rgba(255,255,255,0.04);
+      border-top: 1px solid var(--line);
+    }
+    .page-promo-banner img {
+      max-width: 100%;
+      max-height: 200px;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto;
+    }
 
     /* ===== Cards ===== */
     .card-grid {
@@ -1078,7 +1105,13 @@
         <span>Claims</span>
         <span>Actuary &amp; Investments</span>
       </div>
+      <div class="hero-video rise d4" id="solutions-hero-media" hidden>
+        <video id="solutions-hero-video" controls playsinline muted></video>
+      </div>
     </section>
+    <div class="page-promo-banner" id="solutions-promo-banner" hidden>
+      <img alt="Promotion">
+    </div>
 
     <!-- ===== Solutions ===== -->
     <section id="solutions">
@@ -1506,6 +1539,7 @@
     </div>
   </footer>
 
+  <script src="/page-surface-media.js"></script>
   <script>
     // ===== Scroll reveal =====
     (function initReveal() {
@@ -1775,6 +1809,35 @@
         submitBtn.textContent = originalLabel;
       }
     });
+
+    (async function applyPageMedia() {
+      try {
+        var response = await fetch('/api/design/settings');
+        if (!response.ok) return;
+        var settings = await response.json();
+        var media = window.PhinsPageMedia;
+        if (!media) return;
+        var backgroundUrl = settings.solutions_background_url || settings.hero_background_url;
+        if (backgroundUrl) {
+          media.applyBackground(
+            document.querySelector('.hero'),
+            backgroundUrl,
+            'linear-gradient(rgba(4,9,22,0.72), rgba(4,9,22,0.82))'
+          );
+        }
+        media.applyVideo(
+          document.getElementById('solutions-hero-media'),
+          document.getElementById('solutions-hero-video'),
+          settings.solutions_hero_video_url,
+          settings.solutions_thumbnail_url
+        );
+        media.applyBanner(
+          document.querySelector('main'),
+          settings.solutions_banner_url || settings.promo_banner_url,
+          'solutions-promo-banner'
+        );
+      } catch (err) { /* media optional */ }
+    })();
   </script>
 </body>
 </html>
