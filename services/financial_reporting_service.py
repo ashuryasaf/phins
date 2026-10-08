@@ -484,6 +484,10 @@ class FinancialReportingService:
         - Surrender value
         """
         premium_calc = self.calculate_premium(coverage, age, adl_level, savings_pct, term_years)
+        if not premium_calc.get('eligible'):
+            # Declined quotes (age gate, ADL, unavailable kernel) have no
+            # premium breakdown to project.
+            return []
         annual_premium = premium_calc['annual_premium']
         risk_component = premium_calc['risk_component']
         savings_component = premium_calc['savings_component']
@@ -568,7 +572,8 @@ class FinancialReportingService:
         Lump-sum options using the attained-age life sum, not a share of face.
         """
         savings_accumulated = total_premiums_paid * savings_pct * 1.06 ** years_paid
-        attained = int(age) + int(years_paid) if age is not None else 0
+        # Attained age follows the projection convention: issue_age + policy_year - 1.
+        attained = int(age) + max(0, int(years_paid) - 1) if age is not None else 0
         life_sum = float(self._benefit_sums(coverage, attained)['life_sum'])
         insured = life_sum + savings_accumulated
 

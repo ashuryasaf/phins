@@ -5946,7 +5946,7 @@ class ReserveCalculator:
             'csm_reconciliation': csm_reconciliation,
             'data_integrity': {
                 'portfolio_parameters_match_kernel': bool(
-                    (simulation.get('parameter_integrity') or {}).get('all_checks_pass', True)
+                    (simulation.get('parameter_integrity') or {}).get('all_checks_pass', False)
                 ),
                 'profit_waterfall_consistent': all(identity_checks),
                 'dividends_within_after_tax': all(
