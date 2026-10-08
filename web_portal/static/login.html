@@ -786,8 +786,15 @@
         var s = await r.json();
         var media = window.PhinsPageMedia;
         var backdrop = document.querySelector('.auth-backdrop');
+        var videoOn = media ? media.applyVideo(
+          document.getElementById('login-hero-media'),
+          document.getElementById('login-hero-video'),
+          s.login_hero_video_url,
+          s.login_thumbnail_url
+        ) : false;
+        if (videoOn) document.body.classList.add('has-login-video');
         var p = normalizeHexColor(s.primary_color, '#060d1f');
-        if (p && p !== '#0d47a1' && p !== '#060d1f' && backdrop && !document.body.classList.contains('has-login-video')) {
+        if (p && p !== '#0d47a1' && p !== '#060d1f' && backdrop && !videoOn) {
           backdrop.style.background =
             'radial-gradient(1000px 600px at 80% -10%, ' + p + '8c, transparent 60%),' +
             'radial-gradient(800px 520px at 8% 110%, ' + p + '59, transparent 60%),' +
@@ -806,13 +813,6 @@
           backdrop.style.backgroundPosition = 'center';
         }
         if (media) {
-          var videoOn = media.applyVideo(
-            document.getElementById('login-hero-media'),
-            document.getElementById('login-hero-video'),
-            s.login_hero_video_url,
-            s.login_thumbnail_url
-          );
-          if (videoOn) document.body.classList.add('has-login-video');
           media.applyBanner(
             document.querySelector('.auth-brand'),
             s.login_banner_url,
