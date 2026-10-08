@@ -22,6 +22,12 @@
   "strings": {
     "PHINS Portal — Login": "פורטל PHINS — התחברות",
     "PHINS Portal": "פורטל PHINS",
+    "Private Access": "גישה פרטית",
+    "Secure member sign-in": "התחברות מאובטחת לחברים",
+    "Password and verification questions stay on this page. Your session is opened only after they are accepted.": "הסיסמה ושאלות האימות נשארות בעמוד זה. החיבור נפתח רק לאחר שהן מתקבלות.",
+    "Encrypted session": "חיבור מוצפן",
+    "Device trust": "אמון במכשיר",
+    "Member portal": "פורטל חברים",
     "Sign in to access your account": "התחברו כדי לגשת לחשבונכם",
     "Username": "שם משתמש",
     "Password": "סיסמה",

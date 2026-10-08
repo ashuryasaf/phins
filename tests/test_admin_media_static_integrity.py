@@ -6,6 +6,8 @@ ADMIN_MEDIA_PATH = Path(__file__).resolve().parents[1] / "web_portal" / "static"
 INDEX_PATH = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "index.html"
 LOGIN_PATH = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "login.html"
 REGISTER_PATH = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "register.html"
+SOLUTIONS_PATH = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "solutions.html"
+PAGE_MEDIA_PATH = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "page-surface-media.js"
 
 
 def test_admin_media_uses_authenticated_subtitle_download_helper():
@@ -37,6 +39,14 @@ def test_admin_media_sends_design_settings_on_save():
         "hero_background_id",
         "video_poster_id",
         "promo_banner_id",
+        "login_hero_video_id",
+        "login_background_id",
+        "login_thumbnail_id",
+        "login_banner_id",
+        "solutions_hero_video_id",
+        "solutions_background_id",
+        "solutions_thumbnail_id",
+        "solutions_banner_id",
         "apply_disclosure_video_id",
         "apply_disclosure_control_video_id",
         "apply_chat_disclaimer_video_id",
@@ -152,7 +162,36 @@ def test_login_page_applies_branding():
     assert "/api/design/settings" in content
     assert "primary_color" in content
     assert "hero_background_url" in content
+    assert "login_background_url" in content
+    assert "login_hero_video_url" in content
+    assert "login_thumbnail_url" in content
+    assert "login_banner_url" in content
     assert "p !== '#060d1f'" in content
+    assert 'id="username"' in content
+    assert 'id="password"' in content
+    assert 'id="captcha-section"' in content
+    assert 'id="captcha-question"' in content
+    assert 'id="otp-section"' in content
+    assert 'src="/login.js' in content
+    assert 'src="/page-surface-media.js"' in content
+
+
+def test_solutions_page_applies_assigned_media():
+    content = SOLUTIONS_PATH.read_text(encoding="utf-8")
+    assert "/api/design/settings" in content
+    assert "solutions_hero_video_url" in content
+    assert "solutions_background_url" in content
+    assert "solutions_thumbnail_url" in content
+    assert "solutions_banner_url" in content
+    assert 'id="solutions-hero-video"' in content
+    assert 'src="/page-surface-media.js"' in content
+
+
+def test_page_surface_media_rejects_unsafe_urls():
+    content = PAGE_MEDIA_PATH.read_text(encoding="utf-8")
+    assert "function isPlayableMediaUrl(url)" in content
+    assert "value.indexOf('..') === -1" in content
+    assert "/api/design/settings" not in content
 
 
 def test_register_page_applies_branding():

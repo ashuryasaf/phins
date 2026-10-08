@@ -17,20 +17,42 @@
   <link rel="stylesheet" href="/i18n-rtl.css">
   <script src="/i18n.js"></script>
   <style>
+    :root {
+      --ds-primary: #060d1f;
+      --ds-accent: #e3bf6f;
+      --ds-accent-strong: #f7e2a0;
+      --ink: #eaf1ff;
+      --ink-dim: rgba(234, 241, 255, 0.62);
+      --line: rgba(127, 178, 255, 0.16);
+    }
     body {
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      display: block;
       min-height: 100vh;
+      margin: 0;
       background: #060d1f;
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #0d2a5c;
       position: relative;
       overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+    .auth-media {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .auth-media video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: saturate(0.92);
     }
     .auth-backdrop {
       position: fixed;
       inset: 0;
-      z-index: 0;
+      z-index: 1;
       pointer-events: none;
       background:
         radial-gradient(1000px 600px at 80% -10%, rgba(21, 68, 155, 0.55), transparent 60%),
@@ -49,39 +71,168 @@
       mask-image: radial-gradient(900px 620px at 50% 40%, rgba(0,0,0,0.85), transparent 78%);
       -webkit-mask-image: radial-gradient(900px 620px at 50% 40%, rgba(0,0,0,0.85), transparent 78%);
     }
+    .auth-backdrop::after {
+      content: '';
+      position: absolute;
+      inset: -30%;
+      background: conic-gradient(from 180deg at 50% 50%,
+        transparent 0deg, rgba(79, 216, 255, 0.05) 90deg,
+        transparent 180deg, rgba(227, 191, 111, 0.04) 270deg, transparent 360deg);
+      animation: slow-spin 60s linear infinite;
+    }
+    body.has-login-video .auth-backdrop {
+      background:
+        linear-gradient(105deg, rgba(4, 9, 22, 0.78) 0%, rgba(4, 9, 22, 0.42) 46%, rgba(4, 9, 22, 0.86) 100%);
+    }
+    body.has-login-video .auth-backdrop::before,
+    body.has-login-video .auth-backdrop::after {
+      opacity: 0.35;
+    }
+    @keyframes slow-spin { to { transform: rotate(360deg); } }
+
+    .auth-shell {
+      position: relative;
+      z-index: 2;
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(280px, 1fr) minmax(360px, 520px);
+      align-items: center;
+      gap: 48px;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 48px 32px;
+    }
+    .auth-brand {
+      color: var(--ink);
+      padding: 12px 8px 12px 16px;
+    }
+    .auth-brand-mark {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      text-decoration: none;
+      color: inherit;
+    }
+    .auth-brand-mark img {
+      width: 64px;
+      height: 64px;
+      display: block;
+      filter: drop-shadow(0 12px 36px rgba(79, 216, 255, 0.28));
+    }
+    .auth-wordmark {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.55rem;
+      font-weight: 600;
+      letter-spacing: 0.34em;
+    }
+    .auth-kicker {
+      margin: 36px 0 14px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.74rem;
+      font-weight: 600;
+      letter-spacing: 0.42em;
+      text-transform: uppercase;
+      color: var(--ds-accent);
+    }
+    .auth-brand h2 {
+      margin: 0;
+      max-width: 420px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 700;
+      line-height: 1.12;
+      background: linear-gradient(180deg, #ffffff 0%, #b7d3ff 70%, #7fa8e8 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .auth-brand p {
+      margin: 18px 0 0;
+      max-width: 380px;
+      color: var(--ink-dim);
+      font-size: 1rem;
+      line-height: 1.7;
+    }
+    .auth-brand-rule {
+      width: 120px;
+      height: 1px;
+      margin: 28px 0;
+      background: linear-gradient(90deg, rgba(227, 191, 111, 0.8), transparent);
+    }
+    .auth-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .auth-meta span {
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 14px;
+      border: 1px solid rgba(127, 178, 255, 0.28);
+      border-radius: 999px;
+      color: rgba(234, 241, 255, 0.78);
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .page-promo-banner {
+      margin-top: 28px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.04);
+      max-width: 420px;
+    }
+    .page-promo-banner img {
+      display: block;
+      width: 100%;
+      max-height: 140px;
+      object-fit: cover;
+    }
     .login-container {
       width: 100%;
-      max-width: 450px;
-      padding: 16px;
-      position: relative;
-      z-index: 1;
+      max-width: 460px;
+      justify-self: end;
     }
     .login-card {
-      background: rgba(249, 251, 255, 0.97);
-      border-radius: 22px;
-      padding: 52px;
-      box-shadow: 0 30px 80px rgba(2, 8, 23, 0.65), 0 0 0 1px rgba(127, 178, 255, 0.22);
+      background: rgba(249, 251, 255, 0.94);
+      backdrop-filter: blur(22px) saturate(140%);
+      -webkit-backdrop-filter: blur(22px) saturate(140%);
+      border-radius: 24px;
+      padding: 44px 40px 36px;
+      box-shadow: 0 30px 80px rgba(2, 8, 23, 0.55), 0 0 0 1px rgba(127, 178, 255, 0.18);
       border-top: 3px solid #e3bf6f;
     }
     .login-header {
       text-align: center;
-      margin-bottom: 36px;
+      margin-bottom: 28px;
     }
     .login-logo {
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
     .login-logo img {
-      width: 76px;
-      height: 76px;
+      width: 68px;
+      height: 68px;
       display: block;
       margin: 0 auto;
       filter: drop-shadow(0 8px 24px rgba(18, 63, 130, 0.35));
+    }
+    .login-eyebrow {
+      margin: 0 0 8px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.34em;
+      text-transform: uppercase;
+      color: #8a6d2e;
     }
     .login-title {
       font-family: 'Space Grotesk', sans-serif;
       color: #0d2a5c;
       margin: 0 0 8px 0;
-      font-size: 1.9rem;
+      font-size: 1.85rem;
       font-weight: 700;
       letter-spacing: 0.06em;
     }
@@ -91,20 +242,20 @@
       font-size: 0.95rem;
     }
     .form-group {
-      margin-bottom: 22px;
+      margin-bottom: 20px;
     }
     .form-group label {
       display: block;
       margin-bottom: 8px;
       font-weight: 600;
       color: #0d2a5c;
-      font-size: 0.95rem;
+      font-size: 0.92rem;
     }
     .form-group input {
       width: 100%;
       padding: 14px 16px;
       border: 2px solid #dde7f5;
-      border-radius: 10px;
+      border-radius: 12px;
       font-size: 1rem;
       transition: all 0.3s;
       background: #f8fbff;
@@ -165,7 +316,7 @@
       text-align: center;
       font-weight: 600;
     }
-    
+
     /* CAPTCHA Styles */
     .captcha-box {
       background: #f0f5fd;
@@ -318,7 +469,8 @@
     }
     @media (prefers-reduced-motion: reduce) {
       .captcha-option,
-      .captcha-box.captcha-shake {
+      .captcha-box.captcha-shake,
+      .auth-backdrop::after {
         animation: none;
       }
       .captcha-option:hover {
@@ -344,7 +496,7 @@
         grid-template-columns: 1fr;
       }
     }
-    
+
     /* OTP Verification Styles */
     .otp-box {
       background: #fdf8ec;
@@ -423,7 +575,7 @@
     .trust-device input {
       width: auto;
     }
-    
+
     /* Step Indicator */
     .step-indicator {
       display: flex;
@@ -446,11 +598,31 @@
     .step.complete {
       background: #4caf50;
     }
-    
+
+    @media screen and (max-width: 900px) {
+      .auth-shell {
+        grid-template-columns: 1fr;
+        justify-items: center;
+        gap: 28px;
+        padding: 28px 16px 40px;
+      }
+      .auth-brand {
+        text-align: center;
+        padding: 8px 0 0;
+      }
+      .auth-brand-mark { justify-content: center; }
+      .auth-brand h2, .auth-brand p { margin-left: auto; margin-right: auto; }
+      .auth-brand-rule { margin-left: auto; margin-right: auto; }
+      .auth-meta { justify-content: center; }
+      .page-promo-banner { margin-left: auto; margin-right: auto; }
+      .login-container { justify-self: center; }
+    }
+
     /* Mobile Responsive */
     @media screen and (max-width: 480px) {
       .login-container {
-        padding: 12px;
+        padding: 0;
+        max-width: 100%;
       }
       .login-card {
         padding: 28px 20px;
@@ -466,6 +638,7 @@
       .login-subtitle {
         font-size: 0.9rem;
       }
+      .auth-brand h2 { font-size: 1.7rem; }
       .form-group input {
         padding: 12px 14px;
         font-size: 16px;
@@ -476,100 +649,124 @@
         font-size: 1.2rem;
       }
     }
-    
+
     /* Safe area for notched phones */
     @supports (padding: max(0px)) {
-      .login-container {
-        padding-top: max(16px, env(safe-area-inset-top));
-        padding-bottom: max(16px, env(safe-area-inset-bottom));
+      .auth-shell {
+        padding-top: max(48px, env(safe-area-inset-top));
+        padding-bottom: max(40px, env(safe-area-inset-bottom));
       }
     }
   </style>
 </head>
 <body>
+  <div class="auth-media" id="login-hero-media" hidden aria-hidden="true">
+    <video id="login-hero-video" muted loop playsinline autoplay></video>
+  </div>
   <div class="auth-backdrop" aria-hidden="true"></div>
-  <div class="login-container">
-    <div class="login-card">
-      <div class="login-header">
-        <div class="login-logo"><a href="/" title="PHINS"><img src="/phins-logo.svg" alt="PHINS emblem"></a></div>
-        <h1 class="login-title">PHINS Portal</h1>
-        <p class="login-subtitle">Sign in to access your account</p>
+  <div class="auth-shell">
+    <aside class="auth-brand">
+      <a class="auth-brand-mark" href="/" title="PHINS">
+        <img src="/phins-logo.svg" alt="PHINS emblem">
+        <span class="auth-wordmark">PHINS</span>
+      </a>
+      <div class="auth-kicker">Private Access</div>
+      <h2>Secure member sign-in</h2>
+      <div class="auth-brand-rule"></div>
+      <p>Password and verification questions stay on this page. Your session is opened only after they are accepted.</p>
+      <div class="auth-meta">
+        <span>Encrypted session</span>
+        <span>Device trust</span>
       </div>
-      
-      <!-- Step Indicator -->
-      <div class="step-indicator" id="step-indicator">
-        <div class="step active" id="step-1"></div>
-        <div class="step" id="step-2"></div>
-        <div class="step" id="step-3"></div>
+      <div class="page-promo-banner" id="login-promo-banner" hidden>
+        <img alt="Promotion">
       </div>
-      
-      <form id="login-form">
-        <!-- Step 1: Credentials -->
-        <div id="credentials-section">
-          <div class="form-group">
-            <label for="username">Username</label>
-            <input type="text" id="username" name="username" required autofocus placeholder="Enter your username" />
-          </div>
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" required placeholder="Enter your password" />
-          </div>
-          
-          <!-- CAPTCHA Section -->
-          <div class="captcha-box" id="captcha-section">
-            <div class="captcha-header">
-              <label>Human Verification</label>
-              <a href="#" class="captcha-refresh" id="captcha-refresh" title="Get a new challenge">&#x21bb;</a>
-            </div>
-            <div class="captcha-kind" id="captcha-kind" hidden></div>
-            <div class="captcha-question" id="captcha-question" aria-live="polite">Loading...</div>
-            <div class="captcha-options" id="captcha-options" role="radiogroup" aria-labelledby="captcha-question" data-no-i18n hidden></div>
-            <p class="captcha-hint" id="captcha-hint" hidden>Choose one answer</p>
-            <input type="text" class="captcha-input" id="captcha-answer" placeholder="Your answer" autocomplete="off" />
-            <input type="hidden" id="captcha-id" />
-          </div>
+    </aside>
+    <div class="login-container">
+      <div class="login-card">
+        <div class="login-header">
+          <div class="login-logo"><a href="/" title="PHINS"><img src="/phins-logo.svg" alt="PHINS emblem"></a></div>
+          <p class="login-eyebrow">Member portal</p>
+          <h1 class="login-title">PHINS Portal</h1>
+          <p class="login-subtitle">Sign in to access your account</p>
         </div>
-        
-        <!-- Step 2: OTP Verification (hidden by default) -->
-        <div class="otp-box" id="otp-section">
-          <div class="otp-header">
-            <span></span>
-            <h3>Verification Required</h3>
-          </div>
-          <p class="otp-info" id="otp-info">
-            We've sent a verification code to your email <strong id="otp-email"></strong>
-          </p>
-          <div class="otp-input-group">
-            <input type="text" class="otp-digit" maxlength="1" data-index="0" inputmode="numeric" />
-            <input type="text" class="otp-digit" maxlength="1" data-index="1" inputmode="numeric" />
-            <input type="text" class="otp-digit" maxlength="1" data-index="2" inputmode="numeric" />
-            <input type="text" class="otp-digit" maxlength="1" data-index="3" inputmode="numeric" />
-            <input type="text" class="otp-digit" maxlength="1" data-index="4" inputmode="numeric" />
-            <input type="text" class="otp-digit" maxlength="1" data-index="5" inputmode="numeric" />
-          </div>
-          <input type="hidden" id="verification-id" />
-          <div class="otp-actions">
-            <a class="otp-resend" id="resend-otp">Resend code (<span id="resend-timer">60</span>s)</a>
-            <label class="trust-device">
-              <input type="checkbox" id="trust-device" checked />
-              Trust this device
-            </label>
-          </div>
-        </div>
-        
-        <button type="submit" class="btn-submit" id="submit-btn">Sign In</button>
-      </form>
-      
-      <div id="login-msg"></div>
 
-      <div class="aux-links">
-        <a href="/register.html">Don't have an account? Register</a>
-        <span class="sep">•</span>
-        <a href="/forgot-password.html">Forgot Password?</a>
+        <!-- Step Indicator -->
+        <div class="step-indicator" id="step-indicator">
+          <div class="step active" id="step-1"></div>
+          <div class="step" id="step-2"></div>
+          <div class="step" id="step-3"></div>
+        </div>
+
+        <form id="login-form">
+          <!-- Step 1: Credentials -->
+          <div id="credentials-section">
+            <div class="form-group">
+              <label for="username">Username</label>
+              <input type="text" id="username" name="username" required autofocus placeholder="Enter your username" />
+            </div>
+            <div class="form-group">
+              <label for="password">Password</label>
+              <input type="password" id="password" name="password" required placeholder="Enter your password" />
+            </div>
+
+            <!-- CAPTCHA Section -->
+            <div class="captcha-box" id="captcha-section">
+              <div class="captcha-header">
+                <label>Human Verification</label>
+                <a href="#" class="captcha-refresh" id="captcha-refresh" title="Get a new challenge">&#x21bb;</a>
+              </div>
+              <div class="captcha-kind" id="captcha-kind" hidden></div>
+              <div class="captcha-question" id="captcha-question" aria-live="polite">Loading...</div>
+              <div class="captcha-options" id="captcha-options" role="radiogroup" aria-labelledby="captcha-question" data-no-i18n hidden></div>
+              <p class="captcha-hint" id="captcha-hint" hidden>Choose one answer</p>
+              <input type="text" class="captcha-input" id="captcha-answer" placeholder="Your answer" autocomplete="off" />
+              <input type="hidden" id="captcha-id" />
+            </div>
+          </div>
+
+          <!-- Step 2: OTP Verification (hidden by default) -->
+          <div class="otp-box" id="otp-section">
+            <div class="otp-header">
+              <span></span>
+              <h3>Verification Required</h3>
+            </div>
+            <p class="otp-info" id="otp-info">
+              We've sent a verification code to your email <strong id="otp-email"></strong>
+            </p>
+            <div class="otp-input-group">
+              <input type="text" class="otp-digit" maxlength="1" data-index="0" inputmode="numeric" />
+              <input type="text" class="otp-digit" maxlength="1" data-index="1" inputmode="numeric" />
+              <input type="text" class="otp-digit" maxlength="1" data-index="2" inputmode="numeric" />
+              <input type="text" class="otp-digit" maxlength="1" data-index="3" inputmode="numeric" />
+              <input type="text" class="otp-digit" maxlength="1" data-index="4" inputmode="numeric" />
+              <input type="text" class="otp-digit" maxlength="1" data-index="5" inputmode="numeric" />
+            </div>
+            <input type="hidden" id="verification-id" />
+            <div class="otp-actions">
+              <a class="otp-resend" id="resend-otp">Resend code (<span id="resend-timer">60</span>s)</a>
+              <label class="trust-device">
+                <input type="checkbox" id="trust-device" checked />
+                Trust this device
+              </label>
+            </div>
+          </div>
+
+          <button type="submit" class="btn-submit" id="submit-btn">Sign In</button>
+        </form>
+
+        <div id="login-msg"></div>
+
+        <div class="aux-links">
+          <a href="/register.html">Don't have an account? Register</a>
+          <span class="sep">•</span>
+          <a href="/forgot-password.html">Forgot Password?</a>
+        </div>
       </div>
     </div>
   </div>
-  
+
+  <script src="/page-surface-media.js"></script>
   <script src="/login.js?v=20260927a"></script>
   <script>
     function normalizeHexColor(color, fallback) {
@@ -587,18 +784,40 @@
         var r = await fetch('/api/design/settings');
         if (!r.ok) return;
         var s = await r.json();
+        var media = window.PhinsPageMedia;
         var backdrop = document.querySelector('.auth-backdrop');
+        var videoOn = media ? media.applyVideo(
+          document.getElementById('login-hero-media'),
+          document.getElementById('login-hero-video'),
+          s.login_hero_video_url,
+          s.login_thumbnail_url
+        ) : false;
+        if (videoOn) document.body.classList.add('has-login-video');
         var p = normalizeHexColor(s.primary_color, '#060d1f');
-        if (p && p !== '#0d47a1' && p !== '#060d1f' && backdrop) {
+        if (p && p !== '#0d47a1' && p !== '#060d1f' && backdrop && !videoOn) {
           backdrop.style.background =
             'radial-gradient(1000px 600px at 80% -10%, ' + p + '8c, transparent 60%),' +
             'radial-gradient(800px 520px at 8% 110%, ' + p + '59, transparent 60%),' +
             '#060d1f';
         }
-        if (s.hero_background_url && backdrop) {
+        var backgroundUrl = s.login_background_url || s.hero_background_url;
+        if (backgroundUrl && backdrop && media) {
+          media.applyBackground(
+            backdrop,
+            backgroundUrl,
+            'linear-gradient(rgba(4,9,22,0.78), rgba(4,9,22,0.86))'
+          );
+        } else if (s.hero_background_url && backdrop) {
           backdrop.style.backgroundImage = 'linear-gradient(rgba(4,9,22,0.78), rgba(4,9,22,0.86)), url(' + JSON.stringify(s.hero_background_url) + ')';
           backdrop.style.backgroundSize = 'cover';
           backdrop.style.backgroundPosition = 'center';
+        }
+        if (media) {
+          media.applyBanner(
+            document.querySelector('.auth-brand'),
+            s.login_banner_url,
+            'login-promo-banner'
+          );
         }
       } catch (e) { /* branding optional */ }
     })();
