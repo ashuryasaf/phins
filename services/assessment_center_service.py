@@ -845,12 +845,19 @@ class AssessmentCenterService:
         source: str,
         records: Iterable[Dict[str, Any]],
         fact_type: str = "external_policy",
+        source_document_id: Optional[str] = None,
+        source_document_sha256: Optional[str] = None,
     ) -> AssessmentResult:
         """Accept external clearing-house rows (e.g. Mislaka) as raw facts.
 
         The assessment center never *re-aggregates* the raw response - it simply
         records each row with provenance so that downstream risk and dashboard
         endpoints can query the same fact store.
+
+        When ``source_document_id`` is set, every row is a fact of that
+        document (the document stays a child of ``customer_id``). A repeat
+        pull of the same policy updates the stored row in place and keeps a
+        single fact — it does not mint a second customer or a duplicate row.
         """
         if fact_type not in FACT_TYPES:
             raise ValueError(f"Unknown fact_type {fact_type!r}")
@@ -872,19 +879,66 @@ class AssessmentCenterService:
                 value=str(value),
                 label=str(label),
                 confidence=1.0,
-                source_document_id=None,
-                source_document_sha256=None,
+                source_document_id=source_document_id,
+                source_document_sha256=source_document_sha256,
                 source=source,
                 metadata={"row": row},
             ))
+        self._bind_external_facts_to_document(customer_id, facts)
         self._store_facts(customer_id, facts)
         return AssessmentResult(
             customer_id=customer_id,
-            document_id=None,
+            document_id=source_document_id,
             captured_at=datetime.utcnow().isoformat() + "Z",
             facts=facts,
             summary=self._summarise(facts),
         )
+
+    def _bind_external_facts_to_document(self, customer_id: str, incoming: List[Fact]) -> None:
+        """Point an existing clearinghouse fact at its report document.
+
+        Identity of a row is ``(fact_type, label, value, source)`` — the same
+        key ``_store_facts`` uses, plus source so a document-extracted fact
+        is never retargeted. The stored value is not replaced. Metadata is
+        refreshed only when the incoming row differs, and provenance moves
+        onto the document that was just filed for this customer.
+        """
+        if not customer_id or not incoming:
+            return
+        if not any(f.source_document_id for f in incoming):
+            return
+        changed = False
+        with self._lock:
+            existing = self._facts.get(customer_id, [])
+            index: Dict[Tuple[Any, ...], Fact] = {}
+            for fact in existing:
+                index.setdefault(
+                    (fact.fact_type, fact.label, _hashable(fact.value), fact.source),
+                    fact,
+                )
+            for inc in incoming:
+                if not inc.source_document_id:
+                    continue
+                prior = index.get((
+                    inc.fact_type, inc.label, _hashable(inc.value), inc.source,
+                ))
+                if prior is None:
+                    continue
+                row = (inc.metadata or {}).get("row")
+                prior_row = (prior.metadata or {}).get("row")
+                same_doc = prior.source_document_id == inc.source_document_id
+                same_sha = prior.source_document_sha256 == inc.source_document_sha256
+                if same_doc and same_sha and prior_row == row:
+                    continue
+                prior.source_document_id = inc.source_document_id
+                prior.source_document_sha256 = inc.source_document_sha256
+                if row is not None:
+                    prior.metadata = dict(prior.metadata or {})
+                    prior.metadata["row"] = row
+                changed = True
+            if changed:
+                self._rebuild_indexes(customer_id)
+                self._persist_customer(customer_id, list(existing))
 
     # ── Customer 360 / risk ──────────────────────────────────────────────
 

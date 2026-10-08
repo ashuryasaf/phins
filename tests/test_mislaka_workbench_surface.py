@@ -13,7 +13,8 @@ def test_unified_workbench_exposes_mislaka_link_controls():
     resp = requests.get(f"{BASE_URL}/unified-workbench.html")
     assert resp.status_code == 200
     body = resp.text
-    assert "Pull Mislaka facts" in body
+    assert "Pull Mislaka report" in body
+    assert 'id="mislaka-report"' in body
     assert "linkMislaka" in body
     assert "/api/assessment-center/mislaka/link" in body
     assert 'id="mislaka-id"' in body

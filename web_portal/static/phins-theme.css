@@ -661,6 +661,22 @@
   left: auto;
   right: 0;
 }
+.assessments-nav-group {
+  margin: 8px 6px 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--phins-line);
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--phins-gold);
+}
+.assessments-nav-group:first-child {
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: none;
+}
 .assessments-nav-item {
   display: block;
   text-decoration: none !important;

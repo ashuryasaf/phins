@@ -15,6 +15,7 @@ Covers:
 from __future__ import annotations
 
 import base64
+import hashlib
 import os
 import shutil
 import tempfile
@@ -31,6 +32,13 @@ from services.assessment_center_service import (
     _aadhaar_valid,
     _spain_dni_valid,
 )
+from services.mislaka_api_service import (
+    MislakaPerson,
+    MislakaPolicy,
+    MislakaQueryResult,
+    MislakaStatus,
+)
+from services.mislaka_report_generator import link_to_assessment_center
 from services.document_processing_service import (
     DocumentProcessingService,
     reset_document_service,
@@ -582,3 +590,104 @@ class TestReuploadablePack:
         pack["facts"].append({"fact_id": "tampered", "fact_type": "risk_indicator", "value": "fake"})
         report = center.import_customer_pack(pack)
         assert report["integrity_ok"] is False
+
+
+def _mislaka_result(policies, id_number="123456782"):
+    return MislakaQueryResult(
+        request_id="REQ-DOC",
+        status=MislakaStatus.SUCCESS,
+        timestamp="2026-01-01T00:00:00",
+        person=MislakaPerson(id_number=id_number, first_name="Ada", last_name="Levi"),
+        policies=policies,
+        total_policies=len(policies),
+        total_accumulated=0,
+        total_monthly_premium=0,
+    )
+
+
+def _mislaka_policy(**kw):
+    base = dict(
+        policy_id="P-1", policy_number="POL-1", product_type="1", company_name="Migdal",
+        company_code="01", start_date="2020-01-01", status="1",
+        premium_monthly=100.0, accumulated_value=25000.0,
+    )
+    base.update(kw)
+    return MislakaPolicy(**base)
+
+
+class TestMislakaReportDocumentHierarchy:
+    def test_report_is_a_document_of_the_customer_not_a_new_user(self, center):
+        result = _mislaka_result([_mislaka_policy()])
+        payload = link_to_assessment_center(
+            result, customer_id="CUST-MIS", center=center,
+        )
+        assert payload["customer_id"] == "CUST-MIS"
+        assert payload["customer_id"] != result.person.id_number
+        assert center.get_facts(result.person.id_number) == []
+
+        doc_id = payload["document_id"]
+        record = center.document_service.get_document(doc_id, include_data=True)
+        assert record["customer_id"] == "CUST-MIS"
+        assert record["entity_type"] == "customer"
+        assert record["entity_id"] == "CUST-MIS"
+        assert record["document_type"] == "mislaka_report"
+        assert record["sha256_checksum"] == payload["document_sha256"]
+        raw = base64.b64decode(record["data"])
+        assert hashlib.sha256(raw).hexdigest() == payload["document_sha256"]
+        assert b"MISLAKA AFFILIATION REPORT" in raw
+
+        facts = center.get_facts("CUST-MIS")
+        assert len(facts) == 1
+        assert facts[0]["source_document_id"] == doc_id
+        assert facts[0]["source_document_sha256"] == payload["document_sha256"]
+        assert facts[0]["source"] == "mislaka"
+        summaries = center.get_document_assessments([doc_id])
+        assert summaries[doc_id]["facts_extracted"] == 1
+
+    def test_repeat_pull_reuses_the_document_and_does_not_duplicate_facts(self, center):
+        result = _mislaka_result([_mislaka_policy(policy_id="P-9")])
+        first = link_to_assessment_center(result, customer_id="CUST-MIS", center=center)
+        second = link_to_assessment_center(result, customer_id="CUST-MIS", center=center)
+        assert second["document_reused"] is True
+        assert second["document_id"] == first["document_id"]
+        assert second["document_sha256"] == first["document_sha256"]
+        assert len(center.get_facts("CUST-MIS")) == 1
+        listing = center.document_service.list_documents(customer_id="CUST-MIS", page_size=50)
+        reports = [d for d in listing["items"] if d.get("document_type") == "mislaka_report"]
+        assert len(reports) == 1
+
+    def test_same_bytes_for_another_customer_stay_on_that_customer(self, center):
+        result = _mislaka_result([_mislaka_policy(policy_id="P-shared")])
+        a = link_to_assessment_center(result, customer_id="CUST-A", center=center)
+        b = link_to_assessment_center(result, customer_id="CUST-B", center=center)
+        assert a["document_id"] != b["document_id"]
+        assert a["document_sha256"] == b["document_sha256"]
+        a_doc = center.document_service.get_document(a["document_id"])
+        b_doc = center.document_service.get_document(b["document_id"])
+        assert a_doc["customer_id"] == "CUST-A"
+        assert b_doc["customer_id"] == "CUST-B"
+        assert center.get_facts("CUST-A")[0]["source_document_id"] == a["document_id"]
+        assert center.get_facts("CUST-B")[0]["source_document_id"] == b["document_id"]
+
+    def test_changed_row_refreshes_in_place_on_the_new_report(self, center):
+        first = link_to_assessment_center(
+            _mislaka_result([_mislaka_policy(policy_id="P-1", premium_monthly=100.0)]),
+            customer_id="CUST-MIS", center=center,
+        )
+        second = link_to_assessment_center(
+            _mislaka_result([_mislaka_policy(policy_id="P-1", premium_monthly=180.0)]),
+            customer_id="CUST-MIS", center=center,
+        )
+        assert second["document_id"] != first["document_id"]
+        facts = center.get_facts("CUST-MIS")
+        assert len(facts) == 1
+        assert facts[0]["source_document_id"] == second["document_id"]
+        assert facts[0]["metadata"]["row"]["premium_monthly"] == 180.0
+
+    def test_missing_customer_does_not_invent_a_user_from_the_national_id(self, center):
+        result = _mislaka_result([_mislaka_policy()])
+        with pytest.raises(ValueError, match="customer_id required"):
+            link_to_assessment_center(result, customer_id="", center=center)
+        assert center.get_facts("123456782") == []
+        listing = center.document_service.list_documents(page_size=50)
+        assert listing["total"] == 0

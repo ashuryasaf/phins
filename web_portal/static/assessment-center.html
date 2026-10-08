@@ -267,7 +267,8 @@
         <div class="card-title">🇮🇱 Pull Mislaka facts</div>
         <p style="font-size: 0.85rem; color: #546e7a; margin: 0 0 10px;">
           The Mislaka clearinghouse already returns authoritative policy rows.
-          Each row is stored as a fact - the workbench is the only place that
+          The report is filed as a document under this customer, and each row
+          is a fact of that document. The workbench is the only place that
           performs statistical review.
         </p>
         <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
@@ -1006,7 +1007,8 @@
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status));
-      setStatus('mislaka-status', `${json.policies_received || 0} policies stored as facts`, 'ok');
+      const filed = (json.assessment && json.assessment.document_id) ? ' on your Mislaka report' : '';
+      setStatus('mislaka-status', `${json.policies_received || 0} policies stored as facts${filed}`, 'ok');
       await onCustomerChange();
     } catch (e) {
       setStatus('mislaka-status', '' + e.message, 'error');

@@ -127,6 +127,19 @@ def test_verify_all_counts_the_whole_book_not_the_returned_page():
     assert "Number(summary.total_tokens)" in html
 
 
+def test_dashboard_header_uses_unified_menu_chips():
+    html = _html()
+    assert 'class="phins-header-top"' in html
+    assert 'id="mobile-nav"' in html
+    assert 'class="mobile-menu-btn"' in html
+    assert "function toggleMobileMenu()" in html
+    assert 'data-assessments-nav data-assessments-role="customer"' in html
+    assert "rgba(255, 255, 255, 0.06)" in html
+    # Small screens open the drawer; they do not drop the menu links.
+    assert "phins-nav a:not(.btn-logout)" not in html
+    assert ".phins-nav.open { display: flex !important; }" in html
+
+
 def test_dashboard_loads_book_after_auth_not_at_parse_time():
     html = _html()
     assert "loadBillingDetails()," in html or "loadBillingDetails()" in html

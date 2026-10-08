@@ -87,10 +87,9 @@
     
     /* ========== MOBILE RESPONSIVE STYLES ========== */
     @media screen and (max-width: 768px) {
-      /* Header Mobile */
+      /* Header Mobile — drawer chips stay the unified menu size */
       .phins-header-inner {
         padding: 0.5rem 1rem !important;
-        flex-wrap: wrap;
       }
       .phins-logo-icon {
         width: 36px !important;
@@ -98,25 +97,12 @@
         font-size: 1.2rem !important;
       }
       .phins-logo-text {
-        font-size: 1.3rem !important;
+        font-size: 1.15rem !important;
+        letter-spacing: 0.14em !important;
       }
-      .phins-nav {
-        width: 100%;
-        justify-content: center;
-        gap: 6px !important;
-        margin-top: 8px;
-        flex-wrap: wrap;
-      }
-      .phins-nav a {
-        padding: 6px 10px !important;
-        font-size: 0.75rem !important;
-      }
-      .phins-nav .language-selector {
-        display: none;
-      }
-      .btn-logout {
-        padding: 6px 12px !important;
-        font-size: 0.75rem !important;
+      .phins-utility .btn-logout {
+        padding: 0.35rem 0.75rem !important;
+        font-size: 0.78rem !important;
       }
       
       /* Main Container Mobile */
@@ -242,11 +228,8 @@
         grid-template-columns: 1fr !important;
       }
       
-      .phins-nav a:not(.btn-logout) {
-        display: none;
-      }
-      .phins-nav {
-        margin-top: 0;
+      .phins-logo-text {
+        font-size: 1.05rem !important;
       }
       
       #health-wallet > div:nth-child(4) {
@@ -281,101 +264,175 @@
         padding-bottom: max(16px, env(safe-area-inset-bottom));
       }
     }
-    /* PHINS Unified Header - Elegant Gradient Blue */
+    /* PHINS unified header — same navy glass + gold chip menu as staff chrome */
     .phins-header {
-      background: linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
-      border-bottom: 1px solid rgba(255,255,255,0.15);
+      background:
+        radial-gradient(700px 180px at 85% -60%, rgba(21, 68, 155, 0.5), transparent 70%),
+        rgba(6, 13, 31, 0.96);
+      border-bottom: 1px solid rgba(127, 178, 255, 0.16);
       padding: 0;
       position: sticky;
       top: 0;
       z-index: 1000;
-      box-shadow: 0 4px 24px rgba(13, 71, 161, 0.3);
+      box-shadow: 0 8px 30px rgba(2, 8, 23, 0.35);
     }
     .phins-header-inner {
-      max-width: 1400px;
+      max-width: 1600px;
       margin: 0 auto;
-      padding: 0.85rem 2rem;
+      padding: 0.7rem 1.5rem 0.55rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      position: relative;
+    }
+    .phins-header-top {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 0.75rem;
     }
     .phins-logo {
       display: flex;
       align-items: center;
-      gap: 0.75rem;
+      gap: 0.65rem;
       text-decoration: none;
     }
     .phins-logo-icon {
-      width: 44px;
-      height: 44px;
-      background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
-      border-radius: 12px;
+      width: 40px;
+      height: 40px;
+      background: transparent;
+      border-radius: 11px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.5rem;
-      box-shadow: 0 4px 15px rgba(66, 165, 245, 0.4);
-      border: 1px solid rgba(255,255,255,0.2);
+      font-size: 1.35rem;
+      box-shadow: none;
+      border: none;
     }
     .phins-logo-text {
-      font-size: 1.75rem;
-      font-weight: 700;
-      background: linear-gradient(135deg, #fff 0%, #e3f2fd 100%);
+      font-size: 1.5rem;
+      font-weight: 600;
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      letter-spacing: 0.22em;
+      background: linear-gradient(180deg, #ffffff 0%, #b7d3ff 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
     }
-    .phins-nav {
+    .phins-utility {
       display: flex;
       align-items: center;
       gap: 0.5rem;
     }
-    .phins-nav a {
-      padding: 0.5rem 1rem;
-      color: rgba(255,255,255,0.85);
+    .phins-nav {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.35rem 0.45rem;
+      width: 100%;
+    }
+    .phins-nav a,
+    .phins-header .phins-nav .assessments-nav-toggle {
+      padding: 0.4rem 0.8rem;
+      color: rgba(234, 241, 255, 0.88);
       text-decoration: none;
       border-radius: 8px;
-      font-size: 0.9rem;
+      font-size: 0.82rem;
       font-weight: 500;
-      transition: all 0.2s ease;
+      font-family: 'Inter', sans-serif;
+      line-height: 1.2;
+      white-space: nowrap;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
     }
-    .phins-nav a:hover {
-      background: rgba(255,255,255,0.12);
-      color: white;
+    .phins-nav a:hover,
+    .phins-header .phins-nav .assessments-nav-toggle:hover {
+      background: rgba(127, 178, 255, 0.14);
+      color: #ffffff;
+      border-color: rgba(127, 178, 255, 0.28);
     }
-    .phins-nav a.active {
-      background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
-      color: white;
-      box-shadow: 0 4px 12px rgba(66, 165, 245, 0.3);
-    }
-    .phins-nav .nav-divider {
-      width: 1px;
-      height: 24px;
-      background: rgba(255,255,255,0.2);
-      margin: 0 0.25rem;
-    }
-    .phins-nav .btn-logout {
-      background: linear-gradient(135deg, #ef5350 0%, #e53935 100%);
-      color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 8px;
+    .phins-nav a.active,
+    .phins-header .phins-nav .assessments-nav-toggle.active,
+    .phins-header .phins-nav .assessments-nav.open .assessments-nav-toggle {
+      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+      color: #071022;
+      border-color: transparent;
       font-weight: 600;
+      box-shadow: 0 4px 12px rgba(227, 191, 111, 0.35);
     }
-    .phins-nav .btn-logout:hover {
-      background: linear-gradient(135deg, #e53935 0%, #c62828 100%);
+    .phins-utility .btn-logout {
+      background: transparent;
+      color: #e3bf6f;
+      padding: 0.4rem 0.95rem;
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: 0.82rem;
+      text-decoration: none;
+      border: 1px solid rgba(227, 191, 111, 0.65);
+    }
+    .phins-utility .btn-logout:hover {
+      background: rgba(227, 191, 111, 0.16);
+      color: #f7e2a0;
+    }
+    .mobile-menu-btn {
+      display: none;
+      background: rgba(127, 178, 255, 0.12);
+      border: 1px solid rgba(127, 178, 255, 0.16);
+      color: #ffffff;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      cursor: pointer;
     }
     .language-selector {
       background: rgba(255,255,255,0.1);
       border: 1px solid rgba(255,255,255,0.25);
       color: white;
-      padding: 0.4rem 0.6rem;
-      border-radius: 6px;
-      font-size: 0.8rem;
+      padding: 0.35rem 0.65rem;
+      border-radius: 8px;
+      font-size: 0.78rem;
       cursor: pointer;
     }
     .language-selector option {
-      background: #0d47a1;
+      background: #060d1f;
       color: white;
+    }
+    @media screen and (max-width: 1024px) {
+      .mobile-menu-btn { display: block; }
+      .phins-header { overflow: visible; }
+      .phins-nav {
+        display: none;
+        position: fixed;
+        top: 60px;
+        left: 0;
+        right: 0;
+        flex-direction: column;
+        align-items: stretch;
+        padding: 10px 12px calc(28px + env(safe-area-inset-bottom, 0px));
+        gap: 6px;
+        z-index: 999;
+        bottom: auto;
+        height: auto;
+        max-height: calc(100svh - 60px - env(safe-area-inset-bottom, 0px));
+        overflow-x: hidden;
+        overflow-y: auto;
+        justify-content: flex-start;
+      }
+      .phins-nav.open { display: flex !important; }
+      .phins-nav a,
+      .phins-header .phins-nav .assessments-nav-toggle {
+        width: 100%;
+        text-align: center;
+        justify-content: center;
+        white-space: normal;
+        min-height: 44px;
+        box-sizing: border-box;
+      }
+      .language-selector { display: none; }
     }
     /* Soft gradient background */
     body {
@@ -609,11 +666,21 @@
 
   <header class="phins-header">
     <div class="phins-header-inner">
-      <a href="/dashboard.html" class="phins-logo">
-        <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
-        <span class="phins-logo-text">PHINS</span>
-      </a>
-      <nav class="phins-nav">
+      <div class="phins-header-top">
+        <a href="/dashboard.html" class="phins-logo">
+          <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
+          <span class="phins-logo-text">PHINS</span>
+        </a>
+        <button class="mobile-menu-btn" type="button" onclick="toggleMobileMenu()" aria-label="Open menu">Menu</button>
+        <div class="phins-utility">
+          <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)" data-no-i18n>
+            <option value="en">English</option>
+            <option value="he">עברית</option>
+          </select>
+          <a href="/" class="btn-logout">Logout</a>
+        </div>
+      </div>
+      <nav class="phins-nav" id="mobile-nav">
         <a href="/dashboard.html" class="active">Dashboard</a>
         <a href="/dashboard.html#policies">Policies</a>
         <a href="/documents.html#durable-objects">Documents</a>
@@ -624,15 +691,15 @@
         <a href="/dashboard.html#referrals">Referrals</a>
         <a href="/foundation-dashboard.html">Community</a>
         <span data-assessments-nav data-assessments-role="customer"></span>
-        <div class="nav-divider"></div>
-        <select id="language-selector" class="language-selector" onchange="changeLanguage(this.value)" data-no-i18n>
-          <option value="en">English</option>
-          <option value="he">עברית</option>
-        </select>
-        <a href="/" class="btn-logout">Logout</a>
       </nav>
     </div>
   </header>
+  <script>
+    function toggleMobileMenu() {
+      var nav = document.getElementById('mobile-nav');
+      if (nav) nav.classList.toggle('open');
+    }
+  </script>
 
   <main class="container" style="padding-top:32px">
     <!-- Customer Account Info Panel -->
