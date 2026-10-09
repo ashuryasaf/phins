@@ -513,6 +513,71 @@ class TestOwnershipIsolationAndAffiliatedSummary(unittest.TestCase):
         self.assertEqual(summary.get('birth_date'), '11/11/1978')
         self.assertEqual(summary.get('integrity_issues', []), [])
 
+    def test_customer_file_analysis_stays_off_the_admin_library(self):
+        """Upload + analyze is the customer's own document. Admin keeps staff filings."""
+        from datetime import date
+
+        self.service.save_data = lambda *args, **kwargs: True
+        csv_content = b"""id_number,savings_balance,cover_amount,policy_number
+123456782,4500,25000,POL-1001"""
+        personal = self.service.parse_file(
+            'personal_mislaka.csv', csv_content, 'csv',
+            owner_id='CUST-A', owner_role='customer',
+        )
+        staff = self.service.parse_file(
+            'staff_mislaka.csv', csv_content, 'csv',
+            owner_id='admin', owner_role='admin',
+        )
+        self.assertEqual(personal['owner_id'], 'CUST-A')
+        self.assertNotEqual(personal['owner_id'], '123456782')
+
+        analysis = self.service.analyze(personal['document_id'])
+        report = self.service.generate_report(analysis.id, language='english')
+        summary = report.metadata.get('savings_cover_id_summary', {})
+        self.assertEqual(summary.get('customer_id'), '123456782')
+        self.assertGreater(summary.get('total_savings', 0), 0)
+
+        staff_analysis = self.service.analyze(staff['document_id'])
+        staff_report = self.service.generate_report(staff_analysis.id, language='english')
+
+        allowed, _ = self.service.authorize_access('report', report.id, 'CUST-A', 'customer')
+        denied_peer, peer_error = self.service.authorize_access(
+            'report', report.id, 'CUST-B', 'customer',
+        )
+        denied_admin, admin_error = self.service.authorize_access(
+            'report', report.id, 'admin', 'admin',
+        )
+        denied_actuary, _ = self.service.authorize_access(
+            'document', personal['document_id'], 'actuary-1', 'actuary',
+        )
+        self.assertTrue(allowed)
+        self.assertFalse(denied_peer)
+        self.assertIn('own reports', peer_error)
+        self.assertFalse(denied_admin)
+        self.assertEqual(admin_error, 'Access denied')
+        self.assertFalse(denied_actuary)
+
+        customer_reports = {item['report_id'] for item in self.service.get_reports_for_user('CUST-A', 'customer')}
+        admin_reports = {item['report_id'] for item in self.service.get_reports_for_user('admin', 'admin')}
+        self.assertIn(report.id, customer_reports)
+        self.assertNotIn(staff_report.id, customer_reports)
+        self.assertIn(staff_report.id, admin_reports)
+        self.assertNotIn(report.id, admin_reports)
+
+        admin_docs = {item['document_id'] for item in self.service.get_documents_for_user('admin', 'admin')}
+        self.assertIn(staff['document_id'], admin_docs)
+        self.assertNotIn(personal['document_id'], admin_docs)
+
+        export = self.service.build_report_download_summary(report.id, 'CUST-A', 'customer')
+        self.assertIn('savings_cover_id_summary', export)
+        with self.assertRaises(ValueError):
+            self.service.build_report_download_summary(report.id, 'admin', 'admin')
+
+        self.service.revoke_reports_for_date('admin', 'admin', date.today(), scope='all')
+        self.assertIn(report.id, self.service.reports)
+        self.assertIn(personal['document_id'], self.service.documents)
+        self.assertNotIn(staff_report.id, self.service.reports)
+
 
 class TestZipAffiliatedIntegrity(unittest.TestCase):
     """ZIP merge and affiliated integrity regression tests."""

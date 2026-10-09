@@ -24,7 +24,7 @@ CUSTOMER_ROUTE_HREFS = (
     "/assessment-center.html",
     "/customer-ai-report.html",
     "/mislaka-report.html",
-    "/risk-reports-dashboard.html",
+    "/mislaka-report.html#analyze",
 )
 
 
@@ -119,6 +119,7 @@ def test_assessment_routes_are_full_pages_not_stubs():
         ("/unified-workbench.html", "Run Unified Analysis"),
         ("/customer-ai-report.html", "AI Report"),
         ("/mislaka-report.html", "Your Mislaka report"),
+        ("/mislaka-report.html", "Analyze &amp; Generate"),
         ("/risk-assessment-viewer.html", "Risk Assessment Report"),
     ]:
         resp = requests.get(f"{BASE_URL}{path}")

@@ -63,6 +63,10 @@ def test_customer_mislaka_tool_is_personal():
         assert api_denial(role, "POST", "/api/assessment-center/mislaka/personal") == ACCESS_DENIED
         assert api_denial(role, "GET", "/api/assessment-center/mislaka/personal/DOC-1") == ACCESS_DENIED
     assert api_denial("admin", "POST", "/api/assessment-center/mislaka/link") is None
+    library = surface_decision("customer", "/risk-reports-dashboard.html")
+    assert library["allowed"] is False
+    assert library["redirect"] == "/dashboard.html"
+    assert surface_decision("admin", "/risk-reports-dashboard.html")["allowed"] is True
 
 
 def test_shared_operational_surfaces_stay_open():
