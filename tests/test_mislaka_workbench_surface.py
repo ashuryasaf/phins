@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import requests
 
@@ -37,4 +38,6 @@ def test_mislaka_reports_library_is_not_a_redirect_stub():
     # Must be the full Swiftness / Mislaka library, not the redirect stub.
     assert "Redirecting to Assessments" not in body
     assert "mislaka" in body.lower()
-    assert len(body) > 50_000
+    assert "/risk-report-studio.js" in body
+    studio = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "risk-report-studio.js"
+    assert studio.stat().st_size > 50_000

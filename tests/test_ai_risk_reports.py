@@ -530,6 +530,9 @@ class TestOwnershipIsolationAndAffiliatedSummary(unittest.TestCase):
         )
         self.assertEqual(personal['owner_id'], 'CUST-A')
         self.assertNotEqual(personal['owner_id'], '123456782')
+        self.assertEqual(personal['content_sha256'], staff['content_sha256'])
+        self.assertNotEqual(personal['document_id'], staff['document_id'])
+        self.assertEqual(len(personal['content_sha256']), 64)
 
         analysis = self.service.analyze(personal['document_id'])
         report = self.service.generate_report(analysis.id, language='english')

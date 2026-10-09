@@ -6,6 +6,10 @@
   <title>PHINS — My Mislaka Report</title>
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/phins-theme.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=Noto+Sans+Hebrew:wght@400;500;600;700&family=Noto+Serif+Hebrew:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/risk-report-studio.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="/phins-document.js"></script>
   <script src="/phins-doc-return.js"></script>
   <style>
@@ -57,7 +61,7 @@
     [dir="rtl"] .rec { border-left: none; border-right: 3px solid #e3bf6f; }
   </style>
 </head>
-<body>
+<body class="phins-unified">
   <header class="phins-header">
     <div class="phins-header-inner">
       <div class="phins-header-top">
@@ -104,36 +108,156 @@
         <span class="status" id="assess-status"></span>
       </div>
     </section>
-    <section class="card" id="analyze">
-      <h2 style="margin:0 0 8px;font-size:1.05rem;">Analyze a file</h2>
-      <p class="muted">Upload your Mislaka or pension file. Analyze &amp; Generate runs the affiliated analysis on that file and keeps the result on your account.</p>
-      <div class="row" style="margin-top:12px;">
-        <input type="file" id="analyze-file" accept=".csv,.xls,.xlsx,.zip,.xml,.png,.jpg,.jpeg,.pdf" multiple>
-        <input type="password" id="analyze-password" autocomplete="off" spellcheck="false" maxlength="256" placeholder="ZIP password, if it has one">
-        <select id="analyze-language">
-          <option value="auto">Auto-detect language</option>
-          <option value="english">English</option>
-          <option value="hebrew">עברית</option>
-        </select>
-        <button type="button" class="gold" id="analyze-btn" disabled>Analyze &amp; Generate</button>
-        <span class="status" id="analyze-status"></span>
+    <div id="analyze">
+    <!-- Upload Section -->
+    <section class="upload-section fade-in">
+      <div class="section-header">
+        <h3>Upload Documents for Analysis</h3>
+        <span style="background: var(--primary); color: white; padding: 6px 14px; border-radius: 20px; font-size: 0.85rem;">
+          AI + BI Analysis
+        </span>
       </div>
-      <div id="analyze-files"></div>
-    </section>
-    <section class="card" id="analysis-view" hidden>
-      <div class="row" style="justify-content:space-between;margin-bottom:12px;">
-        <div>
-          <h2 style="margin:0;font-size:1.05rem;" id="analysis-title">Analysis</h2>
-          <div class="muted" id="analysis-meta"></div>
+      
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+<div class="upload-text">
+          <h4>Drop files here or click to upload</h4>
+          <p>Upload documents for AI-powered inductive analysis and report generation</p>
+          <p style="margin-top: 8px; font-size: 0.9rem; color: var(--text-muted);">
+            <strong>Auto-detects:</strong> Language (Hebrew, English, etc.) • Data type • Risk factors • Patterns
+          </p>
         </div>
-        <button type="button" class="ghost" id="analysis-pdf">Export PDF</button>
+        <div class="supported-formats">
+          <span class="format-badge">CSV</span>
+          <span class="format-badge">XLS/XLSX</span>
+          <span class="format-badge">ZIP</span>
+          <span class="format-badge">XML</span>
+          <span class="format-badge">PNG/JPG</span>
+          <span class="format-badge">PDF</span>
+        </div>
+        <input type="file" id="fileInput" class="file-input" accept=".csv,.xls,.xlsx,.zip,.xml,.png,.jpg,.jpeg,.pdf" multiple>
       </div>
-      <div id="analysis-body"></div>
+      
+      <div class="file-list" id="fileList"></div>
+      
+      <div class="options-row">
+        <div class="option-group">
+          <label for="outputLanguage">Report Language:</label>
+          <select id="outputLanguage">
+            <option value="auto">Auto-detect from files</option>
+            <option value="english">English</option>
+            <option value="hebrew">עברית (Hebrew)</option>
+            <option value="arabic">العربية (Arabic)</option>
+            <option value="spanish">Español</option>
+            <option value="french">Français</option>
+            <option value="german">Deutsch</option>
+            <option value="russian">Русский</option>
+          </select>
+        </div>
+        
+        <div class="option-group">
+          <label for="analysisType">Analysis Type:</label>
+          <select id="analysisType">
+            <option value="auto">Auto-detect</option>
+            <option value="insurance">Insurance Analysis</option>
+            <option value="investment">Investment Portfolio</option>
+            <option value="risk">Risk Assessment</option>
+            <option value="pension">Pension / Mislaka</option>
+            <option value="savings">Savings Analysis</option>
+            <option value="comprehensive">Comprehensive Review</option>
+          </select>
+        </div>
+        
+        <div class="option-group">
+          <label for="filePassword">File password</label>
+          <input type="password" id="filePassword" autocomplete="off" spellcheck="false" maxlength="256" placeholder="If the ZIP has one">
+        </div>
+
+        <button class="btn btn-primary" id="analyzeBtn" disabled>
+          Analyze & Generate
+        </button>
+      </div>
+      
+      <div class="processing-status" id="processingStatus">
+        <h4>AI Inductive Analysis in Progress...</h4>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <p id="processingMessage">Parsing and learning from uploaded files...</p>
+      </div>
     </section>
-    <section class="card">
-      <h2 style="margin:0 0 12px;font-size:1.05rem;">Your file analyses</h2>
-      <div id="analysis-list" class="list"><div class="empty">Loading your analyses.</div></div>
+    
+    <!-- Results Section -->
+    <section class="results-section" id="resultsSection">
+      <!-- Stats Grid -->
+      <div class="stats-grid" id="statsGrid">
+        <!-- Populated dynamically -->
+      </div>
+      
+      <!-- AI Insights Panel -->
+      <div class="insights-panel" id="insightsPanel">
+        <div class="insights-header">
+          <h3>AI Inductive Analysis</h3>
+          <p style="margin-top: 0.5rem; opacity: 0.9; font-size: 0.9rem;">Advanced pattern recognition and statistical insights from your data</p>
+        </div>
+        <div class="insights-body">
+          <div class="insights-grid" id="insightsGrid">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+      </div>
+      
+      <!-- Charts -->
+      <div class="charts-container" id="chartsContainer">
+        <!-- Populated dynamically -->
+      </div>
+      
+      <!-- Report Panel -->
+      <div class="report-panel" id="reportPanel">
+        <div class="report-header">
+          <h2 id="reportTitle">Analysis Report</h2>
+          <div class="report-actions">
+            <button class="btn btn-white" id="exportPdfBtn" onclick="exportReport('pdf')">Export PDF</button>
+            <button class="btn btn-white" onclick="exportReport('excel')">Export Excel</button>
+          </div>
+        </div>
+        <div class="report-body" id="reportBody">
+          <!-- Report sections populated dynamically -->
+        </div>
+      </div>
+      
+      <!-- Recommendations Panel -->
+      <div class="recommendations-panel" id="recommendationsPanel">
+        <div class="recommendations-header">
+          <h2>AI Recommendations</h2>
+        </div>
+        <div class="recommendations-list" id="recommendationsList">
+          <!-- Recommendations populated dynamically -->
+        </div>
+      </div>
     </section>
+    
+    <!-- Report History Section (Now after results) -->
+    <section class="history-section fade-in" id="historySection">
+      <div class="history-header">
+        <h3>Your Report History</h3>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="btn btn-white" onclick="revokeTodayReports()" style="padding: 6px 12px; font-size: 0.85rem;">
+            Revoke Today
+          </button>
+          <button class="btn btn-white" onclick="loadReportHistory()" style="padding: 6px 12px; font-size: 0.85rem;">
+            Refresh
+          </button>
+        </div>
+      </div>
+      <div class="history-body">
+        <div class="history-grid" id="historyGrid">
+          <div style="text-align: center; color: var(--text-muted); padding: 2rem; grid-column: 1/-1;">
+            Loading your reports...
+          </div>
+        </div>
+      </div>
+    </section>
+    </div>
     <section class="card">
       <h2 style="margin:0 0 12px;font-size:1.05rem;">Your reports</h2>
       <div id="report-list" class="list"><div class="empty">Loading your reports.</div></div>
@@ -150,6 +274,7 @@
     </section>
   </main>
   <script src="/agent-jobs.js"></script>
+  <script src="/risk-report-studio.js"></script>
   <script src="/assessments-nav.js"></script>
   <script src="/ui-clarity.js"></script>
   <script>
@@ -260,196 +385,7 @@
       });
     });
 
-    const analyzeBtn = document.getElementById('analyze-btn');
-    const analyzeStatus = document.getElementById('analyze-status');
-    const analyzeInput = document.getElementById('analyze-file');
-    const analysisList = document.getElementById('analysis-list');
-    const analysisView = document.getElementById('analysis-view');
-    let currentAnalysisReport = null;
-    let chosenFiles = [];
-
-    function setAnalyzeStatus(text, isError) {
-      analyzeStatus.textContent = text || '';
-      analyzeStatus.className = isError ? 'status error' : 'status';
-    }
-
-    function readFileAsBase64(file) {
-      return new Promise(function (resolve, reject) {
-        const reader = new FileReader();
-        reader.onload = function () {
-          const raw = String(reader.result || '');
-          resolve(raw.indexOf(',') >= 0 ? raw.split(',')[1] : raw);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-    }
-
-    function renderChosenFiles() {
-      const host = document.getElementById('analyze-files');
-      analyzeBtn.disabled = chosenFiles.length === 0;
-      if (!chosenFiles.length) { host.innerHTML = ''; return; }
-      host.innerHTML = chosenFiles.map(function (file) {
-        return '<div class="file-row"><span>' + esc(file.name) + '</span><span class="muted">'
-          + esc(file.size) + ' bytes</span></div>';
-      }).join('');
-    }
-
-    analyzeInput.addEventListener('change', function () {
-      chosenFiles = Array.prototype.slice.call(analyzeInput.files || []);
-      renderChosenFiles();
-    });
-
-    function cell(row, column) {
-      if (row && typeof row === 'object' && !Array.isArray(row)) return row[column];
-      return '';
-    }
-
-    function renderTable(table) {
-      const rows = Array.isArray(table) ? table : ((table && table.rows) || []);
-      if (!rows.length) return '';
-      const columns = (!Array.isArray(table) && table && Array.isArray(table.columns) && table.columns.length)
-        ? table.columns
-        : Object.keys(rows[0] || {});
-      const head = columns.map(function (col) { return '<th>' + esc(col) + '</th>'; }).join('');
-      const body = rows.slice(0, 120).map(function (row) {
-        return '<tr>' + columns.map(function (col) {
-          return '<td>' + esc(cell(row, col)) + '</td>';
-        }).join('') + '</tr>';
-      }).join('');
-      return '<div class="table-scroll"><table class="data"><thead><tr>' + head + '</tr></thead><tbody>'
-        + body + '</tbody></table></div>';
-    }
-
-    function renderAnalysis(report) {
-      currentAnalysisReport = report;
-      analysisView.hidden = false;
-      document.getElementById('analysis-title').textContent = report.title || 'Analysis';
-      const meta = [];
-      if (report.language) meta.push(report.language);
-      if (report.generated_at) meta.push(report.generated_at);
-      document.getElementById('analysis-meta').textContent = meta.join(' · ');
-      const rtl = report.language === 'hebrew';
-      const sections = (report.sections || []).map(function (section) {
-        return '<div class="section" dir="' + (rtl ? 'rtl' : 'ltr') + '"><h3>' + esc(section.title || 'Section')
-          + '</h3>' + (section.content ? '<div class="content">' + esc(section.content) + '</div>' : '')
-          + renderTable(section.data_table) + '</div>';
-      }).join('');
-      const recs = (report.recommendations || []).map(function (rec) {
-        return '<div class="rec"><strong>' + esc(rec.title || 'Recommendation') + '</strong><div class="content">'
-          + esc(rec.description || '') + '</div></div>';
-      }).join('');
-      document.getElementById('analysis-body').innerHTML = sections
-        + (recs ? '<div class="section" dir="' + (rtl ? 'rtl' : 'ltr') + '"><h3>Recommendations</h3>'
-          + recs + '</div>' : '');
-      analysisView.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-
-    async function loadAnalyses() {
-      const res = await api('/api/reports/list');
-      if (res.status === 401) { window.location.href = '/login.html'; return; }
-      const json = await res.json();
-      if (!res.ok) {
-        analysisList.innerHTML = '<div class="empty">' + esc(json.error || 'Unable to load analyses') + '</div>';
-        return;
-      }
-      const items = json.reports || [];
-      if (!items.length) {
-        analysisList.innerHTML = '<div class="empty">No file analysis yet. Upload a file and choose Analyze &amp; Generate.</div>';
-        return;
-      }
-      analysisList.innerHTML = items.map(function (item) {
-        return '<div class="report-item"><div><strong>' + esc(item.title || item.filename || item.report_id)
-          + '</strong><span class="muted">' + esc(item.filename || '') + ' · ' + esc(item.generated_at || '')
-          + '</span></div><button type="button" class="ghost" data-report="' + esc(item.report_id)
-          + '">View</button></div>';
-      }).join('');
-      analysisList.querySelectorAll('button[data-report]').forEach(function (btn) {
-        btn.addEventListener('click', function () { openAnalysis(btn.getAttribute('data-report')); });
-      });
-    }
-
-    async function openAnalysis(id) {
-      setAnalyzeStatus('Opening analysis…');
-      const res = await api('/api/reports/view?id=' + encodeURIComponent(id));
-      const json = await res.json();
-      if (!res.ok) { setAnalyzeStatus(json.error || 'Analysis unavailable', true); return; }
-      setAnalyzeStatus('');
-      renderAnalysis(json);
-    }
-
-    analyzeBtn.addEventListener('click', async function () {
-      if (!chosenFiles.length) return;
-      analyzeBtn.disabled = true;
-      const languageValue = document.getElementById('analyze-language').value;
-      const language = languageValue === 'auto' ? null : languageValue;
-      const password = (document.getElementById('analyze-password').value || '').trim();
-      try {
-        let last = null;
-        for (let i = 0; i < chosenFiles.length; i++) {
-          const file = chosenFiles[i];
-          setAnalyzeStatus('Reading ' + file.name + ' (' + (i + 1) + '/' + chosenFiles.length + ')');
-          const content = await readFileAsBase64(file);
-          const fileType = (file.name.split('.').pop() || '').toLowerCase();
-          const uploadBody = { filename: file.name, file_type: fileType, content: content };
-          if (fileType === 'zip' && password) uploadBody.file_password = password;
-          const uploaded = await api('/api/reports/upload', { method: 'POST', body: JSON.stringify(uploadBody) });
-          const parsed = await uploaded.json();
-          if (!uploaded.ok || parsed.error || !parsed.document_id) {
-            throw new Error(parsed.error || 'Upload failed');
-          }
-          setAnalyzeStatus('Analyzing ' + file.name);
-          const analyzed = await phinsAwaitJob(await api('/api/reports/analyze', {
-            method: 'POST',
-            body: JSON.stringify({ document_id: parsed.document_id })
-          }), { token: TOKEN });
-          const analysis = await analyzed.json();
-          if (!analyzed.ok || analysis.error || !analysis.id) {
-            throw new Error(analysis.error || 'Analysis failed');
-          }
-          last = analysis;
-        }
-        if (!last) throw new Error('No files could be analyzed');
-        setAnalyzeStatus('Generating your report');
-        const generated = await phinsAwaitJob(await api('/api/reports/generate', {
-          method: 'POST',
-          body: JSON.stringify({ analysis_id: last.id, language: language })
-        }), { token: TOKEN });
-        const report = await generated.json();
-        if (!generated.ok || report.error) throw new Error(report.error || 'Report generation failed');
-        document.getElementById('analyze-password').value = '';
-        setAnalyzeStatus('Analysis filed on your account');
-        renderAnalysis(report);
-        await loadAnalyses();
-      } catch (err) {
-        setAnalyzeStatus(err.message || 'Analysis failed', true);
-      }
-      analyzeBtn.disabled = chosenFiles.length === 0;
-    });
-
-    document.getElementById('analysis-pdf').addEventListener('click', async function () {
-      if (!currentAnalysisReport || !currentAnalysisReport.id) return;
-      setAnalyzeStatus('Preparing PDF…');
-      const res = await api('/api/reports/download-summary?report_id='
-        + encodeURIComponent(currentAnalysisReport.id) + '&format=pdf');
-      if (!res.ok) {
-        let message = 'Export failed';
-        try { message = (await res.json()).error || message; } catch (e) { /* binary or empty */ }
-        setAnalyzeStatus(message, true);
-        return;
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'mislaka-analysis.pdf';
-      link.click();
-      URL.revokeObjectURL(url);
-      setAnalyzeStatus('');
-    });
-
     loadList().catch(function () { setStatus('Unable to reach the report service', true); });
-    loadAnalyses().catch(function () { setAnalyzeStatus('Unable to reach the analysis service', true); });
     if ((location.hash || '') === '#analyze') {
       const panel = document.getElementById('analyze');
       if (panel) panel.scrollIntoView({ block: 'start' });

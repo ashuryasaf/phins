@@ -671,7 +671,9 @@ class TestExecutiveMislakaBriefing(unittest.TestCase):
 
     def test_dashboard_hides_narratives_and_marks_the_policy_table(self):
         from pathlib import Path
-        html = Path('web_portal/static/risk-reports-dashboard.html').read_text(encoding='utf-8')
+        html = Path('web_portal/static/risk-report-studio.js').read_text(encoding='utf-8')
+        css = Path('web_portal/static/risk-report-studio.css').read_text(encoding='utf-8')
+        page = Path('web_portal/static/risk-reports-dashboard.html').read_text(encoding='utf-8')
         self.assertIn('undesignedNarratives', html)
         self.assertIn('סיכום ההערכה שלך', html)
         self.assertIn('הערכת הפנסיה והביטוח שלך', html)
@@ -681,8 +683,11 @@ class TestExecutiveMislakaBriefing(unittest.TestCase):
         self.assertIn('executive-table', html)
         self.assertIn('executive-concentration', html)
         self.assertIn("'הפוליסות שלך'", html)
-        self.assertIn('Noto Serif Hebrew', html)
-        self.assertIn('Noto Sans Hebrew', html)
+        self.assertIn('Noto Serif Hebrew', css)
+        self.assertIn('Noto Sans Hebrew', css)
+        self.assertIn('Noto+Serif+Hebrew', page)
+        self.assertIn('Noto+Sans+Hebrew', page)
+        self.assertIn('/risk-report-studio.js', page)
 
 
 if __name__ == '__main__':
