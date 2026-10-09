@@ -48,6 +48,10 @@ CATALOG_IMAGES = [
     "housekeeping.jpg",
     "legal-consult.jpg",
     "ai-search.jpg",
+    "residential-solutions.jpg",
+    "residential-home.jpg",
+    "residential-extra.jpg",
+    "residential-full.jpg",
 ]
 
 
@@ -62,8 +66,10 @@ def test_catalog_illustrations_exist_and_are_wired():
     assert "/marketplace/gp-consult.jpg" in dashboard
     assert "Demo catalog" in dashboard
     assert "min_radius_km" in dashboard
-    for name in ("Book Consultation", "Medical Devices", "Daily Supplies", "Pharmacy", "Home Care", "AI Search Offers"):
+    for name in ("Book Consultation", "Medical Devices", "Daily Supplies", "Pharmacy", "Home Care", "Health Care Residential Solutions", "AI Search Offers"):
         assert name in dashboard
+    assert "/marketplace/residential-solutions.jpg" in dashboard
+    assert "res-home" in dashboard
 
 
 def test_supplier_listing_accepts_media_before_save():
@@ -95,6 +101,11 @@ def test_wallet_browse_keeps_sibling_categories_distinct():
     assert portal.offer_matches_wallet_browse("home_care", "homecare") is True
     assert portal.offer_matches_wallet_browse("daily_supplies", "supplies") is True
     assert portal.offer_matches_wallet_browse("daily_supplies", "devices") is False
+    assert portal.offer_matches_wallet_browse("residential", "homecare") is False
+    assert portal.offer_matches_wallet_browse("residential", "residential") is True
+    assert portal.offer_matches_wallet_browse("home_bundle", "residential") is True
+    assert portal.offer_matches_wallet_browse("full_accommodation", "consultation") is False
+    assert portal.normalize_marketplace_category("residential") == "residential"
 
 
 def _get_json(path: str):

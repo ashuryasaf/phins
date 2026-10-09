@@ -1088,6 +1088,13 @@
             <span class="phins-wallet-action-title">Home Care</span>
           </span>
         </button>
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('residential')">
+          <img src="/marketplace/residential-solutions.jpg" alt="Caregiver and resident outside a private home">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Care bundles</span>
+            <span class="phins-wallet-action-title">Health Care Residential Solutions</span>
+          </span>
+        </button>
         <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showTransferModal()">
           <img src="/marketplace/medical-alert.jpg" alt="Personal medical alert device">
           <span class="phins-wallet-action-copy">
@@ -1138,6 +1145,7 @@
         <button type="button" onclick="applyHealthWalletAISuggestion('prescription refill')">Prescription refill</button>
         <button type="button" onclick="applyHealthWalletAISuggestion('wheelchair delivery')">Wheelchair delivery</button>
         <button type="button" onclick="applyHealthWalletAISuggestion('mental health counseling')">Mental health counseling</button>
+        <button type="button" onclick="applyHealthWalletAISuggestion('24/7 residential care')">24/7 residential care</button>
       </div>
 
       <div class="phins-search-bar">
@@ -2460,6 +2468,7 @@
         [/(?:check|track|see) (?:my )?claim/i, 'track my claim'],
         
         // Support
+        [/(?:health care residential|residential solutions|residential care|home bundle|extra bundle|full accommodation|safe house|24\/7 care)/i, 'health care residential solutions'],
         [/(?:i need |get me |connect me to )?(?:help|support|assistance)/i, 'contact support'],
         [/talk to (?:a |an )?(?:agent|human|person|representative)/i, 'contact support'],
         
@@ -2698,6 +2707,7 @@
         ACTION_BOOK_CONSULTATION: ['book doctor', 'book consultation', 'doctor appointment', 'see doctor', 'medical consultation', 'schedule appointment', 'book appointment', 'consult doctor', 'talk to doctor', 'telemedicine', 'online doctor'],
         ACTION_PHARMACY: ['pharmacy', 'order medication', 'buy medication', 'order medicine', 'buy medicine', 'prescription', 'refill prescription', 'need medication', 'get medicine', 'medication order', 'drug refill'],
         ACTION_HOME_CARE: ['home care', 'home nursing', 'home health', 'caregiver', 'need nurse', 'home assistance', 'nursing care', 'in-home care'],
+        ACTION_RESIDENTIAL_CARE: ['health care residential solutions', 'residential solutions', 'residential care', 'home bundle', 'extra bundle', 'full accommodation', 'safe house', '24/7 residential care', '24/7 care'],
         
         // ============================================================================
         // PAYMENT & FINANCIAL ACTIONS
@@ -2859,6 +2869,9 @@
           break;
         case 'ACTION_HOME_CARE':
           await navigateToMedical('homecare');
+          break;
+        case 'ACTION_RESIDENTIAL_CARE':
+          await navigateToMedical('residential');
           break;
           
         // ============== PAYMENT ACTIONS ==============
@@ -4264,6 +4277,44 @@
             </div>
           `);
           recordCustomerAction('ai_homecare_view', 0, 'Viewed home care services via AI assistant');
+          break;
+
+        case 'residential':
+          showAIResponse(`
+            <div style="padding: 24px;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <h3 style="color: #333; margin: 0 0 8px 0;">Health Care Residential Solutions</h3>
+                <p style="color: #666; margin: 0;">Private assistance, 24/7. The card price is the monthly amount posted to your health-wallet ledger.</p>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                <div onclick="document.getElementById('health-wallet').scrollIntoView({behavior:'smooth'}); showMedicalCategory('residential');" style="background: white; border: 2px solid #e0e0e0; border-radius: 12px; overflow: hidden; cursor: pointer;">
+                  <img src="/marketplace/residential-home.jpg" alt="Home Bundle" style="width: 100%; height: 110px; object-fit: cover; display: block;">
+                  <div style="padding: 12px;">
+                    <div style="font-weight: 600; color: #333;">Home Bundle</div>
+                    <div style="font-size: 0.85rem; color: #666;">Private assistance, 24/7 care at home</div>
+                  </div>
+                </div>
+                <div onclick="document.getElementById('health-wallet').scrollIntoView({behavior:'smooth'}); showMedicalCategory('residential');" style="background: white; border: 2px solid #e0e0e0; border-radius: 12px; overflow: hidden; cursor: pointer;">
+                  <img src="/marketplace/residential-extra.jpg" alt="Extra Bundle" style="width: 100%; height: 110px; object-fit: cover; display: block;">
+                  <div style="padding: 12px;">
+                    <div style="font-weight: 600; color: #333;">Extra Bundle</div>
+                    <div style="font-size: 0.85rem; color: #666;">Private assistance, 24/7 care away from home</div>
+                  </div>
+                </div>
+                <div onclick="document.getElementById('health-wallet').scrollIntoView({behavior:'smooth'}); showMedicalCategory('residential');" style="background: white; border: 2px solid #e0e0e0; border-radius: 12px; overflow: hidden; cursor: pointer;">
+                  <img src="/marketplace/residential-full.jpg" alt="Full Accommodation Bundle" style="width: 100%; height: 110px; object-fit: cover; display: block;">
+                  <div style="padding: 12px;">
+                    <div style="font-weight: 600; color: #333;">Full Accommodation Bundle</div>
+                    <div style="font-size: 0.85rem; color: #666;">Residential safe house with Medicare clinical care and private assistance, 24/7</div>
+                  </div>
+                </div>
+              </div>
+              <div style="text-align: center;">
+                <button onclick="document.getElementById('health-wallet').scrollIntoView({behavior:'smooth'}); showMedicalCategory('residential');" style="background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%); color: white; border: none; padding: 16px 40px; border-radius: 25px; cursor: pointer; font-size: 1.1rem; font-weight: 600;">Browse Residential Solutions</button>
+              </div>
+            </div>
+          `);
+          recordCustomerAction('ai_residential_care_view', 0, 'Viewed health care residential solutions via AI assistant');
           break;
       }
     }
@@ -6028,6 +6079,11 @@
         { id: 'hc-5', name: 'Home Safety Assessment', price: 150, description: 'Professional home safety evaluation', includes: 'Written report', image: '/marketplace/home-safety.jpg' },
         { id: 'hc-6', name: 'Light Housekeeping (4 hrs)', price: 80, description: 'Basic cleaning and organization', duration: '4 hours', image: '/marketplace/housekeeping.jpg' },
       ],
+      residential: [
+        { id: 'res-home', name: 'Home Bundle', price: 8400, description: 'Private assistance, 24/7 care at home. One monthly service period.', duration: '24/7 · 1 month', unit: 'month', image: '/marketplace/residential-home.jpg', provider: 'PHINS Residential Care', price_source: 'residential_catalog', catalog_locked: true },
+        { id: 'res-extra', name: 'Extra Bundle', price: 10800, description: 'Private assistance, 24/7 care away from home. One monthly service period.', duration: '24/7 · 1 month', unit: 'month', image: '/marketplace/residential-extra.jpg', provider: 'PHINS Residential Care', price_source: 'residential_catalog', catalog_locked: true },
+        { id: 'res-full', name: 'Full Accommodation Bundle', price: 14500, description: 'Residential safe house with full Medicare clinical care and private assistance, 24/7, at a private institution. One monthly service period.', duration: '24/7 · 1 month', unit: 'month', image: '/marketplace/residential-full.jpg', provider: 'PHINS Residential Care', price_source: 'residential_catalog', catalog_locked: true },
+      ],
       legal: [
         { id: 'leg-1', name: 'Legal Consultation (30 min)', price: 95, description: 'Policy, claim, and documentation guidance', duration: '30 minutes', image: '/marketplace/legal-consult.jpg' },
         { id: 'leg-2', name: 'Claims Representation', price: 350, description: 'Claim dispute representation and filing support', duration: 'Per case', image: '/marketplace/legal-consult.jpg' },
@@ -6041,6 +6097,7 @@
       supplies: 'Daily Care Supplies',
       pharmacy: 'Pharmacy & Medications',
       homecare: 'Home Care Services',
+      residential: 'Health Care Residential Solutions',
       legal: 'Legal Services'
     };
     
@@ -6120,6 +6177,7 @@
       supplies: '/marketplace/wound-care.jpg',
       pharmacy: '/marketplace/prescription.jpg',
       homecare: '/marketplace/home-aide.jpg',
+      residential: '/marketplace/residential-solutions.jpg',
       legal: '/marketplace/legal-consult.jpg',
       medical_services: '/marketplace/gp-consult.jpg',
       medical_equipment: '/marketplace/wheelchair.jpg',
@@ -6168,6 +6226,7 @@
     }
 
     function marketplaceBadge(product, hero) {
+      if (product.catalog_locked || product.price_source === 'residential_catalog') return 'Catalog price';
       if (!product.isSupplierOffer) return 'Demo catalog';
       if (hero.source === 'illustration') return 'Illustration';
       if (hero.type === 'video') return 'Supplier video';
@@ -6758,6 +6817,7 @@
       supplies: 'equipment_supplier',
       pharmacy: 'pharmacy',
       homecare: 'healthcare_provider',
+      residential: 'healthcare_provider',
       legal: 'legal_service'
     };
     
@@ -6767,6 +6827,7 @@
       supplies: 'product',
       pharmacy: 'product',
       homecare: 'service',
+      residential: 'service',
       legal: 'service'
     };
     
@@ -6833,6 +6894,41 @@
           }));
           usingDemoCatalog = products.length > 0;
         }
+
+        if (category === 'residential') {
+          let catalogItems = [];
+          try {
+            const catalogResponse = await fetch('/api/medical-products?category=residential');
+            const catalogData = await catalogResponse.json();
+            if (catalogData.success && Array.isArray(catalogData.products)) {
+              catalogItems = catalogData.products;
+            }
+          } catch (catalogErr) {
+            console.error('Residential catalog unavailable', catalogErr);
+          }
+          if (!catalogItems.length) {
+            catalogItems = medicalProducts.residential || [];
+          }
+          const supplierOffers = products.filter(item => item && item.isSupplierOffer);
+          const seen = new Set(supplierOffers.map(item => item.id));
+          products = supplierOffers.slice();
+          catalogItems.forEach(item => {
+            if (!item || !item.id || seen.has(item.id)) return;
+            seen.add(item.id);
+            products.push({
+              ...item,
+              price: Number(item.price) || 0,
+              image: item.image || item.image_url || '',
+              image_url: item.image_url || item.image || '',
+              isSupplierOffer: false,
+              browse_bucket: 'residential',
+              catalog_locked: true,
+              price_source: item.price_source || 'residential_catalog',
+              provider: item.provider || 'PHINS Residential Care'
+            });
+          });
+          usingDemoCatalog = false;
+        }
         
         if (products.length === 0) {
           setMarketplaceHeading(title, 'Approved suppliers have not listed this category yet.');
@@ -6840,12 +6936,19 @@
           return;
         }
 
-        setMarketplaceHeading(
-          title,
-          usingDemoCatalog
-            ? 'Demo catalog. These illustrations are placeholders. A purchase is a wallet catalog charge, not a supplier order, until an approved supplier lists the item.'
-            : 'Approved supplier offers. Checkout uses the offer price on the supply-chain order and ledger. Supplier photos and videos replace the illustration when the listing includes them.'
-        );
+        const hasResidentialCatalog = products.some(item => item && (item.catalog_locked || item.price_source === 'residential_catalog'));
+        const hasSupplierOffers = products.some(item => item && item.isSupplierOffer);
+        let marketplaceSubtitle;
+        if (hasResidentialCatalog && hasSupplierOffers) {
+          marketplaceSubtitle = 'Platform bundles post the card price to the health-wallet ledger. Approved supplier offers settle through the supply-chain order at the offer price.';
+        } else if (hasResidentialCatalog) {
+          marketplaceSubtitle = 'Platform care bundles. The price on the card is the amount posted to the health-wallet ledger for one monthly period.';
+        } else if (usingDemoCatalog) {
+          marketplaceSubtitle = 'Demo catalog. These illustrations are placeholders. A purchase is a wallet catalog charge, not a supplier order, until an approved supplier lists the item.';
+        } else {
+          marketplaceSubtitle = 'Approved supplier offers. Checkout uses the offer price on the supply-chain order and ledger. Supplier photos and videos replace the illustration when the listing includes them.';
+        }
+        setMarketplaceHeading(title, marketplaceSubtitle);
 
         marketplaceOfferIndex = {};
         products.forEach(product => {
@@ -7152,9 +7255,12 @@
         if (purchaseResult.success) {
           walletBalance = purchaseResult.new_balance;
           updateWalletDisplay();
+          const charged = Number(purchaseResult.purchase && purchaseResult.purchase.amount);
+          const shownAmount = Number.isFinite(charged) ? charged : price;
+          const shownName = (purchaseResult.purchase && purchaseResult.purchase.product_name) || productName;
           
-          // Show success notification
-          showNotification(` Purchased ${productName} for $${price.toFixed(2)}!\n NFT: ${purchaseResult.nft_token_id?.substring(0, 12)}...`, 'success');
+          // Confirmation uses the ledger amount, which is the card price for catalog bundles.
+          showNotification(` Purchased ${shownName} for $${shownAmount.toFixed(2)}!\n NFT: ${purchaseResult.nft_token_id?.substring(0, 12)}...`, 'success');
           
           // Refresh data
           loadPurchaseHistory();

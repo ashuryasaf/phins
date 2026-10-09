@@ -1090,6 +1090,10 @@ WALLET_BROWSE_SPECIFIC: Dict[str, set] = {
     'supplies': {'supplies', 'supply', 'daily_supplies'},
     'pharmacy': {'pharmacy', 'medication', 'medications', 'rx', 'medicine'},
     'legal': {'legal', 'legal_service', 'legal_services', 'law'},
+    'residential': {
+        'residential', 'residential_care', 'health_care_residential',
+        'home_bundle', 'extra_bundle', 'full_accommodation',
+    },
 }
 
 # Dashboard supplier-type query values grouped onto the live ecosystem types.
@@ -1222,6 +1226,156 @@ def build_purchase_pricing_plan(base_amount: float, payload: Dict[str, Any] = No
         'gross_before_discount': gross_before_discount,
         'final_customer_amount': final_amount
     }
+
+
+RESIDENTIAL_CARE_CATEGORY = 'residential'
+RESIDENTIAL_CARE_PROVIDER = 'PHINS Residential Care'
+RESIDENTIAL_CARE_MAX_PERIODS = 36
+RESIDENTIAL_CARE_PRICE_SOURCE = 'residential_catalog'
+
+# Monthly customer prices. The wallet debit and the ledger row post this
+# amount. Expense loading, profit, and the discounted rate decompose it
+# (pricing_plan_for_catalog_total); they are not added on top.
+RESIDENTIAL_CARE_BUNDLES: Tuple[Dict[str, Any], ...] = (
+    {
+        'id': 'res-home',
+        'bundle_code': 'home',
+        'name': 'Home Bundle',
+        'price': 8400.00,
+        'category': RESIDENTIAL_CARE_CATEGORY,
+        'description': 'Private assistance, 24/7 care at home. One monthly service period.',
+        'duration': '24/7 · 1 month',
+        'image_url': '/marketplace/residential-home.jpg',
+        'provider': RESIDENTIAL_CARE_PROVIDER,
+        'service_period': 'monthly',
+        'item_type': 'service',
+        'unit': 'month',
+    },
+    {
+        'id': 'res-extra',
+        'bundle_code': 'extra',
+        'name': 'Extra Bundle',
+        'price': 10800.00,
+        'category': RESIDENTIAL_CARE_CATEGORY,
+        'description': 'Private assistance, 24/7 care away from home. One monthly service period.',
+        'duration': '24/7 · 1 month',
+        'image_url': '/marketplace/residential-extra.jpg',
+        'provider': RESIDENTIAL_CARE_PROVIDER,
+        'service_period': 'monthly',
+        'item_type': 'service',
+        'unit': 'month',
+    },
+    {
+        'id': 'res-full',
+        'bundle_code': 'full_accommodation',
+        'name': 'Full Accommodation Bundle',
+        'price': 14500.00,
+        'category': RESIDENTIAL_CARE_CATEGORY,
+        'description': (
+            'Residential safe house with full Medicare clinical care and '
+            'private assistance, 24/7, at a private institution. One monthly service period.'
+        ),
+        'duration': '24/7 · 1 month',
+        'image_url': '/marketplace/residential-full.jpg',
+        'provider': RESIDENTIAL_CARE_PROVIDER,
+        'service_period': 'monthly',
+        'item_type': 'service',
+        'unit': 'month',
+    },
+)
+
+
+def residential_care_by_id(product_id: Any) -> Optional[Dict[str, Any]]:
+    """Return a copy of one residential-care bundle, or None."""
+    key = str(product_id or '').strip()
+    if not key:
+        return None
+    for item in RESIDENTIAL_CARE_BUNDLES:
+        if item['id'] == key:
+            row = dict(item)
+            row['price'] = round(safe_float(item['price'], 0.0), 2)
+            row['price_source'] = RESIDENTIAL_CARE_PRICE_SOURCE
+            row['catalog_locked'] = True
+            return row
+    return None
+
+
+def residential_care_catalog() -> List[Dict[str, Any]]:
+    """Platform residential-care bundles, in display order."""
+    return [residential_care_by_id(item['id']) for item in RESIDENTIAL_CARE_BUNDLES]
+
+
+def _pin_catalog_plan(plan: Dict[str, Any], target: float) -> Dict[str, Any]:
+    """Force ``final_customer_amount`` onto ``target`` without breaking the sum.
+
+    Rounding in the standard loadings skips some cent totals. The skipped
+    cent is taken from the discount so base + expense + profit - discount
+    still equals the amount the customer pays.
+    """
+    gross = round(safe_float(plan.get('gross_before_discount'), 0.0), 2)
+    discount = round(gross - target, 2)
+    if discount < 0 or gross <= 0:
+        raise ValueError(f'residential catalog total {target:.2f} has no pricing decomposition')
+    plan['discounted_rate_amount'] = discount
+    plan['discounted_rate_pct'] = round(discount / gross, 6)
+    plan['final_customer_amount'] = round(gross - discount, 2)
+    plan['catalog_total'] = target
+    plan['price_source'] = RESIDENTIAL_CARE_PRICE_SOURCE
+    if plan['final_customer_amount'] != target:
+        raise ValueError(f'residential catalog total {target:.2f} has no pricing decomposition')
+    return plan
+
+
+def pricing_plan_for_catalog_total(total: float) -> Dict[str, Any]:
+    """Decompose a catalog total with the standard wallet loadings.
+
+    ``final_customer_amount`` equals ``total``. The base is the cent amount
+    whose default expense, profit, and discount round back to that total, so
+    the card price, the wallet debit, and the ledger row are the same number.
+    """
+    target = round(max(safe_float(total, 0.0), 0.0), 2)
+    target_cents = int(round(target * 100))
+    if target_cents <= 0:
+        plan = build_purchase_pricing_plan(0.0, {})
+        plan['catalog_total'] = 0.0
+        plan['price_source'] = RESIDENTIAL_CARE_PRICE_SOURCE
+        return plan
+    factor = (
+        (1.0 + DEFAULT_WALLET_EXPENSE_LOADING_PCT)
+        * (1.0 + DEFAULT_WALLET_PROFIT_MARGIN_PCT)
+        * (1.0 - DEFAULT_WALLET_DISCOUNTED_RATE_PCT)
+    )
+    guess = int(round((target / factor) * 100))
+    closest = None
+    closest_gap = None
+    for delta in range(0, 6):
+        candidates = (guess,) if delta == 0 else (guess - delta, guess + delta)
+        for base_cents in candidates:
+            if base_cents <= 0:
+                continue
+            plan = build_purchase_pricing_plan(base_cents / 100.0, {})
+            final_cents = int(round(plan['final_customer_amount'] * 100))
+            gap = abs(final_cents - target_cents)
+            if closest is None or gap < closest_gap:
+                closest = plan
+                closest_gap = gap
+            if final_cents != target_cents:
+                continue
+            components = round(
+                plan['base_amount']
+                + plan['expense_loading_amount']
+                + plan['profit_margin_amount']
+                - plan['discounted_rate_amount'],
+                2,
+            )
+            if components != plan['final_customer_amount']:
+                continue
+            plan['catalog_total'] = target
+            plan['price_source'] = RESIDENTIAL_CARE_PRICE_SOURCE
+            return plan
+    if closest is None:
+        raise ValueError(f'residential catalog total {target:.2f} has no pricing decomposition')
+    return _pin_catalog_plan(closest, target)
 
 
 def get_customer_display_name(customer_id: Any) -> str:
@@ -30320,7 +30474,8 @@ For claims or questions, please contact:
                 'homecare': [
                     {'id': 'hc-1', 'name': 'Home Health Aide (4 hrs)', 'price': 120, 'category': 'homecare', 'image_url': '/marketplace/home-aide.jpg'},
                     {'id': 'hc-2', 'name': 'Meal Delivery (Weekly)', 'price': 85, 'category': 'homecare', 'image_url': '/marketplace/meal-delivery.jpg'},
-                ]
+                ],
+                'residential': residential_care_catalog(),
             }
             
             if category and category in products:
@@ -53446,6 +53601,51 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Product ID and amount required'}).encode('utf-8'))
                     return
 
+                # Platform residential bundles charge the catalog price. A
+                # live supplier offer with the same id keeps the supply-chain
+                # path. Validation happens before any wallet mutation.
+                catalog_bundle = residential_care_by_id(product_id)
+                catalog_pricing_plan = None
+                with STATE_LOCK:
+                    supplier_offer_exists = product_id in SUPPLIER_OFFERS
+                catalog_price_authoritative = bool(
+                    catalog_bundle and not (
+                        supplier_offer_exists and supply_chain_enabled and supply_chain_service
+                    )
+                )
+                if catalog_price_authoritative:
+                    if quantity > RESIDENTIAL_CARE_MAX_PERIODS:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Quantity exceeds the residential care limit',
+                            'max_periods': RESIDENTIAL_CARE_MAX_PERIODS,
+                        }).encode('utf-8'))
+                        return
+                    expected_amount = round(float(catalog_bundle['price']) * quantity, 2)
+                    if abs(round(amount, 2) - expected_amount) > 0.001:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Catalog price mismatch',
+                            'catalog_amount': expected_amount,
+                            'submitted_amount': round(amount, 2),
+                        }).encode('utf-8'))
+                        return
+                    product_name = catalog_bundle['name']
+                    category = catalog_bundle['category']
+                    provider = catalog_bundle['provider']
+                    try:
+                        catalog_pricing_plan = pricing_plan_for_catalog_total(expected_amount)
+                    except ValueError as exc:
+                        self._set_json_headers(500)
+                        self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                        return
+                    if round(catalog_pricing_plan['final_customer_amount'], 2) != expected_amount:
+                        self._set_json_headers(500)
+                        self.wfile.write(json.dumps({
+                            'error': 'Catalog pricing plan does not match the bundle price',
+                        }).encode('utf-8'))
+                        return
+
                 # Ensure wallet object exists for compatibility even when paying by card.
                 if customer_id not in HEALTH_WALLETS:
                     HEALTH_WALLETS[customer_id] = {
@@ -53604,9 +53804,11 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
 
-                # Fallback path for non-supplier-catalog products
+                # Fallback path for non-supplier-catalog products.
+                # Residential bundles ignore client loadings and post the
+                # catalog total. Other catalog items keep the historical plan.
                 wallet = HEALTH_WALLETS[customer_id]
-                pricing_plan = build_purchase_pricing_plan(amount, data)
+                pricing_plan = catalog_pricing_plan or build_purchase_pricing_plan(amount, data)
                 final_amount = pricing_plan['final_customer_amount']
                 prev_balance = wallet['balance']
 
@@ -53652,7 +53854,14 @@ For claims or questions, please contact:
                         'pricing_plan': pricing_plan,
                         'previous_balance': prev_balance,
                         'new_balance': wallet['balance'],
-                        'payment_source': payment_method
+                        'payment_source': payment_method,
+                        **({
+                            'bundle_code': catalog_bundle.get('bundle_code'),
+                            'catalog_unit_price': catalog_bundle.get('price'),
+                            'service_period': catalog_bundle.get('service_period'),
+                            'price_source': RESIDENTIAL_CARE_PRICE_SOURCE,
+                            'image_url': catalog_bundle.get('image_url'),
+                        } if catalog_pricing_plan and catalog_bundle else {}),
                     }
                 )
 
@@ -53678,6 +53887,12 @@ For claims or questions, please contact:
                     'verification_hash': NFT_LEDGER.get(ledger_tx.get('nft_token_id'), {}).get('verification_hash', ''),
                     'ledger_tx_id': ledger_tx.get('id')  # Fixed: use 'id' not 'tx_id'
                 }
+                if catalog_pricing_plan and catalog_bundle:
+                    purchase['price_source'] = RESIDENTIAL_CARE_PRICE_SOURCE
+                    purchase['bundle_code'] = catalog_bundle.get('bundle_code')
+                    purchase['catalog_unit_price'] = catalog_bundle.get('price')
+                    purchase['service_period'] = catalog_bundle.get('service_period')
+                    purchase['image_url'] = catalog_bundle.get('image_url')
                 MEDICAL_PURCHASES[purchase_id] = purchase
 
                 purchase_doc_bundle = generate_action_accounting_documents(
