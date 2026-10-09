@@ -119,7 +119,7 @@ def test_assessment_routes_are_full_pages_not_stubs():
         ("/unified-workbench.html", "Run Unified Analysis"),
         ("/customer-ai-report.html", "AI Report"),
         ("/mislaka-report.html", "Your Mislaka report"),
-        ("/mislaka-report.html", "Analyze &amp; Generate"),
+        ("/mislaka-report.html", 'id="analyzeBtn"'),
         ("/risk-assessment-viewer.html", "Risk Assessment Report"),
     ]:
         resp = requests.get(f"{BASE_URL}{path}")
@@ -127,6 +127,23 @@ def test_assessment_routes_are_full_pages_not_stubs():
         body = resp.text
         assert "Redirecting to Assessments" not in body, path
         assert must_include in body, path
+
+
+def test_customer_page_script_does_not_share_studio_bindings():
+    """The studio and the personal assess script both name currentReport.
+
+    A second top-level let aborts the page script, so the clearinghouse
+    list never loads. The page script stays inside its own function.
+    """
+    page = (STATIC / "mislaka-report.html").read_text(encoding="utf-8")
+    studio = (STATIC / "risk-report-studio.js").read_text(encoding="utf-8")
+    assert "let currentReport" in studio
+    start = page.rfind("<script>")
+    inline = page[start:]
+    assert "(function () {" in inline
+    assert "let currentReport" in inline
+    assert inline.index("(function () {") < inline.index("let currentReport")
+    assert inline.index("})();") < inline.index("</script>")
 
 
 def test_workbench_and_reports_use_phins_logo_and_theme():

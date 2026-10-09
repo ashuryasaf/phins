@@ -645,8 +645,14 @@ class TestZipPassword:
         password_at = html.find('id="filePassword"')
         analyze_at = html.find('id="analyzeBtn"')
         assert 0 < password_at < analyze_at
-        assert 'file_password' in html
         assert 'If the ZIP has one' in html
+        studio = open(
+            os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                         'web_portal', 'static', 'risk-report-studio.js'),
+            encoding='utf-8',
+        ).read()
+        assert 'file_password' in studio
+        assert html.find('/risk-report-studio.js') > 0
 
 
 def test_pension_columns_are_judged_by_sign_and_fee_band_not_zscore():
@@ -712,7 +718,7 @@ def test_doughnut_hole_total_follows_the_unit_and_the_report_language():
     """A ring of row counts (ID Field Coverage) is not a shekel amount."""
     html = open(
         os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                     'web_portal', 'static', 'risk-reports-dashboard.html'),
+                     'web_portal', 'static', 'risk-report-studio.js'),
         encoding='utf-8',
     ).read()
     plugin_at = html.find("id: 'phinsCenterTotal'")

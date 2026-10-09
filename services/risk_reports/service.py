@@ -7,6 +7,7 @@ authorisation, persistence and the agent-runtime registration. The historical
 import path ``services.ai_risk_reports_service`` re-exports everything here.
 """
 
+import hashlib
 import json
 import os
 import random
@@ -79,6 +80,7 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
             'error': None,
             'owner_id': owner_id,
             'owner_role': owner_role,
+            'content_sha256': hashlib.sha256(file_content).hexdigest(),
             'created_at': datetime.now().isoformat()
         }
         
