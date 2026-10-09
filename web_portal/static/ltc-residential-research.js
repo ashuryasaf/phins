@@ -635,12 +635,16 @@
     return ((lastPack || {}).media || {}).timeline_player || [];
   }
 
-  function resetPlayer() {
+  function stopPlayer() {
     if (player.timer) { clearInterval(player.timer); player.timer = null; }
-    player.frame = 0;
     player.playing = false;
     const btn = document.getElementById('ltcres-play');
     if (btn) btn.textContent = 'Play briefing';
+  }
+
+  function resetPlayer() {
+    stopPlayer();
+    player.frame = 0;
   }
 
   function roundRect(ctx, x, y, w, h, r) {
@@ -750,7 +754,7 @@
   function play() {
     const list = frames();
     if (!list.length) { setStatus('Load the study before playing the briefing.', true); return; }
-    if (player.playing) { resetPlayer(); drawFrame(player.frame); return; }
+    if (player.playing) { stopPlayer(); drawFrame(player.frame); return; }
     player.playing = true;
     const btn = document.getElementById('ltcres-play');
     if (btn) btn.textContent = 'Pause';
@@ -759,8 +763,9 @@
     player.timer = setInterval(() => {
       player.frame += 1;
       if (player.frame >= list.length) {
-        resetPlayer();
-        drawFrame(list.length - 1);
+        player.frame = list.length - 1;
+        stopPlayer();
+        drawFrame(player.frame);
         if (player.recorder && player.recorder.state === 'recording') {
           setTimeout(() => { try { player.recorder.stop(); } catch (err) { /* ignore */ } }, 400);
         }
@@ -802,7 +807,7 @@
   function step(delta) {
     const list = frames();
     if (!list.length) return;
-    resetPlayer();
+    stopPlayer();
     player.frame = Math.max(0, Math.min(list.length - 1, player.frame + delta));
     drawFrame(player.frame);
   }

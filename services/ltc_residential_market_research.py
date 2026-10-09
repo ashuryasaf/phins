@@ -1367,17 +1367,18 @@ def _build_scenarios(params: ResidentialResearchParams) -> List[Dict[str, Any]]:
         alt = ResidentialResearchParams(**{**asdict(params), 'scenario': key})
         fc = _build_demand_forecast(alt)
         by_year = {r['year']: r for r in fc}
-        y2050 = by_year.get(2050) or fc[-1]
+        # 2050 columns stay blank when the outlook stops before 2050.
+        y2050 = by_year.get(2050) or {}
         yend = fc[-1]
         rows.append({
             'scenario': key,
             'label': _SCENARIOS[key]['label'],
             'selected': key == params.scenario,
             'home_share_target_pct': _r(_home_share_target(alt, _REGIONS[alt.region], _SCENARIOS[key]), 1),
-            'recipients_index_2050': y2050['recipients_index'],
-            'residential_demand_index_2050': y2050['residential_demand_index'],
-            'ltc_spend_gdp_pct_2050': y2050['ltc_spend_gdp_pct'],
-            'ltc_spend_usd_bn_2050': y2050['ltc_spend_usd_bn'],
+            'recipients_index_2050': y2050.get('recipients_index'),
+            'residential_demand_index_2050': y2050.get('residential_demand_index'),
+            'ltc_spend_gdp_pct_2050': y2050.get('ltc_spend_gdp_pct'),
+            'ltc_spend_usd_bn_2050': y2050.get('ltc_spend_usd_bn'),
             'recipients_index_end': yend['recipients_index'],
             'residential_demand_index_end': yend['residential_demand_index'],
             'ltc_spend_gdp_pct_end': yend['ltc_spend_gdp_pct'],
@@ -1411,11 +1412,15 @@ def _build_hedge_book(params: ResidentialResearchParams) -> List[Dict[str, Any]]
     factor = _adl_incidence_factor(params.adl_threshold)
     rows = []
     allocated = 0
+    cumulative_width = 0
     for index, (lo, hi) in enumerate(bands):
+        cumulative_width += hi - lo
         if index == len(bands) - 1:
             band_lives = params.lives - allocated
         else:
-            band_lives = int(round(params.lives * (hi - lo) / float(total_width)))
+            # Allocate against the running width so every band stays non-negative
+            # and the bands still sum exactly to params.lives.
+            band_lives = int(round(params.lives * cumulative_width / float(total_width))) - allocated
             allocated += band_lives
         mid = _mid_age(lo, hi)
         incidence = _ltc3_incidence_per_1000(mid) * factor / 1000.0
