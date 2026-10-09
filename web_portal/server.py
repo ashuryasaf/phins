@@ -27011,6 +27011,12 @@ For claims or questions, please contact:
                     page=safe_int(qs.get('page', ['1'])[0], 1),
                     page_size=safe_int(qs.get('page_size', ['50'])[0], 50),
                 )
+                if eff_role != 'customer' and isinstance(result, dict):
+                    from services.mislaka_report_generator import is_personal_mislaka_report
+                    raw_items = result.get('items') or []
+                    kept = [item for item in raw_items if not is_personal_mislaka_report(item)]
+                    result['items'] = kept
+                    result['total'] = max(0, int(result.get('total') or 0) - (len(raw_items) - len(kept)))
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except Exception as e:
@@ -27039,6 +27045,12 @@ For claims or questions, please contact:
                     return
 
                 eff_role = get_effective_role(session)
+                from services.mislaka_report_generator import is_personal_mislaka_report
+                if eff_role != 'customer' and is_personal_mislaka_report(result):
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Document not found'}).encode('utf-8'))
+                    return
+
                 if not is_document_admin_role(eff_role):
                     session_cid = get_session_customer_id(session)
                     doc_cid = result.get('customer_id') or result.get('uploaded_by_customer') or ''

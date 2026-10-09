@@ -36,6 +36,11 @@ POST endpoints
     Re-run extraction on an already-stored document.
 - ``POST /api/assessment-center/mislaka/link``
     Push a Mislaka query result into the Assessment Center as raw facts.
+    Staff assessment path. Unchanged for admin.
+- ``GET|POST /api/assessment-center/mislaka/personal``
+    Customer-only. Assess and list that session's own Mislaka report.
+- ``GET /api/assessment-center/mislaka/personal/<document_id>``
+    Customer-only read of one personal report after its checksum matches.
 - ``POST /api/assessment-center/external-facts``
     Generic external fact ingestion (e.g. Swiftness, internal exports).
 - ``POST /api/assessment-center/import``
@@ -851,6 +856,128 @@ _UPLOAD_REGISTRY = _API_REGISTRY
 
 # ── Dispatchers ───────────────────────────────────────────────────────────────
 
+_PERSONAL_MISLAKA_PATH = "/api/assessment-center/mislaka/personal"
+
+
+def _query_value(query_params: Dict[str, Any], name: str) -> str:
+    if not isinstance(query_params, dict):
+        return ""
+    val = query_params.get(name)
+    if isinstance(val, list):
+        val = val[0] if val else ""
+    return str(val or "").strip()
+
+
+def _personal_customer(session: Optional[Dict[str, Any]], requested: str) -> Tuple[str, Optional[Tuple[int, Dict[str, Any]]]]:
+    """Session customer only. Staff and other roles are refused."""
+    if not session:
+        return "", (401, {"error": "Authentication required"})
+    role = str(session.get("role") or "").lower()
+    if role != "customer":
+        return "", (403, {"error": "Access denied"})
+    cust, err = _resolve_customer(session, requested)
+    if err:
+        status = 401 if err == "Authentication required" else 403
+        return "", (status, {"error": err})
+    if not cust:
+        return "", (400, {"error": "customer_id required"})
+    return cust, None
+
+
+def _personal_mislaka_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any]) -> Optional[Tuple[int, Dict[str, Any]]]:
+    if path != _PERSONAL_MISLAKA_PATH and not path.startswith(_PERSONAL_MISLAKA_PATH + "/"):
+        return None
+    requested = _query_value(query_params, "customer_id")
+    cust, err = _personal_customer(session, requested)
+    if err:
+        return err
+    from services.mislaka_report_generator import (
+        list_personal_mislaka_reports,
+        read_personal_mislaka_report,
+    )
+    svc = _service()
+    if path == _PERSONAL_MISLAKA_PATH:
+        try:
+            page = int(_query_value(query_params, "page") or "1")
+        except ValueError:
+            return 400, {"error": "page must be an integer"}
+        try:
+            page_size = int(_query_value(query_params, "page_size") or "20")
+        except ValueError:
+            return 400, {"error": "page_size must be an integer"}
+        listing = list_personal_mislaka_reports(
+            svc.document_service, cust, page=page, page_size=page_size,
+        )
+        listing["customer_id"] = cust
+        listing["customer_identity"] = _identity_reference(cust)
+        listing["identity_complete"] = listing["customer_identity"] is not None
+        return 200, listing
+
+    doc_id = path[len(_PERSONAL_MISLAKA_PATH) + 1:]
+    if not doc_id or "/" in doc_id or not re.fullmatch(r"DOC-[A-Za-z0-9-]+", doc_id):
+        return 404, {"error": "Report not found"}
+    try:
+        report = read_personal_mislaka_report(svc.document_service, cust, doc_id)
+    except ValueError:
+        return 409, {"error": "Report integrity check failed"}
+    if report is None:
+        return 404, {"error": "Report not found"}
+    report["customer_identity"] = _identity_reference(cust)
+    return 200, report
+
+
+def _personal_mislaka_post(session: Dict[str, Any], body: Dict[str, Any]) -> Optional[Tuple[int, Dict[str, Any]]]:
+    requested = str(body.get("customer_id") or "").strip()
+    cust, err = _personal_customer(session, requested)
+    if err:
+        return err
+    id_number = str(body.get("id_number") or "").strip()
+    id_number, identity_error = _mislaka_identity_sync(
+        cust, id_number, actor=str(session.get("username") or "customer"))
+    if identity_error:
+        return identity_error
+    if not id_number or not id_number.isdigit() or len(id_number) != 9:
+        return 400, {"error": "Israeli ID number (9 digits) required"}
+
+    from services.mislaka_api_service import (
+        MislakaProductType,
+        MislakaStatus,
+        get_mislaka_service,
+    )
+    from services.mislaka_affiliations import ReportFilters
+    from services.mislaka_report_generator import file_personal_mislaka_report
+
+    product_value = str(body.get("product_type") or "all").lower()
+    try:
+        product_type = MislakaProductType(product_value)
+    except ValueError:
+        product_type = MislakaProductType.ALL
+    result = get_mislaka_service().get_person_policies(id_number, product_type)
+    status = getattr(result.status, "value", result.status)
+    if str(status) != MislakaStatus.SUCCESS.value:
+        return 502, {"error": "Mislaka query failed"}
+    report_filters = ReportFilters.from_dict(
+        body.get("filters") if isinstance(body.get("filters"), dict) else None
+    )
+    try:
+        filed = file_personal_mislaka_report(
+            result, customer_id=cust, filters=report_filters, center=_service(),
+        )
+    except ValueError as exc:
+        return 400, {"error": str(exc)}
+    return 200, {
+        "assessed": True,
+        "customer_id": filed["customer_id"],
+        "document_id": filed["document_id"],
+        "document_sha256": filed["document_sha256"],
+        "document_reused": filed["document_reused"],
+        "policy_count": filed["policy_count"],
+        "policies_received": len(result.policies),
+        "customer_identity": _identity_reference(cust),
+        "identity_complete": _identity_reference(cust) is not None,
+    }
+
+
 def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any],
                  client_ip: str) -> Optional[Tuple[int, Dict[str, Any]]]:
     if path == "/api/assessment-center/health":
@@ -1034,6 +1161,10 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
             logger.exception("assessment-center backfill-status failed: %s", exc)
             return 500, {"error": "Assessment center error"}
 
+    personal = _personal_mislaka_get(path, session, query_params)
+    if personal is not None:
+        return personal
+
     if not path.startswith("/api/assessment-center/customer/"):
         return None
 
@@ -1121,6 +1252,15 @@ def dispatch_get(path: str, session: Dict[str, Any], query_params: Dict[str, Any
             except Exception as exc:
                 return 500, {"error": "Document listing failed"}
             items = listing.get("items", []) if isinstance(listing, dict) else []
+            from services.mislaka_report_generator import is_personal_mislaka_report
+            requester_role = str(session.get("role") or "").lower() if session else ""
+            if requester_role != "customer":
+                items = [
+                    d for d in items
+                    if not is_personal_mislaka_report(
+                        d if isinstance(d, dict) else {"id": getattr(d, "id", None)}
+                    )
+                ]
             doc_summaries = svc.get_document_assessments([
                 did for did in (
                     (d.get("id") if isinstance(d, dict) else getattr(d, "id", None))
@@ -1170,6 +1310,9 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
     role = str(session.get("role") or "").lower()
 
     try:
+        if path == _PERSONAL_MISLAKA_PATH:
+            return _personal_mislaka_post(session, body)
+
         if path == "/api/assessment-center/upload":
             file_name = str(body.get("file_name") or body.get("name") or "").strip()
             file_data_b64 = str(body.get("file_data_b64") or body.get("data") or "").strip()
@@ -1230,6 +1373,13 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
             ok, err_resp = _ensure_documents_owned_by(svc, cust, [doc_id], role=role)
             if not ok and err_resp is not None:
                 return err_resp
+
+            from services.mislaka_report_generator import is_personal_mislaka_report
+            personal_record, _owner = _document_owner(svc, doc_id)
+            if is_personal_mislaka_report(personal_record):
+                if role == "customer":
+                    return 403, {"error": "This report is available only in your Mislaka tool"}
+                return 404, {"error": "Document not found"}
 
             assessment = svc.assess_document(
                 doc_id,

@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PHINS — My Mislaka Report</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/phins-theme.css">
+  <script src="/phins-document.js"></script>
+  <script src="/phins-doc-return.js"></script>
+  <style>
+    .phins-header { position: sticky; top: 0; z-index: 1000; padding: 0; }
+    .phins-header-inner { max-width: 1100px; margin: 0 auto; padding: 0.7rem 1.5rem 0.55rem; display: flex; flex-direction: column; gap: 0.55rem; }
+    .phins-header-top { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; }
+    .phins-logo { display: flex; align-items: center; gap: 0.65rem; text-decoration: none; }
+    .phins-logo-icon { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
+    .phins-utility { display: flex; align-items: center; gap: 0.5rem; }
+    .phins-nav { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem 0.45rem; width: 100%; }
+    .phins-nav a, .phins-header .phins-nav .assessments-nav-toggle {
+      padding: 0.4rem 0.8rem; color: rgba(234,241,255,0.88); text-decoration: none; border-radius: 8px;
+      font-size: 0.82rem; font-weight: 500; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+    }
+    .mobile-menu-btn { display: none; background: rgba(127,178,255,0.12); border: 1px solid rgba(127,178,255,0.16); color: #fff; padding: 8px 12px; border-radius: 10px; font-weight: 600; cursor: pointer; }
+    @media screen and (max-width: 1024px) {
+      .mobile-menu-btn { display: block; }
+      .phins-nav { display: none; position: fixed; top: 60px; left: 0; right: 0; bottom: auto; flex-direction: column; align-items: stretch; padding: 10px 12px calc(28px + env(safe-area-inset-bottom, 0px)); z-index: 999; max-height: calc(100svh - 60px); overflow-y: auto; }
+      .phins-nav.open { display: flex !important; }
+      .phins-nav a, .phins-header .phins-nav .assessments-nav-toggle { width: 100%; text-align: center; min-height: 44px; }
+    }
+    body { background: #f4f7fb; color: #102033; font-family: Inter, sans-serif; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 16px 64px; }
+    .hero { background: radial-gradient(700px 220px at 88% -20%, rgba(21,68,155,0.45), transparent 70%), linear-gradient(135deg, #060d1f, #0d1b3e); color: #fff; border-radius: 16px; padding: 28px; margin-bottom: 18px; }
+    .hero h1 { font-family: 'Space Grotesk', Inter, sans-serif; font-size: 1.7rem; margin: 0 0 6px; }
+    .hero p { margin: 0; color: rgba(255,255,255,0.82); }
+    .card { background: #fff; border: 1px solid #e4ebf5; border-radius: 14px; padding: 18px; margin-bottom: 16px; box-shadow: 0 8px 24px rgba(6,13,31,0.04); }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    input, select { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font: inherit; }
+    button.gold { background: linear-gradient(135deg, #f7e2a0, #e3bf6f); color: #071022; border: none; border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
+    button.ghost { background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+    .status { font-size: 0.9rem; color: #3d4d63; }
+    .status.error { color: #9b1c1c; }
+    .list { display: flex; flex-direction: column; gap: 8px; }
+    .report-item { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 12px; border: 1px solid #e4ebf5; border-radius: 10px; background: #fbfcfe; }
+    .report-item strong { display: block; }
+    .muted { color: #5c6b80; font-size: 0.82rem; }
+    pre.report { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; line-height: 1.45; margin: 0; }
+    .empty { color: #5c6b80; }
+  </style>
+</head>
+<body>
+  <header class="phins-header">
+    <div class="phins-header-inner">
+      <div class="phins-header-top">
+        <a href="/dashboard.html" class="phins-logo">
+          <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
+          <span class="phins-logo-text">PHINS</span>
+        </a>
+        <button class="mobile-menu-btn" type="button" onclick="toggleMobileMenu()" aria-label="Open menu">Menu</button>
+        <div class="phins-utility">
+          <a href="/" class="btn-logout">Logout</a>
+        </div>
+      </div>
+      <nav class="phins-nav" id="mobile-nav">
+        <a href="/dashboard.html">Dashboard</a>
+        <a href="/documents.html#durable-objects">Documents</a>
+        <span data-assessments-nav data-assessments-role="customer"></span>
+      </nav>
+    </div>
+  </header>
+  <script>
+    function toggleMobileMenu() {
+      var nav = document.getElementById('mobile-nav');
+      if (nav) nav.classList.toggle('open');
+    }
+  </script>
+  <main class="wrap">
+    <section class="hero">
+      <h1>Your Mislaka report</h1>
+      <p>This is your personal clearinghouse tool. The report is filed as a document on your account. Another customer's report is not available here.</p>
+    </section>
+    <section class="card">
+      <h2 style="margin:0 0 8px;font-size:1.05rem;">Assess</h2>
+      <p class="muted" id="identity-note">Checking the ID saved on your account.</p>
+      <div class="row" style="margin-top:12px;">
+        <input type="text" id="mislaka-id" placeholder="Israeli ID (9 digits)" maxlength="9" hidden>
+        <select id="mislaka-product">
+          <option value="all">All products</option>
+          <option value="pension">Pension</option>
+          <option value="provident">Provident fund</option>
+          <option value="life_insurance">Life insurance</option>
+          <option value="health_insurance">Health insurance</option>
+        </select>
+        <button type="button" class="gold" id="assess-btn">Assess my report</button>
+        <span class="status" id="assess-status"></span>
+      </div>
+    </section>
+    <section class="card">
+      <h2 style="margin:0 0 12px;font-size:1.05rem;">Your reports</h2>
+      <div id="report-list" class="list"><div class="empty">Loading your reports.</div></div>
+    </section>
+    <section class="card" id="report-view" hidden>
+      <div class="row" style="justify-content:space-between;margin-bottom:12px;">
+        <div>
+          <h2 style="margin:0;font-size:1.05rem;" id="view-title">Report</h2>
+          <div class="muted" id="view-meta"></div>
+        </div>
+        <button type="button" class="ghost" id="print-btn">Print</button>
+      </div>
+      <pre class="report" id="view-body"></pre>
+    </section>
+  </main>
+  <script src="/assessments-nav.js"></script>
+  <script src="/ui-clarity.js"></script>
+  <script>
+    const TOKEN = localStorage.getItem('phins_token') || '';
+    if (!TOKEN) window.location.href = '/login.html';
+    const identityNote = document.getElementById('identity-note');
+    const idInput = document.getElementById('mislaka-id');
+    const statusEl = document.getElementById('assess-status');
+    const listEl = document.getElementById('report-list');
+    const view = document.getElementById('report-view');
+    let identityComplete = false;
+    let currentReport = null;
+
+    function api(path, opts) {
+      const extra = (opts && opts.headers) || {};
+      const rest = Object.assign({}, opts || {});
+      delete rest.headers;
+      return fetch(path, Object.assign({
+        headers: Object.assign({
+          'Authorization': 'Bearer ' + TOKEN,
+          'Content-Type': 'application/json'
+        }, extra)
+      }, rest));
+    }
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function setStatus(text, isError) {
+      statusEl.textContent = text || '';
+      statusEl.className = isError ? 'status error' : 'status';
+    }
+
+    async function loadList() {
+      const res = await api('/api/assessment-center/mislaka/personal');
+      if (res.status === 401) { window.location.href = '/login.html'; return; }
+      const json = await res.json();
+      if (!res.ok) { listEl.innerHTML = '<div class="empty">' + esc(json.error || 'Unable to load reports') + '</div>'; return; }
+      identityComplete = !!json.identity_complete;
+      const ref = json.customer_identity || null;
+      if (identityComplete) {
+        idInput.hidden = true;
+        idInput.value = '';
+        const last4 = ref && ref.national_id_last4 ? ' ending ' + ref.national_id_last4 : '';
+        identityNote.textContent = 'Uses the ID saved on your account' + last4 + '. The full number stays inside the report.';
+      } else {
+        idInput.hidden = false;
+        identityNote.textContent = 'Save your Israeli ID once. It is stored on your account and used only for your report.';
+      }
+      const items = json.items || [];
+      if (!items.length) {
+        listEl.innerHTML = '<div class="empty">No personal Mislaka report yet.</div>';
+        return;
+      }
+      listEl.innerHTML = items.map(function (item) {
+        return '<div class="report-item"><div><strong>' + esc(item.file_name || item.id) + '</strong>'
+          + '<span class="muted">' + esc(item.created_date || '') + ' · ' + esc((item.sha256_checksum || '').slice(0, 12)) + '</span></div>'
+          + '<button type="button" class="ghost" data-id="' + esc(item.id) + '">View</button></div>';
+      }).join('');
+      listEl.querySelectorAll('button[data-id]').forEach(function (btn) {
+        btn.addEventListener('click', function () { openReport(btn.getAttribute('data-id')); });
+      });
+    }
+
+    async function openReport(id) {
+      setStatus('Opening report…');
+      const res = await api('/api/assessment-center/mislaka/personal/' + encodeURIComponent(id));
+      const json = await res.json();
+      if (!res.ok) { setStatus(json.error || 'Report unavailable', true); return; }
+      currentReport = json;
+      view.hidden = false;
+      document.getElementById('view-title').textContent = json.file_name || 'Mislaka report';
+      document.getElementById('view-meta').textContent = (json.policy_count || 0) + ' records · SHA-256 ' + (json.sha256_checksum || '').slice(0, 16);
+      document.getElementById('view-body').textContent = json.report_text || '';
+      setStatus('');
+      view.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    document.getElementById('assess-btn').addEventListener('click', async function () {
+      const product = document.getElementById('mislaka-product').value || 'all';
+      const body = { product_type: product };
+      if (!identityComplete) {
+        const id = (idInput.value || '').trim();
+        if (!/^\d{9}$/.test(id)) { setStatus('ID must be 9 digits', true); return; }
+        body.id_number = id;
+      }
+      setStatus('Assessing your report…');
+      const res = await api('/api/assessment-center/mislaka/personal', {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
+      const json = await res.json();
+      if (!res.ok) { setStatus(json.error || 'Assessment failed', true); return; }
+      setStatus((json.policy_count || 0) + ' records filed on your report' + (json.document_reused ? ' (unchanged)' : ''));
+      await loadList();
+      if (json.document_id) openReport(json.document_id);
+    });
+
+    document.getElementById('print-btn').addEventListener('click', function () {
+      if (!currentReport || !window.PhinsDocument) return;
+      const body = '<pre style="white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:12px;">'
+        + esc(currentReport.report_text || '') + '</pre>';
+      PhinsDocument.printReport({
+        title: 'Mislaka report',
+        eyebrow: 'Personal report',
+        subtitle: currentReport.file_name || '',
+        body: body
+      });
+    });
+
+    loadList().catch(function () { setStatus('Unable to reach the report service', true); });
+  </script>
+</body>
+</html>

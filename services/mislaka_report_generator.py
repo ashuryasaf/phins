@@ -49,6 +49,12 @@ from services.mislaka_api_service import MislakaQueryResult
 
 FiltersLike = Union[ReportFilters, Dict[str, Any], None]
 
+# Customer-personal reports live in the same document archive as every other
+# upload. These two stamps together mark that lane. Admin filings keep
+# uploaded_by_role="system" and do not carry the scope token.
+PERSONAL_REPORT_ROLE = "customer"
+PERSONAL_REPORT_SCOPE = "scope=customer_personal"
+
 
 def _coerce_filters(filters: FiltersLike) -> ReportFilters:
     if isinstance(filters, ReportFilters):
@@ -306,49 +312,106 @@ def _find_owned_report(doc_service: Any, customer_id: str, sha256: str) -> str:
     return ""
 
 
+def is_personal_mislaka_report(record: Any) -> bool:
+    """True when this archive row is a customer's own Mislaka report.
+
+    Admin filings stay unmarked, so staff Mislaka assessments are unchanged.
+    """
+    if not isinstance(record, dict):
+        return False
+    if str(record.get("document_type") or "") != "mislaka_report":
+        return False
+    if str(record.get("uploaded_by_role") or "") != PERSONAL_REPORT_ROLE:
+        return False
+    return PERSONAL_REPORT_SCOPE in str(record.get("description") or "")
+
+
+def _find_personal_report(doc_service: Any, customer_id: str, sha256: str) -> str:
+    """Return this customer's personal report id for ``sha256``, or ``""``.
+
+    An admin filing of the same bytes is not reused. The personal copy stays
+    a separate document in the same archive.
+    """
+    page = 1
+    page_size = 200
+    while page <= 20:
+        listing = doc_service.list_documents(
+            customer_id=customer_id, page=page, page_size=page_size,
+        )
+        items = listing.get("items") if isinstance(listing, dict) else None
+        if not items:
+            return ""
+        for rec in items:
+            if not isinstance(rec, dict) or not is_personal_mislaka_report(rec):
+                continue
+            checksum = str(rec.get("sha256_checksum") or rec.get("sha256") or "")
+            owner = str(rec.get("customer_id") or "").strip()
+            if checksum == sha256 and owner == customer_id:
+                return str(rec.get("id") or "")
+        total = int(listing.get("total") or 0)
+        if page * page_size >= total:
+            return ""
+        page += 1
+    return ""
+
+
 def _file_mislaka_report(
     center: Any,
     customer_id: str,
     report_text: str,
     metadata: Dict[str, Any],
+    *,
+    uploaded_by: str = "mislaka",
+    uploaded_by_role: str = "system",
+    scope_note: str = "",
+    reuse_finder: Any = None,
 ) -> Tuple[str, str, bool]:
     """Persist the report text as a document owned by ``customer_id``.
 
     Returns ``(document_id, sha256, reused)``. The national ID is not used as
     a customer id and is not written into the filename. Bytes are the exact
     report text; a failed on-disk checksum aborts before any fact is stored.
+    Default stamps match the admin assessment filing. A personal pull passes
+    its own role, scope note, and reuse finder so it does not attach to an
+    admin document.
     """
     import base64
 
     raw = report_text.encode("utf-8")
     sha256 = hashlib.sha256(raw).hexdigest()
     doc_service = center.document_service
-    existing = _find_owned_report(doc_service, customer_id, sha256)
+    finder = reuse_finder or _find_owned_report
+    existing = finder(doc_service, customer_id, sha256)
     if existing:
         record = doc_service.get_document(existing, include_data=False) or {}
         owner = str(record.get("customer_id") or "").strip()
         stored = str(record.get("sha256_checksum") or record.get("sha256") or "")
         if owner != customer_id or stored != sha256:
             raise ValueError("Mislaka report document failed ownership check")
+        if scope_note and not is_personal_mislaka_report(record):
+            raise ValueError("Mislaka report document failed ownership check")
         return existing, sha256, True
 
     digest = str(metadata.get("data_hash") or sha256)
     file_name = f"mislaka-report-{digest[:16]}.txt"
+    description = (
+        f"Mislaka affiliation report request={metadata.get('request_id') or ''} "
+        f"projection={digest}"
+    )
+    if scope_note:
+        description = f"{description} {scope_note}"
     upload = doc_service.upload_document(
         file_name=file_name,
         file_data_b64=base64.b64encode(raw).decode("ascii"),
         mime_type="text/plain",
         category="report",
         document_type="mislaka_report",
-        description=(
-            f"Mislaka affiliation report request={metadata.get('request_id') or ''} "
-            f"projection={digest}"
-        ),
+        description=description,
         entity_type="customer",
         entity_id=customer_id,
         customer_id=customer_id,
-        uploaded_by="mislaka",
-        uploaded_by_role="system",
+        uploaded_by=uploaded_by,
+        uploaded_by_role=uploaded_by_role,
         skip_processing=True,
     )
     if getattr(upload, "status", "") == "integrity_error" or upload.sha256 != sha256:
@@ -402,6 +465,158 @@ def link_to_assessment_center(
     payload["document_sha256"] = sha256
     payload["document_reused"] = reused
     return payload
+
+
+def file_personal_mislaka_report(
+    result: MislakaQueryResult,
+    *,
+    customer_id: Optional[str] = None,
+    filters: FiltersLike = None,
+    center: Any = None,
+) -> Dict[str, Any]:
+    """File one customer's own Mislaka report in the document archive.
+
+    The bytes use the same upload path as every other document for that
+    account. The row is stamped personal, so the customer viewer can open it
+    and the admin assessment filing is left as its own document. Policy rows
+    are not copied into the shared Assessment Center fact store.
+    """
+    cust = (customer_id or "").strip()
+    if not cust:
+        raise ValueError("customer_id required")
+    if center is None:
+        from services.assessment_center_service import get_assessment_center
+        center = get_assessment_center()
+
+    report_text, metadata, _data = build_mislaka_report_text(
+        result, filters=filters,
+    )
+    doc_id, sha256, reused = _file_mislaka_report(
+        center, cust, report_text, metadata,
+        uploaded_by=cust,
+        uploaded_by_role=PERSONAL_REPORT_ROLE,
+        scope_note=PERSONAL_REPORT_SCOPE,
+        reuse_finder=_find_personal_report,
+    )
+    record = center.document_service.get_document(doc_id, include_data=False) or {}
+    if not is_personal_mislaka_report(record):
+        raise ValueError("Mislaka report was not filed as a personal document")
+    if str(record.get("customer_id") or "").strip() != cust:
+        raise ValueError("Mislaka report was not filed under the customer")
+    return {
+        "customer_id": cust,
+        "document_id": doc_id,
+        "document_sha256": sha256,
+        "document_reused": reused,
+        "policy_count": int(metadata.get("policy_count") or 0),
+    }
+
+
+def list_personal_mislaka_reports(
+    doc_service: Any,
+    customer_id: str,
+    *,
+    page: int = 1,
+    page_size: int = 20,
+) -> Dict[str, Any]:
+    """List personal Mislaka reports owned by ``customer_id``.
+
+    Admin filings for the same account are omitted. The list carries document
+    identity only — not the report text and not a national ID.
+    """
+    cust = (customer_id or "").strip()
+    page = max(1, int(page or 1))
+    page_size = min(50, max(1, int(page_size or 20)))
+    owned: List[Dict[str, Any]] = []
+    if not cust:
+        return {"items": [], "page": page, "page_size": page_size, "total": 0}
+    scan = 1
+    while scan <= 20:
+        listing = doc_service.list_documents(
+            customer_id=cust, page=scan, page_size=200,
+        )
+        items = listing.get("items") if isinstance(listing, dict) else None
+        if not items:
+            break
+        for rec in items:
+            if not isinstance(rec, dict) or not is_personal_mislaka_report(rec):
+                continue
+            if str(rec.get("customer_id") or "").strip() != cust:
+                continue
+            owned.append({
+                "id": rec.get("id"),
+                "file_name": rec.get("original_file_name") or rec.get("file_name"),
+                "sha256_checksum": rec.get("sha256_checksum") or rec.get("sha256"),
+                "file_size": rec.get("file_size"),
+                "created_date": rec.get("created_date") or rec.get("uploaded_at"),
+                "status": rec.get("status"),
+            })
+        total = int(listing.get("total") or 0)
+        if scan * 200 >= total:
+            break
+        scan += 1
+    owned.sort(key=lambda row: str(row.get("created_date") or ""), reverse=True)
+    start = (page - 1) * page_size
+    return {
+        "items": owned[start:start + page_size],
+        "page": page,
+        "page_size": page_size,
+        "total": len(owned),
+    }
+
+
+def read_personal_mislaka_report(
+    doc_service: Any,
+    customer_id: str,
+    document_id: str,
+) -> Optional[Dict[str, Any]]:
+    """Return one personal report for its owner after the checksum matches.
+
+    A missing row, another customer's row, or an admin filing returns
+    ``None``. A checksum mismatch raises ``ValueError`` and does not return
+    the bytes.
+    """
+    import base64
+
+    cust = (customer_id or "").strip()
+    doc_id = (document_id or "").strip()
+    if not cust or not doc_id:
+        return None
+    record = doc_service.get_document(doc_id, include_data=True)
+    if not isinstance(record, dict) or not is_personal_mislaka_report(record):
+        return None
+    if str(record.get("customer_id") or "").strip() != cust:
+        return None
+    if record.get("integrity_warning"):
+        raise ValueError("Report integrity check failed")
+    encoded = record.get("data") or ""
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except Exception as exc:
+        raise ValueError("Report integrity check failed") from exc
+    actual = hashlib.sha256(raw).hexdigest()
+    expected = str(record.get("sha256_checksum") or record.get("sha256") or "")
+    if not expected or actual != expected:
+        raise ValueError("Report integrity check failed")
+    text = raw.decode("utf-8")
+    policy_count = 0
+    for line in text.splitlines():
+        if line.startswith("Records in report:"):
+            try:
+                policy_count = int(line.split(":", 1)[1].strip())
+            except ValueError:
+                policy_count = 0
+            break
+    return {
+        "id": record.get("id"),
+        "customer_id": cust,
+        "file_name": record.get("original_file_name") or record.get("file_name"),
+        "sha256_checksum": expected,
+        "created_date": record.get("created_date") or record.get("uploaded_at"),
+        "policy_count": policy_count,
+        "report_text": text,
+        "integrity_ok": True,
+    }
 
 
 def _format_amount(value: Any) -> str:

@@ -23,7 +23,7 @@ CUSTOMER_ROUTE_HREFS = (
     "/unified-workbench.html",
     "/assessment-center.html",
     "/customer-ai-report.html",
-    "/unified-workbench.html#mislaka-report",
+    "/mislaka-report.html",
     "/risk-reports-dashboard.html",
 )
 
@@ -84,7 +84,8 @@ def test_assessments_nav_route_integrity_is_unchanged():
     assert "scope: 'document'" in customer_block
     assert customer_block.index("scope: 'user'") < customer_block.index("scope: 'document'")
     assert "Mislaka Report" in customer_block
-    assert "#mislaka-report" in customer_block
+    assert "/mislaka-report.html" in customer_block
+    assert "#mislaka-report" not in customer_block
     # Chrome-only: no fetch / POST / localStorage writes from the chooser.
     assert "fetch(" not in js
     assert "XMLHttpRequest" not in js
@@ -117,6 +118,7 @@ def test_assessment_routes_are_full_pages_not_stubs():
         ("/risk-reports-dashboard.html", "Mislaka"),
         ("/unified-workbench.html", "Run Unified Analysis"),
         ("/customer-ai-report.html", "AI Report"),
+        ("/mislaka-report.html", "Your Mislaka report"),
         ("/risk-assessment-viewer.html", "Risk Assessment Report"),
     ]:
         resp = requests.get(f"{BASE_URL}{path}")

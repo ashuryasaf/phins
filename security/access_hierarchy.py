@@ -74,6 +74,9 @@ CUSTOMER_PRIVATE_PAGES: FrozenSet[str] = frozenset({
     "/dashboard.html",
     "/savings-portfolio.html",
     "/algo-trading.html",
+    # Each customer's own Mislaka tool. Staff stay on the admin assessment
+    # surfaces and are not given this personal view.
+    "/mislaka-report.html",
 })
 
 # Both sides may open these. APIs still scope rows to the caller.
@@ -197,7 +200,12 @@ def surface_decision(role: Optional[str], path: Optional[str]) -> Dict[str, Opti
     return {"allowed": True, "redirect": None, "surface": "public", "role": normalized_role}
 
 
+_CUSTOMER_PERSONAL_MISLAKA = "/api/assessment-center/mislaka/personal"
+
+
 def _customer_private_api(method: str, path: str) -> bool:
+    if path == _CUSTOMER_PERSONAL_MISLAKA or path.startswith(_CUSTOMER_PERSONAL_MISLAKA + "/"):
+        return method in ("GET", "POST")
     if method == "GET":
         if path == "/api/health-wallet":
             return True
