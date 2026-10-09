@@ -119,7 +119,7 @@ def test_assessment_routes_are_full_pages_not_stubs():
         ("/unified-workbench.html", "Run Unified Analysis"),
         ("/customer-ai-report.html", "AI Report"),
         ("/mislaka-report.html", "Your Mislaka report"),
-        ("/mislaka-report.html", "Analyze &amp; Generate"),
+        ("/mislaka-report.html", 'id="analyzeBtn"'),
         ("/risk-assessment-viewer.html", "Risk Assessment Report"),
     ]:
         resp = requests.get(f"{BASE_URL}{path}")
