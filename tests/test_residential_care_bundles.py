@@ -593,6 +593,8 @@ def test_demo_video_and_terms_link_are_published_with_the_catalog():
     ).read()
     hebrew = json.load(open(os.path.join(ROOT, "web_portal", "static", "locales", "he.json"), encoding="utf-8"))
     assert "openResidentialDemo" in dashboard
+    assert "const product = isResidentialCatalog(indexed) ? indexed : null;" in dashboard
+    assert "['res-home', 'res-extra', 'res-full'].every(id => isResidentialCatalog(marketplaceOfferIndex[id]))" in dashboard
     assert "Play service demo" in dashboard
     assert "/terms-of-use.html#residential-care" in dashboard
     assert 'id="residential-care"' in terms

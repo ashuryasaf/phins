@@ -7160,7 +7160,7 @@
     }
     
     async function ensureResidentialCatalog() {
-      if (marketplaceOfferIndex['res-home'] && marketplaceOfferIndex['res-extra'] && marketplaceOfferIndex['res-full']) return;
+      if (['res-home', 'res-extra', 'res-full'].every(id => isResidentialCatalog(marketplaceOfferIndex[id]))) return;
       const fallback = medicalProducts.residential || [];
       fallback.forEach(item => {
         if (!marketplaceOfferIndex[item.id]) {
@@ -7244,14 +7244,15 @@
     async function openResidentialDemo(productId) {
       await ensureResidentialCatalog();
       const safeId = marketplaceDomId(productId || '');
-      const product = safeId ? marketplaceOfferIndex[safeId] : null;
+      const indexed = safeId ? marketplaceOfferIndex[safeId] : null;
+      const product = isResidentialCatalog(indexed) ? indexed : null;
       if (product && !residentialTermState[safeId]) {
         residentialTermState[safeId] = { quantity: 1, service_term: 'monthly' };
       }
       const videoUrl = (product && product.demo_video_url) || '/marketplace/residential-demo.mp4';
       const poster = (product && (product.image_url || product.image)) || '/marketplace/residential-solutions.jpg';
       const termsUrl = (product && product.terms_url) || '/terms-of-use.html#residential-care';
-      const choices = ['res-home', 'res-extra', 'res-full'].map(id => marketplaceOfferIndex[id]).filter(Boolean);
+      const choices = ['res-home', 'res-extra', 'res-full'].map(id => marketplaceOfferIndex[id]).filter(item => isResidentialCatalog(item));
       const choiceHtml = choices.map(item => `
         <button type="button" class="phins-demo-choice${item.id === safeId ? ' is-selected' : ''}" onclick="openResidentialDemo('${marketplaceDomId(item.id)}')">
           <img src="${escapeHtml(item.image_url || item.image || '')}" alt="${escapeHtml(item.name)}">
