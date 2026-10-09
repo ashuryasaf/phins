@@ -307,6 +307,71 @@ def test_two_periods_and_card_payment_keep_one_ledger_amount():
         portal.HEALTH_WALLETS.pop(customer_id, None)
 
 
+def test_offer_rows_the_marketplace_hides_keep_the_catalog_price():
+    """A stale row cannot unlock the price of a card the wallet still shows."""
+    customer_id = "CUST-RES-CARE-STALE"
+    price = portal.residential_care_by_id("res-home")["price"]
+    _prime_port()
+    _fund(customer_id, 20000)
+    hidden_rows = {
+        "SUP-RES-INACTIVE-OFFER": ({"active": False}, {"status": "approved", "portal_active": True}),
+        "SUP-RES-UNAPPROVED": ({"active": True}, {"status": "pending", "portal_active": True}),
+        "SUP-RES-PORTAL-OFF": ({"active": True}, {"status": "approved", "portal_active": False}),
+    }
+    try:
+        for supplier_id, (offer_flags, supplier_flags) in hidden_rows.items():
+            with portal.STATE_LOCK:
+                portal.SUPPLIERS[supplier_id] = {
+                    "id": supplier_id,
+                    "company_name": "Stale Residential Supplier",
+                    "supplier_type": "healthcare_provider",
+                    **supplier_flags,
+                }
+                portal.SUPPLIER_OFFERS["res-home"] = {
+                    "id": "res-home",
+                    "supplier_id": supplier_id,
+                    "name": "Discount Home Bundle",
+                    "price": 100.00,
+                    "category": "residential",
+                    "item_type": "service",
+                    **offer_flags,
+                }
+            try:
+                offer_price, offer_body = _post("/api/health-wallet/purchase", {
+                    "customer_id": customer_id,
+                    "product_id": "res-home",
+                    "amount": 100.00,
+                    "quantity": 1,
+                    "payment_method": "health_wallet",
+                })
+                assert offer_price == 400, (supplier_id, offer_body)
+                assert offer_body["error"] == "Catalog price mismatch"
+                assert offer_body["catalog_amount"] == price
+                assert portal.HEALTH_WALLETS[customer_id]["balance"] == 20000.00
+
+                status, body = _post("/api/health-wallet/purchase", {
+                    "customer_id": customer_id,
+                    "product_id": "res-home",
+                    "amount": price,
+                    "quantity": 1,
+                    "payment_method": "health_wallet",
+                })
+                assert status == 200, (supplier_id, body)
+                assert body["purchase"]["amount"] == price
+                assert body["purchase"]["product_name"] == "Home Bundle"
+                assert body["purchase"]["price_source"] == "residential_catalog"
+                assert body["purchase"].get("order_id") is None
+                assert body["new_balance"] == round(20000.00 - price, 2)
+                _plan_identity(body["pricing_plan"], price)
+            finally:
+                with portal.STATE_LOCK:
+                    portal.SUPPLIER_OFFERS.pop("res-home", None)
+                    portal.SUPPLIERS.pop(supplier_id, None)
+                portal.HEALTH_WALLETS[customer_id]["balance"] = 20000.00
+    finally:
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+
+
 def test_other_catalog_purchases_still_use_the_wallet_pricing_plan():
     customer_id = "CUST-RES-CARE-OTHER"
     _prime_port()

@@ -53603,14 +53603,24 @@ For claims or questions, please contact:
 
                 # Platform residential bundles charge the catalog price. A
                 # live supplier offer with the same id keeps the supply-chain
-                # path. Validation happens before any wallet mutation.
+                # path. "Live" is what the marketplace browse shows: an active
+                # offer from an approved, portal-active supplier. A stale or
+                # unapproved row leaves the catalog card on the wallet, so the
+                # catalog price stays authoritative.
                 catalog_bundle = residential_care_by_id(product_id)
                 catalog_pricing_plan = None
                 with STATE_LOCK:
-                    supplier_offer_exists = product_id in SUPPLIER_OFFERS
+                    supplier_offer = SUPPLIER_OFFERS.get(product_id)
+                    offer_supplier = SUPPLIERS.get((supplier_offer or {}).get('supplier_id')) or {}
+                    supplier_offer_is_live = bool(
+                        supplier_offer
+                        and supplier_offer.get('active', True)
+                        and offer_supplier.get('status') == 'approved'
+                        and offer_supplier.get('portal_active', False)
+                    )
                 catalog_price_authoritative = bool(
                     catalog_bundle and not (
-                        supplier_offer_exists and supply_chain_enabled and supply_chain_service
+                        supplier_offer_is_live and supply_chain_enabled and supply_chain_service
                     )
                 )
                 if catalog_price_authoritative:
@@ -53658,10 +53668,7 @@ For claims or questions, please contact:
 
                 # If product_id maps to a registered supplier offer, route through supply-chain
                 # order pipeline so invitation→approval→offer→purchase stays connected.
-                with STATE_LOCK:
-                    supplier_offer = SUPPLIER_OFFERS.get(product_id)
-
-                if supplier_offer and supply_chain_enabled and supply_chain_service:
+                if supplier_offer and not catalog_price_authoritative and supply_chain_enabled and supply_chain_service:
                     supplier_id = data.get('supplier_id') or supplier_offer.get('supplier_id')
                     order_payload = {
                         'quantity': quantity,
