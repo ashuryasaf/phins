@@ -340,7 +340,8 @@
           + esc(rec.description || '') + '</div></div>';
       }).join('');
       document.getElementById('analysis-body').innerHTML = sections
-        + (recs ? '<div class="section"><h3>Recommendations</h3>' + recs + '</div>' : '');
+        + (recs ? '<div class="section" dir="' + (rtl ? 'rtl' : 'ltr') + '"><h3>Recommendations</h3>'
+          + recs + '</div>' : '');
       analysisView.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
