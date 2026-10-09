@@ -684,6 +684,24 @@ class TestMislakaReportDocumentHierarchy:
         assert facts[0]["source_document_id"] == second["document_id"]
         assert facts[0]["metadata"]["row"]["premium_monthly"] == 180.0
 
+    def test_refreshed_row_leaves_no_fact_on_the_superseded_report(self, center):
+        first = link_to_assessment_center(
+            _mislaka_result([_mislaka_policy(policy_id="P-1", premium_monthly=100.0)]),
+            customer_id="CUST-MIS", center=center,
+        )
+        second = link_to_assessment_center(
+            _mislaka_result([_mislaka_policy(policy_id="P-1", premium_monthly=180.0)]),
+            customer_id="CUST-MIS", center=center,
+        )
+        assert center.facts_for_documents([first["document_id"]]) == []
+        assert len(center.facts_for_documents(
+            [first["document_id"], second["document_id"]])) == 1
+        old_only = center.get_document_assessments([first["document_id"]])
+        assert old_only[first["document_id"]]["facts_extracted"] == 0
+        both = center.get_document_assessments(
+            [first["document_id"], second["document_id"]])
+        assert both[second["document_id"]]["facts_extracted"] == 1
+
     def test_missing_customer_does_not_invent_a_user_from_the_national_id(self, center):
         result = _mislaka_result([_mislaka_policy()])
         with pytest.raises(ValueError, match="customer_id required"):

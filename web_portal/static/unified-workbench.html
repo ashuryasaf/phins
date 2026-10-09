@@ -1592,6 +1592,19 @@
     paintAllBars(snapshot);
   }
 
+  /* Deep link (and in-page nav, which only changes the hash) to the
+     clearinghouse report: expand the panels holding it, then scroll. */
+  function revealMislakaReport() {
+    if ((location.hash || '') !== '#mislaka-report') return;
+    const panel = document.getElementById('mislaka-report');
+    const docs = document.getElementById('bar-docs');
+    const assessment = document.getElementById('bar-assessment');
+    if (docs) docs.classList.remove('collapsed');
+    if (assessment) assessment.classList.remove('collapsed');
+    if (panel && panel.scrollIntoView) panel.scrollIntoView({ block: 'start' });
+  }
+  window.addEventListener('hashchange', revealMislakaReport);
+
   (async function init() {
     await ensureServerSession();
     renderContextLine();
@@ -1603,14 +1616,7 @@
       });
     }
     await refreshAllBars();
-    if ((location.hash || '') === '#mislaka-report') {
-      const panel = document.getElementById('mislaka-report');
-      const docs = document.getElementById('bar-docs');
-      const assessment = document.getElementById('bar-assessment');
-      if (docs) docs.classList.remove('collapsed');
-      if (assessment) assessment.classList.remove('collapsed');
-      if (panel && panel.scrollIntoView) panel.scrollIntoView({ block: 'start' });
-    }
+    revealMislakaReport();
   })();
 </script>
 

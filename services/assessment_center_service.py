@@ -624,6 +624,22 @@ class AssessmentCenterService:
         self._by_field.setdefault(fact.customer_id, {}).setdefault(
             (fact.fact_type, fact.label), []).append(fact)
 
+    def _unindex_document(self, fact: Fact, document_id: Optional[str] = None) -> None:
+        """Drop one fact from ``_by_document``. Caller holds ``_lock``.
+
+        ``document_id`` defaults to the fact's own provenance; pass the previous
+        id explicitly when the fact is about to be (or has been) retargeted, so
+        the bucket it actually sits in is the one that gets cleaned.
+        """
+        doc_id = document_id or fact.source_document_id
+        if not doc_id or doc_id not in self._by_document:
+            return
+        bucket = [x for x in self._by_document[doc_id] if x is not fact]
+        if bucket:
+            self._by_document[doc_id] = bucket
+        else:
+            del self._by_document[doc_id]
+
     def _rebuild_indexes(self, customer_id: Optional[str] = None) -> None:
         """Recompute the indexes for one customer (or all). Caller holds ``_lock``.
 
@@ -635,12 +651,7 @@ class AssessmentCenterService:
             stale = self._by_field.pop(cust, {})
             for facts in stale.values():
                 for f in facts:
-                    if f.source_document_id and f.source_document_id in self._by_document:
-                        bucket = [x for x in self._by_document[f.source_document_id] if x is not f]
-                        if bucket:
-                            self._by_document[f.source_document_id] = bucket
-                        else:
-                            del self._by_document[f.source_document_id]
+                    self._unindex_document(f)
             for f in self._facts.get(cust, ()):
                 self._index_fact(f)
 
@@ -930,6 +941,8 @@ class AssessmentCenterService:
                 same_sha = prior.source_document_sha256 == inc.source_document_sha256
                 if same_doc and same_sha and prior_row == row:
                     continue
+                if not same_doc:
+                    self._unindex_document(prior)
                 prior.source_document_id = inc.source_document_id
                 prior.source_document_sha256 = inc.source_document_sha256
                 if row is not None:
