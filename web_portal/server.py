@@ -1309,13 +1309,13 @@ def _residential_from_cents(cents: int) -> float:
 
 
 def _normalize_residential_term(service_term: Any) -> str:
-    token = str(service_term or 'monthly').strip().lower().replace('-', ' ').replace('_', ' ')
-    token = ' '.join(token.split())
-    if token in ('', 'month', 'months', 'monthly'):
+    normalized_term = str(service_term or 'monthly').strip().lower().replace('-', ' ').replace('_', ' ')
+    normalized_term = ' '.join(normalized_term.split())
+    if normalized_term in ('', 'month', 'months', 'monthly'):
         return 'monthly'
-    if token in ('annual', 'annual accommodation'):
+    if normalized_term in ('annual', 'annual accommodation'):
         return 'annual'
-    return token
+    return normalized_term
 
 
 def residential_care_quote(bundle: Dict[str, Any], quantity: Any, service_term: Any = None) -> Dict[str, Any]:
