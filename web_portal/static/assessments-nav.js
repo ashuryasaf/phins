@@ -17,21 +17,33 @@
   ];
 
   var CUSTOMER_ROUTES = [
-    { href: '/unified-workbench.html', label: 'Unified Workbench', hint: 'Documents · assessment · risk · reports' },
-    { href: '/assessment-center.html', label: 'Assessment Center', hint: 'Your Customer 360 facts' },
-    { href: '/customer-ai-report.html', label: 'AI Report', hint: 'Period report with assessment join' },
-    { href: '/risk-reports-dashboard.html', label: 'Reports Library', hint: 'Uploaded report archive' },
+    { href: '/unified-workbench.html', label: 'Unified Workbench', hint: 'Your account · documents · assessment', scope: 'user' },
+    { href: '/assessment-center.html', label: 'Assessment Center', hint: 'Your Customer 360 facts', scope: 'user' },
+    { href: '/customer-ai-report.html', label: 'AI Report', hint: 'Period report for your account', scope: 'user' },
+    { href: '/unified-workbench.html#mislaka-report', label: 'Mislaka Report', hint: 'Clearinghouse document filed under you', scope: 'document' },
+    { href: '/risk-reports-dashboard.html', label: 'Reports Library', hint: 'Your uploaded report archive', scope: 'document' },
   ];
 
   function currentPath() {
     try { return (location.pathname || '').split('?')[0]; } catch (e) { return ''; }
   }
 
-  function isActive(href) {
+  function isActive(href, routes) {
     var path = currentPath();
     try {
       var u = new URL(href, location.origin);
-      return path === u.pathname;
+      if (path !== u.pathname) return false;
+      var hereHash = '';
+      try { hereHash = location.hash || ''; } catch (e) { hereHash = ''; }
+      if (u.hash) return hereHash === u.hash;
+      if (!hereHash) return true;
+      var claimed = (routes || []).some(function (r) {
+        try {
+          var other = new URL(r.href, location.origin);
+          return other.pathname === u.pathname && other.hash && other.hash === hereHash;
+        } catch (e) { return false; }
+      });
+      return !claimed;
     } catch (e) {
       return path === href;
     }
@@ -78,18 +90,28 @@
   function buildMenu(routes) {
     var wrap = document.createElement('div');
     wrap.className = 'assessments-nav';
-    var anyActive = routes.some(function (r) { return isActive(r.href); });
+    var anyActive = routes.some(function (r) { return isActive(r.href, routes); });
     wrap.innerHTML =
       '<button type="button" class="assessments-nav-toggle' + (anyActive ? ' active' : '') + '" aria-haspopup="true" aria-expanded="false">' +
       'Assessments <span class="assessments-nav-caret" aria-hidden="true">▾</span>' +
       '</button>' +
       '<div class="assessments-nav-menu" role="menu" hidden></div>';
     var menu = wrap.querySelector('.assessments-nav-menu');
+    var lastScope = '';
     routes.forEach(function (r) {
+      var scope = r.scope || '';
+      if (scope && scope !== lastScope) {
+        var group = document.createElement('div');
+        group.className = 'assessments-nav-group';
+        group.setAttribute('role', 'presentation');
+        group.textContent = scope === 'document' ? 'Documents' : 'Your account';
+        menu.appendChild(group);
+        lastScope = scope;
+      }
       var a = document.createElement('a');
       a.href = r.href;
       a.setAttribute('role', 'menuitem');
-      a.className = 'assessments-nav-item' + (isActive(r.href) ? ' is-active' : '');
+      a.className = 'assessments-nav-item' + (isActive(r.href, routes) ? ' is-active' : '');
       a.innerHTML =
         '<span class="assessments-nav-item-label">' + r.label + '</span>' +
         '<span class="assessments-nav-item-hint">' + r.hint + '</span>';

@@ -1348,14 +1348,18 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
                 product_type = MislakaProductType(product_value)
             except ValueError:
                 product_type = MislakaProductType.ALL
+            if not cust:
+                return 400, {"error": "customer_id required"}
             result = mislaka.get_person_policies(id_number, product_type)
             # Adjustable reporting: optional filters narrow which real policy
             # rows are ingested as facts (policy number, status, provider, dates).
+            # The national ID stays inside the report document. It is never
+            # promoted to a customer id.
             report_filters = ReportFilters.from_dict(
                 body.get("filters") if isinstance(body.get("filters"), dict) else None
             )
             payload = link_to_assessment_center(
-                result, customer_id=cust or id_number, filters=report_filters,
+                result, customer_id=cust, filters=report_filters,
             )
             return 200, {
                 "linked": True,

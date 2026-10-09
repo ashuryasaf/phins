@@ -277,30 +277,131 @@ def mislaka_facts(
     return rows
 
 
+def _find_owned_report(doc_service: Any, customer_id: str, sha256: str) -> str:
+    """Return this customer's document id for ``sha256``, or ``""``.
+
+    Lookup is owner-scoped. A checksum match on another customer's archive
+    is not reused — the report stays a document of the account that pulled it.
+    """
+    page = 1
+    page_size = 200
+    while page <= 20:
+        listing = doc_service.list_documents(
+            customer_id=customer_id, page=page, page_size=page_size,
+        )
+        items = listing.get("items") if isinstance(listing, dict) else None
+        if not items:
+            return ""
+        for rec in items:
+            if not isinstance(rec, dict):
+                continue
+            checksum = str(rec.get("sha256_checksum") or rec.get("sha256") or "")
+            owner = str(rec.get("customer_id") or "").strip()
+            if checksum == sha256 and owner == customer_id:
+                return str(rec.get("id") or "")
+        total = int(listing.get("total") or 0)
+        if page * page_size >= total:
+            return ""
+        page += 1
+    return ""
+
+
+def _file_mislaka_report(
+    center: Any,
+    customer_id: str,
+    report_text: str,
+    metadata: Dict[str, Any],
+) -> Tuple[str, str, bool]:
+    """Persist the report text as a document owned by ``customer_id``.
+
+    Returns ``(document_id, sha256, reused)``. The national ID is not used as
+    a customer id and is not written into the filename. Bytes are the exact
+    report text; a failed on-disk checksum aborts before any fact is stored.
+    """
+    import base64
+
+    raw = report_text.encode("utf-8")
+    sha256 = hashlib.sha256(raw).hexdigest()
+    doc_service = center.document_service
+    existing = _find_owned_report(doc_service, customer_id, sha256)
+    if existing:
+        record = doc_service.get_document(existing, include_data=False) or {}
+        owner = str(record.get("customer_id") or "").strip()
+        stored = str(record.get("sha256_checksum") or record.get("sha256") or "")
+        if owner != customer_id or stored != sha256:
+            raise ValueError("Mislaka report document failed ownership check")
+        return existing, sha256, True
+
+    digest = str(metadata.get("data_hash") or sha256)
+    file_name = f"mislaka-report-{digest[:16]}.txt"
+    upload = doc_service.upload_document(
+        file_name=file_name,
+        file_data_b64=base64.b64encode(raw).decode("ascii"),
+        mime_type="text/plain",
+        category="report",
+        document_type="mislaka_report",
+        description=(
+            f"Mislaka affiliation report request={metadata.get('request_id') or ''} "
+            f"projection={digest}"
+        ),
+        entity_type="customer",
+        entity_id=customer_id,
+        customer_id=customer_id,
+        uploaded_by="mislaka",
+        uploaded_by_role="system",
+        skip_processing=True,
+    )
+    if getattr(upload, "status", "") == "integrity_error" or upload.sha256 != sha256:
+        raise ValueError("Mislaka report failed integrity check")
+    record = doc_service.get_document(upload.document_id, include_data=False) or {}
+    if str(record.get("customer_id") or "").strip() != customer_id:
+        raise ValueError("Mislaka report was not filed under the customer")
+    return upload.document_id, sha256, False
+
+
 def link_to_assessment_center(
     result: MislakaQueryResult,
     *,
     customer_id: Optional[str] = None,
     filters: FiltersLike = None,
+    center: Any = None,
 ) -> Dict[str, Any]:
-    """Push the Mislaka rows into the Assessment Center as facts.
+    """File the Mislaka report under the customer, then store its rows as facts.
 
-    Returns the Assessment Center's ingestion summary, which already contains
-    the per-fact provenance the dashboards need to render data integrity. The
-    rows pushed are affiliation-enriched and honour any adjustable ``filters``.
+    Hierarchy is account → document → facts. The person's national ID is a
+    field inside the report document; it is never used as a customer id.
+    Facts reference the filed document and its SHA-256. A repeat pull of the
+    same bytes reuses that document and does not duplicate rows.
+
+    Returns the Assessment Center ingestion summary plus ``document_sha256``
+    and ``document_reused``.
     """
-    from services.assessment_center_service import get_assessment_center
+    cust = (customer_id or "").strip()
+    if not cust:
+        raise ValueError("customer_id required")
+    if center is None:
+        from services.assessment_center_service import get_assessment_center
+        center = get_assessment_center()
 
-    center = get_assessment_center()
-    cust = (customer_id or result.person.id_number or "anonymous").strip() or "anonymous"
+    report_text, metadata, _data = build_mislaka_report_text(
+        result, filters=filters,
+    )
+    doc_id, sha256, reused = _file_mislaka_report(center, cust, report_text, metadata)
     rows = mislaka_facts(result, filters=filters)
     assessment = center.ingest_external_facts(
         customer_id=cust,
         source="mislaka",
         records=rows,
         fact_type="external_policy",
+        source_document_id=doc_id,
+        source_document_sha256=sha256,
     )
-    return assessment.to_dict()
+    payload = assessment.to_dict()
+    payload["customer_id"] = cust
+    payload["document_id"] = doc_id
+    payload["document_sha256"] = sha256
+    payload["document_reused"] = reused
+    return payload
 
 
 def _format_amount(value: Any) -> str:

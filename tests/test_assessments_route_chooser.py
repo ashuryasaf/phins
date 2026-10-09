@@ -23,6 +23,7 @@ CUSTOMER_ROUTE_HREFS = (
     "/unified-workbench.html",
     "/assessment-center.html",
     "/customer-ai-report.html",
+    "/unified-workbench.html#mislaka-report",
     "/risk-reports-dashboard.html",
 )
 
@@ -78,6 +79,12 @@ def test_assessments_nav_route_integrity_is_unchanged():
     customer_hrefs = tuple(re.findall(r"href:\s*'([^']+)'", customer_block))
     assert admin_hrefs == ADMIN_ROUTE_HREFS
     assert customer_hrefs == CUSTOMER_ROUTE_HREFS
+    # Customer chooser keeps account surfaces above the documents they own.
+    assert "scope: 'user'" in customer_block
+    assert "scope: 'document'" in customer_block
+    assert customer_block.index("scope: 'user'") < customer_block.index("scope: 'document'")
+    assert "Mislaka Report" in customer_block
+    assert "#mislaka-report" in customer_block
     # Chrome-only: no fetch / POST / localStorage writes from the chooser.
     assert "fetch(" not in js
     assert "XMLHttpRequest" not in js
