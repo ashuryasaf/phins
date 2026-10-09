@@ -23171,6 +23171,138 @@ For claims or questions, please contact:
             return
 
         # =====================================================================
+        # ACTUARIAL: LTC residential services market & hedging strategy
+        # Research & Audit bar — 50-year history, 50-year outlook, TAM/SAM/SOM,
+        # operators, regulation, SWOT and the care-sector hedge for a 3+ADL book.
+        # Research only: nothing here writes to live rate tables.
+        # =====================================================================
+        if path == '/api/actuarial/ltc-residential-research':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.ltc_residential_market_research import build_ltc_residential_research
+                knobs = {key: (values[0] if values else None) for key, values in qs.items()}
+                try:
+                    media_assets = [serialize_media_asset(asset) for asset in list(MEDIA_ASSETS.values())]
+                except Exception:
+                    media_assets = []
+                pack = build_ltc_residential_research(knobs, media_assets=media_assets)
+                self._set_json_headers()
+                self.wfile.write(json.dumps(pack).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/actuarial/ltc-residential-research/tables':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.ltc_residential_market_research import (
+                    build_ltc_residential_research,
+                    extract_research_table,
+                    list_research_tables,
+                )
+                knobs = {key: (values[0] if values else None) for key, values in qs.items()}
+                table_name = str(knobs.pop('table', None) or knobs.pop('table_name', None) or '').strip()
+                pack = build_ltc_residential_research(knobs)
+                if not table_name:
+                    items = []
+                    for name in list_research_tables():
+                        try:
+                            rows = extract_research_table(pack, name)
+                        except KeyError:
+                            rows = []
+                        items.append({'name': name, 'row_count': len(rows)})
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'items': items,
+                        'page': 1,
+                        'page_size': len(items),
+                        'total': len(items),
+                        'integrity': pack.get('integrity'),
+                    }).encode('utf-8'))
+                    return
+                try:
+                    rows = extract_research_table(pack, table_name)
+                except KeyError:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': f'Unknown table: {table_name}',
+                    }).encode('utf-8'))
+                    return
+                self._set_json_headers()
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'items': rows,
+                    'page': 1,
+                    'page_size': len(rows),
+                    'total': len(rows),
+                    'table': table_name,
+                    'params': pack.get('params'),
+                    'integrity': pack.get('integrity'),
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path == '/api/actuarial/ltc-residential-research/download':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            try:
+                from services.ltc_residential_market_research import (
+                    build_ltc_residential_research,
+                    research_table_csv,
+                    research_table_json,
+                )
+                knobs = {key: (values[0] if values else None) for key, values in qs.items()}
+                table_name = str(knobs.pop('table', None) or knobs.pop('table_name', None) or 'demand_forecast').strip()
+                fmt = str(knobs.pop('format', None) or 'csv').strip().lower()
+                knobs.pop('lang', None)
+                knobs.pop('language', None)
+                knobs.pop('download', None)
+                if fmt not in ('csv', 'json', 'pdf'):
+                    fmt = 'csv'
+                pack = build_ltc_residential_research(knobs)
+                if fmt == 'pdf':
+                    from services.ltc_residential_market_research_pdf import build_residential_research_pdf
+                    filename, body_bytes = build_residential_research_pdf(pack)
+                    content_type = 'application/pdf'
+                elif fmt == 'json':
+                    filename, body_bytes = research_table_json(pack, table_name)
+                    content_type = 'application/json; charset=utf-8'
+                else:
+                    filename, body_bytes = research_table_csv(pack, table_name)
+                    content_type = 'text/csv; charset=utf-8'
+                integrity_hash = str((pack.get('integrity') or {}).get('tables_hash') or '')
+                self.send_response(200)
+                self.send_header('Content-Type', content_type)
+                self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+                self.send_header('X-Phins-Table-Integrity', integrity_hash)
+                if fmt == 'pdf':
+                    self.send_header('Content-Language', 'en')
+                    self.send_header('Content-Length', str(len(body_bytes)))
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.send_header('Cache-Control', 'no-store')
+                self.end_headers()
+                self.wfile.write(body_bytes)
+            except KeyError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # =====================================================================
         # ACTUARIAL: Canonical contract specification
         # Returns the contract draft the actuary dashboard prices against so
         # the simulator, reports and audit all share one source of truth.
