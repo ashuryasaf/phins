@@ -765,6 +765,7 @@
 .phins-wallet-actions > *:nth-child(12n + 5) { --tile-accent: #6fe0b8; }
 .phins-wallet-actions > *:nth-child(12n + 6) { --tile-accent: #e3bf6f; }
 .phins-wallet-actions > *:nth-child(12n + 7) { --tile-accent: #58d6de; }
+.phins-wallet-actions > *:nth-child(12n + 8) { --tile-accent: #f0a36b; }
 .phins-wallet-action {
   position: relative;
   overflow: hidden;
