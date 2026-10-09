@@ -143,8 +143,7 @@ def test_customer_page_script_does_not_share_studio_bindings():
     assert "(function () {" in inline
     assert "let currentReport" in inline
     assert inline.index("(function () {") < inline.index("let currentReport")
-    assert inline.strip().endswith("</script>")
-    assert "})();" in inline
+    assert inline.index("})();") < inline.index("</script>")
 
 
 def test_workbench_and_reports_use_phins_logo_and_theme():
