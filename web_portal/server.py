@@ -27010,13 +27010,10 @@ For claims or questions, please contact:
                     search_query=qs.get('q', [None])[0],
                     page=safe_int(qs.get('page', ['1'])[0], 1),
                     page_size=safe_int(qs.get('page_size', ['50'])[0], 50),
+                    # Personal Mislaka reports are dropped inside the query so
+                    # staff pages stay full and the total stays stable.
+                    exclude_personal_mislaka=eff_role != 'customer',
                 )
-                if eff_role != 'customer' and isinstance(result, dict):
-                    from services.mislaka_report_generator import is_personal_mislaka_report
-                    raw_items = result.get('items') or []
-                    kept = [item for item in raw_items if not is_personal_mislaka_report(item)]
-                    result['items'] = kept
-                    result['total'] = max(0, int(result.get('total') or 0) - (len(raw_items) - len(kept)))
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except Exception as e:

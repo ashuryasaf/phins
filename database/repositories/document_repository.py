@@ -6,7 +6,7 @@ Provides data-access methods for persistent document and processing-job records.
 
 from typing import List, Optional, Dict, Any
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import desc
+from sqlalchemy import and_, desc
 import logging
 
 from .base import BaseRepository
@@ -109,10 +109,30 @@ class DocumentRepository(BaseRepository):
             logger.error(f"Error searching documents: {e}")
             return []
 
+    @staticmethod
+    def _personal_mislaka_clause():
+        """Rows a customer filed as their own Mislaka report.
+
+        Mirrors ``services.mislaka_report_generator.is_personal_mislaka_report``
+        so a staff listing can drop that lane inside the query and keep its
+        pagination and totals exact.
+        """
+        from services.mislaka_report_generator import (
+            PERSONAL_REPORT_ROLE,
+            PERSONAL_REPORT_SCOPE,
+        )
+        return and_(
+            Document.document_type == 'mislaka_report',
+            Document.uploaded_by_role == PERSONAL_REPORT_ROLE,
+            Document.description.isnot(None),
+            Document.description.like(f"%{PERSONAL_REPORT_SCOPE}%"),
+        )
+
     def search_all(self, query: Optional[str] = None,
                    entity_type: Optional[str] = None, entity_id: Optional[str] = None,
                    customer_id: Optional[str] = None, category: Optional[str] = None,
                    status: Optional[str] = None,
+                   exclude_personal_mislaka: bool = False,
                    limit: int = 50, offset: int = 0) -> List[Document]:
         """Unified search that chains all optional filters with pagination."""
         try:
@@ -134,6 +154,8 @@ class DocumentRepository(BaseRepository):
                 q = q.filter(Document.category == category)
             if status:
                 q = q.filter(Document.status == status)
+            if exclude_personal_mislaka:
+                q = q.filter(~self._personal_mislaka_clause())
             return q.order_by(desc(Document.created_date)).offset(offset).limit(limit).all()
         except SQLAlchemyError as e:
             logger.error(f"Error in search_all: {e}")
@@ -148,7 +170,8 @@ class DocumentRepository(BaseRepository):
     def count_filtered(self, query: Optional[str] = None,
                        entity_type: Optional[str] = None, entity_id: Optional[str] = None,
                        customer_id: Optional[str] = None, category: Optional[str] = None,
-                       status: Optional[str] = None) -> int:
+                       status: Optional[str] = None,
+                       exclude_personal_mislaka: bool = False) -> int:
         """Efficient COUNT(*) with all optional filters (no row loading)."""
         try:
             q = self.session.query(Document).filter(Document.is_deleted == False)
@@ -169,6 +192,8 @@ class DocumentRepository(BaseRepository):
                 q = q.filter(Document.category == category)
             if status:
                 q = q.filter(Document.status == status)
+            if exclude_personal_mislaka:
+                q = q.filter(~self._personal_mislaka_clause())
             return q.count()
         except SQLAlchemyError as e:
             logger.error(f"Error counting documents: {e}")
