@@ -549,6 +549,111 @@
     }
     #section-ltc-life-research .ltc-source-list li:last-child { border-bottom: none; }
     #section-ltc-life-research .ltc-table-scroll { overflow-x: auto; }
+
+    #section-ltc-residential-research .ltc-chart-wrap {
+      position: relative;
+      height: 300px;
+      margin-top: 8px;
+    }
+    #section-ltc-residential-research .ltc-chart-wrap.tall { height: 420px; }
+    #section-ltc-residential-research .ltc-source-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    #section-ltc-residential-research .ltc-source-list li {
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.86rem;
+    }
+    #section-ltc-residential-research .ltc-source-list li:last-child { border-bottom: none; }
+    #section-ltc-residential-research .ltc-table-scroll { overflow-x: auto; }
+    #section-ltc-residential-research .data-table td { font-size: 0.82rem; vertical-align: top; }
+    #section-ltc-residential-research .ltcres-basis {
+      display: inline-block;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      padding: 0 7px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      line-height: 16px;
+      vertical-align: middle;
+    }
+    #section-ltc-residential-research .ltcres-gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    #section-ltc-residential-research .ltcres-figure {
+      margin: 0;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: linear-gradient(135deg, #060d1f, #0e2f63);
+    }
+    #section-ltc-residential-research .ltcres-figure img,
+    #section-ltc-residential-research .ltcres-figure video {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: #060d1f;
+    }
+    #section-ltc-residential-research .ltcres-figure figcaption {
+      padding: 10px 12px;
+      font-size: 0.82rem;
+      background: #fff;
+    }
+    #section-ltc-residential-research .ltcres-swot-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+    }
+    #section-ltc-residential-research .ltcres-swot-cell {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      background: #fff;
+    }
+    #section-ltc-residential-research .ltcres-swot-title {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-weight: 700;
+      font-size: 0.95rem;
+      margin-bottom: 8px;
+    }
+    #section-ltc-residential-research .ltcres-swot-cell ul { list-style: none; padding: 0; margin: 0; }
+    #section-ltc-residential-research .ltcres-swot-cell li { padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 0.84rem; }
+    #section-ltc-residential-research .ltcres-swot-cell li:last-child { border-bottom: none; }
+    #section-ltc-residential-research .ltcres-weight { color: #c9a04e; letter-spacing: 1px; font-size: 10px; }
+    #section-ltc-residential-research .ltcres-cases {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 14px;
+    }
+    #section-ltc-residential-research .ltcres-case {
+      border: 1px solid var(--border);
+      border-left: 4px solid #c9a04e;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 0.84rem;
+      background: #fff;
+    }
+    #section-ltc-residential-research .ltcres-case-title {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-weight: 700;
+      font-size: 0.95rem;
+      margin-bottom: 4px;
+      color: #0e2f63;
+    }
+    #section-ltc-residential-research .ltcres-player-wrap {
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #060d1f;
+    }
+    #section-ltc-residential-research #ltcres-player { display: block; width: 100%; height: auto; }
+    #section-ltc-residential-research #ltcres-recorded { display: none; width: 100%; max-width: 960px; border-radius: 12px; margin-top: 12px; background: #060d1f; }
     
     .badge-soft {
       display: inline-block;
@@ -1531,6 +1636,9 @@
           </div>
           <div class="nav-item" onclick="showSection('ltc-life-research')">
             <span>LTC 3+ADL &amp; Life Research</span>
+          </div>
+          <div class="nav-item" onclick="showSection('ltc-residential-research')">
+            <span>LTC Residential Market Strategy</span>
           </div>
           <div class="nav-item" onclick="showSection('uploaded')">
             <span>Uploaded Tables</span>
@@ -3322,6 +3430,485 @@
           </div>
         </section>
 
+        <!-- LTC Residential Market Strategy (Research & Audit) -->
+        <section id="section-ltc-residential-research" class="section">
+          <div class="annual-brand-banner">
+            <div class="brand-row">
+              <img src="/phins-logo.svg" alt="PHINS emblem" class="brand-emblem">
+              <div>
+                <span class="brand-wordmark">PHINS</span>
+                <div class="brand-tagline">Personal Health Insurance &amp; Savings · AI-Operated Insurance Platform</div>
+              </div>
+              <div class="brand-divider"></div>
+              <div>
+                <div class="brand-title">LTC Residential Market Strategy</div>
+                <div class="brand-tagline">1975–2075 · private vs public institutions vs home care · TAM / SAM / SOM · care-sector hedge</div>
+              </div>
+              <span class="header-badge">Research &amp; Audit</span>
+            </div>
+          </div>
+          <div class="alert alert-warning">
+            Strategic study of <strong>long-term care residential services</strong>: financing, Medicare / Medicaid and social-insurance payer flows, real estate, workforce,
+            accommodation and staffing standards, regulation, operator margins, fifty years of market evolution and a fifty-year outlook — distinguishing
+            <strong>private institutions</strong>, <strong>public institutions</strong> and <strong>home care</strong>. Every row carries a figure basis
+            (<span class="ltcres-basis" style="color:#2f855a;border-color:#2f855a;">published</span>
+            <span class="ltcres-basis" style="color:#2b6cb0;border-color:#2b6cb0;">derived</span>
+            <span class="ltcres-basis" style="color:#718096;border-color:#718096;">estimate</span>
+            <span class="ltcres-basis" style="color:#b7791f;border-color:#b7791f;">projection</span>
+            <span class="ltcres-basis" style="color:#805ad5;border-color:#805ad5;">model</span>) and resolvable source ids; the whole pack is sha256-hashed.
+            Projections are PHINS research scenarios, not carrier experience, and nothing here changes live pricing.
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">LTC spend, % of GDP (region)</div>
+              <div class="stat-value" id="ltcres-kpi-spend-gdp">—</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Public share of LTC spend</div>
+              <div class="stat-value" id="ltcres-kpi-public">—</div>
+            </div>
+            <div class="stat-card success">
+              <div class="stat-label">TAM 2025 (residential + home)</div>
+              <div class="stat-value" id="ltcres-kpi-tam-now">—</div>
+            </div>
+            <div class="stat-card warning">
+              <div class="stat-label">TAM <span id="ltcres-kpi-end-year">2075</span> nominal</div>
+              <div class="stat-value" id="ltcres-kpi-tam-end">—</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">SOM <span id="ltcres-kpi-end-year-2">2075</span></div>
+              <div class="stat-value" id="ltcres-kpi-som-end">—</div>
+            </div>
+            <div class="stat-card success">
+              <div class="stat-label">Hedge income / expected claims</div>
+              <div class="stat-value" id="ltcres-kpi-hedge">—</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Study controls — region, scenario, demand drivers and the hedge book</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              Choose a region and scenario, move the demand drivers, and size the 3+ADL book and the care-sector hedge capital. Published history never moves;
+              forecasts, TAM / SAM / SOM, scenarios and the hedge tables are rebuilt deterministically (same controls → same integrity hash).
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Region</label>
+                <select id="ltcres-region" class="form-input">
+                  <option value="us" selected>United States</option>
+                  <option value="oecd">OECD average</option>
+                  <option value="eu">European Union</option>
+                  <option value="il">Israel</option>
+                  <option value="jp">Japan</option>
+                  <option value="de">Germany</option>
+                  <option value="uk">United Kingdom</option>
+                  <option value="nl">Netherlands</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Scenario</label>
+                <select id="ltcres-scenario" class="form-input">
+                  <option value="baseline" selected>Baseline — ageing-in-place continues</option>
+                  <option value="home_shift">Home shift — aggressive HCBS rebalancing</option>
+                  <option value="fiscal_squeeze">Fiscal squeeze — public payer caps rates</option>
+                  <option value="dementia_breakthrough">Dementia breakthrough — lower incidence</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Forecast end</label>
+                <input type="number" id="ltcres-forecast-end" class="form-input" value="2075" min="2030" max="2075" step="5">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Home-care share target % (blank = scenario)</label>
+                <input type="number" id="ltcres-home-target" class="form-input" value="" min="30" max="95" step="1" placeholder="scenario default">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Care-cost inflation % / yr</label>
+                <input type="number" id="ltcres-cost-infl" class="form-input" value="3.5" min="0" max="10" step="0.1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Nominal GDP growth % / yr</label>
+                <input type="number" id="ltcres-gdp-growth" class="form-input" value="3.5" min="0" max="10" step="0.1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Healthy-ageing gain % / yr</label>
+                <input type="number" id="ltcres-healthy" class="form-input" value="0.5" min="-1" max="3" step="0.1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">SOM share of SAM %</label>
+                <input type="number" id="ltcres-som" class="form-input" value="0.5" min="0.01" max="20" step="0.05">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Lives in 3+ADL book</label>
+                <input type="number" id="ltcres-lives" class="form-input" value="10000" min="1" step="100">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Age min</label>
+                <input type="number" id="ltcres-age-min" class="form-input" value="30" min="18" max="90">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Age max</label>
+                <input type="number" id="ltcres-age-max" class="form-input" value="85" min="25" max="100">
+              </div>
+              <div class="form-group">
+                <label class="form-label">LTC annual cover ($)</label>
+                <input type="number" id="ltcres-cover" class="form-input" value="60000" min="1200" step="1200">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">ADL threshold</label>
+                <select id="ltcres-adl" class="form-input">
+                  <option value="2">2+ ADL (typical US LTC)</option>
+                  <option value="3" selected>3+ ADL (PHINS permanent disability)</option>
+                  <option value="4">4+ ADL</option>
+                  <option value="5">5+ ADL</option>
+                  <option value="6">6 ADL (total)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Hedge capital ($)</label>
+                <input type="number" id="ltcres-capital" class="form-input" value="25000000" min="0" step="1000000">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Hedge allocation preset</label>
+                <select id="ltcres-allocation" class="form-input">
+                  <option value="balanced" selected>Balanced — operator / real estate / home care / liquidity</option>
+                  <option value="real_estate">Real-estate heavy — care REIT / sale-leaseback</option>
+                  <option value="home_care">Home-care heavy — platform equity</option>
+                  <option value="operator">Operator heavy — SNF / assisted-living equity</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Incidence stress %</label>
+                <input type="number" id="ltcres-stress" class="form-input" value="30" min="0" max="200" step="5">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Discount rate % (10-year PV)</label>
+                <input type="number" id="ltcres-discount" class="form-input" value="6" min="0" max="20" step="0.5">
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-primary" onclick="PhinsLtcResidentialResearch.load()">Recalculate study</button>
+                <button class="btn btn-outline" onclick="PhinsLtcResidentialResearch.reset()">Reset controls</button>
+              </div>
+            </div>
+            <p id="ltcres-status" class="research-note" style="margin-top:12px;">Open this bar to load the 1975–2075 study.</p>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Strategic narrative</div>
+            <div id="ltcres-narrative">
+              <p style="color:var(--text-light);">Recalculate to load the research narrative.</p>
+            </div>
+            <p id="ltcres-scenario-note" class="research-note" style="margin-top:12px;"></p>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Download the full study</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              Portrait A4 research document: narrative, methodology, KPIs, hedge summary, three research charts, every table and column, sources and integrity hashes —
+              built from the controls above so the file matches the screen. Individual tables download as CSV / JSON with an <code>X-Phins-Table-Integrity</code> header.
+            </p>
+            <div class="form-row">
+              <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-success" onclick="PhinsLtcResidentialResearch.downloadPdf()">Download PDF study</button>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Download table</label>
+                <select id="ltcres-download-table" class="form-input">
+                  <option value="demand_forecast" selected>Demand forecast (year by year)</option>
+                  <option value="tam_sam_som">TAM / SAM / SOM</option>
+                  <option value="scenarios">Scenarios</option>
+                  <option value="hedge_book">Hedge book (3+ADL)</option>
+                  <option value="hedge_allocation">Hedge allocation</option>
+                  <option value="market_structure">Market structure by region</option>
+                  <option value="setting_comparison">Care settings comparison</option>
+                  <option value="payer_mix">Payer mix</option>
+                  <option value="cost_of_care">Cost of care by setting</option>
+                  <option value="spending_history">US spending history (CMS NHE)</option>
+                  <option value="operators">Main operators (OECD)</option>
+                  <option value="margin_benchmarks">Margin benchmarks</option>
+                  <option value="workforce">Workforce</option>
+                  <option value="regulation">Regulation by jurisdiction</option>
+                  <option value="swot">SWOT</option>
+                  <option value="case_studies">Case studies</option>
+                  <option value="eras">Eras (history + forecast)</option>
+                </select>
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-outline" onclick="PhinsLtcResidentialResearch.download('csv')">Download CSV</button>
+                <button class="btn btn-outline" onclick="PhinsLtcResidentialResearch.download('json')">Download JSON</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Fifty years of US LTC spending — nursing care vs home health (CMS National Health Expenditure)</div>
+            <div class="ltc-chart-wrap"><canvas id="ltcres-spending-chart"></canvas></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Market structure by region — private vs public provision and financing</div>
+            <div class="ltc-table-scroll">
+              <table class="data-table" id="ltcres-structure-table">
+                <thead>
+                  <tr>
+                    <th>Region</th><th>LTC spend % GDP</th><th>LTC spend 2025</th><th>Public share</th>
+                    <th>Residential / home recipients</th><th>Beds / 1,000 65+</th><th>Workers / 100 65+</th>
+                    <th>For-profit share</th><th>Pop 80+ 2025 → 2050</th><th>Note</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="10" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Care settings — private institutions vs public institutions vs home care</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              Occupancy, median cost, nurse hours per resident day, Medicaid dependence, survey deficiencies, EBITDAR margin, labour share and capital / regulatory intensity by setting.
+            </p>
+            <div class="ltc-table-scroll">
+              <table class="data-table" id="ltcres-settings-table">
+                <thead>
+                  <tr>
+                    <th>Setting</th><th>US share of facilities</th><th>Occupancy</th><th>Median annual cost</th>
+                    <th>Nurse HPRD</th><th>Medicaid share</th><th>Deficiencies / survey</th>
+                    <th>EBITDAR margin</th><th>Labour share</th><th>Capital / regulatory</th><th>Note</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="11" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Cost of care by setting (US medians, Genworth / CareScout surveys)</div>
+            <div class="ltc-chart-wrap"><canvas id="ltcres-cost-chart"></canvas></div>
+            <div class="ltc-table-scroll" style="margin-top:16px;">
+              <table class="data-table" id="ltcres-cost-table">
+                <thead><tr><th>Setting</th><th>Year</th><th>CAGR</th></tr></thead>
+                <tbody><tr><td colspan="7" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Who pays — Medicare, Medicaid, social insurance, private insurance and out of pocket</div>
+            <div class="ltc-chart-wrap"><canvas id="ltcres-payer-chart"></canvas></div>
+            <div class="ltc-table-scroll" style="margin-top:16px;">
+              <table class="data-table" id="ltcres-payer-table">
+                <thead>
+                  <tr>
+                    <th>Region · segment</th><th>Year</th><th>Public</th><th>Medicare</th><th>Medicaid</th>
+                    <th>Private insurance</th><th>Out of pocket</th><th>Other</th><th>Basis · note</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="9" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Fifty-year demand forecast — recipients, residential vs home demand, LTC spend % GDP</div>
+            <div class="ltc-chart-wrap"><canvas id="ltcres-forecast-chart"></canvas></div>
+            <div class="ltc-table-scroll" style="margin-top:16px;">
+              <table class="data-table" id="ltcres-forecast-table">
+                <thead>
+                  <tr>
+                    <th>Year</th><th>Era</th><th>Pop 80+ share</th><th>Recipients idx</th><th>Home share</th>
+                    <th>Residential idx</th><th>Home idx</th><th>LTC % GDP</th><th>LTC spend</th><th>Public share</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="10" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">TAM / SAM / SOM — residential and home-care services</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              TAM is the region's LTC services spend split by setting; SAM is the privately provided share; SOM is the obtainable share set in the controls. Nominal and at-2025-GDP values are both shown.
+            </p>
+            <div class="ltc-chart-wrap"><canvas id="ltcres-tam-chart"></canvas></div>
+            <div class="ltc-table-scroll" style="margin-top:16px;">
+              <table class="data-table" id="ltcres-tam-table">
+                <thead>
+                  <tr><th>Year</th><th>Segment</th><th>TAM nominal</th><th>TAM at 2025 GDP</th><th>SAM</th><th>SOM</th></tr>
+                </thead>
+                <tbody><tr><td colspan="6" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Scenarios — how the next fifty years can diverge</div>
+            <div class="ltc-chart-wrap"><canvas id="ltcres-scenarios-chart"></canvas></div>
+            <div class="ltc-table-scroll" style="margin-top:16px;">
+              <table class="data-table" id="ltcres-scenarios-table">
+                <thead>
+                  <tr>
+                    <th>Scenario</th><th>Home-share target</th><th>2050 recipients / residential idx</th><th>2050 LTC % GDP</th>
+                    <th>End recipients / residential idx</th><th>End LTC % GDP</th><th>End LTC spend</th><th>Note</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="8" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Main players in the OECD markets — revenue, margins, beds and occupancy</div>
+            <div class="ltc-chart-wrap tall"><canvas id="ltcres-operators-chart"></canvas></div>
+            <div class="ltc-table-scroll" style="margin-top:16px;">
+              <table class="data-table" id="ltcres-operators-table">
+                <thead>
+                  <tr>
+                    <th>Operator</th><th>Country</th><th>Segment</th><th>Revenue</th><th>Margin</th>
+                    <th>Beds / units</th><th>Occupancy</th><th>Basis</th><th>Note</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="9" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Revenue margins by segment — operators, real estate, home care, insurers</div>
+            <div class="ltc-chart-wrap tall"><canvas id="ltcres-margins-chart"></canvas></div>
+            <div class="ltc-table-scroll" style="margin-top:16px;">
+              <table class="data-table" id="ltcres-margins-table">
+                <thead>
+                  <tr><th>Segment</th><th>Metric</th><th>Low – mid – high</th><th>Year</th><th>Basis</th><th>Note</th></tr>
+                </thead>
+                <tbody><tr><td colspan="6" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Workforce — employee power, wages, turnover and the staffing gap</div>
+            <div class="ltc-table-scroll">
+              <table class="data-table" id="ltcres-workforce-table">
+                <thead>
+                  <tr><th>Region</th><th>Metric</th><th>Value</th><th>Basis</th><th>Note</th></tr>
+                </thead>
+                <tbody><tr><td colspan="5" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Regulatory involvement — financing statutes, staffing and accommodation standards, quality regimes</div>
+            <div class="ltc-table-scroll">
+              <table class="data-table" id="ltcres-regulation-table">
+                <thead>
+                  <tr>
+                    <th>Jurisdiction</th><th>Financing model · statute</th><th>Key reform</th><th>Staffing standard</th>
+                    <th>Quality regime</th><th>Accommodation standard</th><th>Direction</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="7" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Hedging 3+ADL insurance risk with care-sector assets</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              The book's expected annual 3+ADL claims (incidence × duration × cover) against a care-sector hedge whose income rises with care demand (claim β).
+              The stress test lifts incidence by the control percentage and measures how much of the extra claims the hedge income offsets.
+            </p>
+            <div class="form-row">
+              <div class="form-group" style="flex:2;">
+                <div class="ltc-table-scroll">
+                  <table class="data-table" id="ltcres-hedge-book-table">
+                    <thead>
+                      <tr>
+                        <th>Age band</th><th>Lives</th><th>Incidence / 1,000</th><th>Mean duration</th>
+                        <th>Prevalence</th><th>E[annual claims]</th><th>Stressed claims</th><th>E[new-claim cost]</th>
+                      </tr>
+                    </thead>
+                    <tbody><tr><td colspan="8" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="form-group" style="flex:1;min-width:260px;">
+                <div class="ltc-chart-wrap"><canvas id="ltcres-alloc-chart"></canvas></div>
+              </div>
+            </div>
+            <div class="ltc-table-scroll" style="margin-top:16px;">
+              <table class="data-table" id="ltcres-hedge-alloc-table">
+                <thead>
+                  <tr>
+                    <th>Asset</th><th>Allocation</th><th>Capital</th><th>Yield</th><th>Claim β</th>
+                    <th>Expected income</th><th>Stressed income</th><th>Liquidity · volatility</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="8" style="text-align:center;color:var(--text-light);">Loading…</td></tr></tbody>
+              </table>
+            </div>
+            <p id="ltcres-hedge-summary" class="research-note" style="margin-top:12px;"></p>
+          </div>
+
+          <div class="card">
+            <div class="card-title">SWOT — investing in LTC residential institutions and home-care platforms</div>
+            <div class="ltcres-swot-grid" id="ltcres-swot"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Case studies</div>
+            <div class="ltcres-cases" id="ltcres-cases"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Illustrations — care-settings spectrum, payer flows, hedge architecture, fifty-year timeline</div>
+            <div class="ltcres-gallery" id="ltcres-gallery"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Briefing video — fifty years back, fifty years forward</div>
+            <p style="color:var(--text-light);margin-bottom:12px;">
+              An animated timeline rendered in the browser from the study pack (same-origin, no external embed). Play it, step through it, or record it to a WebM file for a board pack.
+            </p>
+            <div class="ltcres-player-wrap"><canvas id="ltcres-player" width="960" height="420"></canvas></div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;">
+              <button class="btn btn-primary" id="ltcres-play" onclick="PhinsLtcResidentialResearch.play()">Play briefing</button>
+              <button class="btn btn-outline" onclick="PhinsLtcResidentialResearch.step(-1)">Previous frame</button>
+              <button class="btn btn-outline" onclick="PhinsLtcResidentialResearch.step(1)">Next frame</button>
+              <button class="btn btn-warning" onclick="PhinsLtcResidentialResearch.record()">Record video</button>
+              <a id="ltcres-recorded-link" class="btn btn-success" href="#" style="display:none;">Save recording (.webm)</a>
+              <span id="ltcres-player-caption" class="research-note" style="margin:0;"></span>
+            </div>
+            <video id="ltcres-recorded" controls></video>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Photos &amp; videos from the PHINS media library</div>
+            <div class="ltcres-gallery" id="ltcres-library"></div>
+            <p id="ltcres-media-note" class="research-note" style="margin-top:12px;"></p>
+            <div class="card-title" style="margin-top:16px;font-size:0.95rem;">External publications (open in a new tab)</div>
+            <ul class="ltc-source-list" id="ltcres-publications"></ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Data integrity</div>
+            <p id="ltcres-integrity" class="research-note" style="margin:0;"></p>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Affiliated sources (1975–2026)</div>
+            <ul class="ltc-source-list" id="ltcres-sources"></ul>
+          </div>
+        </section>
+
         <!-- Uploaded Tables Section -->
         <section id="section-uploaded" class="section">
           <h2 class="section-title">Uploaded Actuarial Tables</h2>
@@ -4516,6 +5103,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       if (sectionId === 'ltc-life-research' && window.PhinsLtcLifeResearch) {
         window.PhinsLtcLifeResearch.load();
       }
+      if (sectionId === 'ltc-residential-research' && window.PhinsLtcResidentialResearch) {
+        window.PhinsLtcResidentialResearch.load();
+      }
       if (sectionId === 'phinsafe' && typeof syncPhinsafeFromSimulation === 'function') {
         syncPhinsafeFromSimulation();
       }
@@ -4556,6 +5146,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       }
       if (sectionId === 'ltc-life-research' && window.PhinsLtcLifeResearch) {
         window.PhinsLtcLifeResearch.load();
+      }
+      if (sectionId === 'ltc-residential-research' && window.PhinsLtcResidentialResearch) {
+        window.PhinsLtcResidentialResearch.load();
       }
       if (sectionId === 'phinsafe' && typeof syncPhinsafeFromSimulation === 'function') {
         syncPhinsafeFromSimulation();
@@ -14845,6 +15438,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
     });
   </script>
   <script src="/ltc-life-research.js"></script>
+  <script src="/ltc-residential-research.js"></script>
   <script src="/ui-clarity.js"></script>
 </body>
 </html>

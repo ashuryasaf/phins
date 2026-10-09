@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" role="img" aria-labelledby="t d">
+  <title id="t">Who pays for long-term care</title>
+  <desc id="d">Payer shares for US nursing care and home health in 2024, the OECD average and Israel, drawn as proportional bars.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#060d1f"/>
+      <stop offset="1" stop-color="#0e2f63"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="520" rx="18" fill="url(#bg)"/>
+  <g font-family="'Space Grotesk','Inter',Arial,sans-serif" fill="#f7fafc">
+    <text x="48" y="58" font-size="30" font-weight="700" letter-spacing="0.5">PHINS</text>
+    <text x="140" y="58" font-size="16" fill="#c9d4ea">Research &amp; Audit · Who pays for long-term care</text>
+    <text x="48" y="92" font-size="14" fill="#9fb3d9">Share of spend by payer · CMS NHE 2024 (US) · OECD Health at a Glance 2025 · Taub Center 2022 (Israel)</text>
+  </g>
+  <g font-family="'Inter',Arial,sans-serif" font-size="13">
+    <!-- US nursing care 2024: Medicaid 35.9, Medicare 21.5, other public 3.2, PHI 8.8, OOP 22.1, other 8.5 ; bar width 900 -->
+    <text x="48" y="150" fill="#f7fafc" font-weight="700">US nursing care 2024 · $219.9bn</text>
+    <g transform="translate(48,160)">
+      <rect x="0" width="323" height="34" fill="#0e4f8a"/>
+      <rect x="323" width="194" height="34" fill="#2b6cb0"/>
+      <rect x="517" width="29" height="34" fill="#4fd8ff"/>
+      <rect x="546" width="79" height="34" fill="#c9a04e"/>
+      <rect x="625" width="199" height="34" fill="#e3bf6f"/>
+      <rect x="824" width="76" height="34" fill="#4a5568"/>
+      <text x="8" y="23" fill="#f7fafc" font-size="12">Medicaid 35.9%</text>
+      <text x="331" y="23" fill="#f7fafc" font-size="12">Medicare 21.5%</text>
+      <text x="554" y="23" fill="#060d1f" font-size="12">PHI 8.8%</text>
+      <text x="633" y="23" fill="#060d1f" font-size="12">Out of pocket 22.1%</text>
+      <text x="832" y="23" fill="#f7fafc" font-size="12">Other 8.5%</text>
+    </g>
+    <!-- US home health 2024: Medicaid 22.5, Medicare 32.9, other public 1.0, PHI 22.0, OOP 17.9, other 3.7 -->
+    <text x="48" y="232" fill="#f7fafc" font-weight="700">US home health 2024 · $169.4bn</text>
+    <g transform="translate(48,242)">
+      <rect x="0" width="203" height="34" fill="#0e4f8a"/>
+      <rect x="203" width="296" height="34" fill="#2b6cb0"/>
+      <rect x="499" width="9" height="34" fill="#4fd8ff"/>
+      <rect x="508" width="198" height="34" fill="#c9a04e"/>
+      <rect x="706" width="161" height="34" fill="#e3bf6f"/>
+      <rect x="867" width="33" height="34" fill="#4a5568"/>
+      <text x="8" y="23" fill="#f7fafc" font-size="12">Medicaid 22.5%</text>
+      <text x="211" y="23" fill="#f7fafc" font-size="12">Medicare 32.9%</text>
+      <text x="516" y="23" fill="#060d1f" font-size="12">PHI 22.0%</text>
+      <text x="714" y="23" fill="#060d1f" font-size="12">OOP 17.9%</text>
+    </g>
+    <!-- OECD 80/20 -->
+    <text x="48" y="314" fill="#f7fafc" font-weight="700">OECD average 2023 · 1.8% of GDP</text>
+    <g transform="translate(48,324)">
+      <rect x="0" width="720" height="34" fill="#0e4f8a"/>
+      <rect x="720" width="180" height="34" fill="#e3bf6f"/>
+      <text x="8" y="23" fill="#f7fafc" font-size="12">Public 80%</text>
+      <text x="728" y="23" fill="#060d1f" font-size="12">Private 20%</text>
+    </g>
+    <!-- Israel 71/29 -->
+    <text x="48" y="396" fill="#f7fafc" font-weight="700">Israel 2022 · NIS 23.6bn</text>
+    <g transform="translate(48,406)">
+      <rect x="0" width="639" height="34" fill="#0e4f8a"/>
+      <rect x="639" width="261" height="34" fill="#e3bf6f"/>
+      <text x="8" y="23" fill="#f7fafc" font-size="12">Public 71% (NII home benefit · MoH nursing code · Welfare)</text>
+      <text x="647" y="23" fill="#060d1f" font-size="12">Private 29% (home care NIS 4.4bn)</text>
+    </g>
+    <!-- legend -->
+    <g transform="translate(980,160)" fill="#c9d4ea" font-size="12">
+      <rect width="12" height="12" fill="#0e4f8a"/><text x="18" y="11">Medicaid / public budget</text>
+      <rect y="22" width="12" height="12" fill="#2b6cb0"/><text x="18" y="33">Medicare / social insurance</text>
+      <rect y="44" width="12" height="12" fill="#4fd8ff"/><text x="18" y="55">Other public programmes</text>
+      <rect y="66" width="12" height="12" fill="#c9a04e"/><text x="18" y="77">Private insurance</text>
+      <rect y="88" width="12" height="12" fill="#e3bf6f"/><text x="18" y="99">Household out of pocket</text>
+      <rect y="110" width="12" height="12" fill="#4a5568"/><text x="18" y="121">Other third party</text>
+    </g>
+    <text x="48" y="482" fill="#9fb3d9" font-size="12">Four of five long-term care dollars in the OECD are public; the United States relies more on Medicare post-acute payments and households, Israel on the National Insurance Institute and private insurance (60% of the population covered).</text>
+  </g>
+</svg>

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" role="img" aria-labelledby="t d">
+  <title id="t">PHINS hedge architecture</title>
+  <desc id="d">A 3+ADL insurance book on the left pays claims when disability rises; care operators, care real estate and home-care platforms on the right earn more from the same event; a liquidity reserve bridges timing.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#060d1f"/>
+      <stop offset="1" stop-color="#0e2f63"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e3bf6f"/>
+      <stop offset="1" stop-color="#c9a04e"/>
+    </linearGradient>
+    <marker id="head" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#e3bf6f"/>
+    </marker>
+    <marker id="headcyan" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4fd8ff"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="520" rx="18" fill="url(#bg)"/>
+  <g font-family="'Space Grotesk','Inter',Arial,sans-serif" fill="#f7fafc">
+    <text x="48" y="58" font-size="30" font-weight="700" letter-spacing="0.5">PHINS</text>
+    <text x="140" y="58" font-size="16" fill="#c9d4ea">Research &amp; Audit · Hedging a 3+ADL book with care-sector income</text>
+    <text x="48" y="92" font-size="14" fill="#9fb3d9">One event  a rise in severe disability  raises claims on the left and occupancy, rent coverage and billed hours on the right</text>
+  </g>
+  <g font-family="'Inter',Arial,sans-serif">
+    <!-- event -->
+    <g transform="translate(470,120)">
+      <rect width="260" height="70" rx="35" fill="#0b1a3a" stroke="#f56565" stroke-width="2"/>
+      <text x="130" y="30" text-anchor="middle" font-size="15" font-weight="700" fill="#f7fafc">3+ ADL incidence shock</text>
+      <text x="130" y="52" text-anchor="middle" font-size="12" fill="#9fb3d9">e.g. +30% vs pricing basis</text>
+    </g>
+    <!-- insurer -->
+    <g transform="translate(48,230)">
+      <rect width="330" height="220" rx="14" fill="#0b1a3a" stroke="#4fd8ff" stroke-opacity="0.6"/>
+      <rect width="330" height="6" rx="3" fill="#4fd8ff"/>
+      <text x="20" y="40" font-size="17" font-weight="700" fill="#f7fafc">PHINS 3+ADL book</text>
+      <text x="20" y="64" font-size="12" fill="#9fb3d9">lives × incidence × duration × annual cover</text>
+      <text x="20" y="100" font-size="13" fill="#c9d4ea">Expected annual claims</text>
+      <text x="20" y="120" font-size="13" fill="#f56565">‘ claims under shock</text>
+      <text x="20" y="156" font-size="12" fill="#9fb3d9">Same incidence and remaining-LE curves</text>
+      <text x="20" y="174" font-size="12" fill="#9fb3d9">as the LTC 3+ADL &amp; Life study</text>
+      <text x="20" y="204" font-size="12" fill="#4fd8ff">Hedge ratio = hedge income ÷ claims</text>
+    </g>
+    <!-- arrows from event -->
+    <path d="M470 155 C 380 155, 300 200, 220 230" fill="none" stroke="#4fd8ff" stroke-width="2.5" marker-end="url(#headcyan)"/>
+    <path d="M730 155 C 820 155, 900 200, 980 230" fill="none" stroke="#e3bf6f" stroke-width="2.5" marker-end="url(#head)"/>
+    <!-- offset arrow -->
+    <path d="M820 345 L 400 345" fill="none" stroke="url(#gold)" stroke-width="4" stroke-dasharray="10 6" marker-end="url(#head)"/>
+    <text x="610" y="335" text-anchor="middle" font-size="13" fill="#e3bf6f" font-weight="700">income uplift offsets extra claims</text>
+    <text x="610" y="368" text-anchor="middle" font-size="12" fill="#9fb3d9">stress offset = ” income ÷ ” claims</text>
+    <!-- assets -->
+    <g transform="translate(822,230)">
+      <rect width="330" height="220" rx="14" fill="#0b1a3a" stroke="#e3bf6f" stroke-opacity="0.7"/>
+      <rect width="330" height="6" rx="3" fill="url(#gold)"/>
+      <text x="20" y="40" font-size="17" font-weight="700" fill="#f7fafc">Care-sector allocation</text>
+      <g font-size="12.5" fill="#c9d4ea">
+        <rect x="20" y="58" width="12" height="12" fill="#0e4f8a"/><text x="40" y="69">Operator equity · yield 7.0% · ² 0.50</text>
+        <rect x="20" y="86" width="12" height="12" fill="#c9a04e"/><text x="40" y="97">Care real estate · yield 8.5% · ² 0.30</text>
+        <rect x="20" y="114" width="12" height="12" fill="#4fd8ff"/><text x="40" y="125">Home-care platforms · yield 9.5% · ² 0.80</text>
+        <rect x="20" y="142" width="12" height="12" fill="#4a5568"/><text x="40" y="153">Liquidity reserve · yield 4.5% · ² 0</text>
+      </g>
+      <text x="20" y="186" font-size="12" fill="#9fb3d9">² = % change in income per 1% change in incidence</text>
+      <text x="20" y="204" font-size="12" fill="#9fb3d9">Presets: balanced · real estate · home care · operator</text>
+    </g>
+    <text x="48" y="490" fill="#9fb3d9" font-size="12">Templates in the market: Nippon Life ’ Nichii (2024), Sompo Care (201516), UnitedHealth/Optum ’ LHC &amp; Amedisys (202325), Maccabi ’ Bayit Balev. Research assumptions, flagged "model" in every table.</text>
+  </g>
+</svg>

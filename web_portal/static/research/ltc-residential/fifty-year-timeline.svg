@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" role="img" aria-labelledby="t d">
+  <title id="t">Fifty years back, fifty years forward</title>
+  <desc id="d">Nine market eras from 1965 to 2075 on a horizontal timeline with the defining event of each.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#060d1f"/>
+      <stop offset="1" stop-color="#0e2f63"/>
+    </linearGradient>
+    <linearGradient id="rail" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4fd8ff"/>
+      <stop offset="0.55" stop-color="#e3bf6f"/>
+      <stop offset="1" stop-color="#c9a04e" stop-opacity="0.5"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="520" rx="18" fill="url(#bg)"/>
+  <g font-family="'Space Grotesk','Inter',Arial,sans-serif" fill="#f7fafc">
+    <text x="48" y="58" font-size="30" font-weight="700" letter-spacing="0.5">PHINS</text>
+    <text x="140" y="58" font-size="16" fill="#c9d4ea">Research &amp; Audit · Fifty years back, fifty years forward</text>
+    <text x="48" y="92" font-size="14" fill="#9fb3d9">Market eras of long-term care residential services, 19652075</text>
+  </g>
+  <!-- rail: 1965 at x=70, 2075 at x=1130 ’ 9.636 px per year -->
+  <rect x="70" y="270" width="1060" height="8" rx="4" fill="url(#rail)"/>
+  <line x1="648" y1="150" x2="648" y2="400" stroke="#f7fafc" stroke-opacity="0.35" stroke-dasharray="6 6"/>
+  <text x="648" y="140" text-anchor="middle" font-family="'Inter',Arial,sans-serif" font-size="12" fill="#f7fafc">2025 · today</text>
+  <g font-family="'Inter',Arial,sans-serif" font-size="11.5" fill="#c9d4ea">
+    <!-- history eras, alternating above/below -->
+    <g transform="translate(70,0)">
+      <circle cx="0" cy="274" r="7" fill="#4fd8ff"/>
+      <text x="-10" y="232" font-weight="700" fill="#f7fafc">19651980</text>
+      <text x="-10" y="250">Medicaid build-out</text>
+      <text x="-10" y="312" fill="#9fb3d9">Public insurance creates the industry</text>
+    </g>
+    <g transform="translate(224,0)">
+      <circle cx="0" cy="274" r="7" fill="#4fd8ff"/>
+      <text x="-10" y="340" font-weight="700" fill="#f7fafc">19811990</text>
+      <text x="-10" y="358">Cost control · OBRA 1987</text>
+      <text x="-10" y="376" fill="#9fb3d9">Resident rights, survey &amp; certification</text>
+    </g>
+    <g transform="translate(320,0)">
+      <circle cx="0" cy="274" r="7" fill="#4fd8ff"/>
+      <text x="-10" y="196" font-weight="700" fill="#f7fafc">19912000</text>
+      <text x="-10" y="214">HCBS waivers · PPS</text>
+      <text x="-10" y="232" fill="#9fb3d9">Germany 1995, Japan 2000 social LTC insurance</text>
+    </g>
+    <g transform="translate(417,0)">
+      <circle cx="0" cy="274" r="7" fill="#9fb3d9"/>
+      <text x="-10" y="412" font-weight="700" fill="#f7fafc">20012010</text>
+      <text x="-10" y="430">Assisted living · REITs · PE</text>
+      <text x="-10" y="448" fill="#9fb3d9">Opco-propco leverage; Southern Cross 2011</text>
+    </g>
+    <g transform="translate(513,0)">
+      <circle cx="0" cy="274" r="7" fill="#9fb3d9"/>
+      <text x="-10" y="160" font-weight="700" fill="#f7fafc">20112019</text>
+      <text x="-10" y="178">Rebalancing · consolidation</text>
+      <text x="-10" y="196" fill="#9fb3d9">Home care overtakes beds; Israel 2018 reform</text>
+    </g>
+    <g transform="translate(600,0)">
+      <circle cx="0" cy="274" r="7" fill="#e3bf6f"/>
+      <text x="-6" y="340" font-weight="700" fill="#f7fafc">20202025</text>
+      <text x="-6" y="358">Pandemic reset</text>
+      <text x="-6" y="376" fill="#9fb3d9">Orpea 2022 · Royal Commission · staffing rule repealed</text>
+    </g>
+    <!-- forecast eras -->
+    <g transform="translate(658,0)">
+      <circle cx="0" cy="274" r="7" fill="#e3bf6f"/>
+      <text x="40" y="232" font-weight="700" fill="#f7fafc">20262035</text>
+      <text x="40" y="250">Home-first scaling</text>
+      <text x="40" y="268" fill="#9fb3d9">Technology-enabled home care; capital to high-acuity beds</text>
+    </g>
+    <g transform="translate(755,0)">
+      <circle cx="0" cy="274" r="7" fill="#c9a04e"/>
+      <text x="40" y="340" font-weight="700" fill="#f7fafc">20362050</text>
+      <text x="40" y="358">Peak boomer demand</text>
+      <text x="40" y="376" fill="#9fb3d9">80+ growth peaks; bed shortages in high-acuity care</text>
+    </g>
+    <g transform="translate(899,0)">
+      <circle cx="0" cy="274" r="7" fill="#c9a04e"/>
+      <text x="40" y="160" font-weight="700" fill="#f7fafc">20512075</text>
+      <text x="40" y="178">Longevity steady state</text>
+      <text x="40" y="196" fill="#9fb3d9">Dementia therapy, workforce productivity decide margins</text>
+    </g>
+    <circle cx="1130" cy="274" r="7" fill="#c9a04e" fill-opacity="0.6"/>
+    <text x="1130" y="312" text-anchor="end" fill="#9fb3d9">2075</text>
+  </g>
+  <text x="48" y="490" font-family="'Inter',Arial,sans-serif" font-size="12" fill="#9fb3d9">Source register: CMS NHE · OECD Health at a Glance 2025 · KFF · MedPAC · EC Ageing Report 2024 · UN WPP 2024 · company filings  see the Affiliated sources card.</text>
+</svg>
