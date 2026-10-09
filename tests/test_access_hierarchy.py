@@ -43,11 +43,30 @@ def test_staff_cannot_open_customer_private_surfaces():
         assert decision["allowed"] is False, role
         assert decision["redirect"] == home_for_role(role)
         assert surface_decision(role, "/savings-portfolio.html")["allowed"] is False
+        assert surface_decision(role, "/mislaka-report.html")["allowed"] is False
+        assert surface_decision(role, "/mislaka-report.html")["redirect"] == home_for_role(role)
         assert api_denial(role, "GET", "/api/health-wallet") == ACCESS_DENIED
         assert api_denial(role, "POST", "/api/health-wallet/purchase") == ACCESS_DENIED
         assert api_denial(role, "POST", "/api/pipeline/deposit") == ACCESS_DENIED
         assert api_denial(role, "POST", "/api/savings/invest") == ACCESS_DENIED
         assert api_denial(role, "POST", "/api/unified-payment/deposit") == ACCESS_DENIED
+
+
+def test_customer_mislaka_tool_is_personal():
+    decision = surface_decision("customer", "/mislaka-report.html")
+    assert decision["allowed"] is True
+    assert decision["surface"] == "customer"
+    assert api_denial("customer", "GET", "/api/assessment-center/mislaka/personal") is None
+    assert api_denial("customer", "POST", "/api/assessment-center/mislaka/personal") is None
+    for role in ("admin", "underwriter", "actuary", "accountant", "claims"):
+        assert api_denial(role, "GET", "/api/assessment-center/mislaka/personal") == ACCESS_DENIED
+        assert api_denial(role, "POST", "/api/assessment-center/mislaka/personal") == ACCESS_DENIED
+        assert api_denial(role, "GET", "/api/assessment-center/mislaka/personal/DOC-1") == ACCESS_DENIED
+    assert api_denial("admin", "POST", "/api/assessment-center/mislaka/link") is None
+    library = surface_decision("customer", "/risk-reports-dashboard.html")
+    assert library["allowed"] is False
+    assert library["redirect"] == "/dashboard.html"
+    assert surface_decision("admin", "/risk-reports-dashboard.html")["allowed"] is True
 
 
 def test_shared_operational_surfaces_stay_open():

@@ -20,8 +20,8 @@
     { href: '/unified-workbench.html', label: 'Unified Workbench', hint: 'Your account · documents · assessment', scope: 'user' },
     { href: '/assessment-center.html', label: 'Assessment Center', hint: 'Your Customer 360 facts', scope: 'user' },
     { href: '/customer-ai-report.html', label: 'AI Report', hint: 'Period report for your account', scope: 'user' },
-    { href: '/unified-workbench.html#mislaka-report', label: 'Mislaka Report', hint: 'Clearinghouse document filed under you', scope: 'document' },
-    { href: '/risk-reports-dashboard.html', label: 'Reports Library', hint: 'Your uploaded report archive', scope: 'document' },
+    { href: '/mislaka-report.html', label: 'Mislaka Report', hint: 'Your own clearinghouse report', scope: 'document' },
+    { href: '/mislaka-report.html#analyze', label: 'Reports Library', hint: 'Upload a file and analyze your own report', scope: 'document' },
   ];
 
   function currentPath() {

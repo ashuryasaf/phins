@@ -419,10 +419,54 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
         return report
 
 
+    # Staff library roles still see every staff upload. A document filed by a
+    # customer is that customer's personal analysis and stays off this list.
+    _STAFF_LIBRARY_ROLES = frozenset({'admin', 'actuary', 'underwriter', 'analyst'})
+
+    def _is_customer_personal_document(self, doc: Optional[Dict]) -> bool:
+        return str((doc or {}).get('owner_role') or '').strip().lower() == 'customer'
+
+    def _document_for_resource(self, resource_type: str, resource_id: str) -> Optional[Dict]:
+        """Owning upload for a document, analysis, or report, when the chain is intact."""
+        if resource_type == 'document':
+            doc = self.documents.get(resource_id)
+            return doc if isinstance(doc, dict) else None
+        if resource_type == 'analysis':
+            analysis = self.analyses.get(resource_id)
+            if not analysis:
+                return None
+            doc = self.documents.get(analysis.document_id)
+            return doc if isinstance(doc, dict) else None
+        if resource_type == 'report':
+            report = self.reports.get(resource_id)
+            if not report:
+                return None
+            analysis = self.analyses.get(report.analysis_id)
+            if not analysis:
+                return None
+            doc = self.documents.get(analysis.document_id)
+            return doc if isinstance(doc, dict) else None
+        return None
+
+    def _can_see_document(self, doc: Optional[Dict], user_id: str, user_role: str) -> bool:
+        """Customer uploads are visible only to that customer. Staff uploads stay shared."""
+        if not isinstance(doc, dict):
+            return False
+        role = str(user_role or '').strip().lower()
+        owner = str(doc.get('owner_id') or '')
+        caller = str(user_id or '')
+        if self._is_customer_personal_document(doc):
+            return role == 'customer' and owner != '' and owner == caller
+        if role in self._STAFF_LIBRARY_ROLES:
+            return True
+        return owner != '' and owner == caller
+
     def get_documents_for_user(self, user_id: str, user_role: str) -> List[Dict]:
         """
-        Get all documents accessible to a user.
-        Admins can see all documents, customers only see their own.
+        Documents this caller may list.
+
+        Staff see staff uploads, including each other's. A customer upload is
+        listed only for that customer.
         
         Args:
             user_id: The user's ID
@@ -432,11 +476,9 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
             List of document metadata (without parsed_data for efficiency)
         """
         results = []
-        is_admin = user_role in ['admin', 'actuary', 'underwriter', 'analyst']
-        
+
         for doc_id, doc in self.documents.items():
-            # Admin roles can see all documents
-            if is_admin or doc.get('owner_id') == user_id:
+            if self._can_see_document(doc, user_id, user_role):
                 # Return summary without heavy parsed_data
                 results.append({
                     'document_id': doc['document_id'],
@@ -456,8 +498,10 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
     
     def get_reports_for_user(self, user_id: str, user_role: str) -> List[Dict]:
         """
-        Get all reports accessible to a user.
-        Admins can see all reports, customers only see their own.
+        Reports this caller may list.
+
+        Staff see reports generated from staff uploads. A report generated
+        from a customer's own upload is listed only for that customer.
         
         Args:
             user_id: The user's ID
@@ -467,8 +511,7 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
             List of report summaries
         """
         results = []
-        is_admin = user_role in ['admin', 'actuary', 'underwriter', 'analyst']
-        
+
         for report_id, report in self.reports.items():
             # Get the associated analysis to check ownership
             analysis = self.analyses.get(report.analysis_id)
@@ -479,8 +522,7 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
             if not doc:
                 continue
             
-            # Check access permission
-            if is_admin or doc.get('owner_id') == user_id:
+            if self._can_see_document(doc, user_id, user_role):
                 results.append({
                     'report_id': report.id,
                     'title': report.title,
@@ -534,7 +576,11 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
             if not doc:
                 continue
 
-            if not allow_all and doc.get('owner_id') != user_id:
+            # A customer's personal upload is never revoked from the staff library.
+            if self._is_customer_personal_document(doc):
+                if str(user_role or '').strip().lower() != 'customer' or doc.get('owner_id') != user_id:
+                    continue
+            elif not allow_all and doc.get('owner_id') != user_id:
                 continue
 
             reports_to_remove.append(report_id)
@@ -608,11 +654,24 @@ class AIRiskReportsService(ParserMixin, AnalysisMixin, ChartsMixin, RenderMixin)
         Returns:
             Tuple of (is_authorized, error_message)
         """
+        owned = self._document_for_resource(resource_type, resource_id)
+        if owned is not None and self._is_customer_personal_document(owned):
+            if self._can_see_document(owned, user_id, user_role):
+                return True, None
+            if str(user_role or '').strip().lower() != 'customer':
+                return False, 'Access denied'
+            own_only = {
+                'document': 'Access denied: You can only access your own documents',
+                'analysis': 'Access denied: You can only access your own analyses',
+                'report': 'Access denied: You can only access your own reports',
+            }
+            return False, own_only.get(resource_type, 'Access denied')
+
         is_admin = user_role in ['admin', 'actuary', 'underwriter', 'analyst']
-        
+
         if is_admin:
             return True, None
-        
+
         if resource_type == 'document':
             doc = self.documents.get(resource_id)
             if not doc:
