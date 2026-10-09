@@ -106,9 +106,9 @@ PDF_TABLE_GROUPS: Dict[str, List[List[str]]] = {
     'scenarios': [['label', 'selected', 'home_share_target_pct', 'recipients_index_2050', 'residential_demand_index_2050', 'ltc_spend_gdp_pct_2050', 'ltc_spend_usd_bn_2050'], ['label', 'recipients_index_end', 'residential_demand_index_end', 'ltc_spend_gdp_pct_end', 'ltc_spend_usd_bn_end', 'public_share_pct_end', 'end_year', 'note']],
     'hedge_book': [['age_min', 'age_max', 'band_lives', 'incidence_per_1000', 'mean_claim_duration_years', 'steady_state_prevalence_pct', 'expected_annual_claims', 'expected_new_claim_cost', 'stressed_annual_claims']],
     'hedge_allocation': [['label', 'allocation_pct', 'capital', 'yield_pct', 'claim_beta', 'expected_income', 'stressed_income', 'income_uplift_under_stress', 'income_to_claims_pct'], ['label', 'liquidity', 'volatility', 'rationale']],
-    'swot': [['quadrant', 'item', 'weight', 'applies_to', 'source_ids']],
-    'case_studies': [['title', 'period', 'segment', 'what_happened'], ['title', 'lesson', 'metric', 'source_ids']],
-    'eras': [['start', 'end', 'era', 'kind', 'description']],
+    'swot': [['quadrant', 'item', 'weight', 'applies_to', 'source_ids', 'figure_basis']],
+    'case_studies': [['title', 'period', 'segment', 'what_happened'], ['title', 'lesson', 'metric', 'source_ids', 'figure_basis']],
+    'eras': [['start', 'end', 'era', 'kind', 'description', 'figure_basis']],
 }
 
 # Demand-forecast rows are sampled every five years in the PDF.

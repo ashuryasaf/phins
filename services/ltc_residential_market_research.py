@@ -1253,9 +1253,11 @@ def _build_market_structure() -> List[Dict[str, Any]]:
 def _build_eras() -> List[Dict[str, Any]]:
     rows = []
     for start, end, key, desc, theme in _ERAS:
-        rows.append({'start': start, 'end': end, 'era': key, 'kind': 'history', 'description': desc, 'theme': theme})
+        rows.append({'start': start, 'end': end, 'era': key, 'kind': 'history', 'description': desc, 'theme': theme,
+                     'figure_basis': BASIS_PUBLISHED})
     for start, end, key, desc in _FORECAST_ERAS:
-        rows.append({'start': start, 'end': end, 'era': key, 'kind': 'forecast', 'description': desc, 'theme': desc.split(';')[0]})
+        rows.append({'start': start, 'end': end, 'era': key, 'kind': 'forecast', 'description': desc, 'theme': desc.split(';')[0],
+                     'figure_basis': BASIS_PROJECTION})
     return rows
 
 
@@ -1697,9 +1699,9 @@ TABLE_COLUMNS: Dict[str, List[str]] = {
         'stressed_income', 'income_uplift_under_stress', 'income_to_claims_pct', 'liquidity', 'volatility', 'rationale',
         'figure_basis',
     ],
-    'swot': ['quadrant', 'item', 'weight', 'applies_to', 'source_ids'],
-    'case_studies': ['id', 'title', 'jurisdiction', 'period', 'segment', 'what_happened', 'lesson', 'metric', 'source_ids'],
-    'eras': ['start', 'end', 'era', 'kind', 'description', 'theme'],
+    'swot': ['quadrant', 'item', 'weight', 'applies_to', 'source_ids', 'figure_basis'],
+    'case_studies': ['id', 'title', 'jurisdiction', 'period', 'segment', 'what_happened', 'lesson', 'metric', 'source_ids', 'figure_basis'],
+    'eras': ['start', 'end', 'era', 'kind', 'description', 'theme', 'figure_basis'],
 }
 
 
@@ -1752,8 +1754,10 @@ def build_ltc_residential_research(
         'scenarios': scenarios,
         'hedge_book': hedge_book,
         'hedge_allocation': hedge_allocation,
-        'swot': [dict(r) for r in _SWOT_ROWS],
-        'case_studies': [dict(r) for r in _CASE_STUDY_ROWS],
+        # SWOT items are analyst judgements anchored to the cited sources;
+        # case studies restate published events.
+        'swot': [dict(r, figure_basis=BASIS_ESTIMATE) for r in _SWOT_ROWS],
+        'case_studies': [dict(r, figure_basis=BASIS_PUBLISHED) for r in _CASE_STUDY_ROWS],
         'eras': _build_eras(),
     }
 
