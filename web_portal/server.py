@@ -1232,10 +1232,25 @@ RESIDENTIAL_CARE_CATEGORY = 'residential'
 RESIDENTIAL_CARE_PROVIDER = 'PHINS Residential Care'
 RESIDENTIAL_CARE_MAX_PERIODS = 36
 RESIDENTIAL_CARE_PRICE_SOURCE = 'residential_catalog'
+RESIDENTIAL_CARE_SIX_MONTH_MIN = 6
+RESIDENTIAL_CARE_EXTENDED_DISCOUNT_PCT = 0.20
+RESIDENTIAL_CARE_ANNUAL_MONTHS = 12
+RESIDENTIAL_CARE_ANNUAL_DISCOUNT_PCT = 0.30
+RESIDENTIAL_CARE_TERMS_URL = '/terms-of-use.html#residential-care'
+RESIDENTIAL_CARE_DEMO_VIDEO = '/marketplace/residential-demo.mp4'
+RESIDENTIAL_CARE_DEMO_IMAGES: Tuple[str, ...] = (
+    '/marketplace/residential-solutions.jpg',
+    '/marketplace/residential-home.jpg',
+    '/marketplace/residential-extra.jpg',
+    '/marketplace/residential-full.jpg',
+)
 
-# Monthly customer prices. The wallet debit and the ledger row post this
-# amount. Expense loading, profit, and the discounted rate decompose it
-# (pricing_plan_for_catalog_total); they are not added on top.
+# Monthly customer prices. The wallet debit and the ledger row post the
+# quoted catalog amount: one period at this price, six or more periods at
+# 20% off, or annual accommodation (full bundle, 12 months) at 30% off.
+# Expense loading, profit, and the wallet discounted rate decompose that
+# payable total (pricing_plan_for_catalog_total); they are not added on top
+# and they do not stack with the term reduction.
 RESIDENTIAL_CARE_BUNDLES: Tuple[Dict[str, Any], ...] = (
     {
         'id': 'res-home',
@@ -1285,6 +1300,149 @@ RESIDENTIAL_CARE_BUNDLES: Tuple[Dict[str, Any], ...] = (
 )
 
 
+def _residential_cents(value: Any) -> int:
+    return int(round(safe_float(value, 0.0) * 100))
+
+
+def _residential_from_cents(cents: int) -> float:
+    return round(cents / 100.0, 2)
+
+
+def _normalize_residential_term(service_term: Any) -> str:
+    token = str(service_term or 'monthly').strip().lower().replace('-', ' ').replace('_', ' ')
+    token = ' '.join(token.split())
+    if token in ('', 'month', 'months', 'monthly'):
+        return 'monthly'
+    if token in ('annual', 'annual accommodation'):
+        return 'annual'
+    return token
+
+
+def residential_care_quote(bundle: Dict[str, Any], quantity: Any, service_term: Any = None) -> Dict[str, Any]:
+    """Authoritative residential charge.
+
+    The payable ``catalog_amount`` is what the wallet debits and the ledger
+    posts. Six or more monthly periods take 20% off the list automatically.
+    Annual accommodation is the Full Accommodation Bundle for 12 months at
+    30% off, and that rate replaces the 20% rate rather than stacking with it.
+    """
+    term = _normalize_residential_term(service_term)
+    unit_cents = _residential_cents(bundle.get('price'))
+    qty = max(1, safe_int(quantity, 1))
+    base = {
+        'ok': False,
+        'service_term': term,
+        'quantity': qty,
+        'unit_price': _residential_from_cents(unit_cents),
+        'terms_url': RESIDENTIAL_CARE_TERMS_URL,
+    }
+    if term not in ('monthly', 'annual'):
+        base['error'] = 'Unknown residential service term'
+        return base
+    if qty > RESIDENTIAL_CARE_MAX_PERIODS:
+        base['error'] = 'Quantity exceeds the residential care limit'
+        base['max_periods'] = RESIDENTIAL_CARE_MAX_PERIODS
+        return base
+    if term == 'annual':
+        if bundle.get('bundle_code') != 'full_accommodation':
+            base['error'] = 'Annual accommodation applies only to the Full Accommodation Bundle'
+            return base
+        annual_quote = _residential_term_amounts(
+            unit_cents, RESIDENTIAL_CARE_ANNUAL_MONTHS, RESIDENTIAL_CARE_ANNUAL_DISCOUNT_PCT,
+        )
+        if qty != RESIDENTIAL_CARE_ANNUAL_MONTHS:
+            base['error'] = 'Annual accommodation is a 12-month term'
+            base['expected_quantity'] = RESIDENTIAL_CARE_ANNUAL_MONTHS
+            base['catalog_amount'] = annual_quote['catalog_amount']
+            base['list_amount'] = annual_quote['list_amount']
+            base['term_discount_pct'] = RESIDENTIAL_CARE_ANNUAL_DISCOUNT_PCT
+            return base
+        discount_pct = RESIDENTIAL_CARE_ANNUAL_DISCOUNT_PCT
+        amounts = annual_quote
+    else:
+        discount_pct = (
+            RESIDENTIAL_CARE_EXTENDED_DISCOUNT_PCT
+            if qty >= RESIDENTIAL_CARE_SIX_MONTH_MIN else 0.0
+        )
+        amounts = _residential_term_amounts(unit_cents, qty, discount_pct)
+    quote = {
+        'ok': True,
+        'service_term': term,
+        'quantity': qty,
+        'unit_price': _residential_from_cents(unit_cents),
+        'list_amount': amounts['list_amount'],
+        'term_discount_pct': discount_pct,
+        'term_discount_amount': amounts['term_discount_amount'],
+        'catalog_amount': amounts['catalog_amount'],
+        'automatic': term == 'monthly' and discount_pct > 0,
+        'terms_url': RESIDENTIAL_CARE_TERMS_URL,
+    }
+    if _residential_cents(quote['catalog_amount'] + quote['term_discount_amount']) != _residential_cents(quote['list_amount']):
+        raise ValueError('residential term quote does not add back to the list price')
+    if _residential_cents(quote['unit_price']) * quote['quantity'] != _residential_cents(quote['list_amount']):
+        raise ValueError('residential term quote does not match the catalog unit price')
+    return quote
+
+
+def _residential_term_amounts(unit_cents: int, quantity: int, discount_pct: float) -> Dict[str, float]:
+    """List, term reduction, and payable, in cents, so the three stay equal."""
+    list_cents = unit_cents * quantity
+    if discount_pct <= 0:
+        discount_cents = 0
+    elif abs(discount_pct - RESIDENTIAL_CARE_EXTENDED_DISCOUNT_PCT) < 1e-9:
+        discount_cents = (list_cents * 20) // 100
+    elif abs(discount_pct - RESIDENTIAL_CARE_ANNUAL_DISCOUNT_PCT) < 1e-9:
+        discount_cents = (list_cents * 30) // 100
+    else:
+        discount_cents = int(round(list_cents * discount_pct))
+    payable_cents = list_cents - discount_cents
+    return {
+        'list_amount': _residential_from_cents(list_cents),
+        'term_discount_amount': _residential_from_cents(discount_cents),
+        'catalog_amount': _residential_from_cents(payable_cents),
+    }
+
+
+def _residential_term_offers(bundle: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Published term schedule. Purchase uses residential_care_quote, not this list."""
+    six = residential_care_quote(bundle, RESIDENTIAL_CARE_SIX_MONTH_MIN, 'monthly')
+    offers = [
+        {
+            'service_term': 'monthly',
+            'min_quantity': 1,
+            'max_quantity': RESIDENTIAL_CARE_SIX_MONTH_MIN - 1,
+            'discount_pct': 0.0,
+            'automatic': False,
+            'label': 'Monthly',
+        },
+        {
+            'service_term': 'monthly',
+            'min_quantity': RESIDENTIAL_CARE_SIX_MONTH_MIN,
+            'max_quantity': RESIDENTIAL_CARE_MAX_PERIODS,
+            'discount_pct': RESIDENTIAL_CARE_EXTENDED_DISCOUNT_PCT,
+            'automatic': True,
+            'label': '6 months or longer',
+            'sample_quantity': six['quantity'],
+            'sample_list_amount': six['list_amount'],
+            'sample_catalog_amount': six['catalog_amount'],
+            'sample_term_discount_amount': six['term_discount_amount'],
+        },
+    ]
+    if bundle.get('bundle_code') == 'full_accommodation':
+        annual = residential_care_quote(bundle, RESIDENTIAL_CARE_ANNUAL_MONTHS, 'annual')
+        offers.append({
+            'service_term': 'annual',
+            'quantity': RESIDENTIAL_CARE_ANNUAL_MONTHS,
+            'discount_pct': RESIDENTIAL_CARE_ANNUAL_DISCOUNT_PCT,
+            'automatic': False,
+            'label': 'Annual accommodation',
+            'list_amount': annual['list_amount'],
+            'term_discount_amount': annual['term_discount_amount'],
+            'catalog_amount': annual['catalog_amount'],
+        })
+    return offers
+
+
 def residential_care_by_id(product_id: Any) -> Optional[Dict[str, Any]]:
     """Return a copy of one residential-care bundle, or None."""
     key = str(product_id or '').strip()
@@ -1296,6 +1454,13 @@ def residential_care_by_id(product_id: Any) -> Optional[Dict[str, Any]]:
             row['price'] = round(safe_float(item['price'], 0.0), 2)
             row['price_source'] = RESIDENTIAL_CARE_PRICE_SOURCE
             row['catalog_locked'] = True
+            row['extended_min_quantity'] = RESIDENTIAL_CARE_SIX_MONTH_MIN
+            row['extended_discount_pct'] = RESIDENTIAL_CARE_EXTENDED_DISCOUNT_PCT
+            row['max_periods'] = RESIDENTIAL_CARE_MAX_PERIODS
+            row['terms_url'] = RESIDENTIAL_CARE_TERMS_URL
+            row['demo_video_url'] = RESIDENTIAL_CARE_DEMO_VIDEO
+            row['demo_images'] = list(RESIDENTIAL_CARE_DEMO_IMAGES)
+            row['term_offers'] = _residential_term_offers(row)
             return row
     return None
 
@@ -20494,7 +20659,7 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({
                 'title': 'Terms of Use',
                 'effective_date': '2026-01-01',
-                'last_updated': '2026-04-20',
+                'last_updated': '2026-10-09',
                 'url': '/terms-of-use.html',
                 'version': '1.0',
                 'sections': [
@@ -20506,6 +20671,7 @@ For claims or questions, please contact:
                     'Insurance Products & Services',
                     'Investment Services',
                     'Health & Wellness Services',
+                    'Health Care Residential Solutions',
                     'Supplier Marketplace',
                     'User Conduct & Prohibited Activities',
                     'Intellectual Property',
@@ -20541,7 +20707,7 @@ For claims or questions, please contact:
                     'name': 'Terms of Use',
                     'version': '1.0',
                     'effective_date': '2026-01-01',
-                    'last_updated': '2026-04-20',
+                    'last_updated': '2026-10-09',
                     'url': '/terms-of-use.html',
                     'status': 'active'
                 }
@@ -53623,21 +53789,47 @@ For claims or questions, please contact:
                         supplier_offer_is_live and supply_chain_enabled and supply_chain_service
                     )
                 )
+                catalog_term_quote = None
                 if catalog_price_authoritative:
-                    if quantity > RESIDENTIAL_CARE_MAX_PERIODS:
+                    try:
+                        catalog_term_quote = residential_care_quote(
+                            catalog_bundle, quantity, data.get('service_term'),
+                        )
+                    except ValueError as exc:
+                        self._set_json_headers(500)
+                        self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                        return
+                    if not catalog_term_quote.get('ok'):
                         self._set_json_headers(400)
+                        rejected = {
+                            'error': catalog_term_quote.get('error') or 'Invalid residential term',
+                            'service_term': catalog_term_quote.get('service_term'),
+                            'quantity': catalog_term_quote.get('quantity'),
+                            'expected_quantity': catalog_term_quote.get('expected_quantity'),
+                            'max_periods': catalog_term_quote.get('max_periods'),
+                            'catalog_amount': catalog_term_quote.get('catalog_amount'),
+                            'list_amount': catalog_term_quote.get('list_amount'),
+                            'term_discount_pct': catalog_term_quote.get('term_discount_pct'),
+                            'terms_url': RESIDENTIAL_CARE_TERMS_URL,
+                        }
                         self.wfile.write(json.dumps({
-                            'error': 'Quantity exceeds the residential care limit',
-                            'max_periods': RESIDENTIAL_CARE_MAX_PERIODS,
+                            key: value for key, value in rejected.items() if value is not None
                         }).encode('utf-8'))
                         return
-                    expected_amount = round(float(catalog_bundle['price']) * quantity, 2)
+                    quantity = int(catalog_term_quote['quantity'])
+                    expected_amount = catalog_term_quote['catalog_amount']
                     if abs(round(amount, 2) - expected_amount) > 0.001:
                         self._set_json_headers(400)
                         self.wfile.write(json.dumps({
                             'error': 'Catalog price mismatch',
                             'catalog_amount': expected_amount,
                             'submitted_amount': round(amount, 2),
+                            'list_amount': catalog_term_quote['list_amount'],
+                            'term_discount_pct': catalog_term_quote['term_discount_pct'],
+                            'term_discount_amount': catalog_term_quote['term_discount_amount'],
+                            'service_term': catalog_term_quote['service_term'],
+                            'quantity': quantity,
+                            'terms_url': RESIDENTIAL_CARE_TERMS_URL,
                         }).encode('utf-8'))
                         return
                     product_name = catalog_bundle['name']
@@ -53649,6 +53841,11 @@ For claims or questions, please contact:
                         self._set_json_headers(500)
                         self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
                         return
+                    catalog_pricing_plan['service_term'] = catalog_term_quote['service_term']
+                    catalog_pricing_plan['list_amount'] = catalog_term_quote['list_amount']
+                    catalog_pricing_plan['term_discount_pct'] = catalog_term_quote['term_discount_pct']
+                    catalog_pricing_plan['term_discount_amount'] = catalog_term_quote['term_discount_amount']
+                    catalog_pricing_plan['terms_url'] = RESIDENTIAL_CARE_TERMS_URL
                     if round(catalog_pricing_plan['final_customer_amount'], 2) != expected_amount:
                         self._set_json_headers(500)
                         self.wfile.write(json.dumps({
@@ -53866,9 +54063,15 @@ For claims or questions, please contact:
                             'bundle_code': catalog_bundle.get('bundle_code'),
                             'catalog_unit_price': catalog_bundle.get('price'),
                             'service_period': catalog_bundle.get('service_period'),
+                            'service_term': catalog_term_quote.get('service_term'),
+                            'list_amount': catalog_term_quote.get('list_amount'),
+                            'term_discount_pct': catalog_term_quote.get('term_discount_pct'),
+                            'term_discount_amount': catalog_term_quote.get('term_discount_amount'),
+                            'catalog_amount': catalog_term_quote.get('catalog_amount'),
+                            'terms_url': RESIDENTIAL_CARE_TERMS_URL,
                             'price_source': RESIDENTIAL_CARE_PRICE_SOURCE,
                             'image_url': catalog_bundle.get('image_url'),
-                        } if catalog_pricing_plan and catalog_bundle else {}),
+                        } if catalog_pricing_plan and catalog_bundle and catalog_term_quote else {}),
                     }
                 )
 
@@ -53894,12 +54097,19 @@ For claims or questions, please contact:
                     'verification_hash': NFT_LEDGER.get(ledger_tx.get('nft_token_id'), {}).get('verification_hash', ''),
                     'ledger_tx_id': ledger_tx.get('id')  # Fixed: use 'id' not 'tx_id'
                 }
-                if catalog_pricing_plan and catalog_bundle:
+                if catalog_pricing_plan and catalog_bundle and catalog_term_quote:
                     purchase['price_source'] = RESIDENTIAL_CARE_PRICE_SOURCE
                     purchase['bundle_code'] = catalog_bundle.get('bundle_code')
                     purchase['catalog_unit_price'] = catalog_bundle.get('price')
                     purchase['service_period'] = catalog_bundle.get('service_period')
+                    purchase['service_term'] = catalog_term_quote.get('service_term')
+                    purchase['list_amount'] = catalog_term_quote.get('list_amount')
+                    purchase['term_discount_pct'] = catalog_term_quote.get('term_discount_pct')
+                    purchase['term_discount_amount'] = catalog_term_quote.get('term_discount_amount')
+                    purchase['catalog_amount'] = catalog_term_quote.get('catalog_amount')
+                    purchase['terms_url'] = RESIDENTIAL_CARE_TERMS_URL
                     purchase['image_url'] = catalog_bundle.get('image_url')
+                    purchase['demo_video_url'] = RESIDENTIAL_CARE_DEMO_VIDEO
                 MEDICAL_PURCHASES[purchase_id] = purchase
 
                 purchase_doc_bundle = generate_action_accounting_documents(
