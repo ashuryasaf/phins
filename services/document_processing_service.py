@@ -514,17 +514,20 @@ class DocumentProcessingService:
         search_query: Optional[str] = None,
         page: int = 1,
         page_size: int = 50,
+        exclude_personal_mislaka: bool = False,
     ) -> Dict[str, Any]:
         offset = (page - 1) * page_size
         docs = self._search_records(
             entity_type=entity_type, entity_id=entity_id,
             customer_id=customer_id, category=category, status=status,
             query=search_query, limit=page_size, offset=offset,
+            exclude_personal_mislaka=exclude_personal_mislaka,
         )
         total = self._count_records(
             entity_type=entity_type, entity_id=entity_id,
             customer_id=customer_id, category=category, status=status,
             query=search_query,
+            exclude_personal_mislaka=exclude_personal_mislaka,
         )
         items = []
         for d in docs:
@@ -692,12 +695,13 @@ class DocumentProcessingService:
 
     def _search_records(self, entity_type=None, entity_id=None, customer_id=None,
                         category=None, status=None, query=None,
-                        limit=50, offset=0):
+                        limit=50, offset=0, exclude_personal_mislaka=False):
         if self.db_manager:
             try:
                 return self.db_manager.documents.search_all(
                     query=query, entity_type=entity_type, entity_id=entity_id,
                     customer_id=customer_id, category=category, status=status,
+                    exclude_personal_mislaka=exclude_personal_mislaka,
                     limit=limit, offset=offset,
                 )
             except Exception as e:
@@ -706,6 +710,7 @@ class DocumentProcessingService:
         docs = self._filter_inmemory(
             entity_type=entity_type, entity_id=entity_id,
             customer_id=customer_id, category=category, status=status,
+            exclude_personal_mislaka=exclude_personal_mislaka,
         )
         if query:
             q_lower = query.lower()
@@ -713,18 +718,21 @@ class DocumentProcessingService:
         return docs[offset:offset + limit]
 
     def _count_records(self, entity_type=None, entity_id=None, customer_id=None,
-                       category=None, status=None, query=None, **_ignored) -> int:
+                       category=None, status=None, query=None,
+                       exclude_personal_mislaka=False, **_ignored) -> int:
         if self.db_manager:
             try:
                 return self.db_manager.documents.count_filtered(
                     query=query, entity_type=entity_type, entity_id=entity_id,
                     customer_id=customer_id, category=category, status=status,
+                    exclude_personal_mislaka=exclude_personal_mislaka,
                 )
             except Exception:
                 pass
         docs = self._filter_inmemory(
             entity_type=entity_type, entity_id=entity_id,
             customer_id=customer_id, category=category, status=status,
+            exclude_personal_mislaka=exclude_personal_mislaka,
         )
         if query:
             q_lower = query.lower()
@@ -732,9 +740,13 @@ class DocumentProcessingService:
         return len(docs)
 
     def _filter_inmemory(self, entity_type=None, entity_id=None, customer_id=None,
-                         category=None, status=None, **_ignored) -> List[Dict[str, Any]]:
+                         category=None, status=None, exclude_personal_mislaka=False,
+                         **_ignored) -> List[Dict[str, Any]]:
         """Apply all filters to the in-memory store and return matching docs."""
         docs = [d for d in self._inmemory_store.values() if not d.get('is_deleted')]
+        if exclude_personal_mislaka:
+            from services.mislaka_report_generator import is_personal_mislaka_report
+            docs = [d for d in docs if not is_personal_mislaka_report(d)]
         if entity_type:
             docs = [d for d in docs if d.get('entity_type') == entity_type]
         if entity_id:

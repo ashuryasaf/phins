@@ -284,10 +284,12 @@ def mislaka_facts(
 
 
 def _find_owned_report(doc_service: Any, customer_id: str, sha256: str) -> str:
-    """Return this customer's document id for ``sha256``, or ``""``.
+    """Return this customer's staff document id for ``sha256``, or ``""``.
 
     Lookup is owner-scoped. A checksum match on another customer's archive
     is not reused — the report stays a document of the account that pulled it.
+    The customer's own personal report of the same bytes is skipped too, so a
+    staff filing stays a staff document and never collects shared facts.
     """
     page = 1
     page_size = 200
@@ -299,7 +301,7 @@ def _find_owned_report(doc_service: Any, customer_id: str, sha256: str) -> str:
         if not items:
             return ""
         for rec in items:
-            if not isinstance(rec, dict):
+            if not isinstance(rec, dict) or is_personal_mislaka_report(rec):
                 continue
             checksum = str(rec.get("sha256_checksum") or rec.get("sha256") or "")
             owner = str(rec.get("customer_id") or "").strip()
@@ -388,7 +390,7 @@ def _file_mislaka_report(
         stored = str(record.get("sha256_checksum") or record.get("sha256") or "")
         if owner != customer_id or stored != sha256:
             raise ValueError("Mislaka report document failed ownership check")
-        if scope_note and not is_personal_mislaka_report(record):
+        if bool(scope_note) != is_personal_mislaka_report(record):
             raise ValueError("Mislaka report document failed ownership check")
         return existing, sha256, True
 

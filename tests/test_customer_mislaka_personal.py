@@ -108,6 +108,41 @@ def test_admin_filing_stays_separate_and_out_of_the_personal_list(center):
     assert opened is None
 
 
+def test_admin_filing_after_a_personal_report_stays_its_own_document(center):
+    personal = file_personal_mislaka_report(_result(), customer_id="CUST-A", center=center)
+    admin = link_to_assessment_center(_result(), customer_id="CUST-A", center=center)
+    assert admin["document_reused"] is False
+    assert admin["document_id"] != personal["document_id"]
+    admin_record = center.document_service.get_document(admin["document_id"])
+    assert is_personal_mislaka_report(admin_record) is False
+    facts = center.get_facts("CUST-A")
+    assert len(facts) == 1
+    assert facts[0]["source_document_id"] == admin["document_id"]
+    listing = list_personal_mislaka_reports(center.document_service, "CUST-A")
+    assert [item["id"] for item in listing["items"]] == [personal["document_id"]]
+
+
+def test_staff_listing_pages_the_archive_without_the_personal_lane(center):
+    for premium in (100.0, 110.0, 120.0):
+        file_personal_mislaka_report(
+            _result([_policy(premium_monthly=premium)]), customer_id="CUST-A", center=center,
+        )
+    for premium in (200.0, 210.0, 220.0):
+        link_to_assessment_center(
+            _result([_policy(premium_monthly=premium)]), customer_id="CUST-A", center=center,
+        )
+    docs = center.document_service
+    assert docs.list_documents(page=1, page_size=2)["total"] == 6
+    first = docs.list_documents(page=1, page_size=2, exclude_personal_mislaka=True)
+    second = docs.list_documents(page=2, page_size=2, exclude_personal_mislaka=True)
+    assert first["total"] == second["total"] == 3
+    assert len(first["items"]) == 2
+    assert len(second["items"]) == 1
+    seen = first["items"] + second["items"]
+    assert not any(is_personal_mislaka_report(item) for item in seen)
+    assert len({item["id"] for item in seen}) == 3
+
+
 def test_another_customer_cannot_read_the_report(center):
     filed = file_personal_mislaka_report(_result(), customer_id="CUST-A", center=center)
     other = file_personal_mislaka_report(_result(), customer_id="CUST-B", center=center)
