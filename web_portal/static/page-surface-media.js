@@ -30,6 +30,25 @@
     return true;
   }
 
+  function primeInlinePlayback(video) {
+    video.muted = true;
+    video.defaultMuted = true;
+    video.playsInline = true;
+    video.setAttribute('muted', '');
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
+    video.setAttribute('x5-playsinline', '');
+    video.setAttribute('x5-video-player-type', 'h5');
+    video.setAttribute('x5-video-player-fullscreen', 'false');
+    video.preload = 'auto';
+  }
+
+  function startInlinePlayback(video) {
+    if (prefersReducedMotion()) return;
+    var play = video.play();
+    if (play && play.catch) play.catch(function () {});
+  }
+
   function applyVideo(section, video, url, poster) {
     if (!section || !video) return false;
     if (!isPlayableMediaUrl(url)) {
@@ -38,18 +57,27 @@
       section.hidden = true;
       return false;
     }
-    video.addEventListener('error', function () {
+    video.addEventListener('error', function onMediaError() {
+      var code = video.error && video.error.code;
+      if (!code || code === 1) return;
+      video.removeEventListener('error', onMediaError);
       video.removeAttribute('src');
       section.hidden = true;
-    }, { once: true });
+    });
     if (isPlayableMediaUrl(poster)) video.poster = poster;
     else video.removeAttribute('poster');
+    section.hidden = false;
+    primeInlinePlayback(video);
     video.src = url;
     if (prefersReducedMotion()) {
       video.removeAttribute('autoplay');
-      video.pause();
+      video.autoplay = false;
+    } else if (video.hasAttribute('autoplay') || video.autoplay) {
+      var kick = function () { if (!section.hidden) startInlinePlayback(video); };
+      if (video.readyState >= 2) kick();
+      else video.addEventListener('loadeddata', kick, { once: true });
+      kick();
     }
-    section.hidden = false;
     return true;
   }
 
@@ -86,6 +114,7 @@
     isPlayableMediaUrl: isPlayableMediaUrl,
     applyBackground: applyBackground,
     applyVideo: applyVideo,
-    applyBanner: applyBanner
+    applyBanner: applyBanner,
+    startInlinePlayback: startInlinePlayback
   };
 })(window);

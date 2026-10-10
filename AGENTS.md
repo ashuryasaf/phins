@@ -568,7 +568,10 @@ Environment variables commonly used:
  `GET /api/design/settings`. When a video and a still are both assigned,
  the visitor switches the full-bleed layer between the video and the
  background (thumbnail is the video poster, and the still if no background
- is assigned).
+ is assigned). The login film is inline on iPhone and Android
+ (`playsinline`, `webkit-playsinline`, `x5-video-player-type=h5`) and is
+ attached only after its frame is visible, so a phone does not drop it.
+ Stored placements are not rewritten for playback.
 - **Video agents (B8):** `REPLICATE_API_TOKEN` enables Replicate beside
  Gemini and Kling (Growth Agent and Video Agents). Optional
  `REPLICATE_VIDEO_MODELS` (comma-separated `owner/name`) and

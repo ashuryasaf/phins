@@ -33,29 +33,33 @@
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       color: #0d2a5c;
       position: relative;
-      overflow-x: hidden;
+      overflow-x: clip;
       -webkit-font-smoothing: antialiased;
     }
-    .auth-media {
+    .auth-media,
+    .auth-still {
       position: fixed;
-      inset: 0;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
       z-index: 0;
       overflow: hidden;
       pointer-events: none;
     }
     .auth-media video,
     .auth-still img {
+      position: absolute;
+      top: 0;
+      left: 0;
       width: 100%;
       height: 100%;
       object-fit: cover;
-      filter: saturate(0.92);
-    }
-    .auth-still {
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      overflow: hidden;
-      pointer-events: none;
+      object-position: center center;
+      background: #060d1f;
     }
     .auth-media[hidden],
     .auth-still[hidden],
@@ -703,7 +707,7 @@
 </head>
 <body>
   <div class="auth-media" id="login-hero-media" hidden aria-hidden="true">
-    <video id="login-hero-video" muted loop playsinline autoplay></video>
+    <video id="login-hero-video" muted loop playsinline webkit-playsinline x5-playsinline x5-video-player-type="h5" x5-video-player-fullscreen="false" autoplay preload="auto"></video>
   </div>
   <div class="auth-still" id="login-hero-still" hidden aria-hidden="true">
     <img id="login-hero-still-image" alt="">
@@ -860,9 +864,12 @@
           if (stillWrap) stillWrap.hidden = !showStill;
           if (video) {
             if (showVideo && !motionReduced()) {
-              var play = video.play();
-              if (play && play.catch) play.catch(function () {});
-            } else {
+              if (media && media.startInlinePlayback) media.startInlinePlayback(video);
+              else {
+                var play = video.play();
+                if (play && play.catch) play.catch(function () {});
+              }
+            } else if (!showVideo) {
               video.pause();
             }
           }
@@ -885,9 +892,19 @@
         }
         if (video) {
           video.addEventListener('error', function () {
+            var code = video.error && video.error.code;
+            if (!code || code === 1) return;
             videoOn = false;
             setLoginSurface(stillOn ? 'background' : 'video');
           });
+          var resumeInline = function () {
+            if (!videoOn || motionReduced()) return;
+            var section = document.getElementById('login-hero-media');
+            if (!section || section.hidden || !video.paused) return;
+            if (media && media.startInlinePlayback) media.startInlinePlayback(video);
+          };
+          document.addEventListener('touchend', resumeInline, { passive: true });
+          document.addEventListener('pointerup', resumeInline);
         }
         var preferred = 'video';
         try {
