@@ -4038,12 +4038,17 @@ def _snapshot_design_settings() -> Dict[str, Any]:
 
 
 def _restore_design_settings(snapshot: Dict[str, Any]) -> None:
-    """Replace the live document with a snapshot taken before a failed write."""
-    DESIGN_SETTINGS.clear()
-    if isinstance(snapshot, dict):
-        DESIGN_SETTINGS.update(copy.deepcopy(snapshot))
-    for slot_key in MEDIA_PLACEMENT_SLOTS:
-        DESIGN_SETTINGS.setdefault(slot_key, '')
+    """Replace the live document with a snapshot taken before a failed write.
+
+    Held under the design lock so a concurrent seal cannot snapshot the
+    cleared dict and store a document with no placements.
+    """
+    with _design_state_lock:
+        DESIGN_SETTINGS.clear()
+        if isinstance(snapshot, dict):
+            DESIGN_SETTINGS.update(copy.deepcopy(snapshot))
+        for slot_key in MEDIA_PLACEMENT_SLOTS:
+            DESIGN_SETTINGS.setdefault(slot_key, '')
 
 
 def _remember_design_seal(revision: int, digest: str, payload: Dict[str, Any]) -> None:

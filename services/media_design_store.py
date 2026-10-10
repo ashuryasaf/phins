@@ -97,6 +97,19 @@ def _payload_from_row(raw: str, recorded: str) -> Dict[str, Any]:
     return payload
 
 
+def _conflict_for_stored_row(session: Any) -> Exception:
+    """Read the committed row and describe the race the caller lost."""
+    from database.models import MediaDesignDocument
+
+    raced = session.query(MediaDesignDocument).filter_by(id=DESIGN_DOCUMENT_ID).one_or_none()
+    if raced is None:
+        return MediaDesignStoreError('durable design write failed')
+    return MediaDesignConflict(
+        int(raced.revision or 0),
+        _payload_from_row(raced.payload_json or '', raced.sha256 or ''),
+    )
+
+
 def seal_design_in_session(
     session: Any,
     payload: Dict[str, Any],
@@ -133,22 +146,29 @@ def seal_design_in_session(
                 session.rollback()
                 raise
             raise MediaDesignConflict(current, current_payload)
-        row.sha256 = digest
-        row.revision = current + 1
-        row.payload_json = text
-        row.updated_date = now
+        # Compare-and-swap on the revision the caller read. A replica that
+        # committed between that read and this update keeps its row: the
+        # condition no longer matches and nothing is replaced.
+        changed = session.query(MediaDesignDocument).filter(
+            MediaDesignDocument.id == DESIGN_DOCUMENT_ID,
+            MediaDesignDocument.revision == current,
+        ).update(
+            {
+                'sha256': digest,
+                'revision': current + 1,
+                'payload_json': text,
+                'updated_date': now,
+            },
+            synchronize_session=False,
+        )
+        if changed != 1:
+            session.rollback()
+            raise _conflict_for_stored_row(session)
     try:
         session.commit()
     except IntegrityError as exc:
         session.rollback()
-        raced = session.query(MediaDesignDocument).filter_by(id=DESIGN_DOCUMENT_ID).one_or_none()
-        if raced is None:
-            raise MediaDesignStoreError('durable design write failed') from exc
-        try:
-            current_payload = _payload_from_row(raced.payload_json or '', raced.sha256 or '')
-        except MediaDesignIntegrityError:
-            raise
-        raise MediaDesignConflict(int(raced.revision or 0), current_payload) from exc
+        raise _conflict_for_stored_row(session) from exc
 
     session.expire_all()
     check = session.query(MediaDesignDocument).filter_by(id=DESIGN_DOCUMENT_ID).one_or_none()

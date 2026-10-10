@@ -9,12 +9,13 @@ video the dashboard assigned.
 import copy
 import json
 import threading
+import time
 from datetime import datetime, timedelta
 from http.server import HTTPServer
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 import web_portal.server as portal
@@ -86,6 +87,22 @@ def _session():
     engine = create_engine("sqlite://")
     MediaDesignDocument.__table__.create(engine)
     return sessionmaker(bind=engine)()
+
+
+def _enable_wal(dbapi_connection, _record):
+    dbapi_connection.execute("PRAGMA journal_mode=WAL")
+
+
+def _replica_sessions(tmp_path):
+    """Two connections to one database file, the way two replicas see it."""
+    path = tmp_path / "design.sqlite"
+    sessions = []
+    for _ in range(2):
+        engine = create_engine(f"sqlite:///{path}")
+        event.listen(engine, "connect", _enable_wal)
+        MediaDesignDocument.__table__.create(engine, checkfirst=True)
+        sessions.append(sessionmaker(bind=engine)())
+    return sessions
 
 
 def _asset(asset_id, kind, url):
@@ -218,6 +235,39 @@ def test_design_document_round_trip_refuses_a_bad_checksum_and_a_stale_revision(
     assert corrupt["corrupt"] is True
     assert corrupt["payload"] == {}
     session.close()
+
+
+def test_a_stale_replica_cannot_overwrite_a_newer_login_hero(tmp_path):
+    first, second = _replica_sessions(tmp_path)
+    try:
+        seal_design_in_session(first, {"hero_video_id": "hero-a"}, expected_revision=0)
+        # The second replica read revision 1 before the first replica saved again.
+        stale = second.query(MediaDesignDocument).filter_by(id=DESIGN_DOCUMENT_ID).one()
+        seal_design_in_session(
+            first,
+            {"hero_video_id": "hero-a", "login_hero_video_id": "login-b"},
+            expected_revision=1,
+        )
+        assert int(stale.revision) == 1
+
+        try:
+            seal_design_in_session(
+                second,
+                {"hero_video_id": "hero-a", "login_background_id": "bg-c"},
+                expected_revision=1,
+            )
+            raise AssertionError("a stale replica replaced the newer document")
+        except MediaDesignConflict as conflict:
+            assert conflict.revision == 2
+            assert conflict.payload["login_hero_video_id"] == "login-b"
+            second.rollback()
+
+        stored = load_design_in_session(first)
+        assert stored["revision"] == 2
+        assert stored["payload"]["login_hero_video_id"] == "login-b"
+    finally:
+        first.close()
+        second.close()
 
 
 def test_merge_keeps_a_slot_the_caller_did_not_change():
@@ -354,6 +404,54 @@ def test_failed_seal_rolls_back_the_login_hero(monkeypatch):
         _restore_flags(flags)
         portal.SESSIONS.pop(token, None)
         srv.stop()
+
+
+def test_a_rollback_restore_cannot_seal_an_empty_document(monkeypatch):
+    store = _MemoryDesignDB()
+    _install_store(monkeypatch, store)
+    flags = _design_flags()
+    snapshot = {
+        "hero_video_id": "hero-a",
+        "login_hero_video_id": "login-b",
+        "updated_at": "2026-01-01T00:00:00",
+    }
+    for slot_key in portal.MEDIA_PLACEMENT_SLOTS:
+        snapshot.setdefault(slot_key, "")
+    store.row = {"revision": 1, "sha256": document_checksum(snapshot), "payload": copy.deepcopy(snapshot)}
+    portal.DESIGN_SETTINGS.clear()
+    portal.DESIGN_SETTINGS.update(copy.deepcopy(snapshot))
+    portal._design_revision = 1
+    portal._design_sealed_checksum = ""
+    portal._design_loaded_copy = copy.deepcopy(snapshot)
+    portal._design_hydrated = True
+    portal._design_corrupt = False
+    portal._media_library_catalog_ok = False
+
+    # A ledger save seals from another thread while the rollback restores.
+    racer = threading.Thread(target=portal.seal_design_settings, daemon=True)
+    real_deepcopy = copy.deepcopy
+    started = threading.Event()
+
+    def _deepcopy_racing_the_restore(value, *args, **kwargs):
+        if value is snapshot and not started.is_set():
+            started.set()
+            racer.start()
+            time.sleep(0.2)
+        return real_deepcopy(value, *args, **kwargs)
+
+    monkeypatch.setattr(copy, "deepcopy", _deepcopy_racing_the_restore)
+    try:
+        portal._restore_design_settings(snapshot)
+        monkeypatch.setattr(copy, "deepcopy", real_deepcopy)
+        racer.join(timeout=5)
+        assert not racer.is_alive()
+        assert store.row["payload"]["login_hero_video_id"] == "login-b"
+        assert store.row["payload"]["hero_video_id"] == "hero-a"
+        assert store.row["sha256"] == document_checksum(store.row["payload"])
+    finally:
+        monkeypatch.setattr(copy, "deepcopy", real_deepcopy)
+        racer.join(timeout=5)
+        _restore_flags(flags)
 
 
 def test_corrupt_document_is_not_applied_or_replaced(monkeypatch):
