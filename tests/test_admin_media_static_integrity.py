@@ -220,6 +220,13 @@ def test_login_page_applies_branding():
     assert "login_hero_video_url" in content
     assert "login_thumbnail_url" in content
     assert "login_banner_url" in content
+    assert "login_background_url || s.hero_background_url || s.login_thumbnail_url" in content
+    assert 'id="login-hero-still"' in content
+    assert 'id="login-surface-switch"' in content
+    assert 'id="login-surface-video"' in content
+    assert 'id="login-surface-background"' in content
+    assert "phins.login.surface" in content
+    assert "has-login-still" in content
     assert "p !== '#060d1f'" in content
     assert 'id="username"' in content
     assert 'id="password"' in content

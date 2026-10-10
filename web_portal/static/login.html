@@ -43,11 +43,24 @@
       overflow: hidden;
       pointer-events: none;
     }
-    .auth-media video {
+    .auth-media video,
+    .auth-still img {
       width: 100%;
       height: 100%;
       object-fit: cover;
       filter: saturate(0.92);
+    }
+    .auth-still {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .auth-media[hidden],
+    .auth-still[hidden],
+    .login-surface-switch[hidden] {
+      display: none !important;
     }
     .auth-backdrop {
       position: fixed;
@@ -80,13 +93,41 @@
         transparent 180deg, rgba(227, 191, 111, 0.04) 270deg, transparent 360deg);
       animation: slow-spin 60s linear infinite;
     }
-    body.has-login-video .auth-backdrop {
+    body.has-login-video .auth-backdrop,
+    body.has-login-still .auth-backdrop {
       background:
         linear-gradient(105deg, rgba(4, 9, 22, 0.78) 0%, rgba(4, 9, 22, 0.42) 46%, rgba(4, 9, 22, 0.86) 100%);
     }
     body.has-login-video .auth-backdrop::before,
-    body.has-login-video .auth-backdrop::after {
+    body.has-login-video .auth-backdrop::after,
+    body.has-login-still .auth-backdrop::before,
+    body.has-login-still .auth-backdrop::after {
       opacity: 0.35;
+    }
+    .login-surface-switch {
+      display: inline-flex;
+      gap: 4px;
+      margin-top: 22px;
+      padding: 4px;
+      border-radius: 999px;
+      background: rgba(6, 13, 31, 0.55);
+      border: 1px solid rgba(227, 191, 111, 0.45);
+      width: fit-content;
+    }
+    .login-surface-switch button {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: #eaf1ff;
+      font: 600 0.78rem/1 'Inter', sans-serif;
+      letter-spacing: 0.04em;
+      padding: 8px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .login-surface-switch button[aria-pressed="true"] {
+      background: #e3bf6f;
+      color: #060d1f;
     }
     @keyframes slow-spin { to { transform: rotate(360deg); } }
 
@@ -614,6 +655,7 @@
       .auth-brand h2, .auth-brand p { margin-left: auto; margin-right: auto; }
       .auth-brand-rule { margin-left: auto; margin-right: auto; }
       .auth-meta { justify-content: center; }
+      .login-surface-switch { margin-left: auto; margin-right: auto; }
       .page-promo-banner { margin-left: auto; margin-right: auto; }
       .login-container { justify-self: center; }
     }
@@ -663,6 +705,9 @@
   <div class="auth-media" id="login-hero-media" hidden aria-hidden="true">
     <video id="login-hero-video" muted loop playsinline autoplay></video>
   </div>
+  <div class="auth-still" id="login-hero-still" hidden aria-hidden="true">
+    <img id="login-hero-still-image" alt="">
+  </div>
   <div class="auth-backdrop" aria-hidden="true"></div>
   <div class="auth-shell">
     <aside class="auth-brand">
@@ -677,6 +722,10 @@
       <div class="auth-meta">
         <span>Encrypted session</span>
         <span>Device trust</span>
+      </div>
+      <div class="login-surface-switch" id="login-surface-switch" hidden role="group" aria-label="Sign-in view">
+        <button type="button" id="login-surface-video" aria-pressed="true">Video</button>
+        <button type="button" id="login-surface-background" aria-pressed="false">Background</button>
       </div>
       <div class="page-promo-banner" id="login-promo-banner" hidden>
         <img alt="Promotion">
@@ -786,31 +835,77 @@
         var s = await r.json();
         var media = window.PhinsPageMedia;
         var backdrop = document.querySelector('.auth-backdrop');
+        var videoSection = document.getElementById('login-hero-media');
+        var video = document.getElementById('login-hero-video');
+        var stillWrap = document.getElementById('login-hero-still');
+        var stillImage = document.getElementById('login-hero-still-image');
+        var switcher = document.getElementById('login-surface-switch');
+        var videoButton = document.getElementById('login-surface-video');
+        var backgroundButton = document.getElementById('login-surface-background');
         var videoOn = media ? media.applyVideo(
-          document.getElementById('login-hero-media'),
-          document.getElementById('login-hero-video'),
+          videoSection,
+          video,
           s.login_hero_video_url,
           s.login_thumbnail_url
         ) : false;
-        if (videoOn) document.body.classList.add('has-login-video');
+        var backgroundUrl = s.login_background_url || s.hero_background_url || s.login_thumbnail_url;
+        var stillOn = !!(stillImage && media && media.isPlayableMediaUrl(backgroundUrl));
+        function motionReduced() {
+          return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+        }
+        function setLoginSurface(mode) {
+          var showVideo = mode !== 'background' && videoOn;
+          var showStill = !showVideo && stillOn;
+          if (videoSection) videoSection.hidden = !showVideo;
+          if (stillWrap) stillWrap.hidden = !showStill;
+          if (video) {
+            if (showVideo && !motionReduced()) {
+              var play = video.play();
+              if (play && play.catch) play.catch(function () {});
+            } else {
+              video.pause();
+            }
+          }
+          document.body.classList.toggle('has-login-video', showVideo);
+          document.body.classList.toggle('has-login-still', showStill);
+          if (videoButton) videoButton.setAttribute('aria-pressed', showVideo ? 'true' : 'false');
+          if (backgroundButton) backgroundButton.setAttribute('aria-pressed', showStill ? 'true' : 'false');
+          if (switcher) switcher.hidden = !(videoOn && stillOn);
+          try {
+            if (videoOn && stillOn) sessionStorage.setItem('phins.login.surface', showVideo ? 'video' : 'background');
+          } catch (err) { /* preference is optional */ }
+        }
+        if (stillOn) {
+          stillImage.addEventListener('error', function () {
+            stillOn = false;
+            if (stillWrap) stillWrap.hidden = true;
+            setLoginSurface(videoOn ? 'video' : 'background');
+          }, { once: true });
+          stillImage.src = backgroundUrl;
+        }
+        if (video) {
+          video.addEventListener('error', function () {
+            videoOn = false;
+            setLoginSurface(stillOn ? 'background' : 'video');
+          });
+        }
+        var preferred = 'video';
+        try {
+          var stored = sessionStorage.getItem('phins.login.surface');
+          if (stored === 'background' || stored === 'video') preferred = stored;
+        } catch (err) { /* keep the video default */ }
+        if (!videoOn && stillOn) preferred = 'background';
+        if (!stillOn) preferred = 'video';
+        setLoginSurface(preferred);
+        if (videoButton) videoButton.addEventListener('click', function () { setLoginSurface('video'); });
+        if (backgroundButton) backgroundButton.addEventListener('click', function () { setLoginSurface('background'); });
         var p = normalizeHexColor(s.primary_color, '#060d1f');
-        if (p && p !== '#0d47a1' && p !== '#060d1f' && backdrop && !videoOn) {
+        var surfaceOn = document.body.classList.contains('has-login-video') || document.body.classList.contains('has-login-still');
+        if (p && p !== '#0d47a1' && p !== '#060d1f' && backdrop && !surfaceOn) {
           backdrop.style.background =
             'radial-gradient(1000px 600px at 80% -10%, ' + p + '8c, transparent 60%),' +
             'radial-gradient(800px 520px at 8% 110%, ' + p + '59, transparent 60%),' +
             '#060d1f';
-        }
-        var backgroundUrl = s.login_background_url || s.hero_background_url;
-        if (backgroundUrl && backdrop && media) {
-          media.applyBackground(
-            backdrop,
-            backgroundUrl,
-            'linear-gradient(rgba(4,9,22,0.78), rgba(4,9,22,0.86))'
-          );
-        } else if (s.hero_background_url && backdrop) {
-          backdrop.style.backgroundImage = 'linear-gradient(rgba(4,9,22,0.78), rgba(4,9,22,0.86)), url(' + JSON.stringify(s.hero_background_url) + ')';
-          backdrop.style.backgroundSize = 'cover';
-          backdrop.style.backgroundPosition = 'center';
         }
         if (media) {
           media.applyBanner(
