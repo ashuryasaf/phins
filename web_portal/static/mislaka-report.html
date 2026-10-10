@@ -322,8 +322,9 @@
         const last4 = ref && ref.national_id_last4 ? ' ending ' + ref.national_id_last4 : '';
         identityNote.textContent = 'Uses the ID saved on your account' + last4 + '. The full number stays inside the report.';
       } else {
-        idInput.hidden = false;
-        identityNote.textContent = 'Save your Israeli ID once. It is stored on your account and used only for your report.';
+        idInput.hidden = true;
+        idInput.value = '';
+        identityNote.textContent = 'Record your identity on your account before assessing a report. This page does not accept an ID number.';
       }
       const items = json.items || [];
       if (!items.length) {
@@ -358,9 +359,8 @@
       const product = document.getElementById('mislaka-product').value || 'all';
       const body = { product_type: product };
       if (!identityComplete) {
-        const id = (idInput.value || '').trim();
-        if (!/^\d{9}$/.test(id)) { setStatus('ID must be 9 digits', true); return; }
-        body.id_number = id;
+        setStatus('Record your identity on your account before assessing a report.', true);
+        return;
       }
       setStatus('Assessing your report…');
       const res = await api('/api/assessment-center/mislaka/personal', {
