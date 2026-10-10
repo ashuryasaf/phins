@@ -42,6 +42,8 @@ for child in sorted(root.iterdir(), reverse=True):
         continue
     data = json.loads(record_path.read_text(encoding="utf-8"))
     snapshot = (data.get("artifacts") or {}).get("platform_snapshot") or {}
+    bundle = (data.get("artifacts") or {}).get("repository_bundle") or {}
+    refs = (data.get("artifacts") or {}).get("repository_refs") or {}
     entries.append({
         "backup_id": data.get("backup_id") or child.name,
         "created_at": data.get("created_at"),
@@ -50,6 +52,8 @@ for child in sorted(root.iterdir(), reverse=True):
         "has_restore_record": True,
         "has_db_dump": bool(data.get("has_db_dump")),
         "snapshot_sha256": snapshot.get("sha256") or "",
+        "repository_bundle_sha256": bundle.get("sha256") or "",
+        "repository_ref_count": refs.get("ref_count"),
         "verify_command": data.get("verify_command") or "",
     })
 index = {
@@ -128,7 +132,10 @@ print("")
 for item in index.get("backups") or []:
     dump = "db-dump" if item.get("has_db_dump") else "code-snapshot"
     commit = (item.get("git_commit") or "")[:12] or "no-commit"
-    print(f"- {item.get('backup_id')}  {dump}  git={commit}  {item.get('path')}")
+    bundle = "repo-bundle" if item.get("repository_bundle_sha256") else "no-repo-bundle"
+    refs = item.get("repository_ref_count")
+    ref_note = f" refs={refs}" if refs else ""
+    print(f"- {item.get('backup_id')}  {dump}  {bundle}{ref_note}  git={commit}  {item.get('path')}")
 PY
 }
 
@@ -158,6 +165,8 @@ print("Postgres (only if db/postgres.dump exists):")
 print(f"  {restore.get('database_postgres')}")
 print("SQLite (only if a .db file exists under db/):")
 print(f"  {restore.get('database_sqlite')}")
+print("Repository (every ref, when repositories/phins.bundle exists):")
+print(f"  {restore.get('repository_from_bundle') or '(no bundle recorded)'}")
 PY
 }
 
