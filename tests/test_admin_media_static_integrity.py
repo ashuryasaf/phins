@@ -227,6 +227,10 @@ def test_login_page_applies_branding():
     assert 'id="login-surface-background"' in content
     assert "phins.login.surface" in content
     assert "has-login-still" in content
+    assert "webkit-playsinline" in content
+    assert "x5-playsinline" in content
+    assert 'x5-video-player-type="h5"' in content
+    assert "if (!stillOn) preferred = 'video';" in content
     assert "p !== '#060d1f'" in content
     assert 'id="username"' in content
     assert 'id="password"' in content
@@ -253,6 +257,11 @@ def test_page_surface_media_rejects_unsafe_urls():
     assert "function isPlayableMediaUrl(url)" in content
     assert "value.indexOf('..') === -1" in content
     assert "/api/design/settings" not in content
+    mounted = content.split("if (!isPlayableMediaUrl(url))", 1)[1]
+    assert mounted.index("section.hidden = false") < mounted.index("video.src = url")
+    assert "video.playsInline = true" in content
+    assert "webkit-playsinline" in content
+    assert "x5-video-player-type" in content
 
 
 def test_register_page_applies_branding():
