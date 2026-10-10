@@ -560,6 +560,11 @@ Environment variables commonly used:
  cache file. `/media-files/{asset_id}/...` resolves the asset's real file,
  restoring it from the database when the cache is gone. Playback stays
  public; the authenticated download is `GET /api/media/{id}/download`.
+ Design placements (hero, poster, background, thumbnail, login, solutions,
+ solution theaters) are a checksummed singleton in `media_design_documents`.
+ A restart loads that row after the media library; a checksum mismatch is
+ not applied. The login page plays `login_hero_video_url` from
+ `GET /api/design/settings`.
 - **Video agents (B8):** `REPLICATE_API_TOKEN` enables Replicate beside
  Gemini and Kling (Growth Agent and Video Agents). Optional
  `REPLICATE_VIDEO_MODELS` (comma-separated `owner/name`) and

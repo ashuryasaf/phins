@@ -10,6 +10,7 @@ This server exposes simple JSON endpoints and serves static files from
 `web_portal/static/`. It's intended as a minimal demo backend suitable
 for mobile-friendly web UI or to be used by a simple mobile app prototype.
 """
+import copy
 import json
 import os
 import html
@@ -3936,17 +3937,31 @@ def _seal_present_supplier_media() -> None:
             seal_supplier_offer_media(item, payload, str(offer_id))
 
 
+_design_state_lock = threading.RLock()
+_design_revision = 0
+_design_sealed_checksum = ''
+_design_loaded_copy: Optional[Dict[str, Any]] = None
+_design_hydrated = False
+_design_hydrate_in_progress = False
+_design_corrupt = False
+_media_library_catalog_ok = False
+
+
 def hydrate_media_library() -> int:
     """Load durable media metadata into the library. Bytes are restored on read."""
+    global _media_library_catalog_ok
     if not _media_durable_enabled():
+        _media_library_catalog_ok = False
         return 0
     from services.media_library_store import list_asset_records
 
     try:
         rows = list_asset_records()
     except Exception as exc:
+        _media_library_catalog_ok = False
         print(f"[MEDIA] Durable library list failed: {type(exc).__name__}")
         return 0
+    _media_library_catalog_ok = True
     restored = 0
     seen = set()
     for row in rows:
@@ -4006,6 +4021,267 @@ def hydrate_media_library() -> int:
     except Exception as exc:
         print(f"[MEDIA] Supplier media seal skipped: {type(exc).__name__}")
     return restored
+
+
+def _snapshot_design_settings() -> Dict[str, Any]:
+    """Copy the live design document. A racing mutation retries, then fails closed."""
+    from services.media_design_store import MediaDesignStoreError
+
+    last_err = None
+    for _ in range(3):
+        try:
+            return copy.deepcopy(DESIGN_SETTINGS)
+        except RuntimeError as exc:
+            last_err = exc
+            continue
+    raise MediaDesignStoreError('design settings changed during snapshot') from last_err
+
+
+def _restore_design_settings(snapshot: Dict[str, Any]) -> None:
+    """Replace the live document with a snapshot taken before a failed write.
+
+    Held under the design lock so a concurrent seal cannot snapshot the
+    cleared dict and store a document with no placements.
+    """
+    with _design_state_lock:
+        DESIGN_SETTINGS.clear()
+        if isinstance(snapshot, dict):
+            DESIGN_SETTINGS.update(copy.deepcopy(snapshot))
+        for slot_key in MEDIA_PLACEMENT_SLOTS:
+            DESIGN_SETTINGS.setdefault(slot_key, '')
+
+
+def _remember_design_seal(revision: int, digest: str, payload: Dict[str, Any]) -> None:
+    global _design_revision, _design_sealed_checksum, _design_loaded_copy
+    _design_revision = int(revision or 0)
+    _design_sealed_checksum = str(digest or '')
+    _design_loaded_copy = copy.deepcopy(payload if isinstance(payload, dict) else {})
+
+
+def _sync_derived_placement_urls() -> bool:
+    """Point the landing video and poster at the live asset address."""
+    changed = False
+    hero_id = str(DESIGN_SETTINGS.get('hero_video_id') or '')
+    if hero_id and isinstance(MEDIA_ASSETS.get(hero_id), dict):
+        live = get_media_asset_playback_url(hero_id)
+        if DESIGN_SETTINGS.get('video_url') != live:
+            DESIGN_SETTINGS['video_url'] = live
+            changed = True
+    poster_id = str(DESIGN_SETTINGS.get('video_poster_id') or '')
+    if poster_id and isinstance(MEDIA_ASSETS.get(poster_id), dict):
+        live = get_media_asset_playback_url(poster_id)
+        if DESIGN_SETTINGS.get('video_poster') != live:
+            DESIGN_SETTINGS['video_poster'] = live
+            changed = True
+    return changed
+
+
+def reconcile_design_placements() -> bool:
+    """Drop placements that do not name a current asset of the right type.
+
+    A failed library listing leaves every slot alone: an empty catalog from
+    a database error is not evidence that the operator's video was deleted.
+    """
+    changed = False
+    if _media_library_catalog_ok:
+        for slot_key, expected_kind in MEDIA_PLACEMENT_SLOTS.items():
+            ref = DESIGN_SETTINGS.get(slot_key)
+            if ref in ('', None):
+                continue
+            asset = MEDIA_ASSETS.get(ref) if isinstance(ref, str) else None
+            actual = str((asset or {}).get('type') or '').strip().lower()
+            if not isinstance(asset, dict) or actual != expected_kind:
+                DESIGN_SETTINGS[slot_key] = ''
+                changed = True
+                if slot_key == 'hero_video_id':
+                    DESIGN_SETTINGS['video_url'] = ''
+                elif slot_key == 'video_poster_id':
+                    DESIGN_SETTINGS['video_poster'] = ''
+    if _sync_derived_placement_urls():
+        changed = True
+    return changed
+
+
+def seal_design_settings(*, force: bool = False) -> bool:
+    """Write the design document when the database is on.
+
+    Returns True when the database is off, when this process has not finished
+    loading the row yet (so a ledger save cannot replace it), or when the
+    checksummed row was written and read back. A failure leaves the previous
+    row in place. ``force`` is an operator or publish write; it may replace a
+    corrupt row, and a ledger save may not.
+    """
+    global _design_corrupt, _design_hydrated
+    if not _media_durable_enabled():
+        return True
+    if not _design_hydrated and not _design_hydrate_in_progress and not force:
+        return True
+    if _design_corrupt and not force and not _design_hydrate_in_progress:
+        return True
+    from services.media_design_store import (
+        MediaDesignConflict,
+        MediaDesignIntegrityError,
+        MediaDesignStoreError,
+        document_checksum,
+        merge_design_documents,
+        seal_design,
+    )
+
+    with _design_state_lock:
+        try:
+            payload = _snapshot_design_settings()
+        except MediaDesignStoreError:
+            print('[DESIGN] Refusing to seal design settings: snapshot raced a live update')
+            return False
+        try:
+            digest = document_checksum(payload)
+        except MediaDesignIntegrityError:
+            print('[DESIGN] Refusing to seal design settings: document is not an object')
+            return False
+        if digest == _design_sealed_checksum and _design_revision:
+            return True
+        expected = _design_revision
+        try:
+            sealed = seal_design(payload, expected_revision=expected)
+        except MediaDesignConflict as conflict:
+            if not isinstance(_design_loaded_copy, dict):
+                print('[DESIGN] Refusing to replace design settings without a loaded baseline')
+                return False
+            if media_placement_ref_errors(payload):
+                print('[DESIGN] Refusing to merge design settings: placement refs are invalid')
+                return False
+            try:
+                merged = merge_design_documents(conflict.payload, _design_loaded_copy, payload)
+            except MediaDesignIntegrityError:
+                print('[DESIGN] Refusing to merge design settings: stored document is invalid')
+                return False
+            if _media_library_catalog_ok:
+                for bad_key in media_placement_ref_errors(merged):
+                    merged[bad_key] = ''
+                    if bad_key == 'hero_video_id':
+                        merged['video_url'] = ''
+                    elif bad_key == 'video_poster_id':
+                        merged['video_poster'] = ''
+            if media_placement_ref_errors(merged):
+                print('[DESIGN] Refusing to merge design settings: merged placement refs are invalid')
+                return False
+            try:
+                sealed = seal_design(merged, expected_revision=conflict.revision)
+            except (MediaDesignConflict, MediaDesignIntegrityError, MediaDesignStoreError):
+                print('[DESIGN] Durable design merge was not stored')
+                return False
+            _restore_design_settings(merged)
+            payload = merged
+        except MediaDesignIntegrityError:
+            print('[DESIGN] Durable design document failed checksum verification')
+            return False
+        except MediaDesignStoreError:
+            print('[DESIGN] Durable design write failed')
+            return False
+        except Exception as exc:
+            print(f'[DESIGN] Durable design write failed: {type(exc).__name__}')
+            return False
+        _remember_design_seal(sealed.get('revision') or 0, sealed.get('sha256') or digest, payload)
+        _design_corrupt = False
+        _design_hydrated = True
+        return True
+
+
+def hydrate_design_settings() -> str:
+    """Load the checksummed design document after the media library.
+
+    The database row wins over a missing or older ledger snapshot. A checksum
+    mismatch is not applied and is not overwritten. A ledger snapshot that is
+    newer, and whose placements still name real assets, is sealed so the next
+    deploy keeps it.
+    """
+    global _design_loaded_copy, _design_hydrated, _design_hydrate_in_progress, _design_corrupt
+    if not _media_durable_enabled():
+        return 'disabled'
+    from services.media_design_store import (
+        MediaDesignIntegrityError,
+        MediaDesignStoreError,
+        document_checksum,
+        load_design,
+    )
+
+    try:
+        row = load_design()
+    except (MediaDesignStoreError, MediaDesignIntegrityError):
+        print('[DESIGN] Durable design document could not be read')
+        return 'unavailable'
+    except Exception as exc:
+        print(f'[DESIGN] Durable design document could not be read: {type(exc).__name__}')
+        return 'unavailable'
+
+    _design_hydrate_in_progress = True
+    try:
+        return _hydrate_design_settings_locked(row)
+    finally:
+        _design_hydrate_in_progress = False
+        _design_hydrated = True
+
+
+def _hydrate_design_settings_locked(row: Optional[Dict[str, Any]]) -> str:
+    """Apply one loaded design row. Caller sets the hydrate flags."""
+    global _design_loaded_copy, _design_corrupt, _design_revision, _design_sealed_checksum
+    from services.media_design_store import MediaDesignIntegrityError, document_checksum
+
+    with _design_state_lock:
+        if row is None:
+            _design_corrupt = False
+            _design_loaded_copy = _snapshot_design_settings()
+            reconcile_design_placements()
+            if not seal_design_settings():
+                print('[DESIGN] Could not seal the current design document')
+                return 'seal-failed'
+            print('[DESIGN] Sealed design settings into durable storage')
+            return 'seeded'
+
+        if row.get('corrupt'):
+            _design_corrupt = True
+            _design_revision = int(row.get('revision') or 0)
+            _design_sealed_checksum = ''
+            _design_loaded_copy = None
+            print('[DESIGN] Durable design document failed checksum verification; leaving it untouched')
+            return 'corrupt'
+
+        payload = row.get('payload') if isinstance(row.get('payload'), dict) else {}
+        db_updated = str(payload.get('updated_at') or '')
+        memory_updated = str(DESIGN_SETTINGS.get('updated_at') or '')
+        ledger_is_newer = bool(memory_updated and db_updated and memory_updated > db_updated)
+        if ledger_is_newer and not media_placement_ref_errors(DESIGN_SETTINGS):
+            _design_revision = int(row.get('revision') or 0)
+            _design_loaded_copy = copy.deepcopy(payload)
+            _design_sealed_checksum = ''
+            reconcile_design_placements()
+            if not seal_design_settings():
+                print('[DESIGN] Newer ledger design settings were not sealed')
+                return 'seal-failed'
+            print('[DESIGN] Sealed newer ledger design settings into durable storage')
+            return 'ledger-newer'
+
+        _restore_design_settings(payload)
+        for slot_key in MEDIA_PLACEMENT_SLOTS:
+            DESIGN_SETTINGS.setdefault(slot_key, '')
+        _remember_design_seal(
+            int(row.get('revision') or 0),
+            str(row.get('sha256') or ''),
+            payload,
+        )
+        changed = reconcile_design_placements()
+        try:
+            converged = document_checksum(DESIGN_SETTINGS) != str(row.get('sha256') or '')
+        except MediaDesignIntegrityError:
+            converged = True
+        if changed or converged:
+            _design_sealed_checksum = ''
+            if not seal_design_settings():
+                print('[DESIGN] Reconciled design settings were not sealed')
+                return 'applied-unsealed'
+        video_on = bool(DESIGN_SETTINGS.get('login_hero_video_id') or DESIGN_SETTINGS.get('hero_video_id'))
+        print(f"[DESIGN] Restored design settings (login/landing video: {'yes' if video_on else 'no'})")
+        return 'applied'
 
 
 def infer_media_asset_filename(asset: Dict[str, Any], fallback_stem: str = 'media_asset') -> str:
@@ -5292,12 +5568,26 @@ def _finalize_media_video_job_locked(job: Dict[str, Any], poll_result: Dict[str,
     job['message'] = str(poll_result.get('message') or 'Generated video saved to media library.')
     job['download_url'] = build_media_asset_download_url(asset_id)
     if job.get('auto_publish_to_hero'):
-        DESIGN_SETTINGS['hero_video_id'] = asset_id
-        DESIGN_SETTINGS['video_url'] = media_asset_url(asset)
-        DESIGN_SETTINGS['video_poster'] = asset.get('thumbnail', '')
-        DESIGN_SETTINGS['video_poster_id'] = ''
-        DESIGN_SETTINGS['updated_at'] = uploaded_at
-        DESIGN_SETTINGS['updated_by'] = str(job.get('requested_by') or 'admin')
+        try:
+            previous_design = _snapshot_design_settings()
+        except Exception:
+            previous_design = None
+        if previous_design is None:
+            job['auto_publish_to_hero'] = False
+        else:
+            DESIGN_SETTINGS['hero_video_id'] = asset_id
+            DESIGN_SETTINGS['video_url'] = media_asset_url(asset)
+            DESIGN_SETTINGS['video_poster'] = asset.get('thumbnail', '')
+            DESIGN_SETTINGS['video_poster_id'] = ''
+            DESIGN_SETTINGS['updated_at'] = uploaded_at
+            DESIGN_SETTINGS['updated_by'] = str(job.get('requested_by') or 'admin')
+            if not seal_design_settings(force=True):
+                _restore_design_settings(previous_design)
+                job['auto_publish_to_hero'] = False
+                job['message'] = (
+                    str(job.get('message') or 'Generated video saved to media library.')
+                    + ' Landing hero was not updated; durable design storage failed.'
+                )
     return asset
 
 
@@ -6981,6 +7271,12 @@ def save_ledger_data(_periodic: bool = False):
     silently reporting success.
     """
     global _persistence_dirty
+    # The design document has its own checksummed row. Seal it even when the
+    # ledger file is disabled: that file is what a new deploy throws away.
+    try:
+        seal_design_settings()
+    except Exception as exc:
+        print(f"[DESIGN] Durable design seal failed: {type(exc).__name__}")
     if not PERSISTENCE_ENABLED:
         return True
     # Non-periodic (explicit) callers are triggered by data mutations.
@@ -37482,6 +37778,15 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
 
+                try:
+                    previous_design = _snapshot_design_settings()
+                except Exception:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'Design settings could not be stored durably',
+                    }).encode('utf-8'))
+                    return
+
                 previous_hero_id = str(DESIGN_SETTINGS.get('hero_video_id') or '')
                 previous_poster_id = str(DESIGN_SETTINGS.get('video_poster_id') or '')
                 previous_video_url = str(DESIGN_SETTINGS.get('video_url') or '')
@@ -37548,6 +37853,14 @@ For claims or questions, please contact:
 
                 DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
                 DESIGN_SETTINGS['updated_by'] = session.get('username', 'admin')
+
+                if not seal_design_settings(force=True):
+                    _restore_design_settings(previous_design)
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'Design settings could not be stored durably',
+                    }).encode('utf-8'))
+                    return
 
                 save_ledger_data()
 
@@ -39432,12 +39745,29 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
                 now_iso = datetime.now().isoformat()
+                try:
+                    previous_design = _snapshot_design_settings()
+                except Exception:
+                    previous_design = None
+                if previous_design is None:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'Design settings could not be stored durably',
+                    }).encode('utf-8'))
+                    return
                 DESIGN_SETTINGS['hero_video_id'] = generated_asset_id
                 DESIGN_SETTINGS['video_url'] = media_asset_url(asset)
                 DESIGN_SETTINGS['video_poster'] = asset.get('thumbnail', '')
                 DESIGN_SETTINGS['video_poster_id'] = ''
                 DESIGN_SETTINGS['updated_at'] = now_iso
                 DESIGN_SETTINGS['updated_by'] = requested_by
+                if not seal_design_settings(force=True):
+                    _restore_design_settings(previous_design)
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'Design settings could not be stored durably',
+                    }).encode('utf-8'))
+                    return
                 job['auto_publish_to_hero'] = True
                 save_ledger_data()
                 self._set_json_headers(200)
@@ -61470,6 +61800,10 @@ def run_server(port: int = PORT) -> None:
                 print(f"🎞️  Media library: {media_restored} durable video/image record(s) restored")
         except Exception as _media_exc:
             print(f"   ⚠️  Media library restore skipped: {type(_media_exc).__name__}")
+        try:
+            hydrate_design_settings()
+        except Exception as _design_exc:
+            print(f"   ⚠️  Design settings restore skipped: {type(_design_exc).__name__}")
 
     # Sync algo trading data that was staged by load_ledger_data().
     # This MUST happen after load_ledger_data() and after services are
@@ -61785,6 +62119,10 @@ def bootstrap_runtime_state_for_command() -> None:
             hydrate_media_library()
         except Exception as _media_exc:
             print(f"   ⚠️  Media library restore skipped: {type(_media_exc).__name__}")
+        try:
+            hydrate_design_settings()
+        except Exception as _design_exc:
+            print(f"   ⚠️  Design settings restore skipped: {type(_design_exc).__name__}")
 
     try:
         sync_loaded_algo_data()
