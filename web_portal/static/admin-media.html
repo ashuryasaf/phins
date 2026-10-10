@@ -2181,6 +2181,7 @@ Notes:
         let pendingUseId = '';
         let useSaveInFlight = false;
         let mediaLibraryReady = false;
+        let assignmentsReady = false;
         let disclosureVersionLabel = 'light';
         // Landing URLs still served when no asset id is stored. A full save
         // must leave those slots out unless the operator changes the select.
@@ -2415,6 +2416,7 @@ Notes:
                 if (response.ok) {
                     const settings = await response.json();
                     applyServerAssignments(settings);
+                    assignmentsReady = true;
                     const versionSelect = document.getElementById('apply-disclosure-version-label');
                     if (versionSelect) versionSelect.value = disclosureVersionLabel;
                     updateAssignmentUI();
@@ -2458,7 +2460,10 @@ Notes:
         }
 
         function placementPayload(slotKeys) {
-            const keys = slotKeys || assignmentSlots().map(slot => slot.key);
+            // A full save covers the page placements only. The walkthrough
+            // films are written by the Solution Views tab alone, so a design
+            // save can never clear a film it never showed.
+            const keys = slotKeys || PLACEMENT_SLOTS.map(slot => slot.key);
             const body = {};
             assignmentSlots().forEach(slot => {
                 if (keys.indexOf(slot.key) === -1) return;
@@ -2509,7 +2514,9 @@ Notes:
         }
 
         async function persistAssignments(slotKeys, extraBody) {
-            if (!mediaLibraryReady) {
+            if (!mediaLibraryReady || !assignmentsReady) {
+                // Saving before the stored placements arrive would post empty
+                // ids, and an empty id is a clear on the server.
                 showToast('Media library is still loading. Wait, then save again.', 'error');
                 return false;
             }

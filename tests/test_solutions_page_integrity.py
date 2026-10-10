@@ -121,6 +121,16 @@ def test_every_public_segment_opens_an_enlarged_theater_preview():
         assert f"/previews/theaters/{key}.mp4" in html
 
 
+def test_cache_bust_leaves_an_assigned_film_playable():
+    html = _html()
+    # An inline data: payload has no query string to add, and replay must
+    # reuse the mounted address instead of truncating it at the first '?'.
+    assert "if (/^(data|blob):/i.test(src)) return src;" in html
+    assert "video.setAttribute('data-raw-src', src);" in html
+    assert "video.getAttribute('data-raw-src')" in html
+    assert ".split('?')[0]" not in html
+
+
 def test_theater_videos_are_complete_mp4s_near_eleven_seconds():
     for key in EXPECTED_PREVIEWS:
         path = THEATER_DIR / f"{key}.mp4"

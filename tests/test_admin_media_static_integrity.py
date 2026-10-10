@@ -119,6 +119,19 @@ def test_admin_media_keeps_a_url_only_landing_hero_on_save():
     assert "clearStaleAssignments" not in content
 
 
+def test_admin_media_never_clears_walkthroughs_it_has_not_loaded():
+    content = ADMIN_MEDIA_PATH.read_text(encoding="utf-8")
+
+    # A save before GET /api/design/settings returns would post empty ids,
+    # and an empty id is a clear on the server.
+    assert "let assignmentsReady = false;" in content
+    assert "assignmentsReady = true;" in content
+    assert "if (!mediaLibraryReady || !assignmentsReady) {" in content
+    # A full save covers the page placements only; the walkthrough films are
+    # written by the Solution Views tab alone.
+    assert "const keys = slotKeys || PLACEMENT_SLOTS.map(slot => slot.key);" in content
+
+
 def test_chat_welcome_screens_mount_assigned_disclaimer():
     root = ADMIN_MEDIA_PATH.parents[0]
     apply_chat = (root / "apply-chat.html").read_text(encoding="utf-8")

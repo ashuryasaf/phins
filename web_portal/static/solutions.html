@@ -1648,6 +1648,9 @@
     }
 
     function withCacheBust(src) {
+      // An inline data: or blob: payload is not addressable by query string.
+      // Appending one corrupts it, so an assigned film would never play.
+      if (/^(data|blob):/i.test(src)) return src;
       return src + (src.indexOf('?') === -1 ? '?' : '&') + 't=' + Date.now();
     }
 
@@ -1697,6 +1700,7 @@
         video.setAttribute('aria-label', 'Production desk walkthrough');
         var source = document.createElement('source');
         source.type = 'video/mp4';
+        video.setAttribute('data-raw-src', src);
         source.src = withCacheBust(src);
         video.appendChild(source);
         stage.appendChild(video);
@@ -1708,7 +1712,10 @@
         if (video) {
           if (reload) {
             var source = video.querySelector('source');
-            var raw = ((source && source.src) || video.currentSrc || '').split('?')[0];
+            // Replay from the address the theater mounted, not from the
+            // cache-busted one, so a query string of its own survives.
+            var raw = video.getAttribute('data-raw-src')
+              || ((source && source.src) || video.currentSrc || '');
             if (source && raw) source.src = withCacheBust(raw);
             video.load();
           }
