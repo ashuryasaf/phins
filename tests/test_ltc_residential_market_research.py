@@ -12,9 +12,11 @@ import csv
 import io
 import json
 import os
+import re
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from xml.dom import minidom
 
 import pytest
 
@@ -485,6 +487,14 @@ def test_illustrations_are_served_as_svg(admin_token):
         assert 'image/svg+xml' in headers.get('Content-Type', ''), headers
         assert b'<svg' in body[:400]
         assert b'PHINS' in body
+        # A browser renders a non-well-formed SVG as an empty image, so the
+        # bytes must be strict UTF-8 and parse as XML with a sized viewBox.
+        text = body.decode('utf-8')
+        assert not re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ufffd]', text), item['url']
+        root = minidom.parseString(body).documentElement
+        assert root.tagName == 'svg'
+        assert root.getAttribute('viewBox') == '0 0 1200 520'
+        assert root.getAttribute('role') == 'img'
 
 
 def test_dashboard_js_is_served(admin_token):

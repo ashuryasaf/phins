@@ -20,8 +20,8 @@
   <rect width="1200" height="520" rx="18" fill="url(#bg)"/>
   <g font-family="'Space Grotesk','Inter',Arial,sans-serif" fill="#f7fafc">
     <text x="48" y="58" font-size="30" font-weight="700" letter-spacing="0.5">PHINS</text>
-    <text x="140" y="58" font-size="16" fill="#c9d4ea">Research &amp; Audit · Hedging a 3+ADL book with care-sector income</text>
-    <text x="48" y="92" font-size="14" fill="#9fb3d9">One event  a rise in severe disability  raises claims on the left and occupancy, rent coverage and billed hours on the right</text>
+    <text x="140" y="58" font-size="16" fill="#c9d4ea">Research &amp; Audit Â· Hedging a 3+ADL book with care-sector income</text>
+    <text x="48" y="92" font-size="14" fill="#9fb3d9">One event â€” a rise in severe disability â€” raises claims on the left and occupancy, rent coverage and billed hours on the right</text>
   </g>
   <g font-family="'Inter',Arial,sans-serif">
     <!-- event -->
@@ -35,12 +35,12 @@
       <rect width="330" height="220" rx="14" fill="#0b1a3a" stroke="#4fd8ff" stroke-opacity="0.6"/>
       <rect width="330" height="6" rx="3" fill="#4fd8ff"/>
       <text x="20" y="40" font-size="17" font-weight="700" fill="#f7fafc">PHINS 3+ADL book</text>
-      <text x="20" y="64" font-size="12" fill="#9fb3d9">lives × incidence × duration × annual cover</text>
+      <text x="20" y="64" font-size="12" fill="#9fb3d9">lives Ã— incidence Ã— duration Ã— annual cover</text>
       <text x="20" y="100" font-size="13" fill="#c9d4ea">Expected annual claims</text>
-      <text x="20" y="120" font-size="13" fill="#f56565">‘ claims under shock</text>
+      <text x="20" y="120" font-size="13" fill="#f56565">â†‘ claims under shock</text>
       <text x="20" y="156" font-size="12" fill="#9fb3d9">Same incidence and remaining-LE curves</text>
       <text x="20" y="174" font-size="12" fill="#9fb3d9">as the LTC 3+ADL &amp; Life study</text>
-      <text x="20" y="204" font-size="12" fill="#4fd8ff">Hedge ratio = hedge income ÷ claims</text>
+      <text x="20" y="204" font-size="12" fill="#4fd8ff">Hedge ratio = hedge income Ã· claims</text>
     </g>
     <!-- arrows from event -->
     <path d="M470 155 C 380 155, 300 200, 220 230" fill="none" stroke="#4fd8ff" stroke-width="2.5" marker-end="url(#headcyan)"/>
@@ -48,21 +48,21 @@
     <!-- offset arrow -->
     <path d="M820 345 L 400 345" fill="none" stroke="url(#gold)" stroke-width="4" stroke-dasharray="10 6" marker-end="url(#head)"/>
     <text x="610" y="335" text-anchor="middle" font-size="13" fill="#e3bf6f" font-weight="700">income uplift offsets extra claims</text>
-    <text x="610" y="368" text-anchor="middle" font-size="12" fill="#9fb3d9">stress offset = ” income ÷ ” claims</text>
+    <text x="610" y="368" text-anchor="middle" font-size="12" fill="#9fb3d9">stress offset = Î” income Ã· Î” claims</text>
     <!-- assets -->
     <g transform="translate(822,230)">
       <rect width="330" height="220" rx="14" fill="#0b1a3a" stroke="#e3bf6f" stroke-opacity="0.7"/>
       <rect width="330" height="6" rx="3" fill="url(#gold)"/>
       <text x="20" y="40" font-size="17" font-weight="700" fill="#f7fafc">Care-sector allocation</text>
       <g font-size="12.5" fill="#c9d4ea">
-        <rect x="20" y="58" width="12" height="12" fill="#0e4f8a"/><text x="40" y="69">Operator equity · yield 7.0% · ² 0.50</text>
-        <rect x="20" y="86" width="12" height="12" fill="#c9a04e"/><text x="40" y="97">Care real estate · yield 8.5% · ² 0.30</text>
-        <rect x="20" y="114" width="12" height="12" fill="#4fd8ff"/><text x="40" y="125">Home-care platforms · yield 9.5% · ² 0.80</text>
-        <rect x="20" y="142" width="12" height="12" fill="#4a5568"/><text x="40" y="153">Liquidity reserve · yield 4.5% · ² 0</text>
+        <rect x="20" y="58" width="12" height="12" fill="#0e4f8a"/><text x="40" y="69">Operator equity Â· yield 7.0% Â· Î² 0.50</text>
+        <rect x="20" y="86" width="12" height="12" fill="#c9a04e"/><text x="40" y="97">Care real estate Â· yield 8.5% Â· Î² 0.30</text>
+        <rect x="20" y="114" width="12" height="12" fill="#4fd8ff"/><text x="40" y="125">Home-care platforms Â· yield 9.5% Â· Î² 0.80</text>
+        <rect x="20" y="142" width="12" height="12" fill="#4a5568"/><text x="40" y="153">Liquidity reserve Â· yield 4.5% Â· Î² 0</text>
       </g>
-      <text x="20" y="186" font-size="12" fill="#9fb3d9">² = % change in income per 1% change in incidence</text>
-      <text x="20" y="204" font-size="12" fill="#9fb3d9">Presets: balanced · real estate · home care · operator</text>
+      <text x="20" y="186" font-size="12" fill="#9fb3d9">Î² = % change in income per 1% change in incidence</text>
+      <text x="20" y="204" font-size="12" fill="#9fb3d9">Presets: balanced Â· real estate Â· home care Â· operator</text>
     </g>
-    <text x="48" y="490" fill="#9fb3d9" font-size="12">Templates in the market: Nippon Life ’ Nichii (2024), Sompo Care (201516), UnitedHealth/Optum ’ LHC &amp; Amedisys (202325), Maccabi ’ Bayit Balev. Research assumptions, flagged "model" in every table.</text>
+    <text x="48" y="490" fill="#9fb3d9" font-size="12">Templates in the market: Nippon Life â†’ Nichii (2024), Sompo Care (2015â€“16), UnitedHealth/Optum â†’ LHC &amp; Amedisys (2023â€“25), Maccabi â†’ Bayit Balev. Research assumptions, flagged "model" in every table.</text>
   </g>
 </svg>

@@ -18,16 +18,16 @@
   <rect width="1200" height="520" rx="18" fill="url(#bg)"/>
   <g font-family="'Space Grotesk','Inter',Arial,sans-serif" fill="#f7fafc">
     <text x="48" y="58" font-size="30" font-weight="700" letter-spacing="0.5">PHINS</text>
-    <text x="140" y="58" font-size="16" fill="#c9d4ea">Research &amp; Audit · The care-setting spectrum</text>
-    <text x="48" y="92" font-size="14" fill="#9fb3d9">Acuity, annual cost and regulatory intensity rise from left to right · US medians 2025 (CareScout), OECD structure</text>
+    <text x="140" y="58" font-size="16" fill="#c9d4ea">Research &amp; Audit Â· The care-setting spectrum</text>
+    <text x="48" y="92" font-size="14" fill="#9fb3d9">Acuity, annual cost and regulatory intensity rise from left to right Â· US medians 2025 (CareScout), OECD structure</text>
   </g>
   <rect x="48" y="400" width="1104" height="14" rx="7" fill="url(#arrow)"/>
   <polygon points="1152,392 1180,407 1152,422" fill="#e3bf6f"/>
   <g font-family="'Inter',Arial,sans-serif" fill="#c9d4ea" font-size="13">
-    <text x="48" y="440">01 ADL · family carer</text>
-    <text x="1070" y="440" text-anchor="end">3+ ADL · 24/7 nursing</text>
-    <text x="48" y="470" fill="#9fb3d9">Public packages H $35k · Cash benefits (NII, Pflegegeld) · Light regulation</text>
-    <text x="1070" y="470" fill="#9fb3d9" text-anchor="end">Licensing · staffing ratios · survey &amp; certification</text>
+    <text x="48" y="440">01 ADL Â· family carer</text>
+    <text x="1070" y="440" text-anchor="end">3+ ADL Â· 24/7 nursing</text>
+    <text x="48" y="470" fill="#9fb3d9">Public packages â‰ˆ $35k Â· Cash benefits (NII, Pflegegeld) Â· Light regulation</text>
+    <text x="1070" y="470" fill="#9fb3d9" text-anchor="end">Licensing Â· staffing ratios Â· survey &amp; certification</text>
   </g>
   <!-- cards -->
   <g font-family="'Inter',Arial,sans-serif">
@@ -35,46 +35,46 @@
       <rect width="250" height="240" rx="14" fill="#0b1a3a" stroke="#4fd8ff" stroke-opacity="0.45"/>
       <rect x="0" y="0" width="250" height="6" rx="3" fill="#4fd8ff"/>
       <text x="20" y="40" font-size="17" font-weight="700" fill="#f7fafc">Home care</text>
-      <text x="20" y="62" font-size="12" fill="#9fb3d9">private agency · public in-kind · cash</text>
+      <text x="20" y="62" font-size="12" fill="#9fb3d9">private agency Â· public in-kind Â· cash</text>
       <path d="M40 130 l40 -34 l40 34 v44 h-80z" fill="none" stroke="#4fd8ff" stroke-width="3"/>
       <rect x="70" y="150" width="18" height="24" fill="#4fd8ff"/>
-      <text x="20" y="208" font-size="12" fill="#c9d4ea">$80,080 / yr · 44 h per week</text>
-      <text x="20" y="226" font-size="12" fill="#c9d4ea">Medicare HH margin 20% · agencies 812%</text>
+      <text x="20" y="208" font-size="12" fill="#c9d4ea">$80,080 / yr Â· 44 h per week</text>
+      <text x="20" y="226" font-size="12" fill="#c9d4ea">Medicare HH margin 20% Â· agencies 8â€“12%</text>
     </g>
     <g transform="translate(332,130)">
       <rect width="250" height="240" rx="14" fill="#0b1a3a" stroke="#9fb3d9" stroke-opacity="0.45"/>
       <rect x="0" y="0" width="250" height="6" rx="3" fill="#9fb3d9"/>
       <text x="20" y="40" font-size="17" font-weight="700" fill="#f7fafc">Assisted living</text>
-      <text x="20" y="62" font-size="12" fill="#9fb3d9">private pay · state licence · memory care</text>
+      <text x="20" y="62" font-size="12" fill="#9fb3d9">private pay Â· state licence Â· memory care</text>
       <rect x="40" y="100" width="70" height="74" rx="4" fill="none" stroke="#9fb3d9" stroke-width="3"/>
       <rect x="120" y="86" width="70" height="88" rx="4" fill="none" stroke="#9fb3d9" stroke-width="3"/>
       <rect x="55" y="115" width="12" height="12" fill="#9fb3d9"/><rect x="83" y="115" width="12" height="12" fill="#9fb3d9"/>
       <rect x="135" y="100" width="12" height="12" fill="#9fb3d9"/><rect x="163" y="100" width="12" height="12" fill="#9fb3d9"/>
       <rect x="135" y="128" width="12" height="12" fill="#9fb3d9"/><rect x="163" y="128" width="12" height="12" fill="#9fb3d9"/>
-      <text x="20" y="208" font-size="12" fill="#c9d4ea">$74,400 / yr · occupancy H 88%</text>
-      <text x="20" y="226" font-size="12" fill="#c9d4ea">NOI margin 2233% · REIT capital</text>
+      <text x="20" y="208" font-size="12" fill="#c9d4ea">$74,400 / yr Â· occupancy â‰ˆ 88%</text>
+      <text x="20" y="226" font-size="12" fill="#c9d4ea">NOI margin 22â€“33% Â· REIT capital</text>
     </g>
     <g transform="translate(616,130)">
       <rect width="250" height="240" rx="14" fill="#0b1a3a" stroke="#e3bf6f" stroke-opacity="0.6"/>
       <rect x="0" y="0" width="250" height="6" rx="3" fill="url(#gold)"/>
       <text x="20" y="40" font-size="17" font-weight="700" fill="#f7fafc">Nursing home</text>
-      <text x="20" y="62" font-size="12" fill="#9fb3d9">73% for-profit · 20% non-profit · 7% public</text>
+      <text x="20" y="62" font-size="12" fill="#9fb3d9">73% for-profit Â· 20% non-profit Â· 7% public</text>
       <rect x="40" y="90" width="150" height="84" rx="4" fill="none" stroke="#e3bf6f" stroke-width="3"/>
       <rect x="55" y="104" width="14" height="14" fill="#e3bf6f"/><rect x="83" y="104" width="14" height="14" fill="#e3bf6f"/><rect x="111" y="104" width="14" height="14" fill="#e3bf6f"/><rect x="139" y="104" width="14" height="14" fill="#e3bf6f"/>
       <rect x="55" y="132" width="14" height="14" fill="#e3bf6f"/><rect x="83" y="132" width="14" height="14" fill="#e3bf6f"/><rect x="111" y="132" width="14" height="14" fill="#e3bf6f"/><rect x="139" y="132" width="14" height="14" fill="#e3bf6f"/>
       <path d="M105 90 l10 -16 l10 16" fill="none" stroke="#e3bf6f" stroke-width="3"/>
-      <text x="20" y="208" font-size="12" fill="#c9d4ea">$114,975 semi-private · $129,575 private</text>
-      <text x="20" y="226" font-size="12" fill="#c9d4ea">Medicare margin 22% · all-payer H 0.4%</text>
+      <text x="20" y="208" font-size="12" fill="#c9d4ea">$114,975 semi-private Â· $129,575 private</text>
+      <text x="20" y="226" font-size="12" fill="#c9d4ea">Medicare margin 22% Â· all-payer â‰ˆ 0.4%</text>
     </g>
     <g transform="translate(900,130)">
       <rect width="250" height="240" rx="14" fill="#0b1a3a" stroke="#f56565" stroke-opacity="0.5"/>
       <rect x="0" y="0" width="250" height="6" rx="3" fill="#f56565"/>
       <text x="20" y="40" font-size="17" font-weight="700" fill="#f7fafc">Geriatric hospital</text>
-      <text x="20" y="62" font-size="12" fill="#9fb3d9">complex nursing · ventilation · public code</text>
+      <text x="20" y="62" font-size="12" fill="#9fb3d9">complex nursing Â· ventilation Â· public code</text>
       <rect x="40" y="90" width="150" height="84" rx="4" fill="none" stroke="#f56565" stroke-width="3"/>
       <rect x="105" y="108" width="20" height="50" fill="#f56565"/><rect x="90" y="123" width="50" height="20" fill="#f56565"/>
       <text x="20" y="208" font-size="12" fill="#c9d4ea">Israel: 16% of LTC beds in hospitals</text>
-      <text x="20" y="226" font-size="12" fill="#c9d4ea">Highest staffing · lowest margin</text>
+      <text x="20" y="226" font-size="12" fill="#c9d4ea">Highest staffing Â· lowest margin</text>
     </g>
   </g>
 </svg>

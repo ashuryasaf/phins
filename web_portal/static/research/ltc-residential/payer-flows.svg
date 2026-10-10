@@ -10,12 +10,12 @@
   <rect width="1200" height="520" rx="18" fill="url(#bg)"/>
   <g font-family="'Space Grotesk','Inter',Arial,sans-serif" fill="#f7fafc">
     <text x="48" y="58" font-size="30" font-weight="700" letter-spacing="0.5">PHINS</text>
-    <text x="140" y="58" font-size="16" fill="#c9d4ea">Research &amp; Audit · Who pays for long-term care</text>
-    <text x="48" y="92" font-size="14" fill="#9fb3d9">Share of spend by payer · CMS NHE 2024 (US) · OECD Health at a Glance 2025 · Taub Center 2022 (Israel)</text>
+    <text x="140" y="58" font-size="16" fill="#c9d4ea">Research &amp; Audit Â· Who pays for long-term care</text>
+    <text x="48" y="92" font-size="14" fill="#9fb3d9">Share of spend by payer Â· CMS NHE 2024 (US) Â· OECD Health at a Glance 2025 Â· Taub Center 2022 (Israel)</text>
   </g>
   <g font-family="'Inter',Arial,sans-serif" font-size="13">
     <!-- US nursing care 2024: Medicaid 35.9, Medicare 21.5, other public 3.2, PHI 8.8, OOP 22.1, other 8.5 ; bar width 900 -->
-    <text x="48" y="150" fill="#f7fafc" font-weight="700">US nursing care 2024 · $219.9bn</text>
+    <text x="48" y="150" fill="#f7fafc" font-weight="700">US nursing care 2024 Â· $219.9bn</text>
     <g transform="translate(48,160)">
       <rect x="0" width="323" height="34" fill="#0e4f8a"/>
       <rect x="323" width="194" height="34" fill="#2b6cb0"/>
@@ -30,7 +30,7 @@
       <text x="832" y="23" fill="#f7fafc" font-size="12">Other 8.5%</text>
     </g>
     <!-- US home health 2024: Medicaid 22.5, Medicare 32.9, other public 1.0, PHI 22.0, OOP 17.9, other 3.7 -->
-    <text x="48" y="232" fill="#f7fafc" font-weight="700">US home health 2024 · $169.4bn</text>
+    <text x="48" y="232" fill="#f7fafc" font-weight="700">US home health 2024 Â· $169.4bn</text>
     <g transform="translate(48,242)">
       <rect x="0" width="203" height="34" fill="#0e4f8a"/>
       <rect x="203" width="296" height="34" fill="#2b6cb0"/>
@@ -44,7 +44,7 @@
       <text x="714" y="23" fill="#060d1f" font-size="12">OOP 17.9%</text>
     </g>
     <!-- OECD 80/20 -->
-    <text x="48" y="314" fill="#f7fafc" font-weight="700">OECD average 2023 · 1.8% of GDP</text>
+    <text x="48" y="314" fill="#f7fafc" font-weight="700">OECD average 2023 Â· 1.8% of GDP</text>
     <g transform="translate(48,324)">
       <rect x="0" width="720" height="34" fill="#0e4f8a"/>
       <rect x="720" width="180" height="34" fill="#e3bf6f"/>
@@ -52,11 +52,11 @@
       <text x="728" y="23" fill="#060d1f" font-size="12">Private 20%</text>
     </g>
     <!-- Israel 71/29 -->
-    <text x="48" y="396" fill="#f7fafc" font-weight="700">Israel 2022 · NIS 23.6bn</text>
+    <text x="48" y="396" fill="#f7fafc" font-weight="700">Israel 2022 Â· NIS 23.6bn</text>
     <g transform="translate(48,406)">
       <rect x="0" width="639" height="34" fill="#0e4f8a"/>
       <rect x="639" width="261" height="34" fill="#e3bf6f"/>
-      <text x="8" y="23" fill="#f7fafc" font-size="12">Public 71% (NII home benefit · MoH nursing code · Welfare)</text>
+      <text x="8" y="23" fill="#f7fafc" font-size="12">Public 71% (NII home benefit Â· MoH nursing code Â· Welfare)</text>
       <text x="647" y="23" fill="#060d1f" font-size="12">Private 29% (home care NIS 4.4bn)</text>
     </g>
     <!-- legend -->
