@@ -129,6 +129,10 @@ PCT_KEYS = {k for k in {
     'public_share_pct_end', 'steady_state_prevalence_pct', 'allocation_pct', 'yield_pct', 'income_to_claims_pct',
 }}
 INT_KEYS = {'year', 'start', 'end', 'age_min', 'age_max', 'band_lives', 'fiscal_year', 'countries', 'end_year', 'ltc_spend_year', 'weight', 'beds_or_units'}
+# Calendar years and ages read as plain integers; counts keep the thousands separator.
+PLAIN_INT_KEYS = {'year', 'start', 'end', 'age_min', 'age_max', 'fiscal_year', 'end_year', 'ltc_spend_year', 'weight'}
+ACRONYMS = {'tam': 'TAM', 'sam': 'SAM', 'som': 'SOM', 'gdp': 'GDP', 'ltc': 'LTC', 'adl': 'ADL', 'us': 'US',
+            'oecd': 'OECD', 'rn': 'RN', 'hprd': 'HPRD', 'cagr': 'CAGR', 'ebitdar': 'EBITDAR', 'nhe': 'NHE', 'pv': 'PV'}
 
 
 def _fmt(key: str, value: Any) -> str:
@@ -145,9 +149,10 @@ def _fmt(key: str, value: Any) -> str:
             return str(value)
     if key in INT_KEYS:
         try:
-            return f'{int(float(value)):,}'
+            number = int(float(value))
         except (TypeError, ValueError):
             return str(value)
+        return str(number) if key in PLAIN_INT_KEYS else f'{number:,}'
     if key in PCT_KEYS:
         try:
             number = float(value)
@@ -178,7 +183,16 @@ def _header(key: str) -> str:
     }
     if key in special:
         return special[key]
-    return key.replace('_pct', ' %').replace('_usd', ' $').replace('_', ' ').capitalize()
+    words = key.replace('_pct', ' %').replace('_usd', ' $').replace('_', ' ').split(' ')
+    out = []
+    for index, word in enumerate(words):
+        if word in ACRONYMS:
+            out.append(ACRONYMS[word])
+        elif index == 0:
+            out.append(word.capitalize())
+        else:
+            out.append(word)
+    return ' '.join(out)
 
 
 def _paragraph(text: Any, style):

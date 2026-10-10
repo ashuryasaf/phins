@@ -360,6 +360,19 @@ def test_pdf_covers_every_table_and_is_branded():
     assert pack['integrity']['pack_hash'][:12] in text.replace('\n', '')
 
 
+def test_pdf_formats_years_plainly_and_uppercases_acronyms():
+    from services.ltc_residential_market_research_pdf import _fmt, _header
+    assert _fmt('year', 2025) == '2025'
+    assert _fmt('age_min', 65.0) == '65'
+    assert _fmt('band_lives', 12345) == '12,345'
+    assert _fmt('beds_or_units', 30000) == '30,000'
+    assert _fmt('expected_annual_claims', 1234567.8) == '$1,234,568'
+    assert _fmt('ltc_spend_gdp_pct', 1.3341) == '1.334%'
+    assert _header('som_share_of_sam_pct') == 'SOM share of SAM %'
+    assert _header('us_share_of_facilities_pct') == 'US facilities %'
+    assert _header('residential_demand_index') == 'Residential demand index'
+
+
 # ---------------------------------------------------------------- HTTP surface
 
 def test_research_endpoint_requires_actuary_role():
