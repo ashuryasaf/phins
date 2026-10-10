@@ -10,6 +10,7 @@ import os
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import pytest
 from PIL import Image
 
 import web_portal.server as portal
@@ -370,6 +371,123 @@ def test_offer_rows_the_marketplace_hides_keep_the_catalog_price():
                 portal.HEALTH_WALLETS[customer_id]["balance"] = 20000.00
     finally:
         portal.HEALTH_WALLETS.pop(customer_id, None)
+
+
+def test_live_approved_offer_still_charges_the_catalog_price():
+    """An approved, portal-active offer on a catalog SKU cannot set the price."""
+    customer_id = "CUST-RES-CARE-LIVE"
+    price = portal.residential_care_by_id("res-home")["price"]
+    supplier_id = "SUP-RES-LIVE"
+    _prime_port()
+    _fund(customer_id, 20000)
+    try:
+        with portal.STATE_LOCK:
+            portal.SUPPLIERS[supplier_id] = {
+                "id": supplier_id,
+                "company_name": "Live Residential Supplier",
+                "supplier_type": "healthcare_provider",
+                "status": "approved",
+                "portal_active": True,
+            }
+            portal.SUPPLIER_OFFERS["res-home"] = {
+                "id": "res-home",
+                "supplier_id": supplier_id,
+                "name": "Cheap Home Bundle",
+                "price": 100.00,
+                "category": "residential",
+                "item_type": "service",
+                "active": True,
+            }
+        offer_price, offer_body = _post("/api/health-wallet/purchase", {
+            "customer_id": customer_id,
+            "product_id": "res-home",
+            "amount": 100.00,
+            "quantity": 1,
+            "payment_method": "health_wallet",
+        })
+        assert offer_price == 400, offer_body
+        assert offer_body["error"] == "Catalog price mismatch"
+        assert offer_body["catalog_amount"] == price
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 20000.00
+
+        status, body = _post("/api/health-wallet/purchase", {
+            "customer_id": customer_id,
+            "product_id": "res-home",
+            "amount": price,
+            "quantity": 1,
+            "payment_method": "health_wallet",
+        })
+        assert status == 200, body
+        assert body["purchase"]["amount"] == price
+        assert body["purchase"]["product_name"] == "Home Bundle"
+        assert body["purchase"]["price_source"] == "residential_catalog"
+        assert body["purchase"].get("order_id") is None
+        assert body["new_balance"] == round(20000.00 - price, 2)
+        _plan_identity(body["pricing_plan"], price)
+    finally:
+        with portal.STATE_LOCK:
+            portal.SUPPLIER_OFFERS.pop("res-home", None)
+            portal.SUPPLIERS.pop(supplier_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+
+
+def test_catalog_sku_cannot_be_published_as_a_supplier_offer():
+    from services.supply_chain_ecosystem_service import (
+        SupplyChainEcosystemService,
+        SupplierStatus,
+    )
+
+    service = SupplyChainEcosystemService(suppliers_store={
+        "SUP-1": {
+            "id": "SUP-1",
+            "status": SupplierStatus.APPROVED.value,
+            "company_name": "Clinic",
+        },
+    })
+    with pytest.raises(ValueError, match="reserved"):
+        service.upsert_offer("SUP-1", {
+            "id": "res-home",
+            "name": "Home",
+            "category": "residential",
+            "item_type": "service",
+            "price": 100,
+        }, actor="t")
+    assert "res-home" not in service.offers
+
+    _prime_port()
+    token = "phins_catalog-lock"
+    portal.SESSIONS[token] = {
+        "username": "admin-catalog-lock",
+        "user_id": "admin-catalog-lock",
+        "role": "admin",
+        "customer_id": None,
+        "expires": "2099-01-01T00:00:00",
+    }
+    base = os.environ["TEST_BASE_URL"].rstrip("/")
+    data = json.dumps({
+        "id": "res-extra",
+        "supplier_id": "SUP-1",
+        "name": "Extra",
+        "category": "residential",
+        "item_type": "service",
+        "price": 50,
+    }).encode("utf-8")
+    req = Request(
+        base + "/api/supplier/offers/upsert",
+        data=data,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        },
+    )
+    try:
+        with urlopen(req) as resp:
+            status, body = resp.status, json.loads(resp.read().decode("utf-8"))
+    except HTTPError as exc:
+        status, body = exc.code, json.loads(exc.read().decode("utf-8"))
+    assert status == 400, body
+    assert "reserved" in body["error"].lower()
+    assert "res-extra" not in portal.SUPPLIER_OFFERS
 
 
 def test_term_quotes_discount_the_list_without_stacking():

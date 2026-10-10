@@ -322,20 +322,25 @@ def _document_identity_check(customer_id: str, facts: List[Dict[str, Any]]) -> D
 
 
 def _mislaka_identity_sync(customer_id: str, supplied_id: str, actor: str) -> Tuple[str, Optional[Tuple[int, Dict[str, Any]]]]:
-    """Keep the Mislaka lookup ID consistent with the customer identity master.
+    """Return the ID already recorded for this customer. Never captures one.
 
-    * recorded identity + no ID in the request -> use the recorded (decrypted
-      server-side) number so staff never re-type it;
-    * recorded identity + different ID -> 409 ``identity_mismatch`` (never
-      silently overwrite);
-    * no recorded identity + valid Israeli ID -> capture it once
-      (``source='assessment'``) so every later pipeline sees the same value.
+    * no recorded identity -> 409 ``identity_required`` (the supplied number
+      is not stored and must not be sent to the clearinghouse);
+    * recorded identity + no ID in the request -> the recorded number,
+      decrypted server-side;
+    * recorded identity + a different ID -> 409 ``identity_mismatch``.
     Returns (id_number_to_use, error_response_or_None).
     """
     try:
         from services import customer_identity_service as cis
     except ImportError:
-        return supplied_id, None
+        return "", (503, {"error": "Mislaka API not configured", "code": "mislaka_unconfigured"})
+    record = _portal_customers().get(customer_id) if customer_id else None
+    if not isinstance(record, dict) or not cis.is_complete(record):
+        return "", (409, {
+            "error": "Record this customer's identity before a Mislaka lookup",
+            "code": "identity_required",
+        })
     import sys
     portal = sys.modules.get("web_portal.server") or sys.modules.get("server")
     return cis.resolve_lookup_id(
@@ -931,14 +936,6 @@ def _personal_mislaka_post(session: Dict[str, Any], body: Dict[str, Any]) -> Opt
     cust, err = _personal_customer(session, requested)
     if err:
         return err
-    id_number = str(body.get("id_number") or "").strip()
-    id_number, identity_error = _mislaka_identity_sync(
-        cust, id_number, actor=str(session.get("username") or "customer"))
-    if identity_error:
-        return identity_error
-    if not id_number or not id_number.isdigit() or len(id_number) != 9:
-        return 400, {"error": "Israeli ID number (9 digits) required"}
-
     from services.mislaka_api_service import (
         MislakaProductType,
         MislakaStatus,
@@ -947,12 +944,24 @@ def _personal_mislaka_post(session: Dict[str, Any], body: Dict[str, Any]) -> Opt
     from services.mislaka_affiliations import ReportFilters
     from services.mislaka_report_generator import file_personal_mislaka_report
 
+    mislaka = get_mislaka_service()
+    if not mislaka.is_configured():
+        return 503, {"error": "Mislaka API not configured", "code": "mislaka_unconfigured"}
+
+    id_number = str(body.get("id_number") or "").strip()
+    id_number, identity_error = _mislaka_identity_sync(
+        cust, id_number, actor=str(session.get("username") or "customer"))
+    if identity_error:
+        return identity_error
+    if not id_number or not id_number.isdigit() or len(id_number) != 9:
+        return 400, {"error": "Israeli ID number (9 digits) required"}
+
     product_value = str(body.get("product_type") or "all").lower()
     try:
         product_type = MislakaProductType(product_value)
     except ValueError:
         product_type = MislakaProductType.ALL
-    result = get_mislaka_service().get_person_policies(id_number, product_type)
+    result = mislaka.get_person_policies(id_number, product_type)
     status = getattr(result.status, "value", result.status)
     if str(status) != MislakaStatus.SUCCESS.value:
         return 502, {"error": "Mislaka query failed"}
@@ -1475,32 +1484,37 @@ def dispatch_post(path: str, session: Dict[str, Any], body_data: Dict[str, Any],
             if err:
                 return 403, {"error": err}
 
-            id_number = str(body.get("id_number") or "").strip()
-            id_number, identity_error = _mislaka_identity_sync(
-                cust, id_number, actor=str(session.get("username") or "user"))
-            if identity_error:
-                return identity_error
-            if not id_number:
-                id_number = str(cust or "").strip()
-            if not id_number.isdigit() or len(id_number) != 9:
-                return 400, {"error": "Israeli ID number (9 digits) required"}
-
             from services.mislaka_api_service import (
                 get_mislaka_service,
                 MislakaProductType,
+                MislakaStatus,
             )
             from services.mislaka_affiliations import ReportFilters
             from services.mislaka_report_generator import link_to_assessment_center
 
             mislaka = get_mislaka_service()
+            if not mislaka.is_configured():
+                return 503, {"error": "Mislaka API not configured", "code": "mislaka_unconfigured"}
+            if not cust:
+                return 400, {"error": "customer_id required"}
+
+            id_number = str(body.get("id_number") or "").strip()
+            id_number, identity_error = _mislaka_identity_sync(
+                cust, id_number, actor=str(session.get("username") or "user"))
+            if identity_error:
+                return identity_error
+            if not id_number or not id_number.isdigit() or len(id_number) != 9:
+                return 400, {"error": "Israeli ID number (9 digits) required"}
+
             product_value = str(body.get("product_type") or "all").lower()
             try:
                 product_type = MislakaProductType(product_value)
             except ValueError:
                 product_type = MislakaProductType.ALL
-            if not cust:
-                return 400, {"error": "customer_id required"}
             result = mislaka.get_person_policies(id_number, product_type)
+            link_status = getattr(result.status, "value", result.status)
+            if str(link_status) != MislakaStatus.SUCCESS.value:
+                return 502, {"error": "Mislaka query failed"}
             # Adjustable reporting: optional filters narrow which real policy
             # rows are ingested as facts (policy number, status, provider, dates).
             # The national ID stays inside the report document. It is never

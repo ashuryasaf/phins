@@ -41,11 +41,11 @@ def center(tmp_path):
     )
 
 
-def _result(policies=None, id_number="123456782"):
+def _result(policies=None, id_number="123456782", status=MislakaStatus.SUCCESS):
     policies = policies or [_policy()]
     return MislakaQueryResult(
         request_id="REQ-PERSONAL",
-        status=MislakaStatus.SUCCESS,
+        status=status,
         timestamp="2026-01-01T00:00:00",
         person=MislakaPerson(id_number=id_number, first_name="Ada", last_name="Levi"),
         policies=policies,
@@ -191,12 +191,17 @@ def test_missing_customer_does_not_invent_a_user(center):
 
 
 class _FakeMislaka:
-    def __init__(self):
+    def __init__(self, configured=True, status=MislakaStatus.SUCCESS):
         self.calls = []
+        self.configured = configured
+        self.status = status
+
+    def is_configured(self):
+        return self.configured
 
     def get_person_policies(self, id_number, product_type):
         self.calls.append(id_number)
-        return _result(id_number=id_number)
+        return _result(id_number=id_number, status=self.status)
 
 
 def _session(role, customer_id):
@@ -229,52 +234,136 @@ def test_api_customer_files_and_reads_only_their_report(center, monkeypatch):
     assert body["error"] == "Access denied"
     assert fake.calls == []
 
-    status, body = dispatch_post(
-        "/api/assessment-center/mislaka/personal",
-        _session("customer", "CUST-A"),
-        {"id_number": "123456782", "product_type": "pension"},
-        "127.0.0.1",
-    )
-    assert status == 200
-    assert body["customer_id"] == "CUST-A"
-    assert "id_number" not in body
-    assert body["document_sha256"]
-    doc_id = body["document_id"]
+    import web_portal.server as portal
+    from services import customer_identity_service as cis
 
-    status, listing = dispatch_get(
-        "/api/assessment-center/mislaka/personal",
-        _session("customer", "CUST-A"),
-        {},
-        "127.0.0.1",
+    portal.CUSTOMERS["CUST-A"] = {"id": "CUST-A", "name": "Ada", "email": "ada@example.com"}
+    cis.set_identity(
+        portal.CUSTOMERS, "CUST-A", "123456782", "IL",
+        source="registration", actor="t",
     )
-    assert status == 200
-    assert listing["total"] == 1
-    assert "report_text" not in listing["items"][0]
-    assert "id_number" not in listing
+    try:
+        status, body = dispatch_post(
+            "/api/assessment-center/mislaka/personal",
+            _session("customer", "CUST-A"),
+            {"id_number": "123456782", "product_type": "pension"},
+            "127.0.0.1",
+        )
+        assert status == 200
+        assert body["customer_id"] == "CUST-A"
+        assert "id_number" not in body
+        assert body["document_sha256"]
+        doc_id = body["document_id"]
 
-    status, other = dispatch_get(
-        f"/api/assessment-center/mislaka/personal/{doc_id}",
-        _session("customer", "CUST-B"),
-        {},
-        "127.0.0.1",
-    )
-    assert status == 404
+        status, listing = dispatch_get(
+            "/api/assessment-center/mislaka/personal",
+            _session("customer", "CUST-A"),
+            {},
+            "127.0.0.1",
+        )
+        assert status == 200
+        assert listing["total"] == 1
+        assert "report_text" not in listing["items"][0]
+        assert "id_number" not in listing
 
-    status, own = dispatch_get(
-        f"/api/assessment-center/mislaka/personal/{doc_id}",
-        _session("customer", "CUST-A"),
-        {},
-        "127.0.0.1",
-    )
-    assert status == 200
-    assert own["integrity_ok"] is True
-    assert own["customer_id"] == "CUST-A"
-    assert "id_number" not in own
+        status, other = dispatch_get(
+            f"/api/assessment-center/mislaka/personal/{doc_id}",
+            _session("customer", "CUST-B"),
+            {},
+            "127.0.0.1",
+        )
+        assert status == 404
 
-    status, hidden = dispatch_get(
-        f"/api/assessment-center/mislaka/personal/{doc_id}",
-        _session("admin", "CUST-A"),
-        {},
-        "127.0.0.1",
+        status, own = dispatch_get(
+            f"/api/assessment-center/mislaka/personal/{doc_id}",
+            _session("customer", "CUST-A"),
+            {},
+            "127.0.0.1",
+        )
+        assert status == 200
+        assert own["integrity_ok"] is True
+        assert own["customer_id"] == "CUST-A"
+        assert "id_number" not in own
+
+        status, hidden = dispatch_get(
+            f"/api/assessment-center/mislaka/personal/{doc_id}",
+            _session("admin", "CUST-A"),
+            {},
+            "127.0.0.1",
+        )
+        assert status == 403
+    finally:
+        portal.CUSTOMERS.pop("CUST-A", None)
+        cis.reset_process_state()
+
+
+def test_personal_lookup_requires_configuration_and_a_recorded_identity(center, monkeypatch):
+    """A typed ID is not stored and is not sent until both gates pass."""
+    import web_portal.server as portal
+    from services import customer_identity_service as cis
+
+    monkeypatch.setattr("web_portal.api_assessment_center._service", lambda: center)
+    portal.CUSTOMERS.pop("CUST-GATE", None)
+    unconfigured = _FakeMislaka(configured=False)
+    monkeypatch.setattr(
+        "services.mislaka_api_service.get_mislaka_service", lambda: unconfigured,
     )
-    assert status == 403
+    session = _session("customer", "CUST-GATE")
+    payload = {"id_number": "123456782", "product_type": "all"}
+
+    try:
+        status, body = dispatch_post(
+            "/api/assessment-center/mislaka/personal", session, payload, "127.0.0.1",
+        )
+        assert status == 503
+        assert body["code"] == "mislaka_unconfigured"
+        assert unconfigured.calls == []
+        assert not cis.is_complete(portal.CUSTOMERS.get("CUST-GATE"))
+
+        portal.CUSTOMERS["CUST-GATE"] = {
+            "id": "CUST-GATE", "name": "Ada", "email": "gate@example.com",
+        }
+        blocked = _FakeMislaka(configured=True)
+        monkeypatch.setattr(
+            "services.mislaka_api_service.get_mislaka_service", lambda: blocked,
+        )
+        status, body = dispatch_post(
+            "/api/assessment-center/mislaka/personal", session, payload, "127.0.0.1",
+        )
+        assert status == 409 and body["code"] == "identity_required"
+        assert blocked.calls == []
+        assert not cis.is_complete(portal.CUSTOMERS["CUST-GATE"])
+
+        cis.set_identity(
+            portal.CUSTOMERS, "CUST-GATE", "123456782", "IL",
+            source="registration", actor="t",
+        )
+        failed = _FakeMislaka(configured=True, status=MislakaStatus.ERROR)
+        monkeypatch.setattr(
+            "services.mislaka_api_service.get_mislaka_service", lambda: failed,
+        )
+        status, body = dispatch_post(
+            "/api/assessment-center/mislaka/personal", session, payload, "127.0.0.1",
+        )
+        assert status == 502 and body["error"] == "Mislaka query failed"
+        assert failed.calls == ["123456782"]
+        assert portal.CUSTOMERS["CUST-GATE"]["identity_source"] == "registration"
+        assert center.document_service.list_documents(page_size=20)["total"] == 0
+
+        ready = _FakeMislaka(configured=True)
+        monkeypatch.setattr(
+            "services.mislaka_api_service.get_mislaka_service", lambda: ready,
+        )
+        status, body = dispatch_post(
+            "/api/assessment-center/mislaka/personal",
+            session,
+            {"product_type": "all"},
+            "127.0.0.1",
+        )
+        assert status == 200, body
+        assert ready.calls == ["123456782"]
+        assert "123456782" not in __import__("json").dumps(body)
+        assert portal.CUSTOMERS["CUST-GATE"]["identity_source"] == "registration"
+    finally:
+        portal.CUSTOMERS.pop("CUST-GATE", None)
+        cis.reset_process_state()

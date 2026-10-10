@@ -606,32 +606,84 @@ def test_chat_signature_requires_nationality_and_validates_id_against_it():
 # ---------------------------------------------------------------------------
 # assessment center: Mislaka linking reuses the identity master
 # ---------------------------------------------------------------------------
-def test_mislaka_link_captures_prefills_and_refuses_conflicting_ids():
+def test_mislaka_link_requires_recorded_identity_and_a_configured_clearinghouse(monkeypatch):
+    """The link route no longer captures a first-time ID or calls an unconfigured API."""
+    from services.mislaka_api_service import (
+        MislakaPerson,
+        MislakaPolicy,
+        MislakaQueryResult,
+        MislakaStatus,
+    )
+
+    class _Gate:
+        def __init__(self, configured, status=MislakaStatus.SUCCESS):
+            self.calls = []
+            self.configured = configured
+            self.status = status
+
+        def is_configured(self):
+            return self.configured
+
+        def get_person_policies(self, id_number, product_type):
+            self.calls.append(id_number)
+            policy = MislakaPolicy(
+                policy_id="P-1", policy_number="POL-1", product_type="1",
+                company_name="Migdal", company_code="01", start_date="2020-01-01",
+                status="1", premium_monthly=100.0, accumulated_value=25000.0,
+            )
+            return MislakaQueryResult(
+                request_id="REQ-LINK", status=self.status, timestamp="2026-01-01T00:00:00",
+                person=MislakaPerson(id_number=id_number, first_name="Ada", last_name="Levi"),
+                policies=[policy], total_policies=1, total_accumulated=25000.0,
+                total_monthly_premium=100.0,
+            )
+
     cid, rec = _customer()
     token = _session("customer", cid)
     path = "/api/assessment-center/mislaka/link"
+    unconfigured = _Gate(False)
+    monkeypatch.setattr("services.mislaka_api_service.get_mislaka_service", lambda: unconfigured)
 
-    # first link with a valid ID captures it (source=assessment)
     body, status = _post(path, {"customer_id": cid, "id_number": IL_ID}, token=token)
-    assert status == 200, body
-    assert cis.is_complete(rec) and rec["identity_source"] == "assessment"
-    assert IL_ID not in json.dumps(rec)
+    assert status == 503 and body["code"] == "mislaka_unconfigured"
+    assert unconfigured.calls == []
+    assert not cis.is_complete(rec)
 
-    # later links may omit the ID: the recorded (decrypted server-side) one is used
+    blocked = _Gate(True)
+    monkeypatch.setattr("services.mislaka_api_service.get_mislaka_service", lambda: blocked)
+    body, status = _post(path, {"customer_id": cid, "id_number": IL_ID}, token=token)
+    assert status == 409 and body["code"] == "identity_required"
+    assert blocked.calls == []
+    assert not cis.is_complete(rec)
+
+    cis.set_identity(portal.CUSTOMERS, cid, IL_ID, "IL", source="registration", actor="t")
+    failed = _Gate(True, status=MislakaStatus.ERROR)
+    monkeypatch.setattr("services.mislaka_api_service.get_mislaka_service", lambda: failed)
+    body, status = _post(path, {"customer_id": cid}, token=token)
+    assert status == 502 and body["error"] == "Mislaka query failed"
+    assert failed.calls == [IL_ID]
+    assert rec["identity_source"] == "registration"
+
+    ready = _Gate(True)
+    monkeypatch.setattr("services.mislaka_api_service.get_mislaka_service", lambda: ready)
     body, status = _post(path, {"customer_id": cid}, token=token)
     assert status == 200, body
-    assert IL_ID not in json.dumps(body), "Mislaka response must not echo the plaintext ID"
+    assert ready.calls == [IL_ID]
+    assert IL_ID not in json.dumps(body)
+    assert rec["identity_source"] == "registration"
 
-    # a different ID is refused, never overwritten
     body, status = _post(path, {"customer_id": cid, "id_number": IL_ID_2}, token=token)
     assert status == 409 and body["code"] == "identity_mismatch"
     assert rec["national_id_last4"] == "6782"
+    assert ready.calls == [IL_ID]
 
-    # an ID already owned by another customer cannot be linked here either
-    other, _ = _customer()
-    body, status = _post(path, {"customer_id": other, "id_number": IL_ID}, token=_session("customer", other))
-    assert status == 409 and body["code"] == "identity_in_use"
-    assert not cis.is_complete(portal.CUSTOMERS[other])
+    other, other_rec = _customer()
+    body, status = _post(
+        path, {"customer_id": other, "id_number": IL_ID}, token=_session("customer", other),
+    )
+    assert status == 409 and body["code"] == "identity_required"
+    assert not cis.is_complete(other_rec)
+    assert ready.calls == [IL_ID]
 
 
 def test_resolve_lookup_id_outcomes():

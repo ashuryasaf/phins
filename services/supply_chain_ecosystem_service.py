@@ -87,6 +87,10 @@ class InvitationStatus(str, Enum):
     REVOKED = "revoked"
 
 
+# Platform residential SKUs. A supplier offer must not reuse these ids.
+PLATFORM_CATALOG_OFFER_IDS = frozenset({"res-home", "res-extra", "res-full"})
+
+
 class SupplierStatus(str, Enum):
     """Supplier registration status"""
     PENDING = "pending"
@@ -2200,6 +2204,8 @@ class SupplyChainEcosystemService:
         offer_id = str(data.get("id") or "").strip()
         if not offer_id:
             offer_id = f"OFF-{datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}"
+        if offer_id in PLATFORM_CATALOG_OFFER_IDS:
+            raise ValueError("This offer id is reserved for a platform catalog product")
 
         existing = self.offers.get(offer_id)
         if existing and existing.get("supplier_id") != supplier_id:
