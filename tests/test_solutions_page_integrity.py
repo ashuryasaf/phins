@@ -26,9 +26,12 @@ EXPECTED_PREVIEWS = (
     "claims",
     "actuarial_investments",
     "platform",
+    "media",
     "smart_contracts",
     "mga_solutions",
     "actuarial_force",
+    "deep_research",
+    "regulation",
     "individuals",
     "enterprises",
 )
@@ -62,6 +65,9 @@ def test_solutions_page_uses_title_case_where_necessary():
     assert "Smart Contracts Development" in html
     assert "MGA Solutions" in html
     assert "Actuarial Force" in html
+    assert "Media Library" in html
+    assert "Deep Research Strategy" in html
+    assert "Regulation Dashboard" in html
     assert "For Individuals" in html
     assert "For Enterprises &amp; Partners" in html
     assert "Request a Demo" in html
@@ -77,6 +83,9 @@ def test_every_public_segment_opens_an_enlarged_theater_preview():
     assert 'aria-modal="true"' in html
     assert "WALKTHROUGH_MS = 11000" in html
     assert "PREVIEW_VIDEOS" in html
+    assert "theaterOverrides" in html
+    assert "solutions_theater_" in html
+    assert "resolvePreviewSrc" in html
     assert "createElement('video')" in html
     assert "webkit-playsinline" in html
     assert "playsInline = true" in html

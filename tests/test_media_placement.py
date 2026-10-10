@@ -665,3 +665,106 @@ def test_missing_placement_asset_resolves_to_an_empty_public_url():
         assert page_urls["solutions_banner_url"] == ""
     finally:
         _restore(saved)
+
+
+def test_solution_theaters_fall_back_and_do_not_touch_design_slots():
+    """A Solution Views save replaces one walkthrough and leaves design alone.
+
+    An empty slot keeps the bundled screen recording. A photo cannot be
+    stored as a walkthrough. Deleting the film clears only that slot.
+    """
+    srv = _ServerThread()
+    srv.start()
+    _warm(srv.base)
+    token = "phins_test_place_theaters"
+    _admin(token)
+    saved = _snapshot()
+    theater_keys = [
+        portal.solutions_theater_slot_key(key) for key in portal.SOLUTIONS_THEATER_KEYS
+    ]
+    theater_saved = {key: portal.DESIGN_SETTINGS.get(key, "") for key in theater_keys}
+    film_id = "media-place-theater-film"
+    photo_id = "media-place-theater-photo"
+    hero_id = "media-place-theater-hero"
+    try:
+        _asset(film_id, "video", "/media-files/media-place-theater-film/desk.mp4")
+        _asset(photo_id, "image", "/media-files/media-place-theater-photo/still.jpg")
+        _asset(hero_id, "video", "/media-files/media-place-theater-hero/hero.mp4")
+        status, _ = _request(
+            srv.base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={"hero_video_id": hero_id},
+        )
+        assert status == 200
+
+        status, public = _request(srv.base + "/api/design/settings")
+        assert status == 200
+        assert public["solutions_theater_deep_research_url"] == (
+            "/previews/theaters/deep_research.mp4"
+        )
+        assert public["solutions_theater_regulation_url"] == (
+            "/previews/theaters/regulation.mp4"
+        )
+        assert public["solutions_theater_media_url"] == "/previews/theaters/media.mp4"
+        assert "solutions_theater_media_id" not in public
+
+        status, body = _request(
+            srv.base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={"solutions_theater_assessments_id": photo_id},
+        )
+        assert status == 400
+        assert "solutions_theater_assessments_id" in body.get("invalid_refs", [])
+        assert portal.DESIGN_SETTINGS["solutions_theater_assessments_id"] == ""
+        assert portal.DESIGN_SETTINGS["hero_video_id"] == hero_id
+
+        status, body = _request(
+            srv.base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={
+                "solutions_theater_deep_research_id": film_id,
+                "solutions_theater_individuals_id": film_id,
+            },
+        )
+        assert status == 200, body
+        assert portal.DESIGN_SETTINGS["hero_video_id"] == hero_id
+        assert portal.DESIGN_SETTINGS["solutions_hero_video_id"] == saved.get(
+            "solutions_hero_video_id", ""
+        )
+        assert portal.DESIGN_SETTINGS["solutions_theater_regulation_id"] == ""
+
+        status, public = _request(srv.base + "/api/design/settings")
+        assert public["solutions_theater_deep_research_url"] == (
+            "/media-files/media-place-theater-film/desk.mp4"
+        )
+        assert public["solutions_theater_individuals_url"] == (
+            "/media-files/media-place-theater-film/desk.mp4"
+        )
+        assert public["solutions_theater_regulation_url"] == (
+            "/previews/theaters/regulation.mp4"
+        )
+        assert public["video_url"].endswith("/hero.mp4") or "/media-files/" in public["video_url"]
+
+        status, _ = _request(
+            srv.base + f"/api/media/{film_id}",
+            method="DELETE",
+            token=token,
+        )
+        assert status == 200
+        assert portal.DESIGN_SETTINGS["solutions_theater_deep_research_id"] == ""
+        assert portal.DESIGN_SETTINGS["solutions_theater_individuals_id"] == ""
+        assert portal.DESIGN_SETTINGS["hero_video_id"] == hero_id
+        status, public = _request(srv.base + "/api/design/settings")
+        assert public["solutions_theater_deep_research_url"] == (
+            "/previews/theaters/deep_research.mp4"
+        )
+    finally:
+        for asset_id in (film_id, photo_id, hero_id):
+            portal.MEDIA_ASSETS.pop(asset_id, None)
+        _restore(saved)
+        for key, value in theater_saved.items():
+            portal.DESIGN_SETTINGS[key] = value
+        srv.stop()

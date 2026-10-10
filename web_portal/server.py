@@ -3173,6 +3173,37 @@ def normalize_apply_disclosure_version_label(value: Any, default: str = 'light')
     return cleaned or default
 
 
+# Public solution theaters. The bundled screen walkthrough is the fallback.
+# Media may replace one film from the Solution Views tab; an empty slot
+# keeps the bundled file, and the inquiry contract is unchanged.
+SOLUTIONS_THEATER_KEYS = (
+    'underwriting',
+    'assessments',
+    'billing',
+    'claims',
+    'actuarial_investments',
+    'platform',
+    'media',
+    'smart_contracts',
+    'mga_solutions',
+    'actuarial_force',
+    'deep_research',
+    'regulation',
+    'individuals',
+    'enterprises',
+)
+
+
+def solutions_theater_slot_key(preview_key: str) -> str:
+    """Design-settings id for one public solution walkthrough."""
+    return f'solutions_theater_{preview_key}_id'
+
+
+def solutions_theater_fallback_path(preview_key: str) -> str:
+    """Bundled screen recording used when media has not assigned a film."""
+    return f'/previews/theaters/{preview_key}.mp4'
+
+
 # Slots the media dashboard can allocate. The kind is enforced on every
 # write (Use and Save Changes) so a photo cannot be stored as a video
 # placement, and a missing id cannot be stored at all.
@@ -3194,6 +3225,10 @@ MEDIA_PLACEMENT_SLOTS = {
     'solutions_thumbnail_id': 'image',
     'solutions_banner_id': 'image',
 }
+for _theater_key in SOLUTIONS_THEATER_KEYS:
+    _theater_slot = solutions_theater_slot_key(_theater_key)
+    MEDIA_PLACEMENT_SLOTS[_theater_slot] = 'video'
+    DESIGN_SETTINGS.setdefault(_theater_slot, '')
 
 # Public playback fields resolved from the asset record at read time.
 MEDIA_PLACEMENT_PUBLIC_URLS = {
@@ -3264,6 +3299,24 @@ def public_page_media_urls() -> Dict[str, str]:
     for slot_key, public_key in PAGE_MEDIA_PUBLIC_URLS.items():
         urls[public_key] = public_asset_playback_url(
             str(DESIGN_SETTINGS.get(slot_key) or '')
+        )
+    return urls
+
+
+def public_solutions_theater_urls() -> Dict[str, str]:
+    """Resolve each solution walkthrough, falling back to the bundled film.
+
+    An assigned library video wins. A cleared slot, a missing asset, or a
+    blank playback address returns the screen recording shipped with the
+    page, so a media save can never leave a theater blank.
+    """
+    urls = {}
+    for preview_key in SOLUTIONS_THEATER_KEYS:
+        assigned = public_asset_playback_url(
+            str(DESIGN_SETTINGS.get(solutions_theater_slot_key(preview_key)) or '')
+        )
+        urls[f'solutions_theater_{preview_key}_url'] = (
+            assigned or solutions_theater_fallback_path(preview_key)
         )
     return urls
 
@@ -11752,6 +11805,9 @@ BUSINESS_INQUIRY_INTERESTS = (
     'smart_contracts',
     'mga_solutions',
     'platform',
+    'media',
+    'deep_research',
+    'regulation',
 )
 BUSINESS_INQUIRY_STATUSES = ('new', 'contacted', 'qualified', 'closed')
 
@@ -12005,6 +12061,9 @@ _BUSINESS_INQUIRY_INTEREST_LABELS = {
     'smart_contracts': 'Smart Contracts',
     'mga_solutions': 'MGA Solutions',
     'platform': 'Full Platform',
+    'media': 'Media Library',
+    'deep_research': 'Deep Research Strategy',
+    'regulation': 'Regulation',
 }
 
 
@@ -21109,6 +21168,7 @@ For claims or questions, please contact:
                 }
                 public_settings.update(public_placement_video_urls())
                 public_settings.update(public_page_media_urls())
+                public_settings.update(public_solutions_theater_urls())
                 self.wfile.write(json.dumps(public_settings).encode('utf-8'))
             return
         

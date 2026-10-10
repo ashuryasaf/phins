@@ -459,7 +459,8 @@
         .apply-disclosure-assignments,
         .chat-disclaimer-assignments,
         .login-page-assignments,
-        .solutions-page-assignments {
+        .solutions-page-assignments,
+        .solution-views-assignments {
             background: rgba(11, 23, 48, 0.72);
             border: 1px solid rgba(227, 191, 111, 0.45);
         }
@@ -1101,6 +1102,7 @@
         <!-- Main Navigation Tabs -->
         <div class="main-tabs" role="tablist" aria-label="Media Dashboard Sections">
             <button class="main-tab active" data-tab="media" onclick="switchMainTab('media')" role="tab">Media</button>
+            <button class="main-tab" data-tab="solution-views" onclick="switchMainTab('solution-views')" role="tab">Solution Views</button>
             <button class="main-tab" data-tab="growth-agent" onclick="switchMainTab('growth-agent')" role="tab">Growth Agent</button>
             <button class="main-tab" data-tab="video-agents" onclick="switchMainTab('video-agents')" role="tab">Video Agents</button>
             <button class="main-tab" data-tab="design" onclick="switchMainTab('design')" role="tab">Design</button>
@@ -1477,7 +1479,7 @@ Notes:
         <section class="assignments-section solutions-page-assignments">
             <h2>Solutions page</h2>
             <p style="margin: -6px 0 14px; font-size: 0.82rem; color: rgba(255,255,255,0.82);">
-                Assign a photo or video for the solutions hero. Inquiry form data and preview theaters are not changed.
+                Assign a photo or video for the solutions hero. Inquiry form data is not changed here. Walkthrough films are assigned on the Solution Views tab.
             </p>
             <div class="assignment-grid">
                 <div class="assignment-card">
@@ -1675,6 +1677,126 @@ Notes:
         </div><!-- End Video Agents Tab -->
 
         <!-- Design Tab Content -->
+        <div id="tab-solution-views" class="tab-content" style="display: none;">
+            <section class="assignments-section solution-views-assignments">
+                <h2>Solution walkthroughs</h2>
+                <p style="margin: -6px 0 14px; font-size: 0.82rem; color: rgba(255,255,255,0.82);">
+                    These films play on the public solutions page. Leave a row empty to keep the bundled screen walkthrough. Choosing a library video replaces only that preview. Design colors, the hero, and inquiry records stay as they are.
+                </p>
+                <h3 style="margin: 8px 0 10px; font-size: 0.92rem;">Lifecycle desks</h3>
+                <div class="assignment-grid">
+                    <div class="assignment-card">
+                        <div class="assignment-label">AI-Assisted Underwriting</div>
+                        <select id="assign-solutions-theater-underwriting" class="assignment-select" onchange="updateAssignment('solutions_theater_underwriting')">
+                            <option value="">-- Bundled screen walkthrough --</option>
+                        </select>
+                        <div class="assignment-status" id="status-solutions-theater-underwriting"><span></span> Bundled screen walkthrough</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">Assessment Center</div>
+                        <select id="assign-solutions-theater-assessments" class="assignment-select" onchange="updateAssignment('solutions_theater_assessments')">
+                            <option value="">-- Bundled screen walkthrough --</option>
+                        </select>
+                        <div class="assignment-status" id="status-solutions-theater-assessments"><span></span> Bundled screen walkthrough</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">Media Library</div>
+                        <select id="assign-solutions-theater-media" class="assignment-select" onchange="updateAssignment('solutions_theater_media')">
+                            <option value="">-- Bundled screen walkthrough --</option>
+                        </select>
+                        <div class="assignment-status" id="status-solutions-theater-media"><span></span> Bundled screen walkthrough</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">Billing &amp; Payments</div>
+                        <select id="assign-solutions-theater-billing" class="assignment-select" onchange="updateAssignment('solutions_theater_billing')">
+                            <option value="">-- Bundled screen walkthrough --</option>
+                        </select>
+                        <div class="assignment-status" id="status-solutions-theater-billing"><span></span> Bundled screen walkthrough</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">Claims Management</div>
+                        <select id="assign-solutions-theater-claims" class="assignment-select" onchange="updateAssignment('solutions_theater_claims')">
+                            <option value="">-- Bundled screen walkthrough --</option>
+                        </select>
+                        <div class="assignment-status" id="status-solutions-theater-claims"><span></span> Bundled screen walkthrough</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">Actuarial &amp; Investments</div>
+                        <select id="assign-solutions-theater-actuarial-investments" class="assignment-select" onchange="updateAssignment('solutions_theater_actuarial_investments')">
+                            <option value="">-- Bundled screen walkthrough --</option>
+                        </select>
+                        <div class="assignment-status" id="status-solutions-theater-actuarial-investments"><span></span> Bundled screen walkthrough</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">Trust, Security &amp; Auditability</div>
+                        <select id="assign-solutions-theater-platform" class="assignment-select" onchange="updateAssignment('solutions_theater_platform')">
+                            <option value="">-- Bundled screen walkthrough --</option>
+                        </select>
+                        <div class="assignment-status" id="status-solutions-theater-platform"><span></span> Bundled screen walkthrough</div>
+                    </div>
+                </div>
+                <h3 style="margin: 18px 0 10px; font-size: 0.92rem;">Crown</h3>
+                <div class="assignment-grid">
+                    <div class="assignment-card">
+                        <div class="assignment-label">Smart Contracts Development</div>
+                        <select id="assign-solutions-theater-smart-contracts" class="assignment-select" onchange="updateAssignment('solutions_theater_smart_contracts')">
+                            <option value="">-- Bundled screen walkthrough --</option>
+                        </select>
+                        <div class="assignment-status" id="status-solutions-theater-smart-contracts"><span></span> Bundled screen walkthrough</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">MGA Solutions</div>
+                        <select id="assign-solutions-theater-mga-solutions" class="assignment-select" onchange="updateAssignment('solutions_theater_mga_solutions')">
+                            <option value="">-- Bundled screen walkthrough --</option>
+                        </select>
+                        <div class="assignment-status" id="status-solutions-theater-mga-solutions"><span></span> Bundled screen walkthrough</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">Actuarial Force</div>
+                        <select id="assign-solutions-theater-actuarial-force" class="assignment-select" onchange="updateAssignment('solutions_theater_actuarial_force')">
+                            <option value="">-- Bundled screen walkthrough --</option>
+                        </select>
+                        <div class="assignment-status" id="status-solutions-theater-actuarial-force"><span></span> Bundled screen walkthrough</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">Deep Research Strategy</div>
+                        <select id="assign-solutions-theater-deep-research" class="assignment-select" onchange="updateAssignment('solutions_theater_deep_research')">
+                            <option value="">-- Bundled screen walkthrough --</option>
+                        </select>
+                        <div class="assignment-status" id="status-solutions-theater-deep-research"><span></span> Bundled screen walkthrough</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">Regulation Dashboard</div>
+                        <select id="assign-solutions-theater-regulation" class="assignment-select" onchange="updateAssignment('solutions_theater_regulation')">
+                            <option value="">-- Bundled screen walkthrough --</option>
+                        </select>
+                        <div class="assignment-status" id="status-solutions-theater-regulation"><span></span> Bundled screen walkthrough</div>
+                    </div>
+                </div>
+                <h3 style="margin: 18px 0 10px; font-size: 0.92rem;">Who it serves</h3>
+                <div class="assignment-grid">
+                    <div class="assignment-card">
+                        <div class="assignment-label">For Individuals</div>
+                        <select id="assign-solutions-theater-individuals" class="assignment-select" onchange="updateAssignment('solutions_theater_individuals')">
+                            <option value="">-- Bundled screen walkthrough --</option>
+                        </select>
+                        <div class="assignment-status" id="status-solutions-theater-individuals"><span></span> Bundled screen walkthrough</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">For Enterprises &amp; Partners</div>
+                        <select id="assign-solutions-theater-enterprises" class="assignment-select" onchange="updateAssignment('solutions_theater_enterprises')">
+                            <option value="">-- Bundled screen walkthrough --</option>
+                        </select>
+                        <div class="assignment-status" id="status-solutions-theater-enterprises"><span></span> Bundled screen walkthrough</div>
+                    </div>
+                </div>
+                <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-primary" onclick="saveTheaterAssignments()">Save Solution Views</button>
+                    <a href="/solutions.html#audience" target="_blank" class="btn btn-secondary">Preview solutions</a>
+                </div>
+            </section>
+        </div>
+
         <div id="tab-design" class="tab-content" style="display: none;">
             <section class="design-section">
                 <h2>Appearance Settings</h2>
@@ -2016,6 +2138,28 @@ Notes:
             { key: 'apply_chat_disclaimer', field: 'apply_chat_disclaimer_video_id', kind: 'video', label: 'Application chat disclaimer', chip: 'Apply chat' },
             { key: 'claims_chat_disclaimer', field: 'claims_chat_disclaimer_video_id', kind: 'video', label: 'Claims chat disclaimer', chip: 'Claims chat' }
         ];
+        // Solution page walkthroughs. Kept off PLACEMENT_SLOTS so the Use
+        // dialog and the design bar stay exactly as they are. This tab is
+        // the only control for these films.
+        const THEATER_SLOTS = [
+            { key: 'solutions_theater_underwriting', field: 'solutions_theater_underwriting_id', kind: 'video', label: 'Underwriting walkthrough', chip: 'Underwriting', bundled: true },
+            { key: 'solutions_theater_assessments', field: 'solutions_theater_assessments_id', kind: 'video', label: 'Assessments walkthrough', chip: 'Assessments', bundled: true },
+            { key: 'solutions_theater_media', field: 'solutions_theater_media_id', kind: 'video', label: 'Media walkthrough', chip: 'Media view', bundled: true },
+            { key: 'solutions_theater_billing', field: 'solutions_theater_billing_id', kind: 'video', label: 'Billing walkthrough', chip: 'Billing', bundled: true },
+            { key: 'solutions_theater_claims', field: 'solutions_theater_claims_id', kind: 'video', label: 'Claims walkthrough', chip: 'Claims', bundled: true },
+            { key: 'solutions_theater_actuarial_investments', field: 'solutions_theater_actuarial_investments_id', kind: 'video', label: 'Actuarial walkthrough', chip: 'Actuary', bundled: true },
+            { key: 'solutions_theater_platform', field: 'solutions_theater_platform_id', kind: 'video', label: 'Platform walkthrough', chip: 'Platform', bundled: true },
+            { key: 'solutions_theater_smart_contracts', field: 'solutions_theater_smart_contracts_id', kind: 'video', label: 'Smart contracts walkthrough', chip: 'Contracts', bundled: true },
+            { key: 'solutions_theater_mga_solutions', field: 'solutions_theater_mga_solutions_id', kind: 'video', label: 'MGA walkthrough', chip: 'MGA', bundled: true },
+            { key: 'solutions_theater_actuarial_force', field: 'solutions_theater_actuarial_force_id', kind: 'video', label: 'Actuarial force walkthrough', chip: 'Force', bundled: true },
+            { key: 'solutions_theater_deep_research', field: 'solutions_theater_deep_research_id', kind: 'video', label: 'Deep research walkthrough', chip: 'Research', bundled: true },
+            { key: 'solutions_theater_regulation', field: 'solutions_theater_regulation_id', kind: 'video', label: 'Regulation walkthrough', chip: 'Regulation', bundled: true },
+            { key: 'solutions_theater_individuals', field: 'solutions_theater_individuals_id', kind: 'video', label: 'Individuals walkthrough', chip: 'Wallet', bundled: true },
+            { key: 'solutions_theater_enterprises', field: 'solutions_theater_enterprises_id', kind: 'video', label: 'Enterprises walkthrough', chip: 'Enterprises', bundled: true }
+        ];
+        function assignmentSlots() {
+            return PLACEMENT_SLOTS.concat(THEATER_SLOTS);
+        }
         let assignments = {
             hero_video: '',
             hero_background: '',
@@ -2093,7 +2237,7 @@ Notes:
         // textContent.  Iframe-backed tabs lazy-load on first activation to
         // keep the dashboard fast and to avoid spawning embedded sub-pages
         // that the operator never opens.
-        const VALID_MAIN_TABS = ['media', 'growth-agent', 'video-agents', 'design', 'layout', 'branding'];
+        const VALID_MAIN_TABS = ['media', 'solution-views', 'growth-agent', 'video-agents', 'design', 'layout', 'branding'];
 
         function switchMainTab(tabName, options = {}) {
             const updateHash = options.updateHash !== false;
@@ -2156,6 +2300,8 @@ Notes:
         function resolveInitialTab() {
             const raw = (window.location.hash || '').replace(/^#/, '').trim().toLowerCase();
             const candidate = raw === 'growth' ? 'growth-agent'
+                            : raw === 'solutions' ? 'solution-views'
+                            : raw === 'solution-theaters' ? 'solution-views'
                             : raw === 'video' ? 'video-agents'
                             : raw === 'tab-growth-agent' ? 'growth-agent'
                             : raw === 'tab-video-agents' ? 'video-agents'
@@ -2282,7 +2428,7 @@ Notes:
         
         function applyServerAssignments(settings) {
             if (!settings) return;
-            PLACEMENT_SLOTS.forEach(slot => {
+            assignmentSlots().forEach(slot => {
                 if (Object.prototype.hasOwnProperty.call(settings, slot.field)) {
                     assignments[slot.key] = settings[slot.field] || '';
                 }
@@ -2312,9 +2458,9 @@ Notes:
         }
 
         function placementPayload(slotKeys) {
-            const keys = slotKeys || PLACEMENT_SLOTS.map(slot => slot.key);
+            const keys = slotKeys || assignmentSlots().map(slot => slot.key);
             const body = {};
-            PLACEMENT_SLOTS.forEach(slot => {
+            assignmentSlots().forEach(slot => {
                 if (keys.indexOf(slot.key) === -1) return;
                 // A landing URL held without an asset id is still live. Leave
                 // that slot out so saving another placement cannot blank it.
@@ -2393,6 +2539,19 @@ Notes:
             populateAssignmentSelects();
             renderMediaGrid();
             return true;
+        }
+
+        async function saveTheaterAssignments() {
+            if (useSaveInFlight) return;
+            useSaveInFlight = true;
+            try {
+                const ok = await persistAssignments(THEATER_SLOTS.map(slot => slot.key));
+                if (ok) showToast('Solution views saved', 'success');
+            } catch (e) {
+                showToast('Error: ' + e.message, 'error');
+            } finally {
+                useSaveInFlight = false;
+            }
         }
 
         async function saveAllAssignments() {
@@ -3269,14 +3428,14 @@ Notes:
         
         function placedAssetIds() {
             const used = new Set();
-            PLACEMENT_SLOTS.forEach(slot => {
+            assignmentSlots().forEach(slot => {
                 if (assignments[slot.key]) used.add(assignments[slot.key]);
             });
             return used;
         }
 
         function renderPlacementChips(assetId) {
-            const chips = PLACEMENT_SLOTS
+            const chips = assignmentSlots()
                 .filter(slot => assignments[slot.key] === assetId)
                 .map(slot => `<span class="placement-chip">${escHtml(slot.chip)}</span>`)
                 .join('');
@@ -3292,6 +3451,7 @@ Notes:
             if (slot.key === 'hero_video') return '-- No Video --';
             if (slot.key === 'video_poster') return '-- Auto Generate --';
             if (slot.key === 'apply_disclosure_video') return '-- Light in-page version --';
+            if (slot.bundled) return '-- Bundled screen walkthrough --';
             if (slot.kind === 'video') return '-- No video --';
             return '-- None --';
         }
@@ -3299,7 +3459,7 @@ Notes:
         function populateAssignmentSelects() {
             const videos = mediaAssets.filter(m => m.type === 'video');
             const images = mediaAssets.filter(m => m.type === 'image');
-            PLACEMENT_SLOTS.forEach(slot => {
+            assignmentSlots().forEach(slot => {
                 const select = selectForSlot(slot);
                 if (!select) return;
                 const pool = slot.kind === 'video' ? videos : images;
@@ -3341,7 +3501,7 @@ Notes:
         }
         
         function updateAssignmentUI() {
-            PLACEMENT_SLOTS.forEach(slot => {
+            assignmentSlots().forEach(slot => {
                 const statusEl = document.getElementById(`status-${slot.key.replace(/_/g, '-')}`);
                 if (!statusEl) return;
                 const value = assignments[slot.key];
@@ -3349,6 +3509,9 @@ Notes:
                     const media = mediaAssets.find(m => m.id === value);
                     statusEl.innerHTML = `<span></span> ${escHtml(media ? media.name : 'Configured')}`;
                     statusEl.className = 'assignment-status active';
+                } else if (slot.bundled) {
+                    statusEl.innerHTML = '<span></span> Bundled screen walkthrough';
+                    statusEl.className = 'assignment-status inactive';
                 } else if (slot.key === 'apply_disclosure_video') {
                     statusEl.innerHTML = '<span></span> Light in-page version';
                     statusEl.className = 'assignment-status inactive';
