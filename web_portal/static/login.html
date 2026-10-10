@@ -895,6 +895,7 @@
           if (stored === 'background' || stored === 'video') preferred = stored;
         } catch (err) { /* keep the video default */ }
         if (!videoOn && stillOn) preferred = 'background';
+        if (!stillOn) preferred = 'video';
         setLoginSurface(preferred);
         if (videoButton) videoButton.addEventListener('click', function () { setLoginSurface('video'); });
         if (backgroundButton) backgroundButton.addEventListener('click', function () { setLoginSurface('background'); });
