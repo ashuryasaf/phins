@@ -278,6 +278,27 @@ def test_pack_contains_the_strategy_blocks():
     assert eras[0]['start'] <= HISTORICAL_START and eras[-1]['end'] >= FORECAST_MAX
 
 
+def test_scenario_2050_columns_blank_when_outlook_ends_earlier():
+    pack = build_ltc_residential_research({'forecast_end': 2040})
+    for row in pack['tables']['scenarios']:
+        assert row['recipients_index_2050'] is None
+        assert row['ltc_spend_gdp_pct_2050'] is None
+        assert row['recipients_index_end'] is not None
+    assert pack['integrity']['all_checks_pass'] is True
+    filename, data = build_residential_research_pdf(pack)
+    assert data.startswith(b'%PDF')
+
+
+@pytest.mark.parametrize('lives,age_min,age_max', [(1, 30, 85), (7, 30, 85), (13, 60, 65), (10000, 18, 100), (999, 84, 85)])
+def test_hedge_band_lives_are_non_negative_and_sum_to_book(lives, age_min, age_max):
+    pack = build_ltc_residential_research({'lives': lives, 'age_min': age_min, 'age_max': age_max})
+    book = pack['tables']['hedge_book']
+    assert book, 'at least one band must remain in range'
+    assert all(r['band_lives'] >= 0 for r in book), [r['band_lives'] for r in book]
+    assert sum(r['band_lives'] for r in book) == lives
+    assert pack['integrity']['hedge_book_lives_match'] is True
+
+
 def test_forecast_end_shortens_the_study():
     pack = build_ltc_residential_research({'forecast_end': 2050})
     assert pack['tables']['demand_forecast'][-1]['year'] == 2050
