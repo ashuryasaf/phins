@@ -563,8 +563,12 @@ Environment variables commonly used:
  Design placements (hero, poster, background, thumbnail, login, solutions,
  solution theaters) are a checksummed singleton in `media_design_documents`.
  A restart loads that row after the media library; a checksum mismatch is
- not applied. The login page plays `login_hero_video_url` from
- `GET /api/design/settings`.
+ not applied. The login page reads `login_hero_video_url`,
+ `login_background_url`, and `login_thumbnail_url` from
+ `GET /api/design/settings`. When a video and a still are both assigned,
+ the visitor switches the full-bleed layer between the video and the
+ background (thumbnail is the video poster, and the still if no background
+ is assigned).
 - **Video agents (B8):** `REPLICATE_API_TOKEN` enables Replicate beside
  Gemini and Kling (Growth Agent and Video Agents). Optional
  `REPLICATE_VIDEO_MODELS` (comma-separated `owner/name`) and
