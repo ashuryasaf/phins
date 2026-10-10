@@ -144,6 +144,8 @@ def test_customer_page_script_does_not_share_studio_bindings():
     assert "let currentReport" in inline
     assert inline.index("(function () {") < inline.index("let currentReport")
     assert inline.index("})();") < inline.index("</script>")
+    assert "id_number" not in page
+    assert "does not accept an ID number" in page
 
 
 def test_workbench_and_reports_use_phins_logo_and_theme():

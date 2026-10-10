@@ -44109,6 +44109,14 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Missing supplier_id'}).encode('utf-8'))
                     return
 
+                requested_offer_id = str(payload.get('id') or '').strip()
+                if residential_care_by_id(requested_offer_id):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'This offer id is reserved for a platform catalog product',
+                    }).encode('utf-8'))
+                    return
+
                 existing = None
                 if payload.get('id'):
                     with STATE_LOCK:
@@ -53959,28 +53967,14 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'Product ID and amount required'}).encode('utf-8'))
                     return
 
-                # Platform residential bundles charge the catalog price. A
-                # live supplier offer with the same id keeps the supply-chain
-                # path. "Live" is what the marketplace browse shows: an active
-                # offer from an approved, portal-active supplier. A stale or
-                # unapproved row leaves the catalog card on the wallet, so the
-                # catalog price stays authoritative.
+                # Platform residential bundles always charge the catalog price.
+                # A supplier offer that reuses res-home, res-extra, or res-full
+                # cannot move the wallet onto the supplier's price.
                 catalog_bundle = residential_care_by_id(product_id)
                 catalog_pricing_plan = None
                 with STATE_LOCK:
                     supplier_offer = SUPPLIER_OFFERS.get(product_id)
-                    offer_supplier = SUPPLIERS.get((supplier_offer or {}).get('supplier_id')) or {}
-                    supplier_offer_is_live = bool(
-                        supplier_offer
-                        and supplier_offer.get('active', True)
-                        and offer_supplier.get('status') == 'approved'
-                        and offer_supplier.get('portal_active', False)
-                    )
-                catalog_price_authoritative = bool(
-                    catalog_bundle and not (
-                        supplier_offer_is_live and supply_chain_enabled and supply_chain_service
-                    )
-                )
+                catalog_price_authoritative = bool(catalog_bundle)
                 catalog_term_quote = None
                 if catalog_price_authoritative:
                     try:

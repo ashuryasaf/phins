@@ -729,3 +729,16 @@ def test_doughnut_hole_total_follows_the_unit_and_the_report_language():
     assert 'סה״כ' not in plugin
     assert "(currentReport && currentReport.language === 'hebrew') ? 'סה״כ' : 'Total'" in html
 
+
+def test_studio_escapes_history_and_report_text_before_html():
+    html = open(
+        os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                     'web_portal', 'static', 'risk-report-studio.js'),
+        encoding='utf-8',
+    ).read()
+    assert 'data-report-id="${escapeHtml(report.report_id)}"' in html
+    assert '${escapeHtml(report.title || \'Analysis Report\')}' in html
+    assert 'onclick="viewReport(' not in html
+    assert 'let formatted = escapeHtml(content);' in html
+    assert '${escapeHtml(displayTitle)}' in html
+

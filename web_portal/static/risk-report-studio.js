@@ -68,21 +68,24 @@
         }
         
         historyGrid.innerHTML = reportHistory.map(report => `
-          <div class="history-card" onclick="viewReport('${report.report_id}')">
+          <div class="history-card" data-report-id="${escapeHtml(report.report_id)}">
             <div class="history-card-header">
-              <span class="history-card-title">${report.title || 'Analysis Report'}</span>
-              <span class="history-card-date">${formatDate(report.generated_at)}</span>
+              <span class="history-card-title">${escapeHtml(report.title || 'Analysis Report')}</span>
+              <span class="history-card-date">${escapeHtml(formatDate(report.generated_at))}</span>
             </div>
-            <div class="history-card-file">${report.filename || 'Unknown file'}</div>
+            <div class="history-card-file">${escapeHtml(report.filename || 'Unknown file')}</div>
             <div class="history-card-tags">
-              <span class="history-tag" style="background: var(--primary); color: white;">${report.report_type || 'analysis'}</span>
+              <span class="history-tag" style="background: var(--primary); color: white;">${escapeHtml(report.report_type || 'analysis')}</span>
               ${report.risk_score !== undefined ? `
-                <span class="history-tag" style="background: ${getRiskColor(report.risk_score)}; color: white;">Risk: ${report.risk_score.toFixed(0)}</span>
+                <span class="history-tag" style="background: ${getRiskColor(report.risk_score)}; color: white;">Risk: ${escapeHtml(Number(report.risk_score).toFixed(0))}</span>
               ` : ''}
-              <span class="history-tag" style="background: #64748b; color: white;">${report.language || 'en'}</span>
+              <span class="history-tag" style="background: #64748b; color: white;">${escapeHtml(report.language || 'en')}</span>
             </div>
           </div>
         `).join('');
+        historyGrid.querySelectorAll('.history-card[data-report-id]').forEach(card => {
+          card.addEventListener('click', () => viewReport(card.getAttribute('data-report-id')));
+        });
         
       } catch (error) {
         console.error('Error loading report history:', error);
@@ -1323,15 +1326,15 @@
       recList.innerHTML = recommendations.map(rec => `
         <div class="recommendation-item ${rec.priority} fade-in">
           <h4>
-            <span class="priority-badge priority-${rec.priority}">${rec.priority}</span>
-            ${rec.title}
+            <span class="priority-badge priority-${rec.priority}">${escapeHtml(rec.priority)}</span>
+            ${escapeHtml(rec.title)}
           </h4>
-          <p>${rec.description}</p>
+          <p>${escapeHtml(rec.description)}</p>
           <ul class="action-items">
-            ${(rec.action_items || []).map(item => `<li>${item}</li>`).join('')}
+            ${(rec.action_items || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}
           </ul>
           <div class="expected-impact">
-            <strong>Expected Impact:</strong> ${rec.expected_impact}
+            <strong>Expected Impact:</strong> ${escapeHtml(rec.expected_impact)}
           </div>
         </div>
       `).join('');
@@ -1746,7 +1749,7 @@
         
         return `
           <div class="${sectionClass}" dir="${reportLanguage === 'hebrew' ? 'rtl' : 'ltr'}">
-            <h3>${getSectionIcon(displayTitle)} ${displayTitle}</h3>
+            <h3>${getSectionIcon(displayTitle)} ${escapeHtml(displayTitle)}</h3>
             ${content ? `<div class="content">${content}</div>` : ''}
             ${section.data_table ? renderDataTable(section.data_table, { executive: isPolicyTable }) : ''}
           </div>
@@ -1820,10 +1823,10 @@
       const isMislakaReport = content.includes('╔') || content.includes('┌') || 
                               content.includes('מסלקה') || content.includes('פנסיה') ||
                               content.includes('סה״כ נכסים');
+      // Escape before any structural tags are added so file text cannot break out.
+      let formatted = escapeHtml(content);
       
       if (isMislakaReport) {
-        // Parse the structured Mislaka report
-        let formatted = content;
         
         // Main header box (╔═══╗ ... ╚═══╝)
         formatted = formatted.replace(/╔[═]+╗\n?([\s\S]*?)╚[═]+╝/g, (match, inner) => {
@@ -1891,7 +1894,7 @@
       }
       
       // Standard content formatting
-      return content
+      return formatted
         .replace(/╔═+╗/g, '<div class="pension-header-box">')
         .replace(/╚═+╝/g, '</div>')
         .replace(/┌─+┐/g, '<div class="pension-section-header">')
