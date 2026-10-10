@@ -73,7 +73,7 @@
       video.removeAttribute('autoplay');
       video.autoplay = false;
     } else if (video.hasAttribute('autoplay') || video.autoplay) {
-      var kick = function () { startInlinePlayback(video); };
+      var kick = function () { if (!section.hidden) startInlinePlayback(video); };
       if (video.readyState >= 2) kick();
       else video.addEventListener('loadeddata', kick, { once: true });
       kick();
