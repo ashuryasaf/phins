@@ -47,6 +47,16 @@ def test_admin_media_sends_design_settings_on_save():
         "solutions_background_id",
         "solutions_thumbnail_id",
         "solutions_banner_id",
+        "solutions_theater_underwriting_id",
+        "solutions_theater_assessments_id",
+        "solutions_theater_media_id",
+        "solutions_theater_deep_research_id",
+        "solutions_theater_regulation_id",
+        "solutions_theater_individuals_id",
+        "data-tab=\"solution-views\"",
+        "saveTheaterAssignments",
+        "Solution Views",
+        "Bundled screen walkthrough",
         "apply_disclosure_video_id",
         "apply_disclosure_control_video_id",
         "apply_chat_disclaimer_video_id",
@@ -64,6 +74,37 @@ def test_admin_media_sends_design_settings_on_save():
         assert token in content, token
 
 
+def test_solution_views_tab_leaves_design_controls_intact():
+    content = ADMIN_MEDIA_PATH.read_text(encoding="utf-8")
+    assert 'id="tab-solution-views"' in content
+    assert 'id="tab-design"' in content
+    assert 'id="assign-solutions-hero-video"' in content
+    assert 'id="assign-solutions-background"' in content
+    assert "function slotsForMedia(media)" in content
+    assert "return PLACEMENT_SLOTS.filter(slot => slot.kind === media.type);" in content
+    assert "const THEATER_SLOTS" in content
+    assert "PLACEMENT_SLOTS.concat(THEATER_SLOTS)" in content
+    assert "Walkthrough films are assigned on the Solution Views tab." in content
+    for key in (
+        "underwriting",
+        "assessments",
+        "billing",
+        "claims",
+        "actuarial_investments",
+        "platform",
+        "media",
+        "smart_contracts",
+        "mga_solutions",
+        "actuarial_force",
+        "deep_research",
+        "regulation",
+        "individuals",
+        "enterprises",
+    ):
+        assert f"solutions_theater_{key}_id" in content, key
+        assert f"assign-solutions-theater-{key.replace('_', '-')}" in content, key
+
+
 def test_admin_media_keeps_a_url_only_landing_hero_on_save():
     content = ADMIN_MEDIA_PATH.read_text(encoding="utf-8")
 
@@ -76,6 +117,19 @@ def test_admin_media_keeps_a_url_only_landing_hero_on_save():
     assert "clear_hero_video" in content
     assert "clear_video_poster" in content
     assert "clearStaleAssignments" not in content
+
+
+def test_admin_media_never_clears_walkthroughs_it_has_not_loaded():
+    content = ADMIN_MEDIA_PATH.read_text(encoding="utf-8")
+
+    # A save before GET /api/design/settings returns would post empty ids,
+    # and an empty id is a clear on the server.
+    assert "let assignmentsReady = false;" in content
+    assert "assignmentsReady = true;" in content
+    assert "if (!mediaLibraryReady || !assignmentsReady) {" in content
+    # A full save covers the page placements only; the walkthrough films are
+    # written by the Solution Views tab alone.
+    assert "const keys = slotKeys || PLACEMENT_SLOTS.map(slot => slot.key);" in content
 
 
 def test_chat_welcome_screens_mount_assigned_disclaimer():

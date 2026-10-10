@@ -1171,6 +1171,28 @@
               </ul>
             </div>
           </div>
+          <div class="sol-card reveal" data-preview="media" data-interest="media" role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false">
+            <span class="sol-caret" aria-hidden="true">▸</span>
+            <div class="glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l6 3-6 3V9z"/></svg>
+            </div>
+            <h3>Media Library</h3>
+            <p>
+              The films and images visitors see — hero pictures, disclosures and
+              these walkthroughs — live in one media desk. What is on screen can
+              be chosen while the working records stay as they are.
+            </p>
+            <span class="card-tag">Presentation</span>
+            <div class="sol-preview-cue"><span class="play-dot" aria-hidden="true"></span>Watch 11s Preview</div>
+            <div class="sol-detail-source">
+              <div class="sol-detail-title">Inside the Solution</div>
+              <ul>
+                <li>One library for the videos and images the platform presents</li>
+                <li>Hero films, disclosures and solution walkthroughs chosen from that library</li>
+                <li>Swapping a film leaves policies, billing and inquiries unchanged</li>
+              </ul>
+            </div>
+          </div>
           <div class="sol-card reveal" data-preview="billing" data-interest="billing" role="button" tabindex="0" aria-haspopup="dialog" aria-expanded="false">
             <span class="sol-caret" aria-hidden="true">▸</span>
             <div class="glyph" aria-hidden="true">
@@ -1270,7 +1292,7 @@
           <div class="kicker">The Jeweled Crown</div>
           <h2 class="section-title">Where PHINS Goes Beyond the Market.</h2>
           <p class="section-sub">
-            Three capabilities crown the platform. We describe them in outline
+            These capabilities crown the platform. We describe them in outline
             only — the working depth is reserved for qualified conversations.
           </p>
         </div>
@@ -1313,8 +1335,8 @@
             <div class="crown-mark">Crown Capability</div>
             <h3>Actuarial Force</h3>
             <p>
-              An actuarial engine-room where pricing kernels, reserve forecasts
-              and portfolio simulations are first-class platform citizens — not
+              An actuarial engine-room where pricing, reserve forecasts and
+              portfolio simulations are first-class platform citizens — not
               spreadsheets at the edge of the business.
             </p>
             <div class="sol-preview-cue"><span class="play-dot" aria-hidden="true"></span>Watch 11s Preview</div>
@@ -1323,6 +1345,41 @@
                 <li>Pricing, reserve forecasts and simulations as platform citizens</li>
                 <li>Capital views connected to coverage and portfolio performance</li>
                 <li>Working depth reserved for qualified conversations</li>
+              </ul>
+            </div>
+          </div>
+          <div class="crown-card reveal" data-preview="deep_research" data-interest="deep_research" role="button" tabindex="0" aria-haspopup="dialog">
+            <div class="crown-mark">Crown Capability</div>
+            <h3>Deep Research Strategy</h3>
+            <p>
+              A research desk studies long-term care residential services —
+              private institutions, public institutions and home care — from
+              the LTC residential strategy bar. The preview shows that desk.
+              The method stays in qualified conversations.
+            </p>
+            <div class="sol-preview-cue"><span class="play-dot" aria-hidden="true"></span>Watch 11s Preview</div>
+            <div class="sol-detail-source">
+              <ul>
+                <li>The LTC residential strategy bar is the public view of the desk</li>
+                <li>Private institutions, public institutions and home care in one place</li>
+                <li>The research method is reserved for qualified conversations</li>
+              </ul>
+            </div>
+          </div>
+          <div class="crown-card reveal" data-preview="regulation" data-interest="regulation" role="button" tabindex="0" aria-haspopup="dialog">
+            <div class="crown-mark">Crown Capability</div>
+            <h3>Regulation Dashboard</h3>
+            <p>
+              A read-only regulation view presents the outlined book for
+              oversight: which sections exist, and a way to ask about one of
+              them. The figures stay inside the regulator session.
+            </p>
+            <div class="sol-preview-cue"><span class="play-dot" aria-hidden="true"></span>Watch 11s Preview</div>
+            <div class="sol-detail-source">
+              <ul>
+                <li>A read-only outline built for regulatory oversight</li>
+                <li>Sections spanning underwriting, claims, investments, health, billing and agents</li>
+                <li>A direct question path for one outlined subject at a time</li>
               </ul>
             </div>
           </div>
@@ -1343,6 +1400,7 @@
             <div class="aud-sub">A personal insurance experience that respects your time and your data.</div>
             <span class="card-tag">Individuals</span>
             <ul>
+              <li>A health wallet for consultations, devices and daily care</li>
               <li>A self-service client portal for policies, claims and documents</li>
               <li>Transparent billing with flexible payment and auto-pay options</li>
               <li>Savings and investment allocation connected to your coverage</li>
@@ -1460,6 +1518,9 @@
                   <option value="smart_contracts">Smart Contracts Development</option>
                   <option value="mga_solutions">MGA Solutions</option>
                   <option value="platform">The Platform Overall</option>
+                  <option value="media">Media Library</option>
+                  <option value="deep_research">Deep Research Strategy</option>
+                  <option value="regulation">Regulation Dashboard</option>
                 </select>
               </div>
               <div class="form-field full">
@@ -1568,12 +1629,30 @@
       claims: '/previews/theaters/claims.mp4',
       actuarial_investments: '/previews/theaters/actuarial_investments.mp4',
       platform: '/previews/theaters/platform.mp4',
+      media: '/previews/theaters/media.mp4',
       smart_contracts: '/previews/theaters/smart_contracts.mp4',
       mga_solutions: '/previews/theaters/mga_solutions.mp4',
       actuarial_force: '/previews/theaters/actuarial_force.mp4',
+      deep_research: '/previews/theaters/deep_research.mp4',
+      regulation: '/previews/theaters/regulation.mp4',
       individuals: '/previews/theaters/individuals.mp4',
       enterprises: '/previews/theaters/enterprises.mp4'
     };
+    var theaterOverrides = {};
+
+    function resolvePreviewSrc(previewId) {
+      var assigned = theaterOverrides[previewId];
+      var mediaApi = window.PhinsPageMedia;
+      if (mediaApi && mediaApi.isPlayableMediaUrl(assigned)) return assigned;
+      return PREVIEW_VIDEOS[previewId];
+    }
+
+    function withCacheBust(src) {
+      // An inline data: or blob: payload is not addressable by query string.
+      // Appending one corrupts it, so an assigned film would never play.
+      if (/^(data|blob):/i.test(src)) return src;
+      return src + (src.indexOf('?') === -1 ? '?' : '&') + 't=' + Date.now();
+    }
 
     (function initSolutionTheater() {
       var theater = document.getElementById('sol-theater');
@@ -1603,7 +1682,7 @@
 
       function mountPreview(previewId) {
         stage.innerHTML = '';
-        var src = PREVIEW_VIDEOS[previewId];
+        var src = resolvePreviewSrc(previewId);
         if (!src) return;
         var video = document.createElement('video');
         video.className = 'sol-live-frame';
@@ -1621,7 +1700,8 @@
         video.setAttribute('aria-label', 'Production desk walkthrough');
         var source = document.createElement('source');
         source.type = 'video/mp4';
-        source.src = src + '?t=' + Date.now();
+        video.setAttribute('data-raw-src', src);
+        source.src = withCacheBust(src);
         video.appendChild(source);
         stage.appendChild(video);
       }
@@ -1632,8 +1712,11 @@
         if (video) {
           if (reload) {
             var source = video.querySelector('source');
-            var raw = ((source && source.src) || video.currentSrc || '').split('?')[0];
-            if (source && raw) source.src = raw + '?t=' + Date.now();
+            // Replay from the address the theater mounted, not from the
+            // cache-busted one, so a query string of its own survives.
+            var raw = video.getAttribute('data-raw-src')
+              || ((source && source.src) || video.currentSrc || '');
+            if (source && raw) source.src = withCacheBust(raw);
             video.load();
           }
           var startPlayback = function () {
@@ -1836,6 +1919,10 @@
           settings.solutions_banner_url || settings.promo_banner_url,
           'solutions-promo-banner'
         );
+        Object.keys(PREVIEW_VIDEOS).forEach(function (key) {
+          var url = settings['solutions_theater_' + key + '_url'];
+          if (media.isPlayableMediaUrl(url)) theaterOverrides[key] = url;
+        });
       } catch (err) { /* media optional */ }
     })();
   </script>
