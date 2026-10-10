@@ -3236,3 +3236,26 @@ class MediaLibraryBlob(Base):
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
                           nullable=False, index=True)
+
+
+class MediaDesignDocument(Base):
+    """Checksummed singleton for media-dashboard design placements.
+
+    Hero videos, posters, backgrounds, thumbnails, login and solutions
+    slots, and the rest of the design document live here so a new deploy
+    (empty container disk) still restores what the media dashboard saved.
+    ``sha256`` is the digest of the canonical ``payload_json`` bytes.
+    ``revision`` increments on every successful write so a stale replica
+    cannot replace a newer document without merging.
+
+    This is a NEW table - it does not modify any existing data.
+    """
+    __tablename__ = 'media_design_documents'
+
+    id = Column(String(40), primary_key=True)
+    sha256 = Column(String(64), nullable=False)
+    revision = Column(Integer, nullable=False, default=1)
+    payload_json = Column(Text, nullable=False)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+                          nullable=False)
