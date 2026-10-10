@@ -249,6 +249,9 @@ verify_sqlite_dumps() {
   local dbdir="${dir}/db"
   [ -d "${dbdir}" ] || return 0
   local db check found=0
+  # Only the dumps this script writes into db/ itself. db/runtime/ holds
+  # checksummed copies of arbitrary platform files (documents, media), which
+  # the create path never treats as SQLite databases.
   while IFS= read -r -d '' db; do
     found=1
     if ! check="$(sqlite3 "${db}" "PRAGMA integrity_check;" 2>/dev/null)"; then
@@ -259,7 +262,7 @@ verify_sqlite_dumps() {
       warn "SQLite integrity_check failed for ${db}"
       return 1
     fi
-  done < <(find "${dbdir}" -type f \( -name '*.db' -o -name '*.sqlite' -o -name '*.sqlite3' \) -print0)
+  done < <(find "${dbdir}" -maxdepth 1 -type f \( -name '*.db' -o -name '*.sqlite' -o -name '*.sqlite3' \) -print0)
   if [ "${found}" -eq 1 ]; then
     log "SQLite dumps: integrity_check ok."
   fi
@@ -268,6 +271,11 @@ verify_sqlite_dumps() {
 
 verify_repository_bundle() {
   local dir="$1"
+  # git runs below with -C pointing at a scratch repo, so a relative backup
+  # directory would resolve against that directory instead of the caller's.
+  if [ -d "${dir}" ]; then
+    dir="$(cd "${dir}" && pwd -P)"
+  fi
   local bundle="${dir}/repositories/phins.bundle"
   [ -f "${bundle}" ] || return 0
 
@@ -283,7 +291,8 @@ verify_repository_bundle() {
   tmp="$(mktemp -d)"
   if ! git -C "${tmp}" init -q; then
     rc=1
-  elif ! git -C "${tmp}" bundle verify "${bundle}" > "${tmp}/verify.txt" 2>&1; then
+  # LC_ALL=C: the completeness check below greps git's English output.
+  elif ! LC_ALL=C git -C "${tmp}" bundle verify "${bundle}" > "${tmp}/verify.txt" 2>&1; then
     warn "git bundle verify failed"
     cat "${tmp}/verify.txt" >&2 || true
     rc=1
@@ -691,9 +700,12 @@ fi
 # Create backup
 # ---------------------------------------------------------------------------
 TS="$(date -u +"%Y%m%dT%H%M%SZ")"
-OUT_DIR="${BACKUP_ROOT}/${TS}"
 
 mkdir -p "${BACKUP_ROOT}"
+# Resolve the destination before anything writes into it: later steps run git
+# and tar from other directories, where a relative path points elsewhere.
+BACKUP_ROOT="$(cd "${BACKUP_ROOT}" && pwd -P)"
+OUT_DIR="${BACKUP_ROOT}/${TS}"
 assert_destination_not_tracked "${BACKUP_ROOT}"
 
 mkdir -p "${OUT_DIR}/metadata" "${OUT_DIR}/db"

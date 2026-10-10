@@ -258,6 +258,46 @@ def test_manifest_covers_every_artifact_and_verifies(workspace: Path, tmp_path: 
     assert "Backup verified" in verify.stdout
 
 
+def test_verify_accepts_a_relative_backup_path(workspace: Path, tmp_path: Path):
+    """BACKUP.md documents `--verify backups/<timestamp>`."""
+    outside = tmp_path / "external-backups"
+    assert _run_backup(workspace, outside).returncode == 0
+    backup = _backup_dirs(outside)[0]
+
+    verify = subprocess.run(
+        ["bash", str(SCRIPT), "--verify", f"{outside.name}/{backup.name}"],
+        cwd=tmp_path,
+        env={**os.environ, "WORKSPACE_DIR": str(workspace)},
+        capture_output=True,
+        text=True,
+    )
+    assert verify.returncode == 0, verify.stderr
+    assert "Backup verified" in verify.stdout
+
+
+def test_verify_ignores_runtime_files_that_only_look_like_databases(
+    workspace: Path, tmp_path: Path
+):
+    """A customer upload named *.db is checksummed data, not a SQLite dump."""
+    documents = workspace / "data" / "documents"
+    documents.mkdir(parents=True)
+    (documents / "upload.db").write_text("not a database\n", encoding="utf-8")
+
+    outside = tmp_path / "external-backups"
+    assert _run_backup(workspace, outside).returncode == 0
+    backup = _backup_dirs(outside)[0]
+    assert (backup / "db" / "runtime" / "data" / "documents" / "upload.db").is_file()
+
+    verify = subprocess.run(
+        ["bash", str(SCRIPT), "--verify", str(backup)],
+        cwd=workspace,
+        env={**os.environ, "WORKSPACE_DIR": str(workspace)},
+        capture_output=True,
+        text=True,
+    )
+    assert verify.returncode == 0, verify.stderr
+
+
 def test_verify_detects_tampering(workspace: Path, tmp_path: Path):
     outside = tmp_path / "external-backups"
     assert _run_backup(workspace, outside).returncode == 0
