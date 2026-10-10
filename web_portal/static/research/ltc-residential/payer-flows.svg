@@ -68,6 +68,7 @@
       <rect y="88" width="12" height="12" fill="#e3bf6f"/><text x="18" y="99">Household out of pocket</text>
       <rect y="110" width="12" height="12" fill="#4a5568"/><text x="18" y="121">Other third party</text>
     </g>
-    <text x="48" y="482" fill="#9fb3d9" font-size="12">Four of five long-term care dollars in the OECD are public; the United States relies more on Medicare post-acute payments and households, Israel on the National Insurance Institute and private insurance (60% of the population covered).</text>
+    <text x="48" y="470" fill="#9fb3d9" font-size="12">Four of five long-term care dollars in the OECD are public; the United States relies more on Medicare post-acute payments and households,</text>
+    <text x="48" y="488" fill="#9fb3d9" font-size="12">Israel on the National Insurance Institute and private insurance (60% of the population covered).</text>
   </g>
 </svg>

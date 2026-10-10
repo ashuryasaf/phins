@@ -69,15 +69,15 @@
     </g>
     <g transform="translate(755,0)">
       <circle cx="0" cy="274" r="7" fill="#c9a04e"/>
-      <text x="40" y="340" font-weight="700" fill="#f7fafc">2036–2050</text>
-      <text x="40" y="358">Peak boomer demand</text>
-      <text x="40" y="376" fill="#9fb3d9">80+ growth peaks; bed shortages in high-acuity care</text>
+      <text x="40" y="412" font-weight="700" fill="#f7fafc">2036–2050</text>
+      <text x="40" y="430">Peak boomer demand</text>
+      <text x="40" y="448" fill="#9fb3d9">80+ growth peaks; bed shortages in high-acuity care</text>
     </g>
     <g transform="translate(899,0)">
       <circle cx="0" cy="274" r="7" fill="#c9a04e"/>
-      <text x="40" y="160" font-weight="700" fill="#f7fafc">2051–2075</text>
-      <text x="40" y="178">Longevity steady state</text>
-      <text x="40" y="196" fill="#9fb3d9">Dementia therapy, workforce productivity decide margins</text>
+      <text x="231" y="118" text-anchor="end" font-weight="700" fill="#f7fafc">2051–2075</text>
+      <text x="231" y="136" text-anchor="end">Longevity steady state</text>
+      <text x="231" y="154" text-anchor="end" fill="#9fb3d9">Dementia therapy, workforce productivity decide margins</text>
     </g>
     <circle cx="1130" cy="274" r="7" fill="#c9a04e" fill-opacity="0.6"/>
     <text x="1130" y="312" text-anchor="end" fill="#9fb3d9">2075</text>
