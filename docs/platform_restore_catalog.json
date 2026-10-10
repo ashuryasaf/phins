@@ -1,32 +1,24 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-05T09:15:16Z",
-  "latest": "20260905T091515Z",
-  "count": 2,
+  "updated_at": "2026-10-10T12:20:21Z",
+  "latest": "20261010T122007Z",
+  "count": 1,
   "backups": [
     {
-      "backup_id": "20260905T091515Z",
-      "created_at": "2026-09-05T09:15:16Z",
-      "git_commit": "fab28047f4abbbff9b36940beeb5fd0a99426138",
+      "backup_id": "20261010T122007Z",
+      "created_at": "2026-10-10T12:20:19Z",
+      "git_commit": "49ddc064bdfdd55e00f8a3950c33de041c4241fa",
       "git_status_dirty": false,
       "has_db_dump": false,
-      "snapshot_sha256": "839c4d9a119d03dc7498129100aa418eb9b7eedeefe779d6b1ab9d4d363a78aa",
-      "snapshot_bytes": 8166130,
-      "backup_dir": "/workspace/backups/20260905T091515Z",
-      "verify_command": "scripts/backup_platform.sh --verify /workspace/backups/20260905T091515Z",
-      "restore_code": "git checkout fab28047f4abbbff9b36940beeb5fd0a99426138"
-    },
-    {
-      "backup_id": "20260905T091343Z",
-      "created_at": "2026-09-05T09:13:44Z",
-      "git_commit": "25ecaa013ed5c7cb7670618f6f3de63ea4c2e133",
-      "git_status_dirty": true,
-      "has_db_dump": false,
-      "snapshot_sha256": "755c5a723bbc4a28c1b61b41282aa463ed61875767e549e7c8de65e863dfce3b",
-      "snapshot_bytes": 8163623,
-      "backup_dir": "/workspace/backups/20260905T091343Z",
-      "verify_command": "scripts/backup_platform.sh --verify /workspace/backups/20260905T091343Z",
-      "restore_code": "git checkout 25ecaa013ed5c7cb7670618f6f3de63ea4c2e133"
+      "snapshot_sha256": "53a69e4cbaf2370ad801d3e4438ffe4a28114c2a70c46df35facbe830055b485",
+      "snapshot_bytes": 23734556,
+      "repository_bundle_sha256": "b2c44fadf417e730903b8fa45262d310424b36ae826569f74c2231cb04d1d9da",
+      "repository_bundle_bytes": 437052142,
+      "repository_ref_count": 784,
+      "repository_head": "49ddc064bdfdd55e00f8a3950c33de041c4241fa",
+      "backup_dir": "/workspace/backups/20261010T122007Z",
+      "verify_command": "scripts/backup_platform.sh --verify /workspace/backups/20261010T122007Z",
+      "restore_code": "git checkout 49ddc064bdfdd55e00f8a3950c33de041c4241fa"
     }
   ]
 }

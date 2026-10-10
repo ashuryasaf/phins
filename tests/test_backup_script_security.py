@@ -54,6 +54,17 @@ def _run_backup(workspace: Path, backup_root: Path, **env_overrides):
         # Keep the tests independent of the host's retention setting.
         "PHINS_BACKUP_RETENTION": env_overrides.pop("PHINS_BACKUP_RETENTION", "0"),
     }
+    # A developer shell may point at a real database or keyring. Tests opt in
+    # explicitly so a missing host path cannot abort the fixture backup.
+    for key in (
+        "DATABASE_URL",
+        "DATABASE_PUBLIC_URL",
+        "SQLITE_PATH",
+        "LEDGER_PERSISTENCE_FILE",
+        "PHINS_KEYRING_PATH",
+        "PHINS_MEDIA_STORAGE_DIR",
+    ):
+        env.pop(key, None)
     env.update({k: str(v) for k, v in env_overrides.items()})
     return subprocess.run(
         ["bash", str(SCRIPT)],
@@ -247,6 +258,46 @@ def test_manifest_covers_every_artifact_and_verifies(workspace: Path, tmp_path: 
     assert "Backup verified" in verify.stdout
 
 
+def test_verify_accepts_a_relative_backup_path(workspace: Path, tmp_path: Path):
+    """BACKUP.md documents `--verify backups/<timestamp>`."""
+    outside = tmp_path / "external-backups"
+    assert _run_backup(workspace, outside).returncode == 0
+    backup = _backup_dirs(outside)[0]
+
+    verify = subprocess.run(
+        ["bash", str(SCRIPT), "--verify", f"{outside.name}/{backup.name}"],
+        cwd=tmp_path,
+        env={**os.environ, "WORKSPACE_DIR": str(workspace)},
+        capture_output=True,
+        text=True,
+    )
+    assert verify.returncode == 0, verify.stderr
+    assert "Backup verified" in verify.stdout
+
+
+def test_verify_ignores_runtime_files_that_only_look_like_databases(
+    workspace: Path, tmp_path: Path
+):
+    """A customer upload named *.db is checksummed data, not a SQLite dump."""
+    documents = workspace / "data" / "documents"
+    documents.mkdir(parents=True)
+    (documents / "upload.db").write_text("not a database\n", encoding="utf-8")
+
+    outside = tmp_path / "external-backups"
+    assert _run_backup(workspace, outside).returncode == 0
+    backup = _backup_dirs(outside)[0]
+    assert (backup / "db" / "runtime" / "data" / "documents" / "upload.db").is_file()
+
+    verify = subprocess.run(
+        ["bash", str(SCRIPT), "--verify", str(backup)],
+        cwd=workspace,
+        env={**os.environ, "WORKSPACE_DIR": str(workspace)},
+        capture_output=True,
+        text=True,
+    )
+    assert verify.returncode == 0, verify.stderr
+
+
 def test_verify_detects_tampering(workspace: Path, tmp_path: Path):
     outside = tmp_path / "external-backups"
     assert _run_backup(workspace, outside).returncode == 0
@@ -392,4 +443,185 @@ def test_failed_secret_scan_is_not_recorded_in_the_index(
     result = _run_backup(workspace, outside)
     assert result.returncode != 0
     assert not (outside / "RESTORE_INDEX.json").exists()
+    assert not _backup_dirs(outside)
+
+
+# ---------------------------------------------------------------------------
+# Repository bundle + consistent data snapshots
+# ---------------------------------------------------------------------------
+
+def _git_out(cwd: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def test_repository_bundle_round_trips_every_ref_without_remote_urls(
+    workspace: Path, tmp_path: Path
+):
+    """The bundle is a complete, verifiable copy of every ref, not .git/config."""
+    token = "backup-probe-token-value"
+    default_branch = _git_out(workspace, "branch", "--show-current")
+    _git(workspace, "remote", "add", "origin", f"https://user:{token}@example.com/phins.git")
+    _git(workspace, "checkout", "-q", "-b", "feature")
+    (workspace / "feature.txt").write_text("feature\n", encoding="utf-8")
+    _git(workspace, "add", "feature.txt")
+    _git(workspace, "commit", "-qm", "feature")
+    _git(workspace, "checkout", "-q", default_branch)
+
+    outside = tmp_path / "external-backups"
+    result = _run_backup(workspace, outside)
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "Repository bundle: complete history" in result.stdout
+
+    backup = _backup_dirs(outside)[0]
+    bundle = backup / "repositories" / "phins.bundle"
+    refs = (backup / "repositories" / "refs.txt").read_text(encoding="utf-8")
+    assert f"refs/heads/{default_branch}" in refs
+    assert "refs/heads/feature" in refs
+    assert token.encode() not in bundle.read_bytes()
+    leaked = subprocess.run(
+        ["grep", "-R", "-F", "-l", token, str(backup)],
+        capture_output=True,
+        text=True,
+    )
+    assert leaked.stdout.strip() == ""
+
+    restored = tmp_path / "restored"
+    subprocess.run(
+        ["git", "clone", "--mirror", str(bundle), str(restored)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert _git_out(restored, "rev-parse", "refs/heads/feature") == _git_out(
+        workspace, "rev-parse", "refs/heads/feature"
+    )
+    assert _git_out(restored, "rev-parse", "HEAD") == (
+        backup / "repositories" / "HEAD"
+    ).read_text(encoding="utf-8").strip()
+
+    record = json.loads((backup / "restore_record.json").read_text(encoding="utf-8"))
+    assert record["artifacts"]["repository_bundle"]["sha256"]
+    assert record["artifacts"]["repository_refs"]["ref_count"] >= 2
+    assert record["restore"]["repository_from_bundle"]
+
+
+def test_verify_rejects_a_bundle_whose_refs_were_rewritten(
+    workspace: Path, tmp_path: Path
+):
+    outside = tmp_path / "external-backups"
+    assert _run_backup(workspace, outside).returncode == 0
+    backup = _backup_dirs(outside)[0]
+    (backup / "repositories" / "refs.txt").write_text(
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef refs/heads/missing\n",
+        encoding="utf-8",
+    )
+    # Refresh the manifest so this fails the bundle check, not the checksum check.
+    subprocess.run(
+        [
+            "bash",
+            "-c",
+            "find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS",
+        ],
+        cwd=backup,
+        check=True,
+    )
+
+    verify = subprocess.run(
+        ["bash", str(SCRIPT), "--verify", str(backup)],
+        cwd=workspace,
+        env={**os.environ, "WORKSPACE_DIR": str(workspace)},
+        capture_output=True,
+        text=True,
+    )
+    assert verify.returncode != 0
+    assert "Repository bundle verification FAILED" in verify.stderr
+    # --verify must not delete a backup the operator asked to inspect.
+    assert backup.is_dir()
+    assert (backup / "repositories" / "phins.bundle").is_file()
+
+
+def test_sqlite_backup_is_consistent_and_stays_out_of_the_archive(
+    workspace: Path, tmp_path: Path
+):
+    db = workspace / "phins.db"
+    subprocess.run(
+        [
+            "sqlite3",
+            str(db),
+            "CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT); INSERT INTO t(name) VALUES ('alpha');",
+        ],
+        check=True,
+    )
+    outside = tmp_path / "external-backups"
+    result = _run_backup(workspace, outside)
+    assert result.returncode == 0, result.stderr
+
+    backup = _backup_dirs(outside)[0]
+    copied = backup / "db" / "phins.db"
+    check = subprocess.run(
+        ["sqlite3", str(copied), "PRAGMA integrity_check;"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert check.stdout.strip() == "ok"
+    row = subprocess.run(
+        ["sqlite3", str(copied), "SELECT name FROM t;"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert row.stdout.strip() == "alpha"
+    assert "INSERT INTO t VALUES(1,'alpha');" in (backup / "db" / "phins.db.sql").read_text(encoding="utf-8")
+
+    with tarfile.open(backup / "platform_snapshot.tar.gz") as tar:
+        names = {n[2:] if n.startswith("./") else n for n in tar.getnames()}
+    assert "phins.db" not in names
+    assert "app.py" in names
+
+
+def test_ledger_file_is_copied_with_matching_checksum(
+    workspace: Path, tmp_path: Path
+):
+    payload = '{"ledger":1}\n'
+    source = workspace / "phins_ledger_state.json"
+    source.write_text(payload, encoding="utf-8")
+    outside = tmp_path / "external-backups"
+    result = _run_backup(workspace, outside)
+    assert result.returncode == 0, result.stderr
+
+    backup = _backup_dirs(outside)[0]
+    copied = backup / "db" / "runtime" / "phins_ledger_state.json"
+    assert copied.read_text(encoding="utf-8") == payload
+    assert (copied.stat().st_mode & 0o777) == 0o600
+    with tarfile.open(backup / "platform_snapshot.tar.gz") as tar:
+        names = {n[2:] if n.startswith("./") else n for n in tar.getnames()}
+    assert "phins_ledger_state.json" not in names
+
+    record = json.loads((backup / "restore_record.json").read_text(encoding="utf-8"))
+    copied_entry = next(
+        item for item in record["artifacts"]["db_files"]
+        if item["path"] == "db/runtime/phins_ledger_state.json"
+    )
+    assert copied_entry["sha256"]
+    assert record["has_db_dump"] is True
+
+
+def test_configured_database_that_cannot_be_dumped_discards_the_backup(
+    workspace: Path, tmp_path: Path
+):
+    outside = tmp_path / "external-backups"
+    result = _run_backup(
+        workspace,
+        outside,
+        DATABASE_URL="postgresql://127.0.0.1:1/phins",
+    )
+    assert result.returncode != 0
+    assert "refusing" in result.stderr
     assert not _backup_dirs(outside)
