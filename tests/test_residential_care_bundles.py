@@ -372,6 +372,243 @@ def test_offer_rows_the_marketplace_hides_keep_the_catalog_price():
         portal.HEALTH_WALLETS.pop(customer_id, None)
 
 
+def test_term_quotes_discount_the_list_without_stacking():
+    home = portal.residential_care_by_id("res-home")
+    extra = portal.residential_care_by_id("res-extra")
+    full = portal.residential_care_by_id("res-full")
+    one = portal.residential_care_quote(home, 1, None)
+    assert one["ok"] is True
+    assert one["catalog_amount"] == 8400.00
+    assert one["term_discount_pct"] == 0.0
+    assert one["list_amount"] == one["catalog_amount"] + one["term_discount_amount"]
+    five = portal.residential_care_quote(home, 5, "monthly")
+    assert five["catalog_amount"] == 42000.00
+    assert five["automatic"] is False
+
+    six = portal.residential_care_quote(home, 6, "months")
+    assert six["automatic"] is True
+    assert six["term_discount_pct"] == 0.20
+    assert six["list_amount"] == 50400.00
+    assert six["term_discount_amount"] == 10080.00
+    assert six["catalog_amount"] == 40320.00
+    assert six["terms_url"] == "/terms-of-use.html#residential-care"
+    _plan_identity(portal.pricing_plan_for_catalog_total(six["catalog_amount"]), six["catalog_amount"])
+
+    extra_nine = portal.residential_care_quote(extra, 9, "monthly")
+    assert extra_nine["list_amount"] == 97200.00
+    assert extra_nine["catalog_amount"] == 77760.00
+    assert round(extra_nine["catalog_amount"] + extra_nine["term_discount_amount"], 2) == extra_nine["list_amount"]
+
+    monthly_year = portal.residential_care_quote(full, 12, "monthly")
+    annual = portal.residential_care_quote(full, 12, "annual accommodation")
+    assert monthly_year["catalog_amount"] == 139200.00
+    assert monthly_year["term_discount_pct"] == 0.20
+    assert annual["ok"] is True
+    assert annual["service_term"] == "annual"
+    assert annual["list_amount"] == 174000.00
+    assert annual["term_discount_amount"] == 52200.00
+    assert annual["catalog_amount"] == 121800.00
+    assert annual["catalog_amount"] != round(annual["list_amount"] * 0.8 * 0.7, 2)
+    _plan_identity(
+        portal.pricing_plan_for_catalog_total(annual["catalog_amount"]),
+        annual["catalog_amount"],
+        exact_rates=False,
+    )
+
+    for bundle in (home, extra, full):
+        for months in range(1, portal.RESIDENTIAL_CARE_MAX_PERIODS + 1):
+            quote = portal.residential_care_quote(bundle, months, "monthly")
+            assert quote["ok"] is True
+            assert round(quote["unit_price"] * quote["quantity"], 2) == quote["list_amount"]
+            assert round(quote["catalog_amount"] + quote["term_discount_amount"], 2) == quote["list_amount"]
+            if months >= 6:
+                assert quote["term_discount_pct"] == 0.20
+                assert quote["catalog_amount"] == round(quote["list_amount"] * 0.8, 2)
+            else:
+                assert quote["catalog_amount"] == quote["list_amount"]
+
+    refused = portal.residential_care_quote(home, 12, "annual")
+    assert refused["ok"] is False
+    assert refused["error"] == "Annual accommodation applies only to the Full Accommodation Bundle"
+    short_annual = portal.residential_care_quote(full, 6, "annual")
+    assert short_annual["ok"] is False
+    assert short_annual["expected_quantity"] == 12
+    assert short_annual["catalog_amount"] == 121800.00
+    unknown = portal.residential_care_quote(full, 1, "weekly")
+    assert unknown["ok"] is False
+    assert unknown["error"] == "Unknown residential service term"
+    too_many = portal.residential_care_quote(full, 37, "monthly")
+    assert too_many["error"] == "Quantity exceeds the residential care limit"
+
+    monthly_offers = [item for item in full["term_offers"] if item["service_term"] == "monthly"]
+    annual_offer = next(item for item in full["term_offers"] if item["service_term"] == "annual")
+    assert [item["discount_pct"] for item in monthly_offers] == [0.0, 0.20]
+    assert monthly_offers[1]["automatic"] is True
+    assert annual_offer["catalog_amount"] == 121800.00
+    assert full["demo_video_url"] == "/marketplace/residential-demo.mp4"
+    assert home["term_offers"][-1]["sample_catalog_amount"] == 40320.00
+
+
+def test_extended_and_annual_terms_post_the_discounted_catalog_amount():
+    customer_id = "CUST-RES-CARE-TERM"
+    _prime_port()
+    _fund(customer_id, 50000)
+    ledger_before = set(portal.TRANSACTION_LEDGER)
+    purchases_before = set(portal.MEDICAL_PURCHASES)
+    try:
+        listed, listed_body = _post("/api/health-wallet/purchase", {
+            "customer_id": customer_id,
+            "product_id": "res-home",
+            "amount": 50400.00,
+            "quantity": 6,
+            "payment_method": "health_wallet",
+        })
+        assert listed == 400
+        assert listed_body["error"] == "Catalog price mismatch"
+        assert listed_body["catalog_amount"] == 40320.00
+        assert listed_body["list_amount"] == 50400.00
+        assert listed_body["term_discount_pct"] == 0.20
+        assert listed_body["terms_url"] == "/terms-of-use.html#residential-care"
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 50000.00
+        assert _medical_rows(customer_id, ledger_before) == []
+        assert set(portal.MEDICAL_PURCHASES) == purchases_before
+
+        status, body = _post("/api/health-wallet/purchase", {
+            "customer_id": customer_id,
+            "product_id": "res-home",
+            "amount": 40320.00,
+            "quantity": 6,
+            "service_term": "monthly",
+            "payment_method": "health_wallet",
+        })
+        assert status == 200, body
+        purchase = body["purchase"]
+        assert purchase["amount"] == 40320.00
+        assert purchase["quantity"] == 6
+        assert purchase["service_term"] == "monthly"
+        assert purchase["list_amount"] == 50400.00
+        assert purchase["term_discount_pct"] == 0.20
+        assert purchase["term_discount_amount"] == 10080.00
+        assert purchase["catalog_amount"] == 40320.00
+        assert body["new_balance"] == round(50000.00 - 40320.00, 2)
+        assert body["pricing_plan"]["final_customer_amount"] == 40320.00
+        _plan_identity(body["pricing_plan"], 40320.00)
+        posted = _medical_rows(customer_id, ledger_before)
+        assert len(posted) == 1
+        assert posted[0]["amount"] == 40320.00
+        assert posted[0]["metadata"]["term_discount_pct"] == 0.20
+        assert posted[0]["metadata"]["list_amount"] == 50400.00
+        assert posted[0]["metadata"]["catalog_amount"] == 40320.00
+        token = portal.NFT_LEDGER[purchase["nft_token_id"]]
+        assert affiliate_issues(token, posted[0]) == []
+
+        monthly_rate, monthly_body = _post("/api/health-wallet/purchase", {
+            "customer_id": customer_id,
+            "product_id": "res-full",
+            "amount": 121800.00,
+            "quantity": 12,
+            "service_term": "monthly",
+            "payment_method": "health_wallet",
+        })
+        assert monthly_rate == 400
+        assert monthly_body["catalog_amount"] == 139200.00
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == round(50000.00 - 40320.00, 2)
+
+        not_accommodation, not_body = _post("/api/health-wallet/purchase", {
+            "customer_id": customer_id,
+            "product_id": "res-extra",
+            "amount": 77760.00,
+            "quantity": 12,
+            "service_term": "annual",
+            "payment_method": "health_wallet",
+        })
+        assert not_accommodation == 400
+        assert not_body["error"] == "Annual accommodation applies only to the Full Accommodation Bundle"
+        assert "catalog_amount" not in not_body
+        assert len(_medical_rows(customer_id, ledger_before)) == 1
+
+        stacked, stacked_body = _post("/api/health-wallet/purchase", {
+            "customer_id": customer_id,
+            "product_id": "res-full",
+            "amount": 139200.00,
+            "quantity": 12,
+            "service_term": "annual",
+            "payment_method": "credit_card",
+        })
+        assert stacked == 400
+        assert stacked_body["catalog_amount"] == 121800.00
+        assert stacked_body["term_discount_pct"] == 0.30
+
+        card, card_body = _post("/api/health-wallet/purchase", {
+            "customer_id": customer_id,
+            "product_id": "res-full",
+            "amount": 121800.00,
+            "quantity": 12,
+            "service_term": "Annual Accommodation",
+            "payment_method": "credit_card",
+        })
+        assert card == 200, card_body
+        assert card_body["purchase"]["amount"] == 121800.00
+        assert card_body["purchase"]["service_term"] == "annual"
+        assert card_body["purchase"]["term_discount_pct"] == 0.30
+        assert card_body["purchase"]["external_payment_amount"] == 121800.00
+        assert card_body["purchase"]["wallet_deduction"] == 0
+        assert card_body["purchase"]["terms_url"] == "/terms-of-use.html#residential-care"
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == round(50000.00 - 40320.00, 2)
+        assert len(_medical_rows(customer_id, ledger_before)) == 2
+        wallet_purchases = [
+            tx for tx in portal.HEALTH_WALLETS[customer_id]["transactions"]
+            if tx.get("type") == "purchase"
+        ]
+        assert len(wallet_purchases) == 1
+        assert wallet_purchases[0]["amount"] == -40320.00
+    finally:
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+
+
+def test_demo_video_and_terms_link_are_published_with_the_catalog():
+    catalog, status = _get("/api/medical-products?category=residential")
+    assert status == 200
+    rows = {item["id"]: item for item in catalog["products"]}
+    assert rows["res-full"]["term_offers"][-1]["label"] == "Annual accommodation"
+    assert rows["res-full"]["term_offers"][-1]["catalog_amount"] == 121800.00
+    assert rows["res-home"]["extended_discount_pct"] == 0.20
+    assert rows["res-home"]["terms_url"] == "/terms-of-use.html#residential-care"
+    assert all(item["demo_video_url"] == "/marketplace/residential-demo.mp4" for item in rows.values())
+
+    base = os.environ["TEST_BASE_URL"].rstrip("/")
+    with urlopen(base + "/marketplace/residential-demo.mp4") as resp:
+        header = resp.read(12)
+        assert resp.status == 200
+        assert "video/mp4" in resp.headers.get("Content-Type", "")
+    assert b"ftyp" in header
+
+    dashboard = open(
+        os.path.join(ROOT, "web_portal", "static", "dashboard.html"),
+        encoding="utf-8",
+    ).read()
+    terms = open(
+        os.path.join(ROOT, "web_portal", "static", "terms-of-use.html"),
+        encoding="utf-8",
+    ).read()
+    hebrew = json.load(open(os.path.join(ROOT, "web_portal", "static", "locales", "he.json"), encoding="utf-8"))
+    assert "openResidentialDemo" in dashboard
+    assert "const product = isResidentialCatalog(indexed) ? indexed : null;" in dashboard
+    assert "['res-home', 'res-extra', 'res-full'].every(id => isResidentialCatalog(marketplaceOfferIndex[id]))" in dashboard
+    assert "Play service demo" in dashboard
+    assert "/terms-of-use.html#residential-care" in dashboard
+    assert 'id="residential-care"' in terms
+    assert "20% reduction" in terms
+    assert "30% off the twelve-month catalog list" in terms
+    assert hebrew["strings"]["Terms of Service"]
+    assert hebrew["strings"]["Play service demo"]
+    assert hebrew["strings"]["Annual accommodation · 30% off"]
+
+    legal, legal_status = _get("/api/legal/terms-of-use")
+    assert legal_status == 200
+    assert "Health Care Residential Solutions" in legal["sections"]
+
+
 def test_other_catalog_purchases_still_use_the_wallet_pricing_plan():
     customer_id = "CUST-RES-CARE-OTHER"
     _prime_port()

@@ -1088,13 +1088,18 @@
             <span class="phins-wallet-action-title">Home Care</span>
           </span>
         </button>
-        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('residential')">
-          <img src="/marketplace/residential-solutions.jpg" alt="Caregiver and resident outside a private home">
-          <span class="phins-wallet-action-copy">
-            <span class="phins-wallet-action-kicker">Care bundles</span>
-            <span class="phins-wallet-action-title">Health Care Residential Solutions</span>
-          </span>
-        </button>
+        <div class="phins-wallet-action wallet-quick-btn">
+          <button type="button" class="phins-wallet-media-btn" onclick="openResidentialDemo()" aria-label="Play service demo">
+            <img src="/marketplace/residential-solutions.jpg" alt="Caregiver and resident outside a private home">
+            <span class="phins-wallet-play-chip">Play service demo</span>
+          </button>
+          <button type="button" class="phins-wallet-copy-btn" onclick="showMedicalCategory('residential')">
+            <span class="phins-wallet-action-copy">
+              <span class="phins-wallet-action-kicker">Care bundles</span>
+              <span class="phins-wallet-action-title">Health Care Residential Solutions</span>
+            </span>
+          </button>
+        </div>
         <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showTransferModal()">
           <img src="/marketplace/medical-alert.jpg" alt="Personal medical alert device">
           <span class="phins-wallet-action-copy">
@@ -4288,21 +4293,21 @@
               </div>
               <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
                 <div onclick="document.getElementById('health-wallet').scrollIntoView({behavior:'smooth'}); showMedicalCategory('residential');" style="background: white; border: 2px solid #e0e0e0; border-radius: 12px; overflow: hidden; cursor: pointer;">
-                  <img src="/marketplace/residential-home.jpg" alt="Home Bundle" style="width: 100%; height: 110px; object-fit: cover; display: block;">
+                  <img src="/marketplace/residential-home.jpg" alt="Home Bundle" onclick="event.stopPropagation(); openResidentialDemo('res-home');" style="width: 100%; height: 110px; object-fit: cover; display: block; cursor: pointer;">
                   <div style="padding: 12px;">
                     <div style="font-weight: 600; color: #333;">Home Bundle</div>
                     <div style="font-size: 0.85rem; color: #666;">Private assistance, 24/7 care at home</div>
                   </div>
                 </div>
                 <div onclick="document.getElementById('health-wallet').scrollIntoView({behavior:'smooth'}); showMedicalCategory('residential');" style="background: white; border: 2px solid #e0e0e0; border-radius: 12px; overflow: hidden; cursor: pointer;">
-                  <img src="/marketplace/residential-extra.jpg" alt="Extra Bundle" style="width: 100%; height: 110px; object-fit: cover; display: block;">
+                  <img src="/marketplace/residential-extra.jpg" alt="Extra Bundle" onclick="event.stopPropagation(); openResidentialDemo('res-extra');" style="width: 100%; height: 110px; object-fit: cover; display: block; cursor: pointer;">
                   <div style="padding: 12px;">
                     <div style="font-weight: 600; color: #333;">Extra Bundle</div>
                     <div style="font-size: 0.85rem; color: #666;">Private assistance, 24/7 care away from home</div>
                   </div>
                 </div>
                 <div onclick="document.getElementById('health-wallet').scrollIntoView({behavior:'smooth'}); showMedicalCategory('residential');" style="background: white; border: 2px solid #e0e0e0; border-radius: 12px; overflow: hidden; cursor: pointer;">
-                  <img src="/marketplace/residential-full.jpg" alt="Full Accommodation Bundle" style="width: 100%; height: 110px; object-fit: cover; display: block;">
+                  <img src="/marketplace/residential-full.jpg" alt="Full Accommodation Bundle" onclick="event.stopPropagation(); openResidentialDemo('res-full');" style="width: 100%; height: 110px; object-fit: cover; display: block; cursor: pointer;">
                   <div style="padding: 12px;">
                     <div style="font-weight: 600; color: #333;">Full Accommodation Bundle</div>
                     <div style="font-size: 0.85rem; color: #666;">Residential safe house with Medicare clinical care and private assistance, 24/7</div>
@@ -6080,9 +6085,9 @@
         { id: 'hc-6', name: 'Light Housekeeping (4 hrs)', price: 80, description: 'Basic cleaning and organization', duration: '4 hours', image: '/marketplace/housekeeping.jpg' },
       ],
       residential: [
-        { id: 'res-home', name: 'Home Bundle', price: 8400, description: 'Private assistance, 24/7 care at home. One monthly service period.', duration: '24/7 · 1 month', unit: 'month', image: '/marketplace/residential-home.jpg', provider: 'PHINS Residential Care', price_source: 'residential_catalog', catalog_locked: true },
-        { id: 'res-extra', name: 'Extra Bundle', price: 10800, description: 'Private assistance, 24/7 care away from home. One monthly service period.', duration: '24/7 · 1 month', unit: 'month', image: '/marketplace/residential-extra.jpg', provider: 'PHINS Residential Care', price_source: 'residential_catalog', catalog_locked: true },
-        { id: 'res-full', name: 'Full Accommodation Bundle', price: 14500, description: 'Residential safe house with full Medicare clinical care and private assistance, 24/7, at a private institution. One monthly service period.', duration: '24/7 · 1 month', unit: 'month', image: '/marketplace/residential-full.jpg', provider: 'PHINS Residential Care', price_source: 'residential_catalog', catalog_locked: true },
+        { id: 'res-home', name: 'Home Bundle', price: 8400, description: 'Private assistance, 24/7 care at home. One monthly service period.', duration: '24/7 · 1 month', unit: 'month', image: '/marketplace/residential-home.jpg', image_url: '/marketplace/residential-home.jpg', provider: 'PHINS Residential Care', price_source: 'residential_catalog', catalog_locked: true, extended_min_quantity: 6, extended_discount_pct: 0.2, max_periods: 36, terms_url: '/terms-of-use.html#residential-care', demo_video_url: '/marketplace/residential-demo.mp4', term_offers: [{ service_term: 'monthly', min_quantity: 6, discount_pct: 0.2, automatic: true, label: '6 months or longer', sample_quantity: 6, sample_list_amount: 50400, sample_catalog_amount: 40320 }] },
+        { id: 'res-extra', name: 'Extra Bundle', price: 10800, description: 'Private assistance, 24/7 care away from home. One monthly service period.', duration: '24/7 · 1 month', unit: 'month', image: '/marketplace/residential-extra.jpg', image_url: '/marketplace/residential-extra.jpg', provider: 'PHINS Residential Care', price_source: 'residential_catalog', catalog_locked: true, extended_min_quantity: 6, extended_discount_pct: 0.2, max_periods: 36, terms_url: '/terms-of-use.html#residential-care', demo_video_url: '/marketplace/residential-demo.mp4', term_offers: [{ service_term: 'monthly', min_quantity: 6, discount_pct: 0.2, automatic: true, label: '6 months or longer', sample_quantity: 6, sample_list_amount: 64800, sample_catalog_amount: 51840 }] },
+        { id: 'res-full', name: 'Full Accommodation Bundle', price: 14500, description: 'Residential safe house with full Medicare clinical care and private assistance, 24/7, at a private institution. One monthly service period.', duration: '24/7 · 1 month', unit: 'month', image: '/marketplace/residential-full.jpg', image_url: '/marketplace/residential-full.jpg', provider: 'PHINS Residential Care', price_source: 'residential_catalog', catalog_locked: true, extended_min_quantity: 6, extended_discount_pct: 0.2, max_periods: 36, terms_url: '/terms-of-use.html#residential-care', demo_video_url: '/marketplace/residential-demo.mp4', term_offers: [{ service_term: 'monthly', min_quantity: 6, discount_pct: 0.2, automatic: true, label: '6 months or longer', sample_quantity: 6, sample_list_amount: 87000, sample_catalog_amount: 69600 }, { service_term: 'annual', quantity: 12, discount_pct: 0.3, automatic: false, label: 'Annual accommodation', list_amount: 174000, term_discount_amount: 52200, catalog_amount: 121800 }] },
       ],
       legal: [
         { id: 'leg-1', name: 'Legal Consultation (30 min)', price: 95, description: 'Policy, claim, and documentation guidance', duration: '30 minutes', image: '/marketplace/legal-consult.jpg' },
@@ -6236,12 +6241,14 @@
     function addIndexedToCart(productId, category) {
       const product = marketplaceOfferIndex[productId];
       if (!product) return;
+      const quote = isResidentialCatalog(product) ? residentialCardQuote(productId) : null;
       addToCart(
         productId,
         product.name,
-        Number(product.price) || 0,
+        quote ? quote.unit_price : (Number(product.price) || 0),
         category,
-        product.isSupplierOffer ? (product.supplier_id || null) : null
+        product.isSupplierOffer ? (product.supplier_id || null) : null,
+        quote
       );
     }
 
@@ -6249,6 +6256,157 @@
       const product = marketplaceOfferIndex[productId];
       if (!product) return;
       purchaseProduct(productId, product.name, Number(product.price) || 0, category, product);
+    }
+
+    function buyResidentialProduct(productId, category) {
+      const product = marketplaceOfferIndex[productId];
+      const quote = residentialCardQuote(productId);
+      if (!product || !quote) return;
+      purchaseProduct(productId, product.name, quote.catalog_amount, category || 'residential', {
+        ...product,
+        purchase_quantity: quote.quantity,
+        service_term: quote.service_term,
+        quoted_amount: quote.catalog_amount,
+        list_amount: quote.list_amount
+      });
+    }
+
+    const residentialTermState = {};
+
+    function isResidentialCatalog(product) {
+      return !!(product && (product.catalog_locked || product.price_source === 'residential_catalog') && !product.isSupplierOffer);
+    }
+
+    function residentialMoney(cents) {
+      return cents / 100;
+    }
+
+    function residentialQuote(product, quantity, serviceTerm) {
+      if (!isResidentialCatalog(product)) return null;
+      const unitCents = Math.round(Number(product.price) * 100);
+      const maxPeriods = Number(product.max_periods || 36);
+      const minExtended = Number(product.extended_min_quantity == null ? 6 : product.extended_min_quantity);
+      const extendedPct = Number(product.extended_discount_pct == null ? 0.2 : product.extended_discount_pct);
+      const annual = (product.term_offers || []).find(offer => offer && offer.service_term === 'annual');
+      const term = String(serviceTerm || 'monthly');
+      if (term === 'annual') {
+        if (!annual || annual.catalog_amount == null) return null;
+        return {
+          service_term: 'annual',
+          quantity: Number(annual.quantity || 12),
+          unit_price: residentialMoney(unitCents),
+          list_amount: Number(annual.list_amount),
+          term_discount_pct: Number(annual.discount_pct),
+          term_discount_amount: Number(annual.term_discount_amount),
+          catalog_amount: Number(annual.catalog_amount),
+          terms_url: product.terms_url || '/terms-of-use.html#residential-care'
+        };
+      }
+      let qty = parseInt(quantity, 10);
+      if (!qty || qty < 1) qty = 1;
+      if (qty > maxPeriods) qty = maxPeriods;
+      const listCents = unitCents * qty;
+      let discountCents = 0;
+      let pct = 0;
+      if (qty >= minExtended && extendedPct > 0) {
+        pct = extendedPct;
+        if (Math.abs(extendedPct - 0.2) < 1e-9) discountCents = Math.floor(listCents * 20 / 100);
+        else if (Math.abs(extendedPct - 0.3) < 1e-9) discountCents = Math.floor(listCents * 30 / 100);
+        else discountCents = Math.round(listCents * extendedPct);
+      }
+      return {
+        service_term: 'monthly',
+        quantity: qty,
+        unit_price: residentialMoney(unitCents),
+        list_amount: residentialMoney(listCents),
+        term_discount_pct: pct,
+        term_discount_amount: residentialMoney(discountCents),
+        catalog_amount: residentialMoney(listCents - discountCents),
+        terms_url: product.terms_url || '/terms-of-use.html#residential-care'
+      };
+    }
+
+    function residentialCardQuote(productId) {
+      const product = marketplaceOfferIndex[productId];
+      const state = residentialTermState[productId] || { quantity: 1, service_term: 'monthly' };
+      return residentialQuote(product, state.quantity, state.service_term);
+    }
+
+    function residentialTermNote(quote) {
+      if (!quote) return '';
+      if (quote.service_term === 'annual') return '30% off annual accommodation. This replaces the 6-month rate.';
+      if (quote.term_discount_pct > 0) return '20% off applied automatically.';
+      return 'Catalog price for this many months.';
+    }
+
+    function formatResidentialMoney(amount) {
+      return `$${Number(amount || 0).toFixed(2)}`;
+    }
+
+    function syncResidentialCard(productId) {
+      const quote = residentialCardQuote(productId);
+      const priceEl = document.getElementById(`res-price-${productId}`);
+      const wasEl = document.getElementById(`res-was-${productId}`);
+      const noteEl = document.getElementById(`res-note-${productId}`);
+      const monthsEl = document.getElementById(`res-months-${productId}`);
+      if (!quote) return null;
+      if (priceEl) priceEl.textContent = formatResidentialMoney(quote.catalog_amount);
+      if (wasEl) {
+        const showList = quote.catalog_amount !== quote.list_amount;
+        wasEl.hidden = !showList;
+        wasEl.textContent = showList ? formatResidentialMoney(quote.list_amount) : '';
+      }
+      if (noteEl) noteEl.textContent = residentialTermNote(quote);
+      if (monthsEl) {
+        monthsEl.value = String(quote.quantity);
+        monthsEl.disabled = quote.service_term === 'annual';
+      }
+      return quote;
+    }
+
+    function updateResidentialCardTerm(productId) {
+      const monthsEl = document.getElementById(`res-months-${productId}`);
+      const product = marketplaceOfferIndex[productId];
+      const maxPeriods = Number((product && product.max_periods) || 36);
+      let qty = parseInt(monthsEl && monthsEl.value, 10);
+      if (!qty || qty < 1) qty = 1;
+      if (qty > maxPeriods) qty = maxPeriods;
+      residentialTermState[productId] = { quantity: qty, service_term: 'monthly' };
+      syncResidentialCard(productId);
+    }
+
+    function selectResidentialAnnual(productId) {
+      const product = marketplaceOfferIndex[productId];
+      const annual = ((product && product.term_offers) || []).find(offer => offer && offer.service_term === 'annual');
+      if (!annual) return;
+      const current = residentialTermState[productId] || {};
+      if (current.service_term === 'annual') {
+        residentialTermState[productId] = { quantity: 1, service_term: 'monthly' };
+      } else {
+        residentialTermState[productId] = { quantity: Number(annual.quantity || 12), service_term: 'annual' };
+      }
+      const button = document.getElementById(`res-annual-${productId}`);
+      if (button) button.setAttribute('aria-pressed', residentialTermState[productId].service_term === 'annual' ? 'true' : 'false');
+      syncResidentialCard(productId);
+    }
+
+    function residentialTermControls(product, safeId) {
+      if (!isResidentialCatalog(product)) return '';
+      residentialTermState[safeId] = { quantity: 1, service_term: 'monthly' };
+      const annual = (product.term_offers || []).find(offer => offer && offer.service_term === 'annual');
+      const termsUrl = product.terms_url || '/terms-of-use.html#residential-care';
+      const annualButton = annual
+        ? `<button type="button" class="phins-term-annual" id="res-annual-${safeId}" aria-pressed="false" onclick="selectResidentialAnnual('${safeId}')">Annual accommodation · 30% off</button>`
+        : '';
+      return `
+        <div class="phins-term-row">
+          <label class="phins-term-months">Months
+            <input id="res-months-${safeId}" type="number" min="1" max="${Number(product.max_periods || 36)}" value="1" oninput="updateResidentialCardTerm('${safeId}')">
+          </label>
+          ${annualButton}
+        </div>
+        <div class="phins-term-note" id="res-note-${safeId}">Catalog price for this many months.</div>
+        <a class="phins-term-link" href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener">Terms of Service</a>`;
     }
 
     function renderMarketplaceCard(product, category) {
@@ -6259,9 +6417,12 @@
       const safeId = marketplaceDomId(product.id);
       const safeCategory = marketplaceDomId(category || product.browse_bucket || product.category || 'general');
       const locationBits = [product.supplier_city, product.supplier_country].filter(Boolean);
-      const mediaHtml = hero.type === 'video'
-        ? `<video src="${escapeHtml(hero.url)}" controls preload="metadata" muted playsinline></video>`
-        : `<img src="${escapeHtml(hero.url)}" alt="${escapeHtml(hero.alt || product.name || 'Product')}" loading="lazy">`;
+      const stillHtml = `<img src="${escapeHtml(hero.url)}" alt="${escapeHtml(hero.alt || product.name || 'Product')}" loading="lazy">`;
+      const mediaHtml = isResidentialCatalog(product)
+        ? `<button type="button" class="phins-product-play" onclick="openResidentialDemo('${safeId}')" aria-label="Play service demo">${stillHtml}<span class="phins-product-play-label">Play service demo</span></button>`
+        : (hero.type === 'video'
+          ? `<video src="${escapeHtml(hero.url)}" controls preload="metadata" muted playsinline></video>`
+          : stillHtml);
       const detailBits = [
         product.duration ? escapeHtml(product.duration) : '',
         product.size ? escapeHtml(product.size) : '',
@@ -6288,11 +6449,12 @@
             </div>
             ${locationBits.length ? `<div class="phins-product-meta">${escapeHtml(locationBits.join(', '))}${product.supplier_service_radius_km ? ` · radius ${escapeHtml(String(product.supplier_service_radius_km))} km` : ''}</div>` : ''}
             ${detailBits.length ? `<div class="phins-product-meta">${detailBits.join(' · ')}</div>` : ''}
+            ${residentialTermControls(product, safeId)}
             <div class="phins-product-foot">
-              <span class="phins-product-price">$${Number(product.price || 0).toFixed(2)}</span>
+              <span class="phins-product-price">${isResidentialCatalog(product) ? `<span class="phins-price-was" id="res-was-${safeId}" hidden></span><span id="res-price-${safeId}">$${Number(product.price || 0).toFixed(2)}</span>` : `$${Number(product.price || 0).toFixed(2)}`}</span>
               <div class="phins-product-actions">
                 <button type="button" class="phins-btn phins-btn-gold" onclick="addIndexedToCart('${safeId}', '${safeCategory}')">Add to cart</button>
-                <button type="button" class="phins-btn phins-btn-navy" onclick="buyIndexedProduct('${safeId}', '${safeCategory}')">Buy now</button>
+                <button type="button" class="phins-btn phins-btn-navy" onclick="${isResidentialCatalog(product) ? `buyResidentialProduct('${safeId}', '${safeCategory}')` : `buyIndexedProduct('${safeId}', '${safeCategory}')`}">Buy now</button>
                 ${product.isSupplierOffer ? `<button type="button" class="phins-btn phins-btn-quiet" onclick="showMedicalCategory('${safeCategory}')">Open category</button>` : ''}
               </div>
             </div>
@@ -6369,19 +6531,31 @@
       }
     }
     
-    function addToCart(productId, productName, price, category = 'general', supplierId = null) {
+    function addToCart(productId, productName, price, category = 'general', supplierId = null, quote = null) {
       const indexed = marketplaceOfferIndex[productId] || {};
       // Check if item already in cart
       const existingItem = shoppingCart.find(item => item.id === productId);
       if (existingItem) {
-        existingItem.quantity += 1;
+        if (quote && quote.service_term === 'annual') {
+          existingItem.service_term = 'annual';
+          existingItem.quantity = quote.quantity;
+          existingItem.price = quote.unit_price;
+        } else {
+          existingItem.service_term = 'monthly';
+          existingItem.quantity += quote ? quote.quantity : 1;
+          const maxPeriods = Number((indexed.max_periods) || 36);
+          if (isResidentialCatalog(indexed) && existingItem.quantity > maxPeriods) {
+            existingItem.quantity = maxPeriods;
+          }
+        }
       } else {
         shoppingCart.push({
           id: productId,
           name: indexed.name || productName,
-          price: price,
+          price: quote ? quote.unit_price : price,
           category: indexed.category || category,
-          quantity: 1,
+          quantity: quote ? quote.quantity : 1,
+          service_term: quote ? quote.service_term : 'monthly',
           supplier_id: supplierId || indexed.supplier_id || null,  // Track supplier for marketplace orders
           offer_id: indexed.isSupplierOffer ? productId : null,
           product_details: indexed,
@@ -6404,13 +6578,28 @@
     function updateCartQuantity(productId, delta) {
       const item = shoppingCart.find(item => item.id === productId);
       if (item) {
+        if (item.service_term === 'annual') return;
         item.quantity += delta;
+        const indexed = item.product_details || marketplaceOfferIndex[productId] || {};
+        const maxPeriods = Number(indexed.max_periods || 36);
+        if (isResidentialCatalog(indexed) && item.quantity > maxPeriods) item.quantity = maxPeriods;
         if (item.quantity <= 0) {
           removeFromCart(productId);
         } else {
           updateCartDisplay();
         }
       }
+    }
+
+    function cartLineQuote(item) {
+      const product = item.product_details || marketplaceOfferIndex[item.id] || {};
+      return residentialQuote(product, item.quantity, item.service_term);
+    }
+
+    function cartLineAmount(item) {
+      const quote = cartLineQuote(item);
+      if (quote) return quote.catalog_amount;
+      return (Number(item.price) || 0) * (Number(item.quantity) || 0);
     }
     
     function clearCart() {
@@ -6420,7 +6609,7 @@
     }
     
     function getCartTotal() {
-      return shoppingCart.reduce((total, item) => total + (item.price * item.quantity), 0);
+      return shoppingCart.reduce((total, item) => total + cartLineAmount(item), 0);
     }
     
     function getCartItemCount() {
@@ -6452,13 +6641,13 @@
               <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
                 <div style="flex: 1;">
                   <div style="font-weight: 600; font-size: 0.9rem; color: #fff;">${item.name}</div>
-                  <div style="font-size: 0.8rem; color: rgba(255,255,255,0.7);">$${item.price.toFixed(2)} each</div>
+                  <div style="font-size: 0.8rem; color: rgba(255,255,255,0.7);">$${item.price.toFixed(2)} each${cartLineQuote(item) && cartLineQuote(item).term_discount_pct ? ` · ${Math.round(cartLineQuote(item).term_discount_pct * 100)}% off` : ''}</div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
-                  <button onclick="updateCartQuantity('${item.id}', -1)" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; font-size: 14px;">−</button>
+                  ${item.service_term === 'annual' ? '' : `<button onclick="updateCartQuantity('${item.id}', -1)" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; font-size: 14px;">−</button>`}
                   <span style="color: white; min-width: 20px; text-align: center;">${item.quantity}</span>
-                  <button onclick="updateCartQuantity('${item.id}', 1)" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; font-size: 14px;">+</button>
-                  <span style="color: #4caf50; font-weight: 600; min-width: 60px; text-align: right;">$${(item.price * item.quantity).toFixed(2)}</span>
+                  ${item.service_term === 'annual' ? '' : `<button onclick="updateCartQuantity('${item.id}', 1)" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; font-size: 14px;">+</button>`}
+                  <span style="color: #4caf50; font-weight: 600; min-width: 60px; text-align: right;">$${cartLineAmount(item).toFixed(2)}</span>
                   <button onclick="removeFromCart('${item.id}')" style="background: rgba(244,67,54,0.3); border: none; color: #ff8a80; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; font-size: 12px;"></button>
                 </div>
               </div>
@@ -6560,7 +6749,7 @@
       const cartItemsHtml = shoppingCart.map(item => `
         <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
           <span style="color: #333;">${item.name} × ${item.quantity}</span>
-          <span style="font-weight: 600; color: #1565c0;">$${(item.price * item.quantity).toFixed(2)}</span>
+          <span style="font-weight: 600; color: #1565c0;">$${cartLineAmount(item).toFixed(2)}</span>
         </div>
       `).join('');
       
@@ -6710,7 +6899,8 @@
 
         // Process each item in cart
         for (const item of shoppingCart) {
-          const itemTotal = item.price * item.quantity;
+          const lineQuote = cartLineQuote(item);
+          const itemTotal = lineQuote ? lineQuote.catalog_amount : item.price * item.quantity;
           
           const response = await fetch('/api/health-wallet/purchase', {
             method: 'POST',
@@ -6725,9 +6915,10 @@
               supplier_id: item.supplier_id || undefined,
               product_name: item.name,
               amount: itemTotal,
-              quantity: item.quantity,
+              quantity: lineQuote ? lineQuote.quantity : item.quantity,
+              service_term: lineQuote ? lineQuote.service_term : undefined,
               category: item.category,
-              provider: item.product_details?.supplier_name || 'PHINS Marketplace',
+              provider: item.product_details?.supplier_name || item.product_details?.provider || 'PHINS Marketplace',
               payment_method: apiPaymentMethod,
               allow_credit_fallback: true
             })
@@ -6940,9 +7131,9 @@
         const hasSupplierOffers = products.some(item => item && item.isSupplierOffer);
         let marketplaceSubtitle;
         if (hasResidentialCatalog && hasSupplierOffers) {
-          marketplaceSubtitle = 'Platform bundles post the card price to the health-wallet ledger. Approved supplier offers settle through the supply-chain order at the offer price.';
+          marketplaceSubtitle = 'Platform bundles post the discounted card price to the health-wallet ledger. Approved supplier offers settle through the supply-chain order at the offer price.';
         } else if (hasResidentialCatalog) {
-          marketplaceSubtitle = 'Platform care bundles. The price on the card is the amount posted to the health-wallet ledger for one monthly period.';
+          marketplaceSubtitle = 'Platform care bundles. Six months or longer is 20% off automatically. Annual accommodation is 30% off. The card price is the amount posted to the health-wallet ledger.';
         } else if (usingDemoCatalog) {
           marketplaceSubtitle = 'Demo catalog. These illustrations are placeholders. A purchase is a wallet catalog charge, not a supplier order, until an approved supplier lists the item.';
         } else {
@@ -6968,6 +7159,138 @@
       document.getElementById('medical-marketplace').style.display = 'none';
     }
     
+    async function ensureResidentialCatalog() {
+      if (['res-home', 'res-extra', 'res-full'].every(id => isResidentialCatalog(marketplaceOfferIndex[id]))) return;
+      const fallback = medicalProducts.residential || [];
+      fallback.forEach(item => {
+        if (!marketplaceOfferIndex[item.id]) {
+          marketplaceOfferIndex[item.id] = { ...item, isSupplierOffer: false, browse_bucket: 'residential' };
+        }
+      });
+      try {
+        const response = await fetch('/api/medical-products?category=residential');
+        const data = await response.json();
+        (data.products || []).forEach(item => {
+          if (!item || !item.id) return;
+          const existing = marketplaceOfferIndex[item.id];
+          if (existing && existing.isSupplierOffer) return;
+          marketplaceOfferIndex[item.id] = {
+            ...item,
+            price: Number(item.price) || 0,
+            image: item.image || item.image_url || '',
+            image_url: item.image_url || item.image || '',
+            isSupplierOffer: false,
+            browse_bucket: 'residential',
+            catalog_locked: true,
+            price_source: item.price_source || 'residential_catalog'
+          };
+        });
+      } catch (err) {
+        console.error('Residential catalog unavailable', err);
+      }
+    }
+
+    function closeResidentialDemo() {
+      const modal = document.getElementById('residential-demo-modal');
+      if (modal) modal.remove();
+    }
+
+    function residentialDemoQuote(productId) {
+      const state = residentialTermState[productId] || { quantity: 1, service_term: 'monthly' };
+      return residentialQuote(marketplaceOfferIndex[productId], state.quantity, state.service_term);
+    }
+
+    function paintResidentialDemo(productId) {
+      const quote = residentialDemoQuote(productId);
+      const priceEl = document.getElementById('residential-demo-price');
+      const noteEl = document.getElementById('residential-demo-note');
+      const monthsEl = document.getElementById('residential-demo-months');
+      if (!quote) return;
+      if (priceEl) {
+        const was = quote.catalog_amount === quote.list_amount
+          ? ''
+          : `<span class="phins-price-was">${formatResidentialMoney(quote.list_amount)}</span> `;
+        priceEl.innerHTML = `${was}${formatResidentialMoney(quote.catalog_amount)}`;
+      }
+      if (noteEl) noteEl.textContent = residentialTermNote(quote);
+      if (monthsEl) {
+        monthsEl.value = String(quote.quantity);
+        monthsEl.disabled = quote.service_term === 'annual';
+      }
+      syncResidentialCard(productId);
+    }
+
+    function updateResidentialDemoTerm(productId) {
+      const monthsEl = document.getElementById('residential-demo-months');
+      const product = marketplaceOfferIndex[productId];
+      const maxPeriods = Number((product && product.max_periods) || 36);
+      let qty = parseInt(monthsEl && monthsEl.value, 10);
+      if (!qty || qty < 1) qty = 1;
+      if (qty > maxPeriods) qty = maxPeriods;
+      residentialTermState[productId] = { quantity: qty, service_term: 'monthly' };
+      const annualBtn = document.getElementById('residential-demo-annual');
+      if (annualBtn) annualBtn.setAttribute('aria-pressed', 'false');
+      paintResidentialDemo(productId);
+    }
+
+    function selectResidentialDemoAnnual(productId) {
+      selectResidentialAnnual(productId);
+      const annualBtn = document.getElementById('residential-demo-annual');
+      const state = residentialTermState[productId] || {};
+      if (annualBtn) annualBtn.setAttribute('aria-pressed', state.service_term === 'annual' ? 'true' : 'false');
+      paintResidentialDemo(productId);
+    }
+
+    async function openResidentialDemo(productId) {
+      await ensureResidentialCatalog();
+      const safeId = marketplaceDomId(productId || '');
+      const indexed = safeId ? marketplaceOfferIndex[safeId] : null;
+      const product = isResidentialCatalog(indexed) ? indexed : null;
+      if (product && !residentialTermState[safeId]) {
+        residentialTermState[safeId] = { quantity: 1, service_term: 'monthly' };
+      }
+      const videoUrl = (product && product.demo_video_url) || '/marketplace/residential-demo.mp4';
+      const poster = (product && (product.image_url || product.image)) || '/marketplace/residential-solutions.jpg';
+      const termsUrl = (product && product.terms_url) || '/terms-of-use.html#residential-care';
+      const choices = ['res-home', 'res-extra', 'res-full'].map(id => marketplaceOfferIndex[id]).filter(item => isResidentialCatalog(item));
+      const choiceHtml = choices.map(item => `
+        <button type="button" class="phins-demo-choice${item.id === safeId ? ' is-selected' : ''}" onclick="openResidentialDemo('${marketplaceDomId(item.id)}')">
+          <img src="${escapeHtml(item.image_url || item.image || '')}" alt="${escapeHtml(item.name)}">
+          <span>${escapeHtml(item.name)}</span>
+        </button>`).join('');
+      const annual = product && (product.term_offers || []).find(offer => offer && offer.service_term === 'annual');
+      const quote = product ? residentialDemoQuote(safeId) : null;
+      const termHtml = product ? `
+        <div class="phins-term-row">
+          <label class="phins-term-months">Months
+            <input id="residential-demo-months" type="number" min="1" max="${Number(product.max_periods || 36)}" value="${quote ? quote.quantity : 1}" oninput="updateResidentialDemoTerm('${safeId}')">
+          </label>
+          ${annual ? `<button type="button" class="phins-term-annual" id="residential-demo-annual" aria-pressed="${quote && quote.service_term === 'annual' ? 'true' : 'false'}" onclick="selectResidentialDemoAnnual('${safeId}')">Annual accommodation · 30% off</button>` : ''}
+        </div>
+        <div class="phins-demo-price" id="residential-demo-price">${quote ? formatResidentialMoney(quote.catalog_amount) : ''}</div>
+        <div class="phins-term-note" id="residential-demo-note">${quote ? escapeHtml(residentialTermNote(quote)) : ''}</div>
+        <button type="button" class="phins-btn phins-btn-navy" onclick="closeResidentialDemo(); buyResidentialProduct('${safeId}', 'residential');">Buy this term</button>
+      ` : `<p class="phins-demo-lead">Choose a bundle. The film describes the service, the 6-month price, and annual accommodation.</p>`;
+      closeResidentialDemo();
+      const modal = document.createElement('div');
+      modal.id = 'residential-demo-modal';
+      modal.className = 'phins-demo-modal';
+      modal.innerHTML = `
+        <div class="phins-demo-backdrop" onclick="closeResidentialDemo()"></div>
+        <div class="phins-demo-dialog" role="dialog" aria-modal="true" aria-labelledby="residential-demo-title">
+          <button type="button" class="phins-demo-close" onclick="closeResidentialDemo()" aria-label="Close">×</button>
+          <h2 id="residential-demo-title">${escapeHtml(product ? product.name : 'Health Care Residential Solutions')}</h2>
+          <p class="phins-demo-lead">This short film uses the care photographs to show the service. Six months or longer is 20% off, applied automatically to the price. Annual accommodation is 30% off.</p>
+          <video class="phins-demo-video" src="${escapeHtml(videoUrl)}" poster="${escapeHtml(poster)}" controls autoplay muted playsinline></video>
+          <p>${escapeHtml(product ? (product.description || '') : 'Home Bundle is 24/7 care at home. Extra Bundle is 24/7 care away from home. Full Accommodation Bundle is a residential safe house with Medicare clinical care and private assistance.')}</p>
+          <div class="phins-demo-choices">${choiceHtml}</div>
+          ${termHtml}
+          <a class="phins-term-link" href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener">Terms of Service</a>
+        </div>`;
+      document.body.appendChild(modal);
+      if (product) paintResidentialDemo(safeId);
+    }
+
     // Smart Purchase Modal - AI-powered payment flow
     async function purchaseProduct(productId, productName, price, category = 'general', productDetails = {}) {
       const cid = customerId || sessionStorage.getItem('customer_id') || '';
@@ -7043,6 +7366,7 @@
                 <span style="color: #666;">Purchase Amount</span>
                 <span style="font-size: 1.8rem; font-weight: 700; color: #1565c0;">$${price.toFixed(2)}</span>
               </div>
+              ${productDetails.list_amount && Number(productDetails.list_amount) !== Number(price) ? `<div style="font-size: 0.85rem; color: #0d47a1; margin: -8px 0 12px;">List ${formatResidentialMoney(productDetails.list_amount)} · ${productDetails.service_term === 'annual' ? '30% off annual accommodation.' : '20% off applied automatically.'} <a href="${escapeHtml(productDetails.terms_url || '/terms-of-use.html#residential-care')}" target="_blank" rel="noopener">Terms of Service</a></div>` : (productDetails.terms_url ? `<div style="font-size: 0.85rem; margin: -8px 0 12px;"><a href="${escapeHtml(productDetails.terms_url)}" target="_blank" rel="noopener">Terms of Service</a></div>` : '')}
               
               <!-- AI Recommendation -->
               <div style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 12px 16px; border-radius: 10px; margin-bottom: 16px;">
@@ -7134,7 +7458,7 @@
               <input type="hidden" id="selected-payment-option" value="${recommendedSource}">
               
               <!-- Purchase Button -->
-              <button id="confirm-purchase-btn" onclick="executeSmartPurchase('${productId}', '${productName.replace(/'/g, "\\'")}', ${price}, '${category}')"
+              <button id="confirm-purchase-btn" onclick="executeSmartPurchase('${productId}', '${productName.replace(/'/g, "\\'")}', ${price}, '${category}', ${Number(productDetails.purchase_quantity) || 1}, '${productDetails.service_term || 'monthly'}')"
                       style="width: 100%; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; border: none; padding: 16px; border-radius: 12px; font-size: 1.1rem; font-weight: 700; cursor: pointer; margin-top: 16px; box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);">
                  Complete Purchase
               </button>
@@ -7194,7 +7518,7 @@
     }
     
     // Execute smart purchase based on selected option
-    async function executeSmartPurchase(productId, productName, price, category) {
+    async function executeSmartPurchase(productId, productName, price, category, quantity, serviceTerm) {
       const option = document.getElementById('selected-payment-option').value;
       const cid = customerId || sessionStorage.getItem('customer_id') || '';
       const details = marketplaceOfferIndex[productId] || {};
@@ -7242,7 +7566,8 @@
             supplier_id: details.supplier_id || undefined,
             product_name: productName,
             amount: price,
-            quantity: 1,
+            quantity: Math.max(1, parseInt(quantity, 10) || 1),
+            service_term: serviceTerm || undefined,
             payment_method: 'health_wallet',
             category: details.category || category,
             provider: details.supplier_name || 'PHINS Marketplace',
