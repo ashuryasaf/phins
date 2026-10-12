@@ -15,12 +15,12 @@ PHINS is a Python platform built around:
   `api_assessment_center.py`, `api_chat_application.py` (chat-style policy
   intake / "Phin"), `api_claims_chat.py` (public claims chat), and
   `api_customer_identity.py` (ID + nationality master))
-- service-layer logic in `services/` (126 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
+- service-layer logic in `services/` (132 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (262 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (274 files) and root-level `test_*.py` (11 files)
 - one generalized job queue (`services/agent_job_queue.py`, table
  `document_processing_jobs`, rows keyed by `subject_type`/`subject_id` and
  `submitted_by`; retries, dead-letter, idempotency keys, handler registry —
@@ -206,6 +206,25 @@ PHINS is a Python platform built around:
  `PHINS_DOCUMENT_HOMES`. Same-origin PDF/Markdown opens in a new tab go
  through `/document-viewer.html` (`phins-doc-open.js`). Do not change
  figures, checksums, or stored records when adding chrome
+- customer NFT transaction ledger (`services/nft_ledger.py`): the
+ per-customer seal over PHINS-CHAIN that the dashboard "My Transaction
+ Ledger (NFT)" renders. `record_transaction` is the only minter; v2 tokens
+ hash owner + type + linked transaction id + canonical amount + description
+ + timestamp + block number + previous owner-chain hash + metadata.
+ Operational annotations (status, ledger sequence) sit outside the seal.
+ Money-in / money-out totals count external cash exactly once —
+ customer-logged actions, internal premium sweeps and already-receipted
+ marketplace orders stay on the ledger as records and do not change the
+ net. Allocation reads do not mint tokens. A token with no verification
+ hash is reported as `unsealed`, never valid
+- media-dashboard design singleton (`services/media_design_store.py`): one
+ checksummed `media_design_documents` row holds the login hero / background
+ / thumbnail / poster / solutions / solution-theater placements. The
+ canonical payload is compact sorted-key JSON and `sha256` is the digest of
+ those exact bytes; a row whose bytes do not match the digest is corrupt
+ and is not applied. Concurrent saves use a revision race
+ (`MediaDesignConflict`) so a stale write never overwrites a newer row,
+ and stored placements are not rewritten for playback
 
 Runtime defaults are important:
 
@@ -235,6 +254,10 @@ Preferred file-by-task:
 | Chat intake (Phin, policy or claim) | `services/chat_application_service.py` or `services/claims_chat_service.py`, then `web_portal/api_chat_application.py` / `api_claims_chat.py` |
 | Customer identity (ID + nationality) | `services/customer_identity_service.py` (one writer), `web_portal/api_customer_identity.py` |
 | Document archive / durability probe | `services/customer_document_vault_service.py`, `services/document_durability_agent.py` |
+| Customer NFT transaction ledger | `services/nft_ledger.py` (sole minter via `record_transaction`); tests in `tests/test_nft_customer_ledger.py` |
+| LTC research packs | `services/ltc_life_reinsurance_research{,_pdf}.py`, `services/ltc_residential_market_research{,_pdf}.py` (actuary dashboard Research & Audit bar) |
+| Tax-year statement PDF | `services/tax_year_statement_pdf.py` (chrome-only renderer; figures come from the precomputed statement payload) |
+| Media design placements | `services/media_design_store.py` (singleton, checksummed); dashboard reads/writes via `/api/design/settings` |
 | Premium / reserve / simulator pricing | `services/pricing_kernel.py` (sole writer), then `services/actuarial_service.py` and callers; refresh `tests/test_pricing_kernel.py`, `tests/test_actuarial_reserves.py`, `tests/test_ifrs17_waterfall_identities.py` deliberately |
 | Business rule/workflow | `services/`, then the route or engine that calls it |
 | Database/schema/repository | `database/models.py`, `database/manager.py`, `database/repositories/`, `database/config.py` |
@@ -283,7 +306,7 @@ Preferred file-by-task:
 |- prompts/                             # versioned LLM prompt templates (sha256 provenance)
 |  `- assessment/                       # narrative v1 (free text) + v2 (structured); onboarding/service/termination v1
 |- schemas/                             # JSON schemas for structured LLM output
-|- services/                            # 126 service modules
+|- services/                            # 132 service modules
 |  |- agent_eval.py                     # A6 replay / propose_thresholds / golden sets
 |  |- automation/                       # B2 pure rules: quoting, underwriting_gate, fraud, claims_gate, billing_schedule
 |  |- pricing_kernel.py                 # single writer for premium decomposition (PremiumComponents)
@@ -307,6 +330,11 @@ Preferred file-by-task:
 |  |- financial_reporting_service.py    # unified books / forecast feeds for accountant & regulator surfaces
 |  |- regulator_outline.py              # read-only outline (admin+actuary readable, reconciles to financial books)
 |  |- regulator_inquiries.py            # inquiry thread stored in agent_artifacts + Business Relations row
+|  |- nft_ledger.py                     # per-customer NFT seal over PHINS-CHAIN (customer dashboard transaction ledger)
+|  |- ltc_life_reinsurance_research.py  # LTC 3+ADL reinsurance research pack (+ _pdf renderer)
+|  |- ltc_residential_market_research.py # LTC residential market + hedging research pack (+ _pdf renderer)
+|  |- tax_year_statement_pdf.py         # branded tax-year premium statement PDF (chrome-only renderer)
+|  |- media_design_store.py             # checksummed media-design singleton (login hero/background/thumbnail)
 |  |- agent_job_queue.py                # generalized job queue (retry/DLQ/handlers)
 |  |- document_job_worker.py            # document binding over the job queue
 |  |- jobs/                             # agent job adapters (202 routes; worker_context)
@@ -344,7 +372,7 @@ Preferred file-by-task:
 |- scripts/                             # operational utilities
 |  |- run_agent_eval.py                 # golden sets + decision replay CLI
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
-|- tests/                               # 262 test files
+|- tests/                               # 274 test files
 |  `- golden/<agent>/*.json             # frozen agent outputs ({name, input, expected})
 |- docs/
 |  |- platform_data_architecture.md
@@ -758,7 +786,7 @@ Important test harness facts:
 - Golden fixtures only freeze the keys listed under `expected`; adding output
   keys never breaks one, changing a frozen value does — update the fixture
   in the same PR as the behaviour change and say why
-- 233 test files under `tests/`, 11 root-level `test_*.py` files
+- 274 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -881,4 +909,4 @@ If you update this file again:
 
 ---
 
-Last updated: October 5, 2026
+Last updated: October 12, 2026
