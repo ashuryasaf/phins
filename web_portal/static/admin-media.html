@@ -502,6 +502,33 @@
         }
         .assignment-status.active { color: #fff; }
         .assignment-status.inactive { color: rgba(255,255,255,0.6); }
+        .blueprint-studio {
+            margin-top: 18px;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(227,191,111,0.35);
+            border-radius: 12px;
+            padding: 14px;
+        }
+        .blueprint-studio h3 { margin: 0 0 6px; font-size: 0.95rem; }
+        .blueprint-studio p { margin: 0 0 12px; font-size: 0.8rem; color: rgba(255,255,255,0.82); }
+        .blueprint-studio label { display: block; font-size: 0.75rem; margin: 8px 0 4px; opacity: 0.85; }
+        .blueprint-studio textarea,
+        .blueprint-studio input,
+        .blueprint-studio select {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 8px 10px;
+            border-radius: 6px;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.1);
+            color: white;
+            font-size: 0.85rem;
+        }
+        .blueprint-studio textarea { min-height: 88px; resize: vertical; }
+        .blueprint-studio option { background: #0b1730; color: white; }
+        .blueprint-source { font-size: 0.78rem; opacity: 0.85; margin: 0 0 8px; }
+        .blueprint-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+        .blueprint-status { margin-top: 10px; font-size: 0.8rem; }
         .page-title,
         .assignments-section h2,
         .design-section h2 {
@@ -1794,6 +1821,30 @@ Notes:
                     <button type="button" class="btn btn-primary" onclick="saveTheaterAssignments()">Save Solution Views</button>
                     <a href="/solutions.html#audience" target="_blank" class="btn btn-secondary">Preview solutions</a>
                 </div>
+                <div class="blueprint-studio" id="solution-blueprint-studio">
+                    <h3>Solution video blueprint</h3>
+                    <p>
+                        Each solution keeps its own brief. The narration starts from Inside the Solution and can be edited, given a theme, and pointed at a library image as a screenshot reference.
+                        Send stores the film in the media library through the Growth Agent. It does not replace the public walkthrough.
+                    </p>
+                    <label for="blueprint-solution">Solution</label>
+                    <select id="blueprint-solution" onchange="showSolutionBlueprint(this.value)"></select>
+                    <div class="blueprint-source" id="blueprint-source"></div>
+                    <label for="blueprint-narration">Spoken text</label>
+                    <textarea id="blueprint-narration" maxlength="800"></textarea>
+                    <label for="blueprint-theme">Descriptive theme</label>
+                    <input id="blueprint-theme" type="text" maxlength="240" placeholder="Optional look and setting, for example a quiet actuarial desk at dusk">
+                    <label for="blueprint-reference">Screenshot reference</label>
+                    <select id="blueprint-reference">
+                        <option value="">None</option>
+                    </select>
+                    <div class="blueprint-actions">
+                        <button type="button" class="btn btn-secondary" onclick="saveSolutionBlueprint(false)">Save blueprint</button>
+                        <button type="button" class="btn btn-secondary" onclick="saveSolutionBlueprint(true)">Reset text</button>
+                        <a class="btn btn-primary" href="#growth-agent" onclick="switchMainTab('growth-agent');return false;">Send via Growth Agent</a>
+                    </div>
+                    <div class="blueprint-status" id="blueprint-status">Loading solution blueprints.</div>
+                </div>
             </section>
         </div>
 
@@ -2261,6 +2312,9 @@ Notes:
                 hydrateEmbeddedFrame(panel);
             }
 
+            if (tabName === 'solution-views') {
+                loadSolutionBlueprints();
+            }
             if (updateHash) {
                 const desiredHash = tabName === 'media' ? '' : `#${tabName}`;
                 if ((window.location.hash || '') !== desiredHash) {
@@ -2558,6 +2612,120 @@ Notes:
                 showToast('Error: ' + e.message, 'error');
             } finally {
                 useSaveInFlight = false;
+            }
+        }
+
+        let solutionBlueprints = [];
+
+        function blueprintStatus(message) {
+            const el = document.getElementById('blueprint-status');
+            if (el) el.textContent = message;
+        }
+
+        function selectedBlueprint() {
+            const key = document.getElementById('blueprint-solution')?.value || '';
+            return solutionBlueprints.find(item => item.solution_key === key) || null;
+        }
+
+        function fillBlueprintReferenceOptions(selectedId) {
+            const select = document.getElementById('blueprint-reference');
+            if (!select) return;
+            const images = (mediaAssets || []).filter(asset => asset && asset.type === 'image');
+            const options = ['<option value="">None</option>'].concat(images.map(asset => {
+                const id = escHtml(asset.id);
+                const name = escHtml(asset.name || asset.id);
+                const selected = asset.id === selectedId ? ' selected' : '';
+                return `<option value="${id}"${selected}>${name}</option>`;
+            }));
+            select.innerHTML = options.join('');
+            if (selectedId && !images.some(asset => asset.id === selectedId)) {
+                select.insertAdjacentHTML('beforeend', `<option value="${escHtml(selectedId)}" selected>Missing image ${escHtml(selectedId)}</option>`);
+            }
+        }
+
+        function showSolutionBlueprint(key) {
+            const blueprint = solutionBlueprints.find(item => item.solution_key === key) || solutionBlueprints[0];
+            if (!blueprint) return;
+            const select = document.getElementById('blueprint-solution');
+            if (select && select.value !== blueprint.solution_key) select.value = blueprint.solution_key;
+            const narration = document.getElementById('blueprint-narration');
+            const theme = document.getElementById('blueprint-theme');
+            if (narration) narration.value = blueprint.narration || '';
+            if (theme) theme.value = blueprint.theme || '';
+            fillBlueprintReferenceOptions(blueprint.reference_image_asset_id || '');
+            const source = document.getElementById('blueprint-source');
+            if (source) {
+                const bullets = Array.isArray(blueprint.source_bullets) ? blueprint.source_bullets : [];
+                source.textContent = 'Inside the Solution: ' + bullets.join(' · ');
+            }
+            const integrity = blueprint.integrity_ok ? 'checksum verified' : 'checksum mismatch — save or reset before sending';
+            const stored = blueprint.last_asset_id ? `Library asset ${blueprint.last_asset_id}.` : 'No library film yet.';
+            const pub = blueprint.replaces_public_film
+                ? 'This library film is the public walkthrough.'
+                : 'Public walkthrough unchanged.';
+            blueprintStatus(`${blueprint.title}. ${integrity}. ${stored} ${pub}`);
+        }
+
+        async function loadSolutionBlueprints() {
+            const token = getToken();
+            if (!token) {
+                blueprintStatus('Sign in as admin or media to edit solution blueprints.');
+                return;
+            }
+            try {
+                const response = await fetch('/api/admin/media/solution-blueprints', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Could not load blueprints');
+                solutionBlueprints = Array.isArray(data.blueprints) ? data.blueprints : [];
+                const select = document.getElementById('blueprint-solution');
+                if (!select) return;
+                const current = select.value;
+                select.innerHTML = solutionBlueprints.map(item => (
+                    `<option value="${escHtml(item.solution_key)}">${escHtml(item.title)}</option>`
+                )).join('');
+                const next = solutionBlueprints.some(item => item.solution_key === current)
+                    ? current
+                    : (solutionBlueprints[0] && solutionBlueprints[0].solution_key);
+                if (next) showSolutionBlueprint(next);
+            } catch (err) {
+                blueprintStatus(err.message);
+            }
+        }
+
+        async function saveSolutionBlueprint(resetText) {
+            const blueprint = selectedBlueprint();
+            if (!blueprint) return;
+            const token = getToken();
+            const payload = {
+                solution_key: blueprint.solution_key,
+                narration: document.getElementById('blueprint-narration')?.value || '',
+                theme: document.getElementById('blueprint-theme')?.value || '',
+                reference_image_asset_id: document.getElementById('blueprint-reference')?.value || '',
+                reset_text: !!resetText
+            };
+            blueprintStatus('Saving blueprint…');
+            try {
+                const response = await fetch('/api/admin/media/solution-blueprints', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Save failed');
+                const saved = data.blueprint;
+                solutionBlueprints = solutionBlueprints.map(item => (
+                    item.solution_key === saved.solution_key ? saved : item
+                ));
+                showSolutionBlueprint(saved.solution_key);
+                showToast('Blueprint saved. Public walkthrough unchanged.', 'success');
+            } catch (err) {
+                blueprintStatus(err.message);
+                showToast(err.message, 'error');
             }
         }
 
