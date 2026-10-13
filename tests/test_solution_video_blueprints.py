@@ -15,10 +15,14 @@ import web_portal.server as portal
 from services.solution_video_blueprints import (
     SOLUTION_KEYS,
     SOLUTION_OUTLINES,
+    SPOKEN_WORD_BUDGET,
     apply_blueprint_edit,
     blueprint_checksum,
     canonical_narration,
+    fit_spoken_line,
     fresh_blueprint,
+    growth_blueprint,
+    prompt_override,
     verify_blueprint,
 )
 
@@ -93,6 +97,41 @@ def test_edit_keeps_canonical_bullets_and_checksum():
     assert reset["narration"] == canonical_narration("billing")
     assert verify_blueprint(reset)
     assert fresh_blueprint("billing")["checksum"] == blueprint_checksum(fresh_blueprint("billing"))
+
+
+def test_spoken_line_stops_on_a_sentence_inside_eight_seconds():
+    long_line = (
+        "Premium billing stays aligned with the ledger. "
+        "Every charge remains traceable to the policy. "
+        "This extra sentence is the one that would run past eight seconds of calm speech."
+    )
+    fitted = fit_spoken_line(long_line)
+    assert fitted.endswith(".")
+    assert "extra sentence" not in fitted
+    assert len(fitted.split()) <= SPOKEN_WORD_BUDGET
+    # A single sentence is never chopped, even when it is longer than the budget.
+    whole = "One uninterrupted sentence that is deliberately longer than eighteen words so the cut would land in the middle of the thought."
+    kept = fit_spoken_line(whole)
+    assert kept == whole
+    assert "middle of the thought" in kept
+    for key in SOLUTION_KEYS:
+        spoken = canonical_narration(key)
+        bullets = SOLUTION_OUTLINES[key]["bullets"]
+        full = " ".join(f"{bullet.rstrip('.')}." for bullet in bullets)
+        assert spoken
+        assert spoken.endswith((".", "!", "?"))
+        assert full.startswith(spoken)
+        words = spoken.split()
+        sentences = [part for part in spoken.split(".") if part.strip()]
+        if len(sentences) > 1:
+            assert len(words) <= SPOKEN_WORD_BUDGET
+        brief = growth_blueprint({"title": key, "narration": full, "theme": "", "solution_key": key})
+        assert brief["storyboard"][0] == spoken
+        direction = prompt_override({"narration": full, "theme": "Quiet desk", "reference_image_asset_id": ""})
+        assert "no readable text" in direction
+        assert "On-screen" not in direction
+        assert spoken in direction
+        assert direction.rstrip().endswith('"')
 
 
 class _Server(threading.Thread):
@@ -269,7 +308,10 @@ def test_solution_blueprint_send_stores_a_library_film_without_replacing_the_pag
         prompt = stub.submissions[0]["prompt"]
         assert "Inside Actuarial and Investments" in prompt
         assert "Quiet navy actuarial desk" in prompt
-        assert "not personalized insurance" in prompt
+        assert "no readable text" in prompt
+        assert "complete sentence" in prompt
+        assert "On-screen disclaimer" not in prompt
+        assert "not personalized insurance" not in prompt
         assert stub.submissions[0]["duration_seconds"] == 8
         assert stub.submissions[0]["image_data_url"].startswith("data:image/png")
         assert portal.DESIGN_SETTINGS.get("hero_video_id", "") == hero_before

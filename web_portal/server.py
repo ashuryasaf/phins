@@ -5051,12 +5051,14 @@ def build_media_video_prompt(campaign_id: str, blueprint: Dict[str, Any], prompt
     if not prompt:
         prompt = f"Marketing video for campaign {campaign_id}"
     # Same sentence for every provider so the request fingerprint covers the
-    # disclaimer the model is asked to show. Campaign plan hashes are untouched.
-    disclaimer = (
-        "On-screen disclaimer: this video is general information and not "
-        "personalized insurance, investment, or medical advice."
+    # picture rule. Campaign plan hashes are untouched. The model is not asked
+    # to burn any disclaimer, title, or caption into the frame.
+    picture = (
+        "Picture direction: the frame contains no readable text. "
+        "No titles, captions, subtitles, lower thirds, logos, watermarks, or disclaimers. "
+        "Any spoken line is voice only and ends on a complete sentence."
     )
-    return f"{prompt}. {disclaimer}"
+    return f"{prompt}. {picture}"
 
 
 def media_video_request_fingerprint(
