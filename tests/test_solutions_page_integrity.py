@@ -2,7 +2,7 @@
 
 Guards:
   * title-case presentation of the public outline
-  * enlarged theater + 11-second production-desk video for every segment
+  * enlarged theater + 8-second production-desk video for every segment
   * inquiry form field names, option values, and endpoint stay aligned
     with the server allow-lists (data integrity)
   * preview copy and theater assets stay an outline — no implementation secrets
@@ -81,7 +81,7 @@ def test_every_public_segment_opens_an_enlarged_theater_preview():
     assert 'id="sol-theater"' in html
     assert 'role="dialog"' in html
     assert 'aria-modal="true"' in html
-    assert "WALKTHROUGH_MS = 11000" in html
+    assert "WALKTHROUGH_MS = 8000" in html
     assert "PREVIEW_VIDEOS" in html
     assert "theaterOverrides" in html
     assert "solutions_theater_" in html
@@ -94,7 +94,10 @@ def test_every_public_segment_opens_an_enlarged_theater_preview():
     assert 'playsinline muted' not in html
     assert "x5-playsinline" in html
     assert "source.type = 'video/mp4'" in html
-    assert "Watch 11s Preview" in html
+    assert "Watch 8s Preview" in html
+    assert "Watch 11s Preview" not in html
+    assert "0:11" not in html
+    assert "0:08" in html
     assert "PHINS · Visual Walkthrough" in html
     assert "sol-live-frame" in html
     assert "PREVIEW_FRAME" not in html
@@ -134,7 +137,7 @@ def test_cache_bust_leaves_an_assigned_film_playable():
     assert ".split('?')[0]" not in html
 
 
-def test_theater_videos_are_complete_mp4s_near_eleven_seconds():
+def test_theater_videos_are_complete_mp4s_of_eight_seconds():
     for key in EXPECTED_PREVIEWS:
         path = THEATER_DIR / f"{key}.mp4"
         assert path.is_file(), path
@@ -156,7 +159,7 @@ def test_theater_videos_are_complete_mp4s_near_eleven_seconds():
                 text=True,
             ).strip()
             duration = float(out)
-            assert 10.5 <= duration <= 12.5, (key, duration)
+            assert 7.9 <= duration <= 8.15, (key, duration)
     hashes = {hash((THEATER_DIR / f"{key}.mp4").read_bytes()) for key in EXPECTED_PREVIEWS}
     assert len(hashes) == len(EXPECTED_PREVIEWS)
 
