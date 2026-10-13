@@ -30,11 +30,17 @@
     return true;
   }
 
+  function enableSpeaker(video) {
+    if (!video) return;
+    video.muted = false;
+    video.defaultMuted = false;
+    video.removeAttribute('muted');
+    try { video.volume = 1; } catch (err) {}
+  }
+
   function primeInlinePlayback(video) {
-    video.muted = true;
-    video.defaultMuted = true;
+    enableSpeaker(video);
     video.playsInline = true;
-    video.setAttribute('muted', '');
     video.setAttribute('playsinline', '');
     video.setAttribute('webkit-playsinline', '');
     video.setAttribute('x5-playsinline', '');
@@ -43,10 +49,32 @@
     video.preload = 'auto';
   }
 
+  function resumeSpeakerOnGesture(video) {
+    var resume = function () {
+      enableSpeaker(video);
+      var again = video.play();
+      if (again && again.catch) again.catch(function () {});
+      document.removeEventListener('pointerdown', resume, true);
+      document.removeEventListener('keydown', resume, true);
+    };
+    document.addEventListener('pointerdown', resume, true);
+    document.addEventListener('keydown', resume, true);
+  }
+
   function startInlinePlayback(video) {
     if (prefersReducedMotion()) return;
+    enableSpeaker(video);
     var play = video.play();
-    if (play && play.catch) play.catch(function () {});
+    if (!play || !play.then) return;
+    play.then(function () {}).catch(function () {
+      // A background film can start only while muted. The speaker comes
+      // back on at the next tap or key press.
+      video.muted = true;
+      var retry = video.play();
+      if (retry && retry.then) {
+        retry.then(function () { resumeSpeakerOnGesture(video); }).catch(function () {});
+      }
+    });
   }
 
   function applyVideo(section, video, url, poster) {
@@ -115,6 +143,7 @@
     applyBackground: applyBackground,
     applyVideo: applyVideo,
     applyBanner: applyBanner,
+    enableSpeaker: enableSpeaker,
     startInlinePlayback: startInlinePlayback
   };
 })(window);

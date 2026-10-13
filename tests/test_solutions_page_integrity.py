@@ -89,6 +89,9 @@ def test_every_public_segment_opens_an_enlarged_theater_preview():
     assert "createElement('video')" in html
     assert "webkit-playsinline" in html
     assert "playsInline = true" in html
+    assert "enableSpeaker" in html
+    assert "video.muted = true" not in html
+    assert 'playsinline muted' not in html
     assert "x5-playsinline" in html
     assert "source.type = 'video/mp4'" in html
     assert "Watch 11s Preview" in html

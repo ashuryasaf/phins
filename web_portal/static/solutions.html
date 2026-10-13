@@ -1106,7 +1106,7 @@
         <span>Actuary &amp; Investments</span>
       </div>
       <div class="hero-video rise d4" id="solutions-hero-media" hidden>
-        <video id="solutions-hero-video" controls playsinline muted></video>
+        <video id="solutions-hero-video" controls playsinline></video>
       </div>
     </section>
     <div class="page-promo-banner" id="solutions-promo-banner" hidden>
@@ -1689,10 +1689,15 @@
         video.setAttribute('playsinline', '');
         video.setAttribute('webkit-playsinline', '');
         video.setAttribute('x5-playsinline', '');
-        video.setAttribute('muted', '');
         video.playsInline = true;
-        video.muted = true;
-        video.defaultMuted = true;
+        if (window.PhinsPageMedia && window.PhinsPageMedia.enableSpeaker) {
+          window.PhinsPageMedia.enableSpeaker(video);
+        } else {
+          video.muted = false;
+          video.defaultMuted = false;
+          video.removeAttribute('muted');
+          video.volume = 1;
+        }
         video.autoplay = true;
         video.preload = 'auto';
         video.controls = false;
@@ -1719,13 +1724,25 @@
             if (source && raw) source.src = withCacheBust(raw);
             video.load();
           }
-          var startPlayback = function () {
-            try { if (video.readyState >= 1) video.currentTime = 0; } catch (err) {}
-            var playPromise = video.play();
-            if (playPromise && playPromise.catch) playPromise.catch(function () {});
-          };
-          if (video.readyState >= 2) startPlayback();
-          else video.addEventListener('loadeddata', startPlayback, { once: true });
+          var media = window.PhinsPageMedia;
+          try { if (video.readyState >= 1) video.currentTime = 0; } catch (err) {}
+          if (media && media.enableSpeaker) {
+            media.enableSpeaker(video);
+          } else {
+            video.muted = false;
+            video.volume = 1;
+          }
+          // Ask for playback inside the click that opened the theater. An
+          // unmuted start is refused once the call leaves the gesture, and the
+          // theater carries no controls of its own to recover with.
+          var playPromise = video.play();
+          if (playPromise && playPromise.catch) {
+            playPromise.catch(function () {
+              // Refused anyway: start muted and hand the speaker back at the
+              // viewer's next tap or key press.
+              if (media && media.startInlinePlayback) media.startInlinePlayback(video);
+            });
+          }
         }
         startedAt = Date.now();
         progressEl.style.width = '0%';
