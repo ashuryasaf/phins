@@ -1106,7 +1106,7 @@
         <span>Actuary &amp; Investments</span>
       </div>
       <div class="hero-video rise d4" id="solutions-hero-media" hidden>
-        <video id="solutions-hero-video" controls playsinline muted></video>
+        <video id="solutions-hero-video" controls playsinline></video>
       </div>
     </section>
     <div class="page-promo-banner" id="solutions-promo-banner" hidden>
@@ -1689,10 +1689,15 @@
         video.setAttribute('playsinline', '');
         video.setAttribute('webkit-playsinline', '');
         video.setAttribute('x5-playsinline', '');
-        video.setAttribute('muted', '');
         video.playsInline = true;
-        video.muted = true;
-        video.defaultMuted = true;
+        if (window.PhinsPageMedia && window.PhinsPageMedia.enableSpeaker) {
+          window.PhinsPageMedia.enableSpeaker(video);
+        } else {
+          video.muted = false;
+          video.defaultMuted = false;
+          video.removeAttribute('muted');
+          video.volume = 1;
+        }
         video.autoplay = true;
         video.preload = 'auto';
         video.controls = false;
@@ -1721,6 +1726,12 @@
           }
           var startPlayback = function () {
             try { if (video.readyState >= 1) video.currentTime = 0; } catch (err) {}
+            if (window.PhinsPageMedia && window.PhinsPageMedia.enableSpeaker) {
+              window.PhinsPageMedia.enableSpeaker(video);
+            } else {
+              video.muted = false;
+              video.volume = 1;
+            }
             var playPromise = video.play();
             if (playPromise && playPromise.catch) playPromise.catch(function () {});
           };

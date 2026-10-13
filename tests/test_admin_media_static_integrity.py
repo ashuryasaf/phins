@@ -218,6 +218,8 @@ def test_login_page_applies_branding():
     assert "hero_background_url" in content
     assert "login_background_url" in content
     assert "login_hero_video_url" in content
+    assert 'id="login-hero-video"' in content
+    assert '<video id="login-hero-video" muted' not in content
     assert "login_thumbnail_url" in content
     assert "login_banner_url" in content
     assert "login_background_url || s.hero_background_url || s.login_thumbnail_url" in content
@@ -262,6 +264,18 @@ def test_page_surface_media_rejects_unsafe_urls():
     assert "video.playsInline = true" in content
     assert "webkit-playsinline" in content
     assert "x5-video-player-type" in content
+    assert "function enableSpeaker(video)" in content
+    assert "video.volume = 1" in content
+    assert "video.muted = true" not in content.split("function startInlinePlayback", 1)[0]
+
+
+def test_uploaded_video_players_default_to_speaker():
+    dashboard = (ADMIN_MEDIA_PATH.parent / "dashboard.html").read_text(encoding="utf-8")
+    admin_media = ADMIN_MEDIA_PATH.read_text(encoding="utf-8")
+    assert 'controls preload="metadata" muted' not in dashboard
+    assert 'controls autoplay muted playsinline' not in dashboard
+    assert "player.muted = false" in admin_media
+    assert "player.volume = 1" in admin_media
 
 
 def test_register_page_applies_branding():

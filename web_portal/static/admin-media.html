@@ -3843,7 +3843,15 @@ Notes:
                     const vimeoId = url.split('/').pop();
                     container.innerHTML = `<iframe src="https://player.vimeo.com/video/${escHtml(vimeoId)}" style="width:100%;height:100%;border:none;" allowfullscreen></iframe>`;
                 } else {
-                    container.innerHTML = `<video controls autoplay style="width:100%;height:100%;"><source src="${escHtml(url)}">Your browser does not support video.</video>`;
+                    container.innerHTML = `<video controls autoplay playsinline style="width:100%;height:100%;"><source src="${escHtml(url)}">Your browser does not support video.</video>`;
+                    const player = container.querySelector('video');
+                    if (player) {
+                        player.muted = false;
+                        player.defaultMuted = false;
+                        player.volume = 1;
+                        const started = player.play();
+                        if (started && started.catch) started.catch(function () {});
+                    }
                 }
             } else if (media.type === 'image') {
                 container.innerHTML = `<img src="${escHtml(media.url || media.data || '')}" alt="${escHtml(media.name)}">`;

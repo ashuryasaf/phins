@@ -6421,7 +6421,7 @@
       const mediaHtml = isResidentialCatalog(product)
         ? `<button type="button" class="phins-product-play" onclick="openResidentialDemo('${safeId}')" aria-label="Play service demo">${stillHtml}<span class="phins-product-play-label">Play service demo</span></button>`
         : (hero.type === 'video'
-          ? `<video src="${escapeHtml(hero.url)}" controls preload="metadata" muted playsinline></video>`
+          ? `<video src="${escapeHtml(hero.url)}" controls preload="metadata" playsinline></video>`
           : stillHtml);
       const detailBits = [
         product.duration ? escapeHtml(product.duration) : '',
@@ -7281,7 +7281,7 @@
           <button type="button" class="phins-demo-close" onclick="closeResidentialDemo()" aria-label="Close">×</button>
           <h2 id="residential-demo-title">${escapeHtml(product ? product.name : 'Health Care Residential Solutions')}</h2>
           <p class="phins-demo-lead">This short film uses the care photographs to show the service. Six months or longer is 20% off, applied automatically to the price. Annual accommodation is 30% off.</p>
-          <video class="phins-demo-video" src="${escapeHtml(videoUrl)}" poster="${escapeHtml(poster)}" controls autoplay muted playsinline></video>
+          <video class="phins-demo-video" src="${escapeHtml(videoUrl)}" poster="${escapeHtml(poster)}" controls autoplay playsinline></video>
           <p>${escapeHtml(product ? (product.description || '') : 'Home Bundle is 24/7 care at home. Extra Bundle is 24/7 care away from home. Full Accommodation Bundle is a residential safe house with Medicare clinical care and private assistance.')}</p>
           <div class="phins-demo-choices">${choiceHtml}</div>
           ${termHtml}
