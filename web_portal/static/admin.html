@@ -2303,6 +2303,14 @@
           <div id="mkt-social-plan" style="font-size: 0.85rem; line-height: 1.45;">Generate a campaign to view channel strategy.</div>
         </div>
       </div>
+      <div style="margin-top: 16px; background: rgba(255,255,255,0.1); border: 1px solid rgba(227,191,111,0.45); border-radius: 10px; padding: 12px;">
+        <h4 style="margin: 0 0 6px 0;">Solution walkthrough blueprints</h4>
+        <p style="margin: 0 0 10px; font-size: 0.82rem; opacity: 0.88;">
+          Affiliated with one solution each. Text, theme, and screenshot reference are edited on Solution Views.
+          Sending uses this Growth Agent path and stores the film in the media library. The public walkthrough stays as it is.
+        </p>
+        <div id="mkt-solution-blueprints" style="font-size: 0.85rem; line-height: 1.45;">Loading solution blueprints.</div>
+      </div>
     </section>
     
     <!-- Platform Ledger Analytics Section -->
@@ -5785,6 +5793,77 @@
       if (socialEl) socialEl.innerHTML = socialHtml;
     }
 
+    async function loadSolutionWalkthroughBlueprints() {
+      const host = document.getElementById('mkt-solution-blueprints');
+      if (!host) return;
+      try {
+        const response = await fetch('/api/admin/media/solution-blueprints', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Could not load solution blueprints');
+        const items = Array.isArray(data.blueprints) ? data.blueprints : [];
+        if (!items.length) {
+          host.textContent = 'No solution blueprints.';
+          return;
+        }
+        const replicateEnabled = Boolean(marketingProviderConfig('replicate')?.enabled);
+        host.innerHTML = items.map(item => {
+          const jobs = Array.isArray(item.jobs) ? item.jobs : [];
+          const job = jobs[0];
+          const theme = item.theme ? `Theme: ${item.theme}` : 'No theme yet';
+          const integrity = item.integrity_ok ? 'checksum verified' : 'checksum mismatch';
+          const asset = item.last_asset_id
+            ? `Stored in media library as ${item.last_asset_id}`
+            : 'Not stored in the media library yet';
+          const pub = item.replaces_public_film ? 'Public walkthrough uses this film.' : 'Public walkthrough unchanged.';
+          const jobLine = job ? `${job.status || 'queued'} · ${job.provider || ''}` : 'No growth-agent job yet';
+          return `
+            <div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.15);">
+              <div style="font-weight:700;">${escapeMarketingHtml(item.title)} <span style="font-weight:500;opacity:0.8;">${escapeMarketingHtml(item.campaign_id)}</span></div>
+              <div style="opacity:0.9;margin-top:4px;">${escapeMarketingHtml(item.narration)}</div>
+              <div style="font-size:0.78rem;opacity:0.85;margin-top:4px;">${escapeMarketingHtml(theme)} · ${escapeMarketingHtml(integrity)}</div>
+              <div style="font-size:0.78rem;opacity:0.85;margin-top:2px;">${escapeMarketingHtml(asset)}. ${escapeMarketingHtml(pub)} ${escapeMarketingHtml(jobLine)}</div>
+              <div style="margin-top:8px;">
+                <button ${replicateEnabled && item.integrity_ok ? '' : 'disabled'} onclick="sendSolutionBlueprint('${escapeMarketingHtml(item.solution_key)}')" style="background:#0f766e;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;${replicateEnabled && item.integrity_ok ? '' : 'opacity:0.5;cursor:not-allowed;'}">Send with Replicate${replicateEnabled ? '' : ' (not configured)'}</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        host.textContent = err.message;
+      }
+    }
+
+    async function sendSolutionBlueprint(solutionKey) {
+      try {
+        setMarketingVideoJobStatus(`Sending ${solutionKey} through the growth agent…`, 'info');
+        const response = await fetch('/api/admin/media/solution-blueprints/send', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            solution_key: solutionKey,
+            provider: 'replicate',
+            provider_model: selectedMarketingVideoModel(),
+            poll_mode: selectedMarketingPollMode(),
+            auto_publish_to_hero: false
+          })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Send failed');
+        setMarketingVideoJobStatus(data.message || 'Solution blueprint sent.', data.deduplicated ? 'info' : 'success');
+        setMarketingStatus(data.message || 'Solution blueprint sent. Public walkthrough unchanged.', 'success');
+        await loadSolutionWalkthroughBlueprints();
+      } catch (err) {
+        setMarketingVideoJobStatus(`Solution blueprint was not sent: ${err.message}`, 'error');
+        setMarketingStatus(err.message, 'error');
+        await loadSolutionWalkthroughBlueprints();
+      }
+    }
+
     async function loadLatestMarketingCampaign() {
       const capabilitiesPromise = loadMarketingProviderCapabilities();
       try {
@@ -5794,6 +5873,8 @@
 
         if (response.status === 404) {
           setMarketingStatus('No generated campaign yet. Click "Generate Agent Plan" to begin.', 'info');
+          await capabilitiesPromise;
+          await loadSolutionWalkthroughBlueprints();
           return;
         }
         if (!response.ok) {
@@ -5809,6 +5890,7 @@
           ]);
           renderMarketingCampaign(data.latest_campaign);
           await loadMarketingVideoJobs({ silent: true });
+          await loadSolutionWalkthroughBlueprints();
           const campaignId = data.latest_campaign.campaign?.campaign_id || 'unknown';
           const lifecycleStatus = data.latest_campaign.lifecycle_status || '';
           const statusHint = lifecycleStatus === 'published'

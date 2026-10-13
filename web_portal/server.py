@@ -3057,6 +3057,8 @@ def serialize_media_job(job: Dict[str, Any], include_callback: bool = False) -> 
         'subtitle_track_id': job.get('subtitle_track_id'),
         'campaign_id': job.get('campaign_id'),
         'blueprint_index': job.get('blueprint_index'),
+        'solution_key': str(job.get('solution_key') or ''),
+        'blueprint_checksum': str(job.get('blueprint_checksum') or ''),
         'generated_asset_id': job.get('generated_asset_id'),
         'provider_operation_name': job.get('provider_operation_name', ''),
         'provider_status': job.get('provider_status', ''),
@@ -5137,6 +5139,8 @@ def create_media_video_job(
     auto_publish_to_hero: bool = False,
     prompt_override: str = '',
     submit_inline: bool = True,
+    solution_key: str = '',
+    blueprint_checksum: str = '',
 ) -> Dict[str, Any]:
     """Create a provider-backed video generation job.
 
@@ -5208,6 +5212,8 @@ def create_media_video_job(
             image_data_url=image_data_url,
         ),
         'webhook_deliveries': [],
+        'solution_key': str(solution_key or ''),
+        'blueprint_checksum': str(blueprint_checksum or ''),
     }
     MEDIA_PROCESSING_JOBS[job_id] = job
 
@@ -5555,6 +5561,13 @@ def _finalize_media_video_job_locked(job: Dict[str, Any], poll_result: Dict[str,
                 asset['checksum'] = _compute_file_checksum(asset['file_path'])
             except OSError:
                 pass
+    if job.get('solution_key'):
+        meta = asset.get('metadata') if isinstance(asset.get('metadata'), dict) else {}
+        meta = dict(meta)
+        meta['solution_key'] = str(job.get('solution_key') or '')
+        meta['blueprint_checksum'] = str(job.get('blueprint_checksum') or '')
+        meta['generated_from'] = 'solution_video_blueprint'
+        asset['metadata'] = meta
     MEDIA_ASSETS[asset_id] = asset
     provider_output_url = str(download_url or '').strip()
     if provider_output_url.startswith('https://'):
@@ -5588,6 +5601,8 @@ def _finalize_media_video_job_locked(job: Dict[str, Any], poll_result: Dict[str,
                     str(job.get('message') or 'Generated video saved to media library.')
                     + ' Landing hero was not updated; durable design storage failed.'
                 )
+    if job.get('solution_key'):
+        note_solution_video_asset(job, asset_id)
     return asset
 
 
@@ -5783,8 +5798,275 @@ def resolve_media_video_job_image_data_url(payload: Dict[str, Any]) -> str:
     return build_video_job_reference_image_data_url(reference_image_asset_id)
 
 
+_SOLUTION_BLUEPRINT_LOCK = threading.RLock()
+_SOLUTION_BLUEPRINT_FIELDS = (
+    'solution_key', 'title', 'group', 'source_bullets', 'narration', 'theme',
+    'reference_image_asset_id', 'campaign_id', 'last_job_id', 'last_asset_id',
+    'stored', 'checksum', 'updated_at', 'updated_by',
+)
+
+
+def _solution_blueprint_store() -> Dict[str, Any]:
+    raw = DESIGN_SETTINGS.get('solution_video_blueprints')
+    return raw if isinstance(raw, dict) else {}
+
+
+def load_solution_video_blueprint(solution_key: str) -> Dict[str, Any]:
+    """Stored blueprint, or the canonical outline when nothing has been saved."""
+    from services.solution_video_blueprints import fresh_blueprint, verify_blueprint
+
+    stored = _solution_blueprint_store().get(solution_key)
+    if not isinstance(stored, dict):
+        return fresh_blueprint(solution_key)
+    record = dict(stored)
+    record['stored'] = True
+    record['integrity_ok'] = verify_blueprint(record)
+    return record
+
+
+def solution_video_blueprint_view(solution_key: str) -> Dict[str, Any]:
+    """Admin view of one blueprint plus whether its film is the public slot."""
+    record = load_solution_video_blueprint(solution_key)
+    slot_key = solutions_theater_slot_key(solution_key)
+    public_asset_id = str(DESIGN_SETTINGS.get(slot_key) or '')
+    last_asset_id = str(record.get('last_asset_id') or '')
+    view = dict(record)
+    view['public_slot'] = slot_key
+    view['public_slot_asset_id'] = public_asset_id
+    view['replaces_public_film'] = bool(public_asset_id and public_asset_id == last_asset_id)
+    campaign_id = str(record.get('campaign_id') or '')
+    view['jobs'] = video_generation_jobs_for_campaign_response(campaign_id) if campaign_id else []
+    return view
+
+
+def list_solution_video_blueprints() -> List[Dict[str, Any]]:
+    from services.solution_video_blueprints import SOLUTION_KEYS
+
+    return [solution_video_blueprint_view(key) for key in SOLUTION_KEYS]
+
+
+def _persist_solution_blueprint_unlocked(record: Dict[str, Any]) -> bool:
+    """Store one blueprint inside the design document and seal it.
+
+    A failed seal restores the previous document. Theater slots are not
+    part of the record and are left untouched. Only the brief fields are
+    written, so a view payload cannot smuggle job lists into the document.
+    """
+    key = str(record.get('solution_key') or '').strip()
+    if not key:
+        return False
+    try:
+        previous = _snapshot_design_settings()
+    except Exception:
+        return False
+    store = DESIGN_SETTINGS.get('solution_video_blueprints')
+    if not isinstance(store, dict):
+        store = {}
+        DESIGN_SETTINGS['solution_video_blueprints'] = store
+    slim = {field: record.get(field) for field in _SOLUTION_BLUEPRINT_FIELDS if field in record}
+    store[key] = _copy_json_value(slim)
+    DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
+    if seal_design_settings(force=True):
+        return True
+    _restore_design_settings(previous)
+    return False
+
+
+def _persist_solution_blueprint(record: Dict[str, Any]) -> bool:
+    with _SOLUTION_BLUEPRINT_LOCK:
+        return _persist_solution_blueprint_unlocked(record)
+
+
+def _touch_solution_blueprint_link(solution_key: str, *, job_id: str = '', asset_id: str = '') -> bool:
+    """Record a job or library asset on the stored brief without clobbering the other.
+
+    Re-reads under the blueprint lock so a completion that lands while send
+    is still writing cannot drop ``last_asset_id`` or ``last_job_id``.
+    """
+    from services.solution_video_blueprints import verify_blueprint
+
+    with _SOLUTION_BLUEPRINT_LOCK:
+        record = load_solution_video_blueprint(solution_key)
+        if not record.get('stored') or not verify_blueprint(record):
+            return False
+        if job_id:
+            record['last_job_id'] = str(job_id)
+        if asset_id:
+            record['last_asset_id'] = str(asset_id)
+        return _persist_solution_blueprint_unlocked(record)
+
+
+def save_solution_video_blueprint(solution_key: str, payload: Dict[str, Any], *, actor: str) -> Dict[str, Any]:
+    from services.solution_video_blueprints import SolutionBlueprintError, apply_blueprint_edit
+
+    current = _solution_blueprint_store().get(solution_key)
+    try:
+        record = apply_blueprint_edit(
+            solution_key,
+            current if isinstance(current, dict) else None,
+            narration=payload.get('narration') if 'narration' in payload else None,
+            theme=payload.get('theme') if 'theme' in payload else None,
+            reference_image_asset_id=(
+                payload.get('reference_image_asset_id')
+                if 'reference_image_asset_id' in payload else None
+            ),
+            reset_text=bool(payload.get('reset_text')),
+        )
+    except SolutionBlueprintError:
+        raise
+    image_id = str(record.get('reference_image_asset_id') or '')
+    if image_id:
+        asset = MEDIA_ASSETS.get(image_id)
+        if not isinstance(asset, dict) or str(asset.get('type') or '') != 'image':
+            raise SolutionBlueprintError('Screenshot reference must be an image in the media library')
+    record['updated_at'] = datetime.now().isoformat()
+    record['updated_by'] = actor or 'admin'
+    if not _persist_solution_blueprint(record):
+        raise SolutionBlueprintError('Solution blueprint could not be stored durably')
+    return solution_video_blueprint_view(solution_key)
+
+
+def note_solution_video_asset(job: Dict[str, Any], asset_id: str) -> None:
+    """Remember which library asset a solution job stored. Does not assign it."""
+    from services.solution_video_blueprints import parse_campaign_id
+
+    key = str(job.get('solution_key') or '') or parse_campaign_id(str(job.get('campaign_id') or ''))
+    if not key or not asset_id:
+        return
+    _touch_solution_blueprint_link(
+        key,
+        job_id=str(job.get('id') or ''),
+        asset_id=str(asset_id),
+    )
+
+
+def send_solution_video_blueprint(
+    solution_key: str,
+    payload: Dict[str, Any],
+    *,
+    actor: str,
+) -> Tuple[int, Dict[str, Any]]:
+    """Submit one solution blueprint through the growth-agent video job path.
+
+    The public theater slot and the landing hero are not written. Provider
+    failures before acceptance do not create a job.
+    """
+    from services.solution_video_blueprints import (
+        SolutionBlueprintError,
+        growth_blueprint,
+        prompt_override,
+    )
+
+    try:
+        record = load_solution_video_blueprint(solution_key)
+    except SolutionBlueprintError as exc:
+        return 400, {'error': str(exc)}
+    if not record.get('integrity_ok'):
+        return 409, {'error': 'Solution blueprint integrity check failed'}
+    image_id = str(record.get('reference_image_asset_id') or '')
+    if image_id:
+        asset = MEDIA_ASSETS.get(image_id)
+        if not isinstance(asset, dict) or str(asset.get('type') or '') != 'image':
+            return 400, {'error': 'Screenshot reference must be an image in the media library'}
+    provider = str(payload.get('provider') or 'replicate').strip().lower() or 'replicate'
+    provider_model = str(payload.get('provider_model') or '').strip()
+    provider, provider_error = validate_media_video_provider_selection(provider, provider_model)
+    if provider_error:
+        status = 503 if 'not connected' in provider_error else 400
+        return status, {
+            'error': provider_error,
+            'reason': 'provider_not_configured' if 'not connected' in provider_error else 'provider_invalid',
+            'diagnostics': diagnose_media_video_providers(),
+        }
+    if not record.get('stored'):
+        try:
+            save_solution_video_blueprint(solution_key, {}, actor=actor)
+        except SolutionBlueprintError as exc:
+            return 503, {'error': str(exc)}
+        record = load_solution_video_blueprint(solution_key)
+    brief = growth_blueprint(record)
+    callback_base_url = str(payload.get('callback_base_url') or '').strip() or configured_media_callback_base_url()
+    poll_mode = resolve_media_video_completion_mode(payload.get('poll_mode'), callback_base_url)
+    image_data_url = build_video_job_reference_image_data_url(image_id) if image_id else ''
+    campaign_id = str(record.get('campaign_id') or '')
+    spoken = prompt_override(record)
+    force = bool(payload.get('force') or payload.get('force_regenerate'))
+    if not force:
+        existing = find_duplicate_media_video_job(media_video_request_fingerprint(
+            campaign_id=campaign_id,
+            blueprint_index=0,
+            provider=provider,
+            provider_model=provider_model,
+            prompt=build_media_video_prompt(campaign_id, brief, spoken),
+            image_data_url=image_data_url,
+        ))
+        if existing is not None:
+            return 200, {
+                'success': True,
+                'deduplicated': True,
+                'message': 'An identical solution video request already exists.',
+                'blueprint': solution_video_blueprint_view(solution_key),
+                'job': dict(serialize_media_job(existing, include_callback=True), deduplicated=True),
+            }
+    job = create_media_video_job(
+        campaign_id=campaign_id,
+        blueprint_index=0,
+        blueprint=brief,
+        requested_by=actor or 'admin',
+        provider=provider,
+        callback_base_url=callback_base_url,
+        provider_model=provider_model,
+        image_data_url=image_data_url,
+        auto_publish_to_hero=False,
+        prompt_override=spoken,
+        solution_key=solution_key,
+        blueprint_checksum=str(record.get('checksum') or ''),
+    )
+    blueprint_link_stored = _touch_solution_blueprint_link(
+        solution_key,
+        job_id=str(job.get('id') or ''),
+    )
+    if poll_mode == 'webhook':
+        start_media_job_polling(job['id'], delay_seconds=max(safe_int(payload.get('webhook_fallback_seconds'), 30), 5))
+    else:
+        start_media_job_polling(job['id'], delay_seconds=max(safe_int(payload.get('poll_delay_seconds'), 1), 1))
+    return 202, {
+        'success': True,
+        'deduplicated': False,
+        'message': 'Solution blueprint sent through the growth agent. The public walkthrough was not replaced.',
+        'provider': provider,
+        'provider_model': provider_model,
+        'poll_mode': poll_mode,
+        'auto_publish_to_hero': False,
+        'blueprint_link_stored': blueprint_link_stored,
+        'blueprint': solution_video_blueprint_view(solution_key),
+        'job': serialize_media_job(job, include_callback=True),
+    }
+
+
 def latest_campaign_video_blueprints(campaign_id: str) -> Tuple[Dict[str, Any], List[Dict[str, Any]], str]:
-    """Return stored campaign video blueprints for the requested campaign id."""
+    """Return stored campaign video blueprints for the requested campaign id.
+
+    ``SOL-{solution}`` ids resolve to that solution's adjustable blueprint
+    and never to the signed marketing campaign.
+    """
+    from services.solution_video_blueprints import (
+        SolutionBlueprintError,
+        growth_blueprint,
+        parse_campaign_id,
+    )
+
+    solution_key = parse_campaign_id(campaign_id)
+    if solution_key:
+        record = load_solution_video_blueprint(solution_key)
+        if not record.get('integrity_ok'):
+            return {}, [], 'Solution blueprint integrity check failed'
+        try:
+            brief = growth_blueprint(record)
+        except SolutionBlueprintError as exc:
+            return {}, [], str(exc)
+        return {'campaign_id': campaign_id, 'solution_key': solution_key}, [brief], ''
+
     campaign_entry = get_marketing_campaign_entry(campaign_id)
     campaign_payload = campaign_entry.get('campaign') if isinstance(campaign_entry, dict) else {}
     if str(campaign_payload.get('campaign_id') or '') != str(campaign_id or '').strip():
@@ -21331,6 +21613,25 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
+
+        if path == '/api/admin/media/solution-blueprints':
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+            try:
+                blueprints = list_solution_video_blueprints()
+            except Exception as exc:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'success': True,
+                'blueprints': blueprints,
+                'total': len(blueprints),
+            }, default=str).encode('utf-8'))
+            return
 
         if path == '/api/admin/media/video-jobs':
             if not require_role(session, ['admin', 'media']):
@@ -39378,6 +39679,48 @@ For claims or questions, please contact:
                 import traceback
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e), 'traceback': traceback.format_exc()}).encode('utf-8'))
+            return
+
+        # ========== SOLUTION VIDEO BLUEPRINTS ==========
+        if path in {'/api/admin/media/solution-blueprints', '/api/admin/media/solution-blueprints/send'}:
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            if not isinstance(data, dict):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request body'}).encode('utf-8'))
+                return
+            solution_key = str(data.get('solution_key') or '').strip()
+            actor = (session or {}).get('username', 'admin')
+            from services.solution_video_blueprints import SolutionBlueprintError
+            try:
+                if path.endswith('/send'):
+                    status_code, payload = send_solution_video_blueprint(solution_key, data, actor=actor)
+                else:
+                    blueprint = save_solution_video_blueprint(solution_key, data, actor=actor)
+                    status_code, payload = 200, {
+                        'success': True,
+                        'message': 'Solution blueprint saved. The public walkthrough was not replaced.',
+                        'blueprint': blueprint,
+                    }
+            except SolutionBlueprintError as exc:
+                status_code, payload = 400, {'error': str(exc)}
+            except Exception as exc:
+                status_code, payload = 500, {'error': str(exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
 
         # ========== MEDIA GENERATION JOBS ==========
