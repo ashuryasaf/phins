@@ -7288,6 +7288,20 @@
           <a class="phins-term-link" href="${escapeHtml(termsUrl)}" target="_blank" rel="noopener">Terms of Service</a>
         </div>`;
       document.body.appendChild(modal);
+      const demoVideo = modal.querySelector('video.phins-demo-video');
+      if (demoVideo) {
+        // The autoplay attribute is honoured only once the media is ready, so
+        // an unmuted start has to be asked for here. If it is refused, start
+        // muted — the native controls give the viewer the speaker back.
+        const started = demoVideo.play();
+        if (started && started.catch) {
+          started.catch(() => {
+            demoVideo.muted = true;
+            const retry = demoVideo.play();
+            if (retry && retry.catch) retry.catch(() => {});
+          });
+        }
+      }
       if (product) paintResidentialDemo(safeId);
     }
 

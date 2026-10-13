@@ -1724,19 +1724,25 @@
             if (source && raw) source.src = withCacheBust(raw);
             video.load();
           }
-          var startPlayback = function () {
-            try { if (video.readyState >= 1) video.currentTime = 0; } catch (err) {}
-            if (window.PhinsPageMedia && window.PhinsPageMedia.enableSpeaker) {
-              window.PhinsPageMedia.enableSpeaker(video);
-            } else {
-              video.muted = false;
-              video.volume = 1;
-            }
-            var playPromise = video.play();
-            if (playPromise && playPromise.catch) playPromise.catch(function () {});
-          };
-          if (video.readyState >= 2) startPlayback();
-          else video.addEventListener('loadeddata', startPlayback, { once: true });
+          var media = window.PhinsPageMedia;
+          try { if (video.readyState >= 1) video.currentTime = 0; } catch (err) {}
+          if (media && media.enableSpeaker) {
+            media.enableSpeaker(video);
+          } else {
+            video.muted = false;
+            video.volume = 1;
+          }
+          // Ask for playback inside the click that opened the theater. An
+          // unmuted start is refused once the call leaves the gesture, and the
+          // theater carries no controls of its own to recover with.
+          var playPromise = video.play();
+          if (playPromise && playPromise.catch) {
+            playPromise.catch(function () {
+              // Refused anyway: start muted and hand the speaker back at the
+              // viewer's next tap or key press.
+              if (media && media.startInlinePlayback) media.startInlinePlayback(video);
+            });
+          }
         }
         startedAt = Date.now();
         progressEl.style.width = '0%';
