@@ -2309,6 +2309,7 @@
           Affiliated with one solution each. Text, theme, and screenshot reference are edited on Solution Views.
           Sending uses this Growth Agent path and stores the film in the media library. The public walkthrough stays as it is.
         </p>
+        <div id="mkt-solution-player" style="margin: 0 0 12px;"></div>
         <div id="mkt-solution-blueprints" style="font-size: 0.85rem; line-height: 1.45;">Loading solution blueprints.</div>
       </div>
     </section>
@@ -5818,14 +5819,27 @@
             : 'Not stored in the media library yet';
           const pub = item.replaces_public_film ? 'Public walkthrough uses this film.' : 'Public walkthrough unchanged.';
           const jobLine = job ? `${job.status || 'queued'} · ${job.provider || ''}` : 'No growth-agent job yet';
+          const key = escapeMarketingHtml(item.solution_key);
+          const thumb = item.thumbnail
+            ? `<img alt="" src="${escapeMarketingHtml(item.thumbnail)}" style="width:168px;height:94px;object-fit:cover;border-radius:8px;display:block;margin-top:8px;background:#06101f;">`
+            : '';
+          const play = item.playback_url
+            ? `<button type="button" onclick="playSolutionFilm('${key}')" style="background:#15449b;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;">Play</button>`
+            : '';
+          if (item.playback_url) {
+            window.__solutionFilms = window.__solutionFilms || {};
+            window.__solutionFilms[item.solution_key] = item.playback_url;
+          }
           return `
             <div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.15);">
               <div style="font-weight:700;">${escapeMarketingHtml(item.title)} <span style="font-weight:500;opacity:0.8;">${escapeMarketingHtml(item.campaign_id)}</span></div>
               <div style="opacity:0.9;margin-top:4px;">${escapeMarketingHtml(item.narration)}</div>
+              ${thumb}
               <div style="font-size:0.78rem;opacity:0.85;margin-top:4px;">${escapeMarketingHtml(theme)} · ${escapeMarketingHtml(integrity)}</div>
               <div style="font-size:0.78rem;opacity:0.85;margin-top:2px;">${escapeMarketingHtml(asset)}. ${escapeMarketingHtml(pub)} ${escapeMarketingHtml(jobLine)}</div>
-              <div style="margin-top:8px;">
-                <button ${replicateEnabled && item.integrity_ok ? '' : 'disabled'} onclick="sendSolutionBlueprint('${escapeMarketingHtml(item.solution_key)}')" style="background:#0f766e;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;${replicateEnabled && item.integrity_ok ? '' : 'opacity:0.5;cursor:not-allowed;'}">Send with Replicate${replicateEnabled ? '' : ' (not configured)'}</button>
+              <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+                <button ${replicateEnabled && item.integrity_ok ? '' : 'disabled'} onclick="sendSolutionBlueprint('${key}')" style="background:#0f766e;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;${replicateEnabled && item.integrity_ok ? '' : 'opacity:0.5;cursor:not-allowed;'}">Send with Replicate${replicateEnabled ? '' : ' (not configured)'}</button>
+                ${play}
               </div>
             </div>
           `;
@@ -5833,6 +5847,54 @@
       } catch (err) {
         host.textContent = err.message;
       }
+    }
+
+    function replicateModelForSolutionSend() {
+      const replicate = marketingProviderConfig('replicate') || {};
+      const models = Array.isArray(replicate.models) ? replicate.models.map(model => String(model)) : [];
+      const selected = selectedMarketingVideoProvider() === 'replicate' ? selectedMarketingVideoModel() : '';
+      if (selected && models.indexOf(selected) !== -1) return selected;
+      return '';
+    }
+
+    function playSolutionFilm(solutionKey) {
+      const films = window.__solutionFilms || {};
+      const url = films[solutionKey] || '';
+      const host = document.getElementById('mkt-solution-player');
+      if (!host || !url) return;
+      host.innerHTML = '<video controls autoplay playsinline style="width:100%;max-height:280px;background:#000;border-radius:10px;"></video>';
+      const player = host.querySelector('video');
+      if (!player) return;
+      player.src = url;
+      player.muted = false;
+      player.defaultMuted = false;
+      player.volume = 1;
+      const started = player.play();
+      if (started && started.catch) started.catch(function () {});
+    }
+
+    async function watchSolutionBlueprint(solutionKey) {
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        await new Promise(function (resolve) { setTimeout(resolve, attempt === 0 ? 400 : 2000); });
+        try {
+          const response = await fetch('/api/admin/media/solution-blueprints', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await response.json();
+          if (!response.ok) continue;
+          const item = (data.blueprints || []).find(function (row) { return row.solution_key === solutionKey; });
+          const job = item && Array.isArray(item.jobs) ? item.jobs[0] : null;
+          const status = String((job && job.status) || '').toLowerCase();
+          if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+            await loadSolutionWalkthroughBlueprints();
+            if (status === 'completed' && item.playback_url) playSolutionFilm(solutionKey);
+            return;
+          }
+        } catch (err) {
+          return;
+        }
+      }
+      await loadSolutionWalkthroughBlueprints();
     }
 
     async function sendSolutionBlueprint(solutionKey) {
@@ -5847,8 +5909,8 @@
           body: JSON.stringify({
             solution_key: solutionKey,
             provider: 'replicate',
-            provider_model: selectedMarketingVideoModel(),
-            poll_mode: selectedMarketingPollMode(),
+            provider_model: replicateModelForSolutionSend(),
+            poll_mode: 'poll',
             auto_publish_to_hero: false
           })
         });
@@ -5857,6 +5919,8 @@
         setMarketingVideoJobStatus(data.message || 'Solution blueprint sent.', data.deduplicated ? 'info' : 'success');
         setMarketingStatus(data.message || 'Solution blueprint sent. Public walkthrough unchanged.', 'success');
         await loadSolutionWalkthroughBlueprints();
+        if (!data.deduplicated) watchSolutionBlueprint(solutionKey);
+        else if (data.blueprint && data.blueprint.playback_url) playSolutionFilm(solutionKey);
       } catch (err) {
         setMarketingVideoJobStatus(`Solution blueprint was not sent: ${err.message}`, 'error');
         setMarketingStatus(err.message, 'error');
@@ -5879,6 +5943,8 @@
         }
         if (!response.ok) {
           setMarketingStatus(`Could not load latest campaign (${response.status})`, 'warning');
+          await capabilitiesPromise;
+          await loadSolutionWalkthroughBlueprints();
           return;
         }
 
@@ -5902,6 +5968,7 @@
         }
       } catch (err) {
         setMarketingStatus(`Failed to load latest campaign: ${err.message}`, 'error');
+        await loadSolutionWalkthroughBlueprints();
       }
     }
 
