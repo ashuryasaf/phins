@@ -29,6 +29,8 @@ import csv
 import io
 import tempfile
 import re
+import shutil
+import subprocess
 from typing import Dict, Any, Tuple, Optional, List
 
 # Ensure repository-root imports work when the server is executed as a script
@@ -3075,6 +3077,7 @@ def serialize_media_job(job: Dict[str, Any], include_callback: bool = False) -> 
             payload['asset_size'] = safe_int(asset.get('size'), 0)
             payload['asset_format'] = str(asset.get('format') or '')
             payload['asset_url'] = media_asset_url(asset)
+            payload['asset_thumbnail'] = str(asset.get('thumbnail') or '')
             payload['asset_stored_externally'] = bool(asset.get('stored_externally'))
         # Expose whether this generated video is the currently published landing-page hero
         published_hero_id = str(DESIGN_SETTINGS.get('hero_video_id') or '').strip()
@@ -5429,11 +5432,42 @@ def cancel_media_video_job(job: Dict[str, Any], cancelled_by: str) -> Dict[str, 
 
 
 def build_video_job_reference_image_data_url(asset_id: str) -> str:
-    """Resolve a PHINS media image asset into a data/url payload for image-to-video."""
+    """Resolve a library image into a payload Replicate can fetch.
+
+    A relative ``/media-files/`` address is not reachable from Replicate, so
+    the file bytes are inlined. An image larger than 8 MiB is omitted rather
+    than failing the whole prediction.
+    """
     asset = MEDIA_ASSETS.get(asset_id)
-    if not asset or asset.get('type') != 'image':
+    if not isinstance(asset, dict) or asset.get('type') != 'image':
         return ''
-    return str(asset.get('data') or asset.get('url') or '').strip()
+    data = str(asset.get('data') or '').strip()
+    if data.startswith('data:'):
+        return data
+    url = str(asset.get('url') or '').strip()
+    if url.startswith(('https://', 'http://', 'data:')):
+        return url
+    file_path = str(asset.get('file_path') or '').strip()
+    if not file_path or not os.path.isfile(file_path):
+        resolved = ensure_media_asset_file(asset)
+        file_path = str((resolved or {}).get('path') or '')
+    if not file_path or not os.path.isfile(file_path):
+        return ''
+    try:
+        size = os.path.getsize(file_path)
+    except OSError:
+        return ''
+    if size <= 0 or size > 8 * 1024 * 1024:
+        return ''
+    try:
+        with open(file_path, 'rb') as handle:
+            payload = handle.read()
+    except OSError:
+        return ''
+    mime = _library_media_mime(asset)
+    if not mime.startswith('image/'):
+        mime = 'image/jpeg'
+    return 'data:' + mime + ';base64,' + base64.b64encode(payload).decode('ascii')
 
 
 def finalize_media_video_job(job: Dict[str, Any], poll_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -5527,6 +5561,7 @@ def _finalize_media_video_job_locked(job: Dict[str, Any], poll_result: Dict[str,
                 asset['checksum'] = compute_media_checksum(fp.read())
         except OSError:
             pass
+        attach_generated_video_thumbnail(asset)
     else:
         asset = {
             'id': asset_id,
@@ -5563,6 +5598,7 @@ def _finalize_media_video_job_locked(job: Dict[str, Any], poll_result: Dict[str,
                 asset['checksum'] = _compute_file_checksum(asset['file_path'])
             except OSError:
                 pass
+        attach_generated_video_thumbnail(asset)
     if job.get('solution_key'):
         meta = asset.get('metadata') if isinstance(asset.get('metadata'), dict) else {}
         meta = dict(meta)
@@ -5838,6 +5874,13 @@ def solution_video_blueprint_view(solution_key: str) -> Dict[str, Any]:
     view['replaces_public_film'] = bool(public_asset_id and public_asset_id == last_asset_id)
     campaign_id = str(record.get('campaign_id') or '')
     view['jobs'] = video_generation_jobs_for_campaign_response(campaign_id) if campaign_id else []
+    asset = MEDIA_ASSETS.get(last_asset_id) if last_asset_id else None
+    if isinstance(asset, dict) and str(asset.get('type') or '') == 'video':
+        view['playback_url'] = media_asset_url(asset)
+        view['thumbnail'] = str(asset.get('thumbnail') or '')
+    else:
+        view['playback_url'] = ''
+        view['thumbnail'] = ''
     return view
 
 
@@ -5970,8 +6013,8 @@ def send_solution_video_blueprint(
         asset = MEDIA_ASSETS.get(image_id)
         if not isinstance(asset, dict) or str(asset.get('type') or '') != 'image':
             return 400, {'error': 'Screenshot reference must be an image in the media library'}
-    provider = str(payload.get('provider') or 'replicate').strip().lower() or 'replicate'
-    provider_model = str(payload.get('provider_model') or '').strip()
+    provider = 'replicate'
+    provider_model = solution_replicate_model(str(payload.get('provider_model') or ''))
     provider, provider_error = validate_media_video_provider_selection(provider, provider_model)
     if provider_error:
         status = 503 if 'not connected' in provider_error else 400
@@ -6105,33 +6148,66 @@ def retry_media_video_job(job: Dict[str, Any], *, requested_by: str, callback_ba
     )
 
 
-def generate_video_thumbnail(asset: Dict[str, Any]) -> str:
-    """Generate a lightweight inline SVG thumbnail marker for generated videos."""
-    title = safe_ascii_filename_stem(str(asset.get('name') or 'Generated Video'), fallback='Generated Video').replace('_', ' ')
-    svg = (
-        "<svg xmlns='http://www.w3.org/2000/svg' width='1280' height='720' viewBox='0 0 1280 720'>"
-        "<defs><linearGradient id='g' x1='0%' y1='0%' x2='100%' y2='100%'>"
-        "<stop offset='0%' stop-color='#1e3a8a'/><stop offset='100%' stop-color='#7c3aed'/>"
-        "</linearGradient></defs>"
-        "<rect width='1280' height='720' fill='url(#g)'/>"
-        "<circle cx='640' cy='360' r='110' fill='rgba(255,255,255,0.18)'/>"
-        "<polygon points='610,300 610,420 720,360' fill='white'/>"
-        f"<text x='640' y='600' fill='white' font-size='42' text-anchor='middle' font-family='Arial, sans-serif'>{title[:42]}</text>"
-        "</svg>"
-    )
-    encoded = base64.b64encode(svg.encode('utf-8')).decode('ascii')
-    return f"data:image/svg+xml;base64,{encoded}"
+def extract_video_frame_data_url(file_path: str) -> str:
+    """One JPEG frame from a downloaded video, or '' when ffmpeg cannot read it.
+
+    The frame is a picture of the file. It is not drawn on the video, and it
+    does not change the file's checksum.
+    """
+    path = str(file_path or '').strip()
+    if not path or not os.path.isfile(path) or not shutil.which('ffmpeg'):
+        return ''
+    command = [
+        'ffmpeg', '-y', '-ss', '0.5', '-i', path,
+        '-frames:v', '1', '-vf', 'scale=480:-2',
+        '-q:v', '6', '-f', 'image2pipe', '-vcodec', 'mjpeg', 'pipe:1',
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=20,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ''
+    frame = completed.stdout or b''
+    if completed.returncode != 0 or not frame.startswith(b'\xff\xd8') or len(frame) > 400_000:
+        return ''
+    return 'data:image/jpeg;base64,' + base64.b64encode(frame).decode('ascii')
 
 
 def attach_generated_video_thumbnail(asset: Dict[str, Any]) -> None:
-    """Populate thumbnail and poster fields for generated videos."""
-    thumbnail = generate_video_thumbnail(asset)
+    """Store a frame thumbnail for a downloaded video. The video bytes stay put."""
+    if not isinstance(asset, dict):
+        return
+    before = str(asset.get('checksum') or '')
+    thumbnail = extract_video_frame_data_url(str(asset.get('file_path') or ''))
+    if not thumbnail:
+        return
     asset['thumbnail'] = thumbnail
     metadata = asset.get('metadata')
     if not isinstance(metadata, dict):
         metadata = {}
         asset['metadata'] = metadata
-    metadata['generated_poster'] = thumbnail
+    metadata['generated_poster'] = 'frame'
+    if before:
+        asset['checksum'] = before
+
+
+def solution_replicate_model(provider_model: str) -> str:
+    """A Replicate ``owner/name`` id, or '' so the server default model is used.
+
+    The Growth Agent model menu also lists Gemini and Kling ids. Sending one
+    of those to Replicate is a 400 before any prediction is created.
+    """
+    from services.media_generation_service import MediaGenerationService
+
+    selected = str(provider_model or '').strip()
+    if selected and MediaGenerationService.replicate_model_id_ok(selected):
+        return selected
+    return ''
 
 
 def get_media_generation_service():

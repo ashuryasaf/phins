@@ -99,6 +99,78 @@ def test_edit_keeps_canonical_bullets_and_checksum():
     assert fresh_blueprint("billing")["checksum"] == blueprint_checksum(fresh_blueprint("billing"))
 
 
+def test_solution_send_drops_a_non_replicate_model_id():
+    assert portal.solution_replicate_model("veo-3.1-generate-preview") == ""
+    assert portal.solution_replicate_model("kling-v2.6-pro") == ""
+    assert portal.solution_replicate_model("google/veo-3.1-fast") == "google/veo-3.1-fast"
+    assert portal.solution_replicate_model("") == ""
+
+
+def test_library_image_file_is_inlined_for_replicate(tmp_path):
+    image = tmp_path / "shot.png"
+    image.write_bytes(
+        __import__("base64").b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )
+    )
+    asset_id = "media-solution-ref"
+    portal.MEDIA_ASSETS[asset_id] = {
+        "id": asset_id,
+        "type": "image",
+        "format": "image/png",
+        "file_path": str(image),
+        "url": f"/media-files/{asset_id}/shot.png",
+        "data": "",
+    }
+    try:
+        payload = portal.build_video_job_reference_image_data_url(asset_id)
+    finally:
+        portal.MEDIA_ASSETS.pop(asset_id, None)
+    assert payload.startswith("data:image/png;base64,")
+    assert "/media-files/" not in payload
+
+
+def test_downloaded_video_thumbnail_is_a_frame_and_leaves_the_file_unchanged(tmp_path):
+    import hashlib
+    import subprocess
+
+    film = tmp_path / "film.mp4"
+    subprocess.check_call(
+        [
+            "ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=navy:s=320x180:d=1",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-t", "1", str(film),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    digest = hashlib.sha256(film.read_bytes()).hexdigest()
+    asset = {
+        "id": "media-frame",
+        "name": "film.mp4",
+        "type": "video",
+        "file_path": str(film),
+        "checksum": digest,
+        "metadata": {},
+    }
+    portal.attach_generated_video_thumbnail(asset)
+    assert asset["checksum"] == digest
+    assert hashlib.sha256(film.read_bytes()).hexdigest() == digest
+    assert asset["thumbnail"].startswith("data:image/jpeg;base64,")
+    assert asset["metadata"]["generated_poster"] == "frame"
+
+
+def test_growth_agent_can_play_a_stored_solution_film():
+    admin = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "admin.html"
+    media = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "admin-media.html"
+    admin_html = admin.read_text(encoding="utf-8")
+    media_html = media.read_text(encoding="utf-8")
+    assert "function playSolutionFilm" in admin_html
+    assert "function replicateModelForSolutionSend" in admin_html
+    assert "provider: 'replicate'" in admin_html
+    assert "poll_mode: 'poll'" in admin_html
+    assert "previewMedia('${safeId}')\">${media.type === 'video' ? 'Play' : 'View'}" in media_html
+
+
 def test_spoken_line_stops_on_a_sentence_inside_eight_seconds():
     long_line = (
         "Premium billing stays aligned with the ledger. "
@@ -296,6 +368,7 @@ def test_solution_blueprint_send_stores_a_library_film_without_replacing_the_pag
             payload={
                 "solution_key": "actuarial_investments",
                 "provider": "replicate",
+                "provider_model": "veo-3.1-generate-preview",
                 "auto_publish_to_hero": True,
             },
         )
@@ -313,6 +386,8 @@ def test_solution_blueprint_send_stores_a_library_film_without_replacing_the_pag
         assert "On-screen disclaimer" not in prompt
         assert "not personalized insurance" not in prompt
         assert stub.submissions[0]["duration_seconds"] == 8
+        assert stub.submissions[0]["model"] == ""
+        assert stub.submissions[0]["provider"] == "replicate"
         assert stub.submissions[0]["image_data_url"].startswith("data:image/png")
         assert portal.DESIGN_SETTINGS.get("hero_video_id", "") == hero_before
         assert {
@@ -335,6 +410,7 @@ def test_solution_blueprint_send_stores_a_library_film_without_replacing_the_pag
         assert asset["checksum"]
         assert asset["metadata"]["solution_key"] == "actuarial_investments"
         assert asset["metadata"]["generated_from"] == "solution_video_blueprint"
+        assert item.get("playback_url", "").startswith("data:video/mp4")
         assert asset["metadata"]["blueprint_checksum"] == saved["blueprint"]["checksum"]
         assert portal.DESIGN_SETTINGS.get("solutions_theater_actuarial_investments_id", "") == ""
 
