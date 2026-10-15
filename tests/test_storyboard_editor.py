@@ -370,6 +370,102 @@ def test_a_slow_submission_does_not_block_another_board():
     assert editor.get(rendering["id"])["scenes"][0]["video_job_id"] == "job-slow"
 
 
+def test_a_save_during_a_submission_still_links_the_billed_job():
+    editor = _editor()
+    board = editor.create(
+        purpose="claims", script="Gather the documents.", opening_reference=_opening(),
+        provider_model="google/veo-3.1-fast",
+    )
+    submitting = threading.Event()
+    release = threading.Event()
+
+    def _slow(params):
+        submitting.set()
+        assert release.wait(10)
+        return {"id": "job-inflight", "status": "queued"}
+
+    worker = threading.Thread(
+        target=editor.render_scene,
+        args=(board["id"], 1),
+        kwargs={
+            "expected_sha256": board["integrity"]["document_sha256"],
+            "submitter": _slow,
+            "replicate_enabled": True,
+            "provider_model": "google/veo-3.1-fast",
+            "submitted_by": "admin",
+        },
+    )
+    worker.start()
+    try:
+        assert submitting.wait(10)
+        saved = editor.update(
+            board["id"],
+            expected_sha256=board["integrity"]["document_sha256"],
+            title="Renamed while the scene is submitting",
+        )
+        # A second render of the same scene must not bill the provider again.
+        with pytest.raises(StoryboardConflict):
+            editor.render_scene(
+                board["id"], 1,
+                expected_sha256=saved["integrity"]["document_sha256"],
+                submitter=lambda params: (_ for _ in ()).throw(AssertionError("must not submit")),
+                replicate_enabled=True,
+                provider_model="google/veo-3.1-fast",
+                submitted_by="admin",
+            )
+    finally:
+        release.set()
+        worker.join(10)
+    linked = editor.get(board["id"])
+    assert linked["title"] == "Renamed while the scene is submitting"
+    assert linked["scenes"][0]["video_job_id"] == "job-inflight"
+    assert linked["scenes"][0]["status"] == "queued"
+
+
+def test_an_edited_scene_does_not_take_the_job_it_no_longer_describes():
+    editor = _editor()
+    board = editor.create(
+        purpose="claims", script="Gather the documents.", opening_reference=_opening(),
+        provider_model="google/veo-3.1-fast",
+    )
+    submitting = threading.Event()
+    release = threading.Event()
+    outcome = {}
+
+    def _slow(params):
+        submitting.set()
+        assert release.wait(10)
+        return {"id": "job-voided", "status": "queued"}
+
+    def _render():
+        try:
+            editor.render_scene(
+                board["id"], 1,
+                expected_sha256=board["integrity"]["document_sha256"],
+                submitter=_slow,
+                replicate_enabled=True,
+                provider_model="google/veo-3.1-fast",
+                submitted_by="admin",
+            )
+        except StoryboardConflict as exc:
+            outcome["conflict"] = exc
+
+    worker = threading.Thread(target=_render)
+    worker.start()
+    try:
+        assert submitting.wait(10)
+        editor.update(
+            board["id"],
+            expected_sha256=board["integrity"]["document_sha256"],
+            scenes=[{"script": "Rewritten line.", "duration_seconds": 8}],
+        )
+    finally:
+        release.set()
+        worker.join(10)
+    assert outcome["conflict"].extra["video_job_id"] == "job-voided"
+    assert editor.get(board["id"])["scenes"][0]["video_job_id"] == ""
+
+
 def test_changing_scene_one_supersedes_the_chain_and_keeps_a_chosen_scene():
     editor = _editor()
     chosen = seal_reference(raw=_PNG_B, mime="image/png", label="own")

@@ -588,6 +588,15 @@ def _identity(scene: Dict[str, Any]) -> tuple:
     )
 
 
+def _render_identity(board: Dict[str, Any], scene: Dict[str, Any]) -> tuple:
+    """What a submitted video is of. An edit to any of it voids that video."""
+    return (
+        str(board.get("purpose") or ""),
+        _identity(scene),
+        str(scene.get("resolved_start_sha256") or ""),
+    )
+
+
 def _normalize_script(value: Any) -> str:
     script = str(value or "").replace("\x00", "").strip()
     if len(script) > MAX_SCRIPT_CHARS:
@@ -650,6 +659,9 @@ class StoryboardEditor:
             )
         self._store = store
         self._lock = threading.Lock()
+        # (storyboard id, scene index) pairs whose Replicate submission is in
+        # flight. The scene is still ``draft`` on disk during that round-trip.
+        self._submitting: set = set()
 
     def _save(self, board: Dict[str, Any]) -> Dict[str, Any]:
         sealed = _stamp_integrity(board)
@@ -1030,6 +1042,12 @@ class StoryboardEditor:
                         "deduplicated": True,
                     },
                 }
+            claim = (str(board["id"]), int(scene["index"]))
+            if claim in self._submitting:
+                raise StoryboardConflict(
+                    "This scene is already being submitted to Replicate.",
+                    document_sha256=str((board.get("integrity") or {}).get("document_sha256") or ""),
+                )
             if model and model != str(board.get("provider_model") or ""):
                 board["provider_model"] = model
             model = str(board.get("provider_model") or model or "").strip()
@@ -1089,39 +1107,57 @@ class StoryboardEditor:
                 },
                 "force": False,
             }
+            submitted = _render_identity(board, scene)
+            # The claim holds the scene for this submission so a second render
+            # cannot bill Replicate for the same work while the lock is down.
+            self._submitting.add(claim)
         # The provider round-trip runs without the editor lock. A failed
         # submission leaves the stored document untouched, so the caller can
         # retry with the same expected_sha256.
         expected = str(expected_sha256 or "").strip().lower()
         try:
-            job = submitter(submission)
-        except StoryboardError:
-            raise
-        except Exception as exc:
-            raise StoryboardProviderError(
-                f"Replicate submission failed: {exc}",
-                document_sha256=expected,
-            ) from exc
-        if not isinstance(job, dict) or not job.get("id"):
-            raise StoryboardProviderError("Replicate did not return a video job.")
-        with self._lock:
-            board = self._load(storyboard_id)
-            stored = str((board.get("integrity") or {}).get("document_sha256") or "")
-            if stored != expected:
-                raise StoryboardConflict(
-                    "Storyboard changed while the scene was being submitted. "
-                    "The video job was created and is not linked to this scene.",
-                    document_sha256=stored,
-                    video_job_id=str(job.get("id")),
+            try:
+                job = submitter(submission)
+            except StoryboardError:
+                raise
+            except Exception as exc:
+                raise StoryboardProviderError(
+                    f"Replicate submission failed: {exc}",
+                    document_sha256=expected,
+                ) from exc
+            if not isinstance(job, dict) or not job.get("id"):
+                raise StoryboardProviderError("Replicate did not return a video job.")
+            with self._lock:
+                board = self._load(storyboard_id)
+                stored = str((board.get("integrity") or {}).get("document_sha256") or "")
+                scene = next(
+                    (item for item in board.get("scenes") or []
+                     if int(item.get("index") or 0) == claim[1]),
+                    None,
                 )
-            scene = self._scene(board, index)
-            board["provider_model"] = model
-            scene["video_job_id"] = str(job.get("id"))
-            scene["provider_duration_seconds"] = int(scene["duration_seconds"])
-            status = str(job.get("status") or "queued").lower()
-            scene["status"] = _scene_status_from_job(status, has_end=False)
-            board["updated_at"] = _now()
-            saved = self._save(board)
+                stored_model = str(board.get("provider_model") or "")
+                # An unrelated edit elsewhere on the board still takes the job.
+                # Only a scene that no longer asks for what was submitted
+                # refuses it, because that video is not of this scene.
+                if scene is None or _render_identity(board, scene) != submitted or (
+                    stored_model and stored_model != model
+                ):
+                    raise StoryboardConflict(
+                        "This scene changed while it was being submitted. "
+                        "The video job was created and is not linked to this scene.",
+                        document_sha256=stored,
+                        video_job_id=str(job.get("id")),
+                    )
+                board["provider_model"] = model
+                scene["video_job_id"] = str(job.get("id"))
+                scene["provider_duration_seconds"] = int(scene["duration_seconds"])
+                status = str(job.get("status") or "queued").lower()
+                scene["status"] = _scene_status_from_job(status, has_end=False)
+                board["updated_at"] = _now()
+                saved = self._save(board)
+        finally:
+            with self._lock:
+                self._submitting.discard(claim)
         return {
             "storyboard": saved,
             "job": {
