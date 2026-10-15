@@ -37719,7 +37719,9 @@ For claims or questions, please contact:
         if api_extensions_enabled and api_ext_post:
             # These endpoints need JSON body parsing
             security_paths = ['/api/security/', '/api/foundations', '/api/admin/foundations',
-                              '/api/admin/ai-agents/']
+                              '/api/admin/ai-agents/',
+                              # Storyboard editor (create, save, render, end-frame).
+                              '/api/admin/media/storyboards']
             is_extension_path = any(path.startswith(p) for p in security_paths)
             
             if is_extension_path:

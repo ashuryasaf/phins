@@ -3546,6 +3546,499 @@ def handle_video_webhook(session: Optional[Dict], job_id: str, body_data: Dict) 
 
 
 # ============================================================================
+# STORYBOARD EDITOR
+# ============================================================================
+
+_STORYBOARD_PREFIX = "/api/admin/media/storyboards"
+
+
+def _storyboard_tail(path: str) -> Optional[List[str]]:
+    if path == _STORYBOARD_PREFIX:
+        return []
+    prefix = _STORYBOARD_PREFIX + "/"
+    if not path.startswith(prefix):
+        return None
+    return [part for part in path[len(prefix):].split("/") if part]
+
+
+def _storyboard_error(exc: Exception) -> Tuple[int, Dict]:
+    from services.storyboard_editor import StoryboardError
+    if isinstance(exc, StoryboardError):
+        body = {"error": exc.message}
+        body.update(exc.extra)
+        return exc.status, body
+    logger.exception("storyboard request failed")
+    return 500, {"error": "Storyboard request failed."}
+
+
+def _storyboard_actor(session: Optional[Dict]) -> str:
+    return str(
+        (session or {}).get("username") or (session or {}).get("customer_id") or "admin"
+    ).strip()
+
+
+def _seal_storyboard_reference(body: Dict) -> Dict:
+    """Seal a reference from a library asset or an inline image.
+
+    Library bytes are read locally and checked against the asset checksum.
+    Remote URLs are not fetched.
+    """
+    from services.storyboard_editor import (
+        MAX_INLINE_IMAGE_BYTES,
+        StoryboardIntegrityError,
+        StoryboardValidationError,
+        seal_reference,
+    )
+
+    asset_id = str(body.get("asset_id") or "").strip()
+    data_url = str(body.get("data_url") or "").strip()
+    claimed = str(body.get("sha256") or "").strip().lower()
+    label = str(body.get("label") or "").strip()
+    if asset_id:
+        portal = _portal_module()
+        asset = (getattr(portal, "MEDIA_ASSETS", {}) or {}).get(asset_id)
+        if not isinstance(asset, dict):
+            raise StoryboardValidationError(f"Media asset {asset_id!r} was not found.")
+        if str(asset.get("type") or "").strip().lower() != "image":
+            raise StoryboardValidationError("Storyboard references must be images.")
+        library_url = str(asset.get("data") or "").strip()
+        raw = b""
+        mime = ""
+        if library_url.startswith("data:"):
+            if len(library_url) > MAX_INLINE_IMAGE_BYTES * 2:
+                raise StoryboardValidationError("Reference image exceeds 2 MiB.")
+            raw, mime = portal.decode_media_data_url(library_url)
+        else:
+            file_path = str(asset.get("file_path") or "").strip()
+            within = getattr(portal, "_media_path_within_storage", None)
+            if (
+                file_path
+                and os.path.isfile(file_path)
+                and callable(within)
+                and within(file_path)
+                and os.path.getsize(file_path) <= MAX_INLINE_IMAGE_BYTES
+            ):
+                with open(file_path, "rb") as handle:
+                    raw = handle.read()
+                mime = str(asset.get("format") or "image/png").split(";", 1)[0].strip()
+            else:
+                raise StoryboardValidationError(
+                    "That library image has no sealed bytes in the media library."
+                )
+        actual = portal.compute_media_checksum(raw)
+        expected = str(asset.get("checksum") or "").strip().lower()
+        if expected and expected != actual:
+            raise StoryboardIntegrityError(
+                "Media library checksum does not match the image bytes.",
+                expected_sha256=expected,
+                actual_sha256=actual,
+            )
+        if claimed and claimed != actual:
+            raise StoryboardIntegrityError(
+                "Reference checksum does not match the library image.",
+                expected_sha256=claimed,
+                actual_sha256=actual,
+            )
+        if not label:
+            label = str(asset.get("name") or asset_id)
+        return seal_reference(
+            raw=raw, mime=mime, asset_id=asset_id, label=label, expected_sha256=actual,
+        )
+    if not data_url:
+        raise StoryboardValidationError("A reference image is required.")
+    return seal_reference(data_url=data_url, label=label, expected_sha256=claimed)
+
+
+def _prepare_storyboard_scenes(items: Any) -> List[Dict]:
+    from services.storyboard_editor import StoryboardValidationError
+
+    if not isinstance(items, list):
+        raise StoryboardValidationError("scenes must be a list.")
+    prepared: List[Dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            raise StoryboardValidationError("Each scene must be an object.")
+        scene = {
+            "script": item.get("script") or "",
+            "duration_seconds": item.get("duration_seconds", 8),
+            "reference_mode": item.get("reference_mode") or "chain",
+        }
+        chosen = item.get("chosen_reference")
+        if isinstance(chosen, dict) and (chosen.get("asset_id") or chosen.get("data_url")):
+            scene["chosen_reference"] = _seal_storyboard_reference(chosen)
+        prepared.append(scene)
+    return prepared
+
+
+def _storyboard_view(board: Dict, *, include_media: bool) -> Dict:
+    from services.storyboard_editor import public_view
+    return public_view(board, include_media=include_media)
+
+
+def _replicate_for_storyboard() -> Tuple[bool, str]:
+    if not VIDEO_AGENTS_AVAILABLE:
+        return False, ""
+    caps = get_video_agents_service().get_provider_capabilities()
+    replicate = (caps.get("providers") or {}).get("replicate") or {}
+    model = str(replicate.get("model") or "").strip()
+    models = replicate.get("models") or []
+    if not model and models:
+        model = str(models[0] or "").strip()
+    return bool(replicate.get("enabled")), model
+
+
+def handle_storyboard_list(session: Optional[Dict]) -> Tuple[int, Dict]:
+    """GET /api/admin/media/storyboards — list storyboards and the purpose catalog."""
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+    try:
+        from services.storyboard_editor import (
+            DEFAULT_SCENE_SECONDS,
+            VEO_DURATIONS,
+            get_storyboard_editor,
+            purpose_catalog,
+        )
+        editor = get_storyboard_editor()
+        items = [
+            _storyboard_view(board, include_media=False)
+            for board in editor.list_boards()
+        ]
+        return 200, {
+            "items": items,
+            "total": len(items),
+            "default_scene_seconds": DEFAULT_SCENE_SECONDS,
+            "veo_durations": list(VEO_DURATIONS),
+            "purposes": purpose_catalog(),
+            "provider": "replicate",
+        }
+    except Exception as exc:
+        return _storyboard_error(exc)
+
+
+def handle_storyboard_get(session: Optional[Dict], storyboard_id: str) -> Tuple[int, Dict]:
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+    try:
+        from services.storyboard_editor import get_storyboard_editor
+        board = get_storyboard_editor().get(storyboard_id)
+        return 200, {"storyboard": _storyboard_view(board, include_media=True)}
+    except Exception as exc:
+        return _storyboard_error(exc)
+
+
+def handle_storyboard_slide(session: Optional[Dict], storyboard_id: str) -> Tuple[int, Dict]:
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+    try:
+        from services.storyboard_editor import build_slide, get_storyboard_editor
+        board = get_storyboard_editor().get(storyboard_id)
+        slide = build_slide(board)
+        stored = (board.get("integrity") or {}).get("slide_sha256")
+        slide["stored_slide_sha256"] = stored
+        slide["matches_document"] = stored == slide.get("slide_sha256")
+        return 200, {"storyboard_id": storyboard_id, "slide": slide}
+    except Exception as exc:
+        return _storyboard_error(exc)
+
+
+def handle_storyboard_verify(session: Optional[Dict], storyboard_id: str) -> Tuple[int, Dict]:
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+    try:
+        from services.storyboard_editor import get_storyboard_editor
+        return 200, get_storyboard_editor().verify(storyboard_id)
+    except Exception as exc:
+        return _storyboard_error(exc)
+
+
+def handle_storyboard_create(session: Optional[Dict], body: Dict) -> Tuple[int, Dict]:
+    """POST /api/admin/media/storyboards — create a storyboard from a script."""
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+    try:
+        from services.storyboard_editor import get_storyboard_editor
+        opening = None
+        if isinstance(body.get("opening_reference"), dict):
+            opening = _seal_storyboard_reference(body["opening_reference"])
+        scenes = None
+        if isinstance(body.get("scenes"), list):
+            scenes = _prepare_storyboard_scenes(body["scenes"])
+        board = get_storyboard_editor().create(
+            title=str(body.get("title") or ""),
+            purpose=str(body.get("purpose") or "advertisement"),
+            script=str(body.get("script") or ""),
+            scenes=scenes,
+            opening_reference=opening,
+            provider_model=str(body.get("provider_model") or ""),
+            aspect_ratio=str(body.get("aspect_ratio") or "16:9"),
+            resolution=str(body.get("resolution") or "720p"),
+            campaign_id=str(body.get("campaign_id") or ""),
+            surface=str(body.get("surface") or "video-agents"),
+            created_by=_storyboard_actor(session),
+        )
+        return 201, {"storyboard": _storyboard_view(board, include_media=True)}
+    except Exception as exc:
+        return _storyboard_error(exc)
+
+
+def handle_storyboard_update(session: Optional[Dict], storyboard_id: str, body: Dict) -> Tuple[int, Dict]:
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+    try:
+        from services.storyboard_editor import get_storyboard_editor
+        kwargs: Dict[str, Any] = {
+            "expected_sha256": str(body.get("expected_sha256") or ""),
+        }
+        for key in ("title", "purpose", "provider_model", "aspect_ratio", "resolution", "campaign_id"):
+            if key in body:
+                kwargs[key] = body.get(key)
+        if "opening_reference" in body and isinstance(body.get("opening_reference"), dict):
+            raw_ref = body["opening_reference"]
+            if raw_ref.get("asset_id") or raw_ref.get("data_url"):
+                kwargs["opening_reference"] = _seal_storyboard_reference(raw_ref)
+            else:
+                from services.storyboard_editor import _empty_reference
+                kwargs["opening_reference"] = _empty_reference()
+        if "scenes" in body:
+            kwargs["scenes"] = _prepare_storyboard_scenes(body.get("scenes"))
+            kwargs["remove_sealed"] = bool(body.get("remove_sealed"))
+        board = get_storyboard_editor().update(storyboard_id, **kwargs)
+        return 200, {"storyboard": _storyboard_view(board, include_media=True)}
+    except Exception as exc:
+        return _storyboard_error(exc)
+
+
+def handle_storyboard_scene_reference(
+    session: Optional[Dict], storyboard_id: str, index: str, body: Dict,
+) -> Tuple[int, Dict]:
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+    try:
+        from services.storyboard_editor import get_storyboard_editor
+        mode = str(body.get("reference_mode") or "chosen").strip().lower()
+        chosen = None
+        if mode == "chosen":
+            chosen = _seal_storyboard_reference(body.get("chosen_reference") or body)
+        board = get_storyboard_editor().set_scene_reference(
+            storyboard_id,
+            int(index),
+            expected_sha256=str(body.get("expected_sha256") or ""),
+            reference_mode=mode,
+            chosen_reference=chosen,
+        )
+        return 200, {"storyboard": _storyboard_view(board, include_media=True)}
+    except Exception as exc:
+        return _storyboard_error(exc)
+
+
+def _submit_storyboard_scene(params: Dict) -> Dict:
+    return get_video_agents_service().submit_video_job(**params)
+
+
+def handle_storyboard_render(
+    session: Optional[Dict], storyboard_id: str, index: str, body: Dict,
+) -> Tuple[int, Dict]:
+    """POST .../scenes/{index}/render — one Replicate scene, chained still in."""
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+    if not VIDEO_AGENTS_AVAILABLE:
+        return 503, {"error": "Video agents service not available"}
+    try:
+        from services.storyboard_editor import get_storyboard_editor
+        enabled, default_model = _replicate_for_storyboard()
+        model = str(body.get("provider_model") or "").strip() or default_model
+        result = get_storyboard_editor().render_scene(
+            storyboard_id,
+            int(index),
+            expected_sha256=str(body.get("expected_sha256") or ""),
+            submitter=_submit_storyboard_scene,
+            replicate_enabled=enabled,
+            provider_model=model,
+            submitted_by=_storyboard_actor(session),
+        )
+        return 201, {
+            "storyboard": _storyboard_view(result["storyboard"], include_media=True),
+            "job": result.get("job") or {},
+        }
+    except Exception as exc:
+        return _storyboard_error(exc)
+
+
+def handle_storyboard_render_next(session: Optional[Dict], storyboard_id: str, body: Dict) -> Tuple[int, Dict]:
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+    try:
+        from services.storyboard_editor import get_storyboard_editor
+        editor = get_storyboard_editor()
+        board = editor.get(storyboard_id)
+        index = editor.next_scene_index(board)
+        if index is None:
+            return 200, {
+                "storyboard": _storyboard_view(board, include_media=True),
+                "job": None,
+                "message": "No scene is waiting to render.",
+            }
+        return handle_storyboard_render(session, storyboard_id, str(index), body)
+    except Exception as exc:
+        return _storyboard_error(exc)
+
+
+def handle_storyboard_sync(
+    session: Optional[Dict], storyboard_id: str, index: str, body: Dict,
+) -> Tuple[int, Dict]:
+    """Copy the video-job status onto the scene. Does not invent a screenshot."""
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+    if not VIDEO_AGENTS_AVAILABLE:
+        return 503, {"error": "Video agents service not available"}
+    try:
+        from services.storyboard_editor import get_storyboard_editor
+        editor = get_storyboard_editor()
+        board = editor.get(storyboard_id)
+        number = int(index)
+        scene = next(
+            (item for item in board.get("scenes") or [] if int(item.get("index") or 0) == number),
+            None,
+        )
+        if scene is None:
+            return 404, {"error": f"Scene {number} was not found."}
+        job_id = str(scene.get("video_job_id") or "")
+        if not job_id:
+            return 409, {"error": "This scene has no video job yet."}
+        job = get_video_agents_service().poll_job(job_id)
+        if job is None:
+            return 404, {"error": f"Job {job_id!r} not found"}
+        updated = editor.note_job_status(
+            storyboard_id,
+            number,
+            expected_sha256=str(body.get("expected_sha256") or ""),
+            job_status=str(job.get("status") or ""),
+            job_id=str(job.get("id") or job_id),
+        )
+        return 200, {
+            "storyboard": _storyboard_view(updated, include_media=True),
+            "job": {"id": job.get("id"), "status": job.get("status"), "error": job.get("error") or ""},
+        }
+    except Exception as exc:
+        return _storyboard_error(exc)
+
+
+def handle_storyboard_end_frame(
+    session: Optional[Dict], storyboard_id: str, index: str, body: Dict,
+) -> Tuple[int, Dict]:
+    """Seal the ending screenshot from the rendered video, or from a supplied still of it."""
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+    try:
+        from services.storyboard_editor import (
+            decode_image_data_url,
+            extract_last_frame_png,
+            get_storyboard_editor,
+        )
+        editor = get_storyboard_editor()
+        board = editor.get(storyboard_id)
+        number = int(index)
+        scene = next(
+            (item for item in board.get("scenes") or [] if int(item.get("index") or 0) == number),
+            None,
+        )
+        if scene is None:
+            return 404, {"error": f"Scene {number} was not found."}
+        job_id = str(body.get("video_job_id") or scene.get("video_job_id") or "").strip()
+        image_data_url = str(body.get("image_data_url") or "").strip()
+        if image_data_url:
+            raw, mime = decode_image_data_url(image_data_url)
+            source = "supplied"
+        else:
+            if not VIDEO_AGENTS_AVAILABLE:
+                return 503, {"error": "Video agents service not available"}
+            if not job_id:
+                return 409, {"error": "This scene has no video job to capture."}
+            job = get_video_agents_service().poll_job(job_id)
+            if job is None:
+                return 404, {"error": f"Job {job_id!r} not found"}
+            if str(job.get("status") or "") != "completed":
+                return 409, {"error": "Scene video is not completed, so there is no ending screenshot yet."}
+            import tempfile
+            tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+            tmp_path = tmp.name
+            tmp.close()
+            try:
+                get_video_agents_service().download_job_video(job_id, stream_to_path=tmp_path)
+                raw = extract_last_frame_png(tmp_path)
+            finally:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+            mime = "image/png"
+            source = "extracted"
+        updated = editor.record_end_frame(
+            storyboard_id,
+            number,
+            expected_sha256=str(body.get("expected_sha256") or ""),
+            video_job_id=job_id,
+            image_bytes=raw,
+            image_mime=mime,
+            claimed_sha256=str(body.get("sha256") or ""),
+            source=source,
+        )
+        return 200, {"storyboard": _storyboard_view(updated, include_media=True)}
+    except Exception as exc:
+        return _storyboard_error(exc)
+
+
+def dispatch_storyboard_get(path: str, session: Optional[Dict]) -> Optional[Tuple[int, Dict]]:
+    tail = _storyboard_tail(path)
+    if tail is None:
+        return None
+    if tail == []:
+        return handle_storyboard_list(session)
+    if len(tail) == 1:
+        return handle_storyboard_get(session, tail[0])
+    if len(tail) == 2 and tail[1] == "slide":
+        return handle_storyboard_slide(session, tail[0])
+    if len(tail) == 2 and tail[1] == "verify":
+        return handle_storyboard_verify(session, tail[0])
+    return 404, {"error": "Storyboard route was not found."}
+
+
+def dispatch_storyboard_post(path: str, session: Optional[Dict], body: Dict) -> Optional[Tuple[int, Dict]]:
+    tail = _storyboard_tail(path)
+    if tail is None:
+        return None
+    body = body if isinstance(body, dict) else {}
+    if tail == []:
+        return handle_storyboard_create(session, body)
+    if len(tail) == 1:
+        return handle_storyboard_update(session, tail[0], body)
+    if len(tail) == 2 and tail[1] == "verify":
+        return handle_storyboard_verify(session, tail[0])
+    if len(tail) == 2 and tail[1] == "render-next":
+        return handle_storyboard_render_next(session, tail[0], body)
+    if len(tail) == 4 and tail[1] == "scenes" and tail[3] == "reference":
+        return handle_storyboard_scene_reference(session, tail[0], tail[2], body)
+    if len(tail) == 4 and tail[1] == "scenes" and tail[3] == "render":
+        return handle_storyboard_render(session, tail[0], tail[2], body)
+    if len(tail) == 4 and tail[1] == "scenes" and tail[3] == "sync":
+        return handle_storyboard_sync(session, tail[0], tail[2], body)
+    if len(tail) == 4 and tail[1] == "scenes" and tail[3] == "end-frame":
+        return handle_storyboard_end_frame(session, tail[0], tail[2], body)
+    return 404, {"error": "Storyboard route was not found."}
+
+
+# ============================================================================
 # ROUTE DISPATCHER
 # ============================================================================
 
@@ -3554,6 +4047,10 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     Dispatch GET requests to appropriate handlers.
     Returns (status_code, response_dict) or None if path not handled.
     """
+    storyboard_get = dispatch_storyboard_get(path, session)
+    if storyboard_get is not None:
+        return storyboard_get
+
     # Admin operations view over every registered software agent.
     if path == '/api/admin/ai-agents/health':
         return handle_ai_agents_health(session, query_params)
@@ -3775,6 +4272,10 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
     Dispatch POST requests to appropriate handlers.
     Returns (status_code, response_dict) or None if path not handled.
     """
+    storyboard_post = dispatch_storyboard_post(path, session, body_data)
+    if storyboard_post is not None:
+        return storyboard_post
+
     # Audited threshold promotion (A6) — the calibration loop's one mutating step.
     if path == AI_AGENTS_PROMOTE_PATH:
         return handle_ai_agent_threshold_promote(session, body_data)

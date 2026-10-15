@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS Storyboard Editor</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/phins-theme.css">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #f4f7ff;
+      background: linear-gradient(180deg, #0d1b3d 0%, #14336b 48%, #1b4d9b 100%);
+      min-height: 100vh;
+    }
+    .wrap { max-width: 1440px; margin: 0 auto; padding: 16px; }
+    .topbar { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+    .brand { color: white; text-decoration: none; }
+    .brand strong { display: block; font-size: 1.2rem; }
+    .brand span { opacity: 0.78; font-size: 0.82rem; }
+    .btn, button.btn, a.btn {
+      border: 0; border-radius: 9px; padding: 8px 12px; font-weight: 700; cursor: pointer;
+      color: white; text-decoration: none; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 6px;
+    }
+    .btn-primary { background: linear-gradient(135deg, #e3bf6f 0%, #c9a24d 100%); color: #14213d; }
+    .btn-secondary { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18); }
+    .btn-success { background: linear-gradient(135deg, #26a69a 0%, #1b7f74 100%); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .hero, .panel { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 14px; }
+    .hero { margin-bottom: 14px; }
+    .hero h1 { margin: 0 0 6px; font-size: 1.25rem; }
+    .hero p { margin: 0; opacity: 0.86; line-height: 1.5; max-width: 980px; }
+    .layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 14px; align-items: start; }
+    .board-list { display: flex; flex-direction: column; gap: 8px; }
+    .board-item { text-align: left; background: rgba(255,255,255,0.08); color: white; border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 8px 10px; cursor: pointer; }
+    .board-item.active { border-color: #e3bf6f; }
+    .board-item small { display: block; opacity: 0.72; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    label { display: block; font-size: 0.75rem; opacity: 0.8; margin-bottom: 4px; }
+    input, select, textarea {
+      width: 100%; border-radius: 9px; border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.1); color: white; padding: 8px 10px; font: inherit; font-size: 0.84rem;
+    }
+    select option { color: white; background: #173f8a; }
+    textarea { min-height: 72px; resize: vertical; }
+    .status { margin-top: 10px; padding: 8px 10px; border-radius: 10px; background: rgba(0,0,0,0.18); font-size: 0.82rem; line-height: 1.45; }
+    .status.error { background: rgba(239,83,80,0.22); }
+    .status.ok { background: rgba(38,166,154,0.22); }
+    .scenes { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+    .scene { background: rgba(7,16,40,0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 12px; }
+    .scene h3 { margin: 0 0 8px; font-size: 0.92rem; }
+    .meta { font-size: 0.75rem; opacity: 0.78; word-break: break-all; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .slide { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; margin-top: 8px; }
+    .frame { min-width: 160px; max-width: 180px; background: rgba(0,0,0,0.2); border-radius: 10px; padding: 8px; }
+    .frame img { width: 100%; height: 90px; object-fit: cover; border-radius: 8px; background: rgba(255,255,255,0.06); }
+    .frame .pending { height: 90px; display: flex; align-items: center; justify-content: center; opacity: 0.7; font-size: 0.75rem; text-align: center; }
+    .integrity { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.75rem; }
+    html[data-embed] .topbar { display: none; }
+    html[data-embed] .wrap { padding: 8px; }
+    @media (max-width: 900px) {
+      .layout, .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+  <script>
+    (function () {
+      try {
+        var params = new URLSearchParams(window.location.search);
+        if ((params.get('embed') || '').trim()) {
+          document.documentElement.setAttribute('data-embed', '1');
+        }
+      } catch (e) { /* embed is best-effort */ }
+    })();
+  </script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <a class="brand" href="/admin-media.html">
+        <strong>PHINS Storyboard Editor</strong>
+        <span>Scenes, reference photos, and Replicate — one sealed chain.</span>
+      </a>
+      <div class="actions">
+        <a class="btn btn-secondary" href="/admin-media.html">Media dashboard</a>
+        <a class="btn btn-secondary" href="/video-agents.html">Video agents</a>
+      </div>
+    </div>
+    <section class="hero">
+      <h1>Build a storyboard from a script and reference photos</h1>
+      <p>
+        Each scene defaults to 8 seconds. Scene 1 opens on the reference photo you choose.
+        Any later scene can keep that chain or use its own photo. The scene ends on a screenshot,
+        and that still is the opening of the next scene. Rendering uses Replicate. Checksums are
+        sealed before the next scene is allowed to start.
+      </p>
+    </section>
+    <div class="layout">
+      <aside class="panel">
+        <h2 style="margin:0 0 8px;font-size:1rem;">Storyboards</h2>
+        <div id="board-list" class="board-list"></div>
+        <div class="actions">
+          <button class="btn btn-secondary" type="button" id="new-board">New storyboard</button>
+        </div>
+      </aside>
+      <section class="panel">
+        <div class="grid">
+          <div>
+            <label for="sb-title">Title</label>
+            <input id="sb-title" type="text" maxlength="200" placeholder="Autumn care advertisement">
+          </div>
+          <div>
+            <label for="sb-purpose">Purpose</label>
+            <select id="sb-purpose"></select>
+          </div>
+          <div>
+            <label for="sb-campaign">Campaign ID</label>
+            <input id="sb-campaign" type="text" placeholder="Optional">
+          </div>
+          <div>
+            <label for="sb-model">Replicate model</label>
+            <select id="sb-model"><option value="">Provider default</option></select>
+          </div>
+          <div>
+            <label for="sb-aspect">Aspect</label>
+            <select id="sb-aspect">
+              <option value="16:9">16:9</option>
+              <option value="9:16">9:16</option>
+              <option value="1:1">1:1</option>
+            </select>
+          </div>
+          <div>
+            <label for="sb-opening">Opening reference photo</label>
+            <select id="sb-opening"><option value="">Choose a library image</option></select>
+          </div>
+        </div>
+        <div style="margin-top:10px;">
+          <label for="sb-opening-file">Or upload the first reference</label>
+          <input id="sb-opening-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+        </div>
+        <div style="margin-top:10px;">
+          <label for="sb-script">Script</label>
+          <textarea id="sb-script" placeholder="Separate scenes with a blank line, or start lines with Scene 1:, Scene 2:."></textarea>
+        </div>
+        <div class="actions">
+          <button class="btn btn-secondary" type="button" id="split-script">Split into scenes</button>
+          <button class="btn btn-primary" type="button" id="save-board">Save storyboard</button>
+          <button class="btn btn-success" type="button" id="render-next">Render next scene</button>
+          <button class="btn btn-secondary" type="button" id="verify-board">Verify integrity</button>
+        </div>
+        <div id="sb-status" class="status">Sign in with an admin or media account to edit a storyboard.</div>
+        <div id="sb-integrity" class="integrity" style="margin-top:8px;"></div>
+        <h2 style="margin:16px 0 6px;font-size:1rem;">Screenshot slide</h2>
+        <div id="sb-slide" class="slide"></div>
+        <div id="sb-scenes" class="scenes"></div>
+      </section>
+    </div>
+  </div>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const surface = ['media', 'growth', 'solutions', 'video-agents'].includes(params.get('surface'))
+      ? params.get('surface') : 'video-agents';
+    const token = localStorage.getItem('phins_token') || '';
+    const state = {
+      purposes: [],
+      images: [],
+      boards: [],
+      board: null,
+      scenes: [],
+      openingFile: '',
+      sceneFiles: {},
+    };
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function setStatus(message, kind) {
+      const el = document.getElementById('sb-status');
+      el.textContent = message;
+      el.className = 'status' + (kind ? ' ' + kind : '');
+    }
+
+    async function api(url, options) {
+      const headers = Object.assign({ 'Authorization': 'Bearer ' + token }, (options && options.headers) || {});
+      const response = await fetch(url, Object.assign({}, options || {}, { headers }));
+      let data = {};
+      try { data = await response.json(); } catch (err) { data = {}; }
+      if (!response.ok) {
+        const error = new Error(data.error || ('Request failed (' + response.status + ')'));
+        error.status = response.status;
+        error.body = data;
+        throw error;
+      }
+      return data;
+    }
+
+    function shaOf(board) {
+      return (board && board.integrity && board.integrity.document_sha256) || '';
+    }
+
+    function splitLocal(text) {
+      const raw = String(text || '').replace(/\r\n/g, '\n').trim();
+      if (!raw) return [];
+      if (/^\s*scene\s+\d+\s*[:.\-]?/im.test(raw)) {
+        return raw.split(/^\s*scene\s+\d+\s*[:.\-]?\s*/im).map(function (part) {
+          return part.trim();
+        }).filter(Boolean);
+      }
+      const paragraphs = raw.split(/\n\s*\n/).map(function (part) { return part.trim(); }).filter(Boolean);
+      return paragraphs.length ? paragraphs : [raw];
+    }
+
+    function currentScenesFromDom() {
+      return Array.prototype.map.call(document.querySelectorAll('[data-scene]'), function (card) {
+        const index = card.getAttribute('data-scene');
+        const mode = card.querySelector('.scene-mode').value;
+        const scene = {
+          script: card.querySelector('.scene-script').value,
+          duration_seconds: Number(card.querySelector('.scene-duration').value || 8),
+          reference_mode: mode,
+        };
+        if (mode === 'chosen') {
+          if (state.sceneFiles[index]) {
+            scene.chosen_reference = { data_url: state.sceneFiles[index], label: 'Scene ' + index + ' reference' };
+          } else {
+            const assetId = card.querySelector('.scene-asset').value;
+            const image = state.images.find(function (item) { return item.id === assetId; });
+            if (image) {
+              scene.chosen_reference = { asset_id: image.id, sha256: image.checksum || '', label: image.name || image.id };
+            }
+          }
+        }
+        return scene;
+      });
+    }
+
+    function renderPurposes() {
+      const select = document.getElementById('sb-purpose');
+      const current = select.value;
+      const purposes = state.purposes.length ? state.purposes : [
+        { id: 'advertisement', label: 'Advertisement' },
+        { id: 'story', label: 'Story' },
+        { id: 'investment_advice', label: 'Investment advice' },
+        { id: 'insurance_agent', label: 'Insurance agent' },
+        { id: 'disclaimer', label: 'Disclaimer' },
+        { id: 'policy_information', label: 'Policy information' },
+        { id: 'billing', label: 'Billing data' },
+        { id: 'claims', label: 'Claims' },
+        { id: 'underwriting', label: 'Underwriting' },
+      ];
+      select.innerHTML = purposes.map(function (item) {
+        return '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(item.label) + '</option>';
+      }).join('');
+      if (current) select.value = current;
+    }
+
+    function renderImages() {
+      const options = '<option value="">Choose a library image</option>' + state.images.map(function (image) {
+        const checksum = String(image.checksum || '');
+        const short = checksum ? checksum.slice(0, 8) : 'no checksum';
+        return '<option value="' + escapeHtml(image.id) + '">' + escapeHtml(image.name || image.id) + ' · ' + escapeHtml(short) + '</option>';
+      }).join('');
+      document.getElementById('sb-opening').innerHTML = options;
+      document.querySelectorAll('.scene-asset').forEach(function (select) {
+        const current = select.value;
+        select.innerHTML = options;
+        if (current) select.value = current;
+      });
+    }
+
+    function renderBoards() {
+      const list = document.getElementById('board-list');
+      if (!state.boards.length) {
+        list.innerHTML = '<div class="meta">No storyboards yet.</div>';
+        return;
+      }
+      list.innerHTML = state.boards.map(function (board) {
+        const active = state.board && state.board.id === board.id ? ' active' : '';
+        const ok = board.integrity_ok ? 'sealed' : 'check';
+        return '<button type="button" class="board-item' + active + '" data-id="' + escapeHtml(board.id) + '">'
+          + escapeHtml(board.title || board.id)
+          + '<small>' + escapeHtml(board.purpose || '') + ' · ' + escapeHtml(String((board.scenes || []).length)) + ' scenes · ' + ok + '</small>'
+          + '</button>';
+      }).join('');
+    }
+
+    function renderSlide(board) {
+      const slide = (board && board.slide) || { frames: [] };
+      const host = document.getElementById('sb-slide');
+      if (!slide.frames || !slide.frames.length) {
+        host.innerHTML = '<div class="meta">The slide appears when an opening photo or an ending screenshot is sealed.</div>';
+        return;
+      }
+      host.innerHTML = slide.frames.map(function (frame) {
+        const picture = frame.data_url
+          ? '<img alt="" src="' + escapeHtml(frame.data_url) + '">'
+          : '<div class="pending">' + (frame.sha256 ? 'Sealed still' : 'Waiting for the ending screenshot') + '</div>';
+        const handoff = frame.hands_off_to_scene ? ' → scene ' + frame.hands_off_to_scene : '';
+        return '<div class="frame">' + picture
+          + '<div class="meta" style="margin-top:6px;">' + escapeHtml(frame.label || frame.role) + handoff + '</div>'
+          + '<div class="meta">' + (frame.duration_seconds ? escapeHtml(frame.duration_seconds + 's') : 'open') + '</div>'
+          + '<div class="meta">' + escapeHtml((frame.sha256 || '').slice(0, 12)) + '</div>'
+          + '</div>';
+      }).join('');
+    }
+
+    function renderIntegrity(board) {
+      const host = document.getElementById('sb-integrity');
+      if (!board || !board.integrity) {
+        host.textContent = '';
+        return;
+      }
+      const integrity = board.integrity;
+      const notes = (integrity.chain_notes || []).join(' ');
+      host.textContent = (board.integrity_ok ? 'Integrity sealed' : 'Integrity check failed')
+        + ' · SHA-256 ' + (integrity.document_sha256 || '')
+        + (integrity.chain_ok ? ' · chain ready' : ' · chain incomplete')
+        + (notes ? ' · ' + notes : '');
+    }
+
+    function renderScenes() {
+      const host = document.getElementById('sb-scenes');
+      host.innerHTML = state.scenes.map(function (scene, offset) {
+        const index = offset + 1;
+        const end = (scene.end_screenshot && scene.end_screenshot.sha256) || '';
+        return '<article class="scene" data-scene="' + index + '">'
+          + '<h3>Scene ' + index + ' · ' + escapeHtml(scene.status || 'draft') + '</h3>'
+          + '<div class="grid">'
+          + '<div><label>Length (seconds)</label><input class="scene-duration" type="number" min="2" max="15" value="' + escapeHtml(scene.duration_seconds || 8) + '"></div>'
+          + '<div><label>Reference</label><select class="scene-mode">'
+          + '<option value="chain"' + (scene.reference_mode !== 'chosen' ? ' selected' : '') + '>Chain from previous still</option>'
+          + '<option value="chosen"' + (scene.reference_mode === 'chosen' ? ' selected' : '') + '>Choose this scene\'s photo</option>'
+          + '</select></div>'
+          + '<div><label>Scene reference photo</label><select class="scene-asset"><option value="">Choose a library image</option></select></div>'
+          + '<div><label>Or upload a scene reference</label><input class="scene-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></div>'
+          + '</div>'
+          + '<div style="margin-top:8px;"><label>Script</label><textarea class="scene-script">' + escapeHtml(scene.script || '') + '</textarea></div>'
+          + '<div class="meta" style="margin-top:6px;">Opens on ' + escapeHtml((scene.resolved_start_sha256 || 'not sealed').slice(0, 16))
+          + ' · ends on ' + escapeHtml((end || 'not captured').slice(0, 16))
+          + (scene.video_job_id ? ' · job ' + escapeHtml(scene.video_job_id) : '')
+          + '</div>'
+          + '<div class="actions"><button class="btn btn-success scene-render" type="button">Render with Replicate</button>'
+          + '<button class="btn btn-secondary scene-capture" type="button">Capture ending screenshot</button></div>'
+          + '</article>';
+      }).join('');
+      renderImages();
+      state.scenes.forEach(function (scene, offset) {
+        const card = host.querySelector('[data-scene="' + (offset + 1) + '"]');
+        const chosen = scene.chosen_reference || {};
+        if (chosen.asset_id && card) card.querySelector('.scene-asset').value = chosen.asset_id;
+      });
+    }
+
+    function applyBoard(board) {
+      state.board = board;
+      state.scenes = (board.scenes || []).map(function (scene) {
+        return Object.assign({}, scene);
+      });
+      state.sceneFiles = {};
+      state.openingFile = '';
+      document.getElementById('sb-title').value = board.title || '';
+      document.getElementById('sb-purpose').value = board.purpose || 'advertisement';
+      document.getElementById('sb-campaign').value = board.campaign_id || '';
+      document.getElementById('sb-model').value = board.provider_model || '';
+      document.getElementById('sb-aspect').value = board.aspect_ratio || '16:9';
+      document.getElementById('sb-script').value = board.source_script || '';
+      const opening = board.opening_reference || {};
+      document.getElementById('sb-opening').value = opening.asset_id || '';
+      renderScenes();
+      renderSlide(board);
+      renderIntegrity(board);
+      renderBoards();
+    }
+
+    function blankBoard() {
+      state.board = null;
+      state.scenes = [{ script: '', duration_seconds: 8, reference_mode: 'chain', status: 'draft' }];
+      state.sceneFiles = {};
+      state.openingFile = '';
+      document.getElementById('sb-title').value = '';
+      document.getElementById('sb-script').value = '';
+      document.getElementById('sb-campaign').value = '';
+      renderScenes();
+      renderSlide(null);
+      renderIntegrity(null);
+      renderBoards();
+      setStatus('New storyboard. Split a script or write scene 1, choose the opening photo, then save.', '');
+    }
+
+    async function openingPayload() {
+      if (state.openingFile) {
+        return { data_url: state.openingFile, label: 'Opening reference' };
+      }
+      const assetId = document.getElementById('sb-opening').value;
+      const image = state.images.find(function (item) { return item.id === assetId; });
+      if (!image) return null;
+      return { asset_id: image.id, sha256: image.checksum || '', label: image.name || image.id };
+    }
+
+    async function saveBoard() {
+      let scenes = currentScenesFromDom();
+      const scriptText = document.getElementById('sb-script').value;
+      const onlyEmpty = scenes.length === 1 && !String(scenes[0].script || '').trim();
+      if (onlyEmpty && scriptText.trim()) {
+        const parts = splitLocal(scriptText);
+        scenes = parts.map(function (script) {
+          return { script: script, duration_seconds: 8, reference_mode: 'chain' };
+        });
+      }
+      const opening = await openingPayload();
+      const payload = {
+        title: document.getElementById('sb-title').value,
+        purpose: document.getElementById('sb-purpose').value,
+        campaign_id: document.getElementById('sb-campaign').value,
+        provider_model: document.getElementById('sb-model').value,
+        aspect_ratio: document.getElementById('sb-aspect').value,
+        surface: surface,
+        scenes: scenes,
+      };
+      if (opening) payload.opening_reference = opening;
+      setStatus('Saving storyboard…', '');
+      let data;
+      if (!state.board) {
+        payload.script = document.getElementById('sb-script').value;
+        data = await api('/api/admin/media/storyboards', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        payload.expected_sha256 = shaOf(state.board);
+        data = await api('/api/admin/media/storyboards/' + encodeURIComponent(state.board.id), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
+      applyBoard(data.storyboard);
+      await refreshList();
+      setStatus('Saved. Document SHA-256 ' + shaOf(state.board), 'ok');
+    }
+
+    async function refreshList() {
+      const data = await api('/api/admin/media/storyboards');
+      state.boards = data.items || [];
+      state.purposes = data.purposes || state.purposes;
+      renderPurposes();
+      renderBoards();
+    }
+
+    async function loadBoard(id) {
+      const data = await api('/api/admin/media/storyboards/' + encodeURIComponent(id));
+      applyBoard(data.storyboard);
+      setStatus('Loaded ' + data.storyboard.id + '.', 'ok');
+    }
+
+    async function renderScene(index) {
+      if (!state.board) {
+        setStatus('Save the storyboard before rendering.', 'error');
+        return;
+      }
+      await saveBoard();
+      setStatus('Sending scene ' + index + ' to Replicate…', '');
+      const data = await api('/api/admin/media/storyboards/' + encodeURIComponent(state.board.id) + '/scenes/' + index + '/render', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expected_sha256: shaOf(state.board),
+          provider_model: document.getElementById('sb-model').value,
+        }),
+      });
+      applyBoard(data.storyboard);
+      const job = data.job || {};
+      setStatus('Scene ' + index + ' job ' + (job.id || '') + ' is ' + (job.status || 'queued') + '.', 'ok');
+      if (job.id && ['queued', 'processing', 'completed'].includes(String(job.status || ''))) {
+        window.setTimeout(function () { followScene(index); }, 2500);
+      }
+    }
+
+    async function followScene(index) {
+      if (!state.board) return;
+      try {
+        const sync = await api('/api/admin/media/storyboards/' + encodeURIComponent(state.board.id) + '/scenes/' + index + '/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ expected_sha256: shaOf(state.board) }),
+        });
+        applyBoard(sync.storyboard);
+        const status = String((sync.job || {}).status || '');
+        if (status === 'completed') {
+          const sealed = await api('/api/admin/media/storyboards/' + encodeURIComponent(state.board.id) + '/scenes/' + index + '/end-frame', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ expected_sha256: shaOf(state.board), video_job_id: sync.job.id }),
+          });
+          applyBoard(sealed.storyboard);
+          setStatus('Scene ' + index + ' ending screenshot is sealed. It opens the next chained scene.', 'ok');
+          return;
+        }
+        if (status === 'queued' || status === 'processing') {
+          setStatus('Scene ' + index + ' is still rendering (' + status + ').', '');
+          window.setTimeout(function () { followScene(index); }, 5000);
+          return;
+        }
+        setStatus('Scene ' + index + ' is ' + (status || 'unknown') + '.', status === 'failed' ? 'error' : '');
+      } catch (err) {
+        setStatus(err.message, 'error');
+      }
+    }
+
+    async function captureScene(index) {
+      if (!state.board) return;
+      setStatus('Capturing the ending screenshot for scene ' + index + '…', '');
+      const data = await api('/api/admin/media/storyboards/' + encodeURIComponent(state.board.id) + '/scenes/' + index + '/end-frame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expected_sha256: shaOf(state.board) }),
+      });
+      applyBoard(data.storyboard);
+      setStatus('Ending screenshot sealed.', 'ok');
+    }
+
+    document.getElementById('split-script').addEventListener('click', function () {
+      const parts = splitLocal(document.getElementById('sb-script').value);
+      if (!parts.length) {
+        setStatus('Write a script first.', 'error');
+        return;
+      }
+      state.scenes = parts.map(function (script) {
+        return { script: script, duration_seconds: 8, reference_mode: 'chain', status: 'draft' };
+      });
+      renderScenes();
+      setStatus(parts.length + ' scene' + (parts.length === 1 ? '' : 's') + ' at 8 seconds. Save to seal the document.', 'ok');
+    });
+
+    document.getElementById('new-board').addEventListener('click', blankBoard);
+    document.getElementById('save-board').addEventListener('click', function () {
+      saveBoard().catch(function (err) { setStatus(err.message, 'error'); });
+    });
+    document.getElementById('render-next').addEventListener('click', function () {
+      if (!state.board) {
+        setStatus('Save the storyboard before rendering.', 'error');
+        return;
+      }
+      saveBoard().then(function () {
+        return api('/api/admin/media/storyboards/' + encodeURIComponent(state.board.id) + '/render-next', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            expected_sha256: shaOf(state.board),
+            provider_model: document.getElementById('sb-model').value,
+          }),
+        });
+      }).then(function (data) {
+        applyBoard(data.storyboard);
+        if (!data.job) {
+          setStatus(data.message || 'No scene is waiting to render.', '');
+          return;
+        }
+        setStatus('Rendering job ' + data.job.id + '.', 'ok');
+        const scene = (data.storyboard.scenes || []).find(function (item) {
+          return item.video_job_id === data.job.id;
+        });
+        if (scene) window.setTimeout(function () { followScene(scene.index); }, 2500);
+      }).catch(function (err) { setStatus(err.message, 'error'); });
+    });
+    document.getElementById('verify-board').addEventListener('click', function () {
+      if (!state.board) return;
+      api('/api/admin/media/storyboards/' + encodeURIComponent(state.board.id) + '/verify')
+        .then(function (data) {
+          setStatus(data.ok ? 'Integrity verified.' : 'Integrity check failed. The storyboard was not repaired.', data.ok ? 'ok' : 'error');
+        })
+        .catch(function (err) { setStatus(err.message, 'error'); });
+    });
+    document.getElementById('sb-opening-file').addEventListener('change', function (event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function () { state.openingFile = String(reader.result || ''); };
+      reader.readAsDataURL(file);
+    });
+    document.getElementById('board-list').addEventListener('click', function (event) {
+      const button = event.target.closest('[data-id]');
+      if (!button) return;
+      loadBoard(button.getAttribute('data-id')).catch(function (err) { setStatus(err.message, 'error'); });
+    });
+    document.getElementById('sb-scenes').addEventListener('click', function (event) {
+      const card = event.target.closest('[data-scene]');
+      if (!card) return;
+      const index = Number(card.getAttribute('data-scene'));
+      if (event.target.classList.contains('scene-render')) {
+        renderScene(index).catch(function (err) { setStatus(err.message, 'error'); });
+      }
+      if (event.target.classList.contains('scene-capture')) {
+        captureScene(index).catch(function (err) { setStatus(err.message, 'error'); });
+      }
+    });
+    document.getElementById('sb-scenes').addEventListener('change', function (event) {
+      if (!event.target.classList.contains('scene-file')) return;
+      const card = event.target.closest('[data-scene]');
+      const file = event.target.files && event.target.files[0];
+      if (!card || !file) return;
+      const reader = new FileReader();
+      reader.onload = function () {
+        state.sceneFiles[card.getAttribute('data-scene')] = String(reader.result || '');
+        card.querySelector('.scene-mode').value = 'chosen';
+      };
+      reader.readAsDataURL(file);
+    });
+
+    async function boot() {
+      renderPurposes();
+      blankBoard();
+      if (!token) {
+        setStatus('Sign in as admin or media, then open this editor from the media dashboard.', 'error');
+        return;
+      }
+      try {
+        await refreshList();
+        const providers = await api('/api/admin/media/video-providers');
+        const replicate = (((providers.capabilities || {}).providers || {}).replicate) || {};
+        const models = Array.isArray(replicate.models) ? replicate.models : [];
+        document.getElementById('sb-model').innerHTML = '<option value="">Provider default</option>' + models.map(function (model) {
+          return '<option value="' + escapeHtml(model) + '">' + escapeHtml(model) + '</option>';
+        }).join('');
+        if (!replicate.enabled) {
+          setStatus('Replicate is not configured on this server. You can still build and seal the storyboard. Rendering needs REPLICATE_API_TOKEN.', '');
+        }
+        const media = await api('/api/media');
+        state.images = (media.assets || []).filter(function (asset) { return asset.type === 'image'; });
+        renderImages();
+        if (state.boards[0]) await loadBoard(state.boards[0].id);
+        else setStatus('Ready. Split a script into 8-second scenes, choose the opening photo, and save.', 'ok');
+      } catch (err) {
+        setStatus(err.message, 'error');
+      }
+    }
+    boot();
+  </script>
+</body>
+</html>

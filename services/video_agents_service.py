@@ -157,6 +157,36 @@ _PIPELINE_PROMPTS: Dict[str, str] = {
         "Tone: empathetic, clear, supportive. Reduce anxiety and set accurate expectations. "
         "Duration: 60-90 seconds. Style: compassionate, step-by-step, outcome-focused."
     ),
+    # Storyboard scenes are explicit submits. They are not part of the
+    # default batch, so "generate all" stays the five workflow pipelines.
+    "storyboard_story": (
+        "Create one commercial story scene for PHINS. Open on the supplied reference still "
+        "and end on a clear still that can open the next scene. Use only the supplied script."
+    ),
+    "storyboard_advertisement": (
+        "Create one brand-safe advertisement scene for PHINS. Open on the supplied reference still "
+        "and end on a clear still that can open the next scene. Do not add unsupported claims."
+    ),
+    "storyboard_investment_advice": (
+        "Create one investment-education scene for PHINS. This is not a personal recommendation. "
+        "Use only figures written in the script. Do not invent returns. End on a clear still."
+    ),
+    "storyboard_insurance_agent": (
+        "Create one insurance-agent scene for PHINS. Plain language. Do not invent policy terms. "
+        "Open on the supplied reference still and end on a clear still for the next scene."
+    ),
+    "storyboard_disclaimer": (
+        "Deliver the disclaimer script verbatim. Do not paraphrase or add legal lines. "
+        "Open on the supplied reference still and end on a clear still."
+    ),
+    "storyboard_policy_information": (
+        "Explain the policy using only the supplied script. Do not invent coverage, exclusions, or premiums. "
+        "Open on the supplied reference still and end on a clear still."
+    ),
+    "storyboard_billing": (
+        "Explain the billing scene using only amounts and dates written in the script. "
+        "Do not invent balances. Open on the supplied reference still and end on a clear still."
+    ),
 }
 
 _PIPELINE_TITLES: Dict[str, str] = {
@@ -165,7 +195,23 @@ _PIPELINE_TITLES: Dict[str, str] = {
     "application_assistant": "PHINS Application Assistant",
     "underwriting_assistant": "PHINS Underwriting Assistant",
     "claims_assistant": "PHINS Claims Assistant",
+    "storyboard_story": "PHINS Story Scene",
+    "storyboard_advertisement": "PHINS Advertisement Scene",
+    "storyboard_investment_advice": "PHINS Investment Advice Scene",
+    "storyboard_insurance_agent": "PHINS Insurance Agent Scene",
+    "storyboard_disclaimer": "PHINS Disclaimer Scene",
+    "storyboard_policy_information": "PHINS Policy Information Scene",
+    "storyboard_billing": "PHINS Billing Scene",
 }
+
+# The original workflow batch. Storyboard pipelines are submitted per scene.
+BATCH_PIPELINE_TYPES = frozenset({
+    "introductions",
+    "regulatory_presentations",
+    "application_assistant",
+    "underwriting_assistant",
+    "claims_assistant",
+})
 
 SUPPORTED_PIPELINE_TYPES = set(_PIPELINE_PROMPTS.keys())
 
@@ -551,9 +597,10 @@ class VideoAgentsService:
                     "replicate": {"enabled": False, "label": "Replicate", "models": []},
                 },
                 "default_provider": "gemini",
-                "pipeline_types": sorted(SUPPORTED_PIPELINE_TYPES),
-                "service_available": False,
-            }
+            "pipeline_types": sorted(SUPPORTED_PIPELINE_TYPES),
+            "batch_pipeline_types": sorted(BATCH_PIPELINE_TYPES),
+            "service_available": False,
+        }
 
         svc = get_media_generation_service()
         provider_config = svc.supported_provider_config()
@@ -565,10 +612,23 @@ class VideoAgentsService:
                 default_provider = name
                 break
 
+        storyboard: Dict[str, Any] = {}
+        try:
+            from services.storyboard_editor import purpose_catalog, DEFAULT_SCENE_SECONDS
+            storyboard = {
+                "provider": "replicate",
+                "default_scene_seconds": DEFAULT_SCENE_SECONDS,
+                "purposes": purpose_catalog(),
+            }
+        except Exception:
+            storyboard = {}
+
         return {
             "providers": provider_config,
             "default_provider": default_provider,
             "pipeline_types": sorted(SUPPORTED_PIPELINE_TYPES),
+            "batch_pipeline_types": sorted(BATCH_PIPELINE_TYPES),
+            "storyboard": storyboard,
             "service_available": True,
         }
 
@@ -809,7 +869,7 @@ class VideoAgentsService:
         pipelines = (
             [pipeline_type]
             if pipeline_type and pipeline_type in SUPPORTED_PIPELINE_TYPES
-            else sorted(SUPPORTED_PIPELINE_TYPES)
+            else sorted(BATCH_PIPELINE_TYPES)
         )
 
         queued_jobs: List[Dict[str, Any]] = []

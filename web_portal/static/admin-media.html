@@ -1158,6 +1158,19 @@
                     <div class="stat-label">Storage</div>
                 </div>
             </div>
+
+        <section class="storyboard-embed-section" style="margin: 0 0 16px;">
+            <div class="embed-frame-bar">
+                <div class="embed-frame-title">Storyboard editor</div>
+                <div class="embed-frame-actions">
+                    <a class="btn btn-secondary" href="/storyboard-editor.html?surface=media" target="_blank" rel="noopener">Open full editor</a>
+                </div>
+            </div>
+            <iframe class="storyboard-embed"
+                    src="/storyboard-editor.html?embed=1&amp;surface=media"
+                    title="Storyboard editor for media"
+                    style="width:100%;height:920px;border:0;background:transparent;display:block;"></iframe>
+        </section>
         
         <!-- Upload Section -->
         <section class="upload-section">
@@ -1682,6 +1695,17 @@ Notes:
                         data-src="/admin.html?embed=growth-agent-section"
                         title="Growth Agent (AI + BI Marketing & Sales)"
                         loading="lazy"></iframe>
+                <div class="embed-frame-bar" style="border-top:1px solid rgba(255,255,255,0.08);border-bottom:0;">
+                    <div class="embed-frame-title">Storyboard editor</div>
+                    <div class="embed-frame-actions">
+                        <a class="btn btn-secondary" href="/storyboard-editor.html?surface=growth" target="_blank" rel="noopener">Open full editor</a>
+                    </div>
+                </div>
+                <iframe id="growth-storyboard-frame"
+                        class="storyboard-embed"
+                        data-src="/storyboard-editor.html?embed=1&amp;surface=growth"
+                        title="Storyboard editor for growth"
+                        style="width:100%;height:920px;border:0;background:transparent;display:block;"></iframe>
             </div>
         </div><!-- End Growth Agent Tab -->
 
@@ -1845,6 +1869,19 @@ Notes:
                     </div>
                     <div class="blueprint-status" id="blueprint-status">Loading solution blueprints.</div>
                 </div>
+            </section>
+            <section class="storyboard-embed-section" style="margin-top:16px;">
+                <div class="embed-frame-bar">
+                    <div class="embed-frame-title">Storyboard editor</div>
+                    <div class="embed-frame-actions">
+                        <a class="btn btn-secondary" href="/storyboard-editor.html?surface=solutions" target="_blank" rel="noopener">Open full editor</a>
+                    </div>
+                </div>
+                <iframe id="solutions-storyboard-frame"
+                        class="storyboard-embed"
+                        data-src="/storyboard-editor.html?embed=1&amp;surface=solutions"
+                        title="Storyboard editor for solution films"
+                        style="width:100%;height:920px;border:0;background:transparent;display:block;"></iframe>
             </section>
         </div>
 
@@ -2330,26 +2367,28 @@ Notes:
         // those tabs.  Preserves data integrity because each sub-page keeps
         // its own state machine and API session.
         function hydrateEmbeddedFrame(panel) {
-            const frame = panel && panel.querySelector('iframe.embed-frame');
-            if (!frame) return;
-            const desired = frame.getAttribute('data-src');
-            if (!desired) return;
-            const current = frame.getAttribute('src') || '';
-            if (!current) frame.setAttribute('src', desired);
+            const frames = panel ? panel.querySelectorAll('iframe.embed-frame, iframe.storyboard-embed') : [];
+            frames.forEach(frame => {
+                const desired = frame.getAttribute('data-src');
+                if (!desired) return;
+                const current = frame.getAttribute('src') || '';
+                if (!current) frame.setAttribute('src', desired);
+            });
         }
 
         function reloadEmbeddedTab(tabName) {
             const panel = document.getElementById(`tab-${tabName}`);
-            const frame = panel && panel.querySelector('iframe.embed-frame');
-            if (!frame) return;
-            const desired = frame.getAttribute('data-src') || frame.getAttribute('src');
-            if (!desired) return;
-            frame.removeAttribute('src');
-            // Force a reflow so the browser registers the removal before
-            // we assign the URL again; without this some engines coalesce
-            // the remove+set into a no-op.
-            void frame.offsetHeight;
-            frame.setAttribute('src', desired);
+            const frames = panel ? panel.querySelectorAll('iframe.embed-frame, iframe.storyboard-embed') : [];
+            frames.forEach(frame => {
+                const desired = frame.getAttribute('data-src') || frame.getAttribute('src');
+                if (!desired) return;
+                frame.removeAttribute('src');
+                // Force a reflow so the browser registers the removal before
+                // we assign the URL again; without this some engines coalesce
+                // the remove+set into a no-op.
+                void frame.offsetHeight;
+                frame.setAttribute('src', desired);
+            });
         }
 
         function resolveInitialTab() {
