@@ -3795,7 +3795,7 @@ def handle_storyboard_update(session: Optional[Dict], storyboard_id: str, body: 
         kwargs: Dict[str, Any] = {
             "expected_sha256": str(body.get("expected_sha256") or ""),
         }
-        for key in ("title", "purpose", "provider_model", "aspect_ratio", "resolution", "campaign_id"):
+        for key in ("title", "purpose", "script", "provider_model", "aspect_ratio", "resolution", "campaign_id"):
             if key in body:
                 kwargs[key] = body.get(key)
         if "opening_reference" in body and isinstance(body.get("opening_reference"), dict):

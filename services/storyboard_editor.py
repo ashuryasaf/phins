@@ -791,6 +791,7 @@ class StoryboardEditor:
         expected_sha256: str,
         title: Optional[str] = None,
         purpose: Optional[str] = None,
+        script: Optional[str] = None,
         provider_model: Optional[str] = None,
         aspect_ratio: Optional[str] = None,
         resolution: Optional[str] = None,
@@ -814,6 +815,8 @@ class StoryboardEditor:
                 board["pipeline_type"] = PURPOSES[purpose_key]["pipeline_type"]
             if title is not None:
                 board["title"] = str(title or "").strip()[:200] or board.get("title") or "Storyboard"
+            if script is not None:
+                board["source_script"] = str(script or "")[:MAX_SOURCE_SCRIPT_CHARS]
             if provider_model is not None:
                 model = str(provider_model or "").strip()
                 if model != str(board.get("provider_model") or ""):
@@ -1086,34 +1089,47 @@ class StoryboardEditor:
                 },
                 "force": False,
             }
-            try:
-                job = submitter(submission)
-            except StoryboardError:
-                raise
-            except Exception as exc:
-                scene["status"] = "failed"
-                board["updated_at"] = _now()
-                failed = self._save(board)
-                raise StoryboardProviderError(
-                    f"Replicate submission failed: {exc}",
-                    document_sha256=(failed.get("integrity") or {}).get("document_sha256"),
-                ) from exc
-            if not isinstance(job, dict) or not job.get("id"):
-                raise StoryboardProviderError("Replicate did not return a video job.")
+        # The provider round-trip runs without the editor lock. A failed
+        # submission leaves the stored document untouched, so the caller can
+        # retry with the same expected_sha256.
+        expected = str(expected_sha256 or "").strip().lower()
+        try:
+            job = submitter(submission)
+        except StoryboardError:
+            raise
+        except Exception as exc:
+            raise StoryboardProviderError(
+                f"Replicate submission failed: {exc}",
+                document_sha256=expected,
+            ) from exc
+        if not isinstance(job, dict) or not job.get("id"):
+            raise StoryboardProviderError("Replicate did not return a video job.")
+        with self._lock:
+            board = self._load(storyboard_id)
+            stored = str((board.get("integrity") or {}).get("document_sha256") or "")
+            if stored != expected:
+                raise StoryboardConflict(
+                    "Storyboard changed while the scene was being submitted. "
+                    "The video job was created and is not linked to this scene.",
+                    document_sha256=stored,
+                    video_job_id=str(job.get("id")),
+                )
+            scene = self._scene(board, index)
+            board["provider_model"] = model
             scene["video_job_id"] = str(job.get("id"))
             scene["provider_duration_seconds"] = int(scene["duration_seconds"])
             status = str(job.get("status") or "queued").lower()
             scene["status"] = _scene_status_from_job(status, has_end=False)
             board["updated_at"] = _now()
             saved = self._save(board)
-            return {
-                "storyboard": saved,
-                "job": {
-                    "id": job.get("id"),
-                    "status": job.get("status"),
-                    "deduplicated": bool(job.get("deduplicated")),
-                },
-            }
+        return {
+            "storyboard": saved,
+            "job": {
+                "id": job.get("id"),
+                "status": job.get("status"),
+                "deduplicated": bool(job.get("deduplicated")),
+            },
+        }
 
     def _resolved_reference(self, board: Dict[str, Any], scene: Dict[str, Any]) -> Dict[str, Any]:
         if scene.get("reference_mode") == "chosen":

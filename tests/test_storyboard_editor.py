@@ -6,6 +6,7 @@ import base64
 import hashlib
 import shutil
 import subprocess
+import threading
 
 import pytest
 
@@ -289,6 +290,86 @@ def test_replicate_disabled_does_not_submit():
     assert editor.get(board["id"])["scenes"][0]["video_job_id"] == ""
 
 
+def test_failed_submission_leaves_the_board_ready_for_the_same_retry():
+    editor = _editor()
+    board = editor.create(
+        purpose="billing",
+        script="The amount due is 120.",
+        opening_reference=_opening(),
+        provider_model="google/veo-3.1-fast",
+    )
+    sha = board["integrity"]["document_sha256"]
+
+    def _down(params):
+        raise RuntimeError("provider is down")
+
+    with pytest.raises(StoryboardProviderError) as exc:
+        editor.render_scene(
+            board["id"], 1,
+            expected_sha256=sha,
+            submitter=_down,
+            replicate_enabled=True,
+            provider_model="google/veo-3.1-fast",
+            submitted_by="admin",
+        )
+    assert exc.value.extra["document_sha256"] == sha
+    stored = editor.get(board["id"])
+    assert stored["integrity"]["document_sha256"] == sha
+    assert stored["scenes"][0]["status"] == "draft"
+    retried = editor.render_scene(
+        board["id"], 1,
+        expected_sha256=sha,
+        submitter=lambda params: {"id": "job-retry", "status": "queued"},
+        replicate_enabled=True,
+        provider_model="google/veo-3.1-fast",
+        submitted_by="admin",
+    )
+    assert retried["storyboard"]["scenes"][0]["video_job_id"] == "job-retry"
+
+
+def test_a_slow_submission_does_not_block_another_board():
+    editor = _editor()
+    rendering = editor.create(
+        purpose="claims", script="Gather the documents.", opening_reference=_opening(),
+        provider_model="google/veo-3.1-fast",
+    )
+    other = editor.create(
+        purpose="story", script="Dawn.", opening_reference=_opening(),
+    )
+    submitting = threading.Event()
+    release = threading.Event()
+
+    def _slow(params):
+        submitting.set()
+        assert release.wait(10)
+        return {"id": "job-slow", "status": "queued"}
+
+    worker = threading.Thread(
+        target=editor.render_scene,
+        args=(rendering["id"], 1),
+        kwargs={
+            "expected_sha256": rendering["integrity"]["document_sha256"],
+            "submitter": _slow,
+            "replicate_enabled": True,
+            "provider_model": "google/veo-3.1-fast",
+            "submitted_by": "admin",
+        },
+    )
+    worker.start()
+    try:
+        assert submitting.wait(10)
+        renamed = editor.update(
+            other["id"],
+            expected_sha256=other["integrity"]["document_sha256"],
+            title="Edited while the provider is slow",
+        )
+        assert renamed["title"] == "Edited while the provider is slow"
+    finally:
+        release.set()
+        worker.join(10)
+    assert editor.get(rendering["id"])["scenes"][0]["video_job_id"] == "job-slow"
+
+
 def test_changing_scene_one_supersedes_the_chain_and_keeps_a_chosen_scene():
     editor = _editor()
     chosen = seal_reference(raw=_PNG_B, mime="image/png", label="own")
@@ -422,6 +503,29 @@ def test_api_create_chain_and_auth(monkeypatch):
     })
     assert status == 409
     assert api_extensions.handle_storyboard_get(admin, board["id"])[1]["storyboard"]["title"] == "Billing explainer"
+
+
+def test_saved_script_survives_a_reload():
+    reset_storyboard_editor()
+    admin = {"username": "admin", "role": "admin"}
+    board = api_extensions.handle_storyboard_create(admin, {
+        "purpose": "story",
+        "script": "First paste.",
+        "opening_reference": {"data_url": _PNG_URL},
+    })[1]["storyboard"]
+    status, updated = api_extensions.handle_storyboard_update(admin, board["id"], {
+        "expected_sha256": board["integrity"]["document_sha256"],
+        "script": "Scene 1: The sealed line.",
+        "scenes": [{"script": "The sealed line.", "duration_seconds": 8}],
+    })
+    assert status == 200
+    reloaded = api_extensions.handle_storyboard_get(admin, board["id"])[1]["storyboard"]
+    assert reloaded["source_script"] == "Scene 1: The sealed line."
+    kept = api_extensions.handle_storyboard_update(admin, board["id"], {
+        "expected_sha256": updated["storyboard"]["integrity"]["document_sha256"],
+        "title": "Renamed",
+    })[1]["storyboard"]
+    assert kept["source_script"] == "Scene 1: The sealed line."
 
 
 def test_api_library_checksum_mismatch_is_refused(monkeypatch):

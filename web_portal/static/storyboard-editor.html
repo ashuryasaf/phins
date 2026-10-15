@@ -420,13 +420,13 @@
         provider_model: document.getElementById('sb-model').value,
         aspect_ratio: document.getElementById('sb-aspect').value,
         surface: surface,
+        script: scriptText,
         scenes: scenes,
       };
       if (opening) payload.opening_reference = opening;
       setStatus('Saving storyboard…', '');
       let data;
       if (!state.board) {
-        payload.script = document.getElementById('sb-script').value;
         data = await api('/api/admin/media/storyboards', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
