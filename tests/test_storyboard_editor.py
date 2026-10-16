@@ -21,6 +21,7 @@ from services.storyboard_editor import (
     StoryboardValidationError,
     VEO_DURATIONS,
     build_slide,
+    concatenate_videos,
     document_sha256,
     duration_renders_exactly,
     extract_last_frame_png,
@@ -578,7 +579,10 @@ def test_api_create_chain_and_auth(monkeypatch):
         return {"id": "job-api", "status": "queued", "deduplicated": False}
 
     monkeypatch.setattr(api_extensions, "_submit_storyboard_scene", _submit)
-    monkeypatch.setattr(api_extensions, "_replicate_for_storyboard", lambda: (True, "google/veo-3.1-fast"))
+    monkeypatch.setattr(
+        api_extensions, "_storyboard_connection",
+        lambda provider, model: (True, provider or "replicate", ""),
+    )
     status, rendered = api_extensions.handle_storyboard_render(admin, board["id"], "1", {
         "expected_sha256": board["integrity"]["document_sha256"],
     })
@@ -691,3 +695,151 @@ def test_extract_last_frame_seals_a_real_clip(tmp_path):
     assert frame.startswith(b"\x89PNG\r\n\x1a\n")
     sealed = seal_reference(raw=frame, mime="image/png", label="end")
     assert sealed["sha256"] == hashlib.sha256(frame).hexdigest()
+
+
+def test_growth_agent_job_keeps_the_scene_duration_and_still(monkeypatch):
+    captured = {}
+
+    class _FakeProvider:
+        def submit_video_generation(self, **kwargs):
+            captured.update(kwargs)
+            return {
+                "provider_job_id": "pred-storyboard",
+                "status": "queued",
+                "provider_state": {},
+                "message": "accepted",
+            }
+
+    import web_portal.server as portal
+    monkeypatch.setattr(portal, "get_media_generation_service", lambda: _FakeProvider())
+    job = portal.create_media_video_job(
+        campaign_id="SB-DURATION",
+        blueprint_index=0,
+        blueprint={"title": "Scene 1"},
+        requested_by="admin",
+        provider="replicate",
+        provider_model="bytedance/seedance-2.0",
+        image_data_url="data:image/png;base64,aaaa",
+        prompt_override="Hold the still.",
+        duration_seconds=10,
+        aspect_ratio="9:16",
+        resolution="720p",
+        submit_inline=True,
+    )
+    try:
+        assert captured["duration_seconds"] == 10
+        assert captured["aspect_ratio"] == "9:16"
+        assert captured["image_data_url"] == "data:image/png;base64,aaaa"
+        assert captured["provider"] == "replicate"
+        assert job["duration_seconds"] == 10
+        assert job["status"] == "queued"
+        assert str(job["id"]).startswith("mjob-")
+    finally:
+        portal.MEDIA_PROCESSING_JOBS.pop(job["id"], None)
+
+
+def test_scene_one_without_a_photo_asks_the_provider_to_generate_it():
+    editor = _editor()
+    board = editor.create(purpose="advertisement", script="Open on the kitchen table.")
+    assert board["provider"] == "replicate"
+    assert board["scenes"][0]["start_source"] == "generated"
+    assert board["integrity"]["chain_ok"] is True
+    calls = []
+    rendered = editor.render_scene(
+        board["id"], 1,
+        expected_sha256=board["integrity"]["document_sha256"],
+        submitter=lambda params: calls.append(params) or {"id": "job-gen", "status": "queued"},
+        provider="replicate",
+        provider_connected=True,
+        provider_model="google/veo-3.1-fast",
+        submitted_by="admin",
+    )["storyboard"]
+    assert calls[0]["image_data_url"] == ""
+    assert calls[0]["provider"] == "replicate"
+    assert "Generate the opening picture" in calls[0]["prompt_override"]
+    assert rendered["scenes"][0]["video_job_id"] == "job-gen"
+
+
+def test_kling_duration_is_sent_only_when_kling_would_keep_it():
+    assert duration_renders_exactly("kling-v2.6-pro", 8, "kling") is False
+    assert duration_renders_exactly("kling-v2.6-pro", 5, "kling") is True
+    assert duration_renders_exactly("veo-3.1-generate-preview", 8, "gemini") is True
+    assert duration_renders_exactly("veo-3.1-generate-preview", 10, "gemini") is False
+    editor = _editor()
+    board = editor.create(
+        purpose="disclaimer",
+        provider="kling",
+        scenes=[{"script": "This is general information.", "duration_seconds": 5}],
+        opening_reference=_opening(),
+    )
+    calls = []
+    editor.render_scene(
+        board["id"], 1,
+        expected_sha256=board["integrity"]["document_sha256"],
+        submitter=lambda params: calls.append(params) or {"id": "job-k", "status": "queued", "provider": "kling"},
+        provider="kling",
+        provider_connected=True,
+        provider_model="kling-v2.6-pro",
+        submitted_by="admin",
+    )
+    assert calls[0]["provider"] == "kling"
+    assert calls[0]["duration_seconds"] == 5
+    refused = editor.create(
+        purpose="disclaimer",
+        provider="kling",
+        scenes=[{"script": "This is general information.", "duration_seconds": 8}],
+        opening_reference=_opening(),
+    )
+    with pytest.raises(StoryboardIntegrityError, match="exact duration"):
+        editor.render_scene(
+            refused["id"], 1,
+            expected_sha256=refused["integrity"]["document_sha256"],
+            submitter=lambda params: (_ for _ in ()).throw(AssertionError("must not submit")),
+            provider="kling",
+            provider_connected=True,
+            provider_model="kling-v2.6-pro",
+            submitted_by="admin",
+        )
+
+
+def test_scene_files_join_without_rewriting_them(tmp_path):
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg not installed")
+    clips = []
+    for color in ("blue", "red"):
+        path = tmp_path / f"{color}.mp4"
+        subprocess.run(
+            [
+                "ffmpeg", "-hide_banner", "-nostdin", "-y",
+                "-f", "lavfi", "-i", f"color=c={color}:s=32x32:d=1",
+                "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+                "-shortest", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-c:a", "aac",
+                str(path),
+            ],
+            check=True, capture_output=True, timeout=30,
+        )
+        clips.append(path)
+    before = [path.read_bytes() for path in clips]
+    film = concatenate_videos([str(path) for path in clips])
+    assert film[4:8] == b"ftyp"
+    assert [path.read_bytes() for path in clips] == before
+    editor = _editor()
+    board = editor.create(
+        purpose="story",
+        scenes=[
+            {"script": "First.", "duration_seconds": 8},
+            {"script": "Second.", "duration_seconds": 8},
+        ],
+        opening_reference=_opening(),
+    )
+    first_sha = hashlib.sha256(before[0]).hexdigest()
+    second_sha = hashlib.sha256(before[1]).hexdigest()
+    with pytest.raises(StoryboardIntegrityError, match="not sealed"):
+        editor.record_film(
+            board["id"],
+            expected_sha256=board["integrity"]["document_sha256"],
+            asset_id="media-film",
+            sha256=hashlib.sha256(film).hexdigest(),
+            byte_length=len(film),
+            scene_sha256=[first_sha, second_sha],
+        )

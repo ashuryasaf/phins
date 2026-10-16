@@ -91,10 +91,11 @@
     <section class="hero">
       <h1>Build a storyboard from a script and reference photos</h1>
       <p>
-        Each scene defaults to 8 seconds. Scene 1 opens on the reference photo you choose.
-        Any later scene can keep that chain or use its own photo. The scene ends on a screenshot,
-        and that still is the opening of the next scene. Rendering uses Replicate. Checksums are
-        sealed before the next scene is allowed to start.
+        Each scene defaults to 8 seconds. Scene 1 opens on a reference photo, or the provider
+        generates that first picture from the script. Any later scene can keep that chain or use
+        its own photo. The scene ends on a screenshot, and that still opens the next scene.
+        Finished scenes join into one film for the login page, solutions, and disclaimers.
+        Replicate is the default provider. Checksums are sealed before the next scene starts.
       </p>
     </section>
     <div class="layout">
@@ -120,7 +121,11 @@
             <input id="sb-campaign" type="text" placeholder="Optional">
           </div>
           <div>
-            <label for="sb-model">Replicate model</label>
+            <label for="sb-provider">Provider</label>
+            <select id="sb-provider"><option value="replicate">Replicate</option></select>
+          </div>
+          <div>
+            <label for="sb-model">Model</label>
             <select id="sb-model"><option value="">Provider default</option></select>
           </div>
           <div>
@@ -133,7 +138,7 @@
           </div>
           <div>
             <label for="sb-opening">Opening reference photo</label>
-            <select id="sb-opening"><option value="">Choose a library image</option></select>
+            <select id="sb-opening"><option value="">Generate the first picture from the script</option></select>
           </div>
         </div>
         <div style="margin-top:10px;">
@@ -148,7 +153,17 @@
           <button class="btn btn-secondary" type="button" id="split-script">Split into scenes</button>
           <button class="btn btn-primary" type="button" id="save-board">Save storyboard</button>
           <button class="btn btn-success" type="button" id="render-next">Render next scene</button>
+          <button class="btn btn-secondary" type="button" id="assemble-film">Join scenes into one film</button>
           <button class="btn btn-secondary" type="button" id="verify-board">Verify integrity</button>
+        </div>
+        <div class="grid" style="margin-top:10px;">
+          <div>
+            <label for="sb-share">Share the film</label>
+            <select id="sb-share"><option value="">Choose a page</option></select>
+          </div>
+          <div class="actions" style="align-items:end;">
+            <button class="btn btn-primary" type="button" id="share-film">Share film</button>
+          </div>
         </div>
         <div id="sb-status" class="status">Sign in with an admin or media account to edit a storyboard.</div>
         <div id="sb-integrity" class="integrity" style="margin-top:8px;"></div>
@@ -171,6 +186,7 @@
       scenes: [],
       openingFile: '',
       sceneFiles: {},
+      providerCatalog: { providers: {}, share_slots: [] },
     };
 
     function escapeHtml(value) {
@@ -260,12 +276,13 @@
     }
 
     function renderImages() {
-      const options = '<option value="">Choose a library image</option>' + state.images.map(function (image) {
+      const imageOptions = state.images.map(function (image) {
         const checksum = String(image.checksum || '');
         const short = checksum ? checksum.slice(0, 8) : 'no checksum';
         return '<option value="' + escapeHtml(image.id) + '">' + escapeHtml(image.name || image.id) + ' · ' + escapeHtml(short) + '</option>';
       }).join('');
-      document.getElementById('sb-opening').innerHTML = options;
+      const options = '<option value="">Choose a library image</option>' + imageOptions;
+      document.getElementById('sb-opening').innerHTML = '<option value="">Generate the first picture from the script</option>' + imageOptions;
       document.querySelectorAll('.scene-asset').forEach(function (select) {
         const current = select.value;
         select.innerHTML = options;
@@ -344,7 +361,7 @@
           + ' · ends on ' + escapeHtml((end || 'not captured').slice(0, 16))
           + (scene.video_job_id ? ' · job ' + escapeHtml(scene.video_job_id) : '')
           + '</div>'
-          + '<div class="actions"><button class="btn btn-success scene-render" type="button">Render with Replicate</button>'
+          + '<div class="actions"><button class="btn btn-success scene-render" type="button">Render scene</button>'
           + '<button class="btn btn-secondary scene-capture" type="button">Capture ending screenshot</button></div>'
           + '</article>';
       }).join('');
@@ -366,6 +383,8 @@
       document.getElementById('sb-title').value = board.title || '';
       document.getElementById('sb-purpose').value = board.purpose || 'advertisement';
       document.getElementById('sb-campaign').value = board.campaign_id || '';
+      document.getElementById('sb-provider').value = board.provider || 'replicate';
+      fillModels(board.provider || 'replicate');
       document.getElementById('sb-model').value = board.provider_model || '';
       document.getElementById('sb-aspect').value = board.aspect_ratio || '16:9';
       document.getElementById('sb-script').value = board.source_script || '';
@@ -389,7 +408,7 @@
       renderSlide(null);
       renderIntegrity(null);
       renderBoards();
-      setStatus('New storyboard. Split a script or write scene 1, choose the opening photo, then save.', '');
+      setStatus('New storyboard. Split a script, choose a provider, and save. Scene 1 can open on a photo or on a picture the provider generates from the script.', '');
     }
 
     async function openingPayload() {
@@ -417,6 +436,7 @@
         title: document.getElementById('sb-title').value,
         purpose: document.getElementById('sb-purpose').value,
         campaign_id: document.getElementById('sb-campaign').value,
+        provider: document.getElementById('sb-provider').value || 'replicate',
         provider_model: document.getElementById('sb-model').value,
         aspect_ratio: document.getElementById('sb-aspect').value,
         surface: surface,
@@ -445,11 +465,52 @@
       setStatus('Saved. Document SHA-256 ' + shaOf(state.board), 'ok');
     }
 
+    function fillModels(providerName) {
+      const catalog = (state.providerCatalog && state.providerCatalog.providers) || {};
+      const entry = catalog[providerName] || {};
+      const models = Array.isArray(entry.models) ? entry.models : [];
+      const select = document.getElementById('sb-model');
+      const current = select.value;
+      select.innerHTML = '<option value="">Provider default</option>' + models.map(function (model) {
+        return '<option value="' + escapeHtml(model) + '">' + escapeHtml(model) + '</option>';
+      }).join('');
+      if (current && models.indexOf(current) >= 0) select.value = current;
+    }
+
+    function fillProviders() {
+      const catalog = (state.providerCatalog && state.providerCatalog.providers) || {};
+      const names = Object.keys(catalog);
+      if (names.indexOf('replicate') < 0) names.unshift('replicate');
+      names.sort(function (a, b) {
+        if (a === 'replicate') return -1;
+        if (b === 'replicate') return 1;
+        return a < b ? -1 : 1;
+      });
+      const select = document.getElementById('sb-provider');
+      const current = select.value || 'replicate';
+      select.innerHTML = names.map(function (name) {
+        const entry = catalog[name] || {};
+        const label = (entry.label || name) + (entry.enabled ? '' : ' (not connected)');
+        return '<option value="' + escapeHtml(name) + '">' + escapeHtml(label) + '</option>';
+      }).join('');
+      select.value = names.indexOf(current) >= 0 ? current : 'replicate';
+      fillModels(select.value || 'replicate');
+      const share = document.getElementById('sb-share');
+      const slots = (state.providerCatalog && state.providerCatalog.share_slots) || [];
+      const shareCurrent = share.value;
+      share.innerHTML = '<option value="">Choose a page</option>' + slots.map(function (slot) {
+        return '<option value="' + escapeHtml(slot.id) + '">' + escapeHtml(slot.label) + '</option>';
+      }).join('');
+      if (shareCurrent) share.value = shareCurrent;
+    }
+
     async function refreshList() {
       const data = await api('/api/admin/media/storyboards');
       state.boards = data.items || [];
       state.purposes = data.purposes || state.purposes;
+      if (data.providers) state.providerCatalog = data.providers;
       renderPurposes();
+      fillProviders();
       renderBoards();
     }
 
@@ -465,12 +526,14 @@
         return;
       }
       await saveBoard();
-      setStatus('Sending scene ' + index + ' to Replicate…', '');
+      const providerName = document.getElementById('sb-provider').value || 'replicate';
+      setStatus('Sending scene ' + index + ' through the growth agent (' + providerName + ')…', '');
       const data = await api('/api/admin/media/storyboards/' + encodeURIComponent(state.board.id) + '/scenes/' + index + '/render', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           expected_sha256: shaOf(state.board),
+          provider: providerName,
           provider_model: document.getElementById('sb-model').value,
         }),
       });
@@ -492,6 +555,10 @@
         });
         applyBoard(sync.storyboard);
         const status = String((sync.job || {}).status || '');
+        if (sync.sealed) {
+          setStatus('Scene ' + index + ' is in the media library. Its ending screenshot opens the next chained scene.', 'ok');
+          return;
+        }
         if (status === 'completed') {
           const sealed = await api('/api/admin/media/storyboards/' + encodeURIComponent(state.board.id) + '/scenes/' + index + '/end-frame', {
             method: 'POST',
@@ -551,10 +618,11 @@
         return api('/api/admin/media/storyboards/' + encodeURIComponent(state.board.id) + '/render-next', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            expected_sha256: shaOf(state.board),
-            provider_model: document.getElementById('sb-model').value,
-          }),
+        body: JSON.stringify({
+          expected_sha256: shaOf(state.board),
+          provider: document.getElementById('sb-provider').value || 'replicate',
+          provider_model: document.getElementById('sb-model').value,
+        }),
         });
       }).then(function (data) {
         applyBoard(data.storyboard);
@@ -576,6 +644,40 @@
           setStatus(data.ok ? 'Integrity verified.' : 'Integrity check failed. The storyboard was not repaired.', data.ok ? 'ok' : 'error');
         })
         .catch(function (err) { setStatus(err.message, 'error'); });
+    });
+    document.getElementById('sb-provider').addEventListener('change', function () {
+      fillModels(this.value);
+    });
+    document.getElementById('assemble-film').addEventListener('click', function () {
+      if (!state.board) {
+        setStatus('Save and render the scenes before joining them.', 'error');
+        return;
+      }
+      setStatus('Joining sealed scene files into one film…', '');
+      api('/api/admin/media/storyboards/' + encodeURIComponent(state.board.id) + '/assemble', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expected_sha256: shaOf(state.board) }),
+      }).then(function (data) {
+        applyBoard(data.storyboard);
+        setStatus('Film saved in the media library. SHA-256 ' + ((data.film && data.film.sha256) || ''), 'ok');
+      }).catch(function (err) { setStatus(err.message, 'error'); });
+    });
+    document.getElementById('share-film').addEventListener('click', function () {
+      if (!state.board) return;
+      const slot = document.getElementById('sb-share').value;
+      if (!slot) {
+        setStatus('Choose where to share the film.', 'error');
+        return;
+      }
+      api('/api/admin/media/storyboards/' + encodeURIComponent(state.board.id) + '/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expected_sha256: shaOf(state.board), slot: slot }),
+      }).then(function (data) {
+        applyBoard(data.storyboard);
+        setStatus('Film assigned to ' + slot + '. The video file was not rewritten.', 'ok');
+      }).catch(function (err) { setStatus(err.message, 'error'); });
     });
     document.getElementById('sb-opening-file').addEventListener('change', function (event) {
       const file = event.target.files && event.target.files[0];
@@ -622,20 +724,25 @@
       }
       try {
         await refreshList();
-        const providers = await api('/api/admin/media/video-providers');
-        const replicate = (((providers.capabilities || {}).providers || {}).replicate) || {};
-        const models = Array.isArray(replicate.models) ? replicate.models : [];
-        document.getElementById('sb-model').innerHTML = '<option value="">Provider default</option>' + models.map(function (model) {
-          return '<option value="' + escapeHtml(model) + '">' + escapeHtml(model) + '</option>';
-        }).join('');
+        const replicate = (((state.providerCatalog || {}).providers || {}).replicate) || {};
+        const connected = Object.keys(((state.providerCatalog || {}).providers) || {}).filter(function (name) {
+          return state.providerCatalog.providers[name] && state.providerCatalog.providers[name].enabled;
+        });
         if (!replicate.enabled) {
-          setStatus('Replicate is not configured on this server. You can still build and seal the storyboard. Rendering needs REPLICATE_API_TOKEN.', '');
+          setStatus(
+            connected.length
+              ? 'Replicate is not connected. You can render with ' + connected.join(', ') + ', or set REPLICATE_API_TOKEN.'
+              : 'No video provider is connected. You can still seal the storyboard. Rendering needs Replicate, Kling, or Gemini.',
+            ''
+          );
         }
         const media = await api('/api/media');
         state.images = (media.assets || []).filter(function (asset) { return asset.type === 'image'; });
         renderImages();
         if (state.boards[0]) await loadBoard(state.boards[0].id);
-        else setStatus('Ready. Split a script into 8-second scenes, choose the opening photo, and save.', 'ok');
+        else if (replicate.enabled || connected.length) {
+          setStatus('Ready. Split a script into 8-second scenes. Scene 1 can open on a photo or be generated from the script.', 'ok');
+        }
       } catch (err) {
         setStatus(err.message, 'error');
       }

@@ -8,20 +8,26 @@ the operator sets another length).
 
 Continuity is a checksum chain, not a guess:
 
-- Scene 1 opens on the chosen first reference photo.
+- Scene 1 opens on the chosen first reference photo. With no photo, the
+  provider generates the opening picture from the script.
 - Any scene may instead open on its own chosen reference.
 - Otherwise a scene opens on the previous scene's ending screenshot.
 - That ending still is captured from the rendered scene video (or from an
   operator-supplied still of that video) and sealed with SHA-256 before the
   next scene is allowed to render.
+- Finished scenes are joined into one film. The scene files are not rewritten.
 
 The document itself is sealed. ``integrity.document_sha256`` is the SHA-256
 of the canonical JSON excluding the integrity block. A mismatch is reported
 and blocks render. The editor never rewrites a sealed still or a media-library
 file to make a chain look consistent.
 
-Rendering goes through the video-agents job path with provider ``replicate``.
-The requested duration is sent only when that model accepts it exactly.
+Rendering uses the growth-agent media job: the provider accepts the scene,
+the completed file is checksummed into the media library, and that file is
+the only source of the ending screenshot. Replicate is the default. Kling,
+Gemini, and any later affiliated provider are selected explicitly and are
+not substituted when the chosen one is offline. The requested duration is
+sent only when that provider would accept it unchanged.
 """
 
 from __future__ import annotations
@@ -53,6 +59,9 @@ MAX_SOURCE_SCRIPT_CHARS = 20000
 MAX_INLINE_IMAGE_BYTES = 2 * 1024 * 1024
 MAX_SUPERSEDED = 8
 VEO_DURATIONS = (4, 6, 8)
+KLING_DURATIONS = (5, 10)
+DEFAULT_PROVIDER = "replicate"
+_PROVIDER_NAME = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 SURFACES = frozenset({"media", "growth", "solutions", "video-agents"})
 REFERENCE_MODES = frozenset({"chain", "chosen"})
 ALLOWED_IMAGE_MIME = frozenset({
@@ -219,16 +228,38 @@ def coerce_duration(value: Any) -> int:
     return number
 
 
-def duration_renders_exactly(model: str, requested: int) -> bool:
-    """True when Replicate would be asked for this duration unchanged.
+def normalize_provider(value: Any, default: str = DEFAULT_PROVIDER) -> str:
+    """A provider id. Replicate is the default. A new affiliated name is allowed."""
+    name = str(value or default or DEFAULT_PROVIDER).strip().lower() or DEFAULT_PROVIDER
+    if not _PROVIDER_NAME.match(name):
+        raise StoryboardValidationError(
+            f"Unknown video provider {value!r}."
+        )
+    return name
 
-    Veo (and an empty model, because the platform default Replicate model is
-    Veo) accepts 4, 6, or 8. Other Replicate video models accept 1–15, which
-    this editor already clamps to 2–15.
+
+def duration_renders_exactly(
+    model: str,
+    requested: int,
+    provider: str = DEFAULT_PROVIDER,
+) -> bool:
+    """True when the provider would be asked for this duration unchanged.
+
+    Replicate Veo (and an empty Replicate model, because that default is Veo)
+    accepts 4, 6, or 8. Kling accepts 5 or 10. Gemini Veo accepts 4, 6, or 8.
+    Other models accept the editor range, 2–15, as sent.
     """
     requested = int(requested)
+    name = str(provider or DEFAULT_PROVIDER).strip().lower() or DEFAULT_PROVIDER
     label = str(model or "")
-    if not label or "veo" in label.lower():
+    if name == "kling":
+        return requested in KLING_DURATIONS
+    veo = "veo" in label.lower()
+    if name == "replicate" and not label:
+        veo = True
+    if name == "gemini" and (not label or veo):
+        veo = True
+    if veo and name in {"replicate", "gemini"}:
         return requested in VEO_DURATIONS
     return MIN_SCENE_SECONDS <= requested <= MAX_SCENE_SECONDS
 
@@ -355,16 +386,19 @@ def apply_chain(board: Dict[str, Any]) -> List[str]:
         if mode == "chosen":
             sha = _reference_sha(scene.get("chosen_reference"))
             scene["resolved_start_sha256"] = sha
+            scene["start_source"] = "chosen"
             if not sha:
                 errors.append(
                     f"Scene {scene.get('index')}: chosen reference has no checksum."
                 )
         elif int(scene.get("index") or 0) == 1:
             scene["resolved_start_sha256"] = opening
-            if not opening:
-                errors.append("Scene 1: choose an opening reference photo.")
+            scene["start_source"] = "reference" if opening else "generated"
+            # No photo is a valid opening: the provider draws the first
+            # picture from the script. Later scenes still wait for a still.
         else:
             scene["resolved_start_sha256"] = previous_end
+            scene["start_source"] = "chain"
             if not previous_end:
                 errors.append(
                     f"Scene {scene.get('index')}: waiting for the previous "
@@ -436,8 +470,16 @@ def compile_scene_prompt(board: Dict[str, Any], scene: Dict[str, Any]) -> str:
         spec["prompt"],
         f"Scene {scene.get('index')} of {total}.",
         f"Duration: {scene.get('duration_seconds')} seconds.",
-        f"Reference still SHA-256: {scene.get('resolved_start_sha256')}.",
-        "Open on the supplied reference still and keep the same subject and setting.",
+        (
+            f"Reference still SHA-256: {scene.get('resolved_start_sha256')}."
+            if scene.get("resolved_start_sha256")
+            else "No reference still. Generate the opening picture from the script."
+        ),
+        (
+            "Open on the supplied reference still and keep the same subject and setting."
+            if scene.get("resolved_start_sha256")
+            else "Invent the opening picture only from the script, then hold one clear subject."
+        ),
         "End on one clear still frame that can be the opening image of the next scene.",
         "Do not add titles, captions, or logos that are not in the script.",
         "Script:",
@@ -502,6 +544,73 @@ def extract_last_frame_png(video_path: str) -> bytes:
                 pass
 
 
+def concatenate_videos(paths: List[str]) -> bytes:
+    """Join local scene files into one MP4. The inputs are not rewritten.
+
+    Each path is a file the caller has already checksummed. The concat list
+    is local, and ffmpeg may read only the file protocol.
+    """
+    cleaned: List[str] = []
+    for path in paths:
+        item = str(path or "").strip()
+        if not item or not os.path.isfile(item):
+            raise StoryboardIntegrityError(
+                "A scene video file is missing, so the film was not assembled."
+            )
+        if any(char in item for char in ("\n", "\r", "'", '"')):
+            raise StoryboardIntegrityError(
+                "A scene video path cannot be joined safely."
+            )
+        cleaned.append(os.path.abspath(item))
+    if not cleaned:
+        raise StoryboardValidationError("Assemble needs at least one sealed scene.")
+    if not _ffmpeg_available():
+        raise StoryboardProviderError("ffmpeg is not available to join the scenes.")
+    list_path = ""
+    dst = ""
+    try:
+        list_handle = tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w")
+        list_path = list_handle.name
+        for item in cleaned:
+            list_handle.write(f"file '{item}'\n")
+        list_handle.close()
+        out_handle = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+        dst = out_handle.name
+        out_handle.close()
+        result = subprocess.run(
+            [
+                "ffmpeg", "-hide_banner", "-nostdin", "-y",
+                "-protocol_whitelist", "file,crypto",
+                "-f", "concat", "-safe", "0",
+                "-i", list_path,
+                "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-ar", "48000", "-ac", "2",
+                "-movflags", "+faststart",
+                dst,
+            ],
+            capture_output=True,
+            timeout=300,
+        )
+        if result.returncode != 0 or not os.path.isfile(dst) or os.path.getsize(dst) == 0:
+            raise StoryboardIntegrityError(
+                "The scene videos could not be joined into one film."
+            )
+        with open(dst, "rb") as handle:
+            payload = handle.read()
+        if len(payload) < 12 or payload[4:8] != b"ftyp":
+            raise StoryboardIntegrityError("The joined film is not an MP4.")
+        return payload
+    except subprocess.TimeoutExpired as exc:
+        raise StoryboardIntegrityError("Joining the scene videos timed out.") from exc
+    finally:
+        for leftover in (list_path, dst):
+            if leftover and os.path.exists(leftover):
+                try:
+                    os.remove(leftover)
+                except OSError:
+                    pass
+
+
 def _stamp_integrity(board: Dict[str, Any]) -> Dict[str, Any]:
     errors = apply_chain(board)
     slide = build_slide(board)
@@ -543,8 +652,11 @@ def _new_scene(index: int, script: str, duration: int, mode: str = "chain") -> D
         "reference_mode": mode,
         "chosen_reference": None,
         "resolved_start_sha256": "",
+        "start_source": "",
         "end_screenshot": None,
         "video_job_id": "",
+        "media_asset_id": "",
+        "media_sha256": "",
         "status": "draft",
         "provider_duration_seconds": None,
         "superseded_job_ids": [],
@@ -568,9 +680,17 @@ def _supersede(scene: Dict[str, Any]) -> None:
         })
         scene["superseded_end_screenshots"] = stills[-MAX_SUPERSEDED:]
     scene["video_job_id"] = ""
+    scene["media_asset_id"] = ""
+    scene["media_sha256"] = ""
     scene["end_screenshot"] = None
     scene["provider_duration_seconds"] = None
     scene["status"] = "stale"
+
+
+def _clear_film(board: Dict[str, Any]) -> None:
+    """Drop the joined-film link. The library file itself is left in place."""
+    if board.get("film"):
+        board["film"] = None
 
 
 def _scene_has_output(scene: Dict[str, Any]) -> bool:
@@ -594,6 +714,7 @@ def _render_identity(board: Dict[str, Any], scene: Dict[str, Any]) -> tuple:
         str(board.get("purpose") or ""),
         _identity(scene),
         str(scene.get("resolved_start_sha256") or ""),
+        str(scene.get("start_source") or ""),
     )
 
 
@@ -697,8 +818,9 @@ class StoryboardEditor:
         purpose: str = "advertisement",
         script: str = "",
         scenes: Optional[List[Dict[str, Any]]] = None,
-        opening_reference: Optional[Dict[str, Any]] = None,
-        provider_model: str = "",
+            opening_reference: Optional[Dict[str, Any]] = None,
+            provider: str = DEFAULT_PROVIDER,
+            provider_model: str = "",
         aspect_ratio: str = "16:9",
         resolution: str = "720p",
         campaign_id: str = "",
@@ -723,8 +845,10 @@ class StoryboardEditor:
             "title": str(title or "").strip()[:200] or PURPOSES[purpose_key]["label"],
             "purpose": purpose_key,
             "pipeline_type": PURPOSES[purpose_key]["pipeline_type"],
-            "provider": "replicate",
+            "provider": normalize_provider(provider),
             "provider_model": str(provider_model or "").strip(),
+            "film": None,
+            "placements": [],
             "aspect_ratio": str(aspect_ratio or "16:9").strip() or "16:9",
             "resolution": str(resolution or "720p").strip() or "720p",
             "campaign_id": str(campaign_id or "").strip(),
@@ -804,6 +928,7 @@ class StoryboardEditor:
         title: Optional[str] = None,
         purpose: Optional[str] = None,
         script: Optional[str] = None,
+        provider: Optional[str] = None,
         provider_model: Optional[str] = None,
         aspect_ratio: Optional[str] = None,
         resolution: Optional[str] = None,
@@ -829,6 +954,11 @@ class StoryboardEditor:
                 board["title"] = str(title or "").strip()[:200] or board.get("title") or "Storyboard"
             if script is not None:
                 board["source_script"] = str(script or "")[:MAX_SOURCE_SCRIPT_CHARS]
+            if provider is not None:
+                name = normalize_provider(provider)
+                if name != str(board.get("provider") or ""):
+                    self._supersede_all(board)
+                board["provider"] = name
             if provider_model is not None:
                 model = str(provider_model or "").strip()
                 if model != str(board.get("provider_model") or ""):
@@ -847,14 +977,18 @@ class StoryboardEditor:
                     self._cascade_from(board, 1, include_start=True, only_chain_start=True)
             if scenes is not None:
                 self._replace_scenes(board, scenes, remove_sealed=remove_sealed)
-            board["provider"] = "replicate"
+            board["provider"] = normalize_provider(board.get("provider"))
             board["updated_at"] = _now()
             return self._save(board)
 
     def _supersede_all(self, board: Dict[str, Any]) -> None:
+        changed = False
         for scene in board.get("scenes") or []:
             if _scene_has_output(scene):
                 _supersede(scene)
+                changed = True
+        if changed:
+            _clear_film(board)
 
     def _cascade_from(
         self,
@@ -887,6 +1021,7 @@ class StoryboardEditor:
                 continue
             if _scene_has_output(scene):
                 _supersede(scene)
+                _clear_film(board)
             elif index != start_index:
                 scene["status"] = "draft"
 
@@ -936,6 +1071,8 @@ class StoryboardEditor:
                     fresh["chosen_reference"] = copy.deepcopy(previous.get("chosen_reference"))
             if previous is not None:
                 fresh["video_job_id"] = previous.get("video_job_id") or ""
+                fresh["media_asset_id"] = previous.get("media_asset_id") or ""
+                fresh["media_sha256"] = previous.get("media_sha256") or ""
                 fresh["end_screenshot"] = copy.deepcopy(previous.get("end_screenshot"))
                 fresh["status"] = previous.get("status") or "draft"
                 fresh["provider_duration_seconds"] = previous.get("provider_duration_seconds")
@@ -946,6 +1083,7 @@ class StoryboardEditor:
                 if _identity(previous) != _identity(fresh):
                     if _scene_has_output(fresh):
                         _supersede(fresh)
+                        _clear_film(board)
                     else:
                         fresh["status"] = "draft"
             rebuilt.append(fresh)
@@ -986,6 +1124,7 @@ class StoryboardEditor:
             changed = previous_mode != mode or previous_sha != _reference_sha(scene.get("chosen_reference"))
             if changed and _scene_has_output(scene):
                 _supersede(scene)
+                _clear_film(board)
             if changed:
                 self._cascade_from(board, index, include_start=False, only_chain_start=False)
             board["updated_at"] = _now()
@@ -1024,11 +1163,15 @@ class StoryboardEditor:
         *,
         expected_sha256: str,
         submitter: Callable[[Dict[str, Any]], Dict[str, Any]],
-        replicate_enabled: bool,
-        provider_model: str,
-        submitted_by: str,
+        replicate_enabled: bool = False,
+        provider_model: str = "",
+        submitted_by: str = "admin",
+        provider: str = "",
+        provider_connected: Optional[bool] = None,
+        provider_error: str = "",
     ) -> Dict[str, Any]:
         model = str(provider_model or "").strip()
+        connected = replicate_enabled if provider_connected is None else bool(provider_connected)
         with self._lock:
             board = self._load(storyboard_id)
             self._require_match(board, expected_sha256)
@@ -1045,49 +1188,73 @@ class StoryboardEditor:
             claim = (str(board["id"]), int(scene["index"]))
             if claim in self._submitting:
                 raise StoryboardConflict(
-                    "This scene is already being submitted to Replicate.",
+                    "This scene is already being submitted.",
                     document_sha256=str((board.get("integrity") or {}).get("document_sha256") or ""),
                 )
-            if model and model != str(board.get("provider_model") or ""):
-                board["provider_model"] = model
+            selected = normalize_provider(provider or board.get("provider") or DEFAULT_PROVIDER)
+            if str(provider or "").strip() and selected != str(board.get("provider") or DEFAULT_PROVIDER):
+                raise StoryboardConflict(
+                    "Save the provider change before rendering. The storyboard was not submitted.",
+                    document_sha256=str((board.get("integrity") or {}).get("document_sha256") or ""),
+                )
+            stored_model = str(board.get("provider_model") or "")
+            if model and stored_model and model != stored_model:
+                raise StoryboardConflict(
+                    "Save the model change before rendering. The storyboard was not submitted.",
+                    document_sha256=str((board.get("integrity") or {}).get("document_sha256") or ""),
+                )
             model = str(board.get("provider_model") or model or "").strip()
             _stamp_integrity(board)
             if not _integrity_matches(board):
                 raise StoryboardIntegrityError("Storyboard checksum could not be sealed.")
             if not str(scene.get("script") or "").strip():
                 raise StoryboardValidationError("Write the scene script before rendering.")
-            if not scene.get("resolved_start_sha256"):
+            generated_opening = (
+                str(scene.get("start_source") or "") == "generated"
+                and not scene.get("resolved_start_sha256")
+            )
+            if not scene.get("resolved_start_sha256") and not generated_opening:
                 notes = list((board.get("integrity") or {}).get("chain_notes") or [])
                 prefix = f"Scene {scene.get('index')}:"
                 specific = next((item for item in notes if str(item).startswith(prefix)), "")
                 raise StoryboardIntegrityError(
                     specific or (notes[0] if notes else "This scene has no opening reference yet.")
                 )
-            if not duration_renders_exactly(model, int(scene["duration_seconds"])):
-                allowed = list(VEO_DURATIONS) if (not model or "veo" in model.lower()) else (
-                    f"{MIN_SCENE_SECONDS}-{MAX_SCENE_SECONDS}"
-                )
+            if not duration_renders_exactly(model, int(scene["duration_seconds"]), selected):
+                if selected == "kling":
+                    allowed: Any = list(KLING_DURATIONS)
+                elif (not model or "veo" in model.lower()) and selected in {"replicate", "gemini"}:
+                    allowed = list(VEO_DURATIONS)
+                else:
+                    allowed = f"{MIN_SCENE_SECONDS}-{MAX_SCENE_SECONDS}"
                 raise StoryboardIntegrityError(
                     "This scene length is not an exact duration for the selected "
-                    "Replicate model. The storyboard was not changed.",
+                    "provider. The storyboard was not changed.",
                     allowed_durations=allowed,
                     duration_seconds=scene["duration_seconds"],
+                    provider=selected,
                     provider_model=model,
                 )
-            reference = self._resolved_reference(board, scene)
-            image = str((reference or {}).get("data_url") or "")
-            if not image or _reference_sha(reference) != scene.get("resolved_start_sha256"):
-                raise StoryboardIntegrityError(
-                    "The opening still for this scene is not sealed."
-                )
-            if not replicate_enabled:
+            image = ""
+            if not generated_opening:
+                reference = self._resolved_reference(board, scene)
+                image = str((reference or {}).get("data_url") or "")
+                if not image or _reference_sha(reference) != scene.get("resolved_start_sha256"):
+                    raise StoryboardIntegrityError(
+                        "The opening still for this scene is not sealed."
+                    )
+            if not connected:
                 raise StoryboardProviderError(
-                    "Replicate is not configured. Set REPLICATE_API_TOKEN to render a storyboard."
+                    provider_error
+                    or (
+                        f"Video provider {selected!r} is not connected. "
+                        "The storyboard was not submitted."
+                    )
                 )
             prompt = compile_scene_prompt(board, scene)
             submission = {
-                "campaign_id": board.get("campaign_id") or "",
-                "provider": "replicate",
+                "campaign_id": board.get("campaign_id") or board.get("id") or "",
+                "provider": selected,
                 "pipeline_type": board.get("pipeline_type") or "storyboard_story",
                 "title": f"{board.get('title') or 'Storyboard'} · scene {scene['index']}",
                 "prompt_override": prompt,
@@ -1122,11 +1289,16 @@ class StoryboardEditor:
                 raise
             except Exception as exc:
                 raise StoryboardProviderError(
-                    f"Replicate submission failed: {exc}",
+                    f"{selected} submission failed: {exc}",
                     document_sha256=expected,
+                    provider=selected,
                 ) from exc
             if not isinstance(job, dict) or not job.get("id"):
-                raise StoryboardProviderError("Replicate did not return a video job.")
+                raise StoryboardProviderError(
+                    f"{selected} did not return a video job.",
+                    document_sha256=expected,
+                    provider=selected,
+                )
             with self._lock:
                 board = self._load(storyboard_id)
                 stored = str((board.get("integrity") or {}).get("document_sha256") or "")
@@ -1148,8 +1320,11 @@ class StoryboardEditor:
                         document_sha256=stored,
                         video_job_id=str(job.get("id")),
                     )
-                board["provider_model"] = model
+                board["provider"] = selected
+                if model:
+                    board["provider_model"] = model
                 scene["video_job_id"] = str(job.get("id"))
+                scene["provider"] = str(job.get("provider") or selected)
                 scene["provider_duration_seconds"] = int(scene["duration_seconds"])
                 status = str(job.get("status") or "queued").lower()
                 scene["status"] = _scene_status_from_job(status, has_end=False)
@@ -1189,7 +1364,7 @@ class StoryboardEditor:
             end = scene.get("end_screenshot") if isinstance(scene.get("end_screenshot"), dict) else {}
             if status == "ready" and end.get("sha256"):
                 continue
-            if scene.get("resolved_start_sha256"):
+            if scene.get("resolved_start_sha256") or scene.get("start_source") == "generated":
                 return int(scene["index"])
             return None
         return None
@@ -1264,6 +1439,7 @@ class StoryboardEditor:
                 self._cascade_from(
                     board, int(scene["index"]), include_start=False, only_chain_start=False,
                 )
+                _clear_film(board)
             board["updated_at"] = _now()
             saved = self._save(board)
         _audit("storyboard_end_frame", saved["id"], {
@@ -1274,6 +1450,178 @@ class StoryboardEditor:
             "document_sha256": (saved.get("integrity") or {}).get("document_sha256"),
         })
         return saved
+
+    def seal_rendered_scene(
+        self,
+        storyboard_id: str,
+        index: int,
+        *,
+        expected_sha256: str,
+        video_job_id: str,
+        asset_id: str,
+        asset_sha256: str,
+        image_bytes: bytes,
+        image_mime: str = "image/png",
+        source: str = "extracted",
+    ) -> Dict[str, Any]:
+        """Seal the library file and its ending still in one write.
+
+        A checksum that does not match the bytes is refused. The chain does
+        not advance, and the library file is not rewritten.
+        """
+        digest = str(asset_sha256 or "").strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise StoryboardIntegrityError("The scene video checksum is not a SHA-256.")
+        if not str(asset_id or "").strip():
+            raise StoryboardIntegrityError("The scene video was not saved to the media library.")
+        sealed = seal_reference(
+            raw=image_bytes,
+            mime=image_mime or "image/png",
+            label=f"Scene {index} end",
+        )
+        with self._lock:
+            board = self._load(storyboard_id)
+            self._require_match(board, expected_sha256)
+            scene = self._scene(board, index)
+            current_job = str(scene.get("video_job_id") or "")
+            if not current_job or current_job != str(video_job_id or ""):
+                raise StoryboardConflict(
+                    "Ending screenshot job does not match the scene video.",
+                    video_job_id=current_job,
+                )
+            previous_end = _reference_sha(scene.get("end_screenshot"))
+            scene["media_asset_id"] = str(asset_id).strip()
+            scene["media_sha256"] = digest
+            scene["end_screenshot"] = {
+                "sha256": sealed["sha256"],
+                "mime": sealed["mime"],
+                "data_url": sealed["data_url"],
+                "source": str(source or "extracted"),
+                "video_job_id": current_job,
+                "byte_length": sealed["byte_length"],
+                "media_asset_id": scene["media_asset_id"],
+            }
+            scene["status"] = "ready"
+            if previous_end and previous_end != sealed["sha256"]:
+                self._cascade_from(
+                    board, int(scene["index"]), include_start=False, only_chain_start=False,
+                )
+                _clear_film(board)
+            elif board.get("film"):
+                _clear_film(board)
+            board["updated_at"] = _now()
+            saved = self._save(board)
+        _audit("storyboard_scene_sealed", saved["id"], {
+            "scene_index": index,
+            "video_job_id": video_job_id,
+            "media_asset_id": asset_id,
+            "media_sha256": digest,
+            "end_sha256": sealed["sha256"],
+            "document_sha256": (saved.get("integrity") or {}).get("document_sha256"),
+        })
+        return saved
+
+    def record_film(
+        self,
+        storyboard_id: str,
+        *,
+        expected_sha256: str,
+        asset_id: str,
+        sha256: str,
+        byte_length: int,
+        scene_sha256: List[str],
+    ) -> Dict[str, Any]:
+        """Link a joined film whose scene checksums still match this board."""
+        digest = str(sha256 or "").strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise StoryboardIntegrityError("The film checksum is not a SHA-256.")
+        if not str(asset_id or "").strip():
+            raise StoryboardValidationError("The joined film has no media asset id.")
+        claimed = [str(item or "").strip().lower() for item in scene_sha256]
+        with self._lock:
+            board = self._load(storyboard_id)
+            self._require_match(board, expected_sha256)
+            scenes = list(board.get("scenes") or [])
+            if not scenes:
+                raise StoryboardValidationError("Assemble needs at least one scene.")
+            if len(claimed) != len(scenes):
+                raise StoryboardIntegrityError(
+                    "The film scene list does not match this storyboard."
+                )
+            for scene, scene_digest in zip(scenes, claimed):
+                if str(scene.get("status") or "") != "ready":
+                    raise StoryboardIntegrityError(
+                        f"Scene {scene.get('index')} is not sealed, so the film was not stored."
+                    )
+                stored = str(scene.get("media_sha256") or "").strip().lower()
+                if not stored or stored != scene_digest:
+                    raise StoryboardIntegrityError(
+                        f"Scene {scene.get('index')} video checksum does not match the film.",
+                        expected_sha256=stored,
+                        actual_sha256=scene_digest,
+                    )
+                if not _reference_sha(scene.get("end_screenshot")):
+                    raise StoryboardIntegrityError(
+                        f"Scene {scene.get('index')} has no ending screenshot."
+                    )
+            board["film"] = {
+                "asset_id": str(asset_id).strip(),
+                "sha256": digest,
+                "byte_length": int(byte_length or 0),
+                "scene_asset_ids": [str(scene.get("media_asset_id") or "") for scene in scenes],
+                "scene_sha256": claimed,
+                "provider": str(board.get("provider") or DEFAULT_PROVIDER),
+                "joined_at": _now(),
+            }
+            board["updated_at"] = _now()
+            saved = self._save(board)
+        _audit("storyboard_film", saved["id"], {
+            "asset_id": asset_id,
+            "sha256": digest,
+            "scene_count": len(claimed),
+            "document_sha256": (saved.get("integrity") or {}).get("document_sha256"),
+        })
+        return saved
+
+    def note_placement(
+        self,
+        storyboard_id: str,
+        *,
+        expected_sha256: str,
+        slot: str,
+        asset_id: str,
+        film_sha256: str,
+    ) -> Dict[str, Any]:
+        """Record that a sealed film was assigned to a design slot.
+
+        This does not write the design document. The caller seals that
+        separately and only then records the assignment.
+        """
+        slot_name = str(slot or "").strip()
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,80}", slot_name):
+            raise StoryboardValidationError("Unknown placement slot.")
+        digest = str(film_sha256 or "").strip().lower()
+        with self._lock:
+            board = self._load(storyboard_id)
+            self._require_match(board, expected_sha256)
+            film = board.get("film") if isinstance(board.get("film"), dict) else {}
+            if str(film.get("sha256") or "") != digest or str(film.get("asset_id") or "") != str(asset_id or ""):
+                raise StoryboardIntegrityError(
+                    "That film is not the sealed film on this storyboard."
+                )
+            placements = [
+                item for item in (board.get("placements") or [])
+                if isinstance(item, dict) and item.get("slot") != slot_name
+            ]
+            placements.append({
+                "slot": slot_name,
+                "asset_id": str(asset_id),
+                "film_sha256": digest,
+                "shared_at": _now(),
+            })
+            board["placements"] = placements[-24:]
+            board["updated_at"] = _now()
+            return self._save(board)
 
 
 def _scene_status_from_job(job_status: str, *, has_end: bool) -> str:
