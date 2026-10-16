@@ -1025,6 +1025,36 @@ def test_kling_submit_routes_kling_v3_through_evolink_unified_endpoint(monkeypat
     assert status_url == "https://api.evolink.ai/v1/tasks/evolink-task-7"
 
 
+def test_kling_v3_holds_the_next_photo_and_a_longer_duration(monkeypatch):
+    monkeypatch.setenv("KLING_API_KEY", "evolink-bearer-1")
+    monkeypatch.delenv("KLING_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("KLING_SECRET_KEY", raising=False)
+    monkeypatch.delenv("KLING_API_BASE_URL", raising=False)
+    monkeypatch.delenv("KLING_API_PROFILE", raising=False)
+    captured = {}
+
+    def _fake_urlopen(request, timeout=0, allowed_schemes=()):
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return _FakeUrlopenResponse(json.dumps({"task_id": "evolink-tail"}).encode("utf-8"))
+
+    monkeypatch.setattr(media_generation_service, "validated_urlopen", _fake_urlopen)
+    service = media_generation_service.MediaGenerationService()
+    service.submit_video_generation(
+        provider="kling",
+        prompt="Move from the desk to the policy card",
+        title="Photo pair",
+        model="kling-v3-image-to-video",
+        duration_seconds=12,
+        image_data_url="https://example.com/start.jpg",
+        end_image_data_url="https://example.com/next.jpg",
+    )
+    assert captured["body"]["duration"] == 12
+    assert captured["body"]["image_start"] == "https://example.com/start.jpg"
+    assert captured["body"]["image_end"] == "https://example.com/next.jpg"
+    assert "image_tail" not in captured["body"]
+    assert "image" not in captured["body"]
+
+
 def test_kling_official_host_submits_model_name_and_polls_submit_resource(monkeypatch):
     """Open Platform hosts reject bodies that only carry ``model``.
 

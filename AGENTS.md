@@ -587,11 +587,17 @@ Environment variables commonly used:
  `PHINS_AGENT_ASYNC` is on, and `rearm_media_video_jobs()` resumes
  in-flight jobs at boot. The storyboard editor
  (`services/storyboard_editor.py`, `/storyboard-editor.html`) is embedded on
- the media, growth, solutions, and video-agents surfaces. Scenes default to
- 8 seconds. Scene 1 opens on a chosen reference or a provider-generated
- picture; later scenes open on the previous ending screenshot. Rendering
- uses the growth-agent media job (Replicate by default; Kling, Gemini, or a
- later affiliated provider when that provider is selected and connected).
+ the media, growth, solutions, and video-agents surfaces. Each scene uses
+ the selected engine's own duration (Veo 4/6/8, Kling 5/10, Kling v3 on
+ EvoLink 3–15, Seedance up to 15). A photo-to-photo script starts on one
+ sealed library photo and ends on the next; Kling and Seedance receive that
+ next photo as the end frame. Solution outlines and Growth Agent storyboard
+ lines are the narration. Scene 1 can still open on a chosen reference or a
+ provider-generated picture; a chained scene opens on the previous ending
+ screenshot. Rendering uses the growth-agent media job (Replicate by default;
+ Kling, Gemini, or a later affiliated provider when that provider is selected
+ and connected, and it is not swapped for another engine). Solution theaters
+ play an assigned film to its own length.
  Sealed scene files join into one checksummed film that can be assigned to
  login, solutions, and disclaimer slots. A checksum mismatch is reported;
  library bytes are never rewritten to force a chain.

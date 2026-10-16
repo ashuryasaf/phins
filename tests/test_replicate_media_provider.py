@@ -232,3 +232,36 @@ def test_custom_owner_model_is_accepted_and_garbage_is_not():
     assert not MediaGenerationService.replicate_model_id_ok("not a model")
     assert not MediaGenerationService.replicate_model_id_ok("../etc/passwd")
     assert not MediaGenerationService.replicate_model_id_ok("https://evil.example/model")
+
+
+def test_seedance_receives_the_next_photo_and_veo_does_not(monkeypatch):
+    service = _service(monkeypatch)
+    captured: Dict[str, Any] = {}
+
+    def fake_read(request, **kwargs):
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return {"id": "pred-seed", "status": "starting"}
+
+    monkeypatch.setattr(MediaGenerationService, "_read_json_with_diagnostics", staticmethod(fake_read))
+    service.submit_video_generation(
+        provider="replicate",
+        prompt="Move to the next still.",
+        title="Pair",
+        model="bytedance/seedance-2.0",
+        duration_seconds=15,
+        image_data_url="https://example.com/start.jpg",
+        end_image_data_url="https://example.com/next.jpg",
+    )
+    assert captured["body"]["input"]["duration"] == 15
+    assert captured["body"]["input"]["image"] == "https://example.com/start.jpg"
+    assert captured["body"]["input"]["last_frame_image"] == "https://example.com/next.jpg"
+    with pytest.raises(Exception):
+        service.submit_video_generation(
+            provider="replicate",
+            prompt="Veo cannot hold the next still.",
+            title="Veo",
+            model="google/veo-3.1-fast",
+            duration_seconds=8,
+            image_data_url="https://example.com/start.jpg",
+            end_image_data_url="https://example.com/next.jpg",
+        )

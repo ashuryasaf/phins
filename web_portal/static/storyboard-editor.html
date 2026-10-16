@@ -81,7 +81,7 @@
     <div class="topbar">
       <a class="brand" href="/admin-media.html">
         <strong>PHINS Storyboard Editor</strong>
-        <span>Scenes, reference photos, and Replicate — one sealed chain.</span>
+        <span>Photo to photo, sealed, on the engine you choose.</span>
       </a>
       <div class="actions">
         <a class="btn btn-secondary" href="/admin-media.html">Media dashboard</a>
@@ -91,11 +91,12 @@
     <section class="hero">
       <h1>Build a storyboard from a script and reference photos</h1>
       <p>
-        Each scene defaults to 8 seconds. Scene 1 opens on a reference photo, or the provider
-        generates that first picture from the script. Any later scene can keep that chain or use
-        its own photo. The scene ends on a screenshot, and that still opens the next scene.
-        Finished scenes join into one film for the login page, solutions, and disclaimers.
-        Replicate is the default provider. Checksums are sealed before the next scene starts.
+        Scene length follows the selected engine: Veo 4, 6, or 8 seconds; Kling 5 or 10;
+        Kling v3 on its image-to-video route up to 15; Seedance up to 15. A photo-to-photo
+        storyboard keeps the first photo as the opening frame and the next photo as the end
+        frame, and writes the move between them from a solution outline or a Growth Agent
+        storyboard. Library bytes and page placements are not rewritten. Finished scenes
+        join into one film you assign yourself.
       </p>
     </section>
     <div class="layout">
@@ -149,6 +150,56 @@
           <label for="sb-script">Script</label>
           <textarea id="sb-script" placeholder="Separate scenes with a blank line, or start lines with Scene 1:, Scene 2:."></textarea>
         </div>
+        <div class="panel" id="photo-to-photo-panel" style="margin-top:12px;background:rgba(7,16,40,0.28);">
+          <h2 style="margin:0 0 6px;font-size:1rem;">Photo to photo</h2>
+          <p style="margin:0 0 8px;opacity:0.86;font-size:0.84rem;">
+            Order the library photos. Scene 1 starts on the first and ends on the second, scene 2
+            starts on the second and ends on the third, and so on. Kling sends that pair as the
+            start and tail frames. Seedance sends the next photo as the last frame. The script
+            is written on the server from the solution outline or the Growth Agent lines.
+          </p>
+          <div class="grid">
+            <div>
+              <label for="photo-prompt-source">Prompt source</label>
+              <select id="photo-prompt-source">
+                <option value="solution">Solution outline</option>
+                <option value="growth">Growth Agent storyboard</option>
+              </select>
+            </div>
+            <div>
+              <label for="photo-solution-key">Solution</label>
+              <select id="photo-solution-key">
+                <option value="underwriting">AI-Assisted Underwriting</option>
+                <option value="assessments">Assessment Center</option>
+                <option value="media">Media Library</option>
+                <option value="billing">Billing &amp; Payments</option>
+                <option value="claims">Claims Management</option>
+                <option value="actuarial_investments">Actuarial &amp; Investments</option>
+                <option value="platform">Trust, Security &amp; Auditability</option>
+                <option value="smart_contracts">Smart Contracts Development</option>
+                <option value="mga_solutions">MGA Solutions</option>
+                <option value="actuarial_force">Actuarial Force</option>
+                <option value="deep_research">Deep Research Strategy</option>
+                <option value="regulation">Regulation Dashboard</option>
+                <option value="individuals">For Individuals</option>
+                <option value="enterprises">For Enterprises &amp; Partners</option>
+              </select>
+            </div>
+            <div>
+              <label for="photo-duration">Seconds per scene</label>
+              <input id="photo-duration" type="number" min="3" max="15" placeholder="Engine maximum">
+            </div>
+            <div>
+              <label for="photo-frame-select">Library photo</label>
+              <select id="photo-frame-select"><option value="">Choose a photo</option></select>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-secondary" type="button" id="photo-frame-add">Add photo</button>
+            <button class="btn btn-primary" type="button" id="photo-to-photo">Auto script photo to photo</button>
+          </div>
+          <div id="photo-frame-list" class="meta" style="margin-top:8px;">No photos yet.</div>
+        </div>
         <div class="actions">
           <button class="btn btn-secondary" type="button" id="split-script">Split into scenes</button>
           <button class="btn btn-primary" type="button" id="save-board">Save storyboard</button>
@@ -188,6 +239,7 @@
       openingFile: '',
       sceneFiles: {},
       providerCatalog: { providers: {}, share_slots: [] },
+      photoFrames: [],
     };
 
     function escapeHtml(value) {
@@ -291,6 +343,12 @@
       const openingCurrent = openingSelect.value;
       openingSelect.innerHTML = '<option value="">Generate the first picture from the script</option>' + uploadedOption + imageOptions;
       if (openingCurrent) openingSelect.value = openingCurrent;
+      const photoSelect = document.getElementById('photo-frame-select');
+      if (photoSelect) {
+        const photoCurrent = photoSelect.value;
+        photoSelect.innerHTML = '<option value="">Choose a photo</option>' + imageOptions;
+        if (photoCurrent) photoSelect.value = photoCurrent;
+      }
       document.querySelectorAll('.scene-asset').forEach(function (select) {
         const current = select.value;
         select.innerHTML = options;
@@ -366,6 +424,7 @@
           + '</div>'
           + '<div style="margin-top:8px;"><label>Script</label><textarea class="scene-script">' + escapeHtml(scene.script || '') + '</textarea></div>'
           + '<div class="meta" style="margin-top:6px;">Opens on ' + escapeHtml((scene.resolved_start_sha256 || 'not sealed').slice(0, 16))
+          + ' · next photo ' + escapeHtml((((scene.end_reference || {}).sha256) || 'none').slice(0, 16))
           + ' · ends on ' + escapeHtml((end || 'not captured').slice(0, 16))
           + (scene.video_job_id ? ' · job ' + escapeHtml(scene.video_job_id) : '')
           + '</div>'
@@ -605,6 +664,132 @@
       applyBoard(data.storyboard);
       setStatus('Ending screenshot sealed.', 'ok');
     }
+
+    function renderPhotoFrames() {
+      const host = document.getElementById('photo-frame-list');
+      if (!state.photoFrames.length) {
+        host.textContent = 'No photos yet. Add the first photo, then the next.';
+        return;
+      }
+      host.innerHTML = state.photoFrames.map(function (frame, index) {
+        return '<div class="actions" data-photo="' + index + '">'
+          + '<span>' + (index + 1) + '. ' + escapeHtml(frame.label || frame.asset_id) + '</span>'
+          + '<button class="btn btn-secondary photo-up" type="button">Up</button>'
+          + '<button class="btn btn-secondary photo-down" type="button">Down</button>'
+          + '<button class="btn btn-secondary photo-remove" type="button">Remove</button>'
+          + '</div>';
+      }).join('');
+    }
+
+    async function growthBeats() {
+      const data = await api('/api/admin/marketing-sales-agent/latest');
+      const campaign = data && data.latest_campaign && data.latest_campaign.campaign;
+      const beats = [];
+      ((campaign && campaign.ai_video_blueprints) || []).forEach(function (blueprint) {
+        (blueprint.storyboard || []).forEach(function (line) {
+          const text = String(line || '').trim();
+          if (text) beats.push(text);
+        });
+      });
+      return beats;
+    }
+
+    async function buildPhotoStoryboard() {
+      if (state.photoFrames.length < 2) {
+        setStatus('Add the first photo and the next photo.', 'error');
+        return;
+      }
+      const source = document.getElementById('photo-prompt-source').value || 'solution';
+      const providerName = document.getElementById('sb-provider').value || 'kling';
+      const model = document.getElementById('sb-model').value || '';
+      const durationRaw = String(document.getElementById('photo-duration').value || '').trim();
+      const payload = {
+        title: document.getElementById('sb-title').value,
+        purpose: document.getElementById('sb-purpose').value,
+        campaign_id: document.getElementById('sb-campaign').value,
+        provider: providerName,
+        provider_model: model,
+        aspect_ratio: document.getElementById('sb-aspect').value,
+        surface: surface,
+        prompt_source: source,
+        solution_key: document.getElementById('photo-solution-key').value,
+        photo_frames: state.photoFrames.map(function (frame) {
+          return { asset_id: frame.asset_id, sha256: frame.sha256 || '', label: frame.label || frame.asset_id };
+        }),
+      };
+      if (durationRaw) payload.duration_seconds = Number(durationRaw);
+      if (source === 'growth') {
+        setStatus('Reading the Growth Agent storyboard…', '');
+        payload.beats = await growthBeats();
+        if (!payload.beats.length) {
+          setStatus('The Growth Agent has no storyboard lines yet.', 'error');
+          return;
+        }
+      }
+      setStatus('Writing the photo-to-photo script…', '');
+      let data;
+      if (!state.board) {
+        data = await api('/api/admin/media/storyboards', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        payload.expected_sha256 = shaOf(state.board);
+        payload.remove_sealed = true;
+        data = await api('/api/admin/media/storyboards/' + encodeURIComponent(state.board.id), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
+      applyBoard(data.storyboard);
+      await refreshList();
+      const seconds = (state.board.scenes && state.board.scenes[0] && state.board.scenes[0].duration_seconds) || '';
+      setStatus(
+        state.board.scenes.length + ' scene' + (state.board.scenes.length === 1 ? '' : 's')
+        + ' at ' + seconds + ' seconds on ' + (state.board.provider || providerName)
+        + '. Checksum ' + shaOf(state.board),
+        'ok'
+      );
+    }
+
+    document.getElementById('photo-frame-add').addEventListener('click', function () {
+      const assetId = document.getElementById('photo-frame-select').value;
+      const image = state.images.find(function (item) { return item.id === assetId; });
+      if (!image) {
+        setStatus('Choose a library photo first.', 'error');
+        return;
+      }
+      state.photoFrames.push({
+        asset_id: image.id,
+        sha256: image.checksum || '',
+        label: image.name || image.id,
+      });
+      renderPhotoFrames();
+    });
+    document.getElementById('photo-frame-list').addEventListener('click', function (event) {
+      const row = event.target.closest('[data-photo]');
+      if (!row) return;
+      const index = Number(row.getAttribute('data-photo'));
+      if (event.target.classList.contains('photo-remove')) {
+        state.photoFrames.splice(index, 1);
+      } else if (event.target.classList.contains('photo-up') && index > 0) {
+        const swap = state.photoFrames[index - 1];
+        state.photoFrames[index - 1] = state.photoFrames[index];
+        state.photoFrames[index] = swap;
+      } else if (event.target.classList.contains('photo-down') && index < state.photoFrames.length - 1) {
+        const swap = state.photoFrames[index + 1];
+        state.photoFrames[index + 1] = state.photoFrames[index];
+        state.photoFrames[index] = swap;
+      } else {
+        return;
+      }
+      renderPhotoFrames();
+    });
+    document.getElementById('photo-to-photo').addEventListener('click', function () {
+      buildPhotoStoryboard().catch(function (err) { setStatus(err.message, 'error'); });
+    });
 
     document.getElementById('split-script').addEventListener('click', function () {
       const parts = splitLocal(document.getElementById('sb-script').value);

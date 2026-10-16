@@ -5154,6 +5154,7 @@ def media_video_request_fingerprint(
     provider_model: str,
     prompt: str,
     image_data_url: str = '',
+    end_image_data_url: str = '',
 ) -> str:
     """Content hash of everything the provider would be asked to render.
 
@@ -5168,6 +5169,10 @@ def media_video_request_fingerprint(
         'prompt': str(prompt or '').strip(),
         'image_sha256': hashlib.sha256(str(image_data_url or '').encode('utf-8')).hexdigest() if image_data_url else '',
     }, sort_keys=True)
+    if end_image_data_url:
+        parsed = json.loads(material)
+        parsed['end_image_sha256'] = hashlib.sha256(str(end_image_data_url).encode('utf-8')).hexdigest()
+        material = json.dumps(parsed, sort_keys=True)
     return hashlib.sha256(material.encode('utf-8')).hexdigest()
 
 
@@ -5223,6 +5228,7 @@ def create_media_video_job(
     callback_base_url: str = '',
     provider_model: str = '',
     image_data_url: str = '',
+    end_image_data_url: str = '',
     auto_publish_to_hero: bool = False,
     prompt_override: str = '',
     submit_inline: bool = True,
@@ -5279,6 +5285,7 @@ def create_media_video_job(
         'provider_state': {},
         'provider_model': provider_model or '',
         'image_data_url': image_data_url or '',
+        'end_image_data_url': end_image_data_url or '',
         'prompt_override': prompt_override,
         'prompt': prompt,
         'aspect_ratio': aspect_ratio,
@@ -5306,6 +5313,7 @@ def create_media_video_job(
             provider_model=provider_model,
             prompt=prompt,
             image_data_url=image_data_url,
+            end_image_data_url=end_image_data_url,
         ),
         'webhook_deliveries': [],
         'solution_key': str(solution_key or ''),
@@ -5355,6 +5363,7 @@ def _submit_media_video_job_to_provider(job: Dict[str, Any]) -> Dict[str, Any]:
             duration_seconds=max(1, safe_int(job.get('duration_seconds'), 8)),
             resolution=str(job.get('resolution') or '720p'),
             image_data_url=str(job.get('image_data_url') or ''),
+            end_image_data_url=str(job.get('end_image_data_url') or ''),
             callback_url=callback_url if has_external_callback else '',
             metadata={
                 'campaign_id': job.get('campaign_id'),
@@ -6234,8 +6243,10 @@ def retry_media_video_job(job: Dict[str, Any], *, requested_by: str, callback_ba
         callback_base_url=callback_base_url,
         provider_model=str(job.get('provider_model') or ''),
         image_data_url=str(job.get('image_data_url') or ''),
+        end_image_data_url=str(job.get('end_image_data_url') or ''),
         auto_publish_to_hero=bool(job.get('auto_publish_to_hero')),
         prompt_override=str(job.get('prompt_override') or ''),
+        duration_seconds=max(1, safe_int(job.get('duration_seconds'), 8)),
     )
 
 

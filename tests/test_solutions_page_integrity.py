@@ -82,6 +82,8 @@ def test_every_public_segment_opens_an_enlarged_theater_preview():
     assert 'role="dialog"' in html
     assert 'aria-modal="true"' in html
     assert "WALKTHROUGH_MS = 8000" in html
+    assert "video.duration" in html
+    assert "function previewBudgetMs" in html
     assert "PREVIEW_VIDEOS" in html
     assert "theaterOverrides" in html
     assert "solutions_theater_" in html

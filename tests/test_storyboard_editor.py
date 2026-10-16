@@ -915,3 +915,101 @@ def test_end_frame_capture_seals_the_library_file(tmp_path, monkeypatch):
     assert scene["media_asset_id"] == "vid-1"
     assert scene["media_sha256"] == digest
     assert scene["end_screenshot"]["sha256"]
+
+
+def test_photo_to_photo_keeps_each_frame_and_uses_the_engine_length():
+    from services.storyboard_editor import (
+        StoryboardValidationError,
+        compose_photo_scenes,
+        engine_scene_seconds,
+    )
+
+    start = seal_reference(data_url=_PNG_URL, label="desk")
+    middle = seal_reference(raw=_PNG_B, mime="image/png", label="policy card")
+    end = seal_reference(data_url=_PNG_URL, label="desk again")
+    assert engine_scene_seconds("kling", "kling-v2.6-pro", None) == 10
+    assert engine_scene_seconds("kling", "kling-v3-image-to-video", None, evolink=True) == 15
+    assert engine_scene_seconds("replicate", "bytedance/seedance-2.0", None) == 15
+    assert engine_scene_seconds("gemini", "veo-3.1-generate-preview", None) == 8
+    assert duration_renders_exactly("kling-v3-image-to-video", 12, "kling", evolink=True) is True
+    assert duration_renders_exactly("kling-v3-image-to-video", 12, "kling", evolink=False) is False
+    with pytest.raises(StoryboardValidationError):
+        engine_scene_seconds("kling", "kling-v2.6-pro", 8)
+    with pytest.raises(StoryboardValidationError):
+        compose_photo_scenes(
+            [start, middle],
+            ["A solution line"],
+            provider="gemini",
+            model="veo-3.1-generate-preview",
+        )
+    scenes = compose_photo_scenes(
+        [start, middle, end],
+        ["Open the desk.", "Show the policy.", "Return to the desk."],
+        provider="kling",
+        model="kling-v3-image-to-video",
+        evolink=True,
+    )
+    assert len(scenes) == 2
+    assert scenes[0]["duration_seconds"] == 15
+    assert scenes[0]["chosen_reference"]["sha256"] == start["sha256"]
+    assert scenes[0]["end_reference"]["sha256"] == middle["sha256"]
+    assert scenes[1]["chosen_reference"]["sha256"] == middle["sha256"]
+    assert scenes[1]["end_reference"]["sha256"] == end["sha256"]
+    assert "desk" in scenes[0]["script"]
+    assert "policy card" in scenes[0]["script"]
+    assert "Open the desk." in scenes[0]["script"]
+    assert "Show the policy." in scenes[1]["script"]
+    assert "Return to the desk." in scenes[1]["script"]
+    editor = _editor()
+    board = editor.create(
+        purpose="underwriting",
+        provider="kling",
+        provider_model="kling-v3-image-to-video",
+        scenes=scenes,
+        opening_reference=start,
+        surface="solutions",
+    )
+    assert board["integrity"]["chain_ok"] is True
+    assert board["scenes"][1]["resolved_start_sha256"] == middle["sha256"]
+    calls = []
+    editor.render_scene(
+        board["id"],
+        1,
+        expected_sha256=board["integrity"]["document_sha256"],
+        submitter=lambda params: calls.append(params) or {"id": "job-photo", "status": "queued"},
+        provider="kling",
+        provider_connected=True,
+        provider_model="kling-v3-image-to-video",
+        submitted_by="admin",
+        evolink=True,
+    )
+    assert calls[0]["duration_seconds"] == 15
+    assert calls[0]["image_data_url"] == start["data_url"]
+    assert calls[0]["end_image_data_url"] == middle["data_url"]
+    assert calls[0]["metadata"]["end_sha256"] == middle["sha256"]
+    assert editor.get(board["id"])["opening_reference"]["sha256"] == start["sha256"]
+    veo = editor.create(
+        purpose="underwriting",
+        provider="gemini",
+        provider_model="veo-3.1-generate-preview",
+        scenes=[{
+            "script": "Hold the desk.",
+            "duration_seconds": 8,
+            "reference_mode": "chosen",
+            "chosen_reference": start,
+            "end_reference": middle,
+        }],
+        opening_reference=start,
+        surface="solutions",
+    )
+    with pytest.raises(StoryboardIntegrityError):
+        editor.render_scene(
+            veo["id"],
+            1,
+            expected_sha256=veo["integrity"]["document_sha256"],
+            submitter=lambda params: (_ for _ in ()).throw(AssertionError("must not submit")),
+            provider="gemini",
+            provider_connected=True,
+            provider_model="veo-3.1-generate-preview",
+            submitted_by="admin",
+        )

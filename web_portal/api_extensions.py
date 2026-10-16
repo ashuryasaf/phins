@@ -3666,6 +3666,12 @@ def _prepare_storyboard_scenes(items: Any) -> List[Dict]:
         chosen = item.get("chosen_reference")
         if isinstance(chosen, dict) and (chosen.get("asset_id") or chosen.get("data_url")):
             scene["chosen_reference"] = _seal_storyboard_reference(chosen)
+        if "end_reference" in item:
+            end_reference = item.get("end_reference")
+            if isinstance(end_reference, dict) and (end_reference.get("asset_id") or end_reference.get("data_url")):
+                scene["end_reference"] = _seal_storyboard_reference(end_reference)
+            else:
+                scene["end_reference"] = {}
         prepared.append(scene)
     return prepared
 
@@ -3790,6 +3796,63 @@ def handle_storyboard_verify(session: Optional[Dict], storyboard_id: str) -> Tup
         return _storyboard_error(exc)
 
 
+def _storyboard_photo_scenes(body: Dict) -> Optional[List[Dict]]:
+    """Seal an ordered photo list into start/end scene pairs.
+
+    Solution outlines are read on the server. Growth beats are the caller's
+    storyboard lines; the reference sentence is still written here.
+    """
+    frames = body.get("photo_frames")
+    if not isinstance(frames, list) or len(frames) < 2:
+        return None
+    from services.solution_video_blueprints import SOLUTION_OUTLINES
+    from services.storyboard_editor import StoryboardValidationError, compose_photo_scenes
+
+    sealed = []
+    for item in frames:
+        if not isinstance(item, dict):
+            raise StoryboardValidationError("Each photo must be an object.")
+        sealed.append(_seal_storyboard_reference(item))
+    source = str(body.get("prompt_source") or "solution").strip().lower()
+    if source == "solution":
+        key = str(body.get("solution_key") or "").strip()
+        outline = SOLUTION_OUTLINES.get(key)
+        if outline is None:
+            raise StoryboardValidationError(
+                f"Unknown solution {key!r}. Supported: {sorted(SOLUTION_OUTLINES)}."
+            )
+        beats = list(outline.get("bullets") or [])
+    elif source == "growth":
+        raw_beats = body.get("beats")
+        if not isinstance(raw_beats, list) or not any(str(item or "").strip() for item in raw_beats):
+            raise StoryboardValidationError(
+                "Growth photo-to-photo needs the campaign storyboard lines."
+            )
+        beats = [str(item).strip() for item in raw_beats if str(item or "").strip()]
+    else:
+        raise StoryboardValidationError("prompt_source must be 'solution' or 'growth'.")
+    provider = str(body.get("provider") or "replicate")
+    model = str(body.get("provider_model") or "")
+    evolink = False
+    if str(provider).strip().lower() == "kling":
+        try:
+            from services.media_generation_service import get_media_generation_service
+            evolink = bool(get_media_generation_service()._kling_use_evolink_profile(model))
+        except Exception:
+            evolink = False
+    requested = body.get("duration_seconds")
+    if requested in ("", None, "engine"):
+        requested = None
+    return compose_photo_scenes(
+        sealed,
+        beats,
+        provider=provider,
+        model=model,
+        requested_duration=requested,
+        evolink=evolink and str(model).lower().startswith(("kling-v3", "kling-o1", "kling-o3")),
+    )
+
+
 def handle_storyboard_create(session: Optional[Dict], body: Dict) -> Tuple[int, Dict]:
     """POST /api/admin/media/storyboards — create a storyboard from a script."""
     auth_error = _require_admin_or_media(session)
@@ -3800,13 +3863,19 @@ def handle_storyboard_create(session: Optional[Dict], body: Dict) -> Tuple[int, 
         opening = None
         if isinstance(body.get("opening_reference"), dict):
             opening = _seal_storyboard_reference(body["opening_reference"])
-        scenes = None
-        if isinstance(body.get("scenes"), list):
+        photo_scenes = _storyboard_photo_scenes(body)
+        scenes = photo_scenes
+        if scenes is None and isinstance(body.get("scenes"), list):
             scenes = _prepare_storyboard_scenes(body["scenes"])
+        script = str(body.get("script") or "")
+        if photo_scenes:
+            opening = photo_scenes[0].get("chosen_reference") or opening
+            if not script.strip():
+                script = "\n\n".join(str(scene.get("script") or "") for scene in photo_scenes)
         board = get_storyboard_editor().create(
             title=str(body.get("title") or ""),
             purpose=str(body.get("purpose") or "advertisement"),
-            script=str(body.get("script") or ""),
+            script=script,
             scenes=scenes,
             opening_reference=opening,
             provider=str(body.get("provider") or "replicate"),
@@ -3844,7 +3913,16 @@ def handle_storyboard_update(session: Optional[Dict], storyboard_id: str, body: 
             else:
                 from services.storyboard_editor import _empty_reference
                 kwargs["opening_reference"] = _empty_reference()
-        if "scenes" in body:
+        photo_scenes = _storyboard_photo_scenes(body)
+        if photo_scenes:
+            kwargs["scenes"] = photo_scenes
+            kwargs["opening_reference"] = photo_scenes[0].get("chosen_reference")
+            kwargs["remove_sealed"] = bool(body.get("remove_sealed"))
+            if body.get("script") is None:
+                kwargs["script"] = "\n\n".join(
+                    str(scene.get("script") or "") for scene in photo_scenes
+                )
+        elif "scenes" in body:
             kwargs["scenes"] = _prepare_storyboard_scenes(body.get("scenes"))
             kwargs["remove_sealed"] = bool(body.get("remove_sealed"))
         board = get_storyboard_editor().update(storyboard_id, **kwargs)
@@ -3908,6 +3986,7 @@ def _submit_storyboard_scene(params: Dict) -> Dict:
             callback_base_url=callback_base,
             provider_model=model,
             image_data_url=str(params.get("image_data_url") or ""),
+            end_image_data_url=str(params.get("end_image_data_url") or ""),
             auto_publish_to_hero=False,
             prompt_override=str(params.get("prompt_override") or ""),
             duration_seconds=int(params.get("duration_seconds") or 8),
@@ -3947,6 +4026,13 @@ def handle_storyboard_render(
         provider = str(body.get("provider") or current.get("provider") or "replicate")
         model = str(body.get("provider_model") or current.get("provider_model") or "").strip()
         connected, provider_name, provider_error = _storyboard_connection(provider, model)
+        evolink = False
+        if provider_name == "kling":
+            try:
+                from services.media_generation_service import get_media_generation_service
+                evolink = bool(get_media_generation_service()._kling_use_evolink_profile(model))
+            except Exception:
+                evolink = False
         result = editor.render_scene(
             storyboard_id,
             int(index),
@@ -3957,6 +4043,7 @@ def handle_storyboard_render(
             provider_error=provider_error,
             provider_model=model,
             submitted_by=_storyboard_actor(session),
+            evolink=evolink and str(model).lower().startswith(("kling-v3", "kling-o1", "kling-o3")),
         )
         return 201, {
             "storyboard": _storyboard_view(result["storyboard"], include_media=True),
