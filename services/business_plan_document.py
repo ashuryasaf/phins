@@ -20,6 +20,13 @@ import json
 import re
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from services.business_plan_charts import (
+    chart_by_id,
+    chart_specs,
+    chart_table,
+    directive as chart_directive,
+    render_svg,
+)
 from services.business_plan_model import (
     FACTORS,
     FACTOR_GROUPS,
@@ -27,11 +34,43 @@ from services.business_plan_model import (
     YEARS,
     compute_plan,
 )
+from services.business_plan_sources import LINEAGE, research_rows
 
 BRAND_TAGLINE = "Personal Health Insurance & Savings · AI-Operated Insurance Platform"
 DOCUMENT_TITLE = "PHINS — Unified Business Plan, Investor Deck & Appendices"
 DOCUMENT_EDITION = "October 2026 · one standard · adjustable factors"
 CONTACT = "asaf@phins.ai · phins.ai"
+
+# Processed founder portrait (media-library placement ``founder_portrait_id``;
+# see services/business_plan_portrait.py). The PDF edition embeds the same
+# route's output when the generator can reach it; otherwise the monogram.
+FOUNDER_PORTRAIT_URL = "/api/business-plan/founder-portrait"
+
+# Founder credentials — facts already stated on the investor surfaces
+# (Investor Meeting pack, partner business plans, Aspire-Invest plan).
+FOUNDER: Dict[str, Any] = {
+    "name": "Asaf Ashury, Adv.",
+    "role": "Founder & CEO · PHINS Technologies",
+    "monogram": "AA",
+    "summary": (
+        "Insurance broker and lawyer who designed the PHINS contract family and built the operating platform "
+        "end-to-end. The first conversations that matter — supervisor, appointed actuary, carrier of record, "
+        "reinsurer, distribution house — require one person who can hold insurance law, actuarial form and "
+        "production software at the same time; that is the founder's role in every market PHINS enters."
+    ),
+    "credentials": [
+        ("Licensed insurance broker", "Life, disability and long-term-care distribution practice in Israel; the anchor contract's 1:4 / 1:1 disability mechanism and the ADL-3 trigger are his product design."),
+        ("Advocate (Adv.)", "Israeli Bar; drafted the regulatory application memorandum in actuarial form (Draft 3.1, EN + HE) and opened the pre-ruling track with the Capital Market, Insurance and Savings Authority (12 October 2026)."),
+        ("Platform author", "Built the production platform at www.phins.ai — {modules} service modules, {api_modules} API modules, {repositories} repositories, {security_modules} security modules, {test_files} test files at this render — including the pricing kernel, the hash-chained ledger and the AI agents that recommend while humans decide."),
+        ("Actuarial validation", "An IAA-recognised executive actuary (IL / CA / US) reviewed the pricing model and the actuarial service layer on 26 May 2026 and is engaged on the Chief-Actuary path; appointed-actuary sign-off remains an open gate."),
+        ("Capital-markets and partner relations", "Leads the carrier, reinsurance, distribution-house and OECD partner conversations; author of the Investor Meeting book this plan reconciles to."),
+    ],
+    "principles": [
+        "AI recommends, the ledger posts, people supervise.",
+        "One factor register behind every investor figure; integrity identities on every render.",
+        "Technology, not balance sheet: carried by licensed insurers, reinsured by quota share, distributed with local partners.",
+    ],
+}
 
 # ---------------------------------------------------------------------------
 # Figures: placeholder key → (plan path, format)
@@ -341,7 +380,33 @@ def plan_sections() -> List[Section]:
             "Decisions that move money or risk are human: underwriting and claims agents recommend, the underwriter and adjuster apply; thresholds are proposed read-only and promoted only through an audited admin step; the regulator has a sealed read-only outline that reconciles to the financial books.",
             "The team is sized by the opex intensity of the anchor book (platform, actuarial, underwriting, claims, customer operations, compliance) and extended per partner market by platform, actuarial and compliance support only. An Appointed Actuary reviews experience against the kernel at each gate.",
         ], "table": "gates"},
+        {"id": "founder", "num": "11", "title": "Founder credentials", "paragraphs": [
+            FOUNDER["summary"],
+        ], "founder": True},
     ]
+
+
+# Charts placed in the plan sections (section id → chart ids). The same
+# specs feed the deck and the appendices; see SECTION_CHARTS consumers.
+SECTION_CHARTS: Dict[str, List[str]] = {
+    "exec": ["in_force"],
+    "financials": ["revenue_ebitda", "gwp_split"],
+    "capital": ["cash_curve", "use_of_funds", "appraisal_sensitivity"],
+    "governance": ["roadmap"],
+}
+# Deck slides that carry a chart (slide title → chart id).
+SLIDE_CHARTS: Dict[str, str] = {
+    "Market and expansion": "in_force",
+    "Financials (ILS)": "revenue_ebitda",
+    "The round": "use_of_funds",
+    "Milestones": "roadmap",
+}
+# Appendix charts (appendix letter → chart ids).
+APPENDIX_CHARTS: Dict[str, List[str]] = {
+    "B": ["carrier_view"],
+    "F": ["gwp_split", "cash_curve"],
+    "G": ["roadmap"],
+}
 
 
 def deck_slides() -> List[Section]:
@@ -366,6 +431,11 @@ def deck_slides() -> List[Section]:
             "Supervisor engaged: pre-ruling track with the Capital Market, Insurance and Savings Authority opened 12 October 2026.",
             "Demographics and public spend make the gap legible to regulators, partners and customers.",
             "AI operating model is built: {modules} service modules, {test_files} test files, golden sets gating CI.",
+        ]},
+        {"title": "Founder", "kicker": FOUNDER["name"] + " · " + FOUNDER["role"], "founder": True, "bullets": [
+            "Licensed insurance broker and advocate; designed the contract family (1:4 / 1:1 disability mechanism, ADL-3 trigger) and drafted the regulatory memorandum in actuarial form.",
+            "Built the production platform end-to-end — {modules} service modules, {test_files} test files at this render; pricing kernel, hash-chained ledger, AI agents that recommend while humans decide.",
+            "Pricing model reviewed by an IAA-recognised executive actuary (26 May 2026); pre-ruling track opened with the Authority on 12 October 2026.",
         ]},
         {"title": "Product and pricing", "bullets": [
             "Kernel specimen: {specimen_life_monthly} life + {specimen_dis_monthly} disability = {specimen_monthly} a month at the 1.255 age-42 factor.",
@@ -530,8 +600,50 @@ def placeholder_keys() -> List[str]:
     for _, a, b in RISKS:
         keys.update(_PLACEHOLDER.findall(a))
         keys.update(_PLACEHOLDER.findall(b))
+    for _, text in FOUNDER["credentials"]:
+        keys.update(_PLACEHOLDER.findall(text))
     keys.discard("il_face")
     return sorted(keys)
+
+
+# ---------------------------------------------------------------------------
+# Charts, founder block and data-source rows shared by both renderers
+# ---------------------------------------------------------------------------
+def _chart_caption(spec: Mapping[str, Any]) -> str:
+    return f"Figure {spec['id'].replace('_', ' ')} — source: {spec.get('source', '')}"
+
+
+def _md_chart(plan: Mapping[str, Any], chart_id: str) -> List[str]:
+    """Directive (drawn by the PDF generator) + the same data as a table."""
+    spec = chart_by_id(plan, chart_id)
+    header, rows = chart_table(spec)
+    return [
+        chart_directive(spec),
+        f"**{spec['title']}.** {spec.get('subtitle', '')}",
+        "",
+        _md_table(header, rows),
+        "",
+        f"*{_chart_caption(spec)}*",
+        "",
+    ]
+
+
+def _html_chart(plan: Mapping[str, Any], chart_id: str) -> str:
+    spec = chart_by_id(plan, chart_id)
+    return (
+        f'<figure class="bp-chart" data-chart-id="{_html.escape(chart_id)}">'
+        f'<div class="bp-chart-svg">{render_svg(spec)}</div>'
+        f'<figcaption>{_html.escape(_chart_caption(spec))}</figcaption></figure>'
+    )
+
+
+def founder_rows(plan: Mapping[str, Any], html_mode: bool) -> List[List[str]]:
+    return [[title, _fill(text, plan, html_mode)] for title, text in FOUNDER["credentials"]]
+
+
+def data_source_rows(plan: Mapping[str, Any]) -> List[Dict[str, str]]:
+    """Appendix I research rows following the plan's market order."""
+    return research_rows(plan["markets"])
 
 
 # ---------------------------------------------------------------------------
@@ -592,6 +704,18 @@ def render_markdown(plan: Optional[Mapping[str, Any]] = None) -> str:
         if sec.get("table") == "gates":
             L.append(_md_table(["When", "Gate"], [[g[0], f(g[1])] for g in GATES]))
             L.append("")
+        if sec.get("founder"):
+            L.append(f"![{FOUNDER['name']} — founder portrait]({FOUNDER_PORTRAIT_URL})")
+            L.append("")
+            L.append(f"**{FOUNDER['name']}** — {FOUNDER['role']}")
+            L.append("")
+            L.append(_md_table(["Credential", "Detail"], founder_rows(plan, False)))
+            L.append("")
+            for pr in FOUNDER["principles"]:
+                L.append(f"- {pr}")
+            L.append("")
+        for chart_id in SECTION_CHARTS.get(sec["id"], []):
+            L.extend(_md_chart(plan, chart_id))
     L.append("---")
     L.append("")
     L.append("# Part II — Investor deck")
@@ -604,6 +728,11 @@ def render_markdown(plan: Optional[Mapping[str, Any]] = None) -> str:
         for b in s["bullets"]:
             L.append(f"- {f(b)}")
         L.append("")
+        if s["title"] in SLIDE_CHARTS:
+            spec = chart_by_id(plan, SLIDE_CHARTS[s["title"]])
+            L.append(chart_directive(spec))
+            L.append(f"*Chart: {spec['title']} — data in Part I and Appendix F.*")
+            L.append("")
     L.append("---")
     L.append("")
     L.append("# Part III — Appendices")
@@ -641,6 +770,8 @@ def render_markdown(plan: Optional[Mapping[str, Any]] = None) -> str:
     h, b = _year_table(plan, "carrier_view", CARRIER_COLUMNS, False)
     L.append(_md_table(h, b))
     L.append("")
+    for chart_id in APPENDIX_CHARTS["B"]:
+        L.extend(_md_chart(plan, chart_id))
     # C
     L.append("## Appendix C — Regulatory pathway by market")
     L.append("")
@@ -713,16 +844,39 @@ def render_markdown(plan: Optional[Mapping[str, Any]] = None) -> str:
         ["Actuarial appraisal (anchor book)", f("{appraisal} at {wacc} WACC, {exit_multiple} 2029 net revenue, {prudence} prudence")],
     ]))
     L.append("")
+    L.append("### F.5 Charts")
+    L.append("")
+    for chart_id in APPENDIX_CHARTS["F"]:
+        L.extend(_md_chart(plan, chart_id))
     # G
     L.append("## Appendix G — Milestone and governance calendar")
     L.append("")
     L.append(_md_table(["When", "Gate"], [[g[0], f(g[1])] for g in GATES]))
     L.append("")
+    for chart_id in APPENDIX_CHARTS["G"]:
+        L.extend(_md_chart(plan, chart_id))
     # H
     L.append("## Appendix H — Glossary")
     L.append("")
     for term, text in GLOSSARY:
         L.append(f"- **{term}** — {text}")
+    L.append("")
+    # I
+    L.append("## Appendix I — Data sources and figure lineage")
+    L.append("")
+    L.append("Every class of figure in this document, where it comes from and whether it feeds the model. "
+             "External research is reference only: the plan counts lives (not market size) from the kernel premium and the persistency identity, "
+             "so no statistic moves a planning figure and no planning figure rewrites a statistic.")
+    L.append("")
+    L.append(_md_table(["Figure class", "Source", "Kind", "Feeds the model", "Note"],
+                       [[r["figure"], r["source"], r["kind"], "yes" if r["feeds_model"] else "reference only", r["note"]]
+                        for r in LINEAGE]))
+    L.append("")
+    L.append("External research registry behind the market section — the same registry the Scenario Lab cites on the pitch dashboard, by planning market:")
+    L.append("")
+    L.append(_md_table(["Market", "Source", "Type · strength", "Used for", "URL"],
+                       [[r["market"], r["title"], f"{r['type']} · {r['strength']}", r["note"], r["url"]]
+                        for r in data_source_rows(plan)]))
     L.append("")
     L.append("---")
     L.append("")
@@ -832,6 +986,23 @@ table.bp-table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; fo
 .phins-letterhead .lh-name { font-family: "Space Grotesk", Inter, sans-serif; font-size: 15pt; font-weight: 700; color: #0e2f63; letter-spacing: 0.08em; line-height: 1.1; }
 .phins-letterhead .lh-tag { font-size: 7pt; color: #5b6b82; letter-spacing: 0.08em; text-transform: uppercase; }
 .bp-glossary dt { font-weight: 700; color: var(--phins-navy); margin-top: 8px; } .bp-glossary dd { margin: 2px 0 0 0; }
+figure.bp-chart { margin: 14px 0 18px; padding: 10px 12px 8px; border: 1px solid var(--phins-line); border-radius: 14px; background: #fff; page-break-inside: avoid; }
+figure.bp-chart .bp-chart-svg svg { width: 100%; height: auto; display: block; }
+figure.bp-chart figcaption { font-size: 11px; color: var(--phins-muted); margin-top: 6px; }
+figure.bp-chart.updating { opacity: 0.55; transition: opacity .15s; }
+.bp-slide figure.bp-chart { margin: 0 12px 12px; padding: 6px 8px 4px; }
+.bp-founder { display: grid; grid-template-columns: 200px 1fr; gap: 20px; align-items: start; margin: 12px 0 16px; padding: 18px; border-radius: 14px; border: 1px solid var(--phins-line); background: linear-gradient(180deg, #fbfdff 0%, #fff 100%); page-break-inside: avoid; }
+.bp-founder-photo { position: relative; width: 200px; height: 200px; border-radius: 16px; overflow: hidden; background: var(--bp-grad); box-shadow: 0 10px 28px rgba(6,13,31,0.22); border: 3px solid #fff; outline: 1px solid var(--phins-gold); }
+.bp-founder-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.bp-founder-photo .bp-monogram { display: none; width: 100%; height: 100%; align-items: center; justify-content: center; font-family: "Space Grotesk", Inter, sans-serif; font-size: 64px; font-weight: 700; color: var(--phins-gold-strong); letter-spacing: 0.06em; }
+.bp-founder-photo.fallback img { display: none; } .bp-founder-photo.fallback .bp-monogram { display: flex; }
+.bp-founder h3 { margin: 0; font-size: 20px; } .bp-founder .bp-founder-role { color: var(--phins-gold-deep); font-weight: 700; font-size: 12.5px; letter-spacing: 0.06em; text-transform: uppercase; margin: 2px 0 10px; }
+.bp-founder ul.bp-principles { margin: 10px 0 0 18px; padding: 0; font-size: 13px; color: var(--phins-muted); }
+.bp-slide .bp-slide-founder { display: flex; gap: 12px; align-items: center; padding: 12px 16px 0; }
+.bp-slide .bp-slide-founder .bp-founder-photo { width: 72px; height: 72px; border-radius: 12px; flex: none; }
+.bp-slide .bp-slide-founder .bp-monogram { font-size: 24px; }
+.bp-source-url { font-size: 11px; word-break: break-all; }
+@media (max-width: 720px) { .bp-founder { grid-template-columns: 1fr; } .bp-founder-photo { width: 160px; height: 160px; } }
 @page { size: A4; margin: 16mm 14mm 18mm 14mm; }
 @media print {
   body { background: #fff; }
@@ -912,7 +1083,26 @@ _JS = r"""
     if (err) err.textContent = (plan.errors && plan.errors.length) ? ('Out-of-range values reset to default: ' + plan.errors.join('; ')) : '';
     var link = document.getElementById('bp-json-link');
     if (link) link.setAttribute('href', '/api/business-plan/model' + query());
+    applyCharts(plan);
     try { window.dispatchEvent(new CustomEvent('phins:business-plan', { detail: plan })); } catch (e) {}
+  }
+  // Charts are drawn by the server from the same plan (one layout engine for
+  // the page, the live refresh and the PDF); the browser only swaps the SVG.
+  function applyCharts(plan) {
+    var figures = document.querySelectorAll('figure.bp-chart[data-chart-id]');
+    var byId = {};
+    (plan.charts || []).forEach(function (c) { byId[c.id] = c; });
+    for (var i = 0; i < figures.length; i++) {
+      var fig = figures[i], chart = byId[fig.getAttribute('data-chart-id')];
+      fig.classList.remove('updating');
+      if (!chart || !chart.svg) continue;
+      var host = fig.querySelector('.bp-chart-svg');
+      if (host && host.innerHTML !== chart.svg) host.innerHTML = chart.svg;
+    }
+  }
+  function markChartsUpdating() {
+    var figures = document.querySelectorAll('figure.bp-chart');
+    for (var i = 0; i < figures.length; i++) figures[i].classList.add('updating');
   }
   function query() {
     var parts = [];
@@ -925,11 +1115,19 @@ _JS = r"""
     timer = setTimeout(function () {
       var q = query();
       try { history.replaceState(null, '', location.pathname + q + location.hash); } catch (e) {}
-      fetch('/api/business-plan/model' + q, { credentials: 'same-origin' })
+      markChartsUpdating();
+      fetch('/api/business-plan/model' + (q ? q + '&' : '?') + 'charts=1', { credentials: 'same-origin' })
         .then(function (r) { return r.json(); })
         .then(apply)
-        .catch(function () {});
+        .catch(function () { applyCharts({}); });
     }, 120);
+  }
+  function portraitFallback() {
+    var photos = document.querySelectorAll('.bp-founder-photo img');
+    for (var i = 0; i < photos.length; i++) {
+      photos[i].addEventListener('error', function (ev) { var box = ev.target.parentNode; if (box) box.classList.add('fallback'); });
+      if (photos[i].complete && photos[i].naturalWidth === 0) photos[i].parentNode.classList.add('fallback');
+    }
   }
   function buildPanel() {
     var host = document.getElementById('bp-factor-groups');
@@ -971,7 +1169,7 @@ _JS = r"""
     refresh();
   }
   document.addEventListener('DOMContentLoaded', function () {
-    readUrl(); buildPanel();
+    readUrl(); buildPanel(); portraitFallback();
     FACTORS.forEach(function (f) { var box = document.getElementById('bp-factor-' + f.id); if (box && state[f.id] !== f.default) box.classList.add('changed'); });
     var rb = document.getElementById('bp-reset'); if (rb) rb.addEventListener('click', reset);
     var pb = document.getElementById('bp-print'); if (pb) pb.addEventListener('click', function () { window.print(); });
@@ -1017,11 +1215,24 @@ def render_html(plan: Optional[Mapping[str, Any]] = None) -> str:
         for label, val, note in kpis
     )
 
+    def founder_photo(cls: str = "") -> str:
+        return (f'<div class="bp-founder-photo {cls}"><img src="{FOUNDER_PORTRAIT_URL}" alt="{e(FOUNDER["name"])} — founder portrait" loading="lazy">'
+                f'<div class="bp-monogram" aria-hidden="true">{e(FOUNDER["monogram"])}</div></div>')
+
+    founder_html = (
+        '<div class="bp-founder">' + founder_photo()
+        + f'<div><h3>{e(FOUNDER["name"])}</h3><div class="bp-founder-role">{e(FOUNDER["role"])}</div>'
+        + _html_table(["Credential", "Detail"], [[e(t), d] for t, d in founder_rows(plan, True)], numeric_from=99, raw_cells=True)
+        + '<ul class="bp-principles">' + "".join(f"<li>{e(p)}</li>" for p in FOUNDER["principles"]) + "</ul></div></div>"
+    )
+
     sections_html: List[str] = []
     for sec in plan_sections():
         parts = [f'<section class="bp-section" id="plan-{sec["id"]}"><h2><span class="secno">{sec["num"]}.</span>{e(sec["title"])}</h2>']
         for p in sec.get("paragraphs", []):
             parts.append(f"<p>{f(p)}</p>")
+        if sec.get("founder"):
+            parts.append(founder_html)
         if sec.get("table") == "risks":
             parts.append(_html_table(["Risk", "What could go wrong", "Mitigation in the plan"],
                                      [[e(r[0]), f(r[1]), f(r[2])] for r in RISKS], numeric_from=99, raw_cells=True))
@@ -1042,6 +1253,8 @@ def render_html(plan: Optional[Mapping[str, Any]] = None) -> str:
                 ["Security modules", f'<span data-bp="technology.census.security_modules" data-fmt="int">{census["security_modules"]:,}</span>'],
                 ["Test files", f'<span data-bp="technology.census.test_files" data-fmt="int">{census["test_files"]:,}</span>'],
             ], raw_cells=True))
+        for chart_id in SECTION_CHARTS.get(sec["id"], []):
+            parts.append(_html_chart(plan, chart_id))
         parts.append("</section>")
         sections_html.append("".join(parts))
 
@@ -1049,10 +1262,15 @@ def render_html(plan: Optional[Mapping[str, Any]] = None) -> str:
     for i, s in enumerate(deck_slides(), 1):
         kicker = f'<div class="bp-kicker">{e(s["kicker"])}</div>' if s.get("kicker") else ""
         bullets = "".join(f"<li>{f(b)}</li>" for b in s["bullets"])
+        extra = ""
+        if s.get("founder"):
+            extra = f'<div class="bp-slide-founder">{founder_photo()}<div><strong>{e(FOUNDER["name"])}</strong><br><span class="bp-status">{e(FOUNDER["role"])}</span></div></div>'
+        chart_html = _html_chart(plan, SLIDE_CHARTS[s["title"]]) if s["title"] in SLIDE_CHARTS else ""
         slides_html.append(
             f'<article class="bp-slide"><div class="bp-slide-head"><div class="bp-slide-no">Slide {i:02d}</div>'
-            f'<h3>{e(s["title"])}</h3>{kicker}</div><div class="bp-slide-gold"></div><ul>{bullets}</ul></article>'
+            f'<h3>{e(s["title"])}</h3>{kicker}</div><div class="bp-slide-gold"></div>{extra}<ul>{bullets}</ul>{chart_html}</article>'
         )
+    n_slides = len(deck_slides())
 
     sp = plan["specimen"]
     appendix_a = (
@@ -1075,7 +1293,8 @@ def render_html(plan: Optional[Mapping[str, Any]] = None) -> str:
     appendix_b = (
         '<section class="bp-section" id="appendix-b"><h2><span class="secno">B.</span>Carrier and reinsurance view (Israel anchor book)</h2>'
         + f"<p>{f('The carrier books 100% of risk GWP, pays the PHINS fee ({take}), expects claims of {loss_ratio} of GWP, cedes {cession} by quota share, receives a {ceding_commission} ceding commission on ceded premium and keeps {carrier_own} of GWP for capital, governance and compliance. Carrier margin in 2029: {carrier_margin_2029}. All five are adjustable factors; the table restates on every change.')}</p>"
-        + _html_table(h, b, raw_cells=True) + "</section>"
+        + _html_table(h, b, raw_cells=True)
+        + "".join(_html_chart(plan, c) for c in APPENDIX_CHARTS["B"]) + "</section>"
     )
     appendix_c = (
         '<section class="bp-section" id="appendix-c"><h2><span class="secno">C.</span>Regulatory pathway by market</h2>'
@@ -1131,15 +1350,31 @@ def render_html(plan: Optional[Mapping[str, Any]] = None) -> str:
     appendix_f = (
         '<section class="bp-section" id="appendix-f"><h2><span class="secno">F.</span>Financial tables (ILS)</h2>'
         + "".join(fin_tables) + "<h3>F.4 Funding</h3>" + _html_table(["Line", "Value"], funding_rows, raw_cells=True)
+        + "<h3>F.5 Charts</h3>" + "".join(_html_chart(plan, c) for c in APPENDIX_CHARTS["F"])
         + "</section>"
     )
     appendix_g = (
         '<section class="bp-section" id="appendix-g"><h2><span class="secno">G.</span>Milestone and governance calendar</h2>'
-        + _html_table(["When", "Gate"], [[e(g[0]), f(g[1])] for g in GATES], numeric_from=99, raw_cells=True) + "</section>"
+        + _html_table(["When", "Gate"], [[e(g[0]), f(g[1])] for g in GATES], numeric_from=99, raw_cells=True)
+        + "".join(_html_chart(plan, c) for c in APPENDIX_CHARTS["G"]) + "</section>"
     )
     appendix_h = (
         '<section class="bp-section" id="appendix-h"><h2><span class="secno">H.</span>Glossary</h2><dl class="bp-glossary">'
         + "".join(f"<dt>{e(t)}</dt><dd>{e(d)}</dd>" for t, d in GLOSSARY) + "</dl></section>"
+    )
+    lineage_rows = [[e(r["figure"]), e(r["source"]), e(r["kind"]),
+                     '<span class="bp-chip ok">model input</span>' if r["feeds_model"] else '<span class="bp-chip">reference only</span>',
+                     e(r["note"])] for r in LINEAGE]
+    source_rows = [[e(r["market"]), e(r["title"]), e(f"{r['type']} · {r['strength']}"), e(r["note"]),
+                    f'<a class="bp-source-url" href="{e(r["url"])}" target="_blank" rel="noopener">{e(r["url"])}</a>']
+                   for r in data_source_rows(plan)]
+    appendix_i = (
+        '<section class="bp-section" id="appendix-i"><h2><span class="secno">I.</span>Data sources and figure lineage</h2>'
+        + "<p>Every class of figure in this document, where it comes from and whether it feeds the model. External research is reference only: the plan counts lives (not market size) from the kernel premium and the persistency identity, so no statistic moves a planning figure and no planning figure rewrites a statistic.</p>"
+        + _html_table(["Figure class", "Source", "Kind", "Feeds the model", "Note"], lineage_rows, numeric_from=99, raw_cells=True)
+        + "<p>External research registry behind the market section — the same registry the Scenario Lab cites on the pitch dashboard, by planning market:</p>"
+        + _html_table(["Market", "Source", "Type · strength", "Used for", "URL"], source_rows, numeric_from=99, raw_cells=True)
+        + "</section>"
     )
 
     factors_json = json.dumps(FACTORS, ensure_ascii=False).replace("</", "<\\/")
@@ -1170,7 +1405,7 @@ def render_html(plan: Optional[Mapping[str, Any]] = None) -> str:
     <div><div class="bp-wordmark">PHINS</div><div class="bp-tagline">{e(BRAND_TAGLINE)}</div></div>
   </a>
   <nav class="bp-nav" aria-label="Document parts">
-    <a href="#part-plan">Business plan</a><a href="#part-deck">Investor deck</a><a href="#part-appendices">Appendices</a><a href="#bp-factor-panel">Factors</a>
+    <a href="#part-plan">Business plan</a><a href="#plan-founder">Founder</a><a href="#part-deck">Investor deck</a><a href="#part-appendices">Appendices</a><a href="#appendix-i">Sources</a><a href="#bp-factor-panel">Factors</a>
   </nav>
   <div class="bp-tools">
     <a class="bp-btn" id="bp-json-link" href="/api/business-plan/model">Model JSON</a>
@@ -1210,12 +1445,12 @@ def render_html(plan: Optional[Mapping[str, Any]] = None) -> str:
     {"".join(sections_html)}
 
     <div class="bp-part" id="part-deck"><div class="bp-eyebrow">Part II</div><h2>Investor deck</h2>
-      <p>Twelve slides, same figures. Print this part alone for a meeting; the factor panel above re-tunes it for any investor or scenario.</p></div>
+      <p>{n_slides} slides, same figures. Print this part alone for a meeting; the factor panel above re-tunes it for any investor or scenario.</p></div>
     <div class="bp-deck">{"".join(slides_html)}</div>
 
     <div class="bp-part" id="part-appendices"><div class="bp-eyebrow">Part III</div><h2>Appendices</h2>
-      <p>A — actuarial basis and pricing kernel · B — carrier and reinsurance view · C — regulatory pathway by market · D — technology architecture and security standard · E — data integrity and methodology · F — financial tables · G — milestone and governance calendar · H — glossary.</p></div>
-    {appendix_a}{appendix_b}{appendix_c}{appendix_d}{appendix_e}{appendix_f}{appendix_g}{appendix_h}
+      <p>A — actuarial basis and pricing kernel · B — carrier and reinsurance view · C — regulatory pathway by market · D — technology architecture and security standard · E — data integrity and methodology · F — financial tables and charts · G — milestone and governance calendar (roadmap) · H — glossary · I — data sources and figure lineage.</p></div>
+    {appendix_a}{appendix_b}{appendix_c}{appendix_d}{appendix_e}{appendix_f}{appendix_g}{appendix_h}{appendix_i}
   </div>
   <footer class="bp-foot">
     <span>PHINS — Confidential. Prepared for investors, carriers, reinsurers and supervisors. Planning identity; not an offer of securities or insurance.</span>
@@ -1234,14 +1469,21 @@ def render_html(plan: Optional[Mapping[str, Any]] = None) -> str:
 
 
 __all__ = [
+    "APPENDIX_CHARTS",
     "BRAND_TAGLINE",
     "DOCUMENT_TITLE",
     "FIGURES",
+    "FOUNDER",
+    "FOUNDER_PORTRAIT_URL",
     "GATES",
     "GLOSSARY",
     "INTEGRITY_LABELS",
     "RISKS",
+    "SECTION_CHARTS",
+    "SLIDE_CHARTS",
+    "data_source_rows",
     "deck_slides",
+    "founder_rows",
     "figure_ref",
     "fmt",
     "get_path",

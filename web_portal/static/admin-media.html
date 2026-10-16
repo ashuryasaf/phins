@@ -1565,6 +1565,28 @@ Notes:
             </div>
         </section>
 
+        <section class="assignments-section business-plan-assignments">
+            <h2>Business plan</h2>
+            <p style="margin: -6px 0 14px; font-size: 0.82rem; color: rgba(255,255,255,0.82);">
+                Founder portrait for <code>/business-plan.html</code>. Upload the photo to the library above, then assign it here. The plan serves a processed edition (orientation fixed, square crop, balanced contrast) through <code>/api/business-plan/founder-portrait</code>; the original file is never rewritten.
+            </p>
+            <div class="assignment-grid">
+                <div class="assignment-card">
+                    <div class="assignment-label">Founder portrait</div>
+                    <select id="assign-founder-portrait" class="assignment-select" onchange="updateAssignment('founder_portrait')">
+                        <option value="">-- None --</option>
+                    </select>
+                    <div class="assignment-status" id="status-founder-portrait">
+                        <span></span> Not set
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-primary" onclick="saveAllAssignments()">Save Changes</button>
+                <a href="/business-plan.html#plan-founder" target="_blank" class="btn btn-secondary">Preview business plan</a>
+            </div>
+        </section>
+
         <section class="assignments-section apply-disclosure-assignments">
             <h2>Apply form disclosure video</h2>
             <p style="margin: -6px 0 14px; font-size: 0.82rem; color: rgba(255,255,255,0.82);">
@@ -2221,6 +2243,7 @@ Notes:
             { key: 'solutions_background', field: 'solutions_background_id', kind: 'image', label: 'Solutions page background', chip: 'Solutions bg' },
             { key: 'solutions_thumbnail', field: 'solutions_thumbnail_id', kind: 'image', label: 'Solutions page thumbnail', chip: 'Solutions poster' },
             { key: 'solutions_banner', field: 'solutions_banner_id', kind: 'image', label: 'Solutions page banner', chip: 'Solutions banner' },
+            { key: 'founder_portrait', field: 'founder_portrait_id', kind: 'image', label: 'Business plan founder portrait', chip: 'Founder' },
             { key: 'apply_disclosure_video', field: 'apply_disclosure_video_id', kind: 'video', label: 'Apply form disclosure', chip: 'Apply form' },
             { key: 'apply_disclosure_control', field: 'apply_disclosure_control_video_id', kind: 'video', label: 'Apply form control cut', chip: 'Control' },
             { key: 'apply_chat_disclaimer', field: 'apply_chat_disclaimer_video_id', kind: 'video', label: 'Application chat disclaimer', chip: 'Apply chat' },
@@ -2261,6 +2284,7 @@ Notes:
             solutions_background: '',
             solutions_thumbnail: '',
             solutions_banner: '',
+            founder_portrait: '',
             apply_disclosure_video: '',
             apply_disclosure_control: '',
             apply_chat_disclaimer: '',

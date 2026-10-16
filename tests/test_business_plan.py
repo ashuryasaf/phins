@@ -20,12 +20,14 @@ Covers:
 
 from __future__ import annotations
 
+import html as html_lib
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -344,3 +346,318 @@ def test_pitch_dashboard_links_the_unified_plan_in_investor_documents():
         assert f'href="{href}"' in text, href
     # the card restates this page's Israel identity verbatim
     assert "ILS 4,518 · 25% / 75% · 24,000 / 94,080 / 230,554" in text
+
+
+# ---------------------------------------------------------------------------
+# Charts: one layout engine, same data in HTML, live API and PDF
+# ---------------------------------------------------------------------------
+from services import business_plan_charts as charts  # noqa: E402
+from services import business_plan_portrait as portrait  # noqa: E402
+from services import business_plan_sources as sources  # noqa: E402
+
+CHART_IDS = ["in_force", "revenue_ebitda", "gwp_split", "cash_curve", "carrier_view",
+             "use_of_funds", "appraisal_sensitivity", "roadmap"]
+
+
+def test_chart_specs_read_the_plan_not_a_second_model():
+    plan = bpm.compute_plan()
+    specs = {s["id"]: s for s in charts.chart_specs(plan)}
+    assert list(specs) == CHART_IDS
+    g = plan["group"]["rows"]
+    il = plan["anchor_book"]["rows"]
+    pm = plan["partner_markets"]["rows"]
+    inf = specs["in_force"]["series"]
+    assert inf[0]["values"] == [r["eoy_in_force"] for r in il]
+    assert inf[1]["values"] == [r["eoy_in_force"] for r in pm]
+    assert [a + b for a, b in zip(inf[0]["values"], inf[1]["values"])] == [r["eoy_in_force"] for r in g]
+    rev = {s["label"]: s["values"] for s in specs["revenue_ebitda"]["series"]}
+    assert rev["PHINS revenue"] == [r["phins_revenue"] for r in g]
+    assert rev["EBITDA"] == [r["ebitda"] for r in g]
+    split = specs["gwp_split"]["series"]
+    for i, r in enumerate(g):
+        assert sum(s["values"][i] for s in split) == pytest.approx(r["risk_gwp"])
+    steps = specs["carrier_view"]["steps"]
+    assert steps[0]["value"] == plan["carrier_view"]["rows"][2]["risk_gwp"]
+    assert sum(s["value"] for s in steps[:-1]) == pytest.approx(steps[-1]["value"])
+    uof = specs["use_of_funds"]["segments"]
+    assert sum(s["value"] for s in uof) == pytest.approx(plan["funding"]["seed"])
+    assert sum(s["share"] for s in uof) == pytest.approx(1.0)
+    cash = specs["cash_curve"]
+    assert cash["series"][0]["values"] == [r["cumulative_ebitda"] for r in g[:len(cash["categories"])]]
+    assert cash["refs"][0]["value"] == -plan["funding"]["seed"]
+
+
+def test_appraisal_sensitivity_grid_is_the_same_formula():
+    plan = bpm.compute_plan()
+    sens = plan["appraisal"]["sensitivity"]
+    assert sens["wacc"] == [0.25, 0.3, 0.35, 0.4, 0.45]
+    assert sens["exit_multiple"] == [3.0, 4.0, 5.0]
+    assert sens["pre_money"][2][1] == pytest.approx(plan["appraisal"]["central_pre_money"])
+    # monotone: higher WACC lowers, higher exit raises
+    for row in sens["pre_money"]:
+        assert row == sorted(row)
+    for j in range(3):
+        col = [row[j] for row in sens["pre_money"]]
+        assert col == sorted(col, reverse=True)
+    spec = charts.chart_by_id(plan, "appraisal_sensitivity")
+    assert spec["highlight"] == [2, 1]
+    # the grid never enters the content hash — it is a view, not an input
+    assert plan["content_hash"] == bpm.content_hash(plan)
+
+
+def test_appraisal_sensitivity_grid_holds_at_the_factor_extremes():
+    """Every value the factor panel accepts keeps the plan on the grid, so the
+    heatmap always has a cell to render."""
+    for overrides in ({"exit_multiple": 30.0}, {"exit_multiple": 0.5},
+                      {"wacc": 0.90}, {"wacc": 0.05},
+                      {"wacc": 0.90, "exit_multiple": 30.0}):
+        plan = bpm.compute_plan(overrides)
+        assert plan["errors"] == []
+        sens = plan["appraisal"]["sensitivity"]
+        assert round(plan["appraisal"]["wacc"], 4) in sens["wacc"]
+        assert round(plan["appraisal"]["exit_multiple"], 4) in sens["exit_multiple"]
+        assert all(len(row) == len(sens["exit_multiple"]) for row in sens["pre_money"])
+        spec = charts.chart_by_id(plan, "appraisal_sensitivity")
+        assert spec["highlight"] != [-1, -1]
+        rendered = {c["id"]: c for c in charts.render_all(plan)}
+        assert rendered["appraisal_sensitivity"]["svg"]
+
+
+def test_roadmap_gantt_follows_the_factors():
+    plan = bpm.compute_plan()
+    items = charts.roadmap_items(plan)
+    labels = [i["label"] for i in items]
+    assert "Partner cohort 2028 — 1 market live" in labels
+    assert "Partner cohort 2029 — 2 markets live" in labels
+    assert "Gate 7 — 24,000 in force · Series A readiness" in labels
+    assert "Series A ₪18.0M (indicative)" in labels
+    assert "Group EBITDA positive (2029)" in labels
+    assert "10 markets on one platform" in labels
+    none = bpm.compute_plan({"new_markets_2028": 0, "new_markets_2029": 0,
+                             "new_markets_2030": 0, "new_markets_2031": 0})
+    labels0 = [i["label"] for i in charts.roadmap_items(none)]
+    assert not any(l.startswith("Partner cohort") for l in labels0)
+    assert "1 markets on one platform" in labels0
+
+
+def test_chart_svg_and_reportlab_share_one_layout():
+    plan = bpm.compute_plan()
+    for spec in charts.chart_specs(plan):
+        ops = charts.layout(spec)
+        svg = charts.render_svg(spec)
+        assert svg.startswith("<svg") and svg.endswith("</svg>")
+        assert f'data-chart="{spec["id"]}"' in svg
+        texts = [op[3] for op in ops if op[0] == "text"]
+        for t in texts:
+            assert charts._esc(t) in svg
+        drawing = charts.render_reportlab(spec, 480)
+        assert len(drawing.contents) == len(ops)
+        header, rows = charts.chart_table(spec)
+        assert rows and all(len(r) == len(header) for r in rows)
+    # labels equal the document formatter for the kinds the charts use
+    assert charts.label(54216000.0, "ilsm") == doc.fmt(54216000.0, "ilsm")
+    assert charts.label(-18846000.0, "ilsm") == doc.fmt(-18846000.0, "ilsm")
+    assert charts.label(230554, "int") == doc.fmt(230554, "int")
+    assert charts.label(0.35, "pct") == doc.fmt(0.35, "pct")
+    assert charts.label(4.0, "x") == doc.fmt(4.0, "x")
+
+
+def test_chart_directive_round_trips_for_the_pdf():
+    plan = bpm.compute_plan()
+    for spec in charts.chart_specs(plan):
+        line = charts.directive(spec)
+        assert line.startswith("<!-- phins-chart ") and line.endswith(" -->")
+        assert "--" not in line[len("<!-- phins-chart "):-len(" -->")]
+        assert charts.parse_directive(line) == json.loads(json.dumps(spec))
+    assert charts.parse_directive("<!-- not a chart -->") is None
+
+
+def test_document_places_every_chart_once_per_surface():
+    plan = bpm.compute_plan()
+    html = doc.render_html(plan)
+    md = doc.render_markdown(plan)
+    placed = (set(sum(doc.SECTION_CHARTS.values(), [])) | set(doc.SLIDE_CHARTS.values())
+              | set(sum(doc.APPENDIX_CHARTS.values(), [])))
+    assert placed == set(CHART_IDS)
+    for cid in CHART_IDS:
+        assert f'data-chart-id="{cid}"' in html
+        assert f'data-chart="{cid}"' in html
+        assert f'"id": "{cid}"' in md
+    assert html.count('<figure class="bp-chart"') == md.count("<!-- phins-chart ")
+    # the Markdown shows the chart data as a table beside each directive
+    assert "| Series | 2027 | 2028 | 2029 | 2030 | 2031 |" in md
+    expected_total = "| Total | " + " | ".join(
+        f"{int(round(r['eoy_in_force'])):,}" for r in plan["group"]["rows"]) + " |"
+    assert expected_total in md
+    assert "| WACC \\ exit multiple | 3.0× | 4.0× | 5.0× |" in md
+    # the page swaps server SVG on refresh and the API supplies it
+    assert "charts=1" in html and "function applyCharts" in html
+
+
+def test_model_endpoint_returns_charts_on_request():
+    base = _get_json(f"{BASE}/api/business-plan/model")
+    assert "charts" not in base
+    payload = _get_json(f"{BASE}/api/business-plan/model?charts=1&phins_take=0.30")
+    assert [c["id"] for c in payload["charts"]] == CHART_IDS
+    local = bpm.compute_plan({"phins_take": 0.30})
+    for c, spec in zip(payload["charts"], charts.chart_specs(local)):
+        assert c["svg"] == charts.render_svg(spec)
+        header, rows = charts.chart_table(spec)
+        assert c["table"] == {"header": header, "rows": rows}
+
+
+def test_pdf_generator_draws_chart_directives_and_skips_comments():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import generate_investor_pdfs as gen
+    from reportlab.graphics.shapes import Drawing
+
+    plan = bpm.compute_plan()
+    spec = charts.chart_by_id(plan, "in_force")
+    md = "\n".join(["# T", "", charts.directive(spec), "", "<!-- plain comment -->", "", "Body."])
+    story = gen.markdown_to_story(md, "T", gen._styles())
+    drawings = [f for f in story if isinstance(f, Drawing)]
+    assert len(drawings) == 1
+    assert not any("plain comment" in getattr(f, "text", "") for f in story)
+
+
+# ---------------------------------------------------------------------------
+# Data sources (Appendix I) stay in sync with the Scenario Lab registry
+# ---------------------------------------------------------------------------
+def _dashboard_registry():
+    text = _read(STATIC / "pitch-dashboard.html")
+    pat = re.compile(r"(\w+): \{\s*title: \"([^\"]+)\",\s*url: \"([^\"]+)\",\s*note: \"([^\"]*)\",\s*"
+                     r"sourceType: \"([^\"]+)\",\s*evidenceStrength: \"([^\"]+)\"")
+    return {m.group(1): {"title": m.group(2), "url": m.group(3), "note": m.group(4),
+                         "type": m.group(5), "strength": m.group(6)} for m in pat.finditer(text)}
+
+
+def test_research_registry_equals_the_scenario_lab_registry():
+    dash = _dashboard_registry()
+    assert dash, "sourceRegistry not found on the pitch dashboard"
+    assert set(sources.RESEARCH_SOURCES) == set(dash)
+    for key, entry in dash.items():
+        assert sources.RESEARCH_SOURCES[key] == entry, key
+    linked = {k for keys in sources.MARKET_SOURCES.values() for k in keys}
+    assert linked <= set(sources.RESEARCH_SOURCES)
+    assert set(sources.MARKET_SOURCES) == {m["id"] for m in bpm.MARKETS}
+
+
+def test_lineage_marks_research_as_reference_only_and_lists_every_market():
+    plan = bpm.compute_plan()
+    research = [r for r in sources.LINEAGE if r["kind"].startswith("External research")]
+    assert research and all(r["feeds_model"] is False for r in research)
+    assert all(r["feeds_model"] is False for r in sources.LINEAGE if "census" in r["figure"].lower())
+    rows = doc.data_source_rows(plan)
+    assert {r["market"] for r in rows} == {m["name"] for m in plan["markets"]}
+    html = doc.render_html(plan)
+    md = doc.render_markdown(plan)
+    for r in rows:
+        assert r["url"] in md
+        assert f'href="{html_lib.escape(r["url"], quote=True)}"' in html
+    assert 'id="appendix-i"' in html and "## Appendix I — Data sources and figure lineage" in md
+
+
+# ---------------------------------------------------------------------------
+# Founder credentials and the processed portrait
+# ---------------------------------------------------------------------------
+def test_founder_section_and_slide_carry_credentials():
+    plan = bpm.compute_plan()
+    html = doc.render_html(plan)
+    md = doc.render_markdown(plan)
+    assert [s["id"] for s in doc.plan_sections()][-1] == "founder"
+    assert "Founder" in [s["title"] for s in doc.deck_slides()]
+    for text in (html, md):
+        assert doc.FOUNDER["name"] in text
+        assert "Licensed insurance broker" in text and "Advocate (Adv.)" in text
+        assert "26 May 2026" in text and "12 October 2026" in text
+        assert doc.FOUNDER_PORTRAIT_URL in text
+    live = portal.count_service_modules()
+    assert f"{live:,} service modules" in md  # credential placeholders are filled
+    assert 'class="bp-founder-photo' in html and 'class="bp-monogram"' in html
+
+
+def _image_bytes(w=600, h=900, orientation=None, mode="RGB"):
+    from io import BytesIO
+    from PIL import Image
+    img = Image.new(mode, (w, h), (40, 60, 120) if mode == "RGB" else (40, 60, 120, 255))
+    buf = BytesIO()
+    if orientation:
+        exif = Image.Exif()
+        exif[0x0112] = orientation
+        img.convert("RGB").save(buf, "JPEG", exif=exif.tobytes())
+    else:
+        img.save(buf, "PNG" if mode == "RGBA" else "JPEG")
+    return buf.getvalue()
+
+
+def test_process_portrait_squares_resizes_and_honours_exif():
+    from io import BytesIO
+    from PIL import Image
+    out, mime = portrait.process_portrait(_image_bytes(600, 900))
+    assert mime == "image/jpeg"
+    img = Image.open(BytesIO(out))
+    assert img.size == (portrait.PORTRAIT_SIZE, portrait.PORTRAIT_SIZE) and img.format == "JPEG"
+    out2, _ = portrait.process_portrait(_image_bytes(600, 900, orientation=6))
+    assert Image.open(BytesIO(out2)).size == (portrait.PORTRAIT_SIZE, portrait.PORTRAIT_SIZE)
+    out3, _ = portrait.process_portrait(_image_bytes(400, 400, mode="RGBA"))
+    assert Image.open(BytesIO(out3)).mode == "RGB"
+    with pytest.raises(portrait.PortraitError):
+        portrait.process_portrait(b"not an image")
+    with pytest.raises(portrait.PortraitError):
+        portrait.process_portrait(b"")
+    assert portrait.portrait_cache_key("a", "x") != portrait.portrait_cache_key("a", "y")
+
+
+def test_founder_portrait_placement_is_an_image_slot_served_processed():
+    assert portal.MEDIA_PLACEMENT_SLOTS["founder_portrait_id"] == "image"
+    assert portal.PAGE_MEDIA_PUBLIC_URLS["founder_portrait_id"] == "founder_portrait_url"
+    assert "founder_portrait_id" in portal.DESIGN_SETTINGS
+    admin = _read(STATIC / "admin-media.html")
+    assert "field: 'founder_portrait_id', kind: 'image'" in admin
+    assert 'id="assign-founder-portrait"' in admin
+
+    import tempfile
+    from io import BytesIO
+    from PIL import Image
+
+    saved = portal.DESIGN_SETTINGS.get("founder_portrait_id", "")
+    asset_id = "media-test-founder-portrait"
+    payload = _image_bytes(300, 500)
+    tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False, dir=portal.MEDIA_STORAGE_DIR)
+    try:
+        tmp.write(payload)
+        tmp.close()
+        portal.MEDIA_ASSETS[asset_id] = {
+            "id": asset_id, "name": "IMG_4538.jpeg", "type": "image", "format": "image/jpeg",
+            "url": f"/media-files/{asset_id}/IMG_4538_jpeg", "data": "", "source": "upload",
+            "file_path": tmp.name, "checksum": portal.compute_media_checksum(payload),
+        }
+        portal.DESIGN_SETTINGS["founder_portrait_id"] = ""
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            urllib.request.urlopen(f"{BASE}/api/business-plan/founder-portrait", timeout=30)
+        assert exc.value.code == 404
+        portal.DESIGN_SETTINGS["founder_portrait_id"] = asset_id
+        with urllib.request.urlopen(f"{BASE}/api/business-plan/founder-portrait", timeout=30) as resp:
+            assert resp.status == 200
+            assert resp.headers["Content-Type"] == "image/jpeg"
+            etag = resp.headers["ETag"]
+            body = resp.read()
+        assert Image.open(BytesIO(body)).size == (portrait.PORTRAIT_SIZE, portrait.PORTRAIT_SIZE)
+        req = urllib.request.Request(f"{BASE}/api/business-plan/founder-portrait",
+                                     headers={"If-None-Match": etag})
+        with pytest.raises(urllib.error.HTTPError) as not_modified:
+            urllib.request.urlopen(req, timeout=30)
+        assert not_modified.value.code == 304
+        public = _get_json(f"{BASE}/api/design/settings")
+        assert public["founder_portrait_url"] == f"/media-files/{asset_id}/IMG_4538_jpeg"
+        assert "founder_portrait_id" not in public
+        # the stored original is untouched
+        assert Path(tmp.name).read_bytes() == payload
+    finally:
+        portal.DESIGN_SETTINGS["founder_portrait_id"] = saved
+        portal.MEDIA_ASSETS.pop(asset_id, None)
+        portal._FOUNDER_PORTRAIT_CACHE.clear()
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
