@@ -2796,6 +2796,7 @@ DESIGN_SETTINGS: Dict[str, Any] = {
     'solutions_background_id': '',
     'solutions_thumbnail_id': '',
     'solutions_banner_id': '',
+    'founder_portrait_id': '',
     'updated_at': None,
     'updated_by': None
 }
@@ -3230,6 +3231,9 @@ MEDIA_PLACEMENT_SLOTS = {
     'solutions_background_id': 'image',
     'solutions_thumbnail_id': 'image',
     'solutions_banner_id': 'image',
+    # Business plan founder portrait (/business-plan.html); served processed
+    # through /api/business-plan/founder-portrait.
+    'founder_portrait_id': 'image',
 }
 for _theater_key in SOLUTIONS_THEATER_KEYS:
     _theater_slot = solutions_theater_slot_key(_theater_key)
@@ -3296,6 +3300,7 @@ PAGE_MEDIA_PUBLIC_URLS = {
     'solutions_background_id': 'solutions_background_url',
     'solutions_thumbnail_id': 'solutions_thumbnail_url',
     'solutions_banner_id': 'solutions_banner_url',
+    'founder_portrait_id': 'founder_portrait_url',
 }
 
 
@@ -12071,6 +12076,15 @@ from services.business_plan_model import (
     compute_plan as _compute_business_plan,
     parse_plan_query as _parse_business_plan_query,
 )
+from services.business_plan_charts import render_all as _render_business_plan_charts
+from services.business_plan_portrait import (
+    PortraitError as _PortraitError,
+    portrait_cache_key as _portrait_cache_key,
+    process_portrait as _process_portrait,
+)
+
+# Processed founder portrait, one entry: (cache key) -> (jpeg bytes, mime).
+_FOUNDER_PORTRAIT_CACHE: Dict[str, Tuple[bytes, str]] = {}
 
 
 def count_service_modules(root=None):
@@ -21277,14 +21291,69 @@ For claims or questions, please contact:
         # content hash. Out-of-range values fall back to the default and are
         # reported under ``errors`` — the page never fails. Always 200.
         if path == '/api/business-plan/model':
+            # ``charts=1`` adds the server-rendered SVG charts (one layout
+            # engine for the page, the live refresh and the PDF) so the
+            # browser never re-derives a figure.
+            want_charts = str((qs.get('charts') or [''])[0]).strip().lower() in ('1', 'true', 'yes')
             try:
                 overrides = _parse_business_plan_query(qs)
                 plan = _compute_business_plan(overrides)
+                if want_charts:
+                    plan['charts'] = _render_business_plan_charts(plan)
             except Exception as e:  # never fail the investor page
                 plan = {'error': str(e), 'plan_version': None, 'canonical': False,
                         'integrity': {'all_hold': False}}
             self._set_json_headers(200)
             self.wfile.write(json.dumps(plan, default=str).encode('utf-8'))
+            return
+
+        # Founder portrait for the business plan: the media-library asset in
+        # the ``founder_portrait_id`` placement, served as a processed JPEG
+        # (EXIF-corrected, square, balanced). The original is never rewritten.
+        if path == '/api/business-plan/founder-portrait':
+            asset_id = str(DESIGN_SETTINGS.get('founder_portrait_id') or '').strip()
+            asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
+            if not isinstance(asset, dict):
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'founder_portrait_not_assigned'}).encode('utf-8'))
+                return
+            resolved = ensure_media_asset_file(asset)
+            if resolved.get('error') == 'checksum_mismatch':
+                self._set_json_headers(409)
+                self.wfile.write(json.dumps({'error': 'Media checksum mismatch'}).encode('utf-8'))
+                return
+            file_path = str(resolved.get('path') or '').strip()
+            if not (file_path and os.path.isfile(file_path) and _media_path_within_storage(file_path)):
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'founder_portrait_unavailable'}).encode('utf-8'))
+                return
+            cache_key = _portrait_cache_key(asset_id, str(asset.get('checksum') or ''))
+            cached = _FOUNDER_PORTRAIT_CACHE.get(cache_key)
+            if cached is None:
+                try:
+                    with open(file_path, 'rb') as handle:
+                        source_bytes = handle.read()
+                    cached = _process_portrait(source_bytes)
+                except (_PortraitError, OSError) as exc:
+                    self._set_json_headers(422)
+                    self.wfile.write(json.dumps({'error': f'founder_portrait_processing_failed: {exc}'}).encode('utf-8'))
+                    return
+                _FOUNDER_PORTRAIT_CACHE.clear()
+                _FOUNDER_PORTRAIT_CACHE[cache_key] = cached
+            payload_bytes, mime_type = cached
+            etag = f'"{cache_key}"'
+            if self.headers.get('If-None-Match') == etag:
+                self.send_response(304)
+                self.send_header('ETag', etag)
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header('Content-Type', mime_type)
+            self.send_header('Content-Length', str(len(payload_bytes)))
+            self.send_header('Cache-Control', 'public, max-age=3600')
+            self.send_header('ETag', etag)
+            self.end_headers()
+            self.wfile.write(payload_bytes)
             return
 
         # Investor valuation simulation (read-only, public): deterministic
