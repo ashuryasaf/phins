@@ -604,7 +604,11 @@ Environment variables commonly used:
  provider-generated picture; a chained scene opens on the previous ending
  screenshot. Rendering uses the growth-agent media job (Replicate by default;
  Kling, Gemini, or a later affiliated provider when that provider is selected
- and connected, and it is not swapped for another engine). Solution theaters
+ and connected, and it is not swapped for another engine). A solution
+ walkthrough send on the Growth Agent uses the selected video provider,
+ provider model, library reference image, and completion mode. The prompt
+ is that solution's sealed script; a different prompt is refused and the
+ blueprint checksum is left as stored. Solution theaters
  play an assigned film to its own length.
  Sealed scene files join into one checksummed film that can be assigned to
  login, solutions, and disclaimer slots. A checksum mismatch is reported;

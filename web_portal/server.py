@@ -5978,6 +5978,8 @@ def solution_video_blueprint_view(solution_key: str) -> Dict[str, Any]:
     view['public_slot_asset_id'] = public_asset_id
     view['replaces_public_film'] = bool(public_asset_id and public_asset_id == last_asset_id)
     campaign_id = str(record.get('campaign_id') or '')
+    from services.solution_video_blueprints import prompt_override
+    view['ready_prompt'] = prompt_override(record)
     view['jobs'] = video_generation_jobs_for_campaign_response(campaign_id) if campaign_id else []
     asset = MEDIA_ASSETS.get(last_asset_id) if last_asset_id else None
     if isinstance(asset, dict) and str(asset.get('type') or '') == 'video':
@@ -6090,6 +6092,54 @@ def note_solution_video_asset(job: Dict[str, Any], asset_id: str) -> None:
     )
 
 
+def _solution_send_reference(asset_id: str) -> Tuple[str, str]:
+    """Inline a library image for one send. Bytes and checksums stay put.
+
+    A recorded checksum that disagrees with the bytes is an error. The asset
+    is not repaired and is not rewritten.
+    """
+    image_id = str(asset_id or '').strip()
+    if not image_id:
+        return '', ''
+    asset = MEDIA_ASSETS.get(image_id)
+    if not isinstance(asset, dict) or str(asset.get('type') or '').strip().lower() != 'image':
+        return '', 'Screenshot reference must be an image in the media library'
+    data_url = build_video_job_reference_image_data_url(image_id)
+    if not data_url:
+        return '', 'Screenshot reference could not be read from the media library'
+    expected = str(asset.get('checksum') or '').strip().lower()
+    if expected and str(data_url).startswith('data:'):
+        try:
+            raw, _mime = decode_media_data_url(data_url)
+        except Exception:
+            return '', 'Screenshot reference could not be read from the media library'
+        if compute_media_checksum(raw) != expected:
+            return '', 'Screenshot reference checksum does not match the library image'
+    return data_url, ''
+
+
+def _solution_send_duration(provider: str, model: str) -> int:
+    """Seconds this engine will be asked for on the eight-second spoken pass.
+
+    Veo and Seedance keep 8. Official Kling keeps 5 or 10, so 8 is sent as
+    10. Kling v3 on EvoLink keeps 8. The spoken script is unchanged.
+    """
+    from services.media_generation_service import MediaGenerationService
+
+    evolink = False
+    if str(provider or '').strip().lower() == 'kling':
+        service = get_media_generation_service()
+        probe = getattr(service, '_kling_use_evolink_profile', None)
+        if callable(probe):
+            try:
+                evolink = bool(probe(model))
+            except Exception:
+                evolink = False
+    return MediaGenerationService.clip_duration(
+        provider, model, 8, evolink=evolink,
+    )
+
+
 def send_solution_video_blueprint(
     solution_key: str,
     payload: Dict[str, Any],
@@ -6098,8 +6148,10 @@ def send_solution_video_blueprint(
 ) -> Tuple[int, Dict[str, Any]]:
     """Submit one solution blueprint through the growth-agent video job path.
 
-    The public theater slot and the landing hero are not written. Provider
-    failures before acceptance do not create a job.
+    Provider, model, library reference, and completion mode come from the
+    request. The prompt is the sealed solution script. The public theater
+    slot and the landing hero are not written. Provider failures before
+    acceptance do not create a job, and the blueprint checksum is not rewritten.
     """
     from services.solution_video_blueprints import (
         SolutionBlueprintError,
@@ -6113,14 +6165,24 @@ def send_solution_video_blueprint(
         return 400, {'error': str(exc)}
     if not record.get('integrity_ok'):
         return 409, {'error': 'Solution blueprint integrity check failed'}
-    image_id = str(record.get('reference_image_asset_id') or '')
-    if image_id:
-        asset = MEDIA_ASSETS.get(image_id)
-        if not isinstance(asset, dict) or str(asset.get('type') or '') != 'image':
-            return 400, {'error': 'Screenshot reference must be an image in the media library'}
-    provider = 'replicate'
-    provider_model = solution_replicate_model(str(payload.get('provider_model') or ''))
-    provider, provider_error = validate_media_video_provider_selection(provider, provider_model)
+    spoken = prompt_override(record)
+    client_prompt = payload.get('prompt_override')
+    if client_prompt is not None and str(client_prompt).strip() and str(client_prompt).strip() != spoken:
+        return 409, {'error': 'The prompt is the solution script. The blueprint was not sent.'}
+    stored_image_id = str(record.get('reference_image_asset_id') or '')
+    if 'reference_image_asset_id' in payload and str(payload.get('reference_image_asset_id') or '').strip():
+        image_id = str(payload.get('reference_image_asset_id') or '').strip()
+    else:
+        image_id = stored_image_id
+    image_data_url, image_error = _solution_send_reference(image_id)
+    if image_error:
+        status = 409 if 'checksum' in image_error else 400
+        return status, {'error': image_error}
+    requested_provider = str(payload.get('provider') or 'replicate').strip().lower() or 'replicate'
+    requested_model = str(payload.get('provider_model') or '').strip()
+    if requested_provider == 'replicate':
+        requested_model = solution_replicate_model(requested_model)
+    provider, provider_error = validate_media_video_provider_selection(requested_provider, requested_model)
     if provider_error:
         status = 503 if 'not connected' in provider_error else 400
         return status, {
@@ -6128,18 +6190,19 @@ def send_solution_video_blueprint(
             'reason': 'provider_not_configured' if 'not connected' in provider_error else 'provider_invalid',
             'diagnostics': diagnose_media_video_providers(),
         }
+    provider_model = requested_model
     if not record.get('stored'):
         try:
             save_solution_video_blueprint(solution_key, {}, actor=actor)
         except SolutionBlueprintError as exc:
             return 503, {'error': str(exc)}
         record = load_solution_video_blueprint(solution_key)
+        spoken = prompt_override(record)
     brief = growth_blueprint(record)
     callback_base_url = str(payload.get('callback_base_url') or '').strip() or configured_media_callback_base_url()
     poll_mode = resolve_media_video_completion_mode(payload.get('poll_mode'), callback_base_url)
-    image_data_url = build_video_job_reference_image_data_url(image_id) if image_id else ''
+    duration_seconds = _solution_send_duration(provider, provider_model)
     campaign_id = str(record.get('campaign_id') or '')
-    spoken = prompt_override(record)
     force = bool(payload.get('force') or payload.get('force_regenerate'))
     if not force:
         existing = find_duplicate_media_video_job(media_video_request_fingerprint(
@@ -6171,6 +6234,7 @@ def send_solution_video_blueprint(
         prompt_override=spoken,
         solution_key=solution_key,
         blueprint_checksum=str(record.get('checksum') or ''),
+        duration_seconds=duration_seconds,
     )
     blueprint_link_stored = _touch_solution_blueprint_link(
         solution_key,
@@ -6183,10 +6247,16 @@ def send_solution_video_blueprint(
     return 202, {
         'success': True,
         'deduplicated': False,
-        'message': 'Solution blueprint sent through the growth agent. The public walkthrough was not replaced.',
+        'message': (
+            f'Solution blueprint sent to {provider}'
+            + (f' ({provider_model})' if provider_model else '')
+            + f' at {duration_seconds} seconds. The prompt is the solution script. '
+            'The public walkthrough was not replaced.'
+        ),
         'provider': provider,
         'provider_model': provider_model,
         'poll_mode': poll_mode,
+        'duration_seconds': duration_seconds,
         'auto_publish_to_hero': False,
         'blueprint_link_stored': blueprint_link_stored,
         'blueprint': solution_video_blueprint_view(solution_key),
