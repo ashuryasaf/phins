@@ -1,0 +1,20 @@
+70032fa Merge pull request #469 from ashuryasaf/cursor/regulatory-meeting-pdf-edc5
+892c772 Add downloadable PDF brief for the 27 July 2026 regulatory meeting
+b174c15 Merge pull request #468 from ashuryasaf/cursor/regulatory-meeting-27jul-edc5
+35bf6bb Add 27 July 2026 regulatory meeting (Herzog Fox Neeman) to admin meetings
+deade7f Merge pull request #466 from ashuryasaf/cursor/hebrew-customer-ux-remove-investment-ai-fb1f
+b9af64e Fix AV fallback storing wrong indicator types in stock data service
+88a7cdb Localize CAPTCHA challenges and voice quick actions into Hebrew
+18b7cd6 Add Hebrew i18n foundation and localize customer journey pages
+be97864 Remove Investment AI feature; extract terminal auth and stock data helpers
+05c69dd Merge pull request #463 from ashuryasaf/cursor/system-backup-configuration-276c
+df75d2a Merge pull request #465 from ashuryasaf/cursor/overview-spectrum-redesign-6e9e
+33a27dd Switch AI assistant purple gradient to complementary navy aurora with gold accents
+d5d2bab Restyle admin and customer overview tiles with spectrum theme: compact proportional grids, no emoji icons
+5cb38ef Fix AV fallback storing wrong indicator types in stock data service
+3afbf1d backup: full platform snapshot 20260724T060255Z
+92101b4 Merge pull request #462 from ashuryasaf/cursor/adjustable-opex-deck-refresh-4cc7
+360b427 Make operating cost adjustable in unicorn/seed configurators and refresh series with platform changes (83 modules, AgentOS v1, IL filing, momentum panel)
+385bd4b Merge pull request #461 from ashuryasaf/cursor/fix-print-gradient-text-4cc7
+bf5fdc9 Fix invisible gradient headlines in unicorn and seed deck print/PDF output
+5c410e3 Merge pull request #459 from ashuryasaf/cursor/brand-unicorn-investor-docs-4cc7
