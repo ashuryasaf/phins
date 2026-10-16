@@ -235,6 +235,7 @@ Preferred file-by-task:
 | Chat intake (Phin, policy or claim) | `services/chat_application_service.py` or `services/claims_chat_service.py`, then `web_portal/api_chat_application.py` / `api_claims_chat.py` |
 | Customer identity (ID + nationality) | `services/customer_identity_service.py` (one writer), `web_portal/api_customer_identity.py` |
 | Document archive / durability probe | `services/customer_document_vault_service.py`, `services/document_durability_agent.py` |
+| Unified business plan / investor deck (`/business-plan.html`) | `services/business_plan_model.py` (factor register, `compute_plan`, `ROUND_SEED_ILS` / `ROUND_PRE_MONEY_ILS` — the one writer for seed / pre-money), `services/business_plan_document.py` (narrative, placeholders, HTML/Markdown renderers), `web_portal/server.py` (`GET /api/business-plan/model`); then `python3 scripts/build_business_plan.py` and `python3 scripts/generate_investor_pdfs.py --only unified-business-plan`; tests in `tests/test_business_plan.py` |
 | Premium / reserve / simulator pricing | `services/pricing_kernel.py` (sole writer), then `services/actuarial_service.py` and callers; refresh `tests/test_pricing_kernel.py`, `tests/test_actuarial_reserves.py`, `tests/test_ifrs17_waterfall_identities.py` deliberately |
 | Business rule/workflow | `services/`, then the route or engine that calls it |
 | Database/schema/repository | `database/models.py`, `database/manager.py`, `database/repositories/`, `database/config.py` |
@@ -729,6 +730,7 @@ bash RUN_ALL_TESTS.sh
 python3 scripts/run_agent_eval.py golden            # agent golden sets (CI gate)
 python3 scripts/run_agent_eval.py golden --update   # deliberate fixture refresh; review the diff
 python3 scripts/run_agent_eval.py replay ai_automation_controller --decisions log.json
+python3 scripts/build_business_plan.py --check   # unified business plan HTML/Markdown up to date?
 ```
 
 Important test harness facts:
@@ -765,6 +767,15 @@ Important test harness facts:
 - Golden fixtures only freeze the keys listed under `expected`; adding output
   keys never breaks one, changing a frozen value does — update the fixture
   in the same PR as the behaviour change and say why
+- `web_portal/static/business-plan.html` and
+  `investor-docs/phins-unified-business-plan.{md,pdf}` are generated, never
+  hand-edited: `tests/test_business_plan.py` compares the committed files to
+  a fresh `render_html` / `render_markdown`. Because the technology section
+  is a live repository census, adding a `services/*.py` module or a
+  `tests/test_*.py` file (as well as any factor or narrative change) requires
+  `python3 scripts/build_business_plan.py` followed by
+  `python3 scripts/generate_investor_pdfs.py --only unified-business-plan`
+  in the same PR
 - 233 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
