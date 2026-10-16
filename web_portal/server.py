@@ -3575,6 +3575,88 @@ def persist_durable_media_asset(asset: Dict[str, Any], *, with_bytes: bool = Tru
         print(f"[MEDIA] Durable write failed for {asset_id}: {type(exc).__name__}")
 
 
+def store_checksummed_video_file(
+    *,
+    name: str,
+    payload: bytes,
+    uploaded_by: str,
+    metadata: Dict[str, Any],
+    duration: int = 0,
+) -> Dict[str, Any]:
+    """Write one new video into the media library and seal its checksum.
+
+    The bytes are hashed before and after the write. A mismatch deletes the
+    new file and does not insert a library row. An existing asset is never
+    overwritten.
+    """
+    if not payload or payload[4:8] != b'ftyp':
+        raise ValueError('Video payload is not an MP4')
+    digest = compute_media_checksum(payload)
+    asset_id = f"media-{uuid.uuid4().hex[:12]}"
+    asset_name = str(name or f'{asset_id}.mp4').strip() or f'{asset_id}.mp4'
+    if not asset_name.lower().endswith('.mp4'):
+        asset_name = f'{asset_name}.mp4'
+    ensure_media_storage_dir()
+    file_path = os.path.join(
+        MEDIA_STORAGE_DIR,
+        f"{asset_id}-{safe_ascii_filename_stem(asset_name, fallback=asset_id)}",
+    )
+    with open(file_path, 'wb') as handle:
+        handle.write(payload)
+    written = _compute_file_checksum(file_path)
+    if written != digest:
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+        raise ValueError('Video checksum changed while it was being stored')
+    uploaded_at = datetime.now().isoformat()
+    asset = {
+        'id': asset_id,
+        'name': asset_name,
+        'type': 'video',
+        'format': 'video/mp4',
+        'size': len(payload),
+        'url': build_internal_media_file_url(asset_id, asset_name),
+        'data': '',
+        'thumbnail': '',
+        'duration': safe_int(duration, 0),
+        'source': 'storyboard_editor',
+        'uploaded_at': uploaded_at,
+        'uploaded_by': uploaded_by or 'admin',
+        'file_path': file_path,
+        'stored_externally': True,
+        'checksum': digest,
+        'metadata': dict(metadata or {}),
+    }
+    attach_generated_video_thumbnail(asset)
+    if str(asset.get('checksum') or '') != digest:
+        asset['checksum'] = digest
+    MEDIA_ASSETS[asset_id] = asset
+    persist_durable_media_asset(asset)
+    return asset
+
+
+def discard_new_media_asset(asset_id: str) -> None:
+    """Remove a library row this process just created after a later step failed.
+
+    The file and the durable copy are removed. A checksum clash with some
+    other asset is not possible here because the id is new.
+    """
+    asset = MEDIA_ASSETS.pop(str(asset_id or ''), None)
+    if isinstance(asset, dict):
+        file_path = str(asset.get('file_path') or '')
+        if file_path and os.path.isfile(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+    try:
+        delete_durable_media(asset_id)
+    except Exception:
+        print(f"[MEDIA] Durable delete failed for unlinked asset {asset_id}")
+
+
 def delete_durable_media(asset_id: str) -> None:
     """Remove the database copy. A missing row is already gone.
 
@@ -5146,6 +5228,9 @@ def create_media_video_job(
     submit_inline: bool = True,
     solution_key: str = '',
     blueprint_checksum: str = '',
+    duration_seconds: int = 8,
+    aspect_ratio: str = '',
+    resolution: str = '720p',
 ) -> Dict[str, Any]:
     """Create a provider-backed video generation job.
 
@@ -5169,10 +5254,14 @@ def create_media_video_job(
     prompt_override = str(prompt_override or '').strip()
     prompt = build_media_video_prompt(campaign_id, blueprint, prompt_override)
 
-    aspect_ratio = '16:9'
-    format_hint = str(blueprint.get('format') or '').lower()
-    if 'vertical' in format_hint or 'short' in format_hint or 'reel' in format_hint:
-        aspect_ratio = '9:16'
+    aspect_ratio = str(aspect_ratio or '').strip()
+    if aspect_ratio not in {'16:9', '9:16', '1:1'}:
+        aspect_ratio = '16:9'
+        format_hint = str(blueprint.get('format') or '').lower()
+        if 'vertical' in format_hint or 'short' in format_hint or 'reel' in format_hint:
+            aspect_ratio = '9:16'
+    duration_value = max(1, safe_int(duration_seconds, 8))
+    resolution_value = str(resolution or '720p').strip() or '720p'
 
     asset_name = str(blueprint.get('title') or f'{campaign_id} Video {blueprint_index + 1}')
 
@@ -5193,6 +5282,8 @@ def create_media_video_job(
         'prompt_override': prompt_override,
         'prompt': prompt,
         'aspect_ratio': aspect_ratio,
+        'duration_seconds': duration_value,
+        'resolution': resolution_value,
         'language': 'en',
         'status': 'queued',
         'progress_pct': 0,
@@ -5261,8 +5352,8 @@ def _submit_media_video_job_to_provider(job: Dict[str, Any]) -> Dict[str, Any]:
             title=asset_name,
             model=str(job.get('provider_model') or ''),
             aspect_ratio=str(job.get('aspect_ratio') or '16:9'),
-            duration_seconds=8,
-            resolution='720p',
+            duration_seconds=max(1, safe_int(job.get('duration_seconds'), 8)),
+            resolution=str(job.get('resolution') or '720p'),
             image_data_url=str(job.get('image_data_url') or ''),
             callback_url=callback_url if has_external_callback else '',
             metadata={

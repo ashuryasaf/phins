@@ -3676,6 +3676,7 @@ def _storyboard_view(board: Dict, *, include_media: bool) -> Dict:
 
 
 def _replicate_for_storyboard() -> Tuple[bool, str]:
+    """Compatibility gate used by tests. Live renders use the growth-agent check."""
     if not VIDEO_AGENTS_AVAILABLE:
         return False, ""
     caps = get_video_agents_service().get_provider_capabilities()
@@ -3685,6 +3686,39 @@ def _replicate_for_storyboard() -> Tuple[bool, str]:
     if not model and models:
         model = str(models[0] or "").strip()
     return bool(replicate.get("enabled")), model
+
+
+def _storyboard_provider_catalog() -> Dict[str, Any]:
+    """The same provider list the growth agent uses. Replicate stays the default name."""
+    portal = _portal_module()
+    try:
+        catalog = portal.media_video_provider_capabilities()
+    except Exception:
+        catalog = {"providers": {}, "default_provider": "replicate"}
+    if not isinstance(catalog, dict):
+        catalog = {"providers": {}, "default_provider": "replicate"}
+    catalog = dict(catalog)
+    catalog["default_provider"] = "replicate"
+    slots = []
+    placement = getattr(portal, "MEDIA_PLACEMENT_SLOTS", {}) or {}
+    labels = {
+        "hero_video_id": "Landing page",
+        "login_hero_video_id": "Login landing",
+        "solutions_hero_video_id": "Solutions page",
+        "apply_chat_disclaimer_video_id": "Apply disclaimer",
+        "apply_disclosure_video_id": "Apply disclosure",
+        "claims_chat_disclaimer_video_id": "Claims disclaimer",
+    }
+    for key, kind in placement.items():
+        if kind != "video":
+            continue
+        label = labels.get(key)
+        if label is None and key.startswith("solutions_theater_") and key.endswith("_id"):
+            label = "Solution: " + key[len("solutions_theater_"):-3].replace("_", " ")
+        if label:
+            slots.append({"id": key, "label": label})
+    catalog["share_slots"] = slots
+    return catalog
 
 
 def handle_storyboard_list(session: Optional[Dict]) -> Tuple[int, Dict]:
@@ -3711,6 +3745,7 @@ def handle_storyboard_list(session: Optional[Dict]) -> Tuple[int, Dict]:
             "veo_durations": list(VEO_DURATIONS),
             "purposes": purpose_catalog(),
             "provider": "replicate",
+            "providers": _storyboard_provider_catalog(),
         }
     except Exception as exc:
         return _storyboard_error(exc)
@@ -3774,6 +3809,7 @@ def handle_storyboard_create(session: Optional[Dict], body: Dict) -> Tuple[int, 
             script=str(body.get("script") or ""),
             scenes=scenes,
             opening_reference=opening,
+            provider=str(body.get("provider") or "replicate"),
             provider_model=str(body.get("provider_model") or ""),
             aspect_ratio=str(body.get("aspect_ratio") or "16:9"),
             resolution=str(body.get("resolution") or "720p"),
@@ -3795,7 +3831,10 @@ def handle_storyboard_update(session: Optional[Dict], storyboard_id: str, body: 
         kwargs: Dict[str, Any] = {
             "expected_sha256": str(body.get("expected_sha256") or ""),
         }
-        for key in ("title", "purpose", "script", "provider_model", "aspect_ratio", "resolution", "campaign_id"):
+        for key in (
+            "title", "purpose", "script", "provider", "provider_model",
+            "aspect_ratio", "resolution", "campaign_id",
+        ):
             if key in body:
                 kwargs[key] = body.get(key)
         if "opening_reference" in body and isinstance(body.get("opening_reference"), dict):
@@ -3839,28 +3878,83 @@ def handle_storyboard_scene_reference(
 
 
 def _submit_storyboard_scene(params: Dict) -> Dict:
-    return get_video_agents_service().submit_video_job(**params)
+    """Submit one scene on the growth-agent media job path.
+
+    The job is the same record the growth agent polls and saves into the
+    media library. Replicate is not swapped for another provider here.
+    """
+    from services.media_generation_service import MediaGenerationError
+    from services.storyboard_editor import StoryboardProviderError
+
+    portal = _portal_module()
+    provider = str(params.get("provider") or "replicate").strip().lower() or "replicate"
+    model = str(params.get("provider_model") or "").strip()
+    provider, error = portal.validate_media_video_provider_selection(provider, model)
+    if error:
+        raise StoryboardProviderError(error, provider=provider, provider_model=model)
+    if provider == "replicate":
+        model = portal.solution_replicate_model(model)
+    callback_base = portal.configured_media_callback_base_url()
+    poll_mode = portal.resolve_media_video_completion_mode(params.get("poll_mode"), callback_base)
+    metadata = params.get("metadata") if isinstance(params.get("metadata"), dict) else {}
+    scene_index = int(metadata.get("scene_index") or 1)
+    try:
+        job = portal.create_media_video_job(
+            campaign_id=str(params.get("campaign_id") or metadata.get("storyboard_id") or ""),
+            blueprint_index=max(scene_index - 1, 0),
+            blueprint={"title": params.get("title") or "Storyboard scene", "format": params.get("aspect_ratio") or "16:9"},
+            requested_by=str(params.get("submitted_by") or "admin"),
+            provider=provider,
+            callback_base_url=callback_base,
+            provider_model=model,
+            image_data_url=str(params.get("image_data_url") or ""),
+            auto_publish_to_hero=False,
+            prompt_override=str(params.get("prompt_override") or ""),
+            duration_seconds=int(params.get("duration_seconds") or 8),
+            aspect_ratio=str(params.get("aspect_ratio") or "16:9"),
+            resolution=str(params.get("resolution") or "720p"),
+            submit_inline=True,
+        )
+    except MediaGenerationError as exc:
+        raise StoryboardProviderError(str(exc), provider=provider) from exc
+    delay = 30 if poll_mode == "webhook" else 1
+    portal.start_media_job_polling(job["id"], delay_seconds=delay)
+    return job
+
+
+def _storyboard_connection(provider: str, model: str) -> Tuple[bool, str, str]:
+    """Whether the selected provider is the one the growth agent would accept."""
+    portal = _portal_module()
+    selected = str(provider or "replicate").strip().lower() or "replicate"
+    try:
+        name, error = portal.validate_media_video_provider_selection(selected, model)
+    except Exception as exc:
+        return False, selected, str(exc)
+    return (not error), name, error
 
 
 def handle_storyboard_render(
     session: Optional[Dict], storyboard_id: str, index: str, body: Dict,
 ) -> Tuple[int, Dict]:
-    """POST .../scenes/{index}/render — one Replicate scene, chained still in."""
+    """POST .../scenes/{index}/render — one growth-agent scene, chained still in."""
     auth_error = _require_admin_or_media(session)
     if auth_error:
         return auth_error
-    if not VIDEO_AGENTS_AVAILABLE:
-        return 503, {"error": "Video agents service not available"}
     try:
         from services.storyboard_editor import get_storyboard_editor
-        enabled, default_model = _replicate_for_storyboard()
-        model = str(body.get("provider_model") or "").strip() or default_model
-        result = get_storyboard_editor().render_scene(
+        editor = get_storyboard_editor()
+        current = editor.get(storyboard_id)
+        provider = str(body.get("provider") or current.get("provider") or "replicate")
+        model = str(body.get("provider_model") or current.get("provider_model") or "").strip()
+        connected, provider_name, provider_error = _storyboard_connection(provider, model)
+        result = editor.render_scene(
             storyboard_id,
             int(index),
             expected_sha256=str(body.get("expected_sha256") or ""),
             submitter=_submit_storyboard_scene,
-            replicate_enabled=enabled,
+            provider=provider_name,
+            provider_connected=connected,
+            provider_error=provider_error,
             provider_model=model,
             submitted_by=_storyboard_actor(session),
         )
@@ -3892,17 +3986,52 @@ def handle_storyboard_render_next(session: Optional[Dict], storyboard_id: str, b
         return _storyboard_error(exc)
 
 
+def _refresh_growth_video_job(job_id: str) -> Optional[Dict]:
+    """Poll the growth-agent job once so a finished provider file is saved."""
+    portal = _portal_module()
+    jobs = getattr(portal, "MEDIA_PROCESSING_JOBS", {}) or {}
+    job = jobs.get(job_id) if isinstance(jobs, dict) else None
+    if not isinstance(job, dict):
+        return None
+    status = str(job.get("status") or "").strip().lower()
+    if status not in {"completed", "failed", "cancelled"} and str(job.get("provider_job_id") or "").strip():
+        portal.poll_media_video_job_once(job_id)
+        job = (getattr(portal, "MEDIA_PROCESSING_JOBS", {}) or {}).get(job_id)
+    return job if isinstance(job, dict) else None
+
+
+def _scene_video_file(asset: Dict) -> Tuple[str, str]:
+    """Return ``(path, sha256)`` after the file bytes match the library checksum."""
+    portal = _portal_module()
+    file_path = str(asset.get("file_path") or "").strip()
+    within = getattr(portal, "_media_path_within_storage", None)
+    if (
+        not file_path
+        or not os.path.isfile(file_path)
+        or not callable(within)
+        or not within(file_path)
+    ):
+        return "", ""
+    digest = portal._compute_file_checksum(file_path)
+    expected = str(asset.get("checksum") or "").strip().lower()
+    if expected and expected != digest:
+        return "", digest
+    return file_path, digest
+
+
 def handle_storyboard_sync(
     session: Optional[Dict], storyboard_id: str, index: str, body: Dict,
 ) -> Tuple[int, Dict]:
-    """Copy the video-job status onto the scene. Does not invent a screenshot."""
+    """Copy the growth-agent job onto the scene and seal its ending still.
+
+    The still comes from the checksummed library file. A mismatch is reported
+    and the chain is not advanced.
+    """
     auth_error = _require_admin_or_media(session)
     if auth_error:
         return auth_error
-    if not VIDEO_AGENTS_AVAILABLE:
-        return 503, {"error": "Video agents service not available"}
     try:
-        from services.storyboard_editor import get_storyboard_editor
+        from services.storyboard_editor import extract_last_frame_png, get_storyboard_editor
         editor = get_storyboard_editor()
         board = editor.get(storyboard_id)
         number = int(index)
@@ -3915,19 +4044,62 @@ def handle_storyboard_sync(
         job_id = str(scene.get("video_job_id") or "")
         if not job_id:
             return 409, {"error": "This scene has no video job yet."}
-        job = get_video_agents_service().poll_job(job_id)
+        job = _refresh_growth_video_job(job_id)
+        if job is None and VIDEO_AGENTS_AVAILABLE:
+            job = get_video_agents_service().poll_job(job_id)
         if job is None:
             return 404, {"error": f"Job {job_id!r} not found"}
+        status = str(job.get("status") or "")
+        asset_id = str(job.get("generated_asset_id") or "")
+        if status == "completed" and asset_id and not (scene.get("end_screenshot") or {}).get("sha256"):
+            portal = _portal_module()
+            asset = (getattr(portal, "MEDIA_ASSETS", {}) or {}).get(asset_id)
+            if not isinstance(asset, dict) or str(asset.get("type") or "") != "video":
+                return 409, {"error": "The finished scene was not saved in the media library."}
+            file_path, digest = _scene_video_file(asset)
+            library = str(asset.get("checksum") or "").strip().lower()
+            if not file_path or (library and digest != library):
+                return 409, {
+                    "error": "Scene video checksum does not match the media library. The file was not changed.",
+                    "expected_sha256": library,
+                    "actual_sha256": digest,
+                }
+            frame = extract_last_frame_png(file_path)
+            updated = editor.seal_rendered_scene(
+                storyboard_id,
+                number,
+                expected_sha256=str(body.get("expected_sha256") or ""),
+                video_job_id=job_id,
+                asset_id=asset_id,
+                asset_sha256=digest,
+                image_bytes=frame,
+            )
+            return 200, {
+                "storyboard": _storyboard_view(updated, include_media=True),
+                "job": {
+                    "id": job.get("id") or job_id,
+                    "status": "completed",
+                    "generated_asset_id": asset_id,
+                    "media_sha256": digest,
+                },
+                "sealed": True,
+            }
         updated = editor.note_job_status(
             storyboard_id,
             number,
             expected_sha256=str(body.get("expected_sha256") or ""),
-            job_status=str(job.get("status") or ""),
+            job_status=status,
             job_id=str(job.get("id") or job_id),
         )
         return 200, {
             "storyboard": _storyboard_view(updated, include_media=True),
-            "job": {"id": job.get("id"), "status": job.get("status"), "error": job.get("error") or ""},
+            "job": {
+                "id": job.get("id") or job_id,
+                "status": status,
+                "error": job.get("error") or "",
+                "generated_asset_id": asset_id,
+            },
+            "sealed": False,
         }
     except Exception as exc:
         return _storyboard_error(exc)
@@ -3957,44 +4129,229 @@ def handle_storyboard_end_frame(
             return 404, {"error": f"Scene {number} was not found."}
         job_id = str(body.get("video_job_id") or scene.get("video_job_id") or "").strip()
         image_data_url = str(body.get("image_data_url") or "").strip()
+        library_asset_id = ""
+        library_digest = ""
         if image_data_url:
             raw, mime = decode_image_data_url(image_data_url)
             source = "supplied"
         else:
-            if not VIDEO_AGENTS_AVAILABLE:
-                return 503, {"error": "Video agents service not available"}
             if not job_id:
                 return 409, {"error": "This scene has no video job to capture."}
-            job = get_video_agents_service().poll_job(job_id)
-            if job is None:
-                return 404, {"error": f"Job {job_id!r} not found"}
-            if str(job.get("status") or "") != "completed":
-                return 409, {"error": "Scene video is not completed, so there is no ending screenshot yet."}
-            import tempfile
-            tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-            tmp_path = tmp.name
-            tmp.close()
-            try:
-                get_video_agents_service().download_job_video(job_id, stream_to_path=tmp_path)
-                raw = extract_last_frame_png(tmp_path)
-            finally:
+            job = _refresh_growth_video_job(job_id)
+            library_path = ""
+            if isinstance(job, dict) and str(job.get("generated_asset_id") or ""):
+                asset = (getattr(_portal_module(), "MEDIA_ASSETS", {}) or {}).get(job.get("generated_asset_id"))
+                if isinstance(asset, dict):
+                    library_path, digest = _scene_video_file(asset)
+                    library_sha = str(asset.get("checksum") or "").strip().lower()
+                    if not library_path or (library_sha and digest != library_sha):
+                        return 409, {
+                            "error": "Scene video checksum does not match the media library. The file was not changed.",
+                        }
+                    library_asset_id = str(job.get("generated_asset_id") or "")
+                    library_digest = digest
+            if library_path:
+                raw = extract_last_frame_png(library_path)
+            else:
+                if not VIDEO_AGENTS_AVAILABLE:
+                    return 503, {"error": "Video agents service not available"}
+                if job is None:
+                    job = get_video_agents_service().poll_job(job_id)
+                if job is None:
+                    return 404, {"error": f"Job {job_id!r} not found"}
+                if str(job.get("status") or "") != "completed":
+                    return 409, {"error": "Scene video is not completed, so there is no ending screenshot yet."}
+                import tempfile
+                tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+                tmp_path = tmp.name
+                tmp.close()
                 try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
+                    get_video_agents_service().download_job_video(job_id, stream_to_path=tmp_path)
+                    raw = extract_last_frame_png(tmp_path)
+                finally:
+                    try:
+                        os.remove(tmp_path)
+                    except OSError:
+                        pass
             mime = "image/png"
             source = "extracted"
-        updated = editor.record_end_frame(
-            storyboard_id,
-            number,
-            expected_sha256=str(body.get("expected_sha256") or ""),
-            video_job_id=job_id,
-            image_bytes=raw,
-            image_mime=mime,
-            claimed_sha256=str(body.get("sha256") or ""),
-            source=source,
-        )
+        if library_asset_id and library_digest:
+            # The library file is checksummed, so seal it with the still and
+            # leave the scene ready to join a film.
+            updated = editor.seal_rendered_scene(
+                storyboard_id,
+                number,
+                expected_sha256=str(body.get("expected_sha256") or ""),
+                video_job_id=job_id,
+                asset_id=library_asset_id,
+                asset_sha256=library_digest,
+                image_bytes=raw,
+                image_mime=mime,
+                source=source,
+            )
+        else:
+            updated = editor.record_end_frame(
+                storyboard_id,
+                number,
+                expected_sha256=str(body.get("expected_sha256") or ""),
+                video_job_id=job_id,
+                image_bytes=raw,
+                image_mime=mime,
+                claimed_sha256=str(body.get("sha256") or ""),
+                source=source,
+            )
         return 200, {"storyboard": _storyboard_view(updated, include_media=True)}
+    except Exception as exc:
+        return _storyboard_error(exc)
+
+
+def handle_storyboard_assemble(session: Optional[Dict], storyboard_id: str, body: Dict) -> Tuple[int, Dict]:
+    """Join sealed scene files into one checksummed film. Scene files stay put."""
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+    asset_id = ""
+    try:
+        from services.storyboard_editor import concatenate_videos, get_storyboard_editor
+        editor = get_storyboard_editor()
+        board = editor.get(storyboard_id)
+        scenes = list(board.get("scenes") or [])
+        portal = _portal_module()
+        paths = []
+        digests = []
+        duration = 0
+        for scene in scenes:
+            if str(scene.get("status") or "") != "ready" or not scene.get("media_asset_id"):
+                return 409, {
+                    "error": f"Scene {scene.get('index')} is not sealed in the media library.",
+                }
+            asset = (getattr(portal, "MEDIA_ASSETS", {}) or {}).get(scene.get("media_asset_id"))
+            if not isinstance(asset, dict) or str(asset.get("type") or "") != "video":
+                return 409, {"error": f"Scene {scene.get('index')} video is not in the media library."}
+            file_path, digest = _scene_video_file(asset)
+            expected = str(scene.get("media_sha256") or "").strip().lower()
+            library = str(asset.get("checksum") or "").strip().lower()
+            if not file_path or digest != expected or (library and library != digest):
+                return 409, {
+                    "error": (
+                        f"Scene {scene.get('index')} checksum does not match the file on disk. "
+                        "The film was not assembled and the file was not changed."
+                    ),
+                    "expected_sha256": expected,
+                    "actual_sha256": digest,
+                }
+            paths.append(file_path)
+            digests.append(digest)
+            duration += int(scene.get("duration_seconds") or 0)
+        payload = concatenate_videos(paths)
+        stored = portal.store_checksummed_video_file(
+            name=f"{board.get('title') or 'Storyboard'} film.mp4",
+            payload=payload,
+            uploaded_by=_storyboard_actor(session),
+            duration=duration,
+            metadata={
+                "generated_from": "storyboard_film",
+                "storyboard_id": board.get("id"),
+                "scene_sha256": digests,
+                "scene_asset_ids": [scene.get("media_asset_id") for scene in scenes],
+                "provider": board.get("provider") or "replicate",
+            },
+        )
+        asset_id = str(stored.get("id") or "")
+        film_sha = str(stored.get("checksum") or "")
+        if film_sha != portal.compute_media_checksum(payload):
+            portal.discard_new_media_asset(asset_id)
+            return 409, {"error": "Joined film checksum does not match the bytes that were stored."}
+        updated = editor.record_film(
+            storyboard_id,
+            expected_sha256=str(body.get("expected_sha256") or ""),
+            asset_id=asset_id,
+            sha256=film_sha,
+            byte_length=len(payload),
+            scene_sha256=digests,
+        )
+        return 201, {
+            "storyboard": _storyboard_view(updated, include_media=True),
+            "film": updated.get("film") or {},
+            "asset_id": asset_id,
+        }
+    except Exception as exc:
+        if asset_id:
+            try:
+                _portal_module().discard_new_media_asset(asset_id)
+            except Exception:
+                logger.exception("storyboard film cleanup failed")
+        return _storyboard_error(exc)
+
+
+def handle_storyboard_share(session: Optional[Dict], storyboard_id: str, body: Dict) -> Tuple[int, Dict]:
+    """Assign the sealed film to a login, solutions, or disclaimer slot.
+
+    Uses the same design-document seal as the media dashboard. The video
+    bytes are not rewritten. A failed seal restores the previous document.
+    """
+    auth_error = _require_admin_or_media(session)
+    if auth_error:
+        return auth_error
+    try:
+        from services.storyboard_editor import get_storyboard_editor
+        editor = get_storyboard_editor()
+        board = editor.get(storyboard_id)
+        film = board.get("film") if isinstance(board.get("film"), dict) else {}
+        asset_id = str(film.get("asset_id") or "")
+        film_sha = str(film.get("sha256") or "")
+        if not asset_id or not film_sha:
+            return 409, {"error": "Assemble the film before sharing it."}
+        slot = str(body.get("slot") or "").strip()
+        portal = _portal_module()
+        slots = getattr(portal, "MEDIA_PLACEMENT_SLOTS", {}) or {}
+        if slots.get(slot) != "video":
+            return 400, {"error": "That placement does not accept a video."}
+        asset = (getattr(portal, "MEDIA_ASSETS", {}) or {}).get(asset_id)
+        if not isinstance(asset, dict) or str(asset.get("type") or "") != "video":
+            return 409, {"error": "The sealed film is not in the media library."}
+        file_path, digest = _scene_video_file(asset)
+        library = str(asset.get("checksum") or "").strip().lower()
+        if not file_path or digest != film_sha or (library and library != digest):
+            return 409, {
+                "error": "Film checksum does not match the media library. The placement was not changed.",
+                "expected_sha256": film_sha,
+                "actual_sha256": digest,
+            }
+        try:
+            previous = portal._snapshot_design_settings()
+        except Exception:
+            return 503, {"error": "Design settings could not be stored durably"}
+        settings = portal.DESIGN_SETTINGS
+        settings[slot] = asset_id
+        if slot == "hero_video_id":
+            settings["video_url"] = portal.get_media_asset_playback_url(asset_id)
+        settings["updated_at"] = portal.datetime.now().isoformat()
+        settings["updated_by"] = _storyboard_actor(session)
+        if not portal.seal_design_settings(force=True):
+            portal._restore_design_settings(previous)
+            return 503, {"error": "Design settings could not be stored durably"}
+        try:
+            updated = editor.note_placement(
+                storyboard_id,
+                expected_sha256=str(body.get("expected_sha256") or ""),
+                slot=slot,
+                asset_id=asset_id,
+                film_sha256=film_sha,
+            )
+        except Exception:
+            portal._restore_design_settings(previous)
+            if not portal.seal_design_settings(force=True):
+                return 503, {
+                    "error": "The placement was not recorded, and the previous design could not be restored.",
+                }
+            raise
+        return 200, {
+            "storyboard": _storyboard_view(updated, include_media=True),
+            "slot": slot,
+            "asset_id": asset_id,
+            "film_sha256": film_sha,
+        }
     except Exception as exc:
         return _storyboard_error(exc)
 
@@ -4027,6 +4384,10 @@ def dispatch_storyboard_post(path: str, session: Optional[Dict], body: Dict) -> 
         return handle_storyboard_verify(session, tail[0])
     if len(tail) == 2 and tail[1] == "render-next":
         return handle_storyboard_render_next(session, tail[0], body)
+    if len(tail) == 2 and tail[1] == "assemble":
+        return handle_storyboard_assemble(session, tail[0], body)
+    if len(tail) == 2 and tail[1] == "share":
+        return handle_storyboard_share(session, tail[0], body)
     if len(tail) == 4 and tail[1] == "scenes" and tail[3] == "reference":
         return handle_storyboard_scene_reference(session, tail[0], tail[2], body)
     if len(tail) == 4 and tail[1] == "scenes" and tail[3] == "render":

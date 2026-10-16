@@ -587,10 +587,13 @@ Environment variables commonly used:
  in-flight jobs at boot. The storyboard editor
  (`services/storyboard_editor.py`, `/storyboard-editor.html`) is embedded on
  the media, growth, solutions, and video-agents surfaces. Scenes default to
- 8 seconds, open on a chosen reference or the previous scene's ending
- screenshot, and render only through Replicate. The document SHA-256 and the
- still chain are refused on mismatch; library bytes are never rewritten to
- force a chain
+ 8 seconds. Scene 1 opens on a chosen reference or a provider-generated
+ picture; later scenes open on the previous ending screenshot. Rendering
+ uses the growth-agent media job (Replicate by default; Kling, Gemini, or a
+ later affiliated provider when that provider is selected and connected).
+ Sealed scene files join into one checksummed film that can be assigned to
+ login, solutions, and disclaimer slots. A checksum mismatch is reported;
+ library bytes are never rewritten to force a chain.
 - **BI analytics (B10):** `PHINS_BI_SNAPSHOT_DIR` also holds
  `materialized_views.json` (served by `/api/bi/*` when fingerprint, checksum
  and age < cache TTL all match); `PHINS_BI_REMATERIALIZE_DELAY_SECONDS`
