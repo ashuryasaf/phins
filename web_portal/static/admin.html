@@ -2247,8 +2247,8 @@
         </div>
       </div>
       <div style="margin:-4px 0 10px 0;">
-        <label for="mkt-prompt-override" style="font-size: 0.78rem; opacity: 0.82;">Prompt / Notes Override</label>
-        <textarea id="mkt-prompt-override" placeholder="Optional narrative or compliance guidance for generated videos." style="width:100%;margin-top:4px;padding:8px;border-radius:7px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.12);color:white;min-height:48px;resize:vertical;font-size:0.84rem;"></textarea>
+          <label for="mkt-prompt-override" style="font-size: 0.78rem; opacity: 0.82;">Prompt / Notes Override</label>
+        <textarea id="mkt-prompt-override" placeholder="Campaign videos only. A solution walkthrough sends that solution's ready script, shown on its card." style="width:100%;margin-top:4px;padding:8px;border-radius:7px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.12);color:white;min-height:48px;resize:vertical;font-size:0.84rem;"></textarea>
       </div>
       <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin:-4px 0 16px 0;font-size:0.82rem;">
         <label style="display:flex;gap:8px;align-items:center;">
@@ -2307,8 +2307,11 @@
       <div style="margin-top: 16px; background: rgba(255,255,255,0.1); border: 1px solid rgba(227,191,111,0.45); border-radius: 10px; padding: 12px;">
         <h4 style="margin: 0 0 6px 0;">Solution walkthrough blueprints</h4>
         <p style="margin: 0 0 10px; font-size: 0.82rem; opacity: 0.88;">
-          Affiliated with one solution each. Text, theme, and screenshot reference are edited on Solution Views.
-          Sending uses this Growth Agent path and stores the film in the media library. The public walkthrough stays as it is.
+          Affiliated with one solution each. Text and theme are edited on Solution Views.
+          Video Provider, Provider Model, Reference Image, and Completion Mode above choose the engine for this send.
+          A library photo selected above is the reference for this film; otherwise the blueprint's screenshot is used.
+          Prompt / Notes Override on each card is that solution's ready script. The campaign notes box is not substituted for it.
+          The film is stored in the media library. The public walkthrough stays as it is until Save Solution Views.
         </p>
         <div id="mkt-solution-player" style="margin: 0 0 12px;"></div>
         <div id="mkt-solution-blueprints" style="font-size: 0.85rem; line-height: 1.45;">Loading solution blueprints.</div>
@@ -5325,6 +5328,7 @@
     document.addEventListener('change', (event) => {
       if (event?.target?.id !== 'mkt-video-provider') return;
       applyMarketingProviderCapabilities(latestMarketingProviderCapabilities);
+      loadSolutionWalkthroughBlueprints();
     });
 
     function selectedMarketingVideoProvider() {
@@ -5809,7 +5813,10 @@
           host.textContent = 'No solution blueprints.';
           return;
         }
-        const replicateEnabled = Boolean(marketingProviderConfig('replicate')?.enabled);
+        const providerName = selectedMarketingVideoProvider() || 'replicate';
+        const providerEnabled = isMarketingProviderEnabled(providerName);
+        const providerLabel = (marketingProviderConfig(providerName) || {}).label || providerName;
+        window.__solutionPrompts = {};
         host.innerHTML = items.map(item => {
           const jobs = Array.isArray(item.jobs) ? item.jobs : [];
           const job = jobs[0];
@@ -5831,15 +5838,20 @@
             window.__solutionFilms = window.__solutionFilms || {};
             window.__solutionFilms[item.solution_key] = item.playback_url;
           }
+          const readyPrompt = String(item.ready_prompt || '');
+          window.__solutionPrompts[item.solution_key] = readyPrompt;
+          const sendLabel = 'Send with ' + providerLabel + (providerEnabled ? '' : ' (not configured)');
           return `
             <div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.15);">
               <div style="font-weight:700;">${escapeMarketingHtml(item.title)} <span style="font-weight:500;opacity:0.8;">${escapeMarketingHtml(item.campaign_id)}</span></div>
               <div style="opacity:0.9;margin-top:4px;">${escapeMarketingHtml(item.narration)}</div>
+              <label style="display:block;margin-top:8px;font-size:0.78rem;opacity:0.82;">Prompt / Notes Override</label>
+              <textarea readonly style="width:100%;margin-top:4px;padding:8px;border-radius:7px;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.08);color:white;min-height:72px;resize:vertical;font-size:0.78rem;">${escapeMarketingHtml(readyPrompt)}</textarea>
               ${thumb}
               <div style="font-size:0.78rem;opacity:0.85;margin-top:4px;">${escapeMarketingHtml(theme)} · ${escapeMarketingHtml(integrity)}</div>
               <div style="font-size:0.78rem;opacity:0.85;margin-top:2px;">${escapeMarketingHtml(asset)}. ${escapeMarketingHtml(pub)} ${escapeMarketingHtml(jobLine)}</div>
               <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-                <button ${replicateEnabled && item.integrity_ok ? '' : 'disabled'} onclick="sendSolutionBlueprint('${key}')" style="background:#0f766e;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;${replicateEnabled && item.integrity_ok ? '' : 'opacity:0.5;cursor:not-allowed;'}">Send with Replicate${replicateEnabled ? '' : ' (not configured)'}</button>
+                <button ${providerEnabled && item.integrity_ok ? '' : 'disabled'} onclick="sendSolutionBlueprint('${key}')" style="background:#0f766e;color:white;border:none;padding:6px 10px;border-radius:7px;cursor:pointer;font-size:0.74rem;font-weight:700;${providerEnabled && item.integrity_ok ? '' : 'opacity:0.5;cursor:not-allowed;'}">${escapeMarketingHtml(sendLabel)}</button>
                 ${play}
               </div>
             </div>
@@ -5850,12 +5862,12 @@
       }
     }
 
-    function replicateModelForSolutionSend() {
-      const replicate = marketingProviderConfig('replicate') || {};
-      const models = Array.isArray(replicate.models) ? replicate.models.map(model => String(model)) : [];
-      const selected = selectedMarketingVideoProvider() === 'replicate' ? selectedMarketingVideoModel() : '';
-      if (selected && models.indexOf(selected) !== -1) return selected;
-      return '';
+    function modelForSolutionSend() {
+      const providerName = selectedMarketingVideoProvider() || 'replicate';
+      const selected = selectedMarketingVideoModel();
+      const models = (marketingProviderConfig(providerName)?.models || []).map(model => String(model));
+      if (selected && models.length && models.indexOf(selected) === -1) return '';
+      return selected;
     }
 
     function playSolutionFilm(solutionKey) {
@@ -5901,19 +5913,25 @@
     async function sendSolutionBlueprint(solutionKey) {
       try {
         setMarketingVideoJobStatus(`Sending ${solutionKey} through the growth agent…`, 'info');
+        const providerName = selectedMarketingVideoProvider() || 'replicate';
+        const referenceId = selectedMarketingReferenceImageId();
+        const readyPrompt = (window.__solutionPrompts || {})[solutionKey] || '';
+        const requestBody = {
+          solution_key: solutionKey,
+          provider: providerName,
+          provider_model: modelForSolutionSend(),
+          poll_mode: selectedMarketingPollMode(),
+          auto_publish_to_hero: false,
+          prompt_override: readyPrompt
+        };
+        if (referenceId) requestBody.reference_image_asset_id = referenceId;
         const response = await fetch('/api/admin/media/solution-blueprints/send', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({
-            solution_key: solutionKey,
-            provider: 'replicate',
-            provider_model: replicateModelForSolutionSend(),
-            poll_mode: 'poll',
-            auto_publish_to_hero: false
-          })
+          body: JSON.stringify(requestBody)
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Send failed');

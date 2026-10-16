@@ -1,6 +1,8 @@
 """Solution video blueprints stay affiliated, editable, and off the public slot."""
 
+import base64
 import copy
+import hashlib
 import json
 import threading
 import time
@@ -165,9 +167,13 @@ def test_growth_agent_can_play_a_stored_solution_film():
     admin_html = admin.read_text(encoding="utf-8")
     media_html = media.read_text(encoding="utf-8")
     assert "function playSolutionFilm" in admin_html
-    assert "function replicateModelForSolutionSend" in admin_html
-    assert "provider: 'replicate'" in admin_html
-    assert "poll_mode: 'poll'" in admin_html
+    assert "function modelForSolutionSend" in admin_html
+    assert "function sendSolutionBlueprint" in admin_html
+    assert "selectedMarketingVideoProvider()" in admin_html
+    assert "selectedMarketingReferenceImageId()" in admin_html
+    assert "selectedMarketingPollMode()" in admin_html
+    assert "ready_prompt" in admin_html
+    assert "Prompt / Notes Override" in admin_html
     assert "previewMedia('${safeId}')\">${media.type === 'video' ? 'Play' : 'View'}" in media_html
 
 
@@ -463,5 +469,221 @@ def test_solution_blueprint_send_stores_a_library_film_without_replacing_the_pag
         else:
             portal.DESIGN_SETTINGS["solution_video_blueprints"] = blueprints_before
         portal.DESIGN_SETTINGS["tagline"] = tagline_before
+        portal.save_ledger_data()
+        srv.stop()
+
+
+class _ChoiceStub(_ReplicateStub):
+    def supported_provider_config(self):
+        return {
+            "replicate": {
+                "enabled": True,
+                "label": "Replicate",
+                "models": ["google/veo-3.1-fast", "bytedance/seedance-2.0"],
+            },
+            "kling": {
+                "enabled": True,
+                "label": "Kling",
+                "models": ["kling-v2.6-pro", "kling-v3-image-to-video"],
+            },
+            "gemini": {
+                "enabled": True,
+                "label": "Gemini / Veo",
+                "models": ["veo-3.1-generate-preview"],
+            },
+        }
+
+
+def test_solution_blueprint_send_follows_the_selected_engine():
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+    png_sha = hashlib.sha256(png).hexdigest()
+    data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+    srv = _Server()
+    srv.start()
+    time.sleep(0.2)
+    base = f"http://127.0.0.1:{srv.port}"
+    try:
+        _json_request(base + "/api/health")
+    except Exception:
+        pass
+    token = "phins_test_solution_engine_token"
+    _inject(token)
+    stub = _ChoiceStub()
+    original = portal.get_media_generation_service
+    portal.get_media_generation_service = lambda: stub
+    blueprints_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("solution_video_blueprints"))
+    assets_before = set(portal.MEDIA_ASSETS)
+    jobs_before = set(portal.MEDIA_PROCESSING_JOBS)
+    theater_before = {
+        key: portal.DESIGN_SETTINGS.get(portal.solutions_theater_slot_key(key), "")
+        for key in SOLUTION_KEYS
+    }
+    hero_before = portal.DESIGN_SETTINGS.get("hero_video_id", "")
+    portal.MEDIA_ASSETS["media-shot-ok"] = {
+        "id": "media-shot-ok",
+        "name": "desk.png",
+        "type": "image",
+        "data": data_url,
+        "checksum": png_sha,
+    }
+    portal.MEDIA_ASSETS["media-shot-next"] = {
+        "id": "media-shot-next",
+        "name": "window.png",
+        "type": "image",
+        "data": data_url,
+        "checksum": png_sha,
+    }
+    portal.MEDIA_ASSETS["media-shot-bad"] = {
+        "id": "media-shot-bad",
+        "name": "bad.png",
+        "type": "image",
+        "data": data_url,
+        "checksum": "0" * 64,
+    }
+    try:
+        status, saved = _json_request(
+            base + "/api/admin/media/solution-blueprints",
+            method="POST",
+            token=token,
+            payload={
+                "solution_key": "claims",
+                "narration": "Inside Claims. The file stays with the adjuster.",
+                "theme": "Quiet claims desk",
+                "reference_image_asset_id": "media-shot-ok",
+            },
+        )
+        assert status == 200, saved
+        checksum = saved["blueprint"]["checksum"]
+        ready = saved["blueprint"]["ready_prompt"]
+        assert "Inside Claims" in ready
+        assert "eight seconds" in ready
+
+        status, sent = _json_request(
+            base + "/api/admin/media/solution-blueprints/send",
+            method="POST",
+            token=token,
+            payload={
+                "solution_key": "claims",
+                "provider": "kling",
+                "provider_model": "kling-v2.6-pro",
+                "poll_mode": "poll",
+                "prompt_override": ready,
+                "auto_publish_to_hero": True,
+            },
+        )
+        assert status == 202, sent
+        assert sent["provider"] == "kling"
+        assert sent["provider_model"] == "kling-v2.6-pro"
+        assert sent["poll_mode"] == "poll"
+        assert sent["duration_seconds"] == 10
+        assert sent["auto_publish_to_hero"] is False
+        assert stub.submissions[-1]["provider"] == "kling"
+        assert stub.submissions[-1]["model"] == "kling-v2.6-pro"
+        assert stub.submissions[-1]["duration_seconds"] == 10
+        assert "Inside Claims" in stub.submissions[-1]["prompt"]
+        assert stub.submissions[-1]["image_data_url"] == data_url
+        stored = portal.DESIGN_SETTINGS["solution_video_blueprints"]["claims"]
+        assert stored["checksum"] == checksum
+        assert stored["reference_image_asset_id"] == "media-shot-ok"
+        assert stored["narration"] == "Inside Claims. The file stays with the adjuster."
+
+        status, seedance = _json_request(
+            base + "/api/admin/media/solution-blueprints/send",
+            method="POST",
+            token=token,
+            payload={
+                "solution_key": "claims",
+                "provider": "replicate",
+                "provider_model": "bytedance/seedance-2.0",
+                "poll_mode": "poll",
+                "prompt_override": ready,
+            },
+        )
+        assert status == 202, seedance
+        assert seedance["provider"] == "replicate"
+        assert seedance["provider_model"] == "bytedance/seedance-2.0"
+        assert seedance["duration_seconds"] == 8
+        assert stub.submissions[-1]["model"] == "bytedance/seedance-2.0"
+        assert stub.submissions[-1]["duration_seconds"] == 8
+
+        before = len(stub.submissions)
+        status, wrong_prompt = _json_request(
+            base + "/api/admin/media/solution-blueprints/send",
+            method="POST",
+            token=token,
+            payload={
+                "solution_key": "claims",
+                "provider": "kling",
+                "provider_model": "kling-v2.6-pro",
+                "prompt_override": "A different script that is not the solution line.",
+                "force": True,
+            },
+        )
+        assert status == 409, wrong_prompt
+        assert "solution script" in wrong_prompt["error"]
+        assert len(stub.submissions) == before
+        assert portal.DESIGN_SETTINGS["solution_video_blueprints"]["claims"]["checksum"] == checksum
+
+        status, bad_image = _json_request(
+            base + "/api/admin/media/solution-blueprints/send",
+            method="POST",
+            token=token,
+            payload={
+                "solution_key": "claims",
+                "provider": "replicate",
+                "provider_model": "bytedance/seedance-2.0",
+                "reference_image_asset_id": "media-shot-bad",
+                "force": True,
+            },
+        )
+        assert status == 409, bad_image
+        assert "checksum" in bad_image["error"].lower()
+        assert len(stub.submissions) == before
+        assert portal.MEDIA_ASSETS["media-shot-bad"]["checksum"] == "0" * 64
+        assert portal.MEDIA_ASSETS["media-shot-bad"]["data"] == data_url
+
+        status, override = _json_request(
+            base + "/api/admin/media/solution-blueprints/send",
+            method="POST",
+            token=token,
+            payload={
+                "solution_key": "claims",
+                "provider": "gemini",
+                "provider_model": "veo-3.1-generate-preview",
+                "reference_image_asset_id": "media-shot-next",
+                "poll_mode": "webhook",
+                "prompt_override": ready,
+                "force": True,
+            },
+        )
+        assert status == 202, override
+        assert override["provider"] == "gemini"
+        assert override["provider_model"] == "veo-3.1-generate-preview"
+        assert override["duration_seconds"] == 8
+        assert override["poll_mode"] in {"poll", "webhook"}
+        assert stub.submissions[-1]["provider"] == "gemini"
+        assert stub.submissions[-1]["image_data_url"] == data_url
+        stored = portal.DESIGN_SETTINGS["solution_video_blueprints"]["claims"]
+        assert stored["checksum"] == checksum
+        assert stored["reference_image_asset_id"] == "media-shot-ok"
+        assert portal.DESIGN_SETTINGS.get("hero_video_id", "") == hero_before
+        assert {
+            key: portal.DESIGN_SETTINGS.get(portal.solutions_theater_slot_key(key), "")
+            for key in SOLUTION_KEYS
+        } == theater_before
+    finally:
+        portal.get_media_generation_service = original
+        for asset_id in list(portal.MEDIA_ASSETS):
+            if asset_id not in assets_before:
+                portal.MEDIA_ASSETS.pop(asset_id, None)
+        for job_id in list(portal.MEDIA_PROCESSING_JOBS):
+            if job_id not in jobs_before:
+                portal.MEDIA_PROCESSING_JOBS.pop(job_id, None)
+        if blueprints_before is None:
+            portal.DESIGN_SETTINGS.pop("solution_video_blueprints", None)
+        else:
+            portal.DESIGN_SETTINGS["solution_video_blueprints"] = blueprints_before
         portal.save_ledger_data()
         srv.stop()
