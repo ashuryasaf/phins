@@ -389,6 +389,7 @@
         { id: "admin_media", label: "Media", query: "open admin media dashboard", requiresAdmin: true, url: "/admin-media.html" },
         { id: "admin_foundations", label: "Foundations", query: "open admin foundations dashboard", requiresAdmin: true, url: "/admin-foundations.html" },
         { id: "admin_video_agents", label: "Video Agents", query: "open video agents dashboard", requiresAdmin: true, url: "/admin-media.html#video-agents" },
+        { id: "admin_storyboard", label: "Storyboard", query: "open storyboard editor", requiresAdmin: true, url: "/storyboard-editor.html?surface=media" },
         { id: "admin_pitch", label: "Pitch", query: "open pitch dashboard", requiresAdmin: true, url: "/pitch-dashboard.html" },
         { id: "admin_assessments", label: "Assessments", query: "open assessments workbench", requiresAdmin: true, url: "/unified-workbench.html" },
         { id: "admin_logout", label: "Logout", query: "logout", requiresAdmin: true, url: "/" },
@@ -870,6 +871,10 @@
     }
     if (q.includes("video agents")) {
       window.location.href = "/admin-media.html#video-agents";
+      return true;
+    }
+    if (q.includes("storyboard")) {
+      window.location.href = "/storyboard-editor.html?surface=media";
       return true;
     }
     if (q.includes("pitch dashboard")) {

@@ -247,6 +247,7 @@ Preferred file-by-task:
 | Agent thresholds / calibration | `services/agent_eval.py`, `services/ai_threshold_config.py`, `web_portal/api_extensions.py` (`/api/admin/ai-agents/eval`, `/thresholds/promote`) |
 | LLM prompts / structured output | `prompts/`, `schemas/*.json`, `services/llm_providers.py`, `services/assessment_ai_service.py`; refresh `tests/golden/assessment_ai/` deliberately |
 | Underwriting Bot / Claims Bot evidence | `services/evidence_facts.py`, `services/underwriting_bot/*.py`, `services/claims_bot_service.py`, `services/model_shadow.py`; tests in `tests/test_evidence_pipeline.py` |
+| Storyboard / longer media | `services/storyboard_editor.py`, `web_portal/static/storyboard-editor.html`, `web_portal/api_extensions.py` (`/api/admin/media/storyboards`); tests in `tests/test_storyboard_editor.py` |
 | Mislaka / pension parsing | `services/pension/{schema,parsers,cache,agent}.py` (facade `services/pension_data_agent.py`); tests in `tests/test_pension_agent.py` |
 | Risk Reports intake / analysis / report text | `services/risk_reports/{parsers,analysis,render,charts,service}.py` (facade `services/ai_risk_reports_service.py`); tests in `tests/test_risk_reports_package.py`, `tests/test_ai_risk_reports.py` |
 
@@ -583,7 +584,13 @@ Environment variables commonly used:
  seconds, default 1800), `MEDIA_WEBHOOK_REPLAY_WINDOW_SECONDS` (callback
  timestamp tolerance, default 300); polls ride the agent queue when
  `PHINS_AGENT_ASYNC` is on, and `rearm_media_video_jobs()` resumes
- in-flight jobs at boot
+ in-flight jobs at boot. The storyboard editor
+ (`services/storyboard_editor.py`, `/storyboard-editor.html`) is embedded on
+ the media, growth, solutions, and video-agents surfaces. Scenes default to
+ 8 seconds, open on a chosen reference or the previous scene's ending
+ screenshot, and render only through Replicate. The document SHA-256 and the
+ still chain are refused on mismatch; library bytes are never rewritten to
+ force a chain
 - **BI analytics (B10):** `PHINS_BI_SNAPSHOT_DIR` also holds
  `materialized_views.json` (served by `/api/bi/*` when fingerprint, checksum
  and age < cache TTL all match); `PHINS_BI_REMATERIALIZE_DELAY_SECONDS`
