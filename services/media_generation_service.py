@@ -228,6 +228,7 @@ class MediaGenerationService:
         duration_seconds: int = 8,
         resolution: str = "720p",
         image_data_url: str = "",
+        end_image_data_url: str = "",
         callback_url: str = "",
         metadata: Optional[Dict[str, Any]] = None,
         attribution: Optional[Dict[str, Any]] = None,
@@ -245,6 +246,10 @@ class MediaGenerationService:
             raise MediaGenerationError("Video prompt is required")
 
         if provider_name == "gemini":
+            if str(end_image_data_url or "").strip():
+                raise MediaGenerationError(
+                    "Veo accepts a start frame only. Kling or Seedance holds the next photo as the end frame."
+                )
             return self._submit_gemini_video(
                 prompt=prompt,
                 title=title,
@@ -267,6 +272,7 @@ class MediaGenerationService:
                 duration_seconds=duration_seconds,
                 resolution=resolution,
                 image_data_url=image_data_url,
+                end_image_data_url=end_image_data_url,
                 callback_url=callback_url,
                 metadata=metadata or {},
                 attribution=attribution,
@@ -279,6 +285,7 @@ class MediaGenerationService:
             aspect_ratio=aspect_ratio,
             duration_seconds=duration_seconds,
             image_data_url=image_data_url,
+            end_image_data_url=end_image_data_url,
             callback_url=callback_url,
             metadata=metadata or {},
             attribution=attribution,
@@ -437,6 +444,7 @@ class MediaGenerationService:
         duration_seconds: int,
         resolution: str,
         image_data_url: str,
+        end_image_data_url: str = "",
         callback_url: str,
         metadata: Dict[str, Any],
         attribution: Optional[Dict[str, Any]] = None,
@@ -456,6 +464,7 @@ class MediaGenerationService:
             duration_seconds=duration_seconds,
             resolution=resolution,
             image_data_url=image_data_url,
+            end_image_data_url=end_image_data_url,
         )
         body: Dict[str, Any] = {"input": model_input}
         if version:
@@ -565,6 +574,7 @@ class MediaGenerationService:
         duration_seconds: int,
         resolution: str,
         image_data_url: str,
+        end_image_data_url: str = "",
     ) -> Dict[str, Any]:
         """Only fields shared by the official video models. Unknown keys 422."""
         model_input: Dict[str, Any] = {"prompt": str(prompt or "")}
@@ -578,16 +588,62 @@ class MediaGenerationService:
         image_value = str(image_data_url or "").strip()
         if image_value.startswith(("https://", "http://", "data:")):
             model_input["image"] = image_value
+        end_value = str(end_image_data_url or "").strip()
+        if end_value:
+            # Seedance accepts the next still as last_frame_image. Veo rejects
+            # that key, so an end frame is refused instead of dropped.
+            if "seedance" in str(model_label or "").lower() and end_value.startswith(("https://", "http://", "data:")):
+                model_input["last_frame_image"] = end_value
+            else:
+                raise MediaGenerationError(
+                    "This Replicate model accepts a start frame only. Seedance holds the next photo as the last frame."
+                )
         return model_input
+
+    @staticmethod
+    def clip_duration(
+        provider: str,
+        model: str,
+        requested: Optional[int] = None,
+        *,
+        evolink: bool = False,
+    ) -> int:
+        """Seconds the named engine will be asked for.
+
+        ``requested`` None is that engine's longest legal clip. Veo is 4, 6,
+        or 8. Kling Open Platform and the aggregator are 5 or 10. Kling v3
+        on EvoLink is an integer from 3 to 15. Seedance and other Replicate
+        models are 1 to 15.
+        """
+        provider_name = str(provider or "").strip().lower()
+        model_label = str(model or "").strip().lower()
+        extended = bool(evolink) and model_label.startswith(("kling-v3", "kling-o1", "kling-o3"))
+        veo = (
+            provider_name == "gemini"
+            or "veo" in model_label
+            or (provider_name == "replicate" and not model_label)
+        )
+        if provider_name == "kling" and not veo:
+            if extended:
+                if requested is None:
+                    return 15
+                return max(3, min(int(requested), 15))
+            if requested is None:
+                return 10
+            return 5 if int(requested) <= 5 else 10
+        if veo:
+            if requested is None:
+                return 8
+            value = int(requested)
+            return min((4, 6, 8), key=lambda choice: (abs(choice - value), choice))
+        if requested is None:
+            return 15
+        return max(1, min(int(requested), 15))
 
     @staticmethod
     def _replicate_duration(model_label: str, duration_seconds: int) -> int:
         requested = int(duration_seconds or 8)
-        if "veo" in str(model_label or "").lower():
-            # Veo accepts 4, 6, or 8 seconds. Snap so a blueprint default of 8
-            # is sent as-is and nearby values do not 422.
-            return min((4, 6, 8), key=lambda choice: (abs(choice - requested), choice))
-        return max(1, min(requested, 15))
+        return MediaGenerationService.clip_duration("replicate", model_label, requested)
 
     @staticmethod
     def _configured_replicate_models() -> list:
@@ -864,6 +920,7 @@ class MediaGenerationService:
         aspect_ratio: str,
         duration_seconds: int,
         image_data_url: str,
+        end_image_data_url: str = "",
         callback_url: str,
         metadata: Dict[str, Any],
         attribution: Optional[Dict[str, Any]] = None,
@@ -879,7 +936,15 @@ class MediaGenerationService:
         safe_prompt = self._clamp_kling_prompt(prompt)
         evolink_profile = self._kling_use_evolink_profile(selected_model)
         official_schema = (not evolink_profile) and self._kling_use_official_schema()
-        duration_value = self._normalize_kling_duration(duration_seconds)
+        extended = evolink_profile and str(selected_model).strip().lower().startswith(
+            ("kling-v3", "kling-o1", "kling-o3")
+        )
+        if extended:
+            duration_value = self.clip_duration(
+                "kling", selected_model, int(duration_seconds or 15), evolink=True,
+            )
+        else:
+            duration_value = self._normalize_kling_duration(duration_seconds)
         official_model = self._official_kling_model_name(selected_model)
         # The Open Platform rejects a body that only has ``model`` with
         # HTTP 400 ``model_name is required``.  Aggregators still read
@@ -944,6 +1009,24 @@ class MediaGenerationService:
             if parsed_image_url.scheme in {"http", "https"} and parsed_image_url.netloc:
                 endpoint_path = image_path
                 body[image_field] = str(image_data_url).strip()
+        end_value = str(end_image_data_url or "").strip()
+        if end_value:
+            if image_field not in body:
+                raise MediaGenerationError(
+                    "Kling needs the opening photo before it can hold the next photo."
+                )
+            end_field = "image_end" if evolink_profile else "image_tail"
+            end_payload = self._parse_data_url(end_value)
+            if end_payload:
+                body[end_field] = end_payload["bytes_b64"]
+            else:
+                parsed_end = urllib.parse.urlparse(end_value)
+                if parsed_end.scheme in {"http", "https"} and parsed_end.netloc:
+                    body[end_field] = end_value
+                else:
+                    raise MediaGenerationError(
+                        "The next photo must be an image URL Kling can read."
+                    )
         if callback_url:
             # Direct Kling uses callBackUrl; EvoLink-style routes accept
             # callback_url.  Send both so the provider can pick the right one.

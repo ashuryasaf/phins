@@ -1672,8 +1672,18 @@
       var activeInterest = '';
 
       function formatClock(ms) {
-        var sec = Math.min(8, Math.max(0, Math.floor(ms / 1000)));
-        return '0:' + (sec < 10 ? '0' : '') + sec;
+        var sec = Math.max(0, Math.floor(ms / 1000));
+        var minutes = Math.floor(sec / 60);
+        var remain = sec % 60;
+        return minutes + ':' + (remain < 10 ? '0' : '') + remain;
+      }
+
+      function previewBudgetMs(video) {
+        if (video && isFinite(video.duration) && video.duration > 0) {
+          return Math.round(video.duration * 1000);
+        }
+        if (video && video.readyState >= 1) return WALKTHROUGH_MS;
+        return null;
       }
 
       function stopPlayback() {
@@ -1749,13 +1759,19 @@
         timeEl.textContent = '0:00 / 0:08';
         timer = window.setInterval(function () {
           var elapsed = Date.now() - startedAt;
-          var pct = Math.min(100, (elapsed / WALKTHROUGH_MS) * 100);
+          var budget = previewBudgetMs(video);
+          if (budget == null && !(video && video.ended)) {
+            timeEl.textContent = formatClock(elapsed) + ' / 0:08';
+            return;
+          }
+          var total = budget || WALKTHROUGH_MS;
+          var pct = Math.min(100, (elapsed / total) * 100);
           progressEl.style.width = pct + '%';
-          timeEl.textContent = formatClock(elapsed) + ' / 0:08';
-          if (elapsed >= WALKTHROUGH_MS) {
+          timeEl.textContent = formatClock(elapsed) + ' / ' + formatClock(total);
+          if ((video && video.ended) || elapsed >= total) {
             stopPlayback();
             progressEl.style.width = '100%';
-            timeEl.textContent = '0:08 / 0:08';
+            timeEl.textContent = formatClock(total) + ' / ' + formatClock(total);
             if (video) video.pause();
           }
         }, 80);

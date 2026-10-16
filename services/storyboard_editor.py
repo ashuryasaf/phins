@@ -3,13 +3,18 @@
 A storyboard is an ordered run of scenes for commercial and operational
 video: stories, advertisements, investment education, insurance-agent
 explainers, disclaimers, policy information, billing, claims, and
-underwriting. Each scene has its own script and length (8 seconds unless
-the operator sets another length).
+underwriting. Each scene has its own script. The length is the selected
+engine's own clip (Veo 4/6/8, Kling 5/10, Kling v3 on EvoLink 3–15,
+Seedance up to 15), not a platform cap.
 
 Continuity is a checksum chain, not a guess:
 
 - Scene 1 opens on the chosen first reference photo. With no photo, the
   provider generates the opening picture from the script.
+- A photo-to-photo scene opens on one sealed photo and ends on the next
+  sealed photo. Kling receives that pair as the start and tail frames.
+  Seedance receives the next photo as the last frame. The photos are not
+  rewritten.
 - Any scene may instead open on its own chosen reference.
 - Otherwise a scene opens on the previous scene's ending screenshot.
 - That ending still is captured from the rendered scene video (or from an
@@ -242,26 +247,138 @@ def duration_renders_exactly(
     model: str,
     requested: int,
     provider: str = DEFAULT_PROVIDER,
+    *,
+    evolink: bool = False,
 ) -> bool:
     """True when the provider would be asked for this duration unchanged.
 
     Replicate Veo (and an empty Replicate model, because that default is Veo)
-    accepts 4, 6, or 8. Kling accepts 5 or 10. Gemini Veo accepts 4, 6, or 8.
-    Other models accept the editor range, 2–15, as sent.
+    accepts 4, 6, or 8. Kling Open Platform and the aggregator accept 5 or 10.
+    Kling v3 on EvoLink accepts 3–15. Gemini Veo accepts 4, 6, or 8. Seedance
+    and other Replicate models accept 1–15 as sent.
     """
-    requested = int(requested)
+    from services.media_generation_service import MediaGenerationService
+
+    try:
+        number = int(requested)
+    except (TypeError, ValueError):
+        return False
     name = str(provider or DEFAULT_PROVIDER).strip().lower() or DEFAULT_PROVIDER
-    label = str(model or "")
+    snapped = MediaGenerationService.clip_duration(name, model, number, evolink=evolink)
+    return snapped == number
+
+
+def engine_scene_seconds(
+    provider: str,
+    model: str,
+    requested: Any = None,
+    *,
+    evolink: bool = False,
+) -> int:
+    """Legal clip length for this affiliation.
+
+    A blank request is the engine maximum. An explicit length that the engine
+    would change is refused.
+    """
+    from services.media_generation_service import MediaGenerationService
+
+    name = normalize_provider(provider)
+    if requested is None or requested == "":
+        seconds = MediaGenerationService.clip_duration(name, model, None, evolink=evolink)
+    else:
+        seconds = coerce_duration(requested)
+        if not duration_renders_exactly(model, seconds, name, evolink=evolink):
+            raise StoryboardValidationError(
+                f"Scene length {seconds} is not an exact duration for {name}. "
+                "The storyboard was not changed.",
+                provider=name,
+                provider_model=str(model or ""),
+                duration_seconds=seconds,
+            )
+    if seconds < MIN_SCENE_SECONDS or seconds > MAX_SCENE_SECONDS:
+        raise StoryboardValidationError(
+            f"Scene length must be between {MIN_SCENE_SECONDS} and "
+            f"{MAX_SCENE_SECONDS} seconds."
+        )
+    return seconds
+
+
+def provider_accepts_end_frame(provider: str, model: str) -> bool:
+    """True when the affiliation can be given the next photo as an end frame."""
+    name = str(provider or "").strip().lower()
+    label = str(model or "").strip().lower()
     if name == "kling":
-        return requested in KLING_DURATIONS
-    veo = "veo" in label.lower()
-    if name == "replicate" and not label:
-        veo = True
-    if name == "gemini" and (not label or veo):
-        veo = True
-    if veo and name in {"replicate", "gemini"}:
-        return requested in VEO_DURATIONS
-    return MIN_SCENE_SECONDS <= requested <= MAX_SCENE_SECONDS
+        return True
+    return name == "replicate" and "seedance" in label
+
+
+def photo_transition_script(start: Dict[str, Any], end: Dict[str, Any], beat: str = "") -> str:
+    """Server-authored move from one sealed photo to the next."""
+    start_label = str((start or {}).get("label") or "the first photo").strip()
+    end_label = str((end or {}).get("label") or "the next photo").strip()
+    start_sha = str((start or {}).get("sha256") or "")[:12]
+    end_sha = str((end or {}).get("sha256") or "")[:12]
+    lines = [
+        f"Start on reference frame {start_label} ({start_sha}).",
+        f"Move continuously into the next reference frame {end_label} ({end_sha}).",
+        "Keep the same subject, lighting, and framing.",
+        "Do not add people, titles, captions, or logos.",
+    ]
+    narrative = " ".join(str(beat or "").split())
+    if narrative:
+        lines.append(narrative)
+    return " ".join(lines)
+
+
+def compose_photo_scenes(
+    frames: List[Dict[str, Any]],
+    beats: Optional[List[str]] = None,
+    *,
+    provider: str,
+    model: str = "",
+    requested_duration: Any = None,
+    evolink: bool = False,
+) -> List[Dict[str, Any]]:
+    """One scene per consecutive photo pair.
+
+    Scene i opens on photo i and names photo i+1 as the end reference.
+    Leftover narration is appended to the last scene. A scene is never
+    invented without a start photo.
+    """
+    sealed = [frame for frame in frames if isinstance(frame, dict) and _reference_sha(frame)]
+    if len(sealed) < 2:
+        raise StoryboardValidationError(
+            "Photo-to-photo needs a first photo and a next photo."
+        )
+    if len(sealed) - 1 > MAX_SCENES:
+        raise StoryboardValidationError(f"A storyboard holds at most {MAX_SCENES} scenes.")
+    name = normalize_provider(provider)
+    if not provider_accepts_end_frame(name, model):
+        raise StoryboardValidationError(
+            "This engine accepts an opening frame only. "
+            "Kling or Seedance holds the next photo as the end frame."
+        )
+    duration = engine_scene_seconds(
+        name, model, requested_duration, evolink=evolink,
+    )
+    narratives = [str(item).strip() for item in (beats or []) if str(item or "").strip()]
+    scenes: List[Dict[str, Any]] = []
+    last = len(sealed) - 1
+    for offset in range(last):
+        if offset == last - 1:
+            beat = " ".join(narratives[offset:])
+        elif offset < len(narratives):
+            beat = narratives[offset]
+        else:
+            beat = ""
+        scenes.append({
+            "script": photo_transition_script(sealed[offset], sealed[offset + 1], beat),
+            "duration_seconds": duration,
+            "reference_mode": "chosen",
+            "chosen_reference": sealed[offset],
+            "end_reference": sealed[offset + 1],
+        })
+    return scenes
 
 
 def canonical_json(value: Any) -> str:
@@ -481,6 +598,14 @@ def compile_scene_prompt(board: Dict[str, Any], scene: Dict[str, Any]) -> str:
             else "Invent the opening picture only from the script, then hold one clear subject."
         ),
         "End on one clear still frame that can be the opening image of the next scene.",
+        (
+            "The next reference still is "
+            f"{(scene.get('end_reference') or {}).get('label') or 'the following photo'} "
+            f"({str((scene.get('end_reference') or {}).get('sha256') or '')[:12]}). "
+            "Move into that frame and do not replace it."
+            if _reference_sha(scene.get("end_reference"))
+            else ""
+        ),
         "Do not add titles, captions, or logos that are not in the script.",
         "Script:",
         str(scene.get("script") or "").strip(),
@@ -654,6 +779,7 @@ def _new_scene(index: int, script: str, duration: int, mode: str = "chain") -> D
         "resolved_start_sha256": "",
         "start_source": "",
         "end_screenshot": None,
+        "end_reference": None,
         "video_job_id": "",
         "media_asset_id": "",
         "media_sha256": "",
@@ -705,6 +831,7 @@ def _identity(scene: Dict[str, Any]) -> tuple:
         int(scene.get("duration_seconds") or DEFAULT_SCENE_SECONDS),
         str(scene.get("reference_mode") or "chain"),
         chosen,
+        _reference_sha(scene.get("end_reference")),
     )
 
 
@@ -760,6 +887,7 @@ def public_view(board: Dict[str, Any], *, include_media: bool) -> Dict[str, Any]
     _strip(view.get("opening_reference"))
     for scene in view.get("scenes") or []:
         _strip(scene.get("chosen_reference"))
+        _strip(scene.get("end_reference"))
         _strip(scene.get("end_screenshot"))
     for frame in view["slide"].get("frames") or []:
         frame["data_url"] = ""
@@ -905,6 +1033,9 @@ class StoryboardEditor:
                 chosen = item.get("chosen_reference")
                 if isinstance(chosen, dict) and chosen.get("sha256"):
                     scene["chosen_reference"] = chosen
+            end_reference = item.get("end_reference")
+            if isinstance(end_reference, dict) and _reference_sha(end_reference):
+                scene["end_reference"] = end_reference
             built.append(scene)
         return built
 
@@ -1069,6 +1200,12 @@ class StoryboardEditor:
                     fresh["chosen_reference"] = incoming_ref
                 elif previous is not None and previous.get("reference_mode") == "chosen":
                     fresh["chosen_reference"] = copy.deepcopy(previous.get("chosen_reference"))
+            if "end_reference" in item:
+                incoming_end = item.get("end_reference")
+                if isinstance(incoming_end, dict) and _reference_sha(incoming_end):
+                    fresh["end_reference"] = incoming_end
+            elif previous is not None and isinstance(previous.get("end_reference"), dict):
+                fresh["end_reference"] = copy.deepcopy(previous.get("end_reference"))
             if previous is not None:
                 fresh["video_job_id"] = previous.get("video_job_id") or ""
                 fresh["media_asset_id"] = previous.get("media_asset_id") or ""
@@ -1169,6 +1306,7 @@ class StoryboardEditor:
         provider: str = "",
         provider_connected: Optional[bool] = None,
         provider_error: str = "",
+        evolink: bool = False,
     ) -> Dict[str, Any]:
         model = str(provider_model or "").strip()
         connected = replicate_enabled if provider_connected is None else bool(provider_connected)
@@ -1220,9 +1358,15 @@ class StoryboardEditor:
                 raise StoryboardIntegrityError(
                     specific or (notes[0] if notes else "This scene has no opening reference yet.")
                 )
-            if not duration_renders_exactly(model, int(scene["duration_seconds"]), selected):
-                if selected == "kling":
-                    allowed: Any = list(KLING_DURATIONS)
+            if not duration_renders_exactly(
+                model, int(scene["duration_seconds"]), selected, evolink=evolink,
+            ):
+                if selected == "kling" and evolink and str(model).lower().startswith(
+                    ("kling-v3", "kling-o1", "kling-o3")
+                ):
+                    allowed: Any = "3-15"
+                elif selected == "kling":
+                    allowed = list(KLING_DURATIONS)
                 elif (not model or "veo" in model.lower()) and selected in {"replicate", "gemini"}:
                     allowed = list(VEO_DURATIONS)
                 else:
@@ -1242,6 +1386,21 @@ class StoryboardEditor:
                 if not image or _reference_sha(reference) != scene.get("resolved_start_sha256"):
                     raise StoryboardIntegrityError(
                         "The opening still for this scene is not sealed."
+                    )
+            end_reference = scene.get("end_reference") if isinstance(scene.get("end_reference"), dict) else {}
+            end_image = str(end_reference.get("data_url") or "")
+            end_sha = _reference_sha(end_reference)
+            if end_sha:
+                if not provider_accepts_end_frame(selected, model):
+                    raise StoryboardIntegrityError(
+                        "This engine accepts an opening frame only. "
+                        "The next photo was not dropped and the scene was not submitted.",
+                        provider=selected,
+                        provider_model=model,
+                    )
+                if not end_image or end_sha != _reference_sha(end_reference):
+                    raise StoryboardIntegrityError(
+                        "The next photo for this scene is not sealed."
                     )
             if not connected:
                 raise StoryboardProviderError(
@@ -1263,12 +1422,14 @@ class StoryboardEditor:
                 "duration_seconds": int(scene["duration_seconds"]),
                 "resolution": board.get("resolution") or "720p",
                 "image_data_url": image,
+                "end_image_data_url": end_image,
                 "submitted_by": submitted_by or "admin",
                 "metadata": {
                     "storyboard_id": board["id"],
                     "scene_index": scene["index"],
                     "document_sha256": (board.get("integrity") or {}).get("document_sha256"),
                     "start_sha256": scene.get("resolved_start_sha256"),
+                    "end_sha256": end_sha,
                     "purpose": board.get("purpose"),
                     "surface": board.get("surface"),
                 },
