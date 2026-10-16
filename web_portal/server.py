@@ -11971,9 +11971,15 @@ _INV_VAL_BASE = {
     'opex': [float(x) for x in _UNIFIED_OPEX],
 }
 
-# Canonical seed-round economics restated on the IL pitch surfaces.
-_INV_ROUND_SEED = 6_000_000.0
-_INV_ROUND_PRE_MONEY = 24_000_000.0
+# Canonical seed-round economics restated on the IL pitch surfaces. Declared
+# once in the unified business plan model so the plan, the deck and this
+# book never disagree on the round.
+from services.business_plan_model import (
+    ROUND_PRE_MONEY_ILS as _INV_ROUND_PRE_MONEY,
+    ROUND_SEED_ILS as _INV_ROUND_SEED,
+    compute_plan as _compute_business_plan,
+    parse_plan_query as _parse_business_plan_query,
+)
 
 
 def count_service_modules(root=None):
@@ -21171,6 +21177,23 @@ For claims or questions, please contact:
                 }
             self._set_json_headers(200)
             self.wfile.write(json.dumps(facts, default=str).encode('utf-8'))
+            return
+
+        # Unified business plan model (read-only, public): one adjustable-factor
+        # identity behind /business-plan.html, the investor deck and every
+        # appendix. Any factor may be overridden by query string; the response
+        # carries the effective inputs, the structural integrity checks and a
+        # content hash. Out-of-range values fall back to the default and are
+        # reported under ``errors`` — the page never fails. Always 200.
+        if path == '/api/business-plan/model':
+            try:
+                overrides = _parse_business_plan_query(qs)
+                plan = _compute_business_plan(overrides)
+            except Exception as e:  # never fail the investor page
+                plan = {'error': str(e), 'plan_version': None, 'canonical': False,
+                        'integrity': {'all_hold': False}}
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(plan, default=str).encode('utf-8'))
             return
 
         # Investor valuation simulation (read-only, public): deterministic
