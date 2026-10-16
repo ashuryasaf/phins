@@ -1,0 +1,20 @@
+3e7d1b5 Merge pull request #473 from ashuryasaf/cursor/actuary-dashboard-style-6e9e
+f249622 Restyle floating voice pill on actuary dashboard to navy/gold
+344e80f Restyle actuarial dashboard chrome: navy/gold sidebar and header, spectrum stat tiles, emoji icon removal
+5c0f279 Merge pull request #470 from ashuryasaf/cursor/agents-markdown-file-eb80
+cfe69fc Update AGENTS.md: refresh test counts, note Hebrew i18n, fix indent
+70032fa Merge pull request #469 from ashuryasaf/cursor/regulatory-meeting-pdf-edc5
+892c772 Add downloadable PDF brief for the 27 July 2026 regulatory meeting
+b174c15 Merge pull request #468 from ashuryasaf/cursor/regulatory-meeting-27jul-edc5
+35bf6bb Add 27 July 2026 regulatory meeting (Herzog Fox Neeman) to admin meetings
+deade7f Merge pull request #466 from ashuryasaf/cursor/hebrew-customer-ux-remove-investment-ai-fb1f
+b9af64e Fix AV fallback storing wrong indicator types in stock data service
+88a7cdb Localize CAPTCHA challenges and voice quick actions into Hebrew
+18b7cd6 Add Hebrew i18n foundation and localize customer journey pages
+be97864 Remove Investment AI feature; extract terminal auth and stock data helpers
+05c69dd Merge pull request #463 from ashuryasaf/cursor/system-backup-configuration-276c
+df75d2a Merge pull request #465 from ashuryasaf/cursor/overview-spectrum-redesign-6e9e
+33a27dd Switch AI assistant purple gradient to complementary navy aurora with gold accents
+d5d2bab Restyle admin and customer overview tiles with spectrum theme: compact proportional grids, no emoji icons
+5cb38ef Fix AV fallback storing wrong indicator types in stock data service
+3afbf1d backup: full platform snapshot 20260724T060255Z
