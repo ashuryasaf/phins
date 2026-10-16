@@ -15,7 +15,7 @@ PHINS is a Python platform built around:
   `api_assessment_center.py`, `api_chat_application.py` (chat-style policy
   intake / "Phin"), `api_claims_chat.py` (public claims chat), and
   `api_customer_identity.py` (ID + nationality master))
-- service-layer logic in `services/` (126 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
+- service-layer logic in `services/` (139 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
@@ -235,7 +235,7 @@ Preferred file-by-task:
 | Chat intake (Phin, policy or claim) | `services/chat_application_service.py` or `services/claims_chat_service.py`, then `web_portal/api_chat_application.py` / `api_claims_chat.py` |
 | Customer identity (ID + nationality) | `services/customer_identity_service.py` (one writer), `web_portal/api_customer_identity.py` |
 | Document archive / durability probe | `services/customer_document_vault_service.py`, `services/document_durability_agent.py` |
-| Unified business plan / investor deck (`/business-plan.html`) | `services/business_plan_model.py` (factor register, `compute_plan`, `ROUND_SEED_ILS` / `ROUND_PRE_MONEY_ILS` — the one writer for seed / pre-money), `services/business_plan_document.py` (narrative, placeholders, HTML/Markdown renderers), `web_portal/server.py` (`GET /api/business-plan/model`); then `python3 scripts/build_business_plan.py` and `python3 scripts/generate_investor_pdfs.py --only unified-business-plan`; tests in `tests/test_business_plan.py` |
+| Unified business plan / investor deck (`/business-plan.html`) | `services/business_plan_model.py` (factor register, `compute_plan`, `ROUND_SEED_ILS` / `ROUND_PRE_MONEY_ILS` — the one writer for seed / pre-money; `appraisal.sensitivity` grid), `services/business_plan_document.py` (narrative, placeholders, founder block, HTML/Markdown renderers), `services/business_plan_charts.py` (chart + Gantt specs read from the plan dict; one layout engine → inline SVG for HTML and `?charts=1`, reportlab Drawing for the PDF; Markdown carries `<!-- phins-chart {json} -->` directives plus a data table), `services/business_plan_sources.py` (figure lineage + research registry kept byte-equal with the pitch-dashboard `sourceRegistry`), `services/business_plan_portrait.py` (Pillow-processed founder portrait), `web_portal/server.py` (`GET /api/business-plan/model[?charts=1]`, `GET /api/business-plan/founder-portrait`); then `python3 scripts/build_business_plan.py` and `python3 scripts/generate_investor_pdfs.py --only unified-business-plan`; tests in `tests/test_business_plan.py` |
 | Premium / reserve / simulator pricing | `services/pricing_kernel.py` (sole writer), then `services/actuarial_service.py` and callers; refresh `tests/test_pricing_kernel.py`, `tests/test_actuarial_reserves.py`, `tests/test_ifrs17_waterfall_identities.py` deliberately |
 | Business rule/workflow | `services/`, then the route or engine that calls it |
 | Database/schema/repository | `database/models.py`, `database/manager.py`, `database/repositories/`, `database/config.py` |
@@ -285,7 +285,7 @@ Preferred file-by-task:
 |- prompts/                             # versioned LLM prompt templates (sha256 provenance)
 |  `- assessment/                       # narrative v1 (free text) + v2 (structured); onboarding/service/termination v1
 |- schemas/                             # JSON schemas for structured LLM output
-|- services/                            # 126 service modules
+|- services/                            # 139 service modules
 |  |- agent_eval.py                     # A6 replay / propose_thresholds / golden sets
 |  |- automation/                       # B2 pure rules: quoting, underwriting_gate, fraud, claims_gate, billing_schedule
 |  |- pricing_kernel.py                 # single writer for premium decomposition (PremiumComponents)
@@ -573,7 +573,15 @@ Environment variables commonly used:
  is assigned). The login film is inline on iPhone and Android
  (`playsinline`, `webkit-playsinline`, `x5-video-player-type=h5`) and is
  attached only after its frame is visible, so a phone does not drop it.
- Stored placements are not rewritten for playback.
+ Stored placements are not rewritten for playback. The `founder_portrait_id`
+ image slot (admin-media "Business plan founder portrait") feeds
+ `GET /api/business-plan/founder-portrait`: the original asset is never
+ rewritten; the route serves a square, EXIF-corrected, 720 px progressive
+ JPEG (ETag / 304, checksum verified first) and the public settings expose
+ only `founder_portrait_url`. The PDF build embeds it when
+ `PHINS_BUSINESS_PLAN_PORTRAIT` (local file) or
+ `PHINS_PDF_PORTRAIT_BASE_URL` (origin that serves the route) is set,
+ otherwise it prints "founder portrait omitted" and draws nothing.
 - **Video agents (B8):** `REPLICATE_API_TOKEN` enables Replicate beside
  Gemini and Kling (Growth Agent and Video Agents). Optional
  `REPLICATE_VIDEO_MODELS` (comma-separated `owner/name`) and
@@ -778,7 +786,11 @@ Important test harness facts:
   `tests/test_*.py` file (as well as any factor or narrative change) requires
   `python3 scripts/build_business_plan.py` followed by
   `python3 scripts/generate_investor_pdfs.py --only unified-business-plan`
-  in the same PR
+  in the same PR. Charts never carry their own numbers: every series in
+  `business_plan_charts.chart_specs` is read from the plan dict, so a factor
+  change re-renders them (the page fetches `?charts=1` and swaps the SVG).
+  `RESEARCH_SOURCES` must stay identical to the pitch-dashboard
+  `sourceRegistry`; the test parses both
 - 233 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
@@ -902,4 +914,4 @@ If you update this file again:
 
 ---
 
-Last updated: October 5, 2026
+Last updated: October 16, 2026
