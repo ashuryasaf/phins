@@ -516,6 +516,73 @@ def _parse_table_row(line: str):
     return cells
 
 
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Founder portrait for the unified business plan. The markdown references
+# the live route; offline the generator reads PHINS_BUSINESS_PLAN_PORTRAIT
+# (a local image file) or, when PHINS_PDF_PORTRAIT_BASE_URL is set, fetches
+# the processed portrait from that deployment. Otherwise the PDF carries the
+# credentials without a photo — never a placeholder image.
+FOUNDER_PORTRAIT_ROUTE = '/api/business-plan/founder-portrait'
+_PORTRAIT_CACHE = {}
+
+
+def _chart_flowable(line: str, styles):
+    if _REPO_ROOT not in sys.path:
+        sys.path.insert(0, _REPO_ROOT)
+    try:
+        from services.business_plan_charts import parse_directive, render_reportlab
+    except Exception as exc:  # pragma: no cover - services package always present in-repo
+        print(f'  ! chart skipped (services unavailable): {exc}')
+        return None
+    spec = parse_directive(line)
+    if not spec:
+        print('  ! chart skipped (unreadable directive)')
+        return None
+    hebrew = _register_hebrew_font() == 'PHINSHebrew'
+    font = 'PHINSHebrew' if hebrew else 'Helvetica'
+    bold = 'PHINSHebrew-Bold' if hebrew else 'Helvetica-Bold'
+    return render_reportlab(spec, FRAME_WIDTH, font=font, bold_font=bold,
+                            currency_glyph_ok=hebrew)
+
+
+def _portrait_bytes():
+    if 'bytes' in _PORTRAIT_CACHE:
+        return _PORTRAIT_CACHE['bytes']
+    data = None
+    local = os.environ.get('PHINS_BUSINESS_PLAN_PORTRAIT', '').strip()
+    if local and os.path.isfile(local):
+        with open(local, 'rb') as handle:
+            data = handle.read()
+    else:
+        base = os.environ.get('PHINS_PDF_PORTRAIT_BASE_URL', '').strip().rstrip('/')
+        if base:
+            try:
+                from urllib.request import Request, urlopen
+                with urlopen(Request(base + FOUNDER_PORTRAIT_ROUTE), timeout=10) as resp:
+                    if resp.status == 200:
+                        data = resp.read()
+            except Exception as exc:
+                print(f'  ! founder portrait not fetched from {base}: {exc}')
+    _PORTRAIT_CACHE['bytes'] = data
+    return data
+
+
+def _image_flowable(src: str, alt: str, styles):
+    if src != FOUNDER_PORTRAIT_ROUTE:
+        return None
+    data = _portrait_bytes()
+    if not data:
+        print('  · founder portrait omitted (set PHINS_BUSINESS_PLAN_PORTRAIT or '
+              'PHINS_PDF_PORTRAIT_BASE_URL to embed it)')
+        return None
+    from io import BytesIO
+    side = 4.2 * cm
+    img = RLImage(BytesIO(data), width=side, height=side)
+    img.hAlign = 'LEFT'
+    return img
+
+
 def markdown_to_story(md_text: str, title: str, styles):
     if styles.get('_rtl'):
         story = [_paragraph_for(styles, 'title', title), Spacer(1, 6)]
@@ -547,6 +614,34 @@ def markdown_to_story(md_text: str, title: str, styles):
             i += 1  # skip closing fence
             story.append(Preformatted('\n'.join(buf) or ' ', styles['code']))
             story.append(Spacer(1, 6))
+            continue
+
+        # Business-plan chart directive (services/business_plan_charts.py):
+        # the same layout engine that draws the HTML page draws the PDF.
+        if stripped.startswith('<!-- phins-chart '):
+            flush_list()
+            drawing = _chart_flowable(stripped, styles)
+            if drawing is not None:
+                story.append(drawing)
+                story.append(Spacer(1, 6))
+            i += 1
+            continue
+
+        # Other HTML comments carry no content.
+        if stripped.startswith('<!--') and stripped.endswith('-->'):
+            i += 1
+            continue
+
+        # Image line: ![alt](src). Only the founder portrait route is
+        # resolvable offline; anything else is skipped silently.
+        mi = re.match(r'^!\[([^\]]*)\]\(([^)\s]+)\)$', stripped)
+        if mi:
+            flush_list()
+            image = _image_flowable(mi.group(2), mi.group(1), styles)
+            if image is not None:
+                story.append(image)
+                story.append(Spacer(1, 6))
+            i += 1
             continue
 
         # Table (header line followed by a separator of dashes)
