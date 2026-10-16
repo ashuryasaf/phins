@@ -1,0 +1,20 @@
+92101b4 Merge pull request #462 from ashuryasaf/cursor/adjustable-opex-deck-refresh-4cc7
+360b427 Make operating cost adjustable in unicorn/seed configurators and refresh series with platform changes (83 modules, AgentOS v1, IL filing, momentum panel)
+385bd4b Merge pull request #461 from ashuryasaf/cursor/fix-print-gradient-text-4cc7
+bf5fdc9 Fix invisible gradient headlines in unicorn and seed deck print/PDF output
+5c410e3 Merge pull request #459 from ashuryasaf/cursor/brand-unicorn-investor-docs-4cc7
+92db975 Fix gold letterhead rule to match actual header selectors
+33b2511 Brand unicorn tab decks, country pitches, NDAs, prospectuses, presentation, and risk 1-pagers with PHINS shield letterhead
+a5c3099 Merge pull request #458 from ashuryasaf/cursor/branded-downloadable-documents-4cc7
+8516758 Retry logo preload after a failed fetch
+678b720 Await logo preload before generating pitch dashboard PDFs
+f95539f Fix running header overlapping continuation-page PDF content
+29f66f9 Serve PNG/JPEG brand assets with real image mime and normalize logo data URL for jsPDF letterhead
+0c8c238 Fix running header overlapping continuation-page PDF content
+1ba8d61 Unify downloadable document branding: PHINS shield letterhead, wordmark/tagline, gold-navy rules across pitch-dashboard PDFs, legal docs, and internal print plans
+401cb6e Merge pull request #455 from ashuryasaf/cursor/startup-fast-paths-ee1e
+53ad6f3 Don't persist schema marker when upgrade_schema fails
+6c9e8f5 Fix ledger hydration fetch-failure fallback and schema fingerprint gaps
+53437ee Merge pull request #454 from ashuryasaf/cursor/reduce-startup-seed-noise-ee1e
+167591d Add startup fast paths: schema fingerprint marker, batched seed checks, ledger hydration delta
+004c050 Gate startup demo/test fixture seeding and close DB connections on shutdown
