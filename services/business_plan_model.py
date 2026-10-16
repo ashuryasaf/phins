@@ -81,6 +81,10 @@ OPEX_INTENSITY_5Y: Tuple[float, ...] = tuple(
 
 _ROOT = Path(__file__).resolve().parents[1]
 
+# Appraisal sensitivity grid offsets around the plan's WACC and exit multiple.
+APPRAISAL_SENSITIVITY_WACC_STEPS: Tuple[float, ...] = (-0.10, -0.05, 0.0, 0.05, 0.10)
+APPRAISAL_SENSITIVITY_EXIT_STEPS: Tuple[float, ...] = (-1.0, 0.0, 1.0)
+
 
 # ---------------------------------------------------------------------------
 # Factor register — the one place a planning assumption is declared
@@ -558,6 +562,22 @@ def compute_plan(overrides: Optional[Mapping[str, Any]] = None, *,
     anchor_opex = [r["opex"] for r in il_rows[:ANCHOR_YEARS]]
     central = appraisal_pre_money(anchor_if, premium, take, anchor_opex,
                                   f["wacc"], f["exit_multiple"], f["prudence"])
+    # Sensitivity of the same appraisal to WACC (rows) × exit multiple
+    # (columns), at the plan's prudence. Read-only view of the formula; the
+    # central cell equals ``central`` when the factors sit on the grid.
+    sens_wacc = sorted({round(f["wacc"] + d, 4) for d in APPRAISAL_SENSITIVITY_WACC_STEPS
+                        if 0.05 <= f["wacc"] + d <= 0.80})
+    sens_exit = sorted({round(f["exit_multiple"] + d, 4) for d in APPRAISAL_SENSITIVITY_EXIT_STEPS
+                        if 1.0 <= f["exit_multiple"] + d <= 15.0})
+    sensitivity = {
+        "wacc": sens_wacc,
+        "exit_multiple": sens_exit,
+        "pre_money": [
+            [appraisal_pre_money(anchor_if, premium, take, anchor_opex, w, x, f["prudence"])
+             for x in sens_exit]
+            for w in sens_wacc
+        ],
+    }
     appraisal = {
         "currency": PLAN_CURRENCY,
         "scope": "Israel anchor book, years 2027–2029 (same scope as /api/investor/valuation-sim)",
@@ -568,6 +588,7 @@ def compute_plan(overrides: Optional[Mapping[str, Any]] = None, *,
         "central_pre_money": central,
         "manual_pre_money": pre,
         "ask_to_appraisal": (pre / central) if central else None,
+        "sensitivity": sensitivity,
     }
 
     # --- Markets and product ---------------------------------------------------
