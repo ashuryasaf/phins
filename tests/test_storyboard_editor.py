@@ -25,6 +25,7 @@ from services.storyboard_editor import (
     document_sha256,
     duration_renders_exactly,
     extract_last_frame_png,
+    get_storyboard_editor,
     reset_storyboard_editor,
     seal_reference,
     split_script,
@@ -843,3 +844,74 @@ def test_scene_files_join_without_rewriting_them(tmp_path):
             byte_length=len(film),
             scene_sha256=[first_sha, second_sha],
         )
+
+
+def test_end_frame_capture_seals_the_library_file(tmp_path, monkeypatch):
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg not installed")
+    reset_storyboard_editor()
+    clip = tmp_path / "scene.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-nostdin", "-y",
+            "-f", "lavfi", "-i", "color=c=blue:s=32x32:d=1",
+            "-pix_fmt", "yuv420p", str(clip),
+        ],
+        check=True, capture_output=True, timeout=30,
+    )
+    digest = hashlib.sha256(clip.read_bytes()).hexdigest()
+    editor = get_storyboard_editor()
+    board = editor.create(
+        purpose="story",
+        script="Scene 1: Dawn.\n\nScene 2: The wallet.",
+        opening_reference=_opening(),
+    )
+    rendered = editor.render_scene(
+        board["id"], 1,
+        expected_sha256=board["integrity"]["document_sha256"],
+        submitter=lambda params: {"id": "job-end", "status": "queued"},
+        replicate_enabled=True,
+        provider_model="google/veo-3.1-fast",
+        submitted_by="admin",
+    )["storyboard"]
+
+    class _Portal:
+        MEDIA_PROCESSING_JOBS = {
+            "job-end": {
+                "id": "job-end",
+                "status": "completed",
+                "generated_asset_id": "vid-1",
+                "provider_job_id": "pred-1",
+            }
+        }
+        MEDIA_ASSETS = {
+            "vid-1": {
+                "id": "vid-1",
+                "type": "video",
+                "checksum": digest,
+                "file_path": str(clip),
+            }
+        }
+
+        @staticmethod
+        def _media_path_within_storage(path):
+            return True
+
+        @staticmethod
+        def _compute_file_checksum(path):
+            with open(path, "rb") as handle:
+                return hashlib.sha256(handle.read()).hexdigest()
+
+    monkeypatch.setattr(api_extensions, "_portal_module", lambda: _Portal())
+    status, body = api_extensions.handle_storyboard_end_frame(
+        {"username": "admin", "role": "admin"},
+        board["id"],
+        "1",
+        {"expected_sha256": rendered["integrity"]["document_sha256"]},
+    )
+    assert status == 200
+    scene = body["storyboard"]["scenes"][0]
+    assert scene["status"] == "ready"
+    assert scene["media_asset_id"] == "vid-1"
+    assert scene["media_sha256"] == digest
+    assert scene["end_screenshot"]["sha256"]

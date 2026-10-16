@@ -178,6 +178,7 @@
     const surface = ['media', 'growth', 'solutions', 'video-agents'].includes(params.get('surface'))
       ? params.get('surface') : 'video-agents';
     const token = localStorage.getItem('phins_token') || '';
+    const UPLOADED_OPENING = 'uploaded-opening';
     const state = {
       purposes: [],
       images: [],
@@ -282,7 +283,14 @@
         return '<option value="' + escapeHtml(image.id) + '">' + escapeHtml(image.name || image.id) + ' · ' + escapeHtml(short) + '</option>';
       }).join('');
       const options = '<option value="">Choose a library image</option>' + imageOptions;
-      document.getElementById('sb-opening').innerHTML = '<option value="">Generate the first picture from the script</option>' + imageOptions;
+      const opening = (state.board && state.board.opening_reference) || {};
+      const uploadedOption = !opening.asset_id && opening.sha256
+        ? '<option value="' + UPLOADED_OPENING + '">Uploaded opening photo · ' + escapeHtml(String(opening.sha256).slice(0, 8)) + '</option>'
+        : '';
+      const openingSelect = document.getElementById('sb-opening');
+      const openingCurrent = openingSelect.value;
+      openingSelect.innerHTML = '<option value="">Generate the first picture from the script</option>' + uploadedOption + imageOptions;
+      if (openingCurrent) openingSelect.value = openingCurrent;
       document.querySelectorAll('.scene-asset').forEach(function (select) {
         const current = select.value;
         select.innerHTML = options;
@@ -389,8 +397,9 @@
       document.getElementById('sb-aspect').value = board.aspect_ratio || '16:9';
       document.getElementById('sb-script').value = board.source_script || '';
       const opening = board.opening_reference || {};
-      document.getElementById('sb-opening').value = opening.asset_id || '';
       renderScenes();
+      document.getElementById('sb-opening').value = opening.asset_id
+        || (opening.sha256 ? UPLOADED_OPENING : '');
       renderSlide(board);
       renderIntegrity(board);
       renderBoards();
@@ -416,6 +425,10 @@
         return { data_url: state.openingFile, label: 'Opening reference' };
       }
       const assetId = document.getElementById('sb-opening').value;
+      if (assetId === UPLOADED_OPENING) {
+        const sealed = (state.board && state.board.opening_reference) || {};
+        return { data_url: sealed.data_url || '', sha256: sealed.sha256 || '', label: sealed.label || 'Opening reference' };
+      }
       const image = state.images.find(function (item) { return item.id === assetId; });
       if (!image) return null;
       return { asset_id: image.id, sha256: image.checksum || '', label: image.name || image.id };
@@ -444,6 +457,7 @@
         scenes: scenes,
       };
       if (opening) payload.opening_reference = opening;
+      else if (state.board) payload.opening_reference = {};
       setStatus('Saving storyboard…', '');
       let data;
       if (!state.board) {

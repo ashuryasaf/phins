@@ -4129,6 +4129,8 @@ def handle_storyboard_end_frame(
             return 404, {"error": f"Scene {number} was not found."}
         job_id = str(body.get("video_job_id") or scene.get("video_job_id") or "").strip()
         image_data_url = str(body.get("image_data_url") or "").strip()
+        library_asset_id = ""
+        library_digest = ""
         if image_data_url:
             raw, mime = decode_image_data_url(image_data_url)
             source = "supplied"
@@ -4146,6 +4148,8 @@ def handle_storyboard_end_frame(
                         return 409, {
                             "error": "Scene video checksum does not match the media library. The file was not changed.",
                         }
+                    library_asset_id = str(job.get("generated_asset_id") or "")
+                    library_digest = digest
             if library_path:
                 raw = extract_last_frame_png(library_path)
             else:
@@ -4171,16 +4175,31 @@ def handle_storyboard_end_frame(
                         pass
             mime = "image/png"
             source = "extracted"
-        updated = editor.record_end_frame(
-            storyboard_id,
-            number,
-            expected_sha256=str(body.get("expected_sha256") or ""),
-            video_job_id=job_id,
-            image_bytes=raw,
-            image_mime=mime,
-            claimed_sha256=str(body.get("sha256") or ""),
-            source=source,
-        )
+        if library_asset_id and library_digest:
+            # The library file is checksummed, so seal it with the still and
+            # leave the scene ready to join a film.
+            updated = editor.seal_rendered_scene(
+                storyboard_id,
+                number,
+                expected_sha256=str(body.get("expected_sha256") or ""),
+                video_job_id=job_id,
+                asset_id=library_asset_id,
+                asset_sha256=library_digest,
+                image_bytes=raw,
+                image_mime=mime,
+                source=source,
+            )
+        else:
+            updated = editor.record_end_frame(
+                storyboard_id,
+                number,
+                expected_sha256=str(body.get("expected_sha256") or ""),
+                video_job_id=job_id,
+                image_bytes=raw,
+                image_mime=mime,
+                claimed_sha256=str(body.get("sha256") or ""),
+                source=source,
+            )
         return 200, {"storyboard": _storyboard_view(updated, include_media=True)}
     except Exception as exc:
         return _storyboard_error(exc)
