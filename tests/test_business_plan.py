@@ -405,6 +405,24 @@ def test_appraisal_sensitivity_grid_is_the_same_formula():
     assert plan["content_hash"] == bpm.content_hash(plan)
 
 
+def test_appraisal_sensitivity_grid_holds_at_the_factor_extremes():
+    """Every value the factor panel accepts keeps the plan on the grid, so the
+    heatmap always has a cell to render."""
+    for overrides in ({"exit_multiple": 30.0}, {"exit_multiple": 0.5},
+                      {"wacc": 0.90}, {"wacc": 0.05},
+                      {"wacc": 0.90, "exit_multiple": 30.0}):
+        plan = bpm.compute_plan(overrides)
+        assert plan["errors"] == []
+        sens = plan["appraisal"]["sensitivity"]
+        assert round(plan["appraisal"]["wacc"], 4) in sens["wacc"]
+        assert round(plan["appraisal"]["exit_multiple"], 4) in sens["exit_multiple"]
+        assert all(len(row) == len(sens["exit_multiple"]) for row in sens["pre_money"])
+        spec = charts.chart_by_id(plan, "appraisal_sensitivity")
+        assert spec["highlight"] != [-1, -1]
+        rendered = {c["id"]: c for c in charts.render_all(plan)}
+        assert rendered["appraisal_sensitivity"]["svg"]
+
+
 def test_roadmap_gantt_follows_the_factors():
     plan = bpm.compute_plan()
     items = charts.roadmap_items(plan)

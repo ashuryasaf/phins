@@ -259,6 +259,14 @@ def _coerce(fid: str, raw: Any) -> Tuple[Optional[float], Optional[str]]:
     return val, None
 
 
+def _sensitivity_axis(fid: str, value: float, steps: Iterable[float]) -> List[float]:
+    """Offsets around a factor's value, kept inside that factor's own range so
+    the axis never empties for a value the factor panel accepts."""
+    spec = FACTOR_INDEX[fid]
+    return sorted({round(value + d, 4) for d in steps
+                   if spec["min"] <= value + d <= spec["max"]})
+
+
 def resolve_factors(overrides: Optional[Mapping[str, Any]] = None) -> Tuple[Dict[str, float], List[str]]:
     """Merge overrides over defaults; unknown keys are ignored, bad values reported."""
     inputs: Dict[str, float] = {}
@@ -565,10 +573,8 @@ def compute_plan(overrides: Optional[Mapping[str, Any]] = None, *,
     # Sensitivity of the same appraisal to WACC (rows) × exit multiple
     # (columns), at the plan's prudence. Read-only view of the formula; the
     # central cell equals ``central`` when the factors sit on the grid.
-    sens_wacc = sorted({round(f["wacc"] + d, 4) for d in APPRAISAL_SENSITIVITY_WACC_STEPS
-                        if 0.05 <= f["wacc"] + d <= 0.80})
-    sens_exit = sorted({round(f["exit_multiple"] + d, 4) for d in APPRAISAL_SENSITIVITY_EXIT_STEPS
-                        if 1.0 <= f["exit_multiple"] + d <= 15.0})
+    sens_wacc = _sensitivity_axis("wacc", f["wacc"], APPRAISAL_SENSITIVITY_WACC_STEPS)
+    sens_exit = _sensitivity_axis("exit_multiple", f["exit_multiple"], APPRAISAL_SENSITIVITY_EXIT_STEPS)
     sensitivity = {
         "wacc": sens_wacc,
         "exit_multiple": sens_exit,
