@@ -924,6 +924,8 @@ def denial_html(
     share_id: str = "",
     nda: Optional[Mapping[str, Any]] = None,
     share: Optional[Mapping[str, Any]] = None,
+    preview_origin: str = "",
+    preview_page_url: str = "",
 ) -> str:
     """Branded HTML denial page with admin / share unlock forms.
 
@@ -1420,6 +1422,16 @@ def denial_html(
     fonts = "family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700"
     if page_dir == "rtl":
         fonts += "&family=Heebo:wght@400;500;600"
+    preview_tags = ""
+    try:
+        from services.link_preview import open_graph_markup
+        preview_tags = open_graph_markup(
+            path=target_path,
+            origin=preview_origin,
+            page_url=preview_page_url,
+        )
+    except Exception:
+        preview_tags = ""
     return f"""<!DOCTYPE html>
 <html lang="{_html_escape(page_lang)}" dir="{page_dir}">
 <head>
@@ -1427,6 +1439,7 @@ def denial_html(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
   <meta name="theme-color" content="#060d1f">
+  {preview_tags}
   <title>Access restricted · PHINS</title>
   <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
