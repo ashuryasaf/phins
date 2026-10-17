@@ -1033,7 +1033,7 @@ body.bp-protected .bp-watermark { display: block; }
 .bp-watermark span { position: absolute; font: 700 13px/1 "Space Grotesk", Inter, sans-serif; color: rgba(14,47,99,0.13); white-space: nowrap; transform: rotate(-28deg); letter-spacing: 0.06em; }
 .bp-protect-overlay { position: fixed; inset: 0; z-index: 90; background: var(--bp-grad); color: #fff; display: none; align-items: center; justify-content: center; text-align: center; padding: 30px; font-size: 16px; cursor: pointer; }
 .bp-protect-overlay .bp-protect-message { max-width: 520px; font-family: "Space Grotesk", Inter, sans-serif; font-weight: 600; line-height: 1.5; }
-body.bp-blurred .bp-protect-overlay, body.bp-expired .bp-protect-overlay { display: flex; }
+body.bp-blurred .bp-protect-overlay, body.bp-expired .bp-protect-overlay, .bp-protect-overlay.on { display: flex; }
 body.bp-blurred .bp-shell, body.bp-expired .bp-shell { filter: blur(16px); }
 body.bp-expired .bp-shell { visibility: hidden; }
 .bp-viewer-note { display: none; margin: 18px 34px 0; padding: 12px 16px; border-radius: 12px; background: #fff5e6; border: 1px solid #f3d7a6; color: #8a4b00; font-size: 12.5px; }
@@ -1051,6 +1051,9 @@ body.bp-protected .bp-viewer-note { display: block; }
 .bp-portrait-preview { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; border: 1px solid var(--phins-line); background: var(--bp-grad); }
 .bp-adjustable-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 4px 10px; font-size: 12px; color: var(--phins-muted); }
 .bp-adjustable-grid label { display: flex; gap: 6px; align-items: flex-start; }
+.bp-admin-col { display: flex; flex-direction: column; gap: 8px; }
+.bp-admin-tools label.bp-btn { cursor: pointer; display: inline-block; }
+.bp-portrait-preview.missing { opacity: 0.45; }
 @media print { body.bp-protected .bp-shell, body.bp-protected .bp-watermark { display: none !important; } body.bp-protected::before { content: attr(data-print-notice); display: block; padding: 40px; font: 14px Inter, sans-serif; } }
 """
 
