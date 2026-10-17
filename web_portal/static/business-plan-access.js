@@ -160,8 +160,9 @@
     window.addEventListener('afterprint', function () { body.classList.remove('bp-print-blocked'); });
 
     // Blur the view whenever it is not the focused, visible window.
-    function pause() { if (expired) return; body.classList.add('bp-blurred'); showOverlay(t('blurred'), false); }
-    function resume() { if (expired) return; body.classList.remove('bp-blurred'); hideOverlay(false); }
+    var paused = false;
+    function pause() { if (expired) return; paused = true; body.classList.add('bp-blurred'); showOverlay(t('blurred'), false); }
+    function resume() { if (expired) return; paused = false; body.classList.remove('bp-blurred'); hideOverlay(false); }
     window.addEventListener('blur', pause);
     window.addEventListener('focus', resume);
     document.addEventListener('visibilitychange', function () { if (document.hidden) pause(); else resume(); });
@@ -169,9 +170,11 @@
     if (ov) ov.addEventListener('click', function () { if (!expired) { window.focus(); resume(); } });
 
     // Mirror the server: keep the session alive while the tab is in use and
-    // close the view the moment the server says the opening has ended.
+    // close the view the moment the server says the opening has ended. A
+    // paused (blurred) view is not in use, so it must not refresh the
+    // server-side activity stamp — otherwise the idle timeout never fires.
     function ping() {
-      if (expired || document.hidden) return;
+      if (expired || paused || document.hidden) return;
       fetch(ACCESS_URL, { credentials: 'same-origin', cache: 'no-store' }).then(function (r) {
         if (r.status === 401 || r.status === 403) { expire(); return null; }
         return r.ok ? r.json() : null;

@@ -32,7 +32,7 @@ import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 __all__ = [
     "ConfidentialShareService",
@@ -211,6 +211,42 @@ def _signature_digest(signature_png: Optional[str]) -> Tuple[str, str]:
     if not payload.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ShareError("Signature image is not a PNG.")
     return raw, hashlib.sha256(payload).hexdigest()
+
+
+def _session_is_live(session: Dict[str, Any], idle_timeout: int, now: datetime) -> bool:
+    """True while an opening is inside its access window and not idle-closed."""
+    until = _parse_iso(session.get("access_until"))
+    if until is not None and until <= now:
+        return False
+    last_seen = _parse_iso(session.get("last_seen_at")) or _parse_iso(session.get("opened_at"))
+    if idle_timeout and last_seen is not None and (now - last_seen).total_seconds() > idle_timeout:
+        return False
+    return True
+
+
+def _cap_records(
+    records: List[Dict[str, Any]],
+    *,
+    protected: Callable[[Dict[str, Any]], bool],
+) -> List[Dict[str, Any]]:
+    """Bound a stored list at ``_MAX_SESSIONS``, shedding the oldest other rows.
+
+    A ``protected`` row still authorises a live opening (or carries its NDA
+    receipt), so it is kept even when that pushes the list past the cap: the
+    cap bounds storage, it is not a session LRU.
+    """
+    if len(records) <= _MAX_SESSIONS:
+        return records
+    budget = _MAX_SESSIONS - sum(1 for record in records if protected(record))
+    kept: List[Dict[str, Any]] = []
+    for record in reversed(records):
+        if protected(record):
+            kept.append(record)
+        elif budget > 0:
+            budget -= 1
+            kept.append(record)
+    kept.reverse()
+    return kept
 
 
 class ConfidentialShareService:
@@ -556,7 +592,7 @@ class ConfidentialShareService:
                 }
                 acceptances = list(record.get("nda_acceptances") or [])
                 acceptances.append(acceptance)
-                record["nda_acceptances"] = acceptances[-_MAX_SESSIONS:]
+                record["nda_acceptances"] = acceptances
 
             record["used_count"] = used + 1
             log = list(record.get("use_log") or [])
@@ -581,7 +617,19 @@ class ConfidentialShareService:
                     "ip": str(client_ip or "")[:64],
                 }
             )
-            record["sessions"] = sessions[-_MAX_SESSIONS:]
+            # Bound the stored openings without closing one that is still
+            # live: a missing session key is an immediate deny, so a recipient
+            # who already signed must not lose the window to a later signer.
+            idle_timeout = int(record.get("idle_timeout_seconds") or 0)
+            record["sessions"] = _cap_records(
+                sessions, protected=lambda s: _session_is_live(s, idle_timeout, now)
+            )
+            live_keys = {str(s.get("key")) for s in record["sessions"]}
+            if record.get("nda_acceptances"):
+                record["nda_acceptances"] = _cap_records(
+                    list(record["nda_acceptances"]),
+                    protected=lambda a: str(a.get("session_key")) in live_keys,
+                )
             if max_uses is not None and record["used_count"] >= int(max_uses):
                 record["status"] = "exhausted"
             else:
@@ -689,13 +737,9 @@ class ConfidentialShareService:
             if session is None:
                 return False
             now = _utc_now()
-            until = _parse_iso(session.get("access_until"))
-            if until is not None and until <= now:
+            if not _session_is_live(session, int(record.get("idle_timeout_seconds") or 0), now):
                 return False
-            idle = int(record.get("idle_timeout_seconds") or 0)
             last_seen = _parse_iso(session.get("last_seen_at")) or _parse_iso(session.get("opened_at"))
-            if idle and last_seen is not None and (now - last_seen).total_seconds() > idle:
-                return False
             if last_seen is None or (now - last_seen).total_seconds() >= _TOUCH_INTERVAL_SECONDS:
                 session["last_seen_at"] = now.replace(microsecond=0).isoformat().replace("+00:00", "Z")
                 record["sessions"] = sessions

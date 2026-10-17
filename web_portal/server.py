@@ -19929,9 +19929,18 @@ class PortalHandler(BaseHTTPRequestHandler):
                 'role': role,
                 'signed_at': signed_at,
             }
-            stored = get_confidential_share_service().attach_ledger_receipt(
-                share_id, str(public_share.get('session_key') or ''), receipt
-            )
+            # The signature is on the ledger from here on, and signing is
+            # idempotent per (instance, role, hash): if the caller rolled the
+            # opening back now, the next unlock would reuse this entry and
+            # show the previous signer's receipt. Filing the receipt on the
+            # share is therefore best-effort, never a reason to refuse.
+            try:
+                stored = get_confidential_share_service().attach_ledger_receipt(
+                    share_id, str(public_share.get('session_key') or ''), receipt
+                )
+            except Exception as exc:
+                print(f"⚠️  [CONFIDENTIAL] NDA receipt not filed on share: {exc}")
+                stored = None
             return stored or receipt
         except Exception as exc:
             print(f"⚠️  [CONFIDENTIAL] NDA anchor failed: {exc}")
