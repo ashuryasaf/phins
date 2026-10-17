@@ -27,8 +27,23 @@
   var FACTORS_URL = '/api/business-plan/factors';
   var PORTRAIT_URL = '/api/business-plan/founder-portrait';
 
+  var EXTRA = {
+    en: {
+      document_structure: 'Document structure',
+      structure_help: 'Uncheck a chapter to leave it out of the next open link. The photo, the investor slideshow and the sources are chapters like any other. A link freezes this choice when it is sent.',
+      show_section: '−',
+      hide_section: '+'
+    },
+    he: {
+      document_structure: 'מבנה המסמך',
+      structure_help: 'בטלו סימון של פרק כדי שלא ייכלל בקישור הפתוח הבא. התמונה, מצגת המשקיעים והמקורות הם פרקים כמו כל פרק אחר. הקישור מקפיא את הבחירה ברגע השליחה.',
+      show_section: '−',
+      hide_section: '+'
+    }
+  };
   function t(key, vars) {
-    var s = UI[key] || key;
+    var extra = EXTRA[LANG === 'he' ? 'he' : 'en'] || {};
+    var s = UI[key] || extra[key] || key;
     Object.keys(vars || {}).forEach(function (k) { s = s.split('{' + k + '}').join(String(vars[k])); });
     return s;
   }
@@ -206,7 +221,23 @@
     row.appendChild(saveBtn); row.appendChild(clearBtn); row.appendChild(status);
     host.appendChild(row);
 
-    host.appendChild(el('h4', '', t('viewer_adjustable')));
+    function fold(title, bodyNode) {
+      var head = el('div', 'bp-admin-fold-head');
+      var btn = el('button', 'bp-fold', t('show_section'));
+      btn.type = 'button';
+      btn.setAttribute('aria-expanded', 'true');
+      btn.addEventListener('click', function () {
+        var closed = bodyNode.hasAttribute('hidden');
+        if (closed) { bodyNode.removeAttribute('hidden'); btn.textContent = t('show_section'); btn.setAttribute('aria-expanded', 'true'); }
+        else { bodyNode.setAttribute('hidden', ''); btn.textContent = t('hide_section'); btn.setAttribute('aria-expanded', 'false'); }
+      });
+      head.appendChild(btn);
+      head.appendChild(el('h4', '', title));
+      host.appendChild(head);
+      host.appendChild(bodyNode);
+    }
+
+    var factorBody = el('div', 'bp-fold-body');
     var grid = el('div', 'bp-adjustable-grid');
     var whitelist = access.viewer_adjustable;
     var allAllowed = whitelist === 'all' || whitelist === null || whitelist === undefined;
@@ -219,11 +250,38 @@
       label.appendChild(cb); label.appendChild(document.createTextNode(' ' + f.label));
       grid.appendChild(label);
     });
-    host.appendChild(grid);
+    factorBody.appendChild(grid);
+    fold(t('viewer_adjustable'), factorBody);
+
+    var partBoxes = {};
+    var parts = Array.isArray(access.document_parts) ? access.document_parts : [];
+    var partAllow = access.visible_parts;
+    var allParts = partAllow === 'all' || partAllow === null || partAllow === undefined;
+    if (parts.length) {
+      var partBody = el('div', 'bp-fold-body');
+      partBody.appendChild(el('p', 'bp-status', t('structure_help')));
+      var partGrid = el('div', 'bp-structure-grid');
+      parts.forEach(function (part) {
+        var label = el('label', '');
+        var cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = part.id;
+        cb.checked = allParts || (Array.isArray(partAllow) && partAllow.indexOf(part.id) >= 0);
+        partBoxes[part.id] = cb;
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(' ' + (LANG === 'he' && part.label_he ? part.label_he : part.label)));
+        partGrid.appendChild(label);
+      });
+      partBody.appendChild(partGrid);
+      fold(t('document_structure'), partBody);
+    }
 
     function selectedWhitelist() {
       var ids = BP.factors.filter(function (f) { return boxes[f.id].checked; }).map(function (f) { return f.id; });
       return ids.length === BP.factors.length ? 'all' : ids;
+    }
+    function selectedParts() {
+      var ids = parts.filter(function (part) { return partBoxes[part.id] && partBoxes[part.id].checked; }).map(function (part) { return part.id; });
+      if (!parts.length) return '__keep__';
+      return ids.length === parts.length ? 'all' : ids;
     }
     function postFactors(body) {
       status.textContent = '…';
@@ -233,7 +291,10 @@
     saveBtn.addEventListener('click', function () {
       var factors = {};
       BP.factors.forEach(function (f) { if (BP.state[f.id] !== f.default) factors[f.id] = BP.state[f.id]; });
-      postFactors({ factors: factors, viewer_adjustable: selectedWhitelist() }).then(function (res) {
+      var body = { factors: factors, viewer_adjustable: selectedWhitelist() };
+      var chosenParts = selectedParts();
+      if (chosenParts !== '__keep__') body.visible_parts = chosenParts;
+      postFactors(body).then(function (res) {
         if (!res.ok) { status.textContent = t('save_failed', { error: res.data.error || res.status }); return; }
         status.textContent = t('saved_ok');
         BP.setBaseline((res.data.settings || {}).saved_factors || {});
@@ -245,6 +306,7 @@
         status.textContent = t('cleared_ok');
         BP.setBaseline({});
         BP.factors.forEach(function (f) { boxes[f.id].checked = true; });
+        Object.keys(partBoxes).forEach(function (id) { partBoxes[id].checked = true; });
       }).catch(function (e) { status.textContent = t('save_failed', { error: e }); });
     });
 
@@ -341,6 +403,9 @@
       try { window.dispatchEvent(new CustomEvent('phins:business-plan-access', { detail: access })); } catch (e) {}
     }).catch(function () {});
   }
+  var foldStyle = document.createElement('style');
+  foldStyle.textContent = '.bp-admin-fold-head{display:flex;align-items:center;gap:8px;margin-top:14px}.bp-admin-fold-head h4{margin:0}.bp-fold{width:28px;height:28px;border-radius:8px;border:1px solid #d5dbe6;background:#fff;font:700 16px/1 Inter,sans-serif;cursor:pointer;color:#12305a}.bp-structure-grid,.bp-adjustable-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:4px 12px;font-size:12.5px}.bp-fold-body[hidden]{display:none}';
+  document.head.appendChild(foldStyle);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 })();

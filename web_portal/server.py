@@ -19710,6 +19710,88 @@ class PortalHandler(BaseHTTPRequestHandler):
             print(f"⚠️  [CONFIDENTIAL] share active-check failed: {exc}")
             return False
 
+    def _share_composition(self) -> Optional[Dict[str, Any]]:
+        """Frozen chapters + factors for the open link serving this request.
+
+        ``None`` when this request is not a share viewer. A link minted
+        before composition snapshots returns ``{"legacy": True}``. A snapshot
+        returns the stored dict. A share viewer whose record cannot be read
+        raises, so callers fail closed instead of serving the live document.
+        """
+        decision = getattr(self, '_confidential_decision', None)
+        if decision is None or not getattr(decision, 'is_share_viewer', False):
+            return None
+        from services.confidential_share_service import get_confidential_share_service
+        raw = get_confidential_share_service().get_share_raw(decision.share_id)
+        if not raw:
+            raise LookupError("share record unavailable")
+        composition = raw.get('composition')
+        if composition is None:
+            return {'legacy': True}
+        if not isinstance(composition, dict):
+            raise LookupError("share composition is not a document snapshot")
+        return dict(composition)
+
+    @staticmethod
+    def _share_document_unavailable() -> str:
+        return (
+            '<!DOCTYPE html><html><body><p>This link could not be prepared. '
+            'Ask the sender for a new one.</p></body></html>'
+        )
+
+    def _filter_shared_business_plan(self, url_path: str, html: str) -> str:
+        """Drop chapters and factor controls the share did not include."""
+        lowered = str(url_path or '').split('?', 1)[0].lower()
+        if lowered not in ('/business-plan.html', '/business-plan.he.html'):
+            return html
+        try:
+            composition = self._share_composition()
+        except Exception as exc:
+            print(f"⚠️  [BUSINESS PLAN] share composition unavailable: {exc}")
+            return self._share_document_unavailable()
+        if not composition or composition.get('legacy'):
+            return html
+        parts = composition.get('visible_parts')
+        adjustable = composition.get('viewer_adjustable')
+        if not isinstance(parts, list) or not isinstance(adjustable, list):
+            return self._share_document_unavailable()
+        try:
+            from services.business_plan_parts import filter_share_html
+            return filter_share_html(
+                html,
+                visible_parts=parts,
+                viewer_adjustable=adjustable,
+            )
+        except Exception as exc:
+            # A filter failure must not fall open to the full document.
+            print(f"⚠️  [BUSINESS PLAN] share HTML filter failed: {exc}")
+            return self._share_document_unavailable()
+
+    @staticmethod
+    def _business_plan_link_composition(body_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Snapshot of what the next open link may show, taken at send time."""
+        from services.business_plan_parts import PartsError, freeze_adjustable, freeze_visible_parts
+        from services.business_plan_settings import SettingsError, get_business_plan_settings
+
+        doc = get_business_plan_settings().get()
+        try:
+            if 'visible_parts' in body_data:
+                parts = freeze_visible_parts(body_data.get('visible_parts'))
+            else:
+                parts = freeze_visible_parts(doc.get('visible_parts'))
+            if 'viewer_adjustable' in body_data:
+                from services.business_plan_settings import _validate_adjustable
+                adjustable = freeze_adjustable(_validate_adjustable(body_data.get('viewer_adjustable')))
+            else:
+                adjustable = freeze_adjustable(doc.get('viewer_adjustable'))
+        except (PartsError, SettingsError):
+            raise
+        return {
+            'visible_parts': parts,
+            'viewer_adjustable': adjustable,
+            'saved_factors': dict(doc.get('saved_factors') or {}),
+        }
+
     def _business_plan_access_view(self) -> Dict[str, Any]:
         """Capabilities of the current caller on the unified business plan.
 
@@ -19740,11 +19822,18 @@ class PortalHandler(BaseHTTPRequestHandler):
             print(f"⚠️  [BUSINESS PLAN] saved factors unavailable: {exc}")
             settings_doc = {'saved_factors': {}, 'viewer_adjustable': None, 'has_saved': False}
         whitelist = settings_doc.get('viewer_adjustable')
+        try:
+            from services.business_plan_parts import parts_catalog
+            catalog = parts_catalog()
+        except Exception:
+            catalog = []
         view: Dict[str, Any] = {
             'document': 'PHINS Unified Business Plan',
             'saved_factors': settings_doc.get('saved_factors') or {},
             'has_saved': bool(settings_doc.get('has_saved')),
             'viewer_adjustable': whitelist if whitelist is not None else 'all',
+            'visible_parts': settings_doc.get('visible_parts') if settings_doc.get('visible_parts') is not None else 'all',
+            'document_parts': catalog,
             'saved_updated_at': settings_doc.get('updated_at'),
         }
         if staff:
@@ -19765,15 +19854,41 @@ class PortalHandler(BaseHTTPRequestHandler):
                 )
             except Exception as exc:
                 print(f"⚠️  [BUSINESS PLAN] viewer context unavailable: {exc}")
+            try:
+                composition = self._share_composition()
+            except Exception as exc:
+                print(f"⚠️  [BUSINESS PLAN] share composition unavailable: {exc}")
+                composition = {
+                    'legacy': False,
+                    'saved_factors': {},
+                    'viewer_adjustable': [],
+                    'visible_parts': [],
+                }
+            if composition and not composition.get('legacy'):
+                # The link shows the chapters and factors frozen when it was
+                # sent, not whatever the admin saved afterwards.
+                frozen_factors = composition.get('saved_factors') or {}
+                frozen_adjustable = composition.get('viewer_adjustable')
+                frozen_parts = composition.get('visible_parts')
+                view['saved_factors'] = frozen_factors
+                view['has_saved'] = bool(frozen_factors)
+                view['viewer_adjustable'] = frozen_adjustable if frozen_adjustable is not None else 'all'
+                view['visible_parts'] = frozen_parts if frozen_parts is not None else 'all'
+                share_adjustable = view['viewer_adjustable']
+            else:
+                share_adjustable = whitelist if whitelist is not None else 'all'
             view.update({
                 'mode': 'share', 'role': 'viewer', 'username': '',
                 'protected': True, 'can_download': False, 'can_print': False,
                 'can_copy': False, 'can_save_factors': False,
                 'can_manage_portrait': False,
-                'adjustable': whitelist if whitelist is not None else 'all',
+                'adjustable': share_adjustable,
                 'viewer': viewer,
                 'lang': (viewer or {}).get('lang') or 'en',
             })
+            # The catalog of chapters the admin can toggle is not part of the
+            # viewer's document.
+            view.pop('document_parts', None)
             return view
         view.update({
             'mode': 'public', 'role': role or 'anonymous', 'username': username,
@@ -19815,6 +19930,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 doc = store.save(
                     factors=body_data.get('factors'),
                     viewer_adjustable=body_data.get('viewer_adjustable', '__keep__'),
+                    visible_parts=body_data.get('visible_parts', '__keep__'),
                     updated_by=username or 'admin',
                     note=str(body_data.get('note') or ''),
                 )
@@ -19838,6 +19954,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                     'cleared': body_data.get('clear') is True,
                     'saved_factors': doc.get('saved_factors'),
                     'viewer_adjustable': doc.get('viewer_adjustable'),
+                    'visible_parts': doc.get('visible_parts'),
                 },
             )
         except Exception:
@@ -19933,8 +20050,9 @@ class PortalHandler(BaseHTTPRequestHandler):
             # The signature is on the ledger from here on, and signing is
             # idempotent per (instance, role, hash): if the caller rolled the
             # opening back now, the next unlock would reuse this entry and
-            # show the previous signer's receipt. Filing the receipt on the
-            # share is therefore best-effort, never a reason to refuse.
+            # show the previous signer's receipt. Filing the receipt, and
+            # sealing the signed-documents copy, is therefore best-effort,
+            # never a reason to refuse an opening the ledger already accepted.
             try:
                 stored = get_confidential_share_service().attach_ledger_receipt(
                     share_id, str(public_share.get('session_key') or ''), receipt
@@ -19942,6 +20060,40 @@ class PortalHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 print(f"⚠️  [CONFIDENTIAL] NDA receipt not filed on share: {exc}")
                 stored = None
+            try:
+                from services.business_plan_nda import field_values, nda_text
+                from services.signed_document_archive import get_signed_document_archive
+
+                label = str(public_share.get('label') or '')
+                effective = public_share.get('nda_effective_date') or None
+                lang = str(public_share.get('lang') or 'en')
+                archive_id = get_signed_document_archive().store({
+                    'doc_instance_id': instance,
+                    'entry_id': receipt.get('entry_id'),
+                    'entry_hash': receipt.get('entry_hash'),
+                    'sequence_no': receipt.get('sequence_no'),
+                    'share_id': share_id,
+                    'label': label,
+                    'signer_name': signer,
+                    'role': role,
+                    'signed_at': signed_at,
+                    'lang': lang,
+                    'nda_version': public_share.get('nda_version'),
+                    'nda_sha256': digest,
+                    'nda_text': nda_text(lang, label=label, effective_date=effective),
+                    'field_values': field_values(label, effective),
+                    'signature_method': str(public_share.get('signature_method') or 'type'),
+                    'use_mode': public_share.get('mode'),
+                })
+                receipt['archive_id'] = archive_id
+                try:
+                    stored = get_confidential_share_service().attach_ledger_receipt(
+                        share_id, str(public_share.get('session_key') or ''), receipt
+                    ) or stored
+                except Exception as exc:
+                    print(f"⚠️  [CONFIDENTIAL] archive id not attached: {exc}")
+            except Exception as exc:
+                print(f"⚠️  [CONFIDENTIAL] signed-document archive failed: {exc}")
             return stored or receipt
         except Exception as exc:
             print(f"⚠️  [CONFIDENTIAL] NDA anchor failed: {exc}")
@@ -20104,6 +20256,48 @@ class PortalHandler(BaseHTTPRequestHandler):
             if matched:
                 return matched
         return None
+
+    def _serve_signed_documents(self, path: str) -> bool:
+        """Staff folder of NDAs signed on open links (IL pitch)."""
+        from services.signed_document_archive import (
+            ArchiveError,
+            get_signed_document_archive,
+            render_signed_html,
+        )
+
+        archive = get_signed_document_archive()
+        rest = path[len('/api/confidential/signed-documents'):].strip('/')
+        try:
+            if not rest:
+                items = archive.list_documents()
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'items': items,
+                    'page': 1,
+                    'page_size': len(items),
+                    'total': len(items),
+                    'folder': 'signed_documents',
+                }, default=str).encode('utf-8'))
+                return True
+            html = rest.endswith('/html')
+            archive_id = rest[:-5] if html else rest
+            record = archive.get(archive_id.split('/')[0])
+        except ArchiveError as exc:
+            self._set_json_headers(404)
+            self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+            return True
+        if html:
+            body = render_signed_html(record).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.end_headers()
+            self.wfile.write(body)
+            return True
+        self._set_json_headers(200)
+        self.wfile.write(json.dumps(record, default=str).encode('utf-8'))
+        return True
 
     def _handle_confidential_api(self, path: str, body_data: Dict[str, Any]) -> bool:
         """Handle confidential unlock / share-link management APIs.
@@ -20445,9 +20639,11 @@ class PortalHandler(BaseHTTPRequestHandler):
                         share_lang = 'he' if share_path.lower().endswith('.he.html') else 'en'
                     nda_required = body_data.get('nda_required') in (True, 1, '1', 'true', 'on')
                     # Access to the PHINS Unified Business Plan through an open
-                    # link is always conditional on the signed undertaking.
+                    # link is always conditional on the platform NDA.
+                    composition = None
                     if confidential_access.is_business_plan_path(share_path):
                         nda_required = True
+                        composition = self._business_plan_link_composition(body_data)
                     created = get_confidential_share_service().create_share(
                         path=share_path,
                         password=str(body_data.get('password') or ''),
@@ -20459,8 +20655,13 @@ class PortalHandler(BaseHTTPRequestHandler):
                         access_window_seconds=body_data.get('access_window_seconds'),
                         idle_timeout_seconds=body_data.get('idle_timeout_seconds'),
                         lang=share_lang,
+                        composition=composition,
                     )
                 except ShareError as exc:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                    return True
+                except ValueError as exc:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
                     return True
@@ -20498,6 +20699,13 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._set_json_headers(200)
             self.wfile.write(json.dumps({'success': True, 'share': revoked}).encode('utf-8'))
             return True
+
+        if path == '/api/confidential/signed-documents' or path.startswith('/api/confidential/signed-documents/'):
+            if not confidential_access.session_is_staff(session) and not staff_cookie_ok:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Staff authorization required.'}).encode('utf-8'))
+                return True
+            return self._serve_signed_documents(path)
 
         self._set_json_headers(404)
         self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
@@ -21166,7 +21374,13 @@ For claims or questions, please contact:
             # response lets browsers apply heuristic caching and keep showing
             # the pre-deploy page (observed on admin.html after a release).
             # no-cache makes every navigation revalidate against the server.
-            self.send_header('Cache-Control', 'no-cache')
+            # A share viewer receives a composition-filtered page; that copy
+            # must not be stored and replayed for a different link.
+            decision = getattr(self, '_confidential_decision', None)
+            if decision is not None and getattr(decision, 'is_share_viewer', False):
+                self.send_header('Cache-Control', 'private, no-store')
+            else:
+                self.send_header('Cache-Control', 'no-cache')
         self.end_headers()
 
     def _serve_binary_file(self, file_path: str, content_type: str) -> None:
@@ -21596,7 +21810,7 @@ For claims or questions, please contact:
 
         # Confidential share-link management (staff). Listed before the gate so
         # the JSON API itself is never treated as a confidential HTML document.
-        if path == '/api/confidential/shares':
+        if path == '/api/confidential/shares' or path.startswith('/api/confidential/signed-documents'):
             if self._handle_confidential_api(path, {}):
                 return
 
@@ -21694,11 +21908,22 @@ For claims or questions, please contact:
                 overrides = _parse_business_plan_query(qs)
                 restricted = []
                 access = self._business_plan_access_view()
-                if access.get('mode') == 'share' and access.get('adjustable') != 'all':
-                    # Open-link viewers may only move the whitelisted factors;
-                    # the rest stay pinned to the admin-saved baseline.
+                if access.get('mode') == 'share':
+                    # Open-link viewers may only move the factors frozen on
+                    # the link; everything else stays on that link's baseline.
                     from services.business_plan_settings import get_business_plan_settings
-                    overrides, restricted = get_business_plan_settings().restrict_overrides(overrides)
+                    composition = self._share_composition() or {}
+                    if composition.get('legacy'):
+                        composition = {}
+                    if isinstance(composition.get('viewer_adjustable'), list):
+                        overrides, restricted = get_business_plan_settings().restrict_overrides(
+                            overrides,
+                            whitelist=composition.get('viewer_adjustable'),
+                            baseline=composition.get('saved_factors') or {},
+                            use_stored=False,
+                        )
+                    elif access.get('adjustable') != 'all':
+                        overrides, restricted = get_business_plan_settings().restrict_overrides(overrides)
                 plan = _compute_business_plan(overrides)
                 if restricted:
                     plan['restricted'] = restricted
@@ -21737,6 +21962,23 @@ For claims or questions, please contact:
         # the ``founder_portrait_id`` placement, served as a processed JPEG
         # (EXIF-corrected, square, balanced). The original is never rewritten.
         if path == '/api/business-plan/founder-portrait':
+            try:
+                composition = self._share_composition()
+            except Exception as exc:
+                print(f"⚠️  [BUSINESS PLAN] portrait composition unavailable: {exc}")
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'founder_portrait_not_in_this_link'}).encode('utf-8'))
+                return
+            hidden_photo = (
+                isinstance(composition, dict)
+                and not composition.get('legacy')
+                and isinstance(composition.get('visible_parts'), list)
+                and 'founder-photo' not in composition['visible_parts']
+            )
+            if hidden_photo:
+                self._set_json_headers(404)
+                self.wfile.write(json.dumps({'error': 'founder_portrait_not_in_this_link'}).encode('utf-8'))
+                return
             asset_id = str(DESIGN_SETTINGS.get('founder_portrait_id') or '').strip()
             asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
             if not isinstance(asset, dict):
@@ -37884,6 +38126,7 @@ For claims or questions, please contact:
                     with open(file_path, 'r', encoding='utf-8') as fh:
                         html_content = fh.read()
                     html_content = _inject_ui_clarity_script(html_content)
+                    html_content = self._filter_shared_business_plan(path, html_content)
                     self.wfile.write(html_content.encode('utf-8'))
                 else:
                     file_size = os.path.getsize(file_path)

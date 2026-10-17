@@ -98,10 +98,19 @@ def _validate_adjustable(raw: Any) -> Optional[List[str]]:
     return seen
 
 
+def _validate_parts(raw: Any) -> Optional[List[str]]:
+    from services.business_plan_parts import PartsError, normalize_visible_parts
+
+    try:
+        return normalize_visible_parts(raw)
+    except PartsError as exc:
+        raise SettingsError(str(exc)) from exc
+
+
 def _sanitize(payload: Any) -> Dict[str, Any]:
     """Validate a stored/incoming document; anything invalid degrades to empty."""
     if not isinstance(payload, Mapping):
-        return {"saved_factors": {}, "viewer_adjustable": None}
+        return {"saved_factors": {}, "viewer_adjustable": None, "visible_parts": None}
     try:
         factors = _validate_factors(payload.get("saved_factors"))
     except SettingsError:
@@ -110,7 +119,16 @@ def _sanitize(payload: Any) -> Dict[str, Any]:
         adjustable = _validate_adjustable(payload.get("viewer_adjustable"))
     except SettingsError:
         adjustable = None
-    out: Dict[str, Any] = {"saved_factors": factors, "viewer_adjustable": adjustable}
+    try:
+        parts = _validate_parts(payload.get("visible_parts")) if "visible_parts" in payload else None
+    except SettingsError:
+        # A corrupt allow-list must not fall open to every chapter.
+        parts = []
+    out: Dict[str, Any] = {
+        "saved_factors": factors,
+        "viewer_adjustable": adjustable,
+        "visible_parts": parts,
+    }
     for key in ("updated_at", "updated_by", "note"):
         if payload.get(key) not in (None, ""):
             out[key] = str(payload.get(key))[:200]
@@ -232,6 +250,7 @@ class BusinessPlanSettings:
         *,
         factors: Any = None,
         viewer_adjustable: Any = "__keep__",
+        visible_parts: Any = "__keep__",
         updated_by: str = "admin",
         note: str = "",
     ) -> Dict[str, Any]:
@@ -248,10 +267,15 @@ class BusinessPlanSettings:
                 adjustable = current["viewer_adjustable"]
             else:
                 adjustable = _validate_adjustable(viewer_adjustable)
+            if visible_parts == "__keep__":
+                parts = current["visible_parts"]
+            else:
+                parts = _validate_parts(visible_parts)
             payload = {
                 "version": 1,
                 "saved_factors": clean,
                 "viewer_adjustable": adjustable,
+                "visible_parts": parts,
                 "updated_at": _utc_now_iso(),
                 "updated_by": str(updated_by or "admin")[:80],
                 "note": str(note or "")[:200],
@@ -266,17 +290,30 @@ class BusinessPlanSettings:
 
     # -- viewer restriction -------------------------------------------------
     def restrict_overrides(
-        self, overrides: Mapping[str, Any]
+        self,
+        overrides: Mapping[str, Any],
+        *,
+        whitelist: Any = None,
+        baseline: Any = None,
+        use_stored: bool = True,
     ) -> Tuple[Dict[str, Any], List[str]]:
-        """Apply the open-link whitelist to query overrides.
+        """Apply an open-link whitelist to query overrides.
 
         Returns ``(effective_overrides, restricted_ids)``: a locked factor is
-        pinned to the saved baseline (saved value, else canonical default) and
+        pinned to the baseline (saved value, else canonical default) and
         reported under ``restricted`` when the caller tried to move it.
+
+        By default the whitelist and baseline are the admin settings. A share
+        passes its frozen snapshot (``use_stored=False``) so a later edit of
+        the settings does not change a link that was already sent.
         """
         doc = self.get()
-        whitelist = doc["viewer_adjustable"]
-        baseline = {spec["id"]: float(doc["saved_factors"].get(spec["id"], spec["default"]))
+        if use_stored:
+            whitelist = doc["viewer_adjustable"]
+            saved = doc["saved_factors"]
+        else:
+            saved = baseline or {}
+        baseline = {spec["id"]: float(saved.get(spec["id"], spec["default"]))
                     for spec in FACTORS}
         if whitelist is None:
             return dict(overrides), []
