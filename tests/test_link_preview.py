@@ -144,6 +144,9 @@ def test_http_whatsapp_gets_the_card_and_a_browser_stays_gated(gate_token):
         allow_redirects=False,
     )
     assert crawler.status_code == 200
+    # A shared cache must not replay this shell to the visitor who taps the link.
+    assert "no-store" in crawler.headers.get("Cache-Control", "")
+    assert "User-Agent" in crawler.headers.get("Vary", "")
     assert 'property="og:image"' in crawler.text
     assert "PHINS Unified Business Plan" in crawler.text
     assert 'id="plan-exec"' not in crawler.text

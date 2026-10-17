@@ -19780,7 +19780,8 @@ class PortalHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
-        self.send_header('Cache-Control', 'public, max-age=300')
+        self.send_header('Cache-Control', 'private, no-store')
+        self.send_header('Vary', 'User-Agent')
         self.send_header('X-Robots-Tag', 'noindex, nofollow')
         try:
             from security.headers import html_security_headers
