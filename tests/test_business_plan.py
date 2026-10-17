@@ -263,6 +263,10 @@ def test_browser_and_python_formatters_agree():
     html = _read(HTML)
     js = re.search(r"<script>\s*(\(function \(\) \{\s+'use strict';.*?)</script>", html, re.S).group(1)
     fmt_src = re.search(r"(function moneyM.*?)\n  function getPath", js, re.S).group(1)
+    # the browser formatter reads its words (bool / canonical / months) from
+    # the page's language block — feed it the same block the page ships
+    ui_json = re.search(r'<script type="application/json" id="bp-ui-strings">(.*?)</script>', html, re.S).group(1)
+    fmt_src = "var UI = " + ui_json + ";\n" + fmt_src
     samples = [
         (54216000.0, "ilsm"), (-18846000.0, "ilsm"), (3747265344.0, "ilsm"), (24000000.0, "ilsm0"),
         (749074460.0, "usdm"), (4518.0, "ils"), (376.5, "ils2"), (230554.0, "int"), (0.25, "pct"),
