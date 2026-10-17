@@ -605,18 +605,24 @@ def evaluate_access(
         if share_claims:
             sid = str(share_claims.get("sid") or "")
             session_key = str(share_claims.get("sk") or "")
-            active = True
-            if callable(share_active_check):
-                try:
-                    if session_key:
-                        try:
-                            active = bool(share_active_check(sid, path, session_key))
-                        except TypeError:
+            # A cookie unlocks only the link it was minted for. Opening a
+            # different ``?share=`` (the next link an admin just created, or
+            # a second recipient) must go through that link's own password
+            # and NDA — the previous opening does not carry over.
+            active = False
+            if not (share_id and share_id != sid):
+                active = True
+                if callable(share_active_check):
+                    try:
+                        if session_key:
+                            try:
+                                active = bool(share_active_check(sid, path, session_key))
+                            except TypeError:
+                                active = bool(share_active_check(sid, path))
+                        else:
                             active = bool(share_active_check(sid, path))
-                    else:
-                        active = bool(share_active_check(sid, path))
-                except Exception:
-                    active = False
+                    except Exception:
+                        active = False
             if active:
                 return AccessDecision(
                     allowed=True,

@@ -199,6 +199,7 @@ data/documents/
 database/confidential_shares.json
 database/confidential_shares.json.tmp
 database/confidential_shares.json.lock
+database/signed_documents/
 
 # Runtime meeting summary-notes store (admin drafts for BI / regulatory / AI reference)
 database/meeting_notes.json

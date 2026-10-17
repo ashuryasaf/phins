@@ -599,13 +599,33 @@ Environment variables commonly used:
  (`nda_acceptances[].ledger`), `GET /api/legal-docs/registry?doc_id=LGL-NDA-…`
  and `/api/legal-docs/verify`. Each opening is a session (`access_window_seconds`,
  ≤ 3 h for single use, `idle_timeout_seconds`) bound into the share cookie
- (`sk`). `GET /api/business-plan/access` drives `static/business-plan-access.js`
- (watermark, no print/download/copy/capture, whitelisted factors only);
- `GET`/`POST /api/business-plan/factors` (admin) persists the saved factor set
- and `viewer_adjustable` whitelist via `services/business_plan_settings.py`
- (`agent_artifacts` in DB mode, else `PHINS_BUSINESS_PLAN_SETTINGS_PATH` /
- `database/business_plan_settings.json`); the saved set is always a
- scenario, never `canonical`.
+ (`sk`). The cookie unlocks only the link it was minted for: a different
+ `?share=` is `share_password_required` even when an earlier opening's cookie
+ is still valid, and an NDA share with no matching `nda_acceptances` row for
+ that session key is closed in every use mode (single, multi, unlimited) —
+ the refusal consumes no use. `GET /api/business-plan/access` drives
+ `static/business-plan-access.js` (watermark, no print/download/copy/capture,
+ whitelisted factors only, +/− folds). Admin tools on the plan page include
+ a document-structure allow-list (`services/business_plan_parts.py`: banner,
+ chapters, founder photo, investor deck, appendices, factor panel).
+ `GET`/`POST /api/business-plan/factors` (admin) persists the saved factor
+ set, `viewer_adjustable` and `visible_parts` via
+ `services/business_plan_settings.py` (`agent_artifacts` in DB mode, else
+ `PHINS_BUSINESS_PLAN_SETTINGS_PATH` / `database/business_plan_settings.json`);
+ the saved set is always a scenario, never `canonical`. Creating a plan
+ share freezes that composition (`visible_parts`, `viewer_adjustable`,
+ `saved_factors`) onto the link. The HTML served to the share viewer is
+ filtered before it leaves the server (`filter_share_html`): an unchosen
+ chapter element and an unchosen factor control are not in the response, a
+ later admin edit does not reopen them, and a share viewer whose frozen
+ record cannot be read gets a short error page rather than the full plan.
+ The founder portrait route 404s when `founder-photo` is not in that
+ snapshot. Each anchored NDA is sealed into the signed-documents folder
+ (`PHINS_SIGNED_DOCUMENTS_DIR` or `database/signed_documents/`, created on
+ first signature, gitignored): `record_sha256` over the canonical JSON and
+ `sha256(nda_text)` must equal `nda_sha256`. Staff read it from the IL pitch
+ dashboard and `GET /api/confidential/signed-documents` (anonymous 401); a
+ tampered file lists `intact: false` and `get()` refuses it.
 - **Video agents (B8):** `REPLICATE_API_TOKEN` enables Replicate beside
  Gemini and Kling (Growth Agent and Video Agents). Optional
  `REPLICATE_VIDEO_MODELS` (comma-separated `owner/name`) and

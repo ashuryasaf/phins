@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 import requests
@@ -341,17 +342,21 @@ def closed_gate(tmp_path, monkeypatch):
     """Production-like gate on the embedded server plus temp share/settings stores."""
     from services import business_plan_settings as bps
     from services import confidential_share_service as css
+    from services import signed_document_archive as sda
 
     monkeypatch.setenv("PHINS_ENVIRONMENT", "production")
     monkeypatch.setenv("SESSION_SECRET_KEY", SECRET)
     monkeypatch.setenv("PHINS_CONFIDENTIAL_ACCESS_TOKEN", TOKEN)
     css.reset_confidential_share_service_for_tests()
     bps.reset_business_plan_settings_for_tests()
+    sda.reset_signed_document_archive_for_tests()
     css.get_confidential_share_service(data_path=str(tmp_path / "shares.json"))
     bps.get_business_plan_settings(data_path=str(tmp_path / "bp_settings.json"))
+    sda.get_signed_document_archive(str(tmp_path / "signed"))
     yield
     css.reset_confidential_share_service_for_tests()
     bps.reset_business_plan_settings_for_tests()
+    sda.reset_signed_document_archive_for_tests()
 
 
 def _admin_session():
@@ -448,6 +453,34 @@ def test_http_nda_link_end_to_end(closed_gate):
                           json={"docInstanceId": instance, "documentHash": "0" * 64}, timeout=10).json()
     assert tampered["verified"] is False
 
+    # The signed terms land in the IL-pitch signed-documents folder, sealed.
+    assert requests.get(f"{BASE_URL}/api/confidential/signed-documents", timeout=10).status_code == 401
+    folder = admin.get(f"{BASE_URL}/api/confidential/signed-documents", timeout=10)
+    assert folder.status_code == 200, folder.text
+    filed = folder.json()["items"]
+    assert len(filed) == 1 and filed[0]["intact"] is True
+    assert filed[0]["signer_name"] == "Dana Levi" and filed[0]["nda_sha256"] == share["nda_sha256"]
+    assert filed[0]["archive_id"] == ledger["archive_id"]
+    opened_doc = admin.get(f"{BASE_URL}/api/confidential/signed-documents/{filed[0]['archive_id']}", timeout=10).json()
+    assert opened_doc["nda_sha256"] == share["nda_sha256"]
+    import hashlib
+    assert hashlib.sha256(opened_doc["nda_text"].encode()).hexdigest() == share["nda_sha256"]
+    assert "Non-Disclosure Agreement" in opened_doc["nda_text"] and "Investor ACME" in opened_doc["nda_text"]
+    rendered = admin.get(f"{BASE_URL}/api/confidential/signed-documents/{filed[0]['archive_id']}/html", timeout=10)
+    assert rendered.status_code == 200 and share["nda_sha256"] in rendered.text and "Dana Levi" in rendered.text
+
+    # The cookie from this opening does not unlock a different link.
+    other = admin.post(f"{BASE_URL}/api/confidential/shares",
+                       json={"path": PLAN, "password": "guest-open", "mode": "multi", "label": "Second Recipient",
+                             "max_uses": 5}, timeout=10)
+    assert other.status_code == 201, other.text
+    second_share = other.json()["share"]
+    reused = recipient.get(f"{BASE_URL}{PLAN}", params={"share": second_share["id"]}, timeout=10, allow_redirects=False)
+    assert reused.status_code == 401
+    assert "Second Recipient" in reused.text and "Non-Disclosure Agreement" in reused.text
+    # And the first opening is still the one that can read the page with no share id.
+    assert recipient.get(f"{BASE_URL}{PLAN}", timeout=10).status_code == 200
+
     # One unlock covers the page, the Hebrew edition and the plan APIs …
     assert recipient.get(f"{BASE_URL}{PLAN}", timeout=10).status_code == 200
     he_page = recipient.get(f"{BASE_URL}{PLAN_HE}", timeout=10)
@@ -509,3 +542,146 @@ def test_http_public_mode_in_test_harness_still_serves_the_page():
     assert page.status_code == 200 and "Adjustable factors" in page.text
     access = requests.get(f"{BASE_URL}/api/business-plan/access", timeout=10).json()
     assert access["mode"] in ("public", "staff") and access["adjustable"] == "all"
+
+
+def test_share_cookie_does_not_open_a_different_link():
+    env = {"SESSION_SECRET_KEY": SECRET, "PHINS_ENVIRONMENT": "production",
+           "PHINS_CONFIDENTIAL_ACCESS_TOKEN": TOKEN}
+    cookie = ca.mint_share_cookie(share_id="shr_first", path=PLAN, environ=env, session_key="sess1")
+    header = f"{ca.SHARE_COOKIE_NAME}={cookie}"
+
+    def check(sid, path, sk=""):
+        return sid == "shr_first" and sk == "sess1"
+
+    opened = ca.evaluate_access(PLAN, cookie_header=header, environ=env, share_active_check=check)
+    assert opened.allowed and opened.share_id == "shr_first"
+    same = ca.evaluate_access(PLAN, cookie_header=header, environ=env, share_active_check=check,
+                              query_params={"share": ["shr_first"]})
+    assert same.allowed
+    other = ca.evaluate_access(PLAN, cookie_header=header, environ=env, share_active_check=check,
+                               query_params={"share": ["shr_second"]})
+    assert other.allowed is False and other.reason == "share_password_required" and other.share_id == "shr_second"
+
+
+def test_nda_share_without_a_signed_session_is_closed(store):
+    share = store.create_share(path=PLAN, password="open1234", max_uses=3, label="ACME", nda_required=True)
+    assert not store.share_is_active_for_path(share["id"], PLAN)
+    view, _ = store.unlock(share["id"], "open1234", nda_accepted=True, signer_name="Dana Levi")
+    assert store.share_is_active_for_path(share["id"], PLAN, session_key=view["session_key"])
+    for mode in ("single", "multi", "unlimited"):
+        body_mode = {"single": 1, "multi": 5, "unlimited": None}[mode]
+        made = store.create_share(path=PLAN, password="open1234", max_uses=body_mode, label="ACME", nda_required=True)
+        with pytest.raises(ShareError, match="NDA"):
+            store.unlock(made["id"], "open1234")
+        assert store.get_share(made["id"])["used_count"] == 0
+
+
+def test_filter_removes_unchosen_chapters_and_factor_controls():
+    from services.business_plan_parts import PartsError, filter_share_html, freeze_visible_parts
+
+    html = (
+        '<nav><a href="#part-deck">Deck</a><a href="#plan-exec">Plan</a></nav>'
+        '<section id="plan-exec">Executive</section>'
+        '<div id="part-deck"><h2>Investor deck</h2></div><div class="bp-deck"><article>Slide</article></div>'
+        '<div class="bp-founder-photo"><img src="/api/business-plan/founder-portrait"></div>'
+        '<script type="application/json" id="bp-factors">[{"id":"phins_take"},{"id":"wacc"}]</script>'
+    )
+    kept = filter_share_html(html, visible_parts=["plan-exec"], viewer_adjustable=["phins_take"])
+    assert "Executive" in kept and "Investor deck" not in kept and "Slide" not in kept
+    assert "bp-founder-photo" not in kept and "founder-portrait" not in kept
+    assert "Deck" not in kept and "phins_take" in kept and "wacc" not in kept
+    with pytest.raises(PartsError):
+        freeze_visible_parts(["not-a-chapter"])
+    page = (Path(__file__).resolve().parents[1] / "web_portal" / "static" / "business-plan.html").read_text(encoding="utf-8")
+    redacted = filter_share_html(page, visible_parts=["plan-exec", "factor-panel"], viewer_adjustable=["phins_take"])
+    assert 'id="plan-exec"' in redacted and 'id="part-deck"' not in redacted
+    assert 'class="bp-deck"' not in redacted and 'class="bp-founder-photo"' not in redacted
+    assert 'id="appendix-i"' not in redacted and 'id="bp-factor-panel"' in redacted
+    compact = redacted.replace(" ", "")
+    assert '"id":"wacc"' not in compact
+    assert '"id":"phins_take"' in compact
+
+
+def test_signed_archive_seals_the_terms_and_rejects_a_tampered_file(tmp_path):
+    import hashlib
+    from services.signed_document_archive import ArchiveError, SignedDocumentArchive
+
+    text = "Non-Disclosure Agreement\nReceiving Party ACME\n"
+    digest = hashlib.sha256(text.encode()).hexdigest()
+    archive = SignedDocumentArchive(str(tmp_path / "signed"))
+    assert not archive.directory.exists()
+    with pytest.raises(ArchiveError):
+        archive.store({"nda_text": text, "nda_sha256": "0" * 64, "doc_instance_id": "LGL-NDA-X", "entry_id": "LGLSIG-1"})
+    archive_id = archive.store({
+        "nda_text": text, "nda_sha256": digest, "doc_instance_id": "LGL-NDA-X", "entry_id": "LGLSIG-1",
+        "signer_name": "Dana Levi", "label": "ACME", "sequence_no": 1, "share_id": "shr_x",
+    })
+    assert archive.directory.is_dir()
+    assert archive.list_documents()[0]["signer_name"] == "Dana Levi"
+    assert archive.get(archive_id)["nda_text"] == text
+    path = archive.directory / f"{archive_id}.json"
+    path.write_text(path.read_text(encoding="utf-8").replace("Dana Levi", "Pat Doe"), encoding="utf-8")
+    listed = archive.list_documents()
+    assert listed[0]["intact"] is False
+    with pytest.raises(ArchiveError):
+        archive.get(archive_id)
+
+
+def test_http_link_freezes_structure_and_hides_unchosen_factors(closed_gate):
+    from services.business_plan_parts import part_ids
+
+    admin = _admin_session()
+    saved = admin.post(f"{BASE_URL}/api/business-plan/factors", json={
+        "factors": {"phins_take": 0.30},
+        "viewer_adjustable": ["phins_take"],
+        "visible_parts": ["plan-exec", "plan-financials", "factor-panel"],
+    }, timeout=10)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["settings"]["visible_parts"] == ["plan-exec", "plan-financials", "factor-panel"]
+
+    create = admin.post(f"{BASE_URL}/api/confidential/shares", json={
+        "path": PLAN, "password": "guest-open", "mode": "unlimited", "label": "Redacted Reader",
+    }, timeout=10)
+    assert create.status_code == 201, create.text
+    share = create.json()["share"]
+    assert share["composition"]["visible_parts"] == ["plan-exec", "plan-financials", "factor-panel"]
+    assert share["composition"]["viewer_adjustable"] == ["phins_take"]
+    assert share["composition"]["saved_factors"] == {"phins_take": 0.30}
+    # Unlimited still requires the NDA; nothing is consumed by the refusal.
+    refused = requests.post(f"{BASE_URL}/api/confidential/share-unlock",
+                            json={"share_id": share["id"], "password": "guest-open", "path": PLAN}, timeout=10)
+    assert refused.status_code == 400 and "nda" in refused.json()["error"].lower()
+    assert admin.get(f"{BASE_URL}/api/confidential/shares", timeout=10).json()["items"]
+    listed = next(item for item in admin.get(f"{BASE_URL}/api/confidential/shares", timeout=10).json()["items"] if item["id"] == share["id"])
+    assert listed["used_count"] == 0
+
+    reader = requests.Session()
+    opened = reader.post(f"{BASE_URL}/api/confidential/share-unlock", json={
+        "share_id": share["id"], "password": "guest-open", "path": PLAN,
+        "nda_accepted": True, "signer_name": "Noa Katz",
+    }, timeout=10)
+    assert opened.status_code == 200, opened.text
+    page = reader.get(f"{BASE_URL}{PLAN}", timeout=10)
+    assert page.status_code == 200
+    assert 'id="plan-exec"' in page.text and 'id="plan-financials"' in page.text
+    # Style rules may still name a hidden class. The elements themselves are gone.
+    assert 'id="part-deck"' not in page.text and 'class="bp-deck"' not in page.text
+    assert 'class="bp-founder-photo"' not in page.text
+    assert 'id="appendix-i"' not in page.text
+    assert '"id": "phins_take"' in page.text or '"id":"phins_take"' in page.text
+    assert '"id": "wacc"' not in page.text and '"id":"wacc"' not in page.text
+    # A later admin edit does not reopen chapters on the link already sent.
+    admin.post(f"{BASE_URL}/api/business-plan/factors", json={
+        "factors": {"phins_take": 0.30}, "viewer_adjustable": "all", "visible_parts": "all",
+    }, timeout=10)
+    again = reader.get(f"{BASE_URL}{PLAN}", timeout=10).text
+    assert 'id="part-deck"' not in again
+    access = reader.get(f"{BASE_URL}/api/business-plan/access", timeout=10).json()
+    assert access["visible_parts"] == ["plan-exec", "plan-financials", "factor-panel"]
+    assert access["adjustable"] == ["phins_take"]
+    assert access["saved_factors"] == {"phins_take": 0.30}
+    portrait = reader.get(f"{BASE_URL}/api/business-plan/founder-portrait", timeout=10)
+    assert portrait.status_code == 404
+    # Staff still see every chapter.
+    staff_page = admin.get(f"{BASE_URL}{PLAN}", timeout=10).text
+    assert 'id="part-deck"' in staff_page and len(part_ids()) > 3

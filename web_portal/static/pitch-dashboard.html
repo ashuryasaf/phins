@@ -2684,6 +2684,14 @@
         </form>
         <p id="confidential-share-msg" style="font-size:9pt;margin:10px 0 0;min-height:1.2em;color:var(--text-sub);"></p>
         <div id="confidential-share-result" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:#f4f7fb;font-size:9.5pt;word-break:break-all;"></div>
+        <p style="font-size:8.5pt;color:var(--text-sub);margin:8px 0 0;">A business-plan link freezes the document structure and the adjustable factors saved in <a href="/business-plan.html#bp-factor-panel">Admin tools</a> at the moment it is created. A later edit does not change a link already sent, and each link needs its own signature — opening one does not open the next.</p>
+      </div>
+
+      <div id="signed-documents-folder" hidden style="margin-top:16px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--bg-card);box-shadow:var(--shadow);">
+        <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--amber-1);margin-bottom:6px;">Staff · Signed documents</div>
+        <h3 style="margin:0 0 8px 0;font-size:12pt;">Signed NDAs</h3>
+        <p style="font-size:9.5pt;color:var(--text-sub);margin:0 0 12px 0;">Every NDA signed on an open link is sealed here: the exact terms, the signer, and the platform-ledger receipt. The folder is created the first time someone signs.</p>
+        <div id="signed-documents-list" style="font-size:9.5pt;color:var(--text-sub);">Loading…</div>
       </div>
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:18px;">
@@ -11750,8 +11758,58 @@
           headers: { "Authorization": "Bearer " + token },
           credentials: "same-origin"
         }).then(function (r) {
-          if (r.ok) panel.hidden = false;
+          if (r.ok) {
+            panel.hidden = false;
+            var folder = document.getElementById("signed-documents-folder");
+            if (folder) folder.hidden = false;
+            loadSignedDocuments(token);
+          }
         }).catch(function () {});
+      }
+
+      function loadSignedDocuments(token) {
+        var list = document.getElementById("signed-documents-list");
+        if (!list) return;
+        fetch("/api/confidential/signed-documents", {
+          headers: { "Authorization": "Bearer " + token },
+          credentials: "same-origin"
+        }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
+          if (!data) { list.textContent = "Signed documents could not be loaded."; return; }
+          var items = data.items || [];
+          if (!items.length) { list.textContent = "No signed documents yet."; return; }
+          list.innerHTML = "";
+          items.forEach(function (item) {
+            var row = document.createElement("div");
+            row.style.cssText = "padding:8px 0;border-top:1px solid var(--border);";
+            if (!item.intact) {
+              row.textContent = (item.archive_id || "record") + " — seal failed" + (item.error ? ": " + item.error : "");
+              list.appendChild(row);
+              return;
+            }
+            var when = String(item.signed_at || "").replace("T", " ").replace("Z", " UTC");
+            row.innerHTML = "<strong></strong> · <span></span><br><span style=\"color:#667;\"></span>";
+            row.querySelector("strong").textContent = item.signer_name || "Signer";
+            row.querySelectorAll("span")[0].textContent = (item.label || "") + " · " + when;
+            row.querySelectorAll("span")[1].textContent = (item.doc_instance_id || "") + " · " + String(item.nda_sha256 || "").slice(0, 16) + "… · ledger #" + (item.sequence_no || "");
+            var open = document.createElement("button");
+            open.type = "button";
+            open.className = "exec-dl-btn";
+            open.style.marginTop = "6px";
+            open.textContent = "Open signed NDA";
+            open.addEventListener("click", function () {
+              fetch("/api/confidential/signed-documents/" + encodeURIComponent(item.archive_id) + "/html", {
+                headers: { "Authorization": "Bearer " + token },
+                credentials: "same-origin"
+              }).then(function (r) { return r.ok ? r.text() : Promise.reject(); }).then(function (html) {
+                var blob = new Blob([html], { type: "text/html" });
+                window.open(URL.createObjectURL(blob), "_blank", "noopener");
+              }).catch(function () { open.textContent = "Could not open"; });
+            });
+            row.appendChild(document.createElement("br"));
+            row.appendChild(open);
+            list.appendChild(row);
+          });
+        }).catch(function () { list.textContent = "Signed documents could not be loaded."; });
       }
 
       form.addEventListener("submit", function (ev) {
@@ -11808,6 +11866,9 @@
           var share = res.data.share || {};
           var url = location.origin + (share.share_url_path || (docPath + "?share=" + share.id));
           var hours = Math.round((share.access_window_seconds || body.access_window_seconds) / 3600);
+          var composition = share.composition || {};
+          var partCount = Array.isArray(composition.visible_parts) ? composition.visible_parts.length : 0;
+          var factorCount = Array.isArray(composition.viewer_adjustable) ? composition.viewer_adjustable.length : 0;
           msg.textContent = "Share link created (" + (share.mode || mode) + (share.nda_required ? ", NDA" : "") + ").";
           result.style.display = "block";
           result.innerHTML = "<strong>Link:</strong> <a href=\"" + url + "\">" + url + "</a><br><strong>Open password:</strong> " +
@@ -11819,6 +11880,9 @@
                 (share.nda_doc_instance_id
                   ? "<br><strong>NDA registry:</strong> <a href=\"/api/legal-docs/registry?doc_id=" + encodeURIComponent(share.nda_doc_instance_id) + "\" target=\"_blank\" rel=\"noopener\">" +
                     String(share.nda_doc_instance_id).replace(/</g, "&lt;") + "</a> · content hash <code>" + String(share.nda_sha256 || "").slice(0, 16) + "…</code>"
+                  : "") +
+                (partCount
+                  ? "<br><strong>Frozen for this link:</strong> " + partCount + " chapters · " + factorCount + " adjustable factor" + (factorCount === 1 ? "" : "s")
                   : "")
               : "") +
             "<br><span style=\"color:#666\">Copied to clipboard when supported. Downloads stay excluded.</span>";

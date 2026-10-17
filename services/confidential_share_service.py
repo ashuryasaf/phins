@@ -346,6 +346,7 @@ class ConfidentialShareService:
         access_window_seconds: Optional[int] = None,
         idle_timeout_seconds: Optional[int] = None,
         lang: str = "en",
+        composition: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Create a single-use (max_uses=1) or multi-use share link.
 
@@ -445,6 +446,9 @@ class ConfidentialShareService:
             "access_window_seconds": int(window),
             "idle_timeout_seconds": int(idle),
             "sessions": [],
+            # Frozen chapters + adjustable factors for a business-plan link.
+            # None on every other document (and on links minted before this).
+            "composition": dict(composition) if isinstance(composition, dict) else None,
         }
         with self._exclusive_store():
             self._shares[share_id] = record
@@ -683,6 +687,7 @@ class ConfidentialShareService:
             "doc_instance_id": str(receipt.get("doc_instance_id") or "")[:120] or None,
             "role": str(receipt.get("role") or "")[:80] or None,
             "signed_at": str(receipt.get("signed_at") or "")[:40] or None,
+            "archive_id": str(receipt.get("archive_id") or "")[:64] or None,
         }
         with self._exclusive_store():
             record = self._shares.get(str(share_id or "").strip())
@@ -731,7 +736,19 @@ class ConfidentialShareService:
                 return False
             key = str(session_key or "").strip()
             if not key:
+                # An NDA link has no anonymous cookie: every opening is a
+                # signed session. Legacy non-NDA cookies (no session key)
+                # keep the share-level expiry check only.
+                if record.get("nda_required"):
+                    return False
                 return expiry is None or expiry > _utc_now()
+            if record.get("nda_required"):
+                accepted = any(
+                    a.get("session_key") == key
+                    for a in (record.get("nda_acceptances") or [])
+                )
+                if not accepted:
+                    return False
             sessions = list(record.get("sessions") or [])
             session = next((s for s in sessions if s.get("key") == key), None)
             if session is None:
@@ -779,6 +796,7 @@ class ConfidentialShareService:
                 "idle_timeout_seconds": int(record.get("idle_timeout_seconds") or 0),
                 "access_window_seconds": int(record.get("access_window_seconds") or 0),
                 "mode": "single" if record.get("max_uses") == 1 else ("multi" if record.get("max_uses") else "unlimited"),
+                "composition": dict(record.get("composition") or {}) or None,
             }
 
     # ------------------------------------------------------------------
@@ -834,6 +852,7 @@ class ConfidentialShareService:
             "nda_sha256": record.get("nda_sha256"),
             "nda_effective_date": record.get("nda_effective_date"),
             "nda_doc_instance_id": record.get("nda_doc_instance_id"),
+            "composition": dict(record.get("composition")) if isinstance(record.get("composition"), dict) else None,
             "access_window_seconds": int(
                 record.get("access_window_seconds") or DEFAULT_ACCESS_WINDOW_SECONDS
             ),
