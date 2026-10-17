@@ -607,9 +607,12 @@ Environment variables commonly used:
  and connected, and it is not swapped for another engine). A solution
  walkthrough send on the Growth Agent uses the selected video provider,
  provider model, library reference image, and completion mode. The prompt
- is that solution's sealed script; a different prompt is refused and the
- blueprint checksum is left as stored. Solution theaters
- play an assigned film to its own length.
+ is that solution's sealed narration in full and does not name an
+ eight-second length. The send asks the engine for its longest legal clip
+ (Veo 8, official Kling 10, Kling v3/o1/o3 on EvoLink 15, Seedance 15).
+ A different prompt is refused and the blueprint checksum is left as stored.
+ Fresh defaults use every public bullet; a saved narration is not rewritten.
+ Solution theaters play an assigned film to its own length.
  Sealed scene files join into one checksummed film that can be assigned to
  login, solutions, and disclaimer slots. A checksum mismatch is reported;
  library bytes are never rewritten to force a chain.
