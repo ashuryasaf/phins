@@ -77,7 +77,7 @@ Marketplace and wallet. Suppliers are invited, network-governed participants; th
 
 ## 5. Technology — the one standard
 
-The technology section is the same in every PHINS document because it is read from the repository, not written: 139 service modules in 6 packages, 8 API modules, 20 repositories, 14 security modules and 288 test files at the time of rendering. The platform is a single Python service with a database-backed durable layer (PostgreSQL / SQLite), a generalized job queue, and a hash-chained ledger.
+The technology section is the same in every PHINS document because it is read from the repository, not written: 143 service modules in 6 packages, 8 API modules, 20 repositories, 14 security modules and 289 test files at the time of rendering. The platform is a single Python service with a database-backed durable layer (PostgreSQL / SQLite), a generalized job queue, and a hash-chained ledger.
 
 Ten standards define what 'PHINS technology' means in a partner market, listed in Appendix D: one pricing kernel, append-only integrity, AI governance (agents recommend, humans decide), an evidence pipeline with provenance, durable checksummed agent state, one identity writer, shared security utilities, chat intake beside classic forms, marketplace and payments on the ledger, and one document standard. A partner receives the whole set; nothing is forked per market.
 
@@ -226,13 +226,7 @@ Insurance broker and lawyer who designed the PHINS contract family and built the
 |---|---|
 | Licensed insurance broker | Life, disability and long-term-care distribution practice in Israel; the anchor contract's 1:4 / 1:1 disability mechanism and the ADL-3 trigger are his product design. |
 | Advocate (Adv.) | Israeli Bar; drafted the regulatory application memorandum in actuarial form (Draft 3.1, EN + HE) and opened the pre-ruling track with the Capital Market, Insurance and Savings Authority (12 October 2026). |
-| Platform author | Built the production platform at www.phins.ai — 139 service modules, 8 API modules, 20 repositories, 14 security modules, 288 test files at this render — including the pricing kernel, the hash-chained ledger and the AI agents that recommend while humans decide. |
-| Actuarial validation | An IAA-recognised executive actuary (IL / CA / US) reviewed the pricing model and the actuarial service layer on 26 May 2026 and is engaged on the Chief-Actuary path; appointed-actuary sign-off remains an open gate. |
-| Capital-markets and partner relations | Leads the carrier, reinsurance, distribution-house and OECD partner conversations; author of the Investor Meeting book this plan reconciles to. |
-
-- AI recommends, the ledger posts, people supervise.
-- One factor register behind every investor figure; integrity identities on every render.
-- Technology, not balance sheet: carried by licensed insurers, reinsured by quota share, distributed with local partners.
+| Platform author | Built the production platform at www.phins.ai — 143 service modules, 8 API modules, 20 repositories, 14 security modules, 289 test files at this render — including the pricing kernel, the hash-chained ledger and the AI agents that recommend while humans decide. |
 
 ---
 
@@ -261,14 +255,14 @@ Insurance broker and lawyer who designed the PHINS contract family and built the
 
 - Supervisor engaged: pre-ruling track with the Capital Market, Insurance and Savings Authority opened 12 October 2026.
 - Demographics and public spend make the gap legible to regulators, partners and customers.
-- AI operating model is built: 139 service modules, 288 test files, golden sets gating CI.
+- AI operating model is built: 143 service modules, 289 test files, golden sets gating CI.
 
 ## Slide 5 — Founder
 *Asaf Ashury, Adv. · Founder & CEO · PHINS Technologies*
 
 - Licensed insurance broker and advocate; designed the contract family (1:4 / 1:1 disability mechanism, ADL-3 trigger) and drafted the regulatory memorandum in actuarial form.
-- Built the production platform end-to-end — 139 service modules, 288 test files at this render; pricing kernel, hash-chained ledger, AI agents that recommend while humans decide.
-- Pricing model reviewed by an IAA-recognised executive actuary (26 May 2026); pre-ruling track opened with the Authority on 12 October 2026.
+- Built the production platform end-to-end — 143 service modules, 289 test files at this render; pricing kernel, hash-chained ledger, AI agents that recommend while humans decide.
+- Opened the pre-ruling track with the Capital Market, Insurance and Savings Authority on 12 October 2026.
 
 ## Slide 6 — Product and pricing
 
@@ -293,7 +287,7 @@ Insurance broker and lawyer who designed the PHINS contract family and built the
 
 ## Slide 9 — Technology — one standard
 
-- 139 service modules · 8 API modules · 20 repositories · 14 security modules (live census).
+- 143 service modules · 8 API modules · 20 repositories · 14 security modules (live census).
 - One pricing kernel, hash-chained ledger, AI governance, evidence provenance, durable checksummed agent state, one identity writer.
 - One document standard: navy / gold letterhead, shield emblem, Inter + Space Grotesk — chrome never changes figures.
 
@@ -412,12 +406,12 @@ The carrier books 100% of risk GWP, pays the PHINS fee (25%), expects claims of 
 
 | Census (live) | Count |
 |---|---|
-| Service modules (`services/*.py`) | 139 |
+| Service modules (`services/*.py`) | 143 |
 | Service packages | 6 |
 | API modules (`web_portal/api_*.py`) | 8 |
 | Repositories (`database/repositories/*_repository.py`) | 20 |
 | Security modules (`security/*.py`) | 14 |
-| Test files | 288 |
+| Test files | 289 |
 | Agents with golden sets | 2 |
 
 | Pillar | Standard |
@@ -642,7 +636,6 @@ Every class of figure in this document, where it comes from and whether it feeds
 | OECD partnership expansion: launch counts by year, 50% ramp scale, 60% platform share, 35% opex intensity | Factor register defaults (`expansion` group) | Planning assumption | yes | Zero launches collapse the group to the anchor book exactly (identity `group_equals_anchor_plus_partners`). |
 | Technology census: service modules, packages, API modules, repositories, security modules, test files | Repository census at render time (`technology_census`) and `GET /api/platform/facts` in the browser | Platform fact (live) | reference only | Displayed, never typed; rebuilding the plan after a code change refreshes it. |
 | Regulatory and commercial gates: pre-ruling 12 Oct 2026, seed close Q4 2026, sales clock 1 Jan 2027, Gates 6–7 | Internal meeting records (`investor-docs/regulatory-preruling-avi-ovadia-brief.md`, `investor-docs/regulatory-meeting-27jul-brief.md`) and the Investor Meeting pack | Internal record | reference only | Dates drive the roadmap chart only; the in-force path is independent of them. |
-| Actuarial validation: IAA-recognised executive actuary cleared the pricing model on 26 May 2026 | Investor Meeting record and partner business plans (`internal/phins-ai-tech-partner-business-plan.html`) | Internal record | reference only | Narrative only; appointed-actuary sign-off remains an open gate. |
 | Market context: demographics, long-term-care spend, disability prevalence, insurance market sizes by market | External research registry below — the Scenario Lab's `sourceRegistry` on the pitch dashboard | External research (reference only) | reference only | The plan plans lives, not TAM; no statistic here moves a planning figure and no planning figure rewrites a statistic. |
 
 External research registry behind the market section — the same registry the Scenario Lab cites on the pitch dashboard, by planning market:

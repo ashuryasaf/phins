@@ -582,6 +582,30 @@ Environment variables commonly used:
  `PHINS_BUSINESS_PLAN_PORTRAIT` (local file) or
  `PHINS_PDF_PORTRAIT_BASE_URL` (origin that serves the route) is set,
  otherwise it prints "founder portrait omitted" and draws nothing.
+- **Business-plan open links (NDA, protected view, saved factors):**
+ `/business-plan.html`, `/business-plan.he.html` and `/api/business-plan/*`
+ are one confidential share scope (`confidential_access.share_scope_root`);
+ the `investor-docs/phins-unified-business-plan[.he].{pdf,md}` downloads
+ stay staff-only and are never share-unlockable. A share on a plan path is
+ always `nda_required` and needs a `label` (the Receiving Party). The NDA is
+ **the platform NDA** (`/legal/nda.html`, investor context, one-way) rendered
+ by `services/business_plan_nda.py` for that label and effective date plus a
+ protected-view rider; `nda_sha256` is fixed at link creation. A signed
+ unlock (`POST /api/confidential/share-unlock` with `signer_name`,
+ `nda_accepted`, optional `signature_png`) is anchored through
+ `_legal_doc_sign` (`docType=nda`, role `Receiving Party[ #n]`, instance
+ `LGL-NDA-<share>`) — no ledger anchor, no opening (the use is rolled back,
+ 503). Receipts are visible in `GET /api/confidential/shares`
+ (`nda_acceptances[].ledger`), `GET /api/legal-docs/registry?doc_id=LGL-NDA-…`
+ and `/api/legal-docs/verify`. Each opening is a session (`access_window_seconds`,
+ ≤ 3 h for single use, `idle_timeout_seconds`) bound into the share cookie
+ (`sk`). `GET /api/business-plan/access` drives `static/business-plan-access.js`
+ (watermark, no print/download/copy/capture, whitelisted factors only);
+ `GET`/`POST /api/business-plan/factors` (admin) persists the saved factor set
+ and `viewer_adjustable` whitelist via `services/business_plan_settings.py`
+ (`agent_artifacts` in DB mode, else `PHINS_BUSINESS_PLAN_SETTINGS_PATH` /
+ `database/business_plan_settings.json`); the saved set is always a
+ scenario, never `canonical`.
 - **Video agents (B8):** `REPLICATE_API_TOKEN` enables Replicate beside
  Gemini and Kling (Growth Agent and Video Agents). Optional
  `REPLICATE_VIDEO_MODELS` (comma-separated `owner/name`) and

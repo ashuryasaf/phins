@@ -18,7 +18,14 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+
+from services.business_plan_i18n import current as _current_translator, language_context, translator
+
+
+def _T(text: str) -> str:
+    """Translate ``text`` with the translator of the render in progress."""
+    return _current_translator()(text)
 
 W, H = 680, 320
 PAD_L, PAD_R, PAD_T, PAD_B = 62, 18, 46, 44
@@ -93,30 +100,30 @@ def roadmap_items(plan: Mapping[str, Any]) -> List[Dict[str, Any]]:
     il0 = plan["anchor_book"]["rows"][0]["eoy_in_force"]
     end = float(plan["years"][-1]) + 1.0
     items: List[Dict[str, Any]] = [
-        {"label": "Regulatory pre-ruling → filing (Israel)", "start": 2026.78, "end": 2027.5, "kind": "bar", "group": "Regulation"},
-        {"label": "Seed round " + label(fu["seed"], "ilsm0") + " on " + label(fu["pre_money"], "ilsm0") + " pre", "start": 2026.75, "end": 2027.0, "kind": "bar", "group": "Capital"},
-        {"label": "Israel sales on the carrier's paper", "start": 2027.0, "end": end, "kind": "bar", "group": "Israel"},
-        {"label": "Gate 6 — first 1,000 policies", "start": 2027.5, "end": 2027.5, "kind": "milestone", "group": "Israel"},
-        {"label": f"Gate 7 — {label(il0, 'int')} in force · Series A readiness", "start": 2028.0, "end": 2028.0, "kind": "milestone", "group": "Israel"},
+        {"label": _T("Regulatory pre-ruling → filing (Israel)"), "start": 2026.78, "end": 2027.5, "kind": "bar", "group": _T("Regulation")},
+        {"label": _T("Seed round {seed} on {pre} pre").format(seed=label(fu["seed"], "ilsm0"), pre=label(fu["pre_money"], "ilsm0")), "start": 2026.75, "end": 2027.0, "kind": "bar", "group": _T("Capital")},
+        {"label": _T("Israel sales on the carrier's paper"), "start": 2027.0, "end": end, "kind": "bar", "group": _T("Israel")},
+        {"label": _T("Gate 6 — first 1,000 policies"), "start": 2027.5, "end": 2027.5, "kind": "milestone", "group": _T("Israel")},
+        {"label": _T("Gate 7 — {n} in force · Series A readiness").format(n=label(il0, "int")), "start": 2028.0, "end": 2028.0, "kind": "milestone", "group": _T("Israel")},
     ]
     if fu["series_a_indicative"] > 0:
-        items.append({"label": "Series A " + label(fu["series_a_indicative"], "ilsm") + " (indicative)",
-                      "start": 2028.0, "end": 2028.5, "kind": "bar", "group": "Capital"})
+        items.append({"label": _T("Series A {amount} (indicative)").format(amount=label(fu["series_a_indicative"], "ilsm")),
+                      "start": 2028.0, "end": 2028.5, "kind": "bar", "group": _T("Capital")})
     for key in sorted(launches):
         count = int(launches[key])
         if count <= 0:
             continue
         year = int(key)
-        items.append({"label": f"Partner cohort {year} — {count} market{'s' if count != 1 else ''} live",
-                      "start": float(year), "end": end, "kind": "bar", "group": "Partners"})
+        items.append({"label": (_T("Partner cohort {year} — {count} market live") if count == 1 else _T("Partner cohort {year} — {count} markets live")).format(year=year, count=count),
+                      "start": float(year), "end": end, "kind": "bar", "group": _T("Partners")})
     if fu["first_ebitda_positive_year"]:
         y = int(fu["first_ebitda_positive_year"])
-        items.append({"label": f"Group EBITDA positive ({y})", "start": y + 1.0, "end": y + 1.0, "kind": "milestone", "group": "Cash"})
+        items.append({"label": _T("Group EBITDA positive ({y})").format(y=y), "start": y + 1.0, "end": y + 1.0, "kind": "milestone", "group": _T("Cash")})
     if fu["cumulative_positive_year"]:
         y = int(fu["cumulative_positive_year"])
-        items.append({"label": f"Cumulative EBITDA positive ({y})", "start": y + 1.0, "end": y + 1.0, "kind": "milestone", "group": "Cash"})
-    items.append({"label": f"{plan['partner_markets']['total_markets_by_2031']} markets on one platform",
-                  "start": end, "end": end, "kind": "milestone", "group": "Partners"})
+        items.append({"label": _T("Cumulative EBITDA positive ({y})").format(y=y), "start": y + 1.0, "end": y + 1.0, "kind": "milestone", "group": _T("Cash")})
+    items.append({"label": _T("{n} markets on one platform").format(n=plan["partner_markets"]["total_markets_by_2031"]),
+                  "start": end, "end": end, "kind": "milestone", "group": _T("Partners")})
     return items
 
 
@@ -132,36 +139,36 @@ def chart_specs(plan: Mapping[str, Any]) -> List[Dict[str, Any]]:
 
     specs.append({
         "id": "in_force", "kind": "stacked_bars", "unit": "int",
-        "title": "Policies in force at year end",
-        "subtitle": "Israel anchor book plus partner-market cohorts; the stack total is the group.",
+        "title": _T("Policies in force at year end"),
+        "subtitle": _T("Israel anchor book plus partner-market cohorts; the stack total is the group."),
         "categories": years,
         "series": [
-            {"label": "Israel", "color": NAVY, "values": [r["eoy_in_force"] for r in il]},
-            {"label": "Partner markets", "color": GOLD, "values": [r["eoy_in_force"] for r in pm]},
+            {"label": _T("Israel"), "color": NAVY, "values": [r["eoy_in_force"] for r in il]},
+            {"label": _T("Partner markets"), "color": GOLD, "values": [r["eoy_in_force"] for r in pm]},
         ],
         "source": "anchor_book.rows[].eoy_in_force + partner_markets.rows[].eoy_in_force = group.rows[].eoy_in_force",
     })
     specs.append({
         "id": "revenue_ebitda", "kind": "grouped_bars", "unit": "ilsm",
-        "title": "Group PHINS revenue, opex and EBITDA (ILS)",
-        "subtitle": "Revenue − opex = EBITDA every year; 2027 is the only loss year at default factors.",
+        "title": _T("Group PHINS revenue, opex and EBITDA (ILS)"),
+        "subtitle": _T("Revenue − opex = EBITDA every year; 2027 is the only loss year at default factors."),
         "categories": years,
         "series": [
-            {"label": "PHINS revenue", "color": NAVY, "values": [r["phins_revenue"] for r in g]},
-            {"label": "Opex", "color": GREY, "values": [r["opex"] for r in g]},
-            {"label": "EBITDA", "color": GOLD, "values": [r["ebitda"] for r in g]},
+            {"label": _T("PHINS revenue"), "color": NAVY, "values": [r["phins_revenue"] for r in g]},
+            {"label": _T("Opex"), "color": GREY, "values": [r["opex"] for r in g]},
+            {"label": _T("EBITDA"), "color": GOLD, "values": [r["ebitda"] for r in g]},
         ],
         "source": "group.rows[].phins_revenue, opex, ebitda",
     })
     specs.append({
         "id": "gwp_split", "kind": "stacked_bars", "unit": "ilsm",
-        "title": "Risk GWP and who keeps it (ILS)",
-        "subtitle": "Carrier share + PHINS revenue + partner revenue = group risk GWP; savings flow is outside this bar.",
+        "title": _T("Risk GWP and who keeps it (ILS)"),
+        "subtitle": _T("Carrier share + PHINS revenue + partner revenue = group risk GWP; savings flow is outside this bar."),
         "categories": years,
         "series": [
-            {"label": "Carrier share", "color": NAVY_MID, "values": [r["carrier_share"] for r in g]},
-            {"label": "PHINS revenue", "color": GOLD, "values": [r["phins_revenue"] for r in g]},
-            {"label": "Partner revenue", "color": GOLD_DEEP, "values": [r["partner_revenue"] for r in g]},
+            {"label": _T("Carrier share"), "color": NAVY_MID, "values": [r["carrier_share"] for r in g]},
+            {"label": _T("PHINS revenue"), "color": GOLD, "values": [r["phins_revenue"] for r in g]},
+            {"label": _T("Partner revenue"), "color": GOLD_DEEP, "values": [r["partner_revenue"] for r in g]},
         ],
         "source": "group.rows[].carrier_share + phins_revenue + partner_revenue = group.rows[].risk_gwp",
     })
@@ -172,15 +179,15 @@ def chart_specs(plan: Mapping[str, Any]) -> List[Dict[str, Any]]:
     n_fund = max(3, (plan["years"].index(cum_pos) + 1) if cum_pos in plan["years"] else len(years))
     specs.append({
         "id": "cash_curve", "kind": "line", "unit": "ilsm",
-        "title": f"Cumulative group EBITDA and the funding path, {years[0]}–{years[n_fund - 1]} (ILS)",
-        "subtitle": "The low point of the curve is the peak cumulative need; the seed and the Series A indication are the reference lines.",
+        "title": _T("Cumulative group EBITDA and the funding path, {y0}–{y1} (ILS)").format(y0=years[0], y1=years[n_fund - 1]),
+        "subtitle": _T("The low point of the curve is the peak cumulative need; the seed and the Series A indication are the reference lines."),
         "categories": years[:n_fund],
         "series": [
-            {"label": "Cumulative EBITDA (group)", "color": NAVY, "values": [r["cumulative_ebitda"] for r in g[:n_fund]]},
+            {"label": _T("Cumulative EBITDA (group)"), "color": NAVY, "values": [r["cumulative_ebitda"] for r in g[:n_fund]]},
         ],
         "refs": [
-            {"label": "Seed " + label(fu["seed"], "ilsm0"), "value": -fu["seed"], "color": GOLD_DEEP},
-            {"label": "Seed + Series A " + label(fu["series_a_indicative"], "ilsm"),
+            {"label": _T("Seed {amount}").format(amount=label(fu["seed"], "ilsm0")), "value": -fu["seed"], "color": GOLD_DEEP},
+            {"label": _T("Seed + Series A {amount}").format(amount=label(fu["series_a_indicative"], "ilsm")),
              "value": -(fu["seed"] + fu["series_a_indicative"]), "color": RED},
         ],
         "source": "group.rows[].cumulative_ebitda; funding.seed; funding.series_a_indicative",
@@ -188,30 +195,30 @@ def chart_specs(plan: Mapping[str, Any]) -> List[Dict[str, Any]]:
     c29 = cv[2]
     specs.append({
         "id": "carrier_view", "kind": "waterfall", "unit": "ilsm",
-        "title": f"Carrier economics {years[2]} — Israel anchor book (ILS)",
-        "subtitle": "What the carrier of record and the quota-share reinsurer see on the same GWP.",
+        "title": _T("Carrier economics {year} — Israel anchor book (ILS)").format(year=years[2]),
+        "subtitle": _T("What the carrier of record and the quota-share reinsurer see on the same GWP."),
         "steps": [
-            {"label": "Risk GWP", "value": c29["risk_gwp"], "kind": "total"},
-            {"label": "PHINS fee", "value": -c29["phins_fee"], "kind": "delta"},
-            {"label": "Expected claims", "value": -c29["expected_claims"], "kind": "delta"},
-            {"label": "Ceded claims", "value": c29["ceded_claims"], "kind": "delta"},
-            {"label": "Ceding commission", "value": c29["ceding_commission"], "kind": "delta"},
-            {"label": "Ceded premium", "value": -c29["ceded_premium"], "kind": "delta"},
-            {"label": "Own expenses", "value": -c29["own_expenses"], "kind": "delta"},
-            {"label": "Carrier result", "value": c29["carrier_result"], "kind": "total"},
+            {"label": _T("Risk GWP"), "value": c29["risk_gwp"], "kind": "total"},
+            {"label": _T("PHINS fee"), "value": -c29["phins_fee"], "kind": "delta"},
+            {"label": _T("Expected claims"), "value": -c29["expected_claims"], "kind": "delta"},
+            {"label": _T("Ceded claims"), "value": c29["ceded_claims"], "kind": "delta"},
+            {"label": _T("Ceding commission"), "value": c29["ceding_commission"], "kind": "delta"},
+            {"label": _T("Ceded premium"), "value": -c29["ceded_premium"], "kind": "delta"},
+            {"label": _T("Own expenses"), "value": -c29["own_expenses"], "kind": "delta"},
+            {"label": _T("Carrier result"), "value": c29["carrier_result"], "kind": "total"},
         ],
         "source": "carrier_view.rows[2]",
     })
     uof = fu["use_of_funds"]
     specs.append({
         "id": "use_of_funds", "kind": "donut", "unit": "ilsm",
-        "title": "Use of the seed round (ILS)",
-        "subtitle": "Shares are adjustable factors and must sum to 100%.",
+        "title": _T("Use of the seed round (ILS)"),
+        "subtitle": _T("Shares are adjustable factors and must sum to 100%."),
         "segments": [
-            {"label": "Product & technology", "value": uof["product_technology"]["amount"], "share": uof["product_technology"]["share"], "color": NAVY},
-            {"label": "Regulatory, actuarial & reinsurance", "value": uof["regulatory_actuarial"]["amount"], "share": uof["regulatory_actuarial"]["share"], "color": NAVY_MID},
-            {"label": "Distribution & local partnerships", "value": uof["distribution_partnerships"]["amount"], "share": uof["distribution_partnerships"]["share"], "color": GOLD},
-            {"label": "Operations & reserve", "value": uof["operations_reserve"]["amount"], "share": uof["operations_reserve"]["share"], "color": GOLD_DEEP},
+            {"label": _T("Product & technology"), "value": uof["product_technology"]["amount"], "share": uof["product_technology"]["share"], "color": NAVY},
+            {"label": _T("Regulatory, actuarial & reinsurance"), "value": uof["regulatory_actuarial"]["amount"], "share": uof["regulatory_actuarial"]["share"], "color": NAVY_MID},
+            {"label": _T("Distribution & local partnerships"), "value": uof["distribution_partnerships"]["amount"], "share": uof["distribution_partnerships"]["share"], "color": GOLD},
+            {"label": _T("Operations & reserve"), "value": uof["operations_reserve"]["amount"], "share": uof["operations_reserve"]["share"], "color": GOLD_DEEP},
         ],
         "center": label(fu["seed"], "ilsm0"),
         "source": "funding.use_of_funds",
@@ -219,8 +226,8 @@ def chart_specs(plan: Mapping[str, Any]) -> List[Dict[str, Any]]:
     sens = ap["sensitivity"]
     specs.append({
         "id": "appraisal_sensitivity", "kind": "heatmap", "unit": "ilsm",
-        "title": "Actuarial appraisal sensitivity (ILS pre-money)",
-        "subtitle": f"Rows: discount rate (WACC). Columns: exit multiple on {years[2]} net revenue. Prudence {label(ap['prudence'], 'pct')} throughout; the highlighted cell is the plan.",
+        "title": _T("Actuarial appraisal sensitivity (ILS pre-money)"),
+        "subtitle": _T("Rows: discount rate (WACC). Columns: exit multiple on {year} net revenue. Prudence {prudence} throughout; the highlighted cell is the plan.").format(year=years[2], prudence=label(ap["prudence"], "pct")),
         "rows": [label(w, "pct") for w in sens["wacc"]],
         "cols": [label(x, "x") for x in sens["exit_multiple"]],
         "values": sens["pre_money"],
@@ -230,8 +237,8 @@ def chart_specs(plan: Mapping[str, Any]) -> List[Dict[str, Any]]:
     })
     specs.append({
         "id": "roadmap", "kind": "gantt", "unit": "year",
-        "title": "Roadmap 2026–2031",
-        "subtitle": "Dated gates, the Israel sales clock, one bar per partner-market cohort, and the derived cash gates.",
+        "title": _T("Roadmap 2026–2031"),
+        "subtitle": _T("Dated gates, the Israel sales clock, one bar per partner-market cohort, and the derived cash gates."),
         "items": roadmap_items(plan),
         "axis": {"start": 2026.5, "end": float(plan["years"][-1]) + 1.0},
         "source": "GATES; partner_markets.launches; funding",
@@ -253,20 +260,20 @@ def chart_table(spec: Mapping[str, Any]) -> Tuple[List[str], List[List[str]]]:
     kind = spec["kind"]
     unit = spec.get("unit", "")
     if kind in ("stacked_bars", "grouped_bars", "line"):
-        header = ["Series"] + list(spec["categories"])
+        header = [_T("Series")] + list(spec["categories"])
         rows = [[s["label"]] + [label(v, unit) for v in s["values"]] for s in spec["series"]]
         if kind == "stacked_bars":
             totals = [sum(s["values"][i] for s in spec["series"]) for i in range(len(spec["categories"]))]
-            rows.append(["Total"] + [label(v, unit) for v in totals])
+            rows.append([_T("Total")] + [label(v, unit) for v in totals])
         for ref in spec.get("refs", []):
-            rows.append([ref["label"] + " (reference)"] + [label(ref["value"], unit)] * len(spec["categories"]))
+            rows.append([_T("{label} (reference)").format(label=ref["label"])] + [label(ref["value"], unit)] * len(spec["categories"]))
         return header, rows
     if kind == "waterfall":
-        return ["Step", "Amount"], [[s["label"], label(s["value"], unit)] for s in spec["steps"]]
+        return [_T("Step"), _T("Amount")], [[s["label"], label(s["value"], unit)] for s in spec["steps"]]
     if kind == "donut":
-        return ["Segment", "Amount", "Share"], [[s["label"], label(s["value"], unit), label(s["share"], "pct")] for s in spec["segments"]]
+        return [_T("Segment"), _T("Amount"), _T("Share")], [[s["label"], label(s["value"], unit), label(s["share"], "pct")] for s in spec["segments"]]
     if kind == "heatmap":
-        header = ["WACC \\ exit multiple"] + list(spec["cols"])
+        header = [_T("WACC \\ exit multiple")] + list(spec["cols"])
         return header, [[r] + [label(v, unit) for v in row] for r, row in zip(spec["rows"], spec["values"])]
     if kind == "gantt":
         rows = []
@@ -275,8 +282,8 @@ def chart_table(spec: Mapping[str, Any]) -> Tuple[List[str], List[List[str]]]:
                 when = _year_text(it["start"], end=True)
             else:
                 when = f"{_year_text(it['start'])} → {_year_text(it['end'], end=True)}"
-            rows.append([it["group"], it["label"], "milestone" if it["kind"] == "milestone" else "phase", when])
-        return ["Track", "Item", "Type", "When"], rows
+            rows.append([it["group"], it["label"], _T("milestone") if it["kind"] == "milestone" else _T("phase"), when])
+        return [_T("Track"), _T("Item"), _T("Type"), _T("When")], rows
     raise ValueError(kind)
 
 
@@ -287,7 +294,7 @@ def _year_text(t: float, end: bool = False) -> str:
     year = int(math.floor(t + 1e-9))
     frac = t - year
     if abs(frac) < 1e-9:
-        return f"end-{year - 1}" if end else str(year)
+        return _T("end-{year}").format(year=year - 1) if end else str(year)
     if end:
         return f"Q{int(math.ceil(frac * 4 - 1e-9))} {year}"
     return f"Q{int(math.floor(frac * 4 + 1e-9)) + 1} {year}"
@@ -658,12 +665,15 @@ def render_svg(spec: Mapping[str, Any]) -> str:
 # reportlab backend (PDF edition)
 # ---------------------------------------------------------------------------
 def render_reportlab(spec: Mapping[str, Any], width: float, font: str = "Helvetica",
-                     bold_font: str = "Helvetica-Bold", currency_glyph_ok: bool = False):
+                     bold_font: str = "Helvetica-Bold", currency_glyph_ok: bool = False,
+                     text_transform: Optional[Callable[[str], str]] = None):
     """Return a reportlab Drawing of the same primitives, scaled to ``width``.
 
     When the registered font lacks the new-shekel glyph (Helvetica does),
     ``₪`` is written as ``ILS `` so the number stays legible; the value is
-    unchanged.
+    unchanged. ``text_transform`` is applied to every label before drawing
+    (the PDF generator passes the Unicode bidi reordering for the Hebrew
+    edition); geometry is never touched.
     """
     from reportlab.graphics.shapes import (Circle, Drawing, Line, Polygon, PolyLine, Rect,
                                            String, Wedge)
@@ -676,7 +686,8 @@ def render_reportlab(spec: Mapping[str, Any], width: float, font: str = "Helveti
         return rl_colors.HexColor(c) if c else None
 
     def tx(s: str) -> str:
-        return s if currency_glyph_ok else s.replace("₪", "ILS ")
+        s = s if currency_glyph_ok else s.replace("₪", "ILS ")
+        return text_transform(s) if text_transform else s
 
     for op in layout(spec):
         k = op[0]
@@ -735,8 +746,14 @@ def render_reportlab(spec: Mapping[str, Any], width: float, font: str = "Helveti
 # ---------------------------------------------------------------------------
 # Payload helpers
 # ---------------------------------------------------------------------------
-def render_all(plan: Mapping[str, Any]) -> List[Dict[str, Any]]:
-    """Specs with their SVG and data table — what the API returns for ?charts=1."""
+def render_all(plan: Mapping[str, Any], lang: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Specs with their SVG and data table — what the API returns for ?charts=1.
+
+    ``lang`` renders the chart text in that language (``None`` keeps the
+    translator of the render in progress, English by default)."""
+    if lang is not None:
+        with language_context(translator(lang)):
+            return render_all(plan)
     out = []
     for spec in chart_specs(plan):
         header, rows = chart_table(spec)

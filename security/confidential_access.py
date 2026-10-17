@@ -78,18 +78,47 @@ STAFF_ROLES = ("admin", "accountant", "underwriter", "actuary", "compliance", "f
 # Confidential path prefixes (checked case-insensitively against the URL path).
 DEFAULT_CONFIDENTIAL_PREFIXES = ("/internal/", "/legal/")
 
+# The PHINS Unified Business Plan set: the live page in both languages, its
+# model/portrait/access APIs and the PDF / Markdown editions. The HTML pages
+# and APIs share one *scope root* so a share link minted for the page also
+# authorises the Hebrew edition and the APIs the page calls; the PDF/MD
+# editions are downloadable documents and therefore staff-only (a share
+# cookie never unlocks them).
+BUSINESS_PLAN_SCOPE_ROOT = "/business-plan.html"
+BUSINESS_PLAN_SCOPE_PATHS = (
+    "/business-plan.html",
+    "/business-plan.he.html",
+    "/api/business-plan/model",
+    "/api/business-plan/founder-portrait",
+    "/api/business-plan/access",
+    "/api/business-plan/factors",
+)
+BUSINESS_PLAN_DOWNLOADS = (
+    "/investor-docs/phins-unified-business-plan.pdf",
+    "/investor-docs/phins-unified-business-plan.md",
+    "/investor-docs/phins-unified-business-plan.he.pdf",
+    "/investor-docs/phins-unified-business-plan.he.md",
+)
+
 # Individually confidential files that do not live under a gated prefix.
 DEFAULT_CONFIDENTIAL_FILES = (
     "/pitch-dashboard.html",
     "/phins_business_plan_executive.pdf",
     "/phins_business_plan_executive.md",
-)
+    "/business-plan.html",
+    "/business-plan.he.html",
+) + BUSINESS_PLAN_DOWNLOADS
 
-# API endpoints that expose anchored signatures + signed content snapshots.
+# API endpoints that expose anchored signatures + signed content snapshots,
+# plus the business-plan APIs (the model is the document).
 DEFAULT_CONFIDENTIAL_API_PATHS = (
     "/api/legal-docs/registry",
     "/api/legal-docs/sign",
     "/api/legal-docs/verify",
+    "/api/business-plan/model",
+    "/api/business-plan/founder-portrait",
+    "/api/business-plan/access",
+    "/api/business-plan/factors",
 )
 
 _TRUTHY = ("1", "true", "yes", "y", "on")
@@ -228,6 +257,24 @@ def normalize_request_path(path: str) -> str:
     return str(path or "").split("?", 1)[0].split("#", 1)[0].lower()
 
 
+def share_scope_root(path: str) -> str:
+    """The path a share cookie is scoped to for ``path``.
+
+    Most pages are their own scope. The business-plan set collapses onto
+    ``/business-plan.html`` so one unlock covers the page, its Hebrew edition
+    and the APIs it calls — never the PDF/Markdown downloads.
+    """
+    normalized = normalize_request_path(path).rstrip("/") or "/"
+    if normalized in BUSINESS_PLAN_SCOPE_PATHS:
+        return BUSINESS_PLAN_SCOPE_ROOT
+    return normalized
+
+
+def is_business_plan_path(path: str) -> bool:
+    normalized = normalize_request_path(path).rstrip("/")
+    return normalized in BUSINESS_PLAN_SCOPE_PATHS or normalized in BUSINESS_PLAN_DOWNLOADS
+
+
 def signing_secret(environ: Optional[Mapping[str, str]] = None) -> str:
     """Secret used to mint staff-unlock and share cookies.
 
@@ -358,8 +405,13 @@ def mint_share_cookie(
     path: str,
     environ: Optional[Mapping[str, str]] = None,
     ttl_seconds: Optional[int] = None,
+    session_key: str = "",
 ) -> str:
-    """Mint a path-scoped share cookie after a successful open-password entry."""
+    """Mint a path-scoped share cookie after a successful open-password entry.
+
+    ``session_key`` binds the cookie to one opening of the link so the
+    share service can enforce that opening's access window and idle timeout.
+    """
     secret = signing_secret(environ)
     if not secret:
         raise RuntimeError("No signing secret available for share cookie.")
@@ -384,6 +436,8 @@ def mint_share_cookie(
         "iat": int(time.time()),
         "exp": int(time.time()) + max(60, int(ttl_seconds)),
     }
+    if session_key:
+        payload["sk"] = str(session_key)[:40]
     return _sign_payload(payload, secret)
 
 
@@ -392,13 +446,17 @@ def verify_share_cookie(
     path: str,
     environ: Optional[Mapping[str, str]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Return share claims when the cookie is valid for ``path`` (HTML only)."""
+    """Return share claims when the cookie is valid for ``path`` (HTML only).
+
+    The cookie's path and the requested path must share one scope root, so a
+    business-plan unlock also covers the Hebrew edition and the plan APIs.
+    """
     if is_downloadable_document(path):
         return None
     payload = _verify_signed_payload(cookie_value, signing_secret(environ))
     if not payload or payload.get("typ") != "share":
         return None
-    if normalize_request_path(path) != normalize_request_path(str(payload.get("p") or "")):
+    if share_scope_root(path) != share_scope_root(str(payload.get("p") or "")):
         return None
     if not str(payload.get("sid") or "").strip():
         return None
@@ -489,6 +547,16 @@ class AccessDecision:
     share_id: str = ""
     # True when the denied path is a downloadable export (no share-link unlock).
     downloadable: bool = False
+    # Opening key bound into the share cookie (share_cookie decisions only).
+    share_session_key: str = ""
+
+    @property
+    def is_staff(self) -> bool:
+        return self.reason in ("staff_session", "staff_unlock_cookie")
+
+    @property
+    def is_share_viewer(self) -> bool:
+        return self.reason == "share_cookie"
 
     @property
     def requires_redirect(self) -> bool:
@@ -536,10 +604,17 @@ def evaluate_access(
         )
         if share_claims:
             sid = str(share_claims.get("sid") or "")
+            session_key = str(share_claims.get("sk") or "")
             active = True
             if callable(share_active_check):
                 try:
-                    active = bool(share_active_check(sid, path))
+                    if session_key:
+                        try:
+                            active = bool(share_active_check(sid, path, session_key))
+                        except TypeError:
+                            active = bool(share_active_check(sid, path))
+                    else:
+                        active = bool(share_active_check(sid, path))
                 except Exception:
                     active = False
             if active:
@@ -548,6 +623,7 @@ def evaluate_access(
                     reason="share_cookie",
                     confidential=True,
                     share_id=sid,
+                    share_session_key=session_key,
                 )
 
     token = configured_access_token(env)
@@ -769,22 +845,95 @@ def denial_payload(decision: AccessDecision) -> Dict[str, str]:
     return {"error": "Access token required for confidential documents."}
 
 
+def _nda_share_block(
+    *,
+    nda: Mapping[str, Any],
+    share: Mapping[str, Any],
+    effective_share: str,
+    target_path: str,
+) -> str:
+    """The conditional-NDA unlock panel (signature + password)."""
+    labels = dict(nda.get("labels") or {})
+    hours = max(1, int(round(int(share.get("access_window_seconds") or 10800) / 3600)))
+    idle = max(1, int(round(int(share.get("idle_timeout_seconds") or 1800) / 60)))
+    window_note = str(labels.get("window_note") or "").format(hours=hours, idle=idle)
+    clauses = "".join(
+        f"<li><strong>{_html_escape(c.get('heading'))}.</strong> {_html_escape(c.get('body'))}</li>"
+        for c in (nda.get("clauses") or [])
+    )
+    addressed = _html_escape(nda.get("addressed_to") or share.get("label") or "")
+    instance = str(nda.get("doc_instance_id") or share.get("nda_doc_instance_id") or "")
+    instance_meta = (
+        f' · <span class="gate-nda__instance" data-platform-document="{_html_escape(nda.get("platform_document") or "/legal/nda.html")}">'
+        f"{_html_escape(instance)}</span>"
+        if instance else ""
+    )
+    return f"""
+<section class="gate-panel gate-panel--primary gate-nda" aria-labelledby="share-unlock-title">
+  <div class="gate-panel__eyebrow">{_html_escape(nda.get("document"))}</div>
+  <h2 id="share-unlock-title">{_html_escape(nda.get("title"))}</h2>
+  <p class="gate-panel__copy">{_html_escape(nda.get("subtitle"))}</p>
+  <p class="gate-nda__addressee"><span>{_html_escape(nda.get("addressed_to_label"))}:</span> <strong>{addressed}</strong></p>
+  <div class="gate-nda__text" id="nda-text" tabindex="0">
+    <p>{_html_escape(nda.get("intro"))}</p>
+    <ol>{clauses}</ol>
+    <p class="gate-nda__meta">{_html_escape(labels.get("version"))} {_html_escape(nda.get("version"))}{instance_meta} · {_html_escape(labels.get("checksum"))} <code>{_html_escape(str(nda.get("sha256") or "")[:16])}…</code></p>
+  </div>
+  <p class="gate-nda__window">{_html_escape(window_note)}</p>
+  <form id="share-unlock-form" class="gate-form" autocomplete="on" data-nda="1">
+    <input type="hidden" name="share_id" value="{_html_escape(effective_share)}">
+    <input type="hidden" name="path" value="{_html_escape(target_path)}">
+    <input type="hidden" name="nda_version" value="{_html_escape(nda.get("version"))}">
+    <input type="hidden" name="nda_sha256" value="{_html_escape(nda.get("sha256"))}">
+    <label class="gate-field">{_html_escape(labels.get("full_name"))}
+      <input type="text" name="signer_name" required minlength="2" maxlength="120"
+             autocomplete="name" placeholder="{_html_escape(labels.get("typed_signature"))}">
+    </label>
+    <div class="gate-field">
+      <span>{_html_escape(labels.get("draw_signature"))}</span>
+      <div class="gate-sign">
+        <canvas id="nda-signature" width="520" height="150" aria-label="{_html_escape(labels.get("draw_signature"))}"></canvas>
+        <button type="button" class="gate-sign__clear" id="nda-signature-clear">{_html_escape(labels.get("clear"))}</button>
+      </div>
+    </div>
+    <label class="gate-check">
+      <input type="checkbox" name="nda_accepted" value="1" required>
+      <span>{_html_escape(nda.get("acknowledgement"))}</span>
+    </label>
+    <label class="gate-field">{_html_escape(labels.get("password"))}
+      <input type="password" name="password" required minlength="4"
+             autocomplete="current-password" placeholder="••••••••">
+    </label>
+    <button type="submit" class="gate-btn">{_html_escape(labels.get("submit"))}</button>
+    <p id="share-unlock-msg" class="gate-msg" role="status" aria-live="polite"></p>
+  </form>
+</section>
+"""
+
+
 def denial_html(
     decision: AccessDecision,
     *,
     path: str = "",
     share_id: str = "",
+    nda: Optional[Mapping[str, Any]] = None,
+    share: Optional[Mapping[str, Any]] = None,
 ) -> str:
     """Branded HTML denial page with admin / share unlock forms.
 
     Visual language matches the portal login surface (navy gradient, gold
     accent, PHINS emblem). Form ids and unlock endpoints are unchanged so
-    access integrity stays identical.
+    access integrity stays identical. When ``nda`` (see
+    ``services.business_plan_nda.nda_document``) is given for a share, the
+    share panel becomes the conditional-NDA signature form.
     """
     message = denial_payload(decision)["error"]
     effective_share = (share_id or decision.share_id or "").strip()
     target_path = normalize_request_path(path) or "/"
     show_share = bool(effective_share) and not decision.downloadable
+    show_nda = bool(show_share and nda)
+    page_lang = str((nda or {}).get("lang") or "en")
+    page_dir = "rtl" if (nda or {}).get("rtl") else "ltr"
 
     if decision.reason == "not_configured_production":
         lead = "This document is confidential."
@@ -799,6 +948,9 @@ def denial_html(
             "PDF and export files are not unlocked by share links. "
             "Use a staff password or the deployment open password."
         )
+    elif show_nda:
+        lead = str(nda.get("subtitle") or "You have a shared confidential link.")
+        detail = str(nda.get("intro") or "")
     elif show_share:
         lead = "You have a shared confidential link."
         detail = "Enter the open password you were given to continue."
@@ -814,7 +966,14 @@ def denial_html(
     )
 
     share_block = ""
-    if show_share:
+    if show_nda:
+        share_block = _nda_share_block(
+            nda=nda,
+            share=share or {},
+            effective_share=effective_share,
+            target_path=target_path,
+        )
+    elif show_share:
         share_block = f"""
 <section class="gate-panel gate-panel--primary" aria-labelledby="share-unlock-title">
   <div class="gate-panel__eyebrow">Shared link</div>
@@ -1076,6 +1235,30 @@ def denial_html(
     color: var(--gate-danger);
   }
   .gate-msg.is-ok { color: var(--gate-ok); }
+  .gate-shell.gate-shell--wide { width: min(100%, 640px); }
+  .gate-nda__addressee { margin: 0 0 10px; font-size: 0.92rem; color: var(--gate-ink); }
+  .gate-nda__addressee span { color: var(--gate-muted); }
+  .gate-nda__text {
+    max-height: 260px; overflow: auto; padding: 12px 14px; border-radius: 10px;
+    border: 1px solid var(--gate-line); background: #fff; font-size: 0.84rem;
+    line-height: 1.5; color: #1f2a44;
+  }
+  .gate-nda__text ol { padding-inline-start: 1.2em; margin: 8px 0; }
+  .gate-nda__text li { margin: 0 0 6px; }
+  .gate-nda__text p { margin: 0 0 6px; }
+  .gate-nda__meta { color: var(--gate-muted); font-size: 0.76rem; }
+  .gate-nda__window { margin: 10px 0 4px; font-size: 0.82rem; color: var(--gate-muted); }
+  .gate-sign { position: relative; border: 2px dashed var(--gate-line); border-radius: 10px; background: #fff; }
+  .gate-sign canvas { display: block; width: 100%; height: 150px; touch-action: none; cursor: crosshair; }
+  .gate-sign__clear {
+    position: absolute; top: 6px; inset-inline-end: 6px; border: 1px solid var(--gate-line);
+    background: #f8fbff; color: var(--gate-muted); border-radius: 999px; font-size: 0.72rem;
+    padding: 3px 10px; cursor: pointer; font-family: inherit;
+  }
+  .gate-check { display: flex; gap: 10px; align-items: flex-start; font-size: 0.86rem; color: var(--gate-ink); }
+  .gate-check input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--gate-gold-lo); }
+  html[dir="rtl"] body { font-family: 'Heebo', 'Inter', system-ui, sans-serif; }
+  html[dir="rtl"] .gate-nda__text { text-align: right; }
   .gate-footnote {
     margin: 18px 0 0;
     color: var(--gate-muted);
@@ -1165,6 +1348,26 @@ def denial_html(
     });
   }
 
+  // Drawn signature pad for conditional-NDA links (optional; the typed full
+  // name is the binding signature, the drawing is kept as a PNG digest).
+  var pad = document.getElementById("nda-signature");
+  var padDrawn = false;
+  if (pad && pad.getContext) {
+    var ctx = pad.getContext("2d");
+    var drawing = false;
+    function pos(ev) {
+      var r = pad.getBoundingClientRect();
+      return { x: (ev.clientX - r.left) * (pad.width / r.width), y: (ev.clientY - r.top) * (pad.height / r.height) };
+    }
+    ctx.lineWidth = 2.2; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#0d2a5c";
+    pad.addEventListener("pointerdown", function (ev) { drawing = true; var p = pos(ev); ctx.beginPath(); ctx.moveTo(p.x, p.y); pad.setPointerCapture(ev.pointerId); });
+    pad.addEventListener("pointermove", function (ev) { if (!drawing) return; var p = pos(ev); ctx.lineTo(p.x, p.y); ctx.stroke(); padDrawn = true; });
+    function stop() { drawing = false; }
+    pad.addEventListener("pointerup", stop); pad.addEventListener("pointercancel", stop); pad.addEventListener("pointerleave", stop);
+    var clearBtn = document.getElementById("nda-signature-clear");
+    if (clearBtn) clearBtn.addEventListener("click", function () { ctx.clearRect(0, 0, pad.width, pad.height); padDrawn = false; });
+  }
+
   var shareForm = document.getElementById("share-unlock-form");
   if (shareForm) {
     shareForm.addEventListener("submit", function (ev) {
@@ -1174,11 +1377,19 @@ def denial_html(
       setMsg(msg, "Checking…", true);
       if (btn) btn.disabled = true;
       var fd = new FormData(shareForm);
-      postJson("/api/confidential/share-unlock", {
+      var body = {
         share_id: fd.get("share_id"),
         password: fd.get("password"),
         path: fd.get("path")
-      }).then(function (res) {
+      };
+      if (shareForm.getAttribute("data-nda") === "1") {
+        body.nda_accepted = fd.get("nda_accepted") === "1";
+        body.signer_name = fd.get("signer_name") || "";
+        body.nda_version = fd.get("nda_version") || "";
+        body.nda_sha256 = fd.get("nda_sha256") || "";
+        if (pad && padDrawn) { try { body.signature_png = pad.toDataURL("image/png"); } catch (e) {} }
+      }
+      postJson("/api/confidential/share-unlock", body).then(function (res) {
         if (!res.ok) {
           setMsg(msg, (res.data && res.data.error) || "Unlock failed", false);
           if (btn) btn.disabled = false;
@@ -1200,8 +1411,11 @@ def denial_html(
     # Share form first when the visitor arrived via a share link — primary path.
     panels = f"{share_block}{admin_block}" if show_share else f"{admin_block}"
 
+    fonts = "family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700"
+    if page_dir == "rtl":
+        fonts += "&family=Heebo:wght@400;500;600"
     return f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="{_html_escape(page_lang)}" dir="{page_dir}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1211,12 +1425,12 @@ def denial_html(
   <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?{fonts}&display=swap" rel="stylesheet">
   {styles}
 </head>
 <body>
   <div class="gate-backdrop" aria-hidden="true"></div>
-  <div class="gate-shell">
+  <div class="gate-shell{' gate-shell--wide' if show_nda else ''}">
     <main class="gate-card">
       <header class="gate-brand">
         <a href="/" title="PHINS home">

@@ -263,6 +263,10 @@ def test_browser_and_python_formatters_agree():
     html = _read(HTML)
     js = re.search(r"<script>\s*(\(function \(\) \{\s+'use strict';.*?)</script>", html, re.S).group(1)
     fmt_src = re.search(r"(function moneyM.*?)\n  function getPath", js, re.S).group(1)
+    # the browser formatter reads its words (bool / canonical / months) from
+    # the page's language block — feed it the same block the page ships
+    ui_json = re.search(r'<script type="application/json" id="bp-ui-strings">(.*?)</script>', html, re.S).group(1)
+    fmt_src = "var UI = " + ui_json + ";\n" + fmt_src
     samples = [
         (54216000.0, "ilsm"), (-18846000.0, "ilsm"), (3747265344.0, "ilsm"), (24000000.0, "ilsm0"),
         (749074460.0, "usdm"), (4518.0, "ils"), (376.5, "ils2"), (230554.0, "int"), (0.25, "pct"),
@@ -569,8 +573,13 @@ def test_founder_section_and_slide_carry_credentials():
     for text in (html, md):
         assert doc.FOUNDER["name"] in text
         assert "Licensed insurance broker" in text and "Advocate (Adv.)" in text
-        assert "26 May 2026" in text and "12 October 2026" in text
+        assert "12 October 2026" in text
         assert doc.FOUNDER_PORTRAIT_URL in text
+        # removed on request: the actuarial-validation and capital-markets
+        # rows and the three principle bullets
+        assert "Actuarial validation" not in text and "Capital-markets and partner relations" not in text
+        assert "AI recommends, the ledger posts, people supervise." not in text
+    assert [t for t, _ in doc.FOUNDER["credentials"]] == ["Licensed insurance broker", "Advocate (Adv.)", "Platform author"]
     live = portal.count_service_modules()
     assert f"{live:,} service modules" in md  # credential placeholders are filled
     assert 'class="bp-founder-photo' in html and 'class="bp-monogram"' in html
