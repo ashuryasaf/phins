@@ -92,6 +92,10 @@ DOCUMENTS = [
      'investor-docs/phins-unified-business-plan.pdf',
      'PHINS — Unified Business Plan, Investor Deck & Appendices · '
      'One standard · Adjustable factors'),
+    ('investor-docs/phins-unified-business-plan.he.md',
+     'investor-docs/phins-unified-business-plan.he.pdf',
+     'PHINS — תוכנית עסקית מאוחדת, מצגת משקיעים ונספחים · '
+     'תקן אחד · גורמים מתכווננים'),
     ('investor-docs/israel-regulatory-application-en.md',
      'investor-docs/israel-regulatory-application-en.pdf',
      'PHINS — Regulatory Application Memorandum (Israel) · '
@@ -155,6 +159,7 @@ DOCUMENTS = [
 # font, right-aligned paragraph styles with reportlab's RTL word wrap, and
 # mirrored table columns so the logical first column sits on the right.
 RTL_DOCUMENTS = {
+    'investor-docs/phins-unified-business-plan.he.md',
     'investor-docs/israel-regulatory-application-he.md',
     'investor-docs/regulatory-preruling-avi-ovadia-brief-he.md',
     'investor-docs/aspire-invest-meeting-sep2026-brief-he.md',
@@ -542,8 +547,15 @@ def _chart_flowable(line: str, styles):
     hebrew = _register_hebrew_font() == 'PHINSHebrew'
     font = 'PHINSHebrew' if hebrew else 'Helvetica'
     bold = 'PHINSHebrew-Bold' if hebrew else 'Helvetica-Bold'
+    # Hebrew chart text (the .he edition) is reordered to visual order per
+    # label; the layout geometry is the same as the English chart.
+    transform = None
+    if hebrew and _bidi_get_display is not None and _HEBREW_RUN.search(
+            str(spec.get('title', '')) + str(spec.get('subtitle', ''))):
+        # labels without Hebrew (years, amounts, "WACC 35%") keep LTR order
+        transform = lambda text: _bidi_line(text) if _HEBREW_RUN.search(text) else text  # noqa: E731
     return render_reportlab(spec, FRAME_WIDTH, font=font, bold_font=bold,
-                            currency_glyph_ok=hebrew)
+                            currency_glyph_ok=hebrew, text_transform=transform)
 
 
 def _portrait_bytes():

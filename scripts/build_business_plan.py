@@ -11,15 +11,17 @@ Writes, from ``services/business_plan_model.py`` through
   print / no-JS fallback at default factors;
 * ``web_portal/static/investor-docs/phins-unified-business-plan.md`` — the
   portable edition that ``scripts/generate_investor_pdfs.py`` renders into
-  the branded PDF.
+  the branded PDF;
+* ``business-plan.he.html`` and ``phins-unified-business-plan.he.md`` — the
+  Hebrew edition of both (``lang="he"``, RTL), same plan and content hash.
 
-Both outputs are deterministic for a given repository state, so a committed
+All outputs are deterministic for a given repository state, so a committed
 copy can be checked against a fresh render (``--check``); the contract test is
 ``tests/test_business_plan.py``. The script reads no platform data and writes
-nothing but these two files.
+nothing but these files.
 
 Usage:
-    python3 scripts/build_business_plan.py            # rewrite both files
+    python3 scripts/build_business_plan.py            # rewrite the files
     python3 scripts/build_business_plan.py --check    # exit 1 when stale
 """
 
@@ -38,11 +40,19 @@ from services.business_plan_model import compute_plan  # noqa: E402
 STATIC = ROOT / "web_portal" / "static"
 HTML_PATH = STATIC / "business-plan.html"
 MD_PATH = STATIC / "investor-docs" / "phins-unified-business-plan.md"
+# Hebrew edition — same plan, same hash, rendered with lang="he" (RTL).
+HTML_HE_PATH = STATIC / "business-plan.he.html"
+MD_HE_PATH = STATIC / "investor-docs" / "phins-unified-business-plan.he.md"
 
 
 def outputs() -> dict[Path, str]:
     plan = compute_plan()
-    return {HTML_PATH: render_html(plan), MD_PATH: render_markdown(plan)}
+    return {
+        HTML_PATH: render_html(plan),
+        MD_PATH: render_markdown(plan),
+        HTML_HE_PATH: render_html(plan, lang="he"),
+        MD_HE_PATH: render_markdown(plan, lang="he"),
+    }
 
 
 def main(argv: list[str] | None = None) -> int:

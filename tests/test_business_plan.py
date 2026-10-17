@@ -569,8 +569,13 @@ def test_founder_section_and_slide_carry_credentials():
     for text in (html, md):
         assert doc.FOUNDER["name"] in text
         assert "Licensed insurance broker" in text and "Advocate (Adv.)" in text
-        assert "26 May 2026" in text and "12 October 2026" in text
+        assert "12 October 2026" in text
         assert doc.FOUNDER_PORTRAIT_URL in text
+        # removed on request: the actuarial-validation and capital-markets
+        # rows and the three principle bullets
+        assert "Actuarial validation" not in text and "Capital-markets and partner relations" not in text
+        assert "AI recommends, the ledger posts, people supervise." not in text
+    assert [t for t, _ in doc.FOUNDER["credentials"]] == ["Licensed insurance broker", "Advocate (Adv.)", "Platform author"]
     live = portal.count_service_modules()
     assert f"{live:,} service modules" in md  # credential placeholders are filled
     assert 'class="bp-founder-photo' in html and 'class="bp-monogram"' in html

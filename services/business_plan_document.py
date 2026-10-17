@@ -34,12 +34,18 @@ from services.business_plan_model import (
     YEARS,
     compute_plan,
 )
+from services.business_plan_i18n import current as _current_translator, language_context, translator
 from services.business_plan_sources import LINEAGE, research_rows
 
 BRAND_TAGLINE = "Personal Health Insurance & Savings · AI-Operated Insurance Platform"
 DOCUMENT_TITLE = "PHINS — Unified Business Plan, Investor Deck & Appendices"
 DOCUMENT_EDITION = "October 2026 · one standard · adjustable factors"
 CONTACT = "asaf@phins.ai · phins.ai"
+
+
+def T(text: Optional[str]) -> str:
+    """Translate ``text`` with the translator of the render in progress."""
+    return _current_translator()(text)
 
 # Processed founder portrait (media-library placement ``founder_portrait_id``;
 # see services/business_plan_portrait.py). The PDF edition embeds the same
@@ -62,13 +68,6 @@ FOUNDER: Dict[str, Any] = {
         ("Licensed insurance broker", "Life, disability and long-term-care distribution practice in Israel; the anchor contract's 1:4 / 1:1 disability mechanism and the ADL-3 trigger are his product design."),
         ("Advocate (Adv.)", "Israeli Bar; drafted the regulatory application memorandum in actuarial form (Draft 3.1, EN + HE) and opened the pre-ruling track with the Capital Market, Insurance and Savings Authority (12 October 2026)."),
         ("Platform author", "Built the production platform at www.phins.ai — {modules} service modules, {api_modules} API modules, {repositories} repositories, {security_modules} security modules, {test_files} test files at this render — including the pricing kernel, the hash-chained ledger and the AI agents that recommend while humans decide."),
-        ("Actuarial validation", "An IAA-recognised executive actuary (IL / CA / US) reviewed the pricing model and the actuarial service layer on 26 May 2026 and is engaged on the Chief-Actuary path; appointed-actuary sign-off remains an open gate."),
-        ("Capital-markets and partner relations", "Leads the carrier, reinsurance, distribution-house and OECD partner conversations; author of the Investor Meeting book this plan reconciles to."),
-    ],
-    "principles": [
-        "AI recommends, the ledger posts, people supervise.",
-        "One factor register behind every investor figure; integrity identities on every render.",
-        "Technology, not balance sheet: carried by licensed insurers, reinsured by quota share, distributed with local partners.",
     ],
 }
 
@@ -181,6 +180,7 @@ _ROW_FIGURES: Dict[str, Tuple[str, str, str]] = {
     "cv_margin": ("carrier_view", "carrier_margin", "pct1"),
 }
 _PLACEHOLDER = re.compile(r"\{([a-z_0-9]+)\}")
+_CODE_SPAN = re.compile(r"`([^`]+)`")
 
 
 def _derived(plan: Mapping[str, Any]) -> Dict[str, Any]:
@@ -234,9 +234,9 @@ def fmt(value: Any, kind: str, fx: float = 3.68) -> str:
     if kind == "text":
         return str(value)
     if kind == "bool":
-        return "all identities hold" if value is True else "integrity check failed"
+        return T("all identities hold") if value is True else T("integrity check failed")
     if kind == "canonical":
-        return "canonical" if value is True else "scenario"
+        return T("canonical") if value is True else T("scenario")
     if kind == "hash":
         return str(value)[:16]
     if kind == "year":
@@ -265,7 +265,7 @@ def fmt(value: Any, kind: str, fx: float = 3.68) -> str:
     if kind == "num3":
         return f"{v:.3f}"
     if kind == "months":
-        return f"{v:.1f} months"
+        return T("{n} months").format(n=f"{v:.1f}")
     return str(value)
 
 
@@ -435,7 +435,7 @@ def deck_slides() -> List[Section]:
         {"title": "Founder", "kicker": FOUNDER["name"] + " · " + FOUNDER["role"], "founder": True, "bullets": [
             "Licensed insurance broker and advocate; designed the contract family (1:4 / 1:1 disability mechanism, ADL-3 trigger) and drafted the regulatory memorandum in actuarial form.",
             "Built the production platform end-to-end — {modules} service modules, {test_files} test files at this render; pricing kernel, hash-chained ledger, AI agents that recommend while humans decide.",
-            "Pricing model reviewed by an IAA-recognised executive actuary (26 May 2026); pre-ruling track opened with the Authority on 12 October 2026.",
+            "Opened the pre-ruling track with the Capital Market, Insurance and Savings Authority on 12 October 2026.",
         ]},
         {"title": "Product and pricing", "bullets": [
             "Kernel specimen: {specimen_life_monthly} life + {specimen_dis_monthly} disability = {specimen_monthly} a month at the 1.255 age-42 factor.",
@@ -488,10 +488,10 @@ def _year_table(plan: Mapping[str, Any], table: str, columns: Sequence[Tuple[str
     """columns: (label, field, fmt). Returns header + rows (one row per metric)."""
     fx = float(plan["presentation"]["fx_usd_ils"])
     rows = plan[table]["rows"]
-    header = ["Metric"] + [str(r["year"]) for r in rows]
+    header = [T("Metric")] + [str(r["year"]) for r in rows]
     body: List[List[str]] = []
     for label, field, kind in columns:
-        cells = [label]
+        cells = [T(label)]
         for i, r in enumerate(rows):
             text = fmt(r.get(field), kind, fx)
             if html_mode:
@@ -580,6 +580,7 @@ def _fill(text: str, plan: Mapping[str, Any], html_mode: bool) -> str:
         if not html_mode:
             return value
         return f'<span data-bp="{path}" data-fmt="{kind}">{_html.escape(value)}</span>'
+    text = T(text)
     if html_mode:
         # escape the prose first, then substitute (values are escaped inside repl)
         text = _html.escape(text, quote=False)
@@ -610,7 +611,7 @@ def placeholder_keys() -> List[str]:
 # Charts, founder block and data-source rows shared by both renderers
 # ---------------------------------------------------------------------------
 def _chart_caption(spec: Mapping[str, Any]) -> str:
-    return f"Figure {spec['id'].replace('_', ' ')} — source: {spec.get('source', '')}"
+    return T("Figure {chart} — source: {source}").format(chart=spec['id'].replace('_', ' '), source=spec.get('source', ''))
 
 
 def _md_chart(plan: Mapping[str, Any], chart_id: str) -> List[str]:
@@ -638,7 +639,7 @@ def _html_chart(plan: Mapping[str, Any], chart_id: str) -> str:
 
 
 def founder_rows(plan: Mapping[str, Any], html_mode: bool) -> List[List[str]]:
-    return [[title, _fill(text, plan, html_mode)] for title, text in FOUNDER["credentials"]]
+    return [[T(title), _fill(text, plan, html_mode)] for title, text in FOUNDER["credentials"]]
 
 
 def data_source_rows(plan: Mapping[str, Any]) -> List[Dict[str, str]]:
@@ -646,84 +647,91 @@ def data_source_rows(plan: Mapping[str, Any]) -> List[Dict[str, str]]:
     return research_rows(plan["markets"])
 
 
+# Prose shared by both renderers (one string → one translation)
+METHOD_TEXT = ('Method: in-force follows `eoy = round(prior × persistency) + round(new × first-year persistency)`, average in force is the mid-point, risk GWP = average in force × premium, PHINS revenue = GWP × take, opex = intensity (ILS per average life, by plan year) × average in force. Partner cohorts follow the same recursion from their launch year at the ramp scale; group = anchor + partners. Funding is derived from the group cash curve. The appraisal is PV(EBITDA 2027–2029) + exit multiple × 2029 net revenue, discounted at WACC, less prudence.')
+LINEAGE_INTRO = ('Every class of figure in this document, where it comes from and whether it feeds the model. External research is reference only: the plan counts lives (not market size) from the kernel premium and the persistency identity, so no statistic moves a planning figure and no planning figure rewrites a statistic.')
+
+
 # ---------------------------------------------------------------------------
 # Markdown renderer
 # ---------------------------------------------------------------------------
 def _md_table(header: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
+    header = [T(h) for h in header]
     out = ["| " + " | ".join(header) + " |", "|" + "|".join("---" for _ in header) + "|"]
     for r in rows:
         out.append("| " + " | ".join(str(c).replace("|", "\\|") for c in r) + " |")
     return "\n".join(out)
 
 
-def render_markdown(plan: Optional[Mapping[str, Any]] = None) -> str:
-    plan = plan or compute_plan()
+def render_markdown(plan: Optional[Mapping[str, Any]] = None, lang: str = "en") -> str:
+    """The portable edition; ``lang="he"`` renders the Hebrew edition."""
+    with language_context(translator(lang)):
+        return _render_markdown(plan or compute_plan())
+
+
+def _render_markdown(plan: Mapping[str, Any]) -> str:
     f = lambda t: _fill(t, plan, False)  # noqa: E731
-    fx = float(plan["presentation"]["fx_usd_ils"])
     L: List[str] = []
-    L.append(f"# {DOCUMENT_TITLE}")
+    L.append(f"# {T(DOCUMENT_TITLE)}")
     L.append("")
-    L.append(f"**Edition:** {DOCUMENT_EDITION}  ")
-    L.append(f"**Plan identity:** `{plan['plan_version']}` · content hash `{plan['content_hash']}`  ")
-    L.append(f"**Audience:** venture and angel investors, carriers, reinsurers, supervisors and local partners.  ")
-    L.append(f"**Companion:** the live, adjustable edition is `/business-plan.html`; the model is `GET /api/business-plan/model`. "
-             f"This file is generated from the same model by `scripts/build_business_plan.py` and must not be edited by hand.")
+    L.append(f"**{T('Edition')}:** {T(DOCUMENT_EDITION)}  ")
+    L.append(f"**{T('Plan identity')}:** `{plan['plan_version']}` · {T('content hash')} `{plan['content_hash']}`  ")
+    L.append(f"**{T('Audience')}:** {T('venture and angel investors, carriers, reinsurers, supervisors and local partners.')}  ")
+    L.append(f"**{T('Companion')}:** " + T("the live, adjustable edition is `/business-plan.html`; the model is `GET /api/business-plan/model`. "
+             "This file is generated from the same model by `scripts/build_business_plan.py` and must not be edited by hand."))
     L.append("")
-    L.append("> Planning identity only. Public market evidence stays in the Scenario Lab, locked and separate; "
-             "no figure here writes the platform ledger, the actuarial store or any statistic.")
+    L.append("> " + T("Planning identity only. Public market evidence stays in the Scenario Lab, locked and separate; "
+             "no figure here writes the platform ledger, the actuarial store or any statistic."))
     L.append("")
-    L.append("## Headline figures")
+    L.append("## " + T("Headline figures"))
     L.append("")
     L.append(_md_table(["Figure", "Value"], [
-        ["Annual risk premium (kernel specimen, age 42)", f("{premium}")],
-        ["PHINS take / carrier share", f("{take} / {carrier_share_pct}")],
-        ["Israel in force, end-2029 / end-2031", f("{il_eoy_2} / {il_eoy_4}")],
-        ["Markets on the platform by 2031", f("{markets_2031}")],
-        ["Group PHINS revenue 2031 (ILS / USD at planning FX)", f("{g_rev_4} / {g_rev_usd_4}")],
-        ["Group EBITDA margin 2031", f("{g_margin_4}")],
-        ["Seed / pre-money / post-money", f("{seed} / {pre} / {post}")],
-        ["Series A indication (2028)", f("{series_a}")],
-        ["Actuarial appraisal (anchor book)", f("{appraisal}")],
-        ["Integrity", f("{integrity_all}")],
+        [T("Annual risk premium (kernel specimen, age 42)"), f("{premium}")],
+        [T("PHINS take / carrier share"), f("{take} / {carrier_share_pct}")],
+        [T("Israel in force, end-2029 / end-2031"), f("{il_eoy_2} / {il_eoy_4}")],
+        [T("Markets on the platform by 2031"), f("{markets_2031}")],
+        [T("Group PHINS revenue 2031 (ILS / USD at planning FX)"), f("{g_rev_4} / {g_rev_usd_4}")],
+        [T("Group EBITDA margin 2031"), f("{g_margin_4}")],
+        [T("Seed / pre-money / post-money"), f("{seed} / {pre} / {post}")],
+        [T("Series A indication (2028)"), f("{series_a}")],
+        [T("Actuarial appraisal (anchor book)"), f("{appraisal}")],
+        [T("Integrity"), f("{integrity_all}")],
     ]))
     L.append("")
     L.append("---")
     L.append("")
-    L.append("# Part I — Business plan")
+    L.append("# " + T("Part I — Business plan"))
     L.append("")
     for sec in plan_sections():
-        L.append(f"## {sec['num']}. {sec['title']}")
+        L.append(f"## {sec['num']}. {T(sec['title'])}")
         L.append("")
         for p in sec.get("paragraphs", []):
             L.append(f(p))
             L.append("")
         if sec.get("table") == "risks":
             L.append(_md_table(["Risk", "What could go wrong", "Mitigation in the plan"],
-                               [[r[0], f(r[1]), f(r[2])] for r in RISKS]))
+                               [[T(r[0]), f(r[1]), f(r[2])] for r in RISKS]))
             L.append("")
         if sec.get("table") == "gates":
-            L.append(_md_table(["When", "Gate"], [[g[0], f(g[1])] for g in GATES]))
+            L.append(_md_table(["When", "Gate"], [[T(g[0]), f(g[1])] for g in GATES]))
             L.append("")
         if sec.get("founder"):
-            L.append(f"![{FOUNDER['name']} — founder portrait]({FOUNDER_PORTRAIT_URL})")
+            L.append(f"![{T(FOUNDER['name'])} — {T('founder portrait')}]({FOUNDER_PORTRAIT_URL})")
             L.append("")
-            L.append(f"**{FOUNDER['name']}** — {FOUNDER['role']}")
+            L.append(f"**{T(FOUNDER['name'])}** — {T(FOUNDER['role'])}")
             L.append("")
             L.append(_md_table(["Credential", "Detail"], founder_rows(plan, False)))
-            L.append("")
-            for pr in FOUNDER["principles"]:
-                L.append(f"- {pr}")
             L.append("")
         for chart_id in SECTION_CHARTS.get(sec["id"], []):
             L.extend(_md_chart(plan, chart_id))
     L.append("---")
     L.append("")
-    L.append("# Part II — Investor deck")
+    L.append("# " + T("Part II — Investor deck"))
     L.append("")
     for i, s in enumerate(deck_slides(), 1):
-        L.append(f"## Slide {i} — {s['title']}")
+        L.append(f"## {T('Slide')} {i} — {T(s['title'])}")
         if s.get("kicker"):
-            L.append(f"*{s['kicker']}*")
+            L.append(f"*{T(s['kicker'])}*")
         L.append("")
         for b in s["bullets"]:
             L.append(f"- {f(b)}")
@@ -731,14 +739,14 @@ def render_markdown(plan: Optional[Mapping[str, Any]] = None) -> str:
         if s["title"] in SLIDE_CHARTS:
             spec = chart_by_id(plan, SLIDE_CHARTS[s["title"]])
             L.append(chart_directive(spec))
-            L.append(f"*Chart: {spec['title']} — data in Part I and Appendix F.*")
+            L.append("*" + T("Chart: {title} — data in Part I and Appendix F.").format(title=spec['title']) + "*")
             L.append("")
     L.append("---")
     L.append("")
-    L.append("# Part III — Appendices")
+    L.append("# " + T("Part III — Appendices"))
     L.append("")
     # A
-    L.append("## Appendix A — Actuarial basis and pricing kernel")
+    L.append("## " + T("Appendix A — Actuarial basis and pricing kernel"))
     L.append("")
     L.append(f("The specimen is priced by `services/pricing_kernel.py` from the published `risk_reference_v1` tables: "
                "life 0.25 and disability 0.20 per ₪1,000 monthly, times the locked age curve (factor {specimen_age_factor} at age 42). "
@@ -746,21 +754,21 @@ def render_markdown(plan: Optional[Mapping[str, Any]] = None) -> str:
     L.append("")
     sp = plan["specimen"]
     L.append(_md_table(["Specimen line", "Value"], [
-        ["Age / age factor", f"{sp['avg_age']} / {sp['age_factor']:.3f}"],
-        ["Life sum / disability sum", f"₪{sp['life_sum']:,.0f} / ₪{sp['disability_sum']:,.0f}"],
-        ["Life monthly / disability monthly", f"₪{sp['life_monthly']:,.2f} / ₪{sp['disability_monthly']:,.2f}"],
-        ["Total monthly / annual", f"₪{sp['total_monthly']:,.2f} / ₪{sp['annual_premium']:,.0f}"],
+        [T("Age / age factor"), f"{sp['avg_age']} / {sp['age_factor']:.3f}"],
+        [T("Life sum / disability sum"), f"₪{sp['life_sum']:,.0f} / ₪{sp['disability_sum']:,.0f}"],
+        [T("Life monthly / disability monthly"), f"₪{sp['life_monthly']:,.2f} / ₪{sp['disability_monthly']:,.2f}"],
+        [T("Total monthly / annual"), f"₪{sp['total_monthly']:,.2f} / ₪{sp['annual_premium']:,.0f}"],
     ]))
     L.append("")
-    L.append("Same specimen in every planning market (ILS face, local currency at the planning FX pin — never live FX, never evidence):")
+    L.append(T("Same specimen in every planning market (ILS face, local currency at the planning FX pin — never live FX, never evidence):"))
     L.append("")
     L.append(_md_table(["Market", "OECD", "Currency", "Planning age", "Kernel premium (ILS)", "Kernel premium (local)"],
-                       [[m["name"], m["oecd"], m["currency"], str(m["planning_age"]),
+                       [[T(m["name"]), T(m["oecd"]), m["currency"], str(m["planning_age"]),
                          f"₪{m['kernel_premium_ils']:,.0f}", f"{m['kernel_premium_local']:,} {m['currency']}"]
                         for m in plan["markets"]]))
     L.append("")
     # B
-    L.append("## Appendix B — Carrier and reinsurance view (Israel anchor book)")
+    L.append("## " + T("Appendix B — Carrier and reinsurance view (Israel anchor book)"))
     L.append("")
     L.append(f("The carrier books 100% of risk GWP, pays the PHINS fee ({take}), expects claims of {loss_ratio} of GWP, "
                "cedes {cession} by quota share, receives a {ceding_commission} ceding commission on ceded premium and keeps "
@@ -773,115 +781,110 @@ def render_markdown(plan: Optional[Mapping[str, Any]] = None) -> str:
     for chart_id in APPENDIX_CHARTS["B"]:
         L.extend(_md_chart(plan, chart_id))
     # C
-    L.append("## Appendix C — Regulatory pathway by market")
+    L.append("## " + T("Appendix C — Regulatory pathway by market"))
     L.append("")
     L.append(_md_table(["Market", "OECD status", "Supervisor", "Pathway"],
-                       [[m["name"], m["oecd"], m["supervisor"], m["pathway"]] for m in plan["markets"]]))
+                       [[T(m["name"]), T(m["oecd"]), T(m["supervisor"]), T(m["pathway"])] for m in plan["markets"]]))
     L.append("")
     # D
-    L.append("## Appendix D — Technology architecture and security standard")
+    L.append("## " + T("Appendix D — Technology architecture and security standard"))
     L.append("")
     c = plan["technology"]["census"]
     L.append(_md_table(["Census (live)", "Count"], [
-        ["Service modules (`services/*.py`)", f"{c['service_modules']:,}"],
-        ["Service packages", f"{c['service_packages']:,}"],
-        ["API modules (`web_portal/api_*.py`)", f"{c['api_modules']:,}"],
-        ["Repositories (`database/repositories/*_repository.py`)", f"{c['repositories']:,}"],
-        ["Security modules (`security/*.py`)", f"{c['security_modules']:,}"],
-        ["Test files", f"{c['test_files']:,}"],
-        ["Agents with golden sets", f"{c['golden_agents']:,}"],
+        [T("Service modules (`services/*.py`)"), f"{c['service_modules']:,}"],
+        [T("Service packages"), f"{c['service_packages']:,}"],
+        [T("API modules (`web_portal/api_*.py`)"), f"{c['api_modules']:,}"],
+        [T("Repositories (`database/repositories/*_repository.py`)"), f"{c['repositories']:,}"],
+        [T("Security modules (`security/*.py`)"), f"{c['security_modules']:,}"],
+        [T("Test files"), f"{c['test_files']:,}"],
+        [T("Agents with golden sets"), f"{c['golden_agents']:,}"],
     ]))
     L.append("")
-    L.append(_md_table(["Pillar", "Standard"], [[t["pillar"], t["standard"]] for t in plan["technology"]["standard"]]))
+    L.append(_md_table(["Pillar", "Standard"], [[T(t["pillar"]), T(t["standard"])] for t in plan["technology"]["standard"]]))
     L.append("")
     # E
-    L.append("## Appendix E — Data integrity and methodology")
+    L.append("## " + T("Appendix E — Data integrity and methodology"))
     L.append("")
-    L.append("Identities computed on this render:")
+    L.append(T("Identities computed on this render:"))
     L.append("")
-    L.append(_md_table(["Identity", "Holds"], [[INTEGRITY_LABELS.get(k, k), "yes" if v is True else "NO"]
+    L.append(_md_table(["Identity", "Holds"], [[T(INTEGRITY_LABELS.get(k, k)), T("yes") if v is True else T("NO")]
                                                for k, v in plan["integrity"].items()]))
     L.append("")
-    L.append("Factor register (every adjustable assumption, its default and bounds):")
+    L.append(T("Factor register (every adjustable assumption, its default and bounds):"))
     L.append("")
     L.append(_md_table(["Group", "Factor", "Default", "Min", "Max", "Note"],
-                       [[next(g["label"] for g in FACTOR_GROUPS if g["id"] == fa["group"]), fa["label"],
+                       [[T(next(g["label"] for g in FACTOR_GROUPS if g["id"] == fa["group"])), T(fa["label"]),
                          _factor_text(fa, fa["default"]), _factor_text(fa, fa["min"]), _factor_text(fa, fa["max"]),
-                         fa.get("note") or ""] for fa in FACTORS]))
+                         T(fa.get("note") or "")] for fa in FACTORS]))
     L.append("")
-    L.append("Method: in-force follows `eoy = round(prior × persistency) + round(new × first-year persistency)`, average in force is the mid-point, "
-             "risk GWP = average in force × premium, PHINS revenue = GWP × take, opex = intensity (ILS per average life, by plan year) × average in force. "
-             "Partner cohorts follow the same recursion from their launch year at the ramp scale; group = anchor + partners. "
-             "Funding is derived from the group cash curve. The appraisal is PV(EBITDA 2027–2029) + exit multiple × 2029 net revenue, discounted at WACC, less prudence.")
+    L.append(T(METHOD_TEXT))
     L.append("")
     # F
-    L.append("## Appendix F — Financial tables (ILS)")
+    L.append("## " + T("Appendix F — Financial tables (ILS)"))
     L.append("")
     for title, table, cols in (("F.1 Anchor book — Israel", "anchor_book", ANCHOR_COLUMNS),
                                ("F.2 Partner markets", "partner_markets", PARTNER_COLUMNS),
                                ("F.3 Group", "group", GROUP_COLUMNS)):
-        L.append(f"### {title}")
+        L.append(f"### {T(title)}")
         L.append("")
         h, b = _year_table(plan, table, cols, False)
         L.append(_md_table(h, b))
         L.append("")
-    L.append("### F.4 Funding")
+    L.append("### " + T("F.4 Funding"))
     L.append("")
     fu = plan["funding"]
     L.append(_md_table(["Line", "Value"], [
-        ["Seed / pre-money / post-money", f("{seed} / {pre} / {post}")],
-        ["Seed dilution", f("{dilution}")],
-        ["2027 burn (anchor book EBITDA)", f("{burn_2027}")],
-        ["Runway on seed at the 2027 burn rate", fmt(fu["runway_months_on_seed"], "months")],
-        ["Peak cumulative need (group)", f("{peak_need}")],
+        [T("Seed / pre-money / post-money"), f("{seed} / {pre} / {post}")],
+        [T("Seed dilution"), f("{dilution}")],
+        [T("2027 burn (anchor book EBITDA)"), f("{burn_2027}")],
+        [T("Runway on seed at the 2027 burn rate"), fmt(fu["runway_months_on_seed"], "months")],
+        [T("Peak cumulative need (group)"), f("{peak_need}")],
         [f("Series A indication (need − seed, + {series_a_buffer} buffer)"), f("{series_a}")],
-        ["First EBITDA-positive year (group)", f("{first_positive}")],
-        ["Cumulative EBITDA positive (group)", f("{cum_positive}")],
-        ["Use of seed — product & technology", f("{uof_tech} ({uof_tech_pct})")],
-        ["Use of seed — regulatory, actuarial & reinsurance", f("{uof_reg} ({uof_reg_pct})")],
-        ["Use of seed — distribution & local partnerships", f("{uof_dist} ({uof_dist_pct})")],
-        ["Use of seed — operations & reserve", f("{uof_ops} ({uof_ops_pct})")],
-        ["Actuarial appraisal (anchor book)", f("{appraisal} at {wacc} WACC, {exit_multiple} 2029 net revenue, {prudence} prudence")],
+        [T("First EBITDA-positive year (group)"), f("{first_positive}")],
+        [T("Cumulative EBITDA positive (group)"), f("{cum_positive}")],
+        [T("Use of seed — product & technology"), f("{uof_tech} ({uof_tech_pct})")],
+        [T("Use of seed — regulatory, actuarial & reinsurance"), f("{uof_reg} ({uof_reg_pct})")],
+        [T("Use of seed — distribution & local partnerships"), f("{uof_dist} ({uof_dist_pct})")],
+        [T("Use of seed — operations & reserve"), f("{uof_ops} ({uof_ops_pct})")],
+        [T("Actuarial appraisal (anchor book)"), f("{appraisal} at {wacc} WACC, {exit_multiple} 2029 net revenue, {prudence} prudence")],
     ]))
     L.append("")
-    L.append("### F.5 Charts")
+    L.append("### " + T("F.5 Charts"))
     L.append("")
     for chart_id in APPENDIX_CHARTS["F"]:
         L.extend(_md_chart(plan, chart_id))
     # G
-    L.append("## Appendix G — Milestone and governance calendar")
+    L.append("## " + T("Appendix G — Milestone and governance calendar"))
     L.append("")
-    L.append(_md_table(["When", "Gate"], [[g[0], f(g[1])] for g in GATES]))
+    L.append(_md_table(["When", "Gate"], [[T(g[0]), f(g[1])] for g in GATES]))
     L.append("")
     for chart_id in APPENDIX_CHARTS["G"]:
         L.extend(_md_chart(plan, chart_id))
     # H
-    L.append("## Appendix H — Glossary")
+    L.append("## " + T("Appendix H — Glossary"))
     L.append("")
     for term, text in GLOSSARY:
-        L.append(f"- **{term}** — {text}")
+        L.append(f"- **{T(term)}** — {T(text)}")
     L.append("")
     # I
-    L.append("## Appendix I — Data sources and figure lineage")
+    L.append("## " + T("Appendix I — Data sources and figure lineage"))
     L.append("")
-    L.append("Every class of figure in this document, where it comes from and whether it feeds the model. "
-             "External research is reference only: the plan counts lives (not market size) from the kernel premium and the persistency identity, "
-             "so no statistic moves a planning figure and no planning figure rewrites a statistic.")
+    L.append(T(LINEAGE_INTRO))
     L.append("")
     L.append(_md_table(["Figure class", "Source", "Kind", "Feeds the model", "Note"],
-                       [[r["figure"], r["source"], r["kind"], "yes" if r["feeds_model"] else "reference only", r["note"]]
+                       [[T(r["figure"]), r["source"], T(r["kind"]), T("yes") if r["feeds_model"] else T("reference only"), T(r["note"])]
                         for r in LINEAGE]))
     L.append("")
-    L.append("External research registry behind the market section — the same registry the Scenario Lab cites on the pitch dashboard, by planning market:")
+    L.append(T("External research registry behind the market section — the same registry the Scenario Lab cites on the pitch dashboard, by planning market:"))
     L.append("")
     L.append(_md_table(["Market", "Source", "Type · strength", "Used for", "URL"],
-                       [[r["market"], r["title"], f"{r['type']} · {r['strength']}", r["note"], r["url"]]
+                       [[T(r["market"]), r["title"], f"{T(r['type'])} · {T(r['strength'])}", T(r["note"]), r["url"]]
                         for r in data_source_rows(plan)]))
     L.append("")
     L.append("---")
     L.append("")
-    L.append(f"*{CONTACT} · Confidential — prepared for investors, carriers, reinsurers and supervisors. "
-             f"Generated from `services/business_plan_model.py` ({plan['plan_version']}); content hash `{plan['content_hash']}`.*")
+    L.append("*" + f"{CONTACT} · " + T("Confidential — prepared for investors, carriers, reinsurers and supervisors.") + " "
+             + T("Generated from `services/business_plan_model.py` ({version}); content hash `{hash}`.").format(version=plan['plan_version'], hash=plan['content_hash']) + "*")
     L.append("")
     return "\n".join(L)
 
@@ -997,7 +1000,6 @@ figure.bp-chart.updating { opacity: 0.55; transition: opacity .15s; }
 .bp-founder-photo .bp-monogram { display: none; width: 100%; height: 100%; align-items: center; justify-content: center; font-family: "Space Grotesk", Inter, sans-serif; font-size: 64px; font-weight: 700; color: var(--phins-gold-strong); letter-spacing: 0.06em; }
 .bp-founder-photo.fallback img { display: none; } .bp-founder-photo.fallback .bp-monogram { display: flex; }
 .bp-founder h3 { margin: 0; font-size: 20px; } .bp-founder .bp-founder-role { color: var(--phins-gold-deep); font-weight: 700; font-size: 12.5px; letter-spacing: 0.06em; text-transform: uppercase; margin: 2px 0 10px; }
-.bp-founder ul.bp-principles { margin: 10px 0 0 18px; padding: 0; font-size: 13px; color: var(--phins-muted); }
 .bp-slide .bp-slide-founder { display: flex; gap: 12px; align-items: center; padding: 12px 16px 0; }
 .bp-slide .bp-slide-founder .bp-founder-photo { width: 72px; height: 72px; border-radius: 12px; flex: none; }
 .bp-slide .bp-slide-founder .bp-monogram { font-size: 24px; }
@@ -1014,13 +1016,56 @@ figure.bp-chart.updating { opacity: 0.55; transition: opacity .15s; }
   a { color: inherit; text-decoration: none; }
 }
 @media (max-width: 720px) { .bp-banner, .bp-body, .bp-kpis, .bp-foot { padding-left: 18px; padding-right: 18px; } .bp-factors { margin-left: 18px; margin-right: 18px; } h1 { font-size: 24px; } }
+/* Hebrew edition (dir="rtl"): Heebo beside Inter / Space Grotesk; figures stay isolated runs */
+[dir="rtl"] body { font-family: Heebo, Inter, "Segoe UI", sans-serif; }
+[dir="rtl"] h1, [dir="rtl"] h2, [dir="rtl"] h3, [dir="rtl"] h4, [dir="rtl"] .bp-display, [dir="rtl"] .bp-kpi .bp-kpi-value, [dir="rtl"] .bp-factors summary { font-family: Heebo, "Space Grotesk", Inter, sans-serif; }
+[dir="rtl"] .bp-table th, [dir="rtl"] .bp-table td { text-align: right; }
+[dir="rtl"] .bp-table td.num, [dir="rtl"] .bp-table th.num { text-align: left; }
+[dir="rtl"] .bp-slide ul { margin: 10px 32px 14px 16px; }
+[dir="rtl"] [data-bp], [dir="rtl"] code, [dir="rtl"] .bp-source-url { unicode-bidi: isolate; }
+[dir="rtl"] .bp-watermark span { transform: rotate(28deg); }
+/* Protected view (NDA open link): no print / download / copy chrome, attributed watermark, pause on blur */
+body.bp-protected { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+body.bp-protected img, body.bp-protected svg { pointer-events: none; -webkit-user-drag: none; user-drag: none; }
+body.bp-protected [data-protected-hide] { display: none !important; }
+.bp-watermark { position: fixed; inset: 0; z-index: 30; pointer-events: none; overflow: hidden; display: none; }
+body.bp-protected .bp-watermark { display: block; }
+.bp-watermark span { position: absolute; font: 700 13px/1 "Space Grotesk", Inter, sans-serif; color: rgba(14,47,99,0.13); white-space: nowrap; transform: rotate(-28deg); letter-spacing: 0.06em; }
+.bp-protect-overlay { position: fixed; inset: 0; z-index: 90; background: var(--bp-grad); color: #fff; display: none; align-items: center; justify-content: center; text-align: center; padding: 30px; font-size: 16px; cursor: pointer; }
+.bp-protect-overlay .bp-protect-message { max-width: 520px; font-family: "Space Grotesk", Inter, sans-serif; font-weight: 600; line-height: 1.5; }
+body.bp-blurred .bp-protect-overlay, body.bp-expired .bp-protect-overlay { display: flex; }
+body.bp-blurred .bp-shell, body.bp-expired .bp-shell { filter: blur(16px); }
+body.bp-expired .bp-shell { visibility: hidden; }
+.bp-viewer-note { display: none; margin: 18px 34px 0; padding: 12px 16px; border-radius: 12px; background: #fff5e6; border: 1px solid #f3d7a6; color: #8a4b00; font-size: 12.5px; }
+.bp-viewer-note strong { color: #5a3300; }
+body.bp-protected .bp-viewer-note { display: block; }
+.bp-factor.locked input { background: #f3f5f9; color: var(--phins-muted); cursor: not-allowed; }
+.bp-factor.locked label::after { content: " \1F512"; font-size: 10px; }
+.bp-admin-tools { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--phins-line); }
+.bp-admin-tools[hidden] { display: none; }
+.bp-admin-tools h4 { margin: 8px 0 4px; }
+.bp-admin-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+.bp-admin-tools .bp-btn { color: var(--phins-navy); border-color: var(--phins-line); background: var(--phins-ice); }
+.bp-admin-tools .bp-btn.gold { color: #071022; background: linear-gradient(180deg, #f7e2a0 0%, #e3bf6f 100%); border-color: transparent; }
+.bp-admin-tools select, .bp-admin-tools input[type="file"] { font-family: inherit; font-size: 12.5px; padding: 6px 8px; border: 1px solid var(--phins-line); border-radius: 9px; max-width: 340px; background: #fff; }
+.bp-portrait-preview { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; border: 1px solid var(--phins-line); background: var(--bp-grad); }
+.bp-adjustable-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 4px 10px; font-size: 12px; color: var(--phins-muted); }
+.bp-adjustable-grid label { display: flex; gap: 6px; align-items: flex-start; }
+@media print { body.bp-protected .bp-shell, body.bp-protected .bp-watermark { display: none !important; } body.bp-protected::before { content: attr(data-print-notice); display: block; padding: 40px; font: 14px Inter, sans-serif; } }
 """
 
 _JS = r"""
 (function () {
   'use strict';
   var FACTORS = JSON.parse(document.getElementById('bp-factors').textContent);
+  var UI = JSON.parse(document.getElementById('bp-ui-strings').textContent);
+  var LANG = (document.documentElement.getAttribute('lang') || 'en').toLowerCase();
   var DEFAULTS = {}; FACTORS.forEach(function (f) { DEFAULTS[f.id] = f.default; });
+  // BASELINE is what "Reset" returns to and what an untouched URL opens on:
+  // the canonical defaults until an admin-saved factor set is applied.
+  var BASELINE = {}; Object.keys(DEFAULTS).forEach(function (k) { BASELINE[k] = DEFAULTS[k]; });
+  var hasSaved = false;
+  var adjustable = null; // null = all factors, otherwise an id whitelist
   var state = {};
   var fx = 3.68;
 
@@ -1033,8 +1078,8 @@ _JS = r"""
   function fmt(v, kind) {
     if (v === null || v === undefined) return '\u2014';
     if (kind === 'text') return String(v);
-    if (kind === 'bool') return v === true ? 'all identities hold' : 'integrity check failed';
-    if (kind === 'canonical') return v === true ? 'canonical' : 'scenario';
+    if (kind === 'bool') return v === true ? UI.bool_ok : UI.bool_fail;
+    if (kind === 'canonical') return v === true ? UI.canonical : UI.scenario_word;
     if (kind === 'hash') return String(v).slice(0, 16);
     if (kind === 'year') return String(Math.round(v));
     var n = Number(v);
@@ -1049,7 +1094,7 @@ _JS = r"""
     if (kind === 'x') return (Math.abs(n - Math.round(n)) < 1e-9 ? n.toFixed(1) : String(n)) + '\u00D7';
     if (kind === 'num2') return n.toFixed(2);
     if (kind === 'num3') return n.toFixed(3);
-    if (kind === 'months') return n.toFixed(1) + ' months';
+    if (kind === 'months') return UI.months.replace('{n}', n.toFixed(1));
     return String(v);
   }
   function getPath(obj, path) {
@@ -1063,6 +1108,9 @@ _JS = r"""
   function derived(plan) {
     return { carrier_share_pct: 1 - Number(plan.inputs.phins_take), partner_local_share: 1 - Number(plan.inputs.partner_platform_share) };
   }
+  function equalsBaseline() {
+    return FACTORS.every(function (f) { return state[f.id] === BASELINE[f.id]; });
+  }
   function apply(plan) {
     fx = Number(plan.presentation && plan.presentation.fx_usd_ils) || fx;
     var d = { derived: derived(plan) };
@@ -1074,15 +1122,26 @@ _JS = r"""
       if (el.textContent !== text) el.textContent = text;
     }
     var canon = document.getElementById('bp-canonical');
-    if (canon) { canon.textContent = plan.canonical ? 'Canonical plan' : 'Scenario (factors adjusted)'; canon.className = 'bp-chip ' + (plan.canonical ? 'gold' : 'warn'); }
+    if (canon) {
+      if (plan.canonical) { canon.textContent = UI.canonical_plan; canon.className = 'bp-chip gold'; }
+      else if (hasSaved && equalsBaseline()) { canon.textContent = UI.saved_scenario; canon.className = 'bp-chip gold'; }
+      else { canon.textContent = UI.scenario; canon.className = 'bp-chip warn'; }
+    }
     var integ = document.getElementById('bp-integrity');
-    if (integ) { var ok = plan.integrity && plan.integrity.all_hold === true; integ.textContent = ok ? 'Integrity: all identities hold' : 'Integrity: check failed'; integ.className = 'bp-chip ' + (ok ? 'ok' : 'warn'); }
+    if (integ) { var ok = plan.integrity && plan.integrity.all_hold === true; integ.textContent = ok ? UI.integrity_ok : UI.integrity_fail; integ.className = 'bp-chip ' + (ok ? 'ok' : 'warn'); }
     var rows = document.querySelectorAll('[data-bp-integrity]');
-    for (var r = 0; r < rows.length; r++) { var k = rows[r].getAttribute('data-bp-integrity'); var v = plan.integrity ? plan.integrity[k] : null; rows[r].textContent = v === true ? 'yes' : 'NO'; }
+    for (var r = 0; r < rows.length; r++) { var k = rows[r].getAttribute('data-bp-integrity'); var v = plan.integrity ? plan.integrity[k] : null; rows[r].textContent = v === true ? UI.yes : UI.no; }
     var err = document.getElementById('bp-errors');
-    if (err) err.textContent = (plan.errors && plan.errors.length) ? ('Out-of-range values reset to default: ' + plan.errors.join('; ')) : '';
+    if (err) {
+      var msgs = [];
+      if (plan.errors && plan.errors.length) msgs.push(UI.out_of_range + plan.errors.join('; '));
+      if (plan.restricted && plan.restricted.length) msgs.push(UI.restricted + plan.restricted.join(', '));
+      err.textContent = msgs.join(' ');
+    }
     var link = document.getElementById('bp-json-link');
     if (link) link.setAttribute('href', '/api/business-plan/model' + query());
+    var langLink = document.getElementById('bp-lang-link');
+    if (langLink) langLink.setAttribute('href', langLink.getAttribute('data-href') + query());
     applyCharts(plan);
     try { window.dispatchEvent(new CustomEvent('phins:business-plan', { detail: plan })); } catch (e) {}
   }
@@ -1116,7 +1175,8 @@ _JS = r"""
       var q = query();
       try { history.replaceState(null, '', location.pathname + q + location.hash); } catch (e) {}
       markChartsUpdating();
-      fetch('/api/business-plan/model' + (q ? q + '&' : '?') + 'charts=1', { credentials: 'same-origin' })
+      var api = '/api/business-plan/model' + (q ? q + '&' : '?') + 'charts=1' + (LANG !== 'en' ? '&lang=' + encodeURIComponent(LANG) : '');
+      fetch(api, { credentials: 'same-origin' })
         .then(function (r) { return r.json(); })
         .then(apply)
         .catch(function () { applyCharts({}); });
@@ -1128,6 +1188,12 @@ _JS = r"""
       photos[i].addEventListener('error', function (ev) { var box = ev.target.parentNode; if (box) box.classList.add('fallback'); });
       if (photos[i].complete && photos[i].naturalWidth === 0) photos[i].parentNode.classList.add('fallback');
     }
+  }
+  function syncInputs() {
+    FACTORS.forEach(function (f) {
+      var el = document.getElementById('bp-input-' + f.id); if (el) el.value = state[f.id];
+      var box = document.getElementById('bp-factor-' + f.id); if (box) box.classList.toggle('changed', state[f.id] !== BASELINE[f.id]);
+    });
   }
   function buildPanel() {
     var host = document.getElementById('bp-factor-groups');
@@ -1146,36 +1212,67 @@ _JS = r"""
         input.min = f.min; input.max = f.max; input.step = f.step; input.value = state[f.id];
         if (f.note) input.title = f.note;
         input.addEventListener('input', function () {
+          if (adjustable && adjustable.indexOf(f.id) < 0) { input.value = state[f.id]; return; }
           var v = parseFloat(input.value);
           if (!isFinite(v)) return;
           if (v < f.min) v = f.min; if (v > f.max) v = f.max;
           if (f.kind === 'int') v = Math.round(v);
-          state[f.id] = v; box.classList.toggle('changed', v !== DEFAULTS[f.id]); refresh();
+          state[f.id] = v; box.classList.toggle('changed', v !== BASELINE[f.id]); refresh();
         });
         box.appendChild(input); grid.appendChild(box);
       });
       wrap.appendChild(grid); host.appendChild(wrap);
     });
   }
+  function urlHasFactors() {
+    var params = new URLSearchParams(location.search);
+    return FACTORS.some(function (f) { return params.get(f.id) !== null; });
+  }
   function readUrl() {
     var params = new URLSearchParams(location.search);
     FACTORS.forEach(function (f) {
       var raw = params.get(f.id), v = raw === null ? NaN : parseFloat(raw);
-      state[f.id] = (isFinite(v) && v >= f.min && v <= f.max) ? v : f.default;
+      state[f.id] = (isFinite(v) && v >= f.min && v <= f.max) ? v : BASELINE[f.id];
     });
   }
   function reset() {
-    FACTORS.forEach(function (f) { state[f.id] = f.default; var el = document.getElementById('bp-input-' + f.id); if (el) el.value = f.default; var box = document.getElementById('bp-factor-' + f.id); if (box) box.classList.remove('changed'); });
-    refresh();
+    FACTORS.forEach(function (f) { state[f.id] = BASELINE[f.id]; });
+    syncInputs(); refresh();
+  }
+  // Admin-saved factor set (see /api/business-plan/factors): becomes the
+  // baseline; a URL that already carries factors keeps its own scenario.
+  function setBaseline(saved) {
+    saved = saved || {};
+    var any = false;
+    FACTORS.forEach(function (f) {
+      var v = Number(saved[f.id]);
+      var ok = saved[f.id] !== undefined && saved[f.id] !== null && isFinite(v) && v >= f.min && v <= f.max;
+      BASELINE[f.id] = ok ? v : f.default;
+      if (ok && v !== f.default) any = true;
+    });
+    hasSaved = any;
+    if (!urlHasFactors()) { FACTORS.forEach(function (f) { state[f.id] = BASELINE[f.id]; }); }
+    syncInputs(); refresh();
+  }
+  function setAdjustable(ids) {
+    adjustable = Array.isArray(ids) ? ids.slice() : null;
+    FACTORS.forEach(function (f) {
+      var locked = !!(adjustable && adjustable.indexOf(f.id) < 0);
+      var input = document.getElementById('bp-input-' + f.id); if (input) { input.disabled = locked; input.readOnly = locked; }
+      var box = document.getElementById('bp-factor-' + f.id); if (box) { box.classList.toggle('locked', locked); if (locked) box.title = UI.locked; }
+    });
   }
   document.addEventListener('DOMContentLoaded', function () {
-    readUrl(); buildPanel(); portraitFallback();
-    FACTORS.forEach(function (f) { var box = document.getElementById('bp-factor-' + f.id); if (box && state[f.id] !== f.default) box.classList.add('changed'); });
+    readUrl(); buildPanel(); portraitFallback(); syncInputs();
     var rb = document.getElementById('bp-reset'); if (rb) rb.addEventListener('click', reset);
     var pb = document.getElementById('bp-print'); if (pb) pb.addEventListener('click', function () { window.print(); });
     refresh();
   });
-  window.PhinsBusinessPlan = { apply: apply, refresh: refresh, state: state, fmt: fmt };
+  window.PhinsBusinessPlan = {
+    apply: apply, refresh: refresh, state: state, fmt: fmt, query: query, reset: reset,
+    factors: FACTORS, defaults: DEFAULTS, baseline: BASELINE, ui: UI, lang: LANG,
+    setBaseline: setBaseline, setAdjustable: setAdjustable, urlHasFactors: urlHasFactors
+  };
 })();
 """
 
@@ -1183,7 +1280,7 @@ _JS = r"""
 def _html_table(header: Sequence[str], rows: Sequence[Sequence[str]], numeric_from: int = 1,
                 raw_cells: bool = False) -> str:
     head = "".join(
-        f'<th{" class=\"num\"" if i >= numeric_from else ""}>{_html.escape(h)}</th>' for i, h in enumerate(header)
+        f'<th{" class=\"num\"" if i >= numeric_from else ""}>{_html.escape(T(h))}</th>' for i, h in enumerate(header)
     )
     body = []
     for r in rows:
@@ -1195,11 +1292,66 @@ def _html_table(header: Sequence[str], rows: Sequence[Sequence[str]], numeric_fr
     return f'<table class="bp-table"><thead><tr>{head}</tr></thead><tbody>{"".join(body)}</tbody></table>'
 
 
-def render_html(plan: Optional[Mapping[str, Any]] = None) -> str:
-    plan = plan or compute_plan()
+def _ui_strings() -> Dict[str, str]:
+    """Browser-side strings, translated with the render's language."""
+    keys = {
+        "canonical_plan": "Canonical plan",
+        "scenario": "Scenario (factors adjusted)",
+        "saved_scenario": "Saved default (admin)",
+        "integrity_ok": "Integrity: all identities hold",
+        "integrity_fail": "Integrity: check failed",
+        "yes": "yes",
+        "no": "NO",
+        "out_of_range": "Out-of-range values reset to default: ",
+        "restricted": "Locked on this link (kept at the saved value): ",
+        "bool_ok": "all identities hold",
+        "bool_fail": "integrity check failed",
+        "canonical": "canonical",
+        "scenario_word": "scenario",
+        "months": "{n} months",
+        "locked": "Locked on this link",
+        # protected view (open link)
+        "protected_view": "Protected view",
+        "viewer_note": "Open link for {label} — signed by {signer}. Access ends {when}; the view closes after {idle} minutes idle. Download, print, copy and capture are disabled on this link and access is attributed to the signer.",
+        "expires_in": "Access ends in {time}",
+        "expired": "This protected view has ended. Ask the issuer for a new link.",
+        "blurred": "Protected view paused — click to continue.",
+        "print_blocked": "Printing is disabled on this protected link.",
+        "only_adjustable": "Only the factors marked adjustable can be changed on this link.",
+        # admin tools
+        "admin_tools": "Admin tools",
+        "save_default": "Save as default for every viewer",
+        "clear_default": "Clear saved default",
+        "saved_ok": "Saved — every viewer now opens on this factor set.",
+        "cleared_ok": "Saved default cleared — viewers open on the canonical plan.",
+        "save_failed": "Save failed: {error}",
+        "viewer_adjustable": "Factors an open-link viewer may adjust",
+        "founder_portrait": "Founder portrait",
+        "upload_photo": "Upload photo",
+        "pick_media": "Choose from media library",
+        "select_image": "Select image…",
+        "apply": "Apply",
+        "portrait_updated": "Portrait updated — the page, the deck and the PDF now use this image.",
+        "portrait_failed": "Portrait update failed: {error}",
+        "no_portrait": "No portrait assigned",
+    }
+    return {k: T(v) for k, v in keys.items()}
+
+
+def render_html(plan: Optional[Mapping[str, Any]] = None, lang: str = "en") -> str:
+    """The letterhead page; ``lang="he"`` renders the Hebrew edition (RTL)."""
+    with language_context(translator(lang)) as t:
+        return _render_html(plan or compute_plan(), t.lang, t.rtl)
+
+
+def _render_html(plan: Mapping[str, Any], lang: str, rtl: bool) -> str:
     f = lambda t: _fill(t, plan, True)  # noqa: E731
     e = _html.escape
     census = plan["technology"]["census"]
+    suffix = "" if lang == "en" else f".{lang}"
+    other_lang = "he" if lang == "en" else "en"
+    other_href = "/business-plan.html" if other_lang == "en" else f"/business-plan.{other_lang}.html"
+    other_label = "English" if other_lang == "en" else "עברית"
 
     kpis = [
         ("Kernel premium", "{premium}", "age-42 specimen · published tables"),
@@ -1210,48 +1362,48 @@ def render_html(plan: Optional[Mapping[str, Any]] = None) -> str:
         ("Group EBITDA margin 2031", "{g_margin_4}", "cumulative {g_cum_4}"),
     ]
     kpi_html = "".join(
-        f'<div class="bp-kpi"><div class="bp-kpi-label">{e(label)}</div>'
+        f'<div class="bp-kpi"><div class="bp-kpi-label">{e(T(label))}</div>'
         f'<div class="bp-kpi-value">{f(val)}</div><div class="bp-kpi-note">{f(note)}</div></div>'
         for label, val, note in kpis
     )
 
     def founder_photo(cls: str = "") -> str:
-        return (f'<div class="bp-founder-photo {cls}"><img src="{FOUNDER_PORTRAIT_URL}" alt="{e(FOUNDER["name"])} — founder portrait" loading="lazy">'
+        return (f'<div class="bp-founder-photo {cls}"><img src="{FOUNDER_PORTRAIT_URL}" alt="{e(FOUNDER["name"])} — {e(T("founder portrait"))}" loading="lazy">'
                 f'<div class="bp-monogram" aria-hidden="true">{e(FOUNDER["monogram"])}</div></div>')
 
     founder_html = (
         '<div class="bp-founder">' + founder_photo()
-        + f'<div><h3>{e(FOUNDER["name"])}</h3><div class="bp-founder-role">{e(FOUNDER["role"])}</div>'
+        + f'<div><h3>{e(T(FOUNDER["name"]))}</h3><div class="bp-founder-role">{e(T(FOUNDER["role"]))}</div>'
         + _html_table(["Credential", "Detail"], [[e(t), d] for t, d in founder_rows(plan, True)], numeric_from=99, raw_cells=True)
-        + '<ul class="bp-principles">' + "".join(f"<li>{e(p)}</li>" for p in FOUNDER["principles"]) + "</ul></div></div>"
+        + "</div></div>"
     )
 
     sections_html: List[str] = []
     for sec in plan_sections():
-        parts = [f'<section class="bp-section" id="plan-{sec["id"]}"><h2><span class="secno">{sec["num"]}.</span>{e(sec["title"])}</h2>']
+        parts = [f'<section class="bp-section" id="plan-{sec["id"]}"><h2><span class="secno">{sec["num"]}.</span>{e(T(sec["title"]))}</h2>']
         for p in sec.get("paragraphs", []):
             parts.append(f"<p>{f(p)}</p>")
         if sec.get("founder"):
             parts.append(founder_html)
         if sec.get("table") == "risks":
             parts.append(_html_table(["Risk", "What could go wrong", "Mitigation in the plan"],
-                                     [[e(r[0]), f(r[1]), f(r[2])] for r in RISKS], numeric_from=99, raw_cells=True))
+                                     [[e(T(r[0])), f(r[1]), f(r[2])] for r in RISKS], numeric_from=99, raw_cells=True))
         if sec.get("table") == "gates":
-            parts.append(_html_table(["When", "Gate"], [[e(g[0]), f(g[1])] for g in GATES], numeric_from=99, raw_cells=True))
+            parts.append(_html_table(["When", "Gate"], [[e(T(g[0])), f(g[1])] for g in GATES], numeric_from=99, raw_cells=True))
         if sec["id"] == "financials":
             for title, table, cols in (("Anchor book — Israel", "anchor_book", ANCHOR_COLUMNS),
                                        ("Partner markets", "partner_markets", PARTNER_COLUMNS),
                                        ("Group", "group", GROUP_COLUMNS)):
                 h, b = _year_table(plan, table, cols, True)
-                parts.append(f"<h3>{e(title)}</h3>" + _html_table(h, b, raw_cells=True))
+                parts.append(f"<h3>{e(T(title))}</h3>" + _html_table(h, b, raw_cells=True))
         if sec["id"] == "technology":
             parts.append(_html_table(["Census (live)", "Count"], [
-                ["Service modules", f'<span data-bp="technology.census.service_modules" data-fmt="int">{census["service_modules"]:,}</span>'],
-                ["Service packages", f'<span data-bp="technology.census.service_packages" data-fmt="int">{census["service_packages"]:,}</span>'],
-                ["API modules", f'<span data-bp="technology.census.api_modules" data-fmt="int">{census["api_modules"]:,}</span>'],
-                ["Repositories", f'<span data-bp="technology.census.repositories" data-fmt="int">{census["repositories"]:,}</span>'],
-                ["Security modules", f'<span data-bp="technology.census.security_modules" data-fmt="int">{census["security_modules"]:,}</span>'],
-                ["Test files", f'<span data-bp="technology.census.test_files" data-fmt="int">{census["test_files"]:,}</span>'],
+                [e(T("Service modules")), f'<span data-bp="technology.census.service_modules" data-fmt="int">{census["service_modules"]:,}</span>'],
+                [e(T("Service packages")), f'<span data-bp="technology.census.service_packages" data-fmt="int">{census["service_packages"]:,}</span>'],
+                [e(T("API modules")), f'<span data-bp="technology.census.api_modules" data-fmt="int">{census["api_modules"]:,}</span>'],
+                [e(T("Repositories")), f'<span data-bp="technology.census.repositories" data-fmt="int">{census["repositories"]:,}</span>'],
+                [e(T("Security modules")), f'<span data-bp="technology.census.security_modules" data-fmt="int">{census["security_modules"]:,}</span>'],
+                [e(T("Test files")), f'<span data-bp="technology.census.test_files" data-fmt="int">{census["test_files"]:,}</span>'],
             ], raw_cells=True))
         for chart_id in SECTION_CHARTS.get(sec["id"], []):
             parts.append(_html_chart(plan, chart_id))
@@ -1260,207 +1412,224 @@ def render_html(plan: Optional[Mapping[str, Any]] = None) -> str:
 
     slides_html = []
     for i, s in enumerate(deck_slides(), 1):
-        kicker = f'<div class="bp-kicker">{e(s["kicker"])}</div>' if s.get("kicker") else ""
+        kicker = f'<div class="bp-kicker">{e(T(s["kicker"]))}</div>' if s.get("kicker") else ""
         bullets = "".join(f"<li>{f(b)}</li>" for b in s["bullets"])
         extra = ""
         if s.get("founder"):
-            extra = f'<div class="bp-slide-founder">{founder_photo()}<div><strong>{e(FOUNDER["name"])}</strong><br><span class="bp-status">{e(FOUNDER["role"])}</span></div></div>'
+            extra = f'<div class="bp-slide-founder">{founder_photo()}<div><strong>{e(T(FOUNDER["name"]))}</strong><br><span class="bp-status">{e(T(FOUNDER["role"]))}</span></div></div>'
         chart_html = _html_chart(plan, SLIDE_CHARTS[s["title"]]) if s["title"] in SLIDE_CHARTS else ""
         slides_html.append(
-            f'<article class="bp-slide"><div class="bp-slide-head"><div class="bp-slide-no">Slide {i:02d}</div>'
-            f'<h3>{e(s["title"])}</h3>{kicker}</div><div class="bp-slide-gold"></div>{extra}<ul>{bullets}</ul>{chart_html}</article>'
+            f'<article class="bp-slide"><div class="bp-slide-head"><div class="bp-slide-no">{e(T("Slide"))} {i:02d}</div>'
+            f'<h3>{e(T(s["title"]))}</h3>{kicker}</div><div class="bp-slide-gold"></div>{extra}<ul>{bullets}</ul>{chart_html}</article>'
         )
     n_slides = len(deck_slides())
 
+    def h2(letter: str, title: str) -> str:
+        return f'<h2><span class="secno">{letter}.</span>{e(T(title))}</h2>'
+
     sp = plan["specimen"]
     appendix_a = (
-        '<section class="bp-section" id="appendix-a"><h2><span class="secno">A.</span>Actuarial basis and pricing kernel</h2>'
+        '<section class="bp-section" id="appendix-a">' + h2("A", "Actuarial basis and pricing kernel")
         + f"<p>{f('The specimen is priced by the pricing kernel from the published risk_reference_v1 tables: life 0.25 and disability 0.20 per ₪1,000 monthly, times the locked age curve (factor {specimen_age_factor} at age 42). Life face ₪1,000,000; disability sum ₪250,000 below 65 (1:4) and 1:1 from 65. Issue ages 3–65.')}</p>"
         + _html_table(["Specimen line", "Value"], [
-            ["Age / age factor", f"{sp['avg_age']} / {sp['age_factor']:.3f}"],
-            ["Life sum / disability sum", f"₪{sp['life_sum']:,.0f} / ₪{sp['disability_sum']:,.0f}"],
-            ["Life monthly / disability monthly", f"₪{sp['life_monthly']:,.2f} / ₪{sp['disability_monthly']:,.2f}"],
-            ["Total monthly / annual", f"₪{sp['total_monthly']:,.2f} / ₪{sp['annual_premium']:,.0f}"],
+            [T("Age / age factor"), f"{sp['avg_age']} / {sp['age_factor']:.3f}"],
+            [T("Life sum / disability sum"), f"₪{sp['life_sum']:,.0f} / ₪{sp['disability_sum']:,.0f}"],
+            [T("Life monthly / disability monthly"), f"₪{sp['life_monthly']:,.2f} / ₪{sp['disability_monthly']:,.2f}"],
+            [T("Total monthly / annual"), f"₪{sp['total_monthly']:,.2f} / ₪{sp['annual_premium']:,.0f}"],
         ])
-        + "<p>Same specimen in every planning market (ILS face, local currency at the planning FX pin — never live FX, never evidence):</p>"
+        + f"<p>{e(T('Same specimen in every planning market (ILS face, local currency at the planning FX pin — never live FX, never evidence):'))}</p>"
         + _html_table(["Market", "OECD", "Currency", "Planning age", "Kernel premium (ILS)", "Kernel premium (local)"],
-                      [[m["name"], m["oecd"], m["currency"], str(m["planning_age"]),
+                      [[T(m["name"]), T(m["oecd"]), m["currency"], str(m["planning_age"]),
                         f"₪{m['kernel_premium_ils']:,.0f}", f"{m['kernel_premium_local']:,} {m['currency']}"]
                        for m in plan["markets"]], numeric_from=3)
         + "</section>"
     )
     h, b = _year_table(plan, "carrier_view", CARRIER_COLUMNS, True)
     appendix_b = (
-        '<section class="bp-section" id="appendix-b"><h2><span class="secno">B.</span>Carrier and reinsurance view (Israel anchor book)</h2>'
+        '<section class="bp-section" id="appendix-b">' + h2("B", "Carrier and reinsurance view (Israel anchor book)")
         + f"<p>{f('The carrier books 100% of risk GWP, pays the PHINS fee ({take}), expects claims of {loss_ratio} of GWP, cedes {cession} by quota share, receives a {ceding_commission} ceding commission on ceded premium and keeps {carrier_own} of GWP for capital, governance and compliance. Carrier margin in 2029: {carrier_margin_2029}. All five are adjustable factors; the table restates on every change.')}</p>"
         + _html_table(h, b, raw_cells=True)
         + "".join(_html_chart(plan, c) for c in APPENDIX_CHARTS["B"]) + "</section>"
     )
     appendix_c = (
-        '<section class="bp-section" id="appendix-c"><h2><span class="secno">C.</span>Regulatory pathway by market</h2>'
+        '<section class="bp-section" id="appendix-c">' + h2("C", "Regulatory pathway by market")
         + _html_table(["Market", "OECD status", "Supervisor", "Pathway"],
-                      [[m["name"], m["oecd"], m["supervisor"], m["pathway"]] for m in plan["markets"]], numeric_from=99)
+                      [[T(m["name"]), T(m["oecd"]), T(m["supervisor"]), T(m["pathway"])] for m in plan["markets"]], numeric_from=99)
         + "</section>"
     )
     appendix_d = (
-        '<section class="bp-section" id="appendix-d"><h2><span class="secno">D.</span>Technology architecture and security standard</h2>'
+        '<section class="bp-section" id="appendix-d">' + h2("D", "Technology architecture and security standard")
         + "<p>" + f("Live census at render time: {modules} service modules in {packages} packages, {api_modules} API modules, {repositories} repositories, {security_modules} security modules, {test_files} test files. The deployed service layer reports ")
-        + f'<span data-live-modules>{census["service_modules"]}</span> modules through <code>/api/platform/facts</code>.</p>'
-        + _html_table(["Pillar", "Standard"], [[t["pillar"], t["standard"]] for t in plan["technology"]["standard"]], numeric_from=99)
+        + f'<span data-live-modules>{census["service_modules"]}</span> ' + e(T("modules through")) + ' <code>/api/platform/facts</code>.</p>'
+        + _html_table(["Pillar", "Standard"], [[T(t["pillar"]), T(t["standard"])] for t in plan["technology"]["standard"]], numeric_from=99)
         + "</section>"
     )
     integrity_rows = [
-        [e(INTEGRITY_LABELS.get(k, k)), f'<span data-bp-integrity="{e(k)}">{"yes" if v is True else "NO"}</span>']
+        [e(T(INTEGRITY_LABELS.get(k, k))), f'<span data-bp-integrity="{e(k)}">{e(T("yes")) if v is True else e(T("NO"))}</span>']
         for k, v in plan["integrity"].items()
     ]
-    factor_rows = [[e(next(g["label"] for g in FACTOR_GROUPS if g["id"] == fa["group"])), e(fa["label"]),
+    factor_rows = [[e(T(next(g["label"] for g in FACTOR_GROUPS if g["id"] == fa["group"]))), e(T(fa["label"])),
                     e(_factor_text(fa, fa["default"])), e(_factor_text(fa, fa["min"])), e(_factor_text(fa, fa["max"])),
-                    e(fa.get("note") or "")] for fa in FACTORS]
+                    e(T(fa.get("note") or ""))] for fa in FACTORS]
     appendix_e = (
-        '<section class="bp-section" id="appendix-e"><h2><span class="secno">E.</span>Data integrity and methodology</h2>'
-        + f"<p>Plan identity <code>{e(plan['plan_version'])}</code> · content hash <code data-bp=\"content_hash\" data-fmt=\"text\">{e(plan['content_hash'])}</code>. Identities computed on this render:</p>"
+        '<section class="bp-section" id="appendix-e">' + h2("E", "Data integrity and methodology")
+        + "<p>" + e(T("Plan identity")) + f" <code>{e(plan['plan_version'])}</code> · " + e(T("content hash"))
+        + f" <code data-bp=\"content_hash\" data-fmt=\"text\">{e(plan['content_hash'])}</code>. " + e(T("Identities computed on this render:")) + "</p>"
         + _html_table(["Identity", "Holds"], integrity_rows, raw_cells=True)
-        + "<p>Factor register — every adjustable assumption, its default and bounds. The panel at the top edits the same register; the API accepts the same ids as query parameters.</p>"
+        + f"<p>{e(T('Factor register — every adjustable assumption, its default and bounds. The panel at the top edits the same register; the API accepts the same ids as query parameters.'))}</p>"
         + _html_table(["Group", "Factor", "Default", "Min", "Max", "Note"], factor_rows, numeric_from=2, raw_cells=True)
-        + "<p>Method: in-force follows <code>eoy = round(prior × persistency) + round(new × first-year persistency)</code>, average in force is the mid-point, risk GWP = average in force × premium, PHINS revenue = GWP × take, opex = intensity (ILS per average life, by plan year) × average in force. Partner cohorts follow the same recursion from their launch year at the ramp scale; group = anchor + partners. Funding is derived from the group cash curve. The appraisal is PV(EBITDA 2027–2029) + exit multiple × 2029 net revenue, discounted at WACC, less prudence.</p>"
+        + "<p>" + _CODE_SPAN.sub(r"<code>\1</code>", _html.escape(T(METHOD_TEXT), quote=False)) + "</p>"
         + "</section>"
     )
     fu = plan["funding"]
     funding_rows = [
-        ["Seed / pre-money / post-money", f("{seed} / {pre} / {post}")],
-        ["Seed dilution", f("{dilution}")],
-        ["2027 burn (anchor book EBITDA)", f("{burn_2027}")],
-        ["Runway on seed at the 2027 burn rate", f'<span data-bp="funding.runway_months_on_seed" data-fmt="months">{e(fmt(fu["runway_months_on_seed"], "months"))}</span>'],
-        ["Peak cumulative need (group)", f("{peak_need}")],
-        ["Series A indication (need − seed, + buffer)", f("{series_a} ({series_a_buffer} buffer)")],
-        ["First EBITDA-positive year (group)", f("{first_positive}")],
-        ["Cumulative EBITDA positive (group)", f("{cum_positive}")],
-        ["Use of seed — product &amp; technology", f("{uof_tech} ({uof_tech_pct})")],
-        ["Use of seed — regulatory, actuarial &amp; reinsurance", f("{uof_reg} ({uof_reg_pct})")],
-        ["Use of seed — distribution &amp; local partnerships", f("{uof_dist} ({uof_dist_pct})")],
-        ["Use of seed — operations &amp; reserve", f("{uof_ops} ({uof_ops_pct})")],
-        ["Actuarial appraisal (anchor book)", f("{appraisal} at {wacc} WACC, {exit_multiple} 2029 net revenue, {prudence} prudence")],
+        [e(T("Seed / pre-money / post-money")), f("{seed} / {pre} / {post}")],
+        [e(T("Seed dilution")), f("{dilution}")],
+        [e(T("2027 burn (anchor book EBITDA)")), f("{burn_2027}")],
+        [e(T("Runway on seed at the 2027 burn rate")), f'<span data-bp="funding.runway_months_on_seed" data-fmt="months">{e(fmt(fu["runway_months_on_seed"], "months"))}</span>'],
+        [e(T("Peak cumulative need (group)")), f("{peak_need}")],
+        [e(T("Series A indication (need − seed, + buffer)")), f("{series_a} ({series_a_buffer} buffer)")],
+        [e(T("First EBITDA-positive year (group)")), f("{first_positive}")],
+        [e(T("Cumulative EBITDA positive (group)")), f("{cum_positive}")],
+        [e(T("Use of seed — product & technology")), f("{uof_tech} ({uof_tech_pct})")],
+        [e(T("Use of seed — regulatory, actuarial & reinsurance")), f("{uof_reg} ({uof_reg_pct})")],
+        [e(T("Use of seed — distribution & local partnerships")), f("{uof_dist} ({uof_dist_pct})")],
+        [e(T("Use of seed — operations & reserve")), f("{uof_ops} ({uof_ops_pct})")],
+        [e(T("Actuarial appraisal (anchor book)")), f("{appraisal} at {wacc} WACC, {exit_multiple} 2029 net revenue, {prudence} prudence")],
     ]
     fin_tables = []
     for title, table, cols in (("F.1 Anchor book — Israel", "anchor_book", ANCHOR_COLUMNS),
                                ("F.2 Partner markets", "partner_markets", PARTNER_COLUMNS),
                                ("F.3 Group", "group", GROUP_COLUMNS)):
         h, b = _year_table(plan, table, cols, True)
-        fin_tables.append(f"<h3>{e(title)}</h3>" + _html_table(h, b, raw_cells=True))
+        fin_tables.append(f"<h3>{e(T(title))}</h3>" + _html_table(h, b, raw_cells=True))
     appendix_f = (
-        '<section class="bp-section" id="appendix-f"><h2><span class="secno">F.</span>Financial tables (ILS)</h2>'
-        + "".join(fin_tables) + "<h3>F.4 Funding</h3>" + _html_table(["Line", "Value"], funding_rows, raw_cells=True)
-        + "<h3>F.5 Charts</h3>" + "".join(_html_chart(plan, c) for c in APPENDIX_CHARTS["F"])
+        '<section class="bp-section" id="appendix-f">' + h2("F", "Financial tables (ILS)")
+        + "".join(fin_tables) + f"<h3>{e(T('F.4 Funding'))}</h3>" + _html_table(["Line", "Value"], funding_rows, raw_cells=True)
+        + f"<h3>{e(T('F.5 Charts'))}</h3>" + "".join(_html_chart(plan, c) for c in APPENDIX_CHARTS["F"])
         + "</section>"
     )
     appendix_g = (
-        '<section class="bp-section" id="appendix-g"><h2><span class="secno">G.</span>Milestone and governance calendar</h2>'
-        + _html_table(["When", "Gate"], [[e(g[0]), f(g[1])] for g in GATES], numeric_from=99, raw_cells=True)
+        '<section class="bp-section" id="appendix-g">' + h2("G", "Milestone and governance calendar")
+        + _html_table(["When", "Gate"], [[e(T(g[0])), f(g[1])] for g in GATES], numeric_from=99, raw_cells=True)
         + "".join(_html_chart(plan, c) for c in APPENDIX_CHARTS["G"]) + "</section>"
     )
     appendix_h = (
-        '<section class="bp-section" id="appendix-h"><h2><span class="secno">H.</span>Glossary</h2><dl class="bp-glossary">'
-        + "".join(f"<dt>{e(t)}</dt><dd>{e(d)}</dd>" for t, d in GLOSSARY) + "</dl></section>"
+        '<section class="bp-section" id="appendix-h">' + h2("H", "Glossary") + '<dl class="bp-glossary">'
+        + "".join(f"<dt>{e(T(t))}</dt><dd>{e(T(d))}</dd>" for t, d in GLOSSARY) + "</dl></section>"
     )
-    lineage_rows = [[e(r["figure"]), e(r["source"]), e(r["kind"]),
-                     '<span class="bp-chip ok">model input</span>' if r["feeds_model"] else '<span class="bp-chip">reference only</span>',
-                     e(r["note"])] for r in LINEAGE]
-    source_rows = [[e(r["market"]), e(r["title"]), e(f"{r['type']} · {r['strength']}"), e(r["note"]),
+    lineage_rows = [[e(T(r["figure"])), e(T(r["source"])), e(T(r["kind"])),
+                     f'<span class="bp-chip ok">{e(T("model input"))}</span>' if r["feeds_model"] else f'<span class="bp-chip">{e(T("reference only"))}</span>',
+                     e(T(r["note"]))] for r in LINEAGE]
+    source_rows = [[e(T(r["market"])), e(r["title"]), e(f"{T(r['type'])} · {T(r['strength'])}"), e(T(r["note"])),
                     f'<a class="bp-source-url" href="{e(r["url"])}" target="_blank" rel="noopener">{e(r["url"])}</a>']
                    for r in data_source_rows(plan)]
     appendix_i = (
-        '<section class="bp-section" id="appendix-i"><h2><span class="secno">I.</span>Data sources and figure lineage</h2>'
-        + "<p>Every class of figure in this document, where it comes from and whether it feeds the model. External research is reference only: the plan counts lives (not market size) from the kernel premium and the persistency identity, so no statistic moves a planning figure and no planning figure rewrites a statistic.</p>"
+        '<section class="bp-section" id="appendix-i">' + h2("I", "Data sources and figure lineage")
+        + f"<p>{e(T(LINEAGE_INTRO))}</p>"
         + _html_table(["Figure class", "Source", "Kind", "Feeds the model", "Note"], lineage_rows, numeric_from=99, raw_cells=True)
-        + "<p>External research registry behind the market section — the same registry the Scenario Lab cites on the pitch dashboard, by planning market:</p>"
+        + f"<p>{e(T('External research registry behind the market section — the same registry the Scenario Lab cites on the pitch dashboard, by planning market:'))}</p>"
         + _html_table(["Market", "Source", "Type · strength", "Used for", "URL"], source_rows, numeric_from=99, raw_cells=True)
         + "</section>"
     )
 
-    factors_json = json.dumps(FACTORS, ensure_ascii=False).replace("</", "<\\/")
-    groups_json = json.dumps(FACTOR_GROUPS, ensure_ascii=False).replace("</", "<\\/")
+    factors_i18n = [dict(fa, label=T(fa["label"]), note=T(fa.get("note") or "")) for fa in FACTORS]
+    groups_i18n = [dict(g, label=T(g["label"])) for g in FACTOR_GROUPS]
+    factors_json = json.dumps(factors_i18n, ensure_ascii=False).replace("</", "<\\/")
+    groups_json = json.dumps(groups_i18n, ensure_ascii=False).replace("</", "<\\/")
+    ui_json = json.dumps(_ui_strings(), ensure_ascii=False).replace("</", "<\\/")
+    fonts = ("Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700"
+             + ("&amp;family=Heebo:wght@400;500;600;700" if rtl else ""))
+    appendix_index = T("A — actuarial basis and pricing kernel · B — carrier and reinsurance view · C — regulatory pathway by market · D — technology architecture and security standard · E — data integrity and methodology · F — financial tables and charts · G — milestone and governance calendar (roadmap) · H — glossary · I — data sources and figure lineage.")
 
     return f"""<!DOCTYPE html>
-<html lang="en" dir="ltr">
+<html lang="{e(lang)}" dir="{'rtl' if rtl else 'ltr'}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>{e(DOCUMENT_TITLE)}</title>
-<meta name="description" content="PHINS unified business plan, investor deck and appendices — one adjustable-factor identity for investors, carriers, reinsurers and supervisors.">
+<title>{e(T(DOCUMENT_TITLE))}</title>
+<meta name="description" content="{e(T('PHINS unified business plan, investor deck and appendices — one adjustable-factor identity for investors, carriers, reinsurers and supervisors.'))}">
 <!--
   Generated by scripts/build_business_plan.py from services/business_plan_model.py
-  ({e(plan['plan_version'])}). Do not edit by hand; regenerate.
+  ({e(plan['plan_version'])}, lang={e(lang)}). Do not edit by hand; regenerate.
   Counterparty-facing document. Marker: ui-clarity.js — keep this token in the
   file so the server-side injector skips the shared assistant widget.
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family={fonts}&amp;display=swap" rel="stylesheet">
 <style>{_CSS}</style>
 </head>
-<body>
+<body data-print-notice="{e(T('Printing is disabled on this protected link.'))}">
+<div class="bp-watermark" id="bp-watermark" aria-hidden="true"></div>
+<div class="bp-protect-overlay" id="bp-protect-overlay" role="dialog" aria-live="polite"><div class="bp-protect-message" id="bp-protect-message"></div></div>
 <header class="bp-topbar">
   <a class="bp-brand" href="#bp-top" aria-label="PHINS">
     <img src="/phins-logo.svg" alt="PHINS emblem">
-    <div><div class="bp-wordmark">PHINS</div><div class="bp-tagline">{e(BRAND_TAGLINE)}</div></div>
+    <div><div class="bp-wordmark">PHINS</div><div class="bp-tagline">{e(T(BRAND_TAGLINE))}</div></div>
   </a>
-  <nav class="bp-nav" aria-label="Document parts">
-    <a href="#part-plan">Business plan</a><a href="#plan-founder">Founder</a><a href="#part-deck">Investor deck</a><a href="#part-appendices">Appendices</a><a href="#appendix-i">Sources</a><a href="#bp-factor-panel">Factors</a>
+  <nav class="bp-nav" aria-label="{e(T('Document parts'))}">
+    <a href="#part-plan">{e(T('Business plan'))}</a><a href="#plan-founder">{e(T('Founder'))}</a><a href="#part-deck">{e(T('Investor deck'))}</a><a href="#part-appendices">{e(T('Appendices'))}</a><a href="#appendix-i">{e(T('Sources'))}</a><a href="#bp-factor-panel">{e(T('Factors'))}</a>
   </nav>
   <div class="bp-tools">
-    <a class="bp-btn" id="bp-json-link" href="/api/business-plan/model">Model JSON</a>
-    <a class="bp-btn" href="/investor-docs/phins-unified-business-plan.pdf">PDF edition</a>
-    <a class="bp-btn" href="/investor-docs/phins-unified-business-plan.md">Markdown</a>
-    <button type="button" class="bp-btn" id="bp-reset">Reset factors</button>
-    <button type="button" class="bp-btn gold" id="bp-print">Print / Save PDF</button>
+    <a class="bp-btn" id="bp-lang-link" href="{other_href}" data-href="{other_href}" lang="{other_lang}" hreflang="{other_lang}">{other_label}</a>
+    <a class="bp-btn" id="bp-json-link" href="/api/business-plan/model" data-protected-hide>{e(T('Model JSON'))}</a>
+    <a class="bp-btn" href="/investor-docs/phins-unified-business-plan{suffix}.pdf" data-protected-hide>{e(T('PDF edition'))}</a>
+    <a class="bp-btn" href="/investor-docs/phins-unified-business-plan{suffix}.md" data-protected-hide>{e(T('Markdown'))}</a>
+    <button type="button" class="bp-btn" id="bp-reset">{e(T('Reset factors'))}</button>
+    <button type="button" class="bp-btn gold" id="bp-print" data-protected-hide>{e(T('Print / Save PDF'))}</button>
   </div>
 </header>
 
 <main class="bp-shell" id="bp-top">
   <div class="phins-letterhead" aria-hidden="true">
     <img src="/phins-logo.svg" alt="PHINS emblem">
-    <div><div class="lh-name">PHINS</div><div class="lh-tag">{e(BRAND_TAGLINE)}</div></div>
+    <div><div class="lh-name">PHINS</div><div class="lh-tag">{e(T(BRAND_TAGLINE))}</div></div>
   </div>
   <section class="bp-banner">
-    <div class="bp-eyebrow">Unified business plan · investor deck · appendices</div>
-    <h1>AI insurtech platform. One-stop-shop technology. Local OECD partnerships.</h1>
-    <p>Life insurance with a lifelong severe-disability mechanism, long-term care, savings flow and a health marketplace — written on licensed carriers' paper, reinsured by quota share, distributed with a local partner in every market, and run end-to-end on one platform.</p>
-    <div class="bp-meta">{e(DOCUMENT_EDITION)} · plan identity <code style="color:#f7e2a0">{e(plan['plan_version'])}</code> · hash <code style="color:#f7e2a0" data-bp="content_hash" data-fmt="hash">{e(plan['content_hash'][:16])}</code>… · {e(CONTACT)}</div>
+    <div class="bp-eyebrow">{e(T('Unified business plan · investor deck · appendices'))}</div>
+    <h1>{e(T('AI insurtech platform. One-stop-shop technology. Local OECD partnerships.'))}</h1>
+    <p>{e(T("Life insurance with a lifelong severe-disability mechanism, long-term care, savings flow and a health marketplace — written on licensed carriers' paper, reinsured by quota share, distributed with a local partner in every market, and run end-to-end on one platform."))}</p>
+    <div class="bp-meta">{e(T(DOCUMENT_EDITION))} · {e(T('plan identity'))} <code style="color:#f7e2a0">{e(plan['plan_version'])}</code> · {e(T('hash'))} <code style="color:#f7e2a0" data-bp="content_hash" data-fmt="hash">{e(plan['content_hash'][:16])}</code>… · {e(CONTACT)}</div>
   </section>
   <div class="bp-gold"></div>
   <div class="bp-kpis">{kpi_html}</div>
+  <div class="bp-viewer-note" id="bp-viewer-note" role="status"></div>
 
   <details class="bp-factors" id="bp-factor-panel" open>
-    <summary><span>Adjustable factors — one register behind every figure</span>
-      <span class="bp-chips"><span class="bp-chip gold" id="bp-canonical">Canonical plan</span><span class="bp-chip ok" id="bp-integrity">Integrity: all identities hold</span></span></summary>
+    <summary><span>{e(T('Adjustable factors — one register behind every figure'))}</span>
+      <span class="bp-chips"><span class="bp-chip gold" id="bp-canonical">{e(T('Canonical plan'))}</span><span class="bp-chip ok" id="bp-integrity">{e(T('Integrity: all identities hold'))}</span></span></summary>
     <div class="bp-factors-body">
-      <p class="bp-status">Change any factor and every figure in the plan, the deck and the appendices re-renders from <code>/api/business-plan/model</code>. Defaults are the Investor Meeting book; the URL carries your scenario so it can be shared. Planning assumptions never write public evidence, the ledger or the actuarial store.</p>
+      <p class="bp-status">{e(T('Change any factor and every figure in the plan, the deck and the appendices re-renders from')).rstrip()} <code>/api/business-plan/model</code>. {e(T('Defaults are the Investor Meeting book; the URL carries your scenario so it can be shared. Planning assumptions never write public evidence, the ledger or the actuarial store.'))}</p>
       <div id="bp-factor-groups"></div>
       <p class="bp-status" id="bp-errors"></p>
+      <div class="bp-admin-tools" id="bp-admin-tools" hidden></div>
     </div>
   </details>
 
   <div class="bp-body">
-    <div class="bp-part" id="part-plan"><div class="bp-eyebrow">Part I</div><h2>Business plan</h2></div>
+    <div class="bp-part" id="part-plan"><div class="bp-eyebrow">{e(T('Part I'))}</div><h2>{e(T('Business plan'))}</h2></div>
     {"".join(sections_html)}
 
-    <div class="bp-part" id="part-deck"><div class="bp-eyebrow">Part II</div><h2>Investor deck</h2>
-      <p>{n_slides} slides, same figures. Print this part alone for a meeting; the factor panel above re-tunes it for any investor or scenario.</p></div>
+    <div class="bp-part" id="part-deck"><div class="bp-eyebrow">{e(T('Part II'))}</div><h2>{e(T('Investor deck'))}</h2>
+      <p>{e(T('{n} slides, same figures. Print this part alone for a meeting; the factor panel above re-tunes it for any investor or scenario.').format(n=n_slides))}</p></div>
     <div class="bp-deck">{"".join(slides_html)}</div>
 
-    <div class="bp-part" id="part-appendices"><div class="bp-eyebrow">Part III</div><h2>Appendices</h2>
-      <p>A — actuarial basis and pricing kernel · B — carrier and reinsurance view · C — regulatory pathway by market · D — technology architecture and security standard · E — data integrity and methodology · F — financial tables and charts · G — milestone and governance calendar (roadmap) · H — glossary · I — data sources and figure lineage.</p></div>
+    <div class="bp-part" id="part-appendices"><div class="bp-eyebrow">{e(T('Part III'))}</div><h2>{e(T('Appendices'))}</h2>
+      <p>{e(appendix_index)}</p></div>
     {appendix_a}{appendix_b}{appendix_c}{appendix_d}{appendix_e}{appendix_f}{appendix_g}{appendix_h}{appendix_i}
   </div>
   <footer class="bp-foot">
-    <span>PHINS — Confidential. Prepared for investors, carriers, reinsurers and supervisors. Planning identity; not an offer of securities or insurance.</span>
-    <span>{e(CONTACT)} · generated from <code>services/business_plan_model.py</code></span>
+    <span>{e(T('PHINS — Confidential. Prepared for investors, carriers, reinsurers and supervisors. Planning identity; not an offer of securities or insurance.'))}</span>
+    <span>{e(CONTACT)} · {e(T('generated from'))} <code>services/business_plan_model.py</code></span>
   </footer>
 </main>
 
 <script type="application/json" id="bp-factors">{factors_json}</script>
 <script type="application/json" id="bp-factor-groups-json">{groups_json}</script>
+<script type="application/json" id="bp-ui-strings">{ui_json}</script>
 <script>{_JS}</script>
+<script src="/business-plan-access.js"></script>
 <script src="/platform-facts.js"></script>
 <script src="/phins-doc-return.js"></script>
 </body>
