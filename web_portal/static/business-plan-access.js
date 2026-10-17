@@ -162,7 +162,7 @@
     // Blur the view whenever it is not the focused, visible window.
     var paused = false;
     function pause() { if (expired) return; paused = true; body.classList.add('bp-blurred'); showOverlay(t('blurred'), false); }
-    function resume() { if (expired) return; paused = false; body.classList.remove('bp-blurred'); hideOverlay(false); }
+    function resume() { if (expired) return; paused = false; body.classList.remove('bp-blurred'); hideOverlay(false); ping(); }
     window.addEventListener('blur', pause);
     window.addEventListener('focus', resume);
     document.addEventListener('visibilitychange', function () { if (document.hidden) pause(); else resume(); });
@@ -173,6 +173,8 @@
     // close the view the moment the server says the opening has ended. A
     // paused (blurred) view is not in use, so it must not refresh the
     // server-side activity stamp — otherwise the idle timeout never fires.
+    // Returning to the view asks again at once, so an opening the server has
+    // already closed does not stay readable until the next tick.
     function ping() {
       if (expired || paused || document.hidden) return;
       fetch(ACCESS_URL, { credentials: 'same-origin', cache: 'no-store' }).then(function (r) {
