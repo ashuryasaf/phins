@@ -19693,14 +19693,176 @@ class PortalHandler(BaseHTTPRequestHandler):
             return forwarded == 'https'
         return not _is_local_request_host(self.headers.get('Host', ''))
 
-    def _confidential_share_active(self, share_id: str, path: str) -> bool:
-        """Confirm a share cookie still refers to a non-revoked HTML share."""
+    def _confidential_share_active(self, share_id: str, path: str, session_key: str = '') -> bool:
+        """Confirm a share cookie still refers to a non-revoked HTML share.
+
+        With the opening's ``session_key`` (bound into the cookie at unlock)
+        the share service also enforces that opening's access window and
+        idle timeout and refreshes its activity stamp.
+        """
         try:
             from services.confidential_share_service import get_confidential_share_service
-            return get_confidential_share_service().share_is_active_for_path(share_id, path)
+            return get_confidential_share_service().share_is_active_for_path(
+                share_id, path, session_key=session_key
+            )
         except Exception as exc:
             print(f"⚠️  [CONFIDENTIAL] share active-check failed: {exc}")
             return False
+
+    def _business_plan_access_view(self) -> Dict[str, Any]:
+        """Capabilities of the current caller on the unified business plan.
+
+        ``mode`` is ``staff`` (admin-level session or staff unlock cookie:
+        full page, downloads, admin tools), ``share`` (open-link viewer after
+        the signed NDA: protected view, whitelisted factors only, attributed
+        to the signer) or ``public`` (non-production default / explicit
+        publication / deployment open password — the page as rendered).
+        """
+        decision = getattr(self, '_confidential_decision', None)
+        session = self._get_session()
+        username = str((session or {}).get('username') or '')
+        role = str((session or {}).get('role') or '').strip().lower()
+        staff = confidential_access.session_is_staff(session)
+        if not staff:
+            cookies = confidential_access.parse_cookies(self.headers.get('Cookie', ''))
+            claims = confidential_access.verify_staff_unlock_cookie(
+                cookies.get(confidential_access.STAFF_UNLOCK_COOKIE_NAME)
+            )
+            if claims:
+                staff = True
+                username = str(claims.get('u') or username)
+                role = str(claims.get('r') or role).lower()
+        try:
+            from services.business_plan_settings import get_business_plan_settings
+            settings_doc = get_business_plan_settings().get()
+        except Exception as exc:
+            print(f"⚠️  [BUSINESS PLAN] saved factors unavailable: {exc}")
+            settings_doc = {'saved_factors': {}, 'viewer_adjustable': None, 'has_saved': False}
+        whitelist = settings_doc.get('viewer_adjustable')
+        view: Dict[str, Any] = {
+            'document': 'PHINS Unified Business Plan',
+            'saved_factors': settings_doc.get('saved_factors') or {},
+            'has_saved': bool(settings_doc.get('has_saved')),
+            'viewer_adjustable': whitelist if whitelist is not None else 'all',
+            'saved_updated_at': settings_doc.get('updated_at'),
+        }
+        if staff:
+            is_admin = role == 'admin'
+            view.update({
+                'mode': 'staff', 'role': role, 'username': username,
+                'protected': False, 'can_download': True, 'can_print': True,
+                'can_copy': True, 'can_save_factors': is_admin,
+                'can_manage_portrait': is_admin, 'adjustable': 'all', 'viewer': None,
+            })
+            return view
+        if decision is not None and getattr(decision, 'is_share_viewer', False):
+            viewer = None
+            try:
+                from services.confidential_share_service import get_confidential_share_service
+                viewer = get_confidential_share_service().viewer_context(
+                    decision.share_id, decision.share_session_key
+                )
+            except Exception as exc:
+                print(f"⚠️  [BUSINESS PLAN] viewer context unavailable: {exc}")
+            view.update({
+                'mode': 'share', 'role': 'viewer', 'username': '',
+                'protected': True, 'can_download': False, 'can_print': False,
+                'can_copy': False, 'can_save_factors': False,
+                'can_manage_portrait': False,
+                'adjustable': whitelist if whitelist is not None else 'all',
+                'viewer': viewer,
+                'lang': (viewer or {}).get('lang') or 'en',
+            })
+            return view
+        view.update({
+            'mode': 'public', 'role': role or 'anonymous', 'username': username,
+            'protected': False, 'can_download': True, 'can_print': True,
+            'can_copy': True, 'can_save_factors': False, 'can_manage_portrait': False,
+            'adjustable': 'all', 'viewer': None,
+            'reason': getattr(decision, 'reason', 'not_evaluated'),
+        })
+        return view
+
+    def _handle_business_plan_factors_post(self, body_data: Dict[str, Any]) -> None:
+        """``POST /api/business-plan/factors`` — admin saves the default factor set.
+
+        Body: ``{"factors": {id: value}, "viewer_adjustable": [ids] | "all",
+        "note": "..."}`` or ``{"clear": true}``. Values are validated against
+        the register's bounds; the result is the stored document.
+        """
+        session = self._get_session()
+        role = str((session or {}).get('role') or '').strip().lower()
+        username = str((session or {}).get('username') or '')
+        if role != 'admin':
+            cookies = confidential_access.parse_cookies(self.headers.get('Cookie', ''))
+            claims = confidential_access.verify_staff_unlock_cookie(
+                cookies.get(confidential_access.STAFF_UNLOCK_COOKIE_NAME)
+            )
+            if claims and str(claims.get('r') or '').lower() == 'admin':
+                role = 'admin'
+                username = str(claims.get('u') or username)
+        if role != 'admin':
+            self._set_json_headers(401 if not session else 403)
+            self.wfile.write(json.dumps({'error': 'Admin authorization required.'}).encode('utf-8'))
+            return
+        try:
+            from services.business_plan_settings import SettingsError, get_business_plan_settings
+            store = get_business_plan_settings()
+            if body_data.get('clear') is True:
+                doc = store.clear(updated_by=username or 'admin')
+            else:
+                doc = store.save(
+                    factors=body_data.get('factors'),
+                    viewer_adjustable=body_data.get('viewer_adjustable', '__keep__'),
+                    updated_by=username or 'admin',
+                    note=str(body_data.get('note') or ''),
+                )
+        except SettingsError as exc:
+            self._set_json_headers(400)
+            self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+            return
+        except Exception as exc:
+            print(f"⚠️  [BUSINESS PLAN] saved factors write failed: {exc}")
+            self._set_json_headers(503)
+            self.wfile.write(json.dumps({'error': 'Saved factors could not be stored durably.'}).encode('utf-8'))
+            return
+        try:
+            from services.audit_service import AuditService
+            AuditService().log(
+                actor=username or 'admin',
+                action='business_plan.factors_saved',
+                entity='business_plan_settings',
+                entity_id='default',
+                details={
+                    'cleared': body_data.get('clear') is True,
+                    'saved_factors': doc.get('saved_factors'),
+                    'viewer_adjustable': doc.get('viewer_adjustable'),
+                },
+            )
+        except Exception:
+            pass
+        self._set_json_headers(200)
+        self.wfile.write(json.dumps({'success': True, 'settings': doc}, default=str).encode('utf-8'))
+
+    def _confidential_nda_context(self, share_id: str):
+        """``(nda_document, share_view)`` for an NDA-conditional share, else ``(None, None)``."""
+        if not share_id:
+            return None, None
+        try:
+            from services.confidential_share_service import get_confidential_share_service
+            share = get_confidential_share_service().get_share(share_id)
+        except Exception as exc:
+            print(f"⚠️  [CONFIDENTIAL] share lookup failed: {exc}")
+            return None, None
+        if not share or not share.get('nda_required'):
+            return None, None
+        try:
+            from services.business_plan_nda import nda_document
+            nda = nda_document(str(share.get('lang') or 'en'), label=str(share.get('label') or ''))
+        except Exception as exc:
+            print(f"⚠️  [CONFIDENTIAL] NDA render failed: {exc}")
+            return None, None
+        return nda, share
 
     def _enforce_confidential_access(self, path: str, qs: Dict[str, Any]) -> bool:
         """Gate confidential investor/corporate documents and their APIs.
@@ -19717,6 +19879,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         token-for-cookie exchange redirect) the response is already written and
         callers must return immediately.
         """
+        self._confidential_decision = None
         if not _confidential_access_enabled:
             return True
         try:
@@ -19727,6 +19890,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                 query_params=qs,
                 share_active_check=self._confidential_share_active,
             )
+            # Routes behind the gate (the business-plan APIs) read this to
+            # tell a staff reader from an open-link viewer.
+            self._confidential_decision = decision
         except Exception as exc:
             # Never let a gate failure silently expose the documents: deny and
             # tell the operator. (Non-confidential paths short-circuit above.)
@@ -19784,8 +19950,11 @@ class PortalHandler(BaseHTTPRequestHandler):
             return False
 
         share_id = confidential_access.extract_share_id(qs) or decision.share_id
+        nda_doc, nda_share = (None, None)
+        if share_id and decision.reason == 'share_password_required':
+            nda_doc, nda_share = self._confidential_nda_context(share_id)
         body = confidential_access.denial_html(
-            decision, path=path, share_id=share_id
+            decision, path=path, share_id=share_id, nda=nda_doc, share=nda_share
         ).encode('utf-8')
         self.send_response(decision.status)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
@@ -20030,10 +20199,19 @@ class PortalHandler(BaseHTTPRequestHandler):
                     password,
                     client_ip=client_ip,
                     requested_path=requested_path,
+                    signer_name=str(body_data.get('signer_name') or ''),
+                    signature_png=body_data.get('signature_png'),
+                    nda_accepted=body_data.get('nda_accepted') in (True, 1, '1', 'true', 'on'),
+                    user_agent=str(self.headers.get('User-Agent', '') or ''),
                 )
+                # The cookie lives exactly as long as this opening's window;
+                # the share service also closes it on idle.
+                window = int(public_share.get('access_window_seconds') or 0) or None
                 share_cookie = confidential_access.mint_share_cookie(
                     share_id=public_share['id'],
                     path=target_path,
+                    ttl_seconds=window,
+                    session_key=str(public_share.get('session_key') or ''),
                 )
             except ShareError as exc:
                 msg = str(exc)
@@ -20058,7 +20236,18 @@ class PortalHandler(BaseHTTPRequestHandler):
                 if k in FAILED_LOGINS:
                     del FAILED_LOGINS[k]
 
-            redirect_to = f"{target_path}?share={public_share['id']}"
+            # The signer sees the page they asked for (e.g. the Hebrew edition
+            # of a plan link) when it sits in the share's scope.
+            open_path = target_path
+            if requested_path:
+                req_norm = confidential_access.normalize_request_path(requested_path)
+                if (req_norm and req_norm != target_path
+                        and confidential_access.share_scope_root(req_norm)
+                        == confidential_access.share_scope_root(target_path)
+                        and not confidential_access.is_downloadable_document(req_norm)):
+                    open_path = req_norm
+            redirect_to = f"{open_path}?share={public_share['id']}"
+            public_share = {k: v for k, v in public_share.items() if k != 'session_key'}
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header(
@@ -20067,6 +20256,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                     share_cookie,
                     secure=self._request_is_secure(),
                     cookie_name=confidential_access.SHARE_COOKIE_NAME,
+                    max_age=window,
                 ),
             )
             self.send_header('Cache-Control', 'no-store')
@@ -20140,13 +20330,26 @@ class PortalHandler(BaseHTTPRequestHandler):
                         max_uses_raw = 1
                     elif max_uses_raw in ('', None):
                         max_uses_raw = 1
+                    share_path = str(body_data.get('path') or '')
+                    share_lang = str(body_data.get('lang') or '').strip().lower()
+                    if not share_lang:
+                        share_lang = 'he' if share_path.lower().endswith('.he.html') else 'en'
+                    nda_required = body_data.get('nda_required') in (True, 1, '1', 'true', 'on')
+                    # Access to the PHINS Unified Business Plan through an open
+                    # link is always conditional on the signed undertaking.
+                    if confidential_access.is_business_plan_path(share_path):
+                        nda_required = True
                     created = get_confidential_share_service().create_share(
-                        path=str(body_data.get('path') or ''),
+                        path=share_path,
                         password=str(body_data.get('password') or ''),
                         max_uses=max_uses_raw,
                         expires_at=body_data.get('expires_at'),
                         label=str(body_data.get('label') or ''),
                         created_by=str((session or {}).get('username') or 'admin'),
+                        nda_required=nda_required,
+                        access_window_seconds=body_data.get('access_window_seconds'),
+                        idle_timeout_seconds=body_data.get('idle_timeout_seconds'),
+                        lang=share_lang,
                     )
                 except ShareError as exc:
                     self._set_json_headers(400)
@@ -21374,18 +21577,51 @@ For claims or questions, please contact:
         if path == '/api/business-plan/model':
             # ``charts=1`` adds the server-rendered SVG charts (one layout
             # engine for the page, the live refresh and the PDF) so the
-            # browser never re-derives a figure.
+            # browser never re-derives a figure. ``lang=he`` labels the charts
+            # in Hebrew (figures and the content hash are language-neutral).
             want_charts = str((qs.get('charts') or [''])[0]).strip().lower() in ('1', 'true', 'yes')
+            chart_lang = str((qs.get('lang') or ['en'])[0]).strip().lower()[:2] or 'en'
             try:
                 overrides = _parse_business_plan_query(qs)
+                restricted = []
+                access = self._business_plan_access_view()
+                if access.get('mode') == 'share' and access.get('adjustable') != 'all':
+                    # Open-link viewers may only move the whitelisted factors;
+                    # the rest stay pinned to the admin-saved baseline.
+                    from services.business_plan_settings import get_business_plan_settings
+                    overrides, restricted = get_business_plan_settings().restrict_overrides(overrides)
                 plan = _compute_business_plan(overrides)
+                if restricted:
+                    plan['restricted'] = restricted
                 if want_charts:
-                    plan['charts'] = _render_business_plan_charts(plan)
+                    plan['charts'] = _render_business_plan_charts(plan, chart_lang)
             except Exception as e:  # never fail the investor page
                 plan = {'error': str(e), 'plan_version': None, 'canonical': False,
                         'integrity': {'all_hold': False}}
             self._set_json_headers(200)
             self.wfile.write(json.dumps(plan, default=str).encode('utf-8'))
+            return
+
+        # What this caller may do on the plan page: staff (admin session or
+        # staff unlock) get the full page and the admin tools; an open-link
+        # viewer gets the protected view (no download / print / copy, only
+        # the whitelisted factors) attributed to the NDA signer.
+        if path == '/api/business-plan/access':
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(self._business_plan_access_view(), default=str).encode('utf-8'))
+            return
+
+        # Admin-saved factor set + open-link whitelist (read side).
+        if path == '/api/business-plan/factors':
+            try:
+                from services.business_plan_settings import get_business_plan_settings
+                doc = get_business_plan_settings().get()
+            except Exception as e:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': f'Saved factors unavailable: {e}'}).encode('utf-8'))
+                return
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(doc, default=str).encode('utf-8'))
             return
 
         # Founder portrait for the business plan: the media-library asset in
@@ -37732,6 +37968,27 @@ For claims or questions, please contact:
                 return
             if self._handle_confidential_api(path, confidential_body):
                 return
+
+        # Unified business plan — admin saves the default factor set every
+        # viewer opens on (and the open-link whitelist).
+        if path == '/api/business-plan/factors':
+            try:
+                length = int(self.headers.get('Content-Length', 0) or 0)
+            except (TypeError, ValueError):
+                length = 0
+            raw_body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                factors_body = json.loads(raw_body) if raw_body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON body'}).encode('utf-8'))
+                return
+            if not isinstance(factors_body, dict):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request body'}).encode('utf-8'))
+                return
+            self._handle_business_plan_factors_post(factors_body)
+            return
 
         # Meeting summary-notes admin API (staff) — draft a summary note from a
         # meeting for future BI / regulatory-adjustment / AI-affiliated reference.
