@@ -19,12 +19,7 @@ from typing import Any, Dict, List, Optional
 
 MAX_NARRATION_CHARS = 800
 MAX_THEME_CHARS = 240
-# A calm presenter finishes about this many words inside eight seconds.
-# The next sentence is kept out rather than clipped, so the line always
-# ends on a period. A single sentence longer than the budget stays whole.
-SPOKEN_WORD_BUDGET = 18
 _ASSET_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$")
-_SENTENCE_RE = re.compile(r"[^.!?]+[.!?]?")
 _CAMPAIGN_PREFIX = "SOL-"
 
 # Canonical public outline. Keys match ``data-preview`` / theater slots.
@@ -169,43 +164,14 @@ class SolutionBlueprintError(ValueError):
     """A blueprint edit or send was rejected before any provider call."""
 
 
-def _sentences(text: str) -> List[str]:
-    sentences: List[str] = []
-    for match in _SENTENCE_RE.finditer(str(text or "")):
-        sentence = " ".join(match.group(0).split())
-        if not sentence:
-            continue
-        if sentence[-1] not in ".!?":
-            sentence += "."
-        sentences.append(sentence)
-    return sentences
-
-
-def fit_spoken_line(text: str, *, budget: int = SPOKEN_WORD_BUDGET) -> str:
-    """Complete sentences that finish inside an eight-second spoken pass.
-
-    The stored narration is not rewritten. This is the line the presenter
-    is asked to say, and it always stops on a sentence boundary.
-    """
-    sentences = _sentences(text)
-    if not sentences:
-        return ""
-    chosen = [sentences[0]]
-    count = len(sentences[0].split())
-    for sentence in sentences[1:]:
-        extra = len(sentence.split())
-        if count + extra > budget:
-            break
-        chosen.append(sentence)
-        count += extra
-    return " ".join(chosen)
-
-
 def canonical_narration(solution_key: str) -> str:
-    """Default spoken line: a sentence-bounded prefix of the public bullets."""
+    """Default spoken line: every public bullet, as complete sentences.
+
+    A saved blueprint keeps the narration it was sealed with. This text is
+    only the fresh default and the result of an explicit reset.
+    """
     outline = SOLUTION_OUTLINES[solution_key]
-    full = " ".join(f"{bullet.rstrip('.')}." for bullet in outline["bullets"])
-    return fit_spoken_line(full)
+    return " ".join(f"{bullet.rstrip('.')}." for bullet in outline["bullets"])
 
 
 def campaign_id_for(solution_key: str) -> str:
@@ -340,17 +306,17 @@ def apply_blueprint_edit(
 def growth_blueprint(record: Dict[str, Any]) -> Dict[str, Any]:
     """Brief shape consumed by ``build_media_video_prompt``.
 
-    The storyboard carries the sentence-bounded spoken line, not a tail that
-    would be cut off at eight seconds. The stored narration is left as saved.
+    The storyboard carries the stored narration in full. Clip length is the
+    selected engine's own maximum. The stored narration is left as saved.
     """
-    narration = fit_spoken_line(str(record.get("narration") or ""))
+    narration = str(record.get("narration") or "").strip()
     theme = str(record.get("theme") or "").strip()
     storyboard: List[str] = [narration] if narration else []
     if theme:
         storyboard.append(f"Theme: {theme}")
     return {
         "title": f"{record.get('title') or 'Solution'} — Inside the Solution",
-        "format": "16:9 business appearance, 8 seconds",
+        "format": "16:9 business appearance",
         "voiceover_style": "Clear business presenter, one spoken pass, picture free of lettering",
         "storyboard": storyboard,
         "solution_key": str(record.get("solution_key") or ""),
@@ -358,12 +324,12 @@ def growth_blueprint(record: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def prompt_override(record: Dict[str, Any]) -> str:
-    """Presenter direction. The quoted line is complete sentences only."""
-    narration = fit_spoken_line(str(record.get("narration") or ""))
+    """Presenter direction. The quoted line is the sealed narration in full."""
+    narration = str(record.get("narration") or "").strip()
     theme = str(record.get("theme") or "").strip()
     reference = str(record.get("reference_image_asset_id") or "").strip()
     parts = [
-        "Business appearance, eight seconds, 16:9.",
+        "Business appearance, 16:9.",
         "A single professional presenter in business attire, medium close-up, calm office, looking at the camera.",
         "The frame contains no readable text: no titles, captions, subtitles, lower thirds, logos, watermarks, or disclaimers.",
         "No charts and no readable customer data.",

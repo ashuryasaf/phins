@@ -6119,10 +6119,11 @@ def _solution_send_reference(asset_id: str) -> Tuple[str, str]:
 
 
 def _solution_send_duration(provider: str, model: str) -> int:
-    """Seconds this engine will be asked for on the eight-second spoken pass.
+    """Longest clip the named engine will accept for this solution script.
 
-    Veo and Seedance keep 8. Official Kling keeps 5 or 10, so 8 is sent as
-    10. Kling v3 on EvoLink keeps 8. The spoken script is unchanged.
+    The sealed narration is not shortened. Veo's own maximum is 8. Official
+    Kling is 10. Kling v3, o1, and o3 on EvoLink are 15. Seedance and other
+    Replicate models are 15.
     """
     from services.media_generation_service import MediaGenerationService
 
@@ -6136,7 +6137,7 @@ def _solution_send_duration(provider: str, model: str) -> int:
             except Exception:
                 evolink = False
     return MediaGenerationService.clip_duration(
-        provider, model, 8, evolink=evolink,
+        provider, model, None, evolink=evolink,
     )
 
 

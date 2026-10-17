@@ -17,11 +17,9 @@ import web_portal.server as portal
 from services.solution_video_blueprints import (
     SOLUTION_KEYS,
     SOLUTION_OUTLINES,
-    SPOKEN_WORD_BUDGET,
     apply_blueprint_edit,
     blueprint_checksum,
     canonical_narration,
-    fit_spoken_line,
     fresh_blueprint,
     growth_blueprint,
     prompt_override,
@@ -177,39 +175,43 @@ def test_growth_agent_can_play_a_stored_solution_film():
     assert "previewMedia('${safeId}')\">${media.type === 'video' ? 'Play' : 'View'}" in media_html
 
 
-def test_spoken_line_stops_on_a_sentence_inside_eight_seconds():
+def test_spoken_line_keeps_the_full_sealed_narration():
     long_line = (
         "Premium billing stays aligned with the ledger. "
         "Every charge remains traceable to the policy. "
-        "This extra sentence is the one that would run past eight seconds of calm speech."
+        "This extra sentence stays in the script for the selected engine."
     )
-    fitted = fit_spoken_line(long_line)
-    assert fitted.endswith(".")
-    assert "extra sentence" not in fitted
-    assert len(fitted.split()) <= SPOKEN_WORD_BUDGET
-    # A single sentence is never chopped, even when it is longer than the budget.
-    whole = "One uninterrupted sentence that is deliberately longer than eighteen words so the cut would land in the middle of the thought."
-    kept = fit_spoken_line(whole)
-    assert kept == whole
-    assert "middle of the thought" in kept
+    sealed = apply_blueprint_edit("billing", None, narration=long_line, theme="Quiet desk")
+    digest = sealed["checksum"]
+    assert sealed["narration"] == long_line
+    assert verify_blueprint(sealed)
+    direction = prompt_override(sealed)
+    assert long_line in direction
+    assert "extra sentence stays" in direction
+    assert "eight seconds" not in direction.lower()
+    assert "8 seconds" not in direction
+    assert direction.startswith("Business appearance, 16:9.")
+    brief = growth_blueprint(sealed)
+    assert brief["storyboard"][0] == long_line
+    assert brief["format"] == "16:9 business appearance"
+    assert "8 seconds" not in brief["format"]
+    assert sealed["checksum"] == digest
+    assert sealed["narration"] == long_line
     for key in SOLUTION_KEYS:
         spoken = canonical_narration(key)
         bullets = SOLUTION_OUTLINES[key]["bullets"]
         full = " ".join(f"{bullet.rstrip('.')}." for bullet in bullets)
-        assert spoken
+        assert spoken == full
         assert spoken.endswith((".", "!", "?"))
-        assert full.startswith(spoken)
-        words = spoken.split()
-        sentences = [part for part in spoken.split(".") if part.strip()]
-        if len(sentences) > 1:
-            assert len(words) <= SPOKEN_WORD_BUDGET
-        brief = growth_blueprint({"title": key, "narration": full, "theme": "", "solution_key": key})
-        assert brief["storyboard"][0] == spoken
-        direction = prompt_override({"narration": full, "theme": "Quiet desk", "reference_image_asset_id": ""})
-        assert "no readable text" in direction
-        assert "On-screen" not in direction
-        assert spoken in direction
-        assert direction.rstrip().endswith('"')
+        outline = growth_blueprint({"title": key, "narration": full, "theme": "", "solution_key": key})
+        assert outline["storyboard"][0] == full
+        ready = prompt_override({"narration": full, "theme": "Quiet desk", "reference_image_asset_id": ""})
+        assert "no readable text" in ready
+        assert "On-screen" not in ready
+        assert "eight seconds" not in ready.lower()
+        assert "8 seconds" not in ready
+        assert full in ready
+        assert ready.rstrip().endswith('"')
 
 
 class _Server(threading.Thread):
@@ -389,6 +391,8 @@ def test_solution_blueprint_send_stores_a_library_film_without_replacing_the_pag
         assert "Quiet navy actuarial desk" in prompt
         assert "no readable text" in prompt
         assert "complete sentence" in prompt
+        assert "eight seconds" not in prompt.lower()
+        assert "8 seconds" not in prompt
         assert "On-screen disclaimer" not in prompt
         assert "not personalized insurance" not in prompt
         assert stub.submissions[0]["duration_seconds"] == 8
@@ -558,7 +562,9 @@ def test_solution_blueprint_send_follows_the_selected_engine():
         checksum = saved["blueprint"]["checksum"]
         ready = saved["blueprint"]["ready_prompt"]
         assert "Inside Claims" in ready
-        assert "eight seconds" in ready
+        assert "The file stays with the adjuster." in ready
+        assert "eight seconds" not in ready.lower()
+        assert "8 seconds" not in ready
 
         status, sent = _json_request(
             base + "/api/admin/media/solution-blueprints/send",
@@ -583,6 +589,8 @@ def test_solution_blueprint_send_follows_the_selected_engine():
         assert stub.submissions[-1]["model"] == "kling-v2.6-pro"
         assert stub.submissions[-1]["duration_seconds"] == 10
         assert "Inside Claims" in stub.submissions[-1]["prompt"]
+        assert "eight seconds" not in stub.submissions[-1]["prompt"].lower()
+        assert "8 seconds" not in stub.submissions[-1]["prompt"]
         assert stub.submissions[-1]["image_data_url"] == data_url
         stored = portal.DESIGN_SETTINGS["solution_video_blueprints"]["claims"]
         assert stored["checksum"] == checksum
@@ -604,9 +612,11 @@ def test_solution_blueprint_send_follows_the_selected_engine():
         assert status == 202, seedance
         assert seedance["provider"] == "replicate"
         assert seedance["provider_model"] == "bytedance/seedance-2.0"
-        assert seedance["duration_seconds"] == 8
+        assert seedance["duration_seconds"] == 15
         assert stub.submissions[-1]["model"] == "bytedance/seedance-2.0"
-        assert stub.submissions[-1]["duration_seconds"] == 8
+        assert stub.submissions[-1]["duration_seconds"] == 15
+        assert "eight seconds" not in stub.submissions[-1]["prompt"].lower()
+        assert "8 seconds" not in stub.submissions[-1]["prompt"]
 
         before = len(stub.submissions)
         status, wrong_prompt = _json_request(
@@ -662,6 +672,7 @@ def test_solution_blueprint_send_follows_the_selected_engine():
         assert override["provider"] == "gemini"
         assert override["provider_model"] == "veo-3.1-generate-preview"
         assert override["duration_seconds"] == 8
+        assert "eight seconds" not in stub.submissions[-1]["prompt"].lower()
         assert override["poll_mode"] in {"poll", "webhook"}
         assert stub.submissions[-1]["provider"] == "gemini"
         assert stub.submissions[-1]["image_data_url"] == data_url
