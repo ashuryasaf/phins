@@ -626,6 +626,15 @@ Environment variables commonly used:
  `sha256(nda_text)` must equal `nda_sha256`. Staff read it from the IL pitch
  dashboard and `GET /api/confidential/signed-documents` (anonymous 401); a
  tampered file lists `intact: false` and `get()` refuses it.
+- **Link previews:** `GET /link-preview.png?path=` is a public 1200×630 card
+  (navy/gold gradient, shield logo, document name) from
+  `services/link_preview.py`. Served HTML and the confidential gate carry
+  the same Open Graph tags. Preview crawlers (WhatsApp,
+  `facebookexternalhit`, and the other unfurl bots) receive that card and
+  the file name only — never the document — and the fetch does not open a
+  share or set a cookie. The title is a known name or the name of a file
+  that exists; an unknown path stays `PHINS`. `robots.txt` allows
+  `/link-preview.png`.
 - **Video agents (B8):** `REPLICATE_API_TOKEN` enables Replicate beside
  Gemini and Kling (Growth Agent and Video Agents). Optional
  `REPLICATE_VIDEO_MODELS` (comma-separated `owner/name`) and

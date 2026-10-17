@@ -15918,6 +15918,20 @@ def _inject_ui_clarity_script(html_content: str) -> str:
             + html_content[last.start():]
         )
     return f'{html_content}\n{inject_tag}\n'
+
+
+def _inject_link_preview_tags(handler, path: str, html_content: str) -> str:
+    """Stamp a public Open Graph card onto served HTML. Never raises."""
+    try:
+        from services.link_preview import inject_preview_tags
+        return inject_preview_tags(
+            html_content,
+            path=path,
+            origin=handler._preview_origin(),
+            page_url=handler._preview_page_url(path),
+        )
+    except Exception:
+        return html_content
 # Keep this aligned with front-end accepted document/media uploads.
 ALLOWED_POLICY_DOCUMENT_EXTENSIONS = {
     '.xls', '.xlsx', '.xsd', '.csv', '.pdf',
@@ -19694,6 +19708,90 @@ class PortalHandler(BaseHTTPRequestHandler):
             return forwarded == 'https'
         return not _is_local_request_host(self.headers.get('Host', ''))
 
+    def _preview_origin(self) -> str:
+        """Public origin for Open Graph image and page URLs."""
+        base = public_portal_base_url()
+        if base:
+            return base
+        try:
+            host = str(self.headers.get('Host', '') or '').strip()
+        except Exception:
+            host = ''
+        if not host or any(ch in host for ch in ('\r', '\n', ' ', '/')):
+            return ''
+        scheme = 'https' if self._request_is_secure() else 'http'
+        return f'{scheme}://{host}'
+
+    def _preview_page_url(self, path: str) -> str:
+        from services.link_preview import canonical_page_url
+        return canonical_page_url(self._preview_origin(), path, self.path)
+
+    def _serve_link_preview(self, qs: Dict[str, Any]) -> None:
+        """Public 1200×630 card. The query selects a file name, not a title."""
+        from services.link_preview import PreviewPathError, normalize_preview_path, render_preview_png
+
+        raw = (qs.get('path') or ['/'])[0]
+        try:
+            target = normalize_preview_path(raw)
+        except PreviewPathError:
+            self._set_json_headers(400)
+            self.wfile.write(json.dumps({'error': 'Invalid preview path'}).encode('utf-8'))
+            return
+        try:
+            png = render_preview_png(target)
+        except Exception as exc:
+            print(f"⚠️  [LINK PREVIEW] card render failed: {exc}")
+            self._set_json_headers(500)
+            self.wfile.write(json.dumps({'error': 'Preview card unavailable'}).encode('utf-8'))
+            return
+        self.send_response(200)
+        self.send_header('Content-Type', 'image/png')
+        self.send_header('Content-Length', str(len(png)))
+        self.send_header('Cache-Control', 'public, max-age=86400')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.end_headers()
+        self.wfile.write(png)
+
+    def _send_confidential_link_preview(self, path: str) -> bool:
+        """200 card for unfurl bots. Returns True when the response was written.
+
+        Runs before the access decision so a preview fetch does not open the
+        document, set a cookie, or consume a share. A spoofed crawler name
+        still receives only this shell.
+        """
+        from services.link_preview import is_preview_crawler, preview_shell
+
+        try:
+            user_agent = self.headers.get('User-Agent', '') if self.headers else ''
+        except Exception:
+            user_agent = ''
+        if not is_preview_crawler(user_agent):
+            return False
+        if not confidential_access.is_confidential_path(path):
+            return False
+        if path.startswith('/api/'):
+            return False
+        html = preview_shell(
+            path=path,
+            origin=self._preview_origin(),
+            page_url=self._preview_page_url(path),
+        )
+        body = html.encode('utf-8')
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'public, max-age=300')
+        self.send_header('X-Robots-Tag', 'noindex, nofollow')
+        try:
+            from security.headers import html_security_headers
+            for name, value in html_security_headers():
+                self.send_header(name, value)
+        except Exception:
+            pass
+        self.end_headers()
+        self.wfile.write(body)
+        return True
+
     def _confidential_share_active(self, share_id: str, path: str, session_key: str = '') -> bool:
         """Confirm a share cookie still refers to a non-revoked HTML share.
 
@@ -20118,6 +20216,11 @@ class PortalHandler(BaseHTTPRequestHandler):
         if not _confidential_access_enabled:
             return True
         try:
+            if self._send_confidential_link_preview(path):
+                return False
+        except Exception as exc:
+            print(f"⚠️  [LINK PREVIEW] crawler card failed for {path}: {exc}")
+        try:
             decision = confidential_access.evaluate_access(
                 path,
                 session=self._get_session(),
@@ -20189,7 +20292,9 @@ class PortalHandler(BaseHTTPRequestHandler):
         if share_id and decision.reason == 'share_password_required':
             nda_doc, nda_share = self._confidential_nda_context(share_id)
         body = confidential_access.denial_html(
-            decision, path=path, share_id=share_id, nda=nda_doc, share=nda_share
+            decision, path=path, share_id=share_id, nda=nda_doc, share=nda_share,
+            preview_origin=self._preview_origin(),
+            preview_page_url=self._preview_page_url(path),
         ).encode('utf-8')
         self.send_response(decision.status)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
@@ -21660,6 +21765,7 @@ For claims or questions, please contact:
             self.end_headers()
             robots_content = (
                 "User-agent: *\n"
+                "Allow: /link-preview.png\n"
                 "Disallow: /api/\n"
                 "Disallow: /internal/\n"
                 # Corporate instruments (cap table, term sheet, agreements) and
@@ -21819,6 +21925,11 @@ For claims or questions, please contact:
         if path == '/api/meetings/notes':
             if self._handle_meeting_notes_api(path, {}, qs):
                 return
+
+        # Public share card (logo + file name). Not a document and not gated.
+        if path == '/link-preview.png':
+            self._serve_link_preview(qs)
+            return
 
         # Confidential-document gate. Placed before the legal-docs registry and
         # the static file handler below so a single choke point authorises every
@@ -38127,6 +38238,7 @@ For claims or questions, please contact:
                         html_content = fh.read()
                     html_content = _inject_ui_clarity_script(html_content)
                     html_content = self._filter_shared_business_plan(path, html_content)
+                    html_content = _inject_link_preview_tags(self, path, html_content)
                     self.wfile.write(html_content.encode('utf-8'))
                 else:
                     file_size = os.path.getsize(file_path)
