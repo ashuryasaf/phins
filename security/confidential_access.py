@@ -862,6 +862,12 @@ def _nda_share_block(
         for c in (nda.get("clauses") or [])
     )
     addressed = _html_escape(nda.get("addressed_to") or share.get("label") or "")
+    instance = str(nda.get("doc_instance_id") or share.get("nda_doc_instance_id") or "")
+    instance_meta = (
+        f' · <span class="gate-nda__instance" data-platform-document="{_html_escape(nda.get("platform_document") or "/legal/nda.html")}">'
+        f"{_html_escape(instance)}</span>"
+        if instance else ""
+    )
     return f"""
 <section class="gate-panel gate-panel--primary gate-nda" aria-labelledby="share-unlock-title">
   <div class="gate-panel__eyebrow">{_html_escape(nda.get("document"))}</div>
@@ -871,7 +877,7 @@ def _nda_share_block(
   <div class="gate-nda__text" id="nda-text" tabindex="0">
     <p>{_html_escape(nda.get("intro"))}</p>
     <ol>{clauses}</ol>
-    <p class="gate-nda__meta">{_html_escape(labels.get("version"))} {_html_escape(nda.get("version"))} · {_html_escape(labels.get("checksum"))} <code>{_html_escape(str(nda.get("sha256") or "")[:16])}…</code></p>
+    <p class="gate-nda__meta">{_html_escape(labels.get("version"))} {_html_escape(nda.get("version"))}{instance_meta} · {_html_escape(labels.get("checksum"))} <code>{_html_escape(str(nda.get("sha256") or "")[:16])}…</code></p>
   </div>
   <p class="gate-nda__window">{_html_escape(window_note)}</p>
   <form id="share-unlock-form" class="gate-form" autocomplete="on" data-nda="1">

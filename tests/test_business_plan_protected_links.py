@@ -31,7 +31,16 @@ import requests
 from security import confidential_access as ca
 from services import business_plan_i18n as i18n
 from services import business_plan_model as bpm
-from services.business_plan_nda import NDA_VERSION, nda_document, nda_sha256, nda_text
+from services.business_plan_nda import (
+    DOC_CONTEXT,
+    DOC_TYPE,
+    NDA_VERSION,
+    doc_instance_id,
+    field_values,
+    nda_document,
+    nda_sha256,
+    nda_text,
+)
 from services.business_plan_settings import BusinessPlanSettings, SettingsError
 from services.confidential_share_service import (
     ConfidentialShareService,
@@ -50,15 +59,36 @@ PLAN_HE = "/business-plan.he.html"
 # ---------------------------------------------------------------------------
 # NDA text
 # ---------------------------------------------------------------------------
-def test_nda_is_versioned_content_addressed_and_bilingual():
-    en, he = nda_document("en", label="Investor ACME"), nda_document("he", label="משקיע")
+def test_nda_is_the_platform_nda_instantiated_for_the_link():
+    day = "2026-10-17"
+    en = nda_document("en", label="Investor ACME", effective_date=day, share_id="shr_abc")
+    he = nda_document("he", label="משקיע", effective_date=day, share_id="shr_abc")
     assert en["version"] == he["version"] == NDA_VERSION
-    assert en["sha256"] == nda_sha256("en") and he["sha256"] == nda_sha256("he")
+    assert en["doc_type"] == he["doc_type"] == DOC_TYPE == "nda" and en["context"] == DOC_CONTEXT == "investor"
+    assert en["platform_document"] == "/legal/nda.html"
+    assert en["doc_instance_id"] == he["doc_instance_id"] == doc_instance_id("shr_abc") == "LGL-NDA-SHR_ABC"
+    assert en["sha256"] == nda_sha256("en", label="Investor ACME", effective_date=day)
+    assert he["sha256"] == nda_sha256("he", label="משקיע", effective_date=day)
     assert en["sha256"] != he["sha256"]
+    # Content-addressed per party and date: another label is another document.
+    assert en["sha256"] != nda_sha256("en", label="Investor Other", effective_date=day)
     assert en["addressed_to"] == "Investor ACME" and he["rtl"] is True and en["rtl"] is False
-    assert len(en["clauses"]) == len(he["clauses"]) == 8
-    assert "screenshot" in nda_text("en") and "PHINS Unified Business Plan" in en["document"]
+    # Platform clauses 1–7 (Purpose … Governing Law) + the protected-view rider.
+    assert [c["heading"] for c in en["clauses"]] == [
+        "Purpose", "Confidential Information", "Obligations", "Exclusions", "Term",
+        "No License; Return", "Governing Law", "Protected view (open-link rider)",
+    ]
+    assert len(he["clauses"]) == 8
+    fields = en["field_values"]
+    assert fields == field_values("Investor ACME", day)
+    assert fields["companyName"] == "PHINS Insurance, Inc." and fields["counterpartyName"] == "Investor ACME"
+    assert fields["mutual"].startswith("One-way") and fields["termYears"] == 2 and fields["confidYears"] == 5
+    assert fields["governingLaw"] == "State of Delaware, USA" and fields["effectiveDate"] == day
+    assert "PHINS Unified Business Plan" in fields["purpose"]
+    text = nda_text("en", label="Investor ACME", effective_date=day)
+    assert "Non-Disclosure Agreement" in text and "screenshot" in text and "Investor ACME" in text
     assert nda_document("xx")["lang"] == "en"  # unknown language falls back
+    assert nda_document("en")["doc_instance_id"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -120,18 +150,24 @@ def test_nda_link_needs_label_and_caps_single_use_window(store):
                            nda_required=True, access_window_seconds=4 * 3600)
     share = store.create_share(path=PLAN, password="open1234", max_uses=1, label="ACME", nda_required=True)
     assert share["nda_required"] and share["nda_version"] == NDA_VERSION
-    assert share["nda_sha256"] == nda_sha256("en")
+    today = datetime.now(timezone.utc).date().isoformat()
+    assert share["nda_effective_date"] == today
+    assert share["nda_sha256"] == nda_sha256("en", label="ACME", effective_date=today)
+    assert share["nda_doc_instance_id"] == doc_instance_id(share["id"])
     assert share["access_window_seconds"] == DEFAULT_ACCESS_WINDOW_SECONDS == MAX_SINGLE_USE_WINDOW_SECONDS
     assert share["idle_timeout_seconds"] == 1800 and share["scope"] == PLAN
     assert share["expires_at"]  # an unopened NDA link lapses on its own
     multi = store.create_share(path=PLAN_HE, password="open1234", max_uses=5, label="ACME",
                                nda_required=True, access_window_seconds=8 * 3600, lang="he")
-    assert multi["access_window_seconds"] == 8 * 3600 and multi["nda_sha256"] == nda_sha256("he")
+    assert multi["access_window_seconds"] == 8 * 3600
+    assert multi["nda_sha256"] == nda_sha256("he", label="ACME", effective_date=today)
+    plain = store.create_share(path=PLAN, password="open1234", max_uses=1, label="x")
+    assert plain["nda_sha256"] is None and plain["nda_doc_instance_id"] is None
 
 
 def test_unlock_requires_signed_nda_and_records_acceptance(store):
     share = store.create_share(path=PLAN, password="open1234", max_uses=1, label="ACME", nda_required=True)
-    with pytest.raises(ShareError, match="undertaking"):
+    with pytest.raises(ShareError, match="NDA"):
         store.unlock(share["id"], "open1234")
     with pytest.raises(ShareError, match="full name"):
         store.unlock(share["id"], "open1234", nda_accepted=True, signer_name=" ")
@@ -140,7 +176,9 @@ def test_unlock_requires_signed_nda_and_records_acceptance(store):
                                 requested_path=PLAN_HE, client_ip="10.0.0.1", user_agent="pytest")
     assert target == PLAN and view["status"] == "exhausted" and view["session_key"]
     acc = view["nda_acceptances"][0]
-    assert acc["signer_name"] == "Dana Levi" and acc["nda_sha256"] == nda_sha256("en")
+    assert acc["signer_name"] == "Dana Levi" and acc["nda_sha256"] == share["nda_sha256"]
+    assert acc["doc_instance_id"] == share["nda_doc_instance_id"] and acc["signature_method"] == "type"
+    assert acc["ledger"] is None and view["signature_method"] == "type"
     assert view["openings"][0]["signer_name"] == "Dana Levi"
     until = datetime.fromisoformat(view["access_until"].replace("Z", "+00:00"))
     assert timedelta(hours=2, minutes=59) < until - datetime.now(timezone.utc) <= timedelta(hours=3)
@@ -158,7 +196,37 @@ def test_drawn_signature_is_validated_and_digested(store):
     data_url = "data:image/png;base64," + base64.b64encode(png).decode()
     view, _ = store.unlock(share["id"], "open1234", nda_accepted=True, signer_name="Dana", signature_png=data_url)
     assert view["nda_acceptances"][0]["signed_drawing"] is True
+    assert view["nda_acceptances"][0]["signature_method"] == "draw" and view["signature_method"] == "draw"
     assert len(view["nda_acceptances"][0]["signature_sha256"]) == 64
+
+
+def test_ledger_receipt_is_attached_and_a_failed_anchor_rolls_the_opening_back(store):
+    share = store.create_share(path=PLAN, password="open1234", max_uses=1, label="ACME", nda_required=True)
+    view, _ = store.unlock(share["id"], "open1234", nda_accepted=True, signer_name="Dana Levi")
+    sk = view["session_key"]
+    assert view["status"] == "exhausted" and view["used_count"] == 1
+
+    # The anchor did not happen: the opening is undone and the use is given back.
+    assert store.rollback_opening(share["id"], sk) is True
+    after = store.get_share(share["id"])
+    assert after["status"] == "active" and after["used_count"] == 0
+    assert after["openings"] == [] and after["nda_acceptances"] == []
+    assert not store.share_is_active_for_path(share["id"], PLAN, session_key=sk)
+    assert store.rollback_opening(share["id"], sk) is False  # nothing left to undo
+    assert store.attach_ledger_receipt(share["id"], sk, {"entry_id": "x"}) is None
+
+    # Signed again and anchored: the receipt sits on the acceptance and the viewer context.
+    view, _ = store.unlock(share["id"], "open1234", nda_accepted=True, signer_name="Dana Levi")
+    sk = view["session_key"]
+    receipt = store.attach_ledger_receipt(share["id"], sk, {
+        "entry_id": "LGLSIG-" + "a" * 64, "sequence_no": 7, "entry_hash": "b" * 64,
+        "doc_instance_id": share["nda_doc_instance_id"], "role": "Receiving Party", "signed_at": "2026-10-17T10:00:00Z",
+    })
+    assert receipt["entry_id"] == "LGLSIG-" + "a" * 64 and receipt["sequence_no"] == 7
+    stored = store.get_share(share["id"])["nda_acceptances"][0]["ledger"]
+    assert stored == receipt and stored["doc_instance_id"] == doc_instance_id(share["id"])
+    ctx = store.viewer_context(share["id"], sk)
+    assert ctx["nda_ledger"] == receipt and ctx["nda_doc_instance_id"] == doc_instance_id(share["id"])
 
 
 def test_opening_window_scope_and_idle_are_enforced(store):
@@ -326,28 +394,59 @@ def test_http_nda_link_end_to_end(closed_gate):
     assert create.status_code == 201, create.text
     share = create.json()["share"]
     assert share["nda_required"] is True and share["access_window_seconds"] == 3600
-    assert share["idle_timeout_seconds"] == 900 and share["nda_sha256"] == nda_sha256("en")
+    assert share["idle_timeout_seconds"] == 900
+    assert share["nda_sha256"] == nda_sha256("en", label="Investor ACME", effective_date=share["nda_effective_date"])
+    instance = share["nda_doc_instance_id"]
+    assert instance == doc_instance_id(share["id"])
 
-    # Recipient sees the NDA, addressed to the label, with the signature form.
+    # Recipient sees the platform NDA, addressed to the label, with the signature form.
     gate = requests.get(f"{BASE_URL}{PLAN}", params={"share": share["id"]}, timeout=10, allow_redirects=False)
     assert gate.status_code == 401
     assert 'data-nda="1"' in gate.text and "Investor ACME" in gate.text
-    assert "nda-signature" in gate.text and "Non-Disclosure Undertaking" in gate.text
+    assert "nda-signature" in gate.text and "Non-Disclosure Agreement" in gate.text
+    assert "PHINS NDA Center" in gate.text and instance in gate.text and "/legal/nda.html" in gate.text
+    assert share["nda_sha256"][:16] in gate.text
     assert "Adjustable factors" not in gate.text
 
     recipient = requests.Session()
     unsigned = recipient.post(f"{BASE_URL}/api/confidential/share-unlock",
                               json={"share_id": share["id"], "password": "guest-open", "path": PLAN}, timeout=10)
-    assert unsigned.status_code == 400 and "undertaking" in unsigned.json()["error"].lower()
+    assert unsigned.status_code == 400 and "nda" in unsigned.json()["error"].lower()
+    assert admin.get(f"{BASE_URL}/api/legal-docs/registry", params={"doc_id": instance}, timeout=10).json()["items"] == []
+    assert requests.get(f"{BASE_URL}/api/legal-docs/registry", params={"doc_id": instance}, timeout=10).status_code == 401
     opened = recipient.post(f"{BASE_URL}/api/confidential/share-unlock",
                             json={"share_id": share["id"], "password": "guest-open", "path": PLAN_HE,
                                   "nda_accepted": True, "signer_name": "Dana Levi"}, timeout=10)
     assert opened.status_code == 200, opened.text
     body = opened.json()
     assert body["redirect_to"].startswith(PLAN_HE) and "session_key" not in body["share"]
-    assert body["share"]["nda_acceptances"][0]["signer_name"] == "Dana Levi"
+    acceptance = body["share"]["nda_acceptances"][0]
+    assert acceptance["signer_name"] == "Dana Levi" and acceptance["doc_instance_id"] == instance
     set_cookie = opened.headers.get("Set-Cookie", "")
     assert ca.SHARE_COOKIE_NAME in set_cookie and "Max-Age=3600" in set_cookie
+
+    # The signature is the platform NDA anchored on the platform ledger …
+    ledger = body["share"]["nda_ledger"]
+    assert ledger == acceptance["ledger"]
+    assert ledger["entry_id"].startswith("LGLSIG-") and ledger["sequence_no"] and ledger["entry_hash"]
+    assert ledger["doc_instance_id"] == instance and ledger["role"] == "Receiving Party"
+    # … visible in the NDA registry and verifiable like any NDA Center signature.
+    registry = admin.get(f"{BASE_URL}/api/legal-docs/registry", params={"doc_id": instance}, timeout=10).json()
+    assert registry["total"] == 1
+    sig = registry["items"][0]
+    assert sig["role"] == "Receiving Party" and sig["signer_name"] == "Dana Levi"
+    assert sig["document_hash"] == share["nda_sha256"] and sig["signature_method"] == "type"
+    assert sig["entry_id"] == ledger["entry_id"] and sig["entry_hash"] == ledger["entry_hash"]
+    assert sig["content"]["fieldValues"]["counterpartyName"] == "Investor ACME"
+    assert sig["content"]["fieldValues"]["purpose"].startswith("Evaluation of a potential business")
+    assert sig["content"]["share_id"] == share["id"]
+    verified = admin.post(f"{BASE_URL}/api/legal-docs/verify",
+                          json={"docInstanceId": instance, "documentHash": share["nda_sha256"]}, timeout=10)
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["verified"] is True and verified.json()["chain_valid"] is True
+    tampered = admin.post(f"{BASE_URL}/api/legal-docs/verify",
+                          json={"docInstanceId": instance, "documentHash": "0" * 64}, timeout=10).json()
+    assert tampered["verified"] is False
 
     # One unlock covers the page, the Hebrew edition and the plan APIs …
     assert recipient.get(f"{BASE_URL}{PLAN}", timeout=10).status_code == 200
@@ -359,6 +458,7 @@ def test_http_nda_link_end_to_end(closed_gate):
     assert access["adjustable"] == ["phins_take"] and access["saved_factors"] == {"phins_take": 0.30}
     assert access["viewer"]["signer_name"] == "Dana Levi" and access["viewer"]["label"] == "Investor ACME"
     assert access["viewer"]["access_until"] and access["viewer"]["idle_timeout_seconds"] == 900
+    assert access["viewer"]["nda_doc_instance_id"] == instance and access["viewer"]["nda_ledger"] == ledger
 
     # … but never the downloads.
     for path in ("/investor-docs/phins-unified-business-plan.pdf", "/investor-docs/phins-unified-business-plan.he.md",

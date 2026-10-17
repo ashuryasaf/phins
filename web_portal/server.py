@@ -19858,11 +19858,84 @@ class PortalHandler(BaseHTTPRequestHandler):
             return None, None
         try:
             from services.business_plan_nda import nda_document
-            nda = nda_document(str(share.get('lang') or 'en'), label=str(share.get('label') or ''))
+            nda = nda_document(
+                str(share.get('lang') or 'en'),
+                label=str(share.get('label') or ''),
+                effective_date=share.get('nda_effective_date') or None,
+                share_id=str(share.get('id') or share_id),
+            )
         except Exception as exc:
             print(f"⚠️  [CONFIDENTIAL] NDA render failed: {exc}")
             return None, None
         return nda, share
+
+    def _anchor_share_nda_signature(self, public_share: Dict[str, Any],
+                                    body_data: Dict[str, Any], client_ip: str):
+        """Anchor an open-link NDA acceptance through the platform legal-docs path.
+
+        Same route as the NDA Center (``/api/legal-docs/sign``): docType
+        ``nda``, investor context, role ``Receiving Party``, the share's
+        content digest as ``documentHash`` and the filled field set as the
+        content snapshot. Returns the receipt stored on the share, or ``None``
+        when the ledger refused (the caller rolls the opening back).
+        """
+        try:
+            from services.business_plan_nda import (
+                DOC_CONTEXT, DOC_TYPE, doc_instance_id, field_values,
+            )
+            from services.confidential_share_service import get_confidential_share_service
+
+            share_id = str(public_share.get('id') or '')
+            instance = str(public_share.get('nda_doc_instance_id') or doc_instance_id(share_id))
+            signer = str(public_share.get('signer_name') or body_data.get('signer_name') or '').strip()
+            digest = str(public_share.get('nda_sha256') or '')
+            signed_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+            # The ledger entry id is deterministic per (instance, role, hash);
+            # on a multi-use link each opening must anchor its own signature,
+            # so later openings carry their ordinal in the role.
+            opening_no = int(public_share.get('used_count') or 1)
+            role = 'Receiving Party' if opening_no <= 1 else f'Receiving Party #{opening_no}'
+            status, result = _legal_doc_sign({
+                'docType': DOC_TYPE,
+                'docInstanceId': instance,
+                'context': DOC_CONTEXT,
+                'role': role,
+                'signerName': signer,
+                'signerTitle': str(public_share.get('label') or ''),
+                'signedAt': signed_at,
+                'documentHash': digest,
+                'signatureMethod': str(public_share.get('signature_method') or 'type'),
+                'content': {
+                    'context': DOC_CONTEXT,
+                    'fieldValues': field_values(
+                        str(public_share.get('label') or ''),
+                        public_share.get('nda_effective_date') or None,
+                    ),
+                    'tableData': {},
+                    'source': 'confidential_share',
+                    'share_id': share_id,
+                    'nda_version': public_share.get('nda_version'),
+                    'lang': public_share.get('lang') or 'en',
+                },
+            }, client_ip, None)
+            if status != 200 or not result.get('ok'):
+                print(f"⚠️  [CONFIDENTIAL] NDA anchor refused ({status}): {result.get('error')}")
+                return None
+            receipt = {
+                'entry_id': result.get('entry_id'),
+                'sequence_no': result.get('sequence_no'),
+                'entry_hash': result.get('entry_hash'),
+                'doc_instance_id': instance,
+                'role': role,
+                'signed_at': signed_at,
+            }
+            stored = get_confidential_share_service().attach_ledger_receipt(
+                share_id, str(public_share.get('session_key') or ''), receipt
+            )
+            return stored or receipt
+        except Exception as exc:
+            print(f"⚠️  [CONFIDENTIAL] NDA anchor failed: {exc}")
+            return None
 
     def _enforce_confidential_access(self, path: str, qs: Dict[str, Any]) -> bool:
         """Gate confidential investor/corporate documents and their APIs.
@@ -20231,6 +20304,28 @@ class PortalHandler(BaseHTTPRequestHandler):
                 }).encode('utf-8'))
                 return True
 
+            ledger_receipt = None
+            if public_share.get('nda_required'):
+                # The acceptance is the platform NDA signed as a Receiving
+                # Party: anchor it through the legal-docs path (same as the
+                # NDA Center) so it shows in the NDA registry and verifies.
+                # No anchor → no opening: roll the use back and refuse.
+                ledger_receipt = self._anchor_share_nda_signature(
+                    public_share, body_data, client_ip
+                )
+                if ledger_receipt is None:
+                    try:
+                        get_confidential_share_service().rollback_opening(
+                            public_share['id'], str(public_share.get('session_key') or '')
+                        )
+                    except Exception as exc:
+                        print(f"[CONFIDENTIAL] share rollback failed: {exc}")
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'The NDA signature could not be anchored to the platform ledger. Try again later.'
+                    }).encode('utf-8'))
+                    return True
+
             with STATE_LOCK:
                 k = _security_key(client_ip, server_port)
                 if k in FAILED_LOGINS:
@@ -20248,6 +20343,10 @@ class PortalHandler(BaseHTTPRequestHandler):
                     open_path = req_norm
             redirect_to = f"{open_path}?share={public_share['id']}"
             public_share = {k: v for k, v in public_share.items() if k != 'session_key'}
+            if ledger_receipt:
+                public_share['nda_ledger'] = ledger_receipt
+                if public_share.get('nda_acceptances'):
+                    public_share['nda_acceptances'][-1]['ledger'] = ledger_receipt
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header(

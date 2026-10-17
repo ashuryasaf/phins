@@ -366,16 +366,24 @@ class ConfidentialShareService:
         lang_code = str(lang or "en").strip().lower()[:2] or "en"
         if lang_code not in ("en", "he"):
             lang_code = "en"
-        nda_version = None
-        nda_digest = None
-        if nda_required:
-            from services.business_plan_nda import NDA_VERSION, nda_sha256
-
-            nda_version = NDA_VERSION
-            nda_digest = nda_sha256(lang_code)
-
         pwd = hash_share_password(password)
         share_id = "shr_" + secrets.token_urlsafe(18).replace("-", "").replace("_", "")[:24]
+        nda_version = None
+        nda_digest = None
+        nda_effective_date = None
+        nda_instance = None
+        if nda_required:
+            # The platform NDA (/legal/nda.html) instantiated for this link:
+            # the Receiving Party is the label and the effective date is the
+            # day the link is minted, so the digest is fixed at creation and
+            # is what every signer on this link attests to.
+            from services.business_plan_nda import NDA_VERSION, doc_instance_id, nda_sha256
+
+            nda_version = NDA_VERSION
+            nda_effective_date = _utc_now().date().isoformat()
+            nda_digest = nda_sha256(lang_code, label=clean_label, effective_date=nda_effective_date)
+            nda_instance = doc_instance_id(share_id)
+
         record = {
             "id": share_id,
             "path": target,
@@ -395,6 +403,8 @@ class ConfidentialShareService:
             "nda_required": nda_required,
             "nda_version": nda_version,
             "nda_sha256": nda_digest,
+            "nda_effective_date": nda_effective_date,
+            "nda_doc_instance_id": nda_instance,
             "nda_acceptances": [],
             "access_window_seconds": int(window),
             "idle_timeout_seconds": int(idle),
@@ -507,9 +517,9 @@ class ConfidentialShareService:
 
             if record.get("nda_required"):
                 if not nda_accepted:
-                    raise ShareError("The non-disclosure undertaking must be accepted to open this link.")
+                    raise ShareError("The Non-Disclosure Agreement (NDA) must be accepted to open this link.")
                 if len(clean_signer) < 2 or not any(ch.isalpha() for ch in clean_signer):
-                    raise ShareError("Sign the undertaking with your full name to open this link.")
+                    raise ShareError("Sign the NDA with your full name to open this link.")
 
             max_uses = record.get("max_uses")
             used = int(record.get("used_count") or 0)
@@ -534,11 +544,15 @@ class ConfidentialShareService:
                     "signer_name": clean_signer,
                     "nda_version": record.get("nda_version"),
                     "nda_sha256": record.get("nda_sha256"),
+                    "nda_effective_date": record.get("nda_effective_date"),
+                    "doc_instance_id": record.get("nda_doc_instance_id"),
                     "lang": record.get("lang") or "en",
+                    "signature_method": "draw" if signature_data else "type",
                     "signature_sha256": signature_sha or None,
                     "signature_png": signature_data or None,
                     "ip": str(client_ip or "")[:64],
                     "user_agent": str(user_agent or "")[:200],
+                    "ledger": None,
                 }
                 acceptances = list(record.get("nda_acceptances") or [])
                 acceptances.append(acceptance)
@@ -578,7 +592,63 @@ class ConfidentialShareService:
             view["session_key"] = session_key
             view["access_until"] = sessions[-1]["access_until"]
             view["signer_name"] = clean_signer or None
+            view["signature_method"] = (acceptance or {}).get("signature_method")
             return view, target
+
+    def rollback_opening(self, share_id: str, session_key: str) -> bool:
+        """Undo the opening ``unlock`` just created (its use, session and NDA record).
+
+        Used when the step that must follow an NDA unlock — anchoring the
+        signature on the platform ledger — fails: the link must not count a
+        use, nor keep an acceptance, that was never anchored.
+        """
+        key = str(session_key or "").strip()
+        with self._exclusive_store():
+            record = self._shares.get(str(share_id or "").strip())
+            if not record or not key:
+                return False
+            sessions = [s for s in (record.get("sessions") or []) if s.get("key") != key]
+            if len(sessions) == len(record.get("sessions") or []):
+                return False
+            record["sessions"] = sessions
+            record["nda_acceptances"] = [
+                a for a in (record.get("nda_acceptances") or []) if a.get("session_key") != key
+            ]
+            record["use_log"] = [u for u in (record.get("use_log") or []) if u.get("session_key") != key]
+            record["used_count"] = max(0, int(record.get("used_count") or 0) - 1)
+            if record.get("status") == "exhausted":
+                record["status"] = "active"
+            self._refresh_status(record)
+            self._shares[str(share_id).strip()] = record
+            self._persist()
+            return True
+
+    def attach_ledger_receipt(
+        self, share_id: str, session_key: str, receipt: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Store the platform-ledger anchor of the NDA signature for an opening."""
+        key = str(session_key or "").strip()
+        clean = {
+            "entry_id": str(receipt.get("entry_id") or "")[:160] or None,
+            "sequence_no": receipt.get("sequence_no"),
+            "entry_hash": str(receipt.get("entry_hash") or "")[:128] or None,
+            "doc_instance_id": str(receipt.get("doc_instance_id") or "")[:120] or None,
+            "role": str(receipt.get("role") or "")[:80] or None,
+            "signed_at": str(receipt.get("signed_at") or "")[:40] or None,
+        }
+        with self._exclusive_store():
+            record = self._shares.get(str(share_id or "").strip())
+            if not record or not key:
+                return None
+            acceptances = list(record.get("nda_acceptances") or [])
+            target = next((a for a in acceptances if a.get("session_key") == key), None)
+            if target is None:
+                return None
+            target["ledger"] = clean
+            record["nda_acceptances"] = acceptances
+            self._shares[str(share_id).strip()] = record
+            self._persist()
+            return dict(clean)
 
     def share_is_active_for_path(
         self, share_id: str, path: str, session_key: str = ""
@@ -646,12 +716,19 @@ class ConfidentialShareService:
             ) if key else None
             if session is None and record.get("sessions"):
                 session = record["sessions"][-1]
+            acceptance = next(
+                (a for a in (record.get("nda_acceptances") or [])
+                 if session and a.get("session_key") == session.get("key")),
+                None,
+            )
             return {
                 "share_id": record.get("id"),
                 "label": record.get("label") or "",
                 "lang": record.get("lang") or "en",
                 "nda_required": bool(record.get("nda_required")),
                 "nda_version": record.get("nda_version"),
+                "nda_doc_instance_id": record.get("nda_doc_instance_id"),
+                "nda_ledger": dict(acceptance.get("ledger") or {}) if acceptance and acceptance.get("ledger") else None,
                 "signer_name": (session or {}).get("signer_name"),
                 "opened_at": (session or {}).get("opened_at"),
                 "access_until": (session or {}).get("access_until"),
@@ -711,6 +788,8 @@ class ConfidentialShareService:
             "nda_required": bool(record.get("nda_required")),
             "nda_version": record.get("nda_version"),
             "nda_sha256": record.get("nda_sha256"),
+            "nda_effective_date": record.get("nda_effective_date"),
+            "nda_doc_instance_id": record.get("nda_doc_instance_id"),
             "access_window_seconds": int(
                 record.get("access_window_seconds") or DEFAULT_ACCESS_WINDOW_SECONDS
             ),
@@ -731,8 +810,11 @@ class ConfidentialShareService:
                     "signer_name": a.get("signer_name"),
                     "nda_version": a.get("nda_version"),
                     "nda_sha256": a.get("nda_sha256"),
+                    "signature_method": a.get("signature_method") or ("draw" if a.get("signature_png") else "type"),
                     "signature_sha256": a.get("signature_sha256"),
                     "signed_drawing": bool(a.get("signature_png")),
+                    "doc_instance_id": a.get("doc_instance_id") or record.get("nda_doc_instance_id"),
+                    "ledger": dict(a.get("ledger") or {}) if a.get("ledger") else None,
                 }
                 for a in (record.get("nda_acceptances") or [])
             ],

@@ -2639,7 +2639,7 @@
       <div id="confidential-share-admin" hidden style="margin-top:16px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--bg-card);box-shadow:var(--shadow);">
         <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--amber-1);margin-bottom:6px;">Staff · Share links</div>
         <h3 style="margin:0 0 8px 0;font-size:12pt;">Create a single-use or multi-use open link</h3>
-        <p style="font-size:9.5pt;color:var(--text-sub);margin:0 0 12px 0;">Recipients open this HTML page with a simple password. Downloaded PDFs/exports are excluded from share links. A link to the <strong>PHINS Unified Business Plan</strong> is conditional on a signed NDA addressed to the label: the recipient signs with their full name, gets a protected view (no download, print, copy or capture; watermarked and attributed to the signer) limited to that document and to the factors you mark adjustable, and access ends after the window below or when the view is left idle (single use: at most 3 hours).</p>
+        <p style="font-size:9.5pt;color:var(--text-sub);margin:0 0 12px 0;">Recipients open this HTML page with a simple password. Downloaded PDFs/exports are excluded from share links. A link to the <strong>PHINS Unified Business Plan</strong> is conditional on the <strong>platform NDA</strong> (<a href="/legal/nda.html">/legal/nda.html</a>, investor context, one-way) addressed to the label: the recipient signs with their full name, the signature is anchored to the platform ledger under <code>LGL-NDA-&lt;link&gt;</code> like every NDA Center signature (see <a href="/corporate-legal-dashboard.html">Corporate Legal</a>), and they get a protected view (no download, print, copy or capture; watermarked and attributed to the signer) limited to that document and to the factors you mark adjustable, and access ends after the window below or when the view is left idle (single use: at most 3 hours).</p>
         <form id="confidential-share-form" style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));align-items:end;">
           <label style="font-size:8.5pt;grid-column:1/-1;">Document
             <select id="share-document" style="display:block;width:100%;margin-top:3px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;">
@@ -2678,7 +2678,7 @@
             </select>
           </label>
           <label id="share-nda-row" style="font-size:8.5pt;display:flex;gap:6px;align-items:center;">
-            <input id="share-nda" type="checkbox"> Conditional NDA (signature required)
+            <input id="share-nda" type="checkbox"> Conditional platform NDA (signature required, ledger-anchored)
           </label>
           <button type="submit" class="exec-dl-btn" style="height:34px;">Create share link</button>
         </form>
@@ -11813,9 +11813,13 @@
           result.innerHTML = "<strong>Link:</strong> <a href=\"" + url + "\">" + url + "</a><br><strong>Open password:</strong> " +
             String(body.password).replace(/</g, "&lt;") +
             (share.nda_required
-              ? "<br><strong>Conditional NDA:</strong> addressed to " + String(share.label || "").replace(/</g, "&lt;") +
+              ? "<br><strong>Platform NDA:</strong> addressed to " + String(share.label || "").replace(/</g, "&lt;") +
                 " · protected view · " + hours + "h from opening, closes after " + Math.round((share.idle_timeout_seconds || 0) / 60) + " min idle" +
-                (share.expires_at ? " · link lapses " + String(share.expires_at).slice(0, 10) + " if unopened" : "")
+                (share.expires_at ? " · link lapses " + String(share.expires_at).slice(0, 10) + " if unopened" : "") +
+                (share.nda_doc_instance_id
+                  ? "<br><strong>NDA registry:</strong> <a href=\"/api/legal-docs/registry?doc_id=" + encodeURIComponent(share.nda_doc_instance_id) + "\" target=\"_blank\" rel=\"noopener\">" +
+                    String(share.nda_doc_instance_id).replace(/</g, "&lt;") + "</a> · content hash <code>" + String(share.nda_sha256 || "").slice(0, 16) + "…</code>"
+                  : "")
               : "") +
             "<br><span style=\"color:#666\">Copied to clipboard when supported. Downloads stay excluded.</span>";
           if (navigator.clipboard && navigator.clipboard.writeText) {

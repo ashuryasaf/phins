@@ -114,6 +114,11 @@
       })];
       if (until) parts.push(t('expires_in', { time: fmtLeft(left) }));
       if (Array.isArray(access.adjustable)) parts.push(t('only_adjustable'));
+      // Platform NDA receipt: registry instance + ledger sequence (language-neutral identifiers).
+      if (viewer.nda_ledger && viewer.nda_ledger.entry_id) {
+        parts.push('NDA ' + (viewer.nda_doc_instance_id || '') + ' · ledger #' + (viewer.nda_ledger.sequence_no || '') +
+          ' · ' + String(viewer.nda_ledger.entry_hash || '').slice(0, 12) + '…');
+      }
       note.textContent = parts.join(' ');
       note.classList.add('on');
       if (until && left <= 0) expire();
