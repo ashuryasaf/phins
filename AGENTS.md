@@ -625,7 +625,19 @@ Environment variables commonly used:
  first signature, gitignored): `record_sha256` over the canonical JSON and
  `sha256(nda_text)` must equal `nda_sha256`. Staff read it from the IL pitch
  dashboard and `GET /api/confidential/signed-documents` (anonymous 401); a
- tampered file lists `intact: false` and `get()` refuses it.
+ tampered file lists `intact: false` and `get()` refuses it. Any anchored
+ signature (`_legal_doc_sign`, not a void) is sealed the same way
+ (`store_signature`); the open-link NDA may later promote that attestation
+ to the full text only when the digest matches. With `USE_DATABASE=true`
+ the bytes also live in `signed_document_blobs` (SHA-256 checked on read;
+ a different checksum is not written over the row). `document_use_ledger`
+ appends `sent` / `signed` / `opened` / `used` (`PHINS_DOCUMENT_USE_LEDGER_PATH`
+ or `database/document_use_ledger.json`, hash-chained, idempotent). Staff
+ read both from the pitch dashboard **Signed documents** tab and
+ `GET /api/confidential/document-ledger` (anonymous 401). A broken chain
+ is reported and blocks the next append. Share viewers of a confidential
+ page other than the business plan (which already has its own protected
+ view) and the signed-copy HTML get `phins-capture-guard.js`.
 - **Link previews:** `GET /link-preview.png?path=` is a public 1200×630 card
   (navy/gold gradient, shield logo, document name) from
   `services/link_preview.py`. Served HTML and the confidential gate carry
