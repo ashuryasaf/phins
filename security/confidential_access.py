@@ -1432,6 +1432,14 @@ def denial_html(
         )
     except Exception:
         preview_tags = ""
+    capture_guard = ""
+    if show_nda:
+        try:
+            from services.document_capture_guard import markup as capture_markup
+            who = str((share or {}).get("label") or effective_share or "PHINS confidential")
+            capture_guard = capture_markup(who)
+        except Exception:
+            capture_guard = ""
     return f"""<!DOCTYPE html>
 <html lang="{_html_escape(page_lang)}" dir="{page_dir}">
 <head>
@@ -1466,6 +1474,7 @@ def denial_html(
     <p class="gate-foot"><a href="/">phins.ai</a> · Confidential workspace</p>
   </div>
   {script}
+  {capture_guard}
 </body>
 </html>
 """

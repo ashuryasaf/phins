@@ -2662,7 +2662,7 @@ def _legal_doc_sign(body_data: Dict[str, Any], client_ip: str,
         print(f"[legal-docs] anchor error: {exc}")
         return 500, {'error': 'Failed to anchor signature'}
 
-    return 200, {
+    result = {
         'ok': True,
         'event': event_type,
         'entry_id': entry.get('id'),
@@ -2672,6 +2672,26 @@ def _legal_doc_sign(body_data: Dict[str, Any], client_ip: str,
         'document_hash': document_hash,
         'signed_at': signed_at,
     }
+    if not is_void:
+        try:
+            from services.signed_document_archive import get_signed_document_archive
+            get_signed_document_archive().store_signature({
+                'doc_type': doc_type,
+                'doc_instance_id': doc_instance_id,
+                'entry_id': result['entry_id'],
+                'entry_hash': result['entry_hash'],
+                'sequence_no': result['sequence_no'],
+                'signer_name': signer_name,
+                'role': role,
+                'signed_at': signed_at,
+                'document_hash': document_hash,
+                'content': content_snapshot,
+                'signature_method': signature_method,
+                'label': signer_title or context or doc_type,
+            })
+        except Exception as exc:
+            print(f"[legal-docs] signed copy not sealed: {exc}")
+    return 200, result
 
 
 def _legal_doc_signatures_for(doc_instance_id: str) -> List[Dict[str, Any]]:
@@ -15932,6 +15952,40 @@ def _inject_link_preview_tags(handler, path: str, html_content: str) -> str:
         )
     except Exception:
         return html_content
+
+
+def _record_document_use(**fields) -> None:
+    """Append one use-ledger event. A ledger failure does not fail the request."""
+    try:
+        from services.document_use_ledger import get_document_use_ledger
+        from services.link_preview import preview_title
+        if not fields.get("document_name") and fields.get("document_path"):
+            fields["document_name"] = preview_title(str(fields.get("document_path") or ""))
+        get_document_use_ledger().record(**fields)
+    except Exception as exc:
+        print(f"⚠️  [DOCUMENT USE] not recorded: {exc}")
+
+
+def _inject_capture_guard(handler, path: str, html_content: str) -> str:
+    """Block capture on a confidential document opened from a share link.
+
+    The business-plan pages already run this barrier in business-plan-access.js.
+    """
+    try:
+        decision = getattr(handler, "_confidential_decision", None)
+        if decision is None or not getattr(decision, "is_share_viewer", False):
+            return html_content
+        lowered = str(path or "").split("?", 1)[0].lower()
+        if lowered in ("/business-plan.html", "/business-plan.he.html"):
+            return html_content
+        from services.document_capture_guard import inject
+        stamp = "PHINS confidential"
+        share_id = str(getattr(decision, "share_id", "") or "")
+        if share_id:
+            stamp = f"PHINS confidential · {share_id}"
+        return inject(html_content, stamp)
+    except Exception:
+        return html_content
 # Keep this aligned with front-end accepted document/media uploads.
 ALLOWED_POLICY_DOCUMENT_EXTENSIONS = {
     '.xls', '.xlsx', '.xsd', '.csv', '.pdf',
@@ -20393,6 +20447,18 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
             return True
         if html:
+            opened = datetime.now(timezone.utc).strftime('%Y%m%d%H%M')
+            _record_document_use(
+                action='opened',
+                idempotency_key=f"opened:signed:{record.get('archive_id')}:{opened}",
+                document_name=str(record.get('label') or record.get('doc_type') or 'Signed document'),
+                doc_instance_id=str(record.get('doc_instance_id') or ''),
+                archive_id=str(record.get('archive_id') or ''),
+                share_id=str(record.get('share_id') or ''),
+                actor='staff',
+                content_sha256=str(record.get('document_hash') or record.get('nda_sha256') or ''),
+                entry_id=str(record.get('entry_id') or ''),
+            )
             body = render_signed_html(record).encode('utf-8')
             self.send_response(200)
             self.send_header('Content-Type', 'text/html; charset=utf-8')
@@ -20652,6 +20718,15 @@ class PortalHandler(BaseHTTPRequestHandler):
                         and not confidential_access.is_downloadable_document(req_norm)):
                     open_path = req_norm
             redirect_to = f"{open_path}?share={public_share['id']}"
+            _record_document_use(
+                action='used',
+                idempotency_key=f"used:{public_share['id']}:{public_share.get('session_key') or ''}",
+                document_path=open_path,
+                share_id=public_share['id'],
+                actor=str(body_data.get('signer_name') or public_share.get('label') or ''),
+                content_sha256=str(public_share.get('nda_sha256') or ''),
+                doc_instance_id=str(public_share.get('nda_doc_instance_id') or ''),
+            )
             public_share = {k: v for k, v in public_share.items() if k != 'session_key'}
             if ledger_receipt:
                 public_share['nda_ledger'] = ledger_receipt
@@ -20775,6 +20850,15 @@ class PortalHandler(BaseHTTPRequestHandler):
                     self._set_json_headers(500)
                     self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
                     return True
+                _record_document_use(
+                    action='sent',
+                    idempotency_key=f"sent:{created.get('id')}",
+                    document_path=str(created.get('path') or share_path),
+                    share_id=str(created.get('id') or ''),
+                    actor=str((session or {}).get('username') or 'admin'),
+                    content_sha256=str(created.get('nda_sha256') or ''),
+                    doc_instance_id=str(created.get('nda_doc_instance_id') or ''),
+                )
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({'success': True, 'share': created}).encode('utf-8'))
                 return True
@@ -20812,6 +20896,17 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'Staff authorization required.'}).encode('utf-8'))
                 return True
             return self._serve_signed_documents(path)
+
+        if path == '/api/confidential/document-ledger':
+            if not confidential_access.session_is_staff(session) and not staff_cookie_ok:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Staff authorization required.'}).encode('utf-8'))
+                return True
+            from services.document_use_ledger import get_document_use_ledger
+            report = get_document_use_ledger().list_events()
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(report, default=str).encode('utf-8'))
+            return True
 
         self._set_json_headers(404)
         self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
@@ -21917,7 +22012,7 @@ For claims or questions, please contact:
 
         # Confidential share-link management (staff). Listed before the gate so
         # the JSON API itself is never treated as a confidential HTML document.
-        if path == '/api/confidential/shares' or path.startswith('/api/confidential/signed-documents'):
+        if path == '/api/confidential/shares' or path.startswith('/api/confidential/signed-documents') or path == '/api/confidential/document-ledger':
             if self._handle_confidential_api(path, {}):
                 return
 
@@ -38240,6 +38335,17 @@ For claims or questions, please contact:
                     html_content = _inject_ui_clarity_script(html_content)
                     html_content = self._filter_shared_business_plan(path, html_content)
                     html_content = _inject_link_preview_tags(self, path, html_content)
+                    html_content = _inject_capture_guard(self, path, html_content)
+                    decision = getattr(self, '_confidential_decision', None)
+                    if decision is not None and getattr(decision, 'is_share_viewer', False):
+                        opened = datetime.now(timezone.utc).strftime('%Y%m%d%H%M')
+                        _record_document_use(
+                            action='opened',
+                            idempotency_key=f"opened:{decision.share_id}:{path}:{opened}",
+                            document_path=path,
+                            share_id=decision.share_id,
+                            actor='share viewer',
+                        )
                     self.wfile.write(html_content.encode('utf-8'))
                 else:
                     file_size = os.path.getsize(file_path)

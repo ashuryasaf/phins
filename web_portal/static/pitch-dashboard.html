@@ -2683,6 +2683,7 @@
     </div>
     <nav class="pitch-nav" id="pitch-nav" aria-label="Pitch sections">
       <a href="#investor-documents-section" class="pitch-nav-link">Investor Documents</a>
+      <a href="#signed-use-section" class="pitch-nav-link">Signed documents</a>
       <a href="#actuary-briefing-section" class="pitch-nav-link">Actuary Briefing</a>
       <a href="#investor-meeting-section" class="pitch-nav-link">Investor Meeting</a>
       <a href="#partner-meetings-13jul" class="pitch-nav-link">Partner Meetings 13.7</a>
@@ -2799,11 +2800,14 @@
         <p style="font-size:8.5pt;color:var(--text-sub);margin:8px 0 0;">A business-plan link freezes the document structure and the adjustable factors saved in <a href="/business-plan.html#bp-factor-panel">Admin tools</a> at the moment it is created. A later edit does not change a link already sent, and each link needs its own signature — opening one does not open the next.</p>
       </div>
 
-      <div id="signed-documents-folder" hidden style="margin-top:16px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--bg-card);box-shadow:var(--shadow);">
+      <div id="signed-use-section" hidden style="margin-top:16px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--bg-card);box-shadow:var(--shadow);">
         <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--amber-1);margin-bottom:6px;">Staff · Signed documents</div>
-        <h3 style="margin:0 0 8px 0;font-size:12pt;">Signed NDAs</h3>
-        <p style="font-size:9.5pt;color:var(--text-sub);margin:0 0 12px 0;">Every NDA signed on an open link is sealed here: the exact terms, the signer, and the platform-ledger receipt. The folder is created the first time someone signs.</p>
-        <div id="signed-documents-list" style="font-size:9.5pt;color:var(--text-sub);">Loading…</div>
+        <h3 style="margin:0 0 8px 0;font-size:12pt;">Signed documents and use ledger</h3>
+        <p style="font-size:9.5pt;color:var(--text-sub);margin:0 0 12px 0;">Every anchored signature is sealed with its digest. Sent, signed, opened, and used events sit on one hash chain. A broken seal is shown and is not repaired.</p>
+        <div id="document-use-ledger" style="font-size:9.5pt;color:var(--text-sub);margin-bottom:12px;">Loading use ledger…</div>
+        <div id="signed-documents-folder">
+          <div id="signed-documents-list" style="font-size:9.5pt;color:var(--text-sub);">Loading signed documents…</div>
+        </div>
       </div>
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:18px;">
@@ -12247,11 +12251,43 @@
         }).then(function (r) {
           if (r.ok) {
             panel.hidden = false;
-            var folder = document.getElementById("signed-documents-folder");
-            if (folder) folder.hidden = false;
+            var section = document.getElementById("signed-use-section");
+            if (section) section.hidden = false;
             loadSignedDocuments(token);
+            loadUseLedger(token);
           }
         }).catch(function () {});
+      }
+
+      function loadUseLedger(token) {
+        var box = document.getElementById("document-use-ledger");
+        if (!box) return;
+        fetch("/api/confidential/document-ledger", {
+          headers: { "Authorization": "Bearer " + token },
+          credentials: "same-origin"
+        }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
+          if (!data) { box.textContent = "Use ledger could not be loaded."; return; }
+          var items = data.items || [];
+          box.innerHTML = "";
+          var head = document.createElement("div");
+          head.style.marginBottom = "6px";
+          head.textContent = (data.intact ? "Chain intact" : "Chain does not verify") + " · " + (data.total || 0) + " events";
+          box.appendChild(head);
+          if (!items.length) {
+            var empty = document.createElement("div");
+            empty.textContent = "No sent, signed, opened, or used events yet.";
+            box.appendChild(empty);
+            return;
+          }
+          items.slice(0, 40).forEach(function (item) {
+            var row = document.createElement("div");
+            row.style.cssText = "padding:4px 0;border-top:1px solid var(--border);";
+            var when = String(item.at || "").replace("T", " ").replace("Z", " UTC");
+            row.textContent = String(item.action || "") + " · " + (item.document_name || item.document_path || "document") +
+              " · " + (item.actor || "") + " · " + when;
+            box.appendChild(row);
+          });
+        }).catch(function () { box.textContent = "Use ledger could not be loaded."; });
       }
 
       function loadSignedDocuments(token) {
@@ -12282,7 +12318,7 @@
             open.type = "button";
             open.className = "exec-dl-btn";
             open.style.marginTop = "6px";
-            open.textContent = "Open signed NDA";
+            open.textContent = "Open signed document";
             open.addEventListener("click", function () {
               fetch("/api/confidential/signed-documents/" + encodeURIComponent(item.archive_id) + "/html", {
                 headers: { "Authorization": "Bearer " + token },

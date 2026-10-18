@@ -3259,3 +3259,26 @@ class MediaDesignDocument(Base):
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
                           nullable=False)
+
+
+class SignedDocumentBlob(Base):
+    """Checksummed bytes for a sealed signature or one use-ledger entry.
+
+    The JSON file under ``database/signed_documents/`` is a cache. This table
+    is what survives a restart when that directory is not on a volume.
+    ``sha256`` is the digest of ``payload``. A different checksum is never
+    written over an existing row unless the caller proves the current digest
+    (a verified promotion from an attestation to the full signed text).
+
+    This is a NEW table - it does not modify any existing data.
+    """
+    __tablename__ = 'signed_document_blobs'
+
+    asset_id = Column(String(120), primary_key=True)
+    sha256 = Column(String(64), nullable=False)
+    size_bytes = Column(Integer, nullable=False, default=0)
+    asset_type = Column(String(40), nullable=False, default='signed_document', index=True)
+    payload = Column(LargeBinary, nullable=False)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+                          nullable=False, index=True)
