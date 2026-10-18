@@ -81,12 +81,29 @@ def test_page_url_drops_access_secrets_and_keeps_the_share():
     )
     assert 'property="og:title" content="PHINS Unified Business Plan"' in tags
     assert "og:image" in tags
-    assert "link-preview.png?path=%2Fbusiness-plan.html" in tags
+    assert "/link-preview/business-plan.html.png" in tags
     assert "secret-value" not in tags
+    assert "phins_open" not in tags
+    opened = lp.canonical_page_url(
+        "https://www.phins.ai",
+        "/business-plan.html",
+        "/business-plan.html?share=shr_abc&phins_open=1",
+    )
+    assert opened == "https://www.phins.ai/business-plan.html?share=shr_abc"
     shell = lp.preview_shell(path="/business-plan.html", origin="https://www.phins.ai", page_url=url)
     assert "id=\"plan-exec\"" not in shell
     assert "Pre-launch" not in shell
+    assert "noindex" not in shell.lower()
     assert "PHINS Unified Business Plan" in shell
+    assert "phins_open=1" in shell
+    assert lp.preview_target_from_image_route(
+        "/link-preview/business-plan.html.png"
+    ) == "/business-plan.html"
+    assert lp.preview_target_from_image_route(
+        "/link-preview.png", "/business-plan.html"
+    ) == "/business-plan.html"
+    with pytest.raises(lp.PreviewPathError):
+        lp.preview_target_from_image_route("/link-preview/../../etc/passwd.png")
 
 
 def test_inject_is_idempotent():
@@ -108,10 +125,9 @@ def test_http_public_page_and_card_are_reachable(gate_token):
     page = requests.get(f"{BASE_URL}/index.html", timeout=10, headers={"User-Agent": BROWSER_UA})
     assert page.status_code == 200
     assert 'property="og:image"' in page.text
-    assert "link-preview.png?path=%2Findex.html" in page.text
+    assert "/link-preview/index.png" in page.text
     card = requests.get(
-        f"{BASE_URL}/link-preview.png",
-        params={"path": "/business-plan.html"},
+        f"{BASE_URL}/link-preview/business-plan.html.png",
         timeout=10,
         headers={"User-Agent": BROWSER_UA},
     )
@@ -121,6 +137,16 @@ def test_http_public_page_and_card_are_reachable(gate_token):
     assert image.size == (1200, 630)
     robots = requests.get(f"{BASE_URL}/robots.txt", timeout=10)
     assert "Allow: /link-preview.png" in robots.text
+    assert "Allow: /link-preview/" in robots.text
+    legacy = requests.get(
+        f"{BASE_URL}/link-preview.png",
+        params={"path": "/business-plan.html"},
+        timeout=10,
+        headers={"User-Agent": BROWSER_UA},
+    )
+    assert legacy.status_code == 200
+    assert legacy.headers["Content-Type"].startswith("image/png")
+    assert legacy.content == card.content
 
 
 def test_http_whatsapp_gets_the_card_and_a_browser_stays_gated(gate_token):
@@ -144,10 +170,18 @@ def test_http_whatsapp_gets_the_card_and_a_browser_stays_gated(gate_token):
         allow_redirects=False,
     )
     assert crawler.status_code == 200
-    # A shared cache must not replay this shell to the visitor who taps the link.
-    assert "no-store" in crawler.headers.get("Cache-Control", "")
-    assert "User-Agent" in crawler.headers.get("Vary", "")
+    # WhatsApp keeps a public 200 and drops noindex / private / Vary: User-Agent.
+    # s-maxage=0 tells a shared cache not to store the shell for the next visitor.
+    cache = crawler.headers.get("Cache-Control", "")
+    assert "public" in cache
+    assert "s-maxage=0" in cache
+    assert "no-store" not in cache
+    assert "User-Agent" not in crawler.headers.get("Vary", "")
+    assert "noindex" not in crawler.headers.get("X-Robots-Tag", "").lower()
+    assert "noindex" not in crawler.text.lower()
+    assert "phins_open=1" in crawler.text
     assert 'property="og:image"' in crawler.text
+    assert "/link-preview/business-plan.html.png" in crawler.text
     assert "PHINS Unified Business Plan" in crawler.text
     assert 'id="plan-exec"' not in crawler.text
     assert "Pre-launch build budget" not in crawler.text
@@ -160,6 +194,33 @@ def test_http_whatsapp_gets_the_card_and_a_browser_stays_gated(gate_token):
     assert fetched.status_code == 200
     assert fetched.headers["Content-Type"].startswith("image/png")
     assert Image.open(io.BytesIO(fetched.content)).size == (1200, 630)
+    assert "cross-origin" in fetched.headers.get("Cross-Origin-Resource-Policy", "")
+
+    # The recovery URL is the unlock page for a browser, still only the card
+    # for a crawler, and it never becomes the URL stored on the card.
+    opened = requests.get(
+        f"{BASE_URL}/business-plan.html",
+        params={"share": "shr_preview", "phins_open": "1"},
+        timeout=15,
+        headers={"User-Agent": BROWSER_UA},
+        allow_redirects=False,
+    )
+    assert opened.status_code == 401
+    assert "Access restricted" in opened.text
+    assert 'id="plan-exec"' not in opened.text
+    assert "phins_open" not in crawler.text.split('property="og:url"', 1)[-1].split(">", 1)[0]
+    crawler_open = requests.get(
+        f"{BASE_URL}/business-plan.html",
+        params={"share": "shr_preview", "phins_open": "1"},
+        timeout=15,
+        headers={"User-Agent": WHATSAPP_UA},
+        allow_redirects=False,
+    )
+    assert crawler_open.status_code == 200
+    assert 'id="plan-exec"' not in crawler_open.text
+    og_url = crawler_open.text.split('property="og:url"', 1)[-1].split(">", 1)[0]
+    assert "phins_open" not in og_url
+    assert "shr_preview" in og_url
 
 
 def test_http_spoofed_crawler_does_not_receive_a_download(gate_token):

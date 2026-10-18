@@ -19780,13 +19780,13 @@ class PortalHandler(BaseHTTPRequestHandler):
         from services.link_preview import canonical_page_url
         return canonical_page_url(self._preview_origin(), path, self.path)
 
-    def _serve_link_preview(self, qs: Dict[str, Any]) -> None:
-        """Public 1200×630 card. The query selects a file name, not a title."""
-        from services.link_preview import PreviewPathError, normalize_preview_path, render_preview_png
+    def _serve_link_preview(self, path: str, qs: Dict[str, Any]) -> None:
+        """Public 1200×630 card. The route selects a file name, not a title."""
+        from services.link_preview import PreviewPathError, preview_target_from_image_route, render_preview_png
 
-        raw = (qs.get('path') or ['/'])[0]
+        raw = (qs.get('path') or ['/'])[0] if path == '/link-preview.png' else ''
         try:
-            target = normalize_preview_path(raw)
+            target = preview_target_from_image_route(path, raw)
         except PreviewPathError:
             self._set_json_headers(400)
             self.wfile.write(json.dumps({'error': 'Invalid preview path'}).encode('utf-8'))
@@ -19802,6 +19802,9 @@ class PortalHandler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', 'image/png')
         self.send_header('Content-Length', str(len(png)))
         self.send_header('Cache-Control', 'public, max-age=86400')
+        # The card is public. same-origin CORP would stop WhatsApp embedding it.
+        self.send_header('Cross-Origin-Resource-Policy', 'cross-origin')
+        self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.end_headers()
         self.wfile.write(png)
@@ -19834,12 +19837,16 @@ class PortalHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
-        self.send_header('Cache-Control', 'private, no-store')
-        self.send_header('Vary', 'User-Agent')
-        self.send_header('X-Robots-Tag', 'noindex, nofollow')
+        # WhatsApp drops a card when the fetch is private/no-store, varies on
+        # User-Agent, or carries noindex. ``s-maxage=0`` tells a shared cache
+        # not to keep this shell; a browser that still receives it continues
+        # to the unlock page (the shell's script). The body is the card only.
+        self.send_header('Cache-Control', 'public, max-age=300, s-maxage=0')
         try:
             from security.headers import html_security_headers
             for name, value in html_security_headers():
+                if str(name).lower() == 'cross-origin-resource-policy':
+                    value = 'cross-origin'
                 self.send_header(name, value)
         except Exception:
             pass
@@ -21862,6 +21869,7 @@ For claims or questions, please contact:
             robots_content = (
                 "User-agent: *\n"
                 "Allow: /link-preview.png\n"
+                "Allow: /link-preview/\n"
                 "Disallow: /api/\n"
                 "Disallow: /internal/\n"
                 # Corporate instruments (cap table, term sheet, agreements) and
@@ -22023,8 +22031,12 @@ For claims or questions, please contact:
                 return
 
         # Public share card (logo + file name). Not a document and not gated.
-        if path == '/link-preview.png':
-            self._serve_link_preview(qs)
+        # Query form stays valid. The path form is what og:image names, so
+        # WhatsApp's image fetch is not dropped for carrying a query string.
+        if path == '/link-preview.png' or (
+            path.startswith('/link-preview/') and path.endswith('.png')
+        ):
+            self._serve_link_preview(path, qs)
             return
 
         # Confidential-document gate. Placed before the legal-docs registry and

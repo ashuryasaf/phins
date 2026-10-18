@@ -35,6 +35,9 @@ _SECRET_QUERY = frozenset({
     "access_key",
     "password",
 })
+# Browser-only cache escape. It is not a credential and must not become
+# the URL WhatsApp stores as the card.
+_DROPPED_QUERY = _SECRET_QUERY | frozenset({"phins_open"})
 
 # Preview crawlers. A match receives the card only — never the document —
 # so spoofing one of these names cannot open a confidential file.
@@ -143,13 +146,36 @@ def preview_title(path: str) -> str:
 
 
 def image_path_for(path: str) -> str:
-    """Root-relative URL of the card for ``path``."""
+    """Root-relative URL of the card for ``path``.
+
+    The path has no query string. WhatsApp's image fetch drops a card whose
+    ``og:image`` carries ``?``. ``/link-preview.png?path=`` still resolves.
+    """
     normalized = "/"
     try:
         normalized = normalize_preview_path(path)
     except PreviewPathError:
         normalized = "/"
-    return "/link-preview.png?" + urlencode({"path": normalized})
+    leaf = "/index" if normalized in ("/", "/index.html") else normalized
+    return "/link-preview" + leaf + ".png"
+
+
+def preview_target_from_image_route(path: str, query_path: str = "") -> str:
+    """Document path named by a public card URL.
+
+    ``/link-preview/business-plan.html.png`` and
+    ``/link-preview.png?path=/business-plan.html`` are the same card.
+    """
+    raw = str(path or "")
+    if raw == "/link-preview.png":
+        return normalize_preview_path(query_path or "/")
+    prefix = "/link-preview/"
+    if raw.startswith(prefix) and raw.endswith(".png") and ".." not in raw:
+        inner = raw[len(prefix):-len(".png")].strip("/")
+        if inner in ("", "index"):
+            return normalize_preview_path("/")
+        return normalize_preview_path("/" + inner)
+    raise PreviewPathError("invalid preview path")
 
 
 def absolute_image_url(origin: str, path: str) -> str:
@@ -169,7 +195,7 @@ def canonical_page_url(origin: str, path: str, raw_target: str = "") -> str:
     query = ""
     if raw_target:
         pairs = parse_qsl(urlsplit(str(raw_target)).query, keep_blank_values=False)
-        kept = [(key, value) for key, value in pairs if key.lower() not in _SECRET_QUERY]
+        kept = [(key, value) for key, value in pairs if key.lower() not in _DROPPED_QUERY]
         query = urlencode(kept)
     base = str(origin or "").strip().rstrip("/")
     url = f"{base}{normalized}" if base else normalized
@@ -227,6 +253,12 @@ def preview_shell(*, path: str, origin: str = "", page_url: str = "") -> str:
     """Tiny public HTML document: the card, the file name, and nothing else.
 
     Returned with HTTP 200 to preview crawlers. It is not the document.
+    There is no ``noindex`` tag: WhatsApp and Facebook treat that directive
+    as "do not generate a card". Search engines are not preview crawlers, so
+    they still receive the gated page, which keeps its own ``noindex``.
+
+    A real browser that was handed this shell by a shared cache continues
+    to the unlock page. Crawlers do not run the script, so the card stays.
     """
     title = preview_title(path)
     safe_title = html.escape(title, quote=True)
@@ -238,12 +270,20 @@ def preview_shell(*, path: str, origin: str = "", page_url: str = "") -> str:
         "<head>\n"
         '  <meta charset="utf-8">\n'
         '  <meta name="viewport" content="width=device-width, initial-scale=1">\n'
-        '  <meta name="robots" content="noindex,nofollow">\n'
         f"  <title>{safe_title}</title>\n"
         f"  {tags}\n"
         "</head>\n"
         '<body style="margin:0;background:#060d1f">\n'
         f'  <img src="{image}" alt="{safe_title}" width="{CARD_WIDTH}" height="{CARD_HEIGHT}">\n'
+        "  <script>\n"
+        "  (function () {\n"
+        "    try {\n"
+        "      if (/[?&]phins_open=/.test(location.search)) return;\n"
+        "      var join = location.search ? '&' : '?';\n"
+        "      location.replace(location.pathname + location.search + join + 'phins_open=1' + location.hash);\n"
+        "    } catch (e) {}\n"
+        "  })();\n"
+        "  </script>\n"
         "</body>\n"
         "</html>\n"
     )
