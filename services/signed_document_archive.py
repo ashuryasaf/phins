@@ -261,16 +261,14 @@ class SignedDocumentArchive:
             print(f"⚠️  [SIGNED] use ledger did not record the signature: {exc}")
 
     def list_documents(self) -> List[Dict[str, Any]]:
-        """Folder listing. A file that fails its seal is reported, not hidden."""
+        """Durable rows plus the folder cache. A broken seal is reported, not hidden."""
         items: List[Dict[str, Any]] = []
-        if not self._dir.is_dir():
-            return items
-        for path in sorted(self._dir.glob("*.json")):
+        for archive_id in self._archive_ids():
             try:
-                record = self.get(path.stem)
+                record = self.get(archive_id)
             except ArchiveError as exc:
                 items.append({
-                    "archive_id": path.stem,
+                    "archive_id": archive_id,
                     "intact": False,
                     "error": str(exc),
                 })
@@ -278,6 +276,34 @@ class SignedDocumentArchive:
             items.append(self._summary(record))
         items.sort(key=lambda item: str(item.get("signed_at") or ""), reverse=True)
         return items
+
+    def _archive_ids(self) -> List[str]:
+        """Sealed ids from the database, then any the folder cache still holds.
+
+        The folder is only a cache, so a deploy without that directory must
+        still list every signature the durable store kept.
+        """
+        found: List[str] = []
+        for archive_id in self._durable_archive_ids():
+            if archive_id not in found:
+                found.append(archive_id)
+        if self._dir.is_dir():
+            for path in self._dir.glob("*.json"):
+                if path.stem not in found:
+                    found.append(path.stem)
+        return sorted(found)
+
+    @staticmethod
+    def _durable_archive_ids() -> List[str]:
+        from services import signed_document_store as durable
+        if not durable.database_enabled():
+            return []
+        try:
+            return [str(asset_id).strip() for asset_id in durable.list_asset_ids("signed_document")
+                    if str(asset_id or "").strip()]
+        except Exception:
+            # A database that cannot be read must not blank the folder cache.
+            return []
 
     def get(self, archive_id: str) -> Dict[str, Any]:
         clean = "".join(ch for ch in str(archive_id or "") if ch.isalnum())

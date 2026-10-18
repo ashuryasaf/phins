@@ -15,7 +15,7 @@ import hashlib
 import logging
 import os
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +114,16 @@ def load_in_session(session, asset_id: str) -> Optional[bytes]:
     return payload
 
 
+def list_asset_ids_in_session(session, asset_type: str = "signed_document") -> List[str]:
+    """Ids only. Payloads stay in the database until a read needs them."""
+    from database.models import SignedDocumentBlob
+
+    rows = session.query(SignedDocumentBlob.asset_id).filter_by(
+        asset_type=str(asset_type or "signed_document")[:40]
+    ).all()
+    return [str(asset_id or "") for (asset_id,) in rows if asset_id]
+
+
 def _session_call(fn):
     from database import get_db_session
 
@@ -147,3 +157,7 @@ def replace_verified(asset_id: str, payload: bytes, expected_sha: str,
 
 def load(asset_id: str) -> Optional[bytes]:
     return _session_call(lambda session: load_in_session(session, asset_id))
+
+
+def list_asset_ids(asset_type: str = "signed_document") -> List[str]:
+    return _session_call(lambda session: list_asset_ids_in_session(session, asset_type))

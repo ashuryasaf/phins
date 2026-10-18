@@ -15,9 +15,10 @@ import hashlib
 import json
 import os
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple
 
 __all__ = [
     "ACTIONS",
@@ -62,11 +63,35 @@ class DocumentUseLedger:
                 self._path = Path(env)
             else:
                 self._path = Path(__file__).resolve().parent.parent / "database" / "document_use_ledger.json"
+        self._lock_path = self._path.with_suffix(self._path.suffix + ".lock")
         self._lock = threading.RLock()
 
     @property
     def path(self) -> Path:
         return self._path
+
+    @contextmanager
+    def _exclusive_store(self) -> Iterator[None]:
+        """In-process lock, then a cross-process ``flock`` on the sibling file.
+
+        Several app workers load-append-replace the same JSON file. Without
+        this two workers chain from the same tail and the later ``os.replace``
+        drops the other event. The lock lives on its own file because the
+        ledger itself is replaced (a new inode) on every write.
+        """
+        with self._lock:
+            try:
+                import fcntl  # type: ignore
+            except ImportError:  # pragma: no cover - non-POSIX
+                yield
+                return
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._lock_path, "a+", encoding="utf-8") as lock_file:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def record(self, **fields: Any) -> Dict[str, Any]:
         """Append one event, or return the existing row for its idempotency key."""
@@ -89,7 +114,7 @@ class DocumentUseLedger:
             "content_sha256": str(fields.get("content_sha256") or "").strip().lower()[:64],
             "entry_id": str(fields.get("entry_id") or "")[:160],
         }
-        with self._lock:
+        with self._exclusive_store():
             entries, intact = self._load()
             if not intact:
                 raise LedgerError("Document use ledger chain does not verify.")
@@ -107,7 +132,7 @@ class DocumentUseLedger:
 
     def list_events(self, limit: int = 200) -> Dict[str, Any]:
         """Newest events, plus whether the whole chain still verifies."""
-        with self._lock:
+        with self._exclusive_store():
             entries, intact = self._load()
         cap = max(1, min(int(limit or 200), 500))
         view = list(reversed(entries[-cap:]))
@@ -128,7 +153,12 @@ class DocumentUseLedger:
 
     def _load(self):
         if not self._path.is_file():
-            return [], True
+            restored, complete = self._restore_from_durable()
+            if not complete:
+                return restored, False
+            if not restored:
+                return [], True
+            self._write(restored)
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -151,6 +181,45 @@ class DocumentUseLedger:
                 return entries, False
             prev = entry["entry_hash"]
         return entries, True
+
+    def _restore_from_durable(self) -> Tuple[List[Dict[str, Any]], bool]:
+        """Rebuild the chain from the sealed rows when the file is gone.
+
+        Returns the entries and whether every sealed row was linked into one
+        chain from genesis. An unreadable or unlinked row is reported as a
+        break so the next append is blocked instead of forking the ledger.
+        """
+        try:
+            from services.signed_document_store import database_enabled, list_asset_ids, load
+        except Exception:
+            return [], True
+        if not database_enabled():
+            return [], True
+        try:
+            asset_ids = list_asset_ids("use_ledger")
+        except Exception:
+            return [], False
+        by_prev: Dict[str, Dict[str, Any]] = {}
+        for asset_id in asset_ids:
+            if not str(asset_id or "").startswith("dule:"):
+                continue
+            try:
+                payload = load(asset_id)
+                entry = json.loads(payload.decode("utf-8")) if payload else None
+            except Exception:
+                return [], False
+            if not isinstance(entry, dict):
+                return [], False
+            by_prev[str(entry.get("prev_hash") or "")] = entry
+        if not by_prev:
+            return [], True
+        entries: List[Dict[str, Any]] = []
+        prev = _GENESIS
+        while prev in by_prev:
+            entry = by_prev.pop(prev)
+            entries.append(entry)
+            prev = str(entry.get("entry_hash") or "")
+        return entries, not by_prev
 
     def _write(self, entries: List[Dict[str, Any]]) -> None:
         payload = {"genesis": _GENESIS, "entries": entries}

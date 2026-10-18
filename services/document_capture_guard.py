@@ -23,6 +23,9 @@ def _script() -> str:
 def markup(stamp: str, *, inline: bool = False) -> str:
     """Boot plus the guard. ``inline`` is for blob-opened signed copies."""
     payload = json.dumps({"stamp": str(stamp or "PHINS confidential")[:180]}, ensure_ascii=False)
+    # json.dumps leaves "<" alone, so a recipient-supplied stamp could close
+    # this script tag. The escapes stay valid inside the JSON string literal.
+    payload = payload.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
     boot = f"<script>window.PHINS_CAPTURE_GUARD={payload};</script>"
     if inline:
         return boot + "<script>\n" + _script() + "\n</script>"
