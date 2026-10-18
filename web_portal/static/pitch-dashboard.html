@@ -2552,6 +2552,117 @@
       background: #f0f4fa;
       border: 1px solid #dbe4f0;
     }
+
+    /* Techno Yes — architecture & long-term cost plan */
+    .ty-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      font-size: 8.4pt;
+      color: var(--text-sub);
+      margin: 6px 0 12px;
+    }
+    .ty-legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ty-legend span::before {
+      content: "";
+      width: 11px;
+      height: 11px;
+      border-radius: 3px;
+      background: var(--ty-c, var(--blue-mid));
+      display: inline-block;
+    }
+    .ty-bars {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 14px;
+      align-items: end;
+      height: 230px;
+      padding: 0 4px;
+      border-bottom: 1px solid var(--border);
+    }
+    .ty-bar {
+      display: flex;
+      flex-direction: column-reverse;
+      justify-content: flex-start;
+      height: 100%;
+      position: relative;
+      border-radius: 6px 6px 0 0;
+      overflow: visible;
+    }
+    .ty-bar-seg {
+      width: 100%;
+      min-height: 2px;
+      background: var(--ty-c, var(--blue-mid));
+    }
+    .ty-bar-seg:first-child {
+      border-radius: 0;
+    }
+    .ty-bar-total {
+      position: absolute;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 8.4pt;
+      font-weight: 700;
+      color: var(--blue-dark);
+      white-space: nowrap;
+    }
+    .ty-bar-labels {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 14px;
+      padding: 8px 4px 0;
+      font-size: 8.4pt;
+      color: var(--text-sub);
+      text-align: center;
+    }
+    .ty-bar-labels strong {
+      display: block;
+      color: var(--blue-dark);
+      font-size: 9pt;
+    }
+    .ty-model-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 7.6pt;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      border: 1px solid var(--border);
+      background: #f0f4fa;
+      color: var(--blue-dark);
+    }
+    .ty-model-pill.carrier { background: #e8f1ff; color: #1b4b8f; border-color: #c3d8f5; }
+    .ty-model-pill.mga { background: #e9f8ef; color: #1f6d3f; border-color: #bfe6cd; }
+    .ty-model-pill.platform { background: #fff6e0; color: #8a5a00; border-color: #f2dca3; }
+    .ty-model-pill.reinsurer { background: #f3e9ff; color: #5a2d9c; border-color: #dcc6f5; }
+    .ty-sources {
+      columns: 2;
+      column-gap: 24px;
+      font-size: 8.2pt;
+      color: var(--text-sub);
+      padding-left: 18px;
+      margin: 8px 0 0;
+    }
+    .ty-sources li {
+      break-inside: avoid;
+      margin-bottom: 5px;
+    }
+    .ty-sources a {
+      color: var(--blue-mid);
+      word-break: break-word;
+    }
+    @media (max-width: 760px) {
+      .ty-bars, .ty-bar-labels { gap: 6px; }
+      .ty-bars { height: 190px; }
+      .ty-bar-total { font-size: 7.4pt; }
+      .ty-sources { columns: 1; }
+    }
   </style>
   <link rel="stylesheet" href="/phins-theme.css">
 </head>
@@ -2584,6 +2695,7 @@
       <a href="#il-meeting-diary" class="pitch-nav-link">Meeting Diary</a>
       <a href="#exec-summary-section" class="pitch-nav-link">Executive Summary</a>
       <a href="#scenario-assessment-section" class="pitch-nav-link">Scenario Lab</a>
+      <a href="#techno-yes-section" class="pitch-nav-link">Techno Yes</a>
     </nav>
   </header>
 
@@ -7278,6 +7390,381 @@
       </div>
     </section>
     </section><!-- /#scenario-assessment-section -->
+
+    <section id="techno-yes-section" style="margin-bottom:28px;">
+      <div class="exec-summary-banner" style="background: linear-gradient(135deg,#071226 0%,#0b2347 45%,#145a9e 100%); box-shadow: 0 12px 32px rgba(7,18,38,0.28);">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+          <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(247,226,160,0.18);font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">Techno Yes · Architecture &amp; Cost Plan</span>
+          <span style="font-size:8.5pt;opacity:0.85;">21st-century insurers · reinsurer loop · competitor references · every technology cost, 5 years</span>
+        </div>
+        <h2>Techno Yes — the long-term technology plan, costed against insurtech</h2>
+        <p class="exec-subtitle">
+          Where PHINS sits among the new-age carriers, MGAs and distribution platforms; how reinsurers now fund,
+          front and buy them; what that predicts for 2027–2031; and what it costs PHINS — personnel, AI tokens,
+          cloud, electricity, security and actuarial/regulatory tooling — to go from today's platform to the
+          insurer option. Public competitor facts are quoted with their source; PHINS figures are planning
+          assumptions tied to the unified scale identity used by every other section.
+        </p>
+      </div>
+
+    <section class="stats-strip">
+      <div class="stat-box">
+        <div class="stat-val" id="ty-stat-total">—</div>
+        <div class="stat-lbl">5-year technology plan, M ILS (ex-PAS option)</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val" id="ty-stat-gwp-pct">—</div>
+        <div class="stat-lbl">of 5-year GWP · industry IT runs 1.8–4.2%</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val" id="ty-stat-fte">—</div>
+        <div class="stat-lbl">Technology FTE in year 5 (AI-assisted team)</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val" id="ty-stat-competitors">—</div>
+        <div class="stat-lbl">Insurtech / reinsurer references, 2025–2026 facts</div>
+      </div>
+    </section>
+
+    <section class="layout-grid">
+      <div class="panel">
+        <div class="section-label">21st-century insurance companies</div>
+        <h2 class="section-title">Three operating models, one reinsurer loop</h2>
+        <p class="section-copy">
+          The insurtech generation separated into three durable shapes. <strong>Full-stack carriers</strong>
+          (Lemonade, Root, Hippo, Slide) own the licence and the balance sheet, cede 18–60% to a reinsurer
+          panel and spend 2–8% of premium on technology. <strong>Digital MGAs / agencies</strong> (Ethos,
+          NEXT before its sale, At-Bay) rent capital from carriers and reinsurers and are judged on loss
+          ratio and distribution cost. <strong>Distribution / orchestration platforms</strong>
+          (Gallagher Re's placement engine, CareScout, Assured Allies) sell data, routing and claims
+          intelligence to the first two.
+        </p>
+        <ul class="narrative-list">
+          <li><strong>Reinsurers became the buyers:</strong> Munich Re / ERGO bought NEXT (US$2.6B, 1 Jul 2025) and At-Bay (US$575M via HSB, Aug 2026); Fortitude Re absorbed Dayforward (Sep 2026); Hannover Re funds Lemonade's growth with a US$250M facility; Munich Re reinsures Ethos.</li>
+          <li><strong>Reinsurers also retreat:</strong> Swiss Re wound down iptiQ, its own B2B2C digital carrier — the market rewards partnership capital, not a reinsurer running a retail brand.</li>
+          <li><strong>Fronting is the bridge:</strong> fronting carriers wrote ~US$22B (+17%) and have reported adverse development for 7 years — capacity is available, but the MGA now carries the underwriting proof.</li>
+          <li><strong>Life &amp; LTC moved to hybrids and digital agencies:</strong> hybrids were 67% of 2024 LTC sales (LIMRA); US$9.7B of LTC reserves were ceded in 2024–25; Ethos IPO'd (30 Jan 2026) as an agency/TPA with Banner Life, Protective, Ameritas and TruStage as carriers, 95% instant underwriting.</li>
+          <li><strong>Regulation hardens the AI layer:</strong> the EU AI Act classes life/health pricing as high-risk (Reg (EU) 2026/1744 obligations by 2 Dec 2027); 26 US jurisdictions adopted the NAIC AI bulletin; Israel's CMISA supervises 18 insurers, with Libra and Wesure digital general-only and Ayalon–Clalit launching LTC in 2026.</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <div class="section-label">Prediction 2027–2031</div>
+        <h2 class="section-title">What the pattern predicts — and the PHINS move</h2>
+        <div class="priority-stack">
+          <div class="priority-item">
+            <div class="priority-head"><div class="priority-name">1. Reinsurers keep buying proven MGAs</div><div class="priority-score">High confidence</div></div>
+            <div class="priority-body">Munich Re, Hannover Re, Fortitude and Swiss Re pay 4–5× top line for books with an audited loss ratio and a working underwriting engine. An MGA with its own ledger, pricing kernel and evidence trail is the acquirable unit.</div>
+          </div>
+          <div class="priority-item">
+            <div class="priority-head"><div class="priority-name">2. Full-stack licence only after profitability</div><div class="priority-score">High confidence</div></div>
+            <div class="priority-body">Root (92.1% combined, first full profit) and Hippo (net income US$10.1M) earned their balance sheets after six to nine loss-making years. New entrants will front first and license second.</div>
+          </div>
+          <div class="priority-item">
+            <div class="priority-head"><div class="priority-name">3. LTC/disability capacity flows through hybrids and cessions</div><div class="priority-score">Medium-high</div></div>
+            <div class="priority-body">Stand-alone LTC capital is scarce; reinsurers take blocks and fund care-navigation (Assured Allies: ~7% claims reduction, ~US$50M IP). A severity-layer product with care routing is what reinsurers will quote.</div>
+          </div>
+          <div class="priority-item">
+            <div class="priority-head"><div class="priority-name">4. AI governance becomes a licence condition</div><div class="priority-score">High confidence</div></div>
+            <div class="priority-body">Prompt provenance, schema-validated model output, human override logs and drift monitoring stop being differentiators and become filing requirements (EU AI Act, NAIC bulletin, CMISA circulars).</div>
+          </div>
+          <div class="priority-item">
+            <div class="priority-head"><div class="priority-name">5. Technology spend converges to 1–3% of GWP at scale</div><div class="priority-score">Medium</div></div>
+            <div class="priority-body">Lemonade ~8% of in-force premium, Hippo ~2% of GWP, incumbents 1.8–4.2%. AI-assisted engineering pushes a lean carrier toward the low end; PHINS plans ~1% of GWP by year 5.</div>
+          </div>
+          <div class="priority-item">
+            <div class="priority-head"><div class="priority-name">6. Distribution stays intermediated</div><div class="priority-score">High confidence</div></div>
+            <div class="priority-body">85–95% of commercial and life premium is still intermediated (McKinsey); the winners embed into agents, employers and health funds rather than fighting for direct traffic (Ethos, NEXT).</div>
+          </div>
+          <div class="priority-item">
+            <div class="priority-head"><div class="priority-name">7. PHINS move: MGA / platform first, insurer option open</div><div class="priority-score">Plan of record</div></div>
+            <div class="priority-body">Run as a reinsurer-backed MGA on a fronting carrier through year 3 (≈25% of the plan's technology spend), keep the ledger, pricing kernel and evidence pipeline licence-ready, and exercise the insurer option in years 4–5 only on an audited loss ratio (≈75% of the spend sits there, including the PAS option).</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+      <div class="exec-chart-panel" style="margin-top:24px;">
+        <h3>Insurtech &amp; reinsurer competitor references</h3>
+        <p class="ecp-sub">Each row is a public 2025–2026 fact with its source, the partner structure that fact depends on, and the lesson PHINS takes from it. Models: carrier (own licence), MGA / agency (rented capital), platform (data and distribution), reinsurer (capital partner).</p>
+        <div class="table-wrap">
+          <table style="width:100%;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
+            <thead>
+              <tr style="background:#0d47a1;color:#fff;">
+                <th style="padding:6px 8px;text-align:left;font-weight:700;">Company</th>
+                <th style="padding:6px 8px;text-align:left;font-weight:700;">Model</th>
+                <th style="padding:6px 8px;text-align:left;font-weight:700;">2025–2026 public fact</th>
+                <th style="padding:6px 8px;text-align:left;font-weight:700;">Business partners / capital</th>
+                <th style="padding:6px 8px;text-align:left;font-weight:700;">Lesson for PHINS</th>
+                <th style="padding:6px 8px;text-align:left;font-weight:700;">Source</th>
+              </tr>
+            </thead>
+            <tbody id="ty-competitor-rows"></tbody>
+          </table>
+        </div>
+        <p class="table-note">Public facts are quoted as reported in filings, press releases and trade press on the dates listed in the source list below; they are references, not PHINS inputs, and are never written into the actuarial identity.</p>
+      </div>
+
+      <div class="exec-chart-panel" style="margin-top:24px;">
+        <h3>Full-scale plan — four horizons to the insurer option</h3>
+        <p class="ecp-sub">The architecture plan that the cost table funds. Each horizon ends with a gate that is measurable on the platform itself; no horizon is entered on a calendar date alone.</p>
+        <div class="table-wrap">
+          <table style="width:100%;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
+            <thead>
+              <tr style="background:#0d47a1;color:#fff;">
+                <th style="padding:6px 8px;text-align:left;font-weight:700;">Horizon</th>
+                <th style="padding:6px 8px;text-align:left;font-weight:700;">Plan years</th>
+                <th style="padding:6px 8px;text-align:left;font-weight:700;">Architecture deliverables</th>
+                <th style="padding:6px 8px;text-align:left;font-weight:700;">Partners engaged</th>
+                <th style="padding:6px 8px;text-align:left;font-weight:700;">Gate to the next horizon</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="background:#eef4ff;">
+                <td style="padding:5px 8px;font-weight:700;">H0 · Harden</td>
+                <td style="padding:5px 8px;">Y1</td>
+                <td style="padding:5px 8px;">Split the 63k-line request handler into routed modules behind the same URLs; pytest in CI; Alembic migrations over the 74 SQLAlchemy models; OpenTelemetry traces; SBOM and dependency scanning; keep the pricing kernel as the single writer.</td>
+                <td style="padding:5px 8px;">Fronting carrier term sheet; one reinsurer data room; Israeli distributor pilots.</td>
+                <td style="padding:5px 8px;">Golden sets green in CI, p95 API latency published, zero plaintext PII in logs, external security audit closed.</td>
+              </tr>
+              <tr>
+                <td style="padding:5px 8px;font-weight:700;">H1 · Partner-ready MGA</td>
+                <td style="padding:5px 8px;">Y2</td>
+                <td style="padding:5px 8px;">ASGI edge for partner APIs (strangler, Python); typed partner SDK and bordereaux exports; outbox events to a managed broker; reinsurer cession ledger and quarterly statements; Hebrew/English policy documents sealed by SHA-256.</td>
+                <td style="padding:5px 8px;">Fronting carrier live; quota-share treaty; 2–3 distributors; marketplace suppliers settled through the wallet.</td>
+                <td style="padding:5px 8px;">Audited loss ratio on ≥ 12 months of exposure; treaty renewed; bordereaux accepted without manual repair.</td>
+              </tr>
+              <tr style="background:#f8fafc;">
+                <td style="padding:5px 8px;font-weight:700;">H2 · Scale with reinsurer-backed capacity</td>
+                <td style="padding:5px 8px;">Y3</td>
+                <td style="padding:5px 8px;">Read replicas and partitioned ledger tables; Temporal-style durable workflows over the existing job queue; model registry with shadow scoring in production; EU AI Act / NAIC conformity file generated from prompt provenance and decision logs; care-navigation integrations.</td>
+                <td style="padding:5px 8px;">Second reinsurer; health-fund or employer channel; care-provider network; investment partner for savings component.</td>
+                <td style="padding:5px 8px;">Combined ratio inside treaty corridor for 8 consecutive quarters; capital model reviewed by appointed actuary; regulator pre-ruling on licence path.</td>
+              </tr>
+              <tr>
+                <td style="padding:5px 8px;font-weight:700;">H3 · Insurer option with partners</td>
+                <td style="padding:5px 8px;">Y4–Y5</td>
+                <td style="padding:5px 8px;">Licensed carrier entity: Solvency-style capital reporting, IFRS 17 close from the existing waterfall, policy-administration option (buy or extend), reinsurer-shared data room, DR across two regions, full SOC 2 / ISO 27001 cycle.</td>
+                <td style="padding:5px 8px;">Lead reinsurer as capital partner; fronting carrier retained for legacy book; distributors on the licensed paper; bank/billing partner for premium finance.</td>
+                <td style="padding:5px 8px;">Licence granted or the MGA remains the plan of record; either outcome is funded by the same table below.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="exec-chart-panel" style="margin-top:24px;">
+        <h3>Techno Yes — every technology cost, five plan years (ILS)</h3>
+        <p class="ecp-sub">Personnel at loaded cost, AI development tokens, AI runtime (agents, OCR, transcription), cloud and electricity, security and compliance, actuarial and regulatory tooling. The policy-administration option (H3) is shown separately because it is only spent if the licence is pursued. Lives, GWP and operating expense are the unified scale identity shared with the Aspire-Invest and Grove sections.</p>
+        <div class="ty-legend" id="ty-legend"></div>
+        <div class="ty-bars" id="ty-bars"></div>
+        <div class="ty-bar-labels" id="ty-bar-labels"></div>
+        <div class="table-wrap" style="margin-top:18px;">
+          <table style="width:100%;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
+            <thead>
+              <tr style="background:#0d47a1;color:#fff;">
+                <th style="padding:6px 8px;text-align:left;font-weight:700;">Cost line</th>
+                <th style="padding:6px 8px;text-align:right;font-weight:700;">Y1</th>
+                <th style="padding:6px 8px;text-align:right;font-weight:700;">Y2</th>
+                <th style="padding:6px 8px;text-align:right;font-weight:700;">Y3</th>
+                <th style="padding:6px 8px;text-align:right;font-weight:700;">Y4</th>
+                <th style="padding:6px 8px;text-align:right;font-weight:700;">Y5</th>
+                <th style="padding:6px 8px;text-align:right;font-weight:700;">5-year</th>
+              </tr>
+            </thead>
+            <tbody id="ty-cost-rows"></tbody>
+          </table>
+        </div>
+        <p class="table-note" id="ty-cost-note"></p>
+      </div>
+
+      <div class="exec-chart-panel" style="margin-top:24px;">
+        <h3>Benchmarks, assumptions and sources</h3>
+        <p class="ecp-sub">How each cost line was sized, and the public documents the competitor references are quoted from.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start;">
+          <ul class="narrative-list">
+            <li><strong>Personnel:</strong> 2.2 → 14 technology FTE at 55–58k ILS/month loaded; an AI-assisted team is sized at roughly one third of a 2015-era insurtech engineering org (Lemonade 1,282 staff and Root 1,256 staff in total; both spend 2–8% of premium on technology).</li>
+            <li><strong>AI development tokens:</strong> 120k → 550k ILS/yr for coding, review and documentation agents; <strong>AI runtime:</strong> 60k → 400k ILS/yr for underwriting, claims, OCR, transcription and customer agents, metered through the external-call gateway and daily budgets.</li>
+            <li><strong>Cloud &amp; electricity:</strong> 200k → 3.0M ILS/yr for compute, managed PostgreSQL with replicas, object storage, broker and DR; electricity is embedded in the cloud price and shown as an estimated 1.5 → 50 MWh/yr for transparency.</li>
+            <li><strong>Security &amp; compliance:</strong> 250k → 1.0M ILS/yr for penetration tests, SOC 2 / ISO 27001, SBOM tooling, key management and AI Act conformity evidence.</li>
+            <li><strong>Actuarial &amp; regulatory tooling:</strong> 200k → 800k ILS/yr for IFRS 17 close, capital modelling, reinsurance bordereaux and regulator reporting.</li>
+            <li><strong>PAS option:</strong> 3.0M + 3.5M ILS in Y4–Y5 only; market bands run from ~0.7M ILS (API-first PAS) to &gt; 90M ILS (enterprise suites), so the plan budgets the API-first band and keeps the in-house path open.</li>
+            <li><strong>Contingency:</strong> a 1.5× stress on the technology table lands at ~65M ILS over five years and still stays below 1.6% of plan GWP.</li>
+          </ul>
+          <div>
+            <div class="section-label">Public sources (date accessed 2026)</div>
+            <ol class="ty-sources" id="ty-sources"></ol>
+          </div>
+        </div>
+        <p class="table-note"><strong>Data integrity:</strong> competitor facts are public references only; PHINS lives, GWP and operating expense come from <code>services/aspire_scale_identity.py</code>; technology costs are planning assumptions with a stated basis. This section does not change any actuarial figure, checksum or stored record elsewhere on the platform.</p>
+      </div>
+
+      <script type="application/json" id="techno-yes-data">
+      {
+        "risk_premium_ils": 4518,
+        "cost_lines": [
+          {"key": "personnel", "label": "Personnel (loaded)", "color": "#0d47a1"},
+          {"key": "ai_dev", "label": "AI development tokens", "color": "#1976d2"},
+          {"key": "ai_runtime", "label": "AI runtime (agents, OCR, STT)", "color": "#42a5f5"},
+          {"key": "cloud", "label": "Cloud & electricity", "color": "#26a69a"},
+          {"key": "security", "label": "Security & compliance", "color": "#c9a227"},
+          {"key": "actuarial_reg", "label": "Actuarial & regulatory tooling", "color": "#7e57c2"}
+        ],
+        "years": [
+          {"year": 1, "avg_lives": 12000, "eoy_lives": 24000, "gwp": 54216000, "opex": 32400000, "fte": 2.2, "loaded_month": 55000, "personnel": 1452000, "ai_dev": 120000, "ai_runtime": 60000, "cloud": 200000, "security": 250000, "actuarial_reg": 200000, "total": 2282000, "pas_option": 0, "mwh": 1.5},
+          {"year": 2, "avg_lives": 59040, "eoy_lives": 94080, "gwp": 266742720, "opex": 66420000, "fte": 5.0, "loaded_month": 55000, "personnel": 3300000, "ai_dev": 250000, "ai_runtime": 150000, "cloud": 600000, "security": 400000, "actuarial_reg": 350000, "total": 5050000, "pas_option": 0, "mwh": 5},
+          {"year": 3, "avg_lives": 162317, "eoy_lives": 230554, "gwp": 733348206, "opex": 116868240, "fte": 8.0, "loaded_month": 56000, "personnel": 5376000, "ai_dev": 350000, "ai_runtime": 300000, "cloud": 1400000, "security": 600000, "actuarial_reg": 500000, "total": 8526000, "pas_option": 0, "mwh": 15},
+          {"year": 4, "avg_lives": 293332, "eoy_lives": 356110, "gwp": 1325273976, "opex": 169637783, "fte": 11.0, "loaded_month": 57000, "personnel": 7524000, "ai_dev": 450000, "ai_runtime": 350000, "cloud": 2200000, "security": 800000, "actuarial_reg": 700000, "total": 12024000, "pas_option": 3000000, "mwh": 30},
+          {"year": 5, "avg_lives": 413866, "eoy_lives": 471621, "gwp": 1869846588, "opex": 202927845, "fte": 14.0, "loaded_month": 58000, "personnel": 9744000, "ai_dev": 550000, "ai_runtime": 400000, "cloud": 3000000, "security": 1000000, "actuarial_reg": 800000, "total": 15494000, "pas_option": 3500000, "mwh": 50}
+        ],
+        "competitors": [
+          {"name": "Lemonade", "model": "carrier", "fact": "Q2 2026 in-force premium US$1.43B; net loss US$43.4M; LAE 5%; technology development US$30.0M per quarter (~8% of IFP); ~18% ceded.", "partners": "Hannover Re US$250M growth facility (~9.8% cost); quota-share panel; 1,282 staff.", "lesson": "Technology at 8% of premium only works with reinsurer-funded growth; PHINS plans ~1% by Y5 with a lean AI-assisted team.", "source_label": "Lemonade Q2 2026 shareholder letter", "url": "https://investor.lemonade.com/"},
+          {"name": "Root", "model": "carrier", "fact": "First full-year profit: net income US$25.4M; 92.1% combined ratio; 1,256 staff.", "partners": "Carvana embedded distribution (warrants); reinsurance panel.", "lesson": "Embedded distribution plus pricing discipline reaches profit; the licence came years before the profit.", "source_label": "Root Inc. 2025 annual report", "url": "https://ir.joinroot.com/"},
+          {"name": "Hippo", "model": "carrier", "fact": "GWP US$482M; 38% net retention; net income US$10.1M; technology & development US$10.1M (~2% of GWP).", "partners": "Spinnaker fronting subsidiary; reinsurer quota shares; homebuilder channel.", "lesson": "A carrier that also owns a fronting paper can keep retention low while technology stays near 2% of GWP.", "source_label": "Hippo Holdings quarterly results", "url": "https://investors.hippo.com/"},
+          {"name": "Ethos", "model": "mga", "fact": "IPO 30 Jan 2026 at US$19; Q2 revenue US$189.6M; net income US$19.5M; 95% of applications instantly underwritten.", "partners": "Carriers Banner Life, Protective, Ameritas, TruStage; Munich Re reinsures.", "lesson": "A life agency/TPA with instant underwriting and rented capital is a public-market outcome; PHINS' nearest structural model.", "source_label": "Ethos Technologies S-1 / Q2 2026 results", "url": "https://www.sec.gov/cgi-bin/browse-edgar?company=ethos+technologies&type=S-1"},
+          {"name": "NEXT Insurance", "model": "mga", "fact": "Acquired by ERGO / Munich Re for US$2.6B on 1 Jul 2025 (~4.7x top line).", "partners": "Munich Re capital and reinsurance; small-business embedded partners.", "lesson": "A reinsurer pays a premium multiple for a proven digital underwriting book — the acquirable unit is the MGA.", "source_label": "Munich Re press release, 1 Jul 2025", "url": "https://www.munichre.com/en/company/media-relations.html"},
+          {"name": "At-Bay", "model": "mga", "fact": "Acquired by Munich Re / HSB for US$575M (Aug 2026).", "partners": "Munich Re / HSB capital; cyber MGA with own security telemetry.", "lesson": "Proprietary risk telemetry is what a reinsurer buys; PHINS' evidence pipeline is the analogue.", "source_label": "Munich Re / HSB announcement, Aug 2026", "url": "https://www.munichre.com/en/company/media-relations.html"},
+          {"name": "Swiss Re iptiQ", "model": "reinsurer", "fact": "Wound down; portfolios transferred to Allianz Direct and Hannover Re.", "partners": "Was the B2B2C digital carrier of Swiss Re.", "lesson": "Reinsurers partner and buy, they do not run retail brands — keep PHINS the partner, not the subsidiary.", "source_label": "Swiss Re iptiQ wind-down statements", "url": "https://www.swissre.com/media/"},
+          {"name": "Dayforward", "model": "mga", "fact": "Technology platform acquired by Fortitude Re (Sep 2026); insurance entities excluded.", "partners": "Fortitude Re (reinsurer) as buyer.", "lesson": "A reinsurer values the digital life platform separately from the licensed entities.", "source_label": "Fortitude Re announcement, Sep 2026", "url": "https://www.fortitude-re.com/"},
+          {"name": "Slide Insurance", "model": "carrier", "fact": "IPO Jun 2025; combined ratio 57.6%.", "partners": "Florida reinsurance program; depopulation partners.", "lesson": "A specialist carrier with disciplined cat reinsurance can list quickly once the combined ratio is proven.", "source_label": "Slide Insurance S-1, 2025", "url": "https://www.sec.gov/cgi-bin/browse-edgar?company=slide+insurance&type=S-1"},
+          {"name": "Gallagher Re", "model": "platform", "fact": "Q2 2026 reinsurance brokerage revenue US$2.44B; 99.1% AI-assisted placement workflow.", "partners": "Broker between carriers/MGAs and reinsurer panels.", "lesson": "Placement is AI-driven; the MGA that arrives with clean bordereaux and provenance gets quoted first.", "source_label": "Arthur J. Gallagher Q2 2026 results", "url": "https://investor.ajg.com/"},
+          {"name": "CareScout (Genworth)", "model": "platform", "fact": "Digital LTC product launched Oct 2025 on Genworth's care network.", "partners": "Genworth balance sheet; home-care provider network.", "lesson": "Care navigation plus LTC cover is the product shape reinsurers now quote; PHINS pairs the ADL layer with care routing.", "source_label": "Genworth / CareScout launch, Oct 2025", "url": "https://investor.genworth.com/"},
+          {"name": "Assured Allies", "model": "platform", "fact": "~US$50M in-force premium; ~7% claims reduction reported on LTC blocks.", "partners": "LTC carriers and reinsurers as clients.", "lesson": "Measured claims reduction is a reinsurance pricing input; PHINS' care-navigation agent should publish the same metric.", "source_label": "Assured Allies company and trade-press reports", "url": "https://www.assuredallies.com/"}
+        ],
+        "sources": [
+          {"label": "Lemonade Q2 2026 shareholder letter — IFP, net loss, LAE, tech development, cession, Hannover Re facility", "url": "https://investor.lemonade.com/", "date": "2026-08"},
+          {"label": "Root Inc. 2025 annual report — net income, combined ratio, headcount, Carvana warrants", "url": "https://ir.joinroot.com/", "date": "2026-02"},
+          {"label": "Hippo Holdings results — GWP, retention, net income, technology spend", "url": "https://investors.hippo.com/", "date": "2026-08"},
+          {"label": "Ethos Technologies S-1 and Q2 2026 results — IPO, carriers, Munich Re, instant underwriting", "url": "https://www.sec.gov/cgi-bin/browse-edgar?company=ethos+technologies&type=S-1", "date": "2026-01"},
+          {"label": "Munich Re / ERGO acquisition of NEXT Insurance, US$2.6B", "url": "https://www.munichre.com/en/company/media-relations.html", "date": "2025-07"},
+          {"label": "Munich Re / HSB acquisition of At-Bay, US$575M", "url": "https://www.munichre.com/en/company/media-relations.html", "date": "2026-08"},
+          {"label": "Swiss Re — iptiQ wind-down and portfolio transfers", "url": "https://www.swissre.com/media/", "date": "2025"},
+          {"label": "Fortitude Re — Dayforward platform acquisition", "url": "https://www.fortitude-re.com/", "date": "2026-09"},
+          {"label": "Slide Insurance S-1 — IPO and combined ratio", "url": "https://www.sec.gov/cgi-bin/browse-edgar?company=slide+insurance&type=S-1", "date": "2025-06"},
+          {"label": "Conning — fronting market study: ~US$22B premium, +17%, adverse development", "url": "https://www.conning.com/", "date": "2026"},
+          {"label": "LIMRA — hybrid products 67% of 2024 LTC sales", "url": "https://www.limra.com/", "date": "2025"},
+          {"label": "Genworth / CareScout — digital LTC launch", "url": "https://investor.genworth.com/", "date": "2025-10"},
+          {"label": "Assured Allies — in-force and claims-reduction reports", "url": "https://www.assuredallies.com/", "date": "2026"},
+          {"label": "LTC reserve cessions 2024–25 (~US$9.7B) — trade press summaries of block reinsurance deals", "url": "https://www.artemis.bm/", "date": "2026"},
+          {"label": "Arthur J. Gallagher Q2 2026 results — Gallagher Re revenue, AI-assisted placement", "url": "https://investor.ajg.com/", "date": "2026-07"},
+          {"label": "McKinsey — intermediated share of commercial and life premium (85% / 95%)", "url": "https://www.mckinsey.com/industries/financial-services/our-insights", "date": "2025"},
+          {"label": "EU AI Act — high-risk classification of life/health pricing; Reg (EU) 2026/1744 timeline to 2 Dec 2027", "url": "https://eur-lex.europa.eu/", "date": "2026"},
+          {"label": "NAIC — Model Bulletin on the use of AI by insurers; adopting jurisdictions", "url": "https://content.naic.org/", "date": "2026"},
+          {"label": "Israel Capital Market, Insurance and Savings Authority — supervised insurers; Libra, Wesure, Ayalon–Clalit LTC", "url": "https://www.gov.il/en/departments/capital_market_insurance_and_savings_authority", "date": "2026"},
+          {"label": "Industry IT spend benchmarks 1.8–4.2% of GWP — Gartner / Celent insurance IT surveys", "url": "https://www.gartner.com/en/industries/insurance", "date": "2025"},
+          {"label": "Policy-administration price bands — vendor list prices and analyst estimates (Socotra, Guidewire, Duck Creek, Majesco, EIS)", "url": "https://www.celent.com/", "date": "2026"}
+        ]
+      }
+      </script>
+      <script>
+      (function () {
+        var node = document.getElementById('techno-yes-data');
+        if (!node) { return; }
+        var data;
+        try { data = JSON.parse(node.textContent); } catch (err) { return; }
+        var fmt = function (n) { return Math.round(n).toLocaleString('en-US'); };
+        var mils = function (n) { return (n / 1000000).toFixed(1); };
+        var esc = function (s) {
+          return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        };
+        var years = data.years || [];
+        var lines = data.cost_lines || [];
+        var sum = function (key) { return years.reduce(function (a, y) { return a + (y[key] || 0); }, 0); };
+        var totalTech = sum('total');
+        var totalGwp = sum('gwp');
+        var last = years[years.length - 1] || {};
+
+        var put = function (id, text) { var el = document.getElementById(id); if (el) { el.textContent = text; } };
+        put('ty-stat-total', mils(totalTech));
+        put('ty-stat-gwp-pct', totalGwp ? (100 * totalTech / totalGwp).toFixed(2) + '%' : '—');
+        put('ty-stat-fte', last.fte != null ? String(last.fte) : '—');
+        put('ty-stat-competitors', String((data.competitors || []).length));
+
+        var legend = document.getElementById('ty-legend');
+        if (legend) {
+          legend.innerHTML = lines.map(function (l) {
+            return '<span style="--ty-c:' + esc(l.color) + '">' + esc(l.label) + '</span>';
+          }).join('');
+        }
+        var bars = document.getElementById('ty-bars');
+        var labels = document.getElementById('ty-bar-labels');
+        if (bars && labels && years.length) {
+          var maxTotal = Math.max.apply(null, years.map(function (y) { return y.total || 0; })) || 1;
+          bars.innerHTML = years.map(function (y) {
+            var pct = 100 * (y.total || 0) / maxTotal;
+            var segs = lines.map(function (l) {
+              var h = (y.total ? 100 * (y[l.key] || 0) / y.total : 0);
+              return '<div class="ty-bar-seg" style="--ty-c:' + esc(l.color) + ';height:' + h.toFixed(2) + '%" title="' + esc(l.label) + ': ' + fmt(y[l.key] || 0) + ' ILS"></div>';
+            }).join('');
+            return '<div class="ty-bar" style="height:' + pct.toFixed(2) + '%">' +
+              '<div class="ty-bar-total" style="bottom:calc(100% + 4px)">' + mils(y.total || 0) + 'M</div>' + segs + '</div>';
+          }).join('');
+          labels.innerHTML = years.map(function (y) {
+            var share = y.opex ? (100 * (y.total || 0) / y.opex).toFixed(1) : '—';
+            var gwpShare = y.gwp ? (100 * (y.total || 0) / y.gwp).toFixed(2) : '—';
+            return '<div><strong>Y' + y.year + '</strong>' + fmt(y.avg_lives) + ' avg lives<br>' + share + '% of opex · ' + gwpShare + '% of GWP</div>';
+          }).join('');
+        }
+
+        var costRows = document.getElementById('ty-cost-rows');
+        if (costRows) {
+          var cell = function (v, bold) {
+            return '<td style="padding:5px 8px;text-align:right;' + (bold ? 'font-weight:700;' : '') + '">' + v + '</td>';
+          };
+          var row = function (label, key, opts) {
+            opts = opts || {};
+            var vals = years.map(function (y) { return y[key]; });
+            var total = vals.reduce(function (a, v) { return a + (typeof v === 'number' ? v : 0); }, 0);
+            var render = opts.render || fmt;
+            var bg = opts.bg ? ' style="background:' + opts.bg + (opts.bold ? ';font-weight:800;color:#0d47a1' : '') + ';"' : '';
+            return '<tr' + bg + '><td style="padding:5px 8px;' + (opts.bold ? 'font-weight:700;' : '') + '">' + esc(label) + '</td>' +
+              vals.map(function (v) { return cell(render(v), opts.bold); }).join('') +
+              cell(opts.total === false ? '—' : render(total), true) + '</tr>';
+          };
+          var html = '';
+          html += row('Average lives (scale identity)', 'avg_lives', {bg: '#f8fafc', total: false});
+          html += row('GWP = avg lives x 4,518 ILS risk premium', 'gwp', {bg: '#f8fafc'});
+          html += row('Plan operating expense (scale identity)', 'opex', {bg: '#f8fafc'});
+          html += row('Technology FTE (AI-assisted)', 'fte', {render: function (v) { return typeof v === 'number' ? v.toFixed(1) : '—'; }, total: false});
+          lines.forEach(function (l, i) {
+            html += row(l.label, l.key, {bg: i % 2 ? '#f8fafc' : ''});
+          });
+          html += row('Technology total (ex-PAS)', 'total', {bg: '#e6eefa', bold: true});
+          html += row('Policy-administration option (H3 only)', 'pas_option', {bg: '#fff6e0'});
+          html += row('Estimated electricity, MWh (embedded in cloud)', 'mwh', {render: function (v) { return typeof v === 'number' ? String(v) : '—'; }});
+          costRows.innerHTML = html;
+        }
+        put('ty-cost-note', 'Five-year technology total ' + fmt(totalTech) + ' ILS = ' + (totalGwp ? (100 * totalTech / totalGwp).toFixed(2) : '—') +
+          '% of five-year GWP (' + fmt(totalGwp) + ' ILS) against an industry IT benchmark of 1.8–4.2%; each year sits between ' +
+          Math.min.apply(null, years.map(function (y) { return y.opex ? 100 * y.total / y.opex : 0; })).toFixed(1) + '% and ' +
+          Math.max.apply(null, years.map(function (y) { return y.opex ? 100 * y.total / y.opex : 0; })).toFixed(1) +
+          '% of plan operating expense. Adding the PAS option brings the total to ' + fmt(totalTech + sum('pas_option')) + ' ILS.');
+
+        var compRows = document.getElementById('ty-competitor-rows');
+        if (compRows) {
+          var modelLabel = {carrier: 'Carrier', mga: 'MGA / agency', platform: 'Platform', reinsurer: 'Reinsurer'};
+          compRows.innerHTML = (data.competitors || []).map(function (c, i) {
+            var m = esc(c.model);
+            return '<tr' + (i % 2 ? ' style="background:#f8fafc;"' : '') + '>' +
+              '<td style="padding:5px 8px;font-weight:700;">' + esc(c.name) + '</td>' +
+              '<td style="padding:5px 8px;"><span class="ty-model-pill ' + m + '">' + esc(modelLabel[c.model] || c.model) + '</span></td>' +
+              '<td style="padding:5px 8px;">' + esc(c.fact) + '</td>' +
+              '<td style="padding:5px 8px;">' + esc(c.partners) + '</td>' +
+              '<td style="padding:5px 8px;">' + esc(c.lesson) + '</td>' +
+              '<td style="padding:5px 8px;"><a href="' + esc(c.url) + '" target="_blank" rel="noopener">' + esc(c.source_label) + '</a></td>' +
+              '</tr>';
+          }).join('');
+        }
+
+        var src = document.getElementById('ty-sources');
+        if (src) {
+          src.innerHTML = (data.sources || []).map(function (s) {
+            return '<li>' + esc(s.label) + ' — <a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.url) + '</a> (' + esc(s.date) + ')</li>';
+          }).join('');
+        }
+      })();
+      </script>
+    </section><!-- /#techno-yes-section -->
   </main>
 
   <a href="#pitch-top" class="pitch-back-fab" id="pitch-back-fab" aria-label="Back to pitch dashboard header">↑ Back</a>
@@ -11934,7 +12421,8 @@
         "grove-vc-meeting-24sep",
         "aspire-invest-meeting-sep2026",
         "exec-summary-section",
-        "scenario-assessment-section"
+        "scenario-assessment-section",
+        "techno-yes-section"
       ];
       var NESTED_PARENTS = {
         "il-meeting-diary": "investor-meeting-section",
