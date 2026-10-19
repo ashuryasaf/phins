@@ -755,6 +755,7 @@
                                 <div class="ifrs-row"><span>Operating costs</span><strong id="bs-operating-costs">$0</strong></div>
                                 <div class="ifrs-row"><span>Reinsurance</span><strong id="bs-reinsurance">$0</strong></div>
                                 <div class="ifrs-row"><span>Other expenses</span><strong id="bs-other-expenses">$0</strong></div>
+                                <div class="ifrs-row"><span>Customer acquisition</span><strong id="bs-customer-acquisition">$0</strong></div>
                             </div>
                         </div>
                     </div>
@@ -3592,6 +3593,8 @@
                         document.getElementById('bs-operating-costs').textContent = fmt(bs.expense_breakdown.operating_costs);
                         document.getElementById('bs-reinsurance').textContent = fmt(bs.expense_breakdown.reinsurance);
                         document.getElementById('bs-other-expenses').textContent = fmt(bs.expense_breakdown.other_expenses);
+                        const cacEl = document.getElementById('bs-customer-acquisition');
+                        if (cacEl) cacEl.textContent = fmt(bs.expense_breakdown.customer_acquisition || 0);
                     }
                     
                     // Footer

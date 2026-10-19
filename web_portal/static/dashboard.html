@@ -1954,7 +1954,7 @@
       <div class="section-header" style="margin-bottom: 24px;">
         <div>
           <h2 style="color: white; margin: 0;"><span class="tab-brand-mark"><img src="/phins-logo.svg" alt=""></span>Referral Program</h2>
-          <p style="opacity: 0.9; margin: 8px 0 0 0;">Invite friends and earn rewards! Generate up to 10 referral codes.</p>
+          <p style="opacity: 0.9; margin: 8px 0 0 0;">Invite a customer. When they pay, you earn a share of the acquisition fee and choose where it goes.</p>
         </div>
         <div style="display: flex; gap: 12px;">
           <button onclick="loadReferralData()" style="background: rgba(227,191,111,0.14); color: #f7e2a0; border: 1px solid rgba(227,191,111,0.55); padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Refresh</button>
@@ -2046,6 +2046,38 @@
             </tbody>
           </table>
         </div>
+      </div>
+
+      <div id="referral-reward-panel" style="background: rgba(255,255,255,0.95); color: #333; border-radius: 12px; padding: 20px; margin-top: 20px;">
+        <h3 style="margin: 0 0 8px 0; color: #0d47a1;">Acquisition rewards</h3>
+        <p id="referral-program-copy" style="margin: 0 0 16px 0; color: #555;">When someone you invited pays, your share appears here. Accept it and choose where it goes.</p>
+        <div id="referral-reward-list" style="display: grid; gap: 12px;"></div>
+        <button type="button" onclick="acceptAllRewards()" style="margin-top: 12px; background: #0d47a1; color: white; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Accept all with the suggested split</button>
+      </div>
+
+      <div id="professional-panel" style="background: rgba(255,255,255,0.95); color: #333; border-radius: 12px; padding: 20px; margin-top: 20px;">
+        <h3 style="margin: 0 0 8px 0; color: #0d47a1;">Open a professional role</h3>
+        <p style="margin: 0 0 12px 0; color: #555;">Stay a customer and ask to open the agent view, or a supplier practice. Approval keeps both sides on this same person.</p>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+          <div>
+            <label style="display:block; font-size: 0.85rem; color: #666;">Role</label>
+            <select id="pro-role" style="width:100%; padding: 8px; border-radius: 6px; border: 1px solid #ddd;">
+              <option value="agent">Agent</option>
+              <option value="supplier">Supplier</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block; font-size: 0.85rem; color: #666;">Supplier type</label>
+            <select id="pro-supplier-type" style="width:100%; padding: 8px; border-radius: 6px; border: 1px solid #ddd;"></select>
+          </div>
+          <div>
+            <label style="display:block; font-size: 0.85rem; color: #666;">Practice or company</label>
+            <input id="pro-company" type="text" style="width:100%; padding: 8px; border-radius: 6px; border: 1px solid #ddd;">
+          </div>
+        </div>
+        <button type="button" onclick="submitProfessionalRequest()" style="margin-top: 12px; background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%); color: #071022; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Request this role</button>
+        <div id="pro-status" style="margin-top: 12px; color: #333;"></div>
+        <div id="referral-tools" style="margin-top: 12px;"></div>
       </div>
     </section>
   </main>
@@ -3874,10 +3906,10 @@
               <div style="background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
                 <h4 style="margin: 0 0 12px 0; color: #e65100;"> Referral Benefits</h4>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
-                  <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 1.2rem;"></span> $50 credit for each referral</div>
-                  <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 1.2rem;"></span> Friend gets $25 welcome bonus</div>
-                  <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 1.2rem;"></span> Bonus grows with more referrals</div>
-                  <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 1.2rem;"></span> Unlock premium perks</div>
+                  <div>A fixed acquisition fee, set by PHINS, is shared across up to 3 invitation layers.</div>
+                  <div>You choose the sink: premium credit, health wallet, long-term savings, or cash when that layer allows it.</div>
+                  <div>The reward is earned when the invited customer pays a premium.</div>
+                  <div>An approved agent can invite a larger book and open the agent portal from here.</div>
                 </div>
               </div>
               
@@ -10236,7 +10268,7 @@
         document.getElementById('referral-codes-generated').textContent = codesGenerated;
         document.getElementById('referral-successful').textContent = successfulReferrals;
         document.getElementById('referral-remaining').textContent = remaining;
-        document.getElementById('referral-rewards').textContent = '$' + rewardsEarned;
+        document.getElementById('referral-rewards').textContent = '$' + formatNumber(rewardsEarned, 2);
         
         // Update generate button state
         const genBtn = document.getElementById('generate-referral-btn');
@@ -10255,6 +10287,7 @@
         
         // Render referred customers table
         renderReferredCustomersTable();
+        loadRewardProgram();
         
       } catch (err) {
         console.error('Error loading referral data:', err);
@@ -10309,8 +10342,9 @@
       
       tbody.innerHTML = referredCustomers.map(customer => {
         const joinedDate = new Date(customer.referred_at).toLocaleDateString();
-        const rewardStatus = customer.reward_claimed ? 'Claimed' : 'Pending';
-        const statusColor = customer.reward_claimed ? '#28a745' : '#ffc107';
+        const rewardLabel = customer.reward_status || (customer.reward_claimed ? 'dispatched' : 'pending');
+        const rewardStatus = String(rewardLabel).replace(/_/g, ' ');
+        const statusColor = (rewardLabel === 'dispatched' || customer.reward_claimed) ? '#28a745' : '#ffc107';
         
         return `
           <tr style="border-bottom: 1px solid #eee;">
@@ -10323,6 +10357,176 @@
           </tr>
         `;
       }).join('');
+    }
+
+    function escReferral(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, function(ch) {
+        return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch];
+      });
+    }
+
+    function referralAuthHeaders() {
+      return {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json'
+      };
+    }
+
+    function readRewardAllocation(rewardId) {
+      const allocation = {};
+      ['premium', 'health_wallet', 'savings', 'cash'].forEach(function(dest) {
+        const input = document.getElementById('alloc-' + rewardId + '-' + dest);
+        if (input) allocation[dest] = Number(input.value) || 0;
+      });
+      return allocation;
+    }
+
+    async function loadRewardProgram() {
+      const list = document.getElementById('referral-reward-list');
+      if (!list || !authToken) return;
+      try {
+        const response = await fetch('/api/customer/referral-rewards', { headers: referralAuthHeaders() });
+        if (!response.ok) return;
+        const data = await response.json();
+        const fee = data.fee != null ? formatNumber(data.fee, 2) : '0.00';
+        const copy = document.getElementById('referral-program-copy');
+        if (copy) {
+          copy.textContent = 'The acquisition fee is $' + fee + ' across up to ' + (data.max_layers || 3) +
+            ' layers. Earned $' + formatNumber((data.totals || {}).earned || 0, 2) +
+            ', waiting for your choice $' + formatNumber((data.totals || {}).pending_choice || 0, 2) + '.';
+        }
+        const earnedEl = document.getElementById('referral-rewards');
+        if (earnedEl && data.totals) earnedEl.textContent = '$' + formatNumber(data.totals.earned || 0, 2);
+        const rows = data.rewards || [];
+        if (!rows.length) {
+          list.innerHTML = '<div style="color:#666;">No acquisition reward yet. It is earned when an invited customer pays a premium.</div>';
+        } else {
+          list.innerHTML = rows.map(function(reward) {
+            const defaults = reward.default || {};
+            const locked = reward.status !== 'earned';
+            const fields = ['premium', 'health_wallet', 'savings', 'cash'].map(function(dest) {
+              const allowed = (reward.allowed || []).indexOf(dest) >= 0;
+              return '<label style="font-size:0.8rem;color:#555;">' + escReferral(dest.replace('_', ' ')) +
+                '<input id="alloc-' + escReferral(reward.id) + '-' + dest + '" type="number" min="0" max="100" step="0.01" ' +
+                (allowed && !locked ? '' : 'disabled') +
+                ' value="' + escReferral(defaults[dest] != null ? defaults[dest] : 0) +
+                '" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:6px;"></label>';
+            }).join('');
+            return '<div style="border:1px solid #e6e6e6;border-radius:10px;padding:12px;">' +
+              '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">' +
+              '<strong>Layer ' + escReferral(reward.layer) + ' · $' + formatNumber(reward.amount, 2) + '</strong>' +
+              '<span>' + escReferral(reward.status) + (reward.referee_name ? ' · ' + escReferral(reward.referee_name) : '') + '</span></div>' +
+              '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:8px;">' + fields + '</div>' +
+              (locked ? '' : '<button type="button" onclick="acceptReward(\'' + escReferral(reward.id) + '\')" style="margin-top:8px;background:#15803d;color:white;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;">Accept this reward</button>') +
+              '</div>';
+          }).join('');
+        }
+        const types = document.getElementById('pro-supplier-type');
+        if (types && !types.options.length) {
+          (data.supplier_types || []).forEach(function(value) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = value;
+            types.appendChild(option);
+          });
+        }
+        const professional = data.professional || {};
+        const status = document.getElementById('pro-status');
+        if (status) {
+          status.innerHTML = ['agent', 'supplier'].map(function(role) {
+            const item = professional[role] || {};
+            const open = item.status === 'approved'
+              ? ' <button type="button" onclick="switchPortalRole(\'' + role + '\')" style="margin-left:8px;background:#0d47a1;color:white;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;">Open ' + role + ' view</button>'
+              : '';
+            return '<div style="margin-top:6px;">' + escReferral(role) + ': <strong>' + escReferral(item.status || 'none') + '</strong>' + open + '</div>';
+          }).join('') +
+            '<div style="margin-top:6px;"><button type="button" onclick="switchPortalRole(\'customer\')" style="background:#fff;color:#0d47a1;border:1px solid #0d47a1;padding:4px 10px;border-radius:6px;cursor:pointer;">Stay on the customer view</button></div>';
+        }
+        const tools = document.getElementById('referral-tools');
+        if (tools) {
+          const links = ((data.tools || {}).links || []).filter(function(link) { return link.enabled; });
+          const videos = (data.tools || {}).videos || [];
+          tools.innerHTML =
+            links.map(function(link) {
+              return '<a href="' + escReferral(link.href) + '" style="margin-right:12px;color:#0d47a1;">' + escReferral(link.label) + '</a>';
+            }).join('') +
+            videos.map(function(video) {
+              return '<div style="margin-top:6px;"><a href="' + escReferral(video.url) + '" target="_blank" rel="noopener">' + escReferral(video.label) + '</a></div>';
+            }).join('');
+        }
+      } catch (err) {
+        console.error('Error loading acquisition rewards:', err);
+      }
+    }
+
+    async function acceptReward(rewardId) {
+      const response = await fetch('/api/customer/referral-rewards/accept', {
+        method: 'POST',
+        headers: referralAuthHeaders(),
+        body: JSON.stringify({ reward_id: rewardId, allocation: readRewardAllocation(rewardId) })
+      });
+      const body = await response.json().catch(function() { return {}; });
+      if (!response.ok) {
+        showNotification(body.error || 'Could not accept the reward', 'error');
+        return;
+      }
+      showNotification('Reward accepted', 'success');
+      loadReferralData();
+    }
+
+    async function acceptAllRewards() {
+      const response = await fetch('/api/customer/referral-rewards/accept-all', {
+        method: 'POST',
+        headers: referralAuthHeaders(),
+        body: JSON.stringify({})
+      });
+      const body = await response.json().catch(function() { return {}; });
+      if (!response.ok) {
+        showNotification(body.error || 'Could not accept rewards', 'error');
+        return;
+      }
+      const failed = (body.failed || []).length;
+      showNotification(failed ? ('Accepted some rewards; ' + failed + ' still need a valid split') : 'Rewards accepted', failed ? 'error' : 'success');
+      loadReferralData();
+    }
+
+    async function submitProfessionalRequest() {
+      const role = document.getElementById('pro-role').value;
+      const response = await fetch('/api/customer/professional-requests', {
+        method: 'POST',
+        headers: referralAuthHeaders(),
+        body: JSON.stringify({
+          role: role,
+          supplier_type: document.getElementById('pro-supplier-type').value,
+          company_name: document.getElementById('pro-company').value
+        })
+      });
+      const body = await response.json().catch(function() { return {}; });
+      if (!response.ok) {
+        showNotification(body.error || 'Request was not filed', 'error');
+        return;
+      }
+      showNotification('Request filed for review', 'success');
+      loadRewardProgram();
+    }
+
+    async function switchPortalRole(role) {
+      const response = await fetch('/api/customer/role-switch', {
+        method: 'POST',
+        headers: referralAuthHeaders(),
+        body: JSON.stringify({ role: role })
+      });
+      const body = await response.json().catch(function() { return {}; });
+      if (!response.ok || !body.token) {
+        showNotification((body && body.error) || 'Could not switch role', 'error');
+        return;
+      }
+      authToken = body.token;
+      localStorage.setItem('phins_token', body.token);
+      sessionStorage.setItem('phins_token', body.token);
+      if (role === 'agent') window.location.href = '/agent-portal.html';
+      else if (role === 'supplier') window.location.href = '/supplier-login.html';
+      else window.location.href = '/dashboard.html#referrals';
     }
     
     // Generate a new referral code

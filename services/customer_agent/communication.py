@@ -580,7 +580,7 @@ class CustomerCommunicationAgent:
     # Customer-relations outreach (email / WhatsApp)
     # ------------------------------------------------------------------
 
-    OUTREACH_TEMPLATES = ("message", "offer", "bill", "reminder", "welcome")
+    OUTREACH_TEMPLATES = ("message", "offer", "bill", "reminder", "welcome", "reward")
     OUTREACH_CHANNELS = ("email", "whatsapp", "both")
     _MAX_SUBJECT = 140
     _MAX_MESSAGE = 4000
@@ -776,6 +776,7 @@ class CustomerCommunicationAgent:
             "bill": f"Your PHINS bill is ready — ${report.outstanding_amount:,.2f} outstanding",
             "reminder": f"Reminder: {report.outstanding_bills} PHINS bill(s) need attention",
             "welcome": f"Welcome to PHINS | Executive Portfolio Brief",
+            "reward": f"A PHINS invitation update, {name}",
         }
         subject = self._clip(str(custom_subject or "").strip() or default_subjects[template], self._MAX_SUBJECT)
 
@@ -830,6 +831,17 @@ class CustomerCommunicationAgent:
                 f"Policies: {report.active_policies}/{report.total_policies} active",
                 f"Coverage: ${report.total_coverage:,.2f}",
                 f"Outstanding billing: ${report.outstanding_amount:,.2f}",
+                "",
+                f"Open your dashboard: {safe_login}",
+            ]
+        elif template == "reward":
+            intro = f"Hi {name}, your PHINS invitation book has news."
+            body_lines = [
+                intro,
+                "",
+                "Open Referrals to see who joined with your code and to choose",
+                "where an earned acquisition reward goes: premium credit, health",
+                "wallet, long-term savings, or cash when that layer allows it.",
                 "",
                 f"Open your dashboard: {safe_login}",
             ]

@@ -2156,6 +2156,37 @@ IDENTITY_API_PATHS = (
     '/api/admin/customers/identity', '/api/admin/customers/identity/report',
 )
 
+# Referral acquisition rewards: join notices, layered CAC, destination choice,
+# and customer requests to open an agent or supplier role.
+try:
+    from web_portal.api_referral_rewards import (
+        dispatch_get as api_referral_get,
+        dispatch_post as api_referral_post,
+    )
+    referral_rewards_enabled = True
+    print("✓ Referral Rewards API loaded")
+except ImportError:
+    try:
+        from api_referral_rewards import (  # type: ignore
+            dispatch_get as api_referral_get,
+            dispatch_post as api_referral_post,
+        )
+        referral_rewards_enabled = True
+        print("✓ Referral Rewards API loaded")
+    except ImportError:
+        referral_rewards_enabled = False
+        api_referral_get = None
+        api_referral_post = None
+        print("Warning: Referral Rewards API not available.")
+
+REFERRAL_API_PREFIXES = (
+    '/api/customer/referral-rewards',
+    '/api/customer/professional-requests',
+    '/api/customer/role-switch',
+    '/api/admin/referral-rewards',
+    '/api/admin/professional-requests',
+)
+
 # Import API extensions for the chat-style New Policy Application ("Phin")
 try:
     from web_portal.api_chat_application import (
@@ -6807,7 +6838,8 @@ PHINS_BALANCE_SHEET: Dict[str, Any] = {
         'operating_costs': 0.00,        # Operating expenses
         'commissions': 0.00,            # Agent commissions
         'reinsurance': 0.00,            # Reinsurance premiums
-        'other_expenses': 0.00          # Miscellaneous expenses
+        'other_expenses': 0.00,         # Miscellaneous expenses
+        'customer_acquisition': 0.00,   # Referral CAC rewards (booked at earn)
     },
     
     # Transaction history
@@ -7309,6 +7341,9 @@ def initialize_balance_sheet():
         ensure_seed_claims_reserve(PHINS_BALANCE_SHEET)
     except Exception:
         PHINS_BALANCE_SHEET.setdefault('seed_claims_reserve', 3500000.00)
+    breakdown = PHINS_BALANCE_SHEET.setdefault('expense_breakdown', {})
+    if isinstance(breakdown, dict):
+        breakdown.setdefault('customer_acquisition', 0.0)
     if PHINS_BALANCE_SHEET.get('created_at') is None:
         PHINS_BALANCE_SHEET['created_at'] = datetime.now().isoformat()
         PHINS_BALANCE_SHEET['last_updated'] = datetime.now().isoformat()
@@ -8252,6 +8287,9 @@ def load_ledger_data():
                     ensure_seed_claims_reserve(PHINS_BALANCE_SHEET)
                 except Exception:
                     PHINS_BALANCE_SHEET.setdefault('seed_claims_reserve', 3500000.00)
+                loaded_breakdown = PHINS_BALANCE_SHEET.setdefault('expense_breakdown', {})
+                if isinstance(loaded_breakdown, dict):
+                    loaded_breakdown.setdefault('customer_acquisition', 0.0)
                 print(f"  - PHINS Balance Sheet: Claims Reserve ${PHINS_BALANCE_SHEET.get('claims_reserve', 0):,.2f}")
         
         # Load Claims and Claim Files (v1.4+)
@@ -9916,6 +9954,49 @@ def accrue_agent_commission_for_paid_bills(bill_ids: List[str]) -> None:
         print(f"[AGENTOS] Commission hook skipped: {agent_hook_err}")
 
 
+def notify_referral_reward_for_paid_customer(customer_id: str) -> None:
+    """Earn referral CAC once this customer has a paid premium.
+
+    Best-effort and idempotent. A failure here never fails the payment.
+    """
+    if not customer_id:
+        return
+    try:
+        from services.referral_reward_service import on_customer_paying
+        on_customer_paying(str(customer_id))
+    except Exception as referral_hook_err:
+        print(f"[REFERRAL] Reward hook skipped: {referral_hook_err}")
+
+
+def customer_invitation_limit(customer_id: str) -> int:
+    """Invitation-code cap: 10 for a customer, the agent cap once that role is open."""
+    try:
+        from services.referral_reward_service import invitation_cap_for
+        return int(invitation_cap_for(customer_id))
+    except Exception:
+        return MAX_CUSTOMER_INVITATIONS
+
+
+def _referral_reward_sheet_slice() -> Optional[Dict[str, Any]]:
+    """Short CAC slice embedded on the admin balance-sheet response."""
+    try:
+        from services.referral_reward_service import book_summary
+        summary = book_summary()
+        totals = summary.get("totals") or {}
+        return {
+            "expense_booked": totals.get("expense_booked"),
+            "earned": totals.get("earned"),
+            "dispatched": totals.get("dispatched"),
+            "pending_choice": totals.get("pending_choice"),
+            "retained": totals.get("retained"),
+            "integrity_ok": bool((summary.get("integrity") or {}).get("ok")),
+            "professional_requests": summary.get("professional_requests") or {},
+        }
+    except Exception as referral_sheet_err:
+        print(f"[REFERRAL] Balance-sheet slice skipped: {referral_sheet_err}")
+        return None
+
+
 def process_customer_premium_payment(
     customer_id: str,
     amount: float,
@@ -10045,6 +10126,7 @@ def process_customer_premium_payment(
     amount_applied_to_bills = round(amount - remaining_amount, 2)
     unbilled_premium_amount = round(max(0.0, remaining_amount), 2)
     accrue_agent_commission_for_paid_bills(bills_paid)
+    notify_referral_reward_for_paid_customer(customer_id)
 
     try:
         record_premium_revenue(
@@ -15731,11 +15813,20 @@ def get_effective_role(session: dict[str, str] | None) -> str:
 
     IMPORTANT: Some principals (e.g., suppliers) are not present in `USERS`, so we must
     fall back to the session role to avoid authorization scoping bugs.
+
+    A customer who has opened an agent or supplier view keeps ``USERS.role``
+    as customer (normal login stays the customer dashboard). The signed
+    session minted by ``/api/customer/role-switch`` carries the opened role,
+    and that role is the one this request is acting as.
     """
     if not session:
         return ''
     user = get_session_user(session) or {}
-    return (user.get('role') or session.get('role') or '').lower()
+    user_role = (user.get('role') or '').lower()
+    session_role = (session.get('role') or '').lower()
+    if user_role == 'customer' and session_role in ('agent', 'supplier'):
+        return session_role
+    return user_role or session_role
 
 
 def is_operational_staff_role(role: str) -> bool:
@@ -22610,6 +22701,24 @@ For claims or questions, please contact:
                 return
 
         # =====================================================================
+        # REFERRAL REWARDS (GET) - own acquisition book, professional status,
+        # admin CAC book (admin and accountant)
+        # =====================================================================
+        if referral_rewards_enabled and api_referral_get and path.startswith(REFERRAL_API_PREFIXES):
+            try:
+                referral_result = api_referral_get(path, session, qs)
+                if referral_result is not None:
+                    status_code, response_data = referral_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+            except Exception as e:
+                print(f"Referral Rewards error (GET {path}): {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
+
+        # =====================================================================
         # CHAT APPLICATION (GET) - conversational new-policy flow state,
         # journey (A-Z pipeline), staff funnel. Session optional (resume-code
         # scoped for applicants, role-gated for staff views).
@@ -23244,6 +23353,7 @@ For claims or questions, please contact:
                     'rewards': []
                 })
                 
+                invitation_limit = customer_invitation_limit(customer_id)
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'codes': customer_codes,
@@ -23251,8 +23361,8 @@ For claims or questions, please contact:
                     'active': len([c for c in customer_codes if get_status_lower(c) == 'active']),
                     'used': len([c for c in customer_codes if get_status_lower(c) == 'used']),
                     'stats': stats,
-                    'max_allowed': MAX_CUSTOMER_INVITATIONS,
-                    'can_generate_more': len(customer_codes) < MAX_CUSTOMER_INVITATIONS
+                    'max_allowed': invitation_limit,
+                    'can_generate_more': len(customer_codes) < invitation_limit
                 }).encode('utf-8'))
                 return
             
@@ -36557,6 +36667,7 @@ For claims or questions, please contact:
                     # Transaction count
                     'transaction_count': len(PHINS_BALANCE_SHEET['transactions'])
                 },
+                'referral_rewards': _referral_reward_sheet_slice(),
                 'timestamp': datetime.now().isoformat()
             }, default=str).encode('utf-8'))
             return
@@ -41869,11 +41980,12 @@ For claims or questions, please contact:
                 if c.get('creator_customer_id') == customer_id
             ]
             
-            if len(existing_codes) >= MAX_CUSTOMER_INVITATIONS:
+            invitation_limit = customer_invitation_limit(customer_id)
+            if len(existing_codes) >= invitation_limit:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({
-                    'error': f'Maximum referral limit reached ({MAX_CUSTOMER_INVITATIONS} codes)',
-                    'limit': MAX_CUSTOMER_INVITATIONS,
+                    'error': f'Maximum referral limit reached ({invitation_limit} codes)',
+                    'limit': invitation_limit,
                     'current_count': len(existing_codes)
                 }).encode('utf-8'))
                 return
@@ -41954,9 +42066,9 @@ For claims or questions, please contact:
                     'message': 'Referral code created successfully',
                     'invitation': invitation,
                     'registration_link': registration_link,
-                    'remaining_codes': MAX_CUSTOMER_INVITATIONS - len(existing_codes) - 1,
+                    'remaining_codes': invitation_limit - len(existing_codes) - 1,
                     'total_generated': len(existing_codes) + 1,
-                    'max_allowed': MAX_CUSTOMER_INVITATIONS
+                    'max_allowed': invitation_limit
                 }).encode('utf-8'))
                 return
                 
@@ -42684,6 +42796,27 @@ For claims or questions, please contact:
         _post_auth = self.headers.get('Authorization', '')
         _post_bearer = _post_auth[7:] if _post_auth.startswith('Bearer ') else ''
         session = validate_session(_post_bearer) if _post_bearer else None
+
+        # Referral rewards (POST). Body and session are already bound above.
+        if referral_rewards_enabled and api_referral_post and path.startswith(REFERRAL_API_PREFIXES):
+            try:
+                try:
+                    referral_body = json.loads(body) if body else {}
+                except json.JSONDecodeError:
+                    referral_body = {}
+                if not isinstance(referral_body, dict):
+                    referral_body = {}
+                referral_result = api_referral_post(path, session, referral_body)
+                if referral_result is not None:
+                    status_code, response_data = referral_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+            except Exception as e:
+                print(f"Referral Rewards error (POST {path}): {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
         
         # ========== TRADING TERMINAL API (POST) ==========
         if path == '/api/terminal/order':
@@ -44017,6 +44150,17 @@ For claims or questions, please contact:
                 # Persist all state
                 save_ledger_data()
                 save_invitation_codes_to_file()
+                if invitation_type == 'customer' and referrer_customer_id:
+                    try:
+                        from services.referral_reward_service import on_customer_joined
+                        on_customer_joined(
+                            referee_customer_id=customer_id,
+                            referrer_customer_id=referrer_customer_id,
+                            invitation_code=invitation_code,
+                            referee_name=name,
+                        )
+                    except Exception as referral_join_err:
+                        print(f"[REFERRAL] Join notice skipped: {referral_join_err}")
                 append_customer_to_seeds(email, password, name, customer_id, registration_date)
 
                 # Best-effort branded welcome communication package
@@ -60051,6 +60195,8 @@ For claims or questions, please contact:
                 
                 # EXPLICIT: Re-assign to ensure BILLING is updated
                 BILLING[bill_id] = bill
+                if status_eq(bill, 'paid'):
+                    notify_referral_reward_for_paid_customer(customer_id)
                 
                 # Record premium revenue on PHINS Balance Sheet
                 try:
@@ -60284,6 +60430,9 @@ For claims or questions, please contact:
                     })
                     
                     remaining_to_pay -= payment_amount
+
+                if any(str(item.get('bill_status') or '').lower() == 'paid' for item in payments_made):
+                    notify_referral_reward_for_paid_customer(customer_id)
                 
                 # Deduct total from health wallet
                 total_paid = amount_to_pay - remaining_to_pay

@@ -1455,11 +1455,29 @@
             <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
               <span>Operating Costs</span><span id="bs-operating-costs">$0</span>
             </div>
-            <div style="display: flex; justify-content: space-between; padding: 6px 0;">
+            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
               <span>Reinsurance</span><span id="bs-reinsurance">$0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 6px 0;">
+              <span>Customer acquisition</span><span id="bs-customer-acquisition">$0</span>
             </div>
           </div>
         </div>
+      </div>
+      <div id="referral-cac-panel" style="margin-top: 16px; background: rgba(255,255,255,0.1); border-radius: 10px; padding: 16px;">
+        <h4 style="color: #f7e2a0; margin: 0 0 8px 0; font-size: 14px;">Referral acquisition reward</h4>
+        <p id="referral-cac-summary" style="font-size: 13px; margin: 0 0 12px 0;">Loading the acquisition book…</p>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px;">
+          <label style="font-size: 12px;">Fee (USD)<input id="cac-fee" type="number" min="0" step="0.01" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
+          <label style="font-size: 12px;">Layer 1 %<input id="cac-share-1" type="number" min="0" max="100" step="0.01" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
+          <label style="font-size: 12px;">Layer 2 %<input id="cac-share-2" type="number" min="0" max="100" step="0.01" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
+          <label style="font-size: 12px;">Layer 3 %<input id="cac-share-3" type="number" min="0" max="100" step="0.01" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
+        </div>
+        <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" onclick="saveReferralProgram()" style="background:#e3bf6f; color:#071022; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:600;">Save fee and shares</button>
+          <button type="button" onclick="recomputeReferralRewards()" style="background:rgba(255,255,255,0.16); color:white; border:1px solid rgba(255,255,255,0.3); padding:8px 12px; border-radius:6px; cursor:pointer;">Recompute</button>
+        </div>
+        <div id="referral-request-list" style="margin-top: 12px; font-size: 13px;"></div>
       </div>
       
       <!-- Net Income Summary -->
@@ -6103,6 +6121,98 @@
       }
     }
     
+    function escAdmin(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, function(ch) {
+        return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch];
+      });
+    }
+
+    async function loadReferralRewards() {
+      const summary = document.getElementById('referral-cac-summary');
+      if (!summary) return;
+      try {
+        const response = await fetch('/api/admin/referral-rewards', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) {
+          summary.textContent = 'Acquisition book is not available for this session.';
+          return;
+        }
+        const data = await response.json();
+        const totals = data.totals || {};
+        const integrity = data.integrity || {};
+        const requests = data.professional_requests || {};
+        summary.textContent = 'Booked $' + formatNumber(totals.expense_booked || 0, 2) +
+          ' · earned $' + formatNumber(totals.earned || 0, 2) +
+          ' · waiting for choice $' + formatNumber(totals.pending_choice || 0, 2) +
+          ' · retained $' + formatNumber(totals.retained || 0, 2) +
+          ' · integrity ' + (integrity.ok ? 'ok' : 'needs review') +
+          ' · pending professional requests ' + (requests.pending || 0);
+        const config = data.config || {};
+        const fee = document.getElementById('cac-fee');
+        if (fee && document.activeElement !== fee) fee.value = config.fee != null ? config.fee : '';
+        (config.layers || []).forEach(function(layer) {
+          const input = document.getElementById('cac-share-' + layer.layer);
+          if (input && document.activeElement !== input) input.value = layer.share_percent;
+        });
+        const pending = (data.requests || []).filter(function(item) { return item.status === 'pending'; });
+        const list = document.getElementById('referral-request-list');
+        if (list) {
+          list.innerHTML = pending.length ? pending.map(function(item) {
+            return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">' +
+              '<span>' + escAdmin(item.customer_id) + ' · ' + escAdmin(item.requested_role) +
+              (item.company_name ? ' · ' + escAdmin(item.company_name) : '') + '</span>' +
+              '<button type="button" onclick="reviewProfessionalRequest(\'' + escAdmin(item.id) + '\', \'approve\')" style="background:#15803d;color:white;border:none;padding:4px 8px;border-radius:6px;cursor:pointer;">Approve</button>' +
+              '<button type="button" onclick="reviewProfessionalRequest(\'' + escAdmin(item.id) + '\', \'reject\')" style="background:#b91c1c;color:white;border:none;padding:4px 8px;border-radius:6px;cursor:pointer;">Reject</button>' +
+              '</div>';
+          }).join('') : '<div style="opacity:0.8;">No professional requests waiting.</div>';
+        }
+      } catch (err) {
+        summary.textContent = 'Could not load the acquisition book.';
+      }
+    }
+
+    async function saveReferralProgram() {
+      const payload = {
+        fee: Number(document.getElementById('cac-fee').value),
+        layers: [1, 2, 3].map(function(layer) {
+          return { layer: layer, share_percent: Number(document.getElementById('cac-share-' + layer).value) };
+        })
+      };
+      const response = await fetch('/api/admin/referral-rewards/config', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const body = await response.json().catch(function() { return {}; });
+      alert(response.ok ? 'Acquisition program saved.' : (body.error || 'Could not save the program.'));
+      if (response.ok) loadReferralRewards();
+    }
+
+    async function recomputeReferralRewards() {
+      const response = await fetch('/api/admin/referral-rewards/recompute', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: '{}'
+      });
+      const body = await response.json().catch(function() { return {}; });
+      alert(response.ok
+        ? ('Recomputed. Links ' + (body.links_recorded || 0) + ', rewards ' + (body.rewards_created || 0) + '.')
+        : (body.error || 'Recompute failed.'));
+      loadBalanceSheet();
+    }
+
+    async function reviewProfessionalRequest(id, decision) {
+      const response = await fetch('/api/admin/professional-requests/review', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: id, decision: decision })
+      });
+      const body = await response.json().catch(function() { return {}; });
+      alert(response.ok ? ('Request ' + decision + 'd.') : (body.error || 'Review failed.'));
+      if (response.ok) loadReferralRewards();
+    }
+
     // Load PHINS Balance Sheet (General Reserves)
     async function loadBalanceSheet() {
       try {
@@ -6151,7 +6261,10 @@
             document.getElementById('bs-supplier-payments').textContent = fmt(bs.expense_breakdown.supplier_payments);
             document.getElementById('bs-operating-costs').textContent = fmt(bs.expense_breakdown.operating_costs);
             document.getElementById('bs-reinsurance').textContent = fmt(bs.expense_breakdown.reinsurance);
+            const cacEl = document.getElementById('bs-customer-acquisition');
+            if (cacEl) cacEl.textContent = fmt(bs.expense_breakdown.customer_acquisition || 0);
           }
+          loadReferralRewards();
           
           // Net income
           const netIncome = bs.net_income || 0;

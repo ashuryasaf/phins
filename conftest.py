@@ -99,6 +99,13 @@ if "PHINS_INVITATION_CODES_PATH" not in os.environ:
         pass
     os.environ["PHINS_INVITATION_CODES_PATH"] = str(_tmp_codes)
 
+# Referral acquisition rewards persist to a checksummed JSON book. Keep that
+# book out of the checkout for the same reason as invitation codes.
+os.environ.setdefault(
+    "PHINS_REFERRAL_REWARDS_PATH",
+    str(Path(tempfile.gettempdir()) / f"phins_test_referral_rewards_{os.getpid()}.json"),
+)
+
 
 _httpd = None
 _thread: Optional[threading.Thread] = None
@@ -143,7 +150,12 @@ def pytest_sessionfinish(session, exitstatus):  # type: ignore[no-redef]
         _httpd = None
     # Drop the per-session scratch copies of persisted state (see the env
     # defaults at the top of this file) so /tmp does not accumulate them.
-    for var in ("PHINS_ACTUARIAL_STATE_PATH", "PHINS_INVITATION_CODES_PATH", "PHINS_KEYRING_PATH"):
+    for var in (
+        "PHINS_ACTUARIAL_STATE_PATH",
+        "PHINS_INVITATION_CODES_PATH",
+        "PHINS_KEYRING_PATH",
+        "PHINS_REFERRAL_REWARDS_PATH",
+    ):
         path = os.environ.get(var, "")
         if f"_{os.getpid()}.json" in path:
             try:

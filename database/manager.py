@@ -59,6 +59,7 @@ from database.repositories import (
     AIUsageRepository,
     AgentArtifactRepository,
     VideoJobRepository,
+    ReferralRewardRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -138,6 +139,8 @@ class DatabaseManager:
         # Durable agent state (A4): generic artifacts + video job lifecycle.
         self._agent_artifacts = None
         self._video_jobs = None
+        # Referral acquisition rewards (CAC book, links, professional requests).
+        self._referral_rewards = None
     
     def _ensure_session(self) -> Session:
         """
@@ -212,6 +215,7 @@ class DatabaseManager:
         self._ai_usage = None
         self._agent_artifacts = None
         self._video_jobs = None
+        self._referral_rewards = None
     
     @property
     def customers(self) -> CustomerRepository:
@@ -523,6 +527,13 @@ class DatabaseManager:
         if self._video_jobs is None:
             self._video_jobs = VideoJobRepository(self._ensure_session())
         return self._video_jobs
+
+    @property
+    def referral_rewards(self) -> ReferralRewardRepository:
+        """Get the referral acquisition-reward book (config, links, rewards, requests)."""
+        if self._referral_rewards is None:
+            self._referral_rewards = ReferralRewardRepository(self._ensure_session())
+        return self._referral_rewards
 
     def commit(self):
         """Commit current transaction"""

@@ -107,6 +107,14 @@
         <div class="note">Your proposed rate is sent to an admin, who <strong>locks the final commission rate in advance</strong>. Once approved, the invitation becomes shareable and the rate is fixed for every resulting affiliation.</div>
       </div>
 
+      <h2>Customer invitation rewards</h2>
+      <div class="card">
+        <p class="muted">Commission on an agent invitation is this portal. The fixed acquisition reward for a customer invitation code is accepted on the customer dashboard, where you choose premium credit, the health wallet, savings, or cash.</p>
+        <div class="row" style="margin-top:12px">
+          <button class="btn alt" id="switch-customer" type="button">Open the customer reward dashboard</button>
+        </div>
+      </div>
+
       <h2>My invitations</h2>
       <div class="card" style="overflow-x:auto"><table id="inv-table"><thead><tr><th>Code</th><th>Type</th><th>Proposed</th><th>Locked</th><th>Status</th></tr></thead><tbody></tbody></table></div>
 
@@ -259,6 +267,13 @@
     document.addEventListener('keydown', e=>{ if(e.key==='Enter' && e.target && e.target.id==='cap-a') login(); });
     $('#inv-go').addEventListener('click', createInvitation);
     $('#logout').addEventListener('click', ()=>{ localStorage.removeItem('phins_token'); TOKEN=''; showApp(false); });
+    const switchCustomer = document.getElementById('switch-customer');
+    if (switchCustomer) switchCustomer.addEventListener('click', async ()=>{
+      const {status, body} = await api('/api/customer/role-switch', {method:'POST', body:JSON.stringify({role:'customer'})});
+      if(status!==200 || !body.token){ toast((body&&body.error)||'Could not open the customer view'); return; }
+      TOKEN = body.token; localStorage.setItem('phins_token', TOKEN);
+      window.location.href = '/dashboard.html#referrals';
+    });
 
     if(TOKEN) boot(); else showApp(false);
   })();
