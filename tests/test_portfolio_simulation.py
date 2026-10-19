@@ -51,10 +51,9 @@ class TestPortfolioSimulation:
             prof['profit_margin']
         )
         
-        # Should match gross premium (within rounding for many customers)
-        # Allow 0.1% tolerance for floating point accumulation
-        tolerance = prof['gross_premium'] * 0.001
-        assert abs(prof['gross_premium'] - expected_total) < max(100, tolerance), \
+        # The published cents are one ledger: risk + savings + expense +
+        # profit equals gross premium to the cent.
+        assert abs(prof['gross_premium'] - expected_total) < 0.01, \
             f"Premium mismatch: {prof['gross_premium']} vs {expected_total}"
         
         # Also verify using the calculated_gross field
@@ -201,6 +200,54 @@ class TestPortfolioSimulation:
             total_pct = risk['mortality_pct_of_claims'] + risk['disability_pct_of_claims']
             assert abs(total_pct - 100) < 1, \
                 f"Claim percentages should sum to 100%: {total_pct}"
+
+    def test_component_ledger_holds_on_a_large_book(self):
+        """Expense and profit are the summed priced lives, not a re-derived formula.
+
+        Re-applying the loading percents to the portfolio totals drifts by
+        several dollars on a 100,000-life book and fails the simulation
+        report (premium reconciliation, component sum, reinsurance gross).
+        """
+        from services.actuarial_service import calculate_reinsurance_program
+
+        simulator = get_portfolio_simulator()
+        result = simulator.generate_portfolio(SimulationParams(
+            customer_count=4000,
+            age_min=3,
+            age_max=70,
+            age_mean=35.0,
+            age_std=12.0,
+        ))
+        prof = result['profitability']
+        published = (
+            prof['risk_premium']
+            + prof['savings_premium']
+            + prof['expense_loading']
+            + prof['profit_margin']
+        )
+        assert abs(published - prof['gross_premium']) < 0.01, (
+            prof['gross_premium'], published, prof.get('components_delta'),
+        )
+        assert prof['components_match'] is True
+        assert prof['components_basis'] == 'sum_of_priced_lives'
+        assert abs(prof['components_delta']) < 0.01
+        recon = result['premium_reconciliation']
+        assert recon['all_identities_pass'] is True
+        identity = recon['identities']['sum_of_components_equals_total']
+        assert identity['check'] is True
+        assert abs(identity['delta']) < 0.01
+
+        for life in result['priced_lives']:
+            parts = (
+                float(life['risk_premium'])
+                + float(life['savings_premium'])
+                + float(life['expense_loading'])
+                + float(life['profit_margin'])
+            )
+            assert abs(parts - float(life['annual_premium'])) < 0.001
+
+        program = calculate_reinsurance_program(result, tables_store=get_actuarial_store())
+        assert program['data_integrity']['gross_premium_reconciles'] is True
 
 
 class TestMutualExclusivity:
