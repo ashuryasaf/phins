@@ -538,7 +538,7 @@ def calculate_reinsurance_program(
         'data_integrity': {
             'contracts_within_portfolio': selected_contracts <= accepted_customers,
             'ceded_exposure_within_total': ceded_exposure <= total_coverage + 1,
-            'gross_premium_reconciles': abs(gross_premium - calculated_gross) < 1.0,
+            'gross_premium_reconciles': abs(gross_premium - calculated_gross) < 0.01,
             'protected_claims_share': round(protected_claims_share, 6),
             # Prove the program kept the same L:D ratio the kernel used to
             # price the underlying portfolio — i.e. the disability portion
@@ -2388,9 +2388,11 @@ class PortfolioSimulator:
         avg_x_n = n * avg_premium
         identity_n_times_avg = abs(avg_x_n - total_premium) < 1.0
 
-        # Identity 2: components sum to total
+        # Identity 2: components sum to total. Expense and profit are the
+        # sums of the cents the kernel published for each life, so this is
+        # an exact ledger (float dust only), not a formula re-derivation.
         sum_components = total_risk + total_savings + expense_amount + profit_amount
-        identity_components_sum = abs(sum_components - total_premium) < 1.0
+        identity_components_sum = abs(sum_components - total_premium) < 0.01
 
         # Identity 3 (only meaningful for the markup formula):
         # total_savings ≈ savings_rate × total_risk
@@ -2507,6 +2509,10 @@ class PortfolioSimulator:
             'annual_premium': 0,
             'risk_premium': 0,  # Risk component only (for loss ratio)
             'savings_premium': 0,
+            # Expense and profit are summed from the priced lives, exactly
+            # like risk and savings, so the four components are one ledger.
+            'expense_loading': 0,
+            'profit_margin': 0,
             'pv_mortality_claims': 0,
             'pv_disability_claims': 0,
             'expected_claims_year1': 0,
@@ -2572,6 +2578,8 @@ class PortfolioSimulator:
             customer['annual_premium'] = premium['annual_premium']
             customer['risk_premium'] = premium['risk_premium']
             customer['savings_premium'] = premium['savings_premium']
+            customer['expense_loading'] = float(premium.get('expense_loading') or 0.0)
+            customer['profit_margin'] = float(premium.get('profit_margin') or 0.0)
             customer['pv_mortality'] = premium['pv_mortality']
             customer['pv_disability'] = premium['pv_disability']
             customer['expected_claims_year1'] = premium.get('expected_claims_year1', 0.0)
@@ -2673,6 +2681,8 @@ class PortfolioSimulator:
             totals['annual_premium'] += customer['annual_premium']
             totals['risk_premium'] += customer['risk_premium']
             totals['savings_premium'] += customer['savings_premium']
+            totals['expense_loading'] += customer['expense_loading']
+            totals['profit_margin'] += customer['profit_margin']
             totals['pv_mortality_claims'] += customer['pv_mortality']
             totals['pv_disability_claims'] += customer['pv_disability']
             totals['expected_claims_year1'] += customer['expected_claims_year1']
@@ -2826,19 +2836,27 @@ class PortfolioSimulator:
         annual_risk_premium = totals['risk_premium']  # Already annual
         annual_savings_premium = totals['savings_premium']  # Already annual
         
-        # Calculate expense and profit to match individual customer calculations
-        # In _calculate_premium:
-        #   expense = risk_premium * expense_loading_pct
-        #   profit = (risk_premium + savings_premium + expense) * profit_margin_pct
-        #   annual_premium = risk_premium + savings_premium + expense + profit
-        
-        expense_amount = annual_risk_premium * config.expense_loading_pct
-        
-        # Profit margin is on (risk + savings + expense) to match _calculate_premium
-        profit_amount = (annual_risk_premium + annual_savings_premium + expense_amount) * config.profit_margin_pct
-        
-        # Verify: components should sum to gross premium
+        # Expense and profit are the sums of what the kernel priced for each
+        # accepted life — the same ledger risk and savings come from. The
+        # kernel publishes every life's components so that they add up to
+        # its billed premium to the cent, so these four totals reproduce
+        # gross premium exactly. Re-deriving expense and profit from the
+        # portfolio totals by formula is not an identity: it drifted by a
+        # few dollars on a 100k-life book and tripped every reconciliation.
+        expense_amount = totals['expense_loading']
+        profit_amount = totals['profit_margin']
+
+        # Cross-check only: the kernel's loading formulas applied to the
+        # portfolio totals. Rounding of each life keeps this within cents
+        # per life of the summed ledger; it is reported, not reconciled.
+        expense_by_formula = annual_risk_premium * config.expense_loading_pct
+        profit_by_formula = (
+            annual_risk_premium + annual_savings_premium + expense_by_formula
+        ) * config.profit_margin_pct
+
+        # Verify: components sum to gross premium
         calculated_gross = annual_risk_premium + annual_savings_premium + expense_amount + profit_amount
+        components_delta = totals['annual_premium'] - calculated_gross
         
         # Net profit calculation:
         # Revenue = Risk Premium + Expense Loading + Profit Margin
@@ -2862,7 +2880,11 @@ class PortfolioSimulator:
             'net_margin_pct': net_margin_pct,
             'return_on_risk': round((net_profit / annual_risk_premium) * 100, 2) if annual_risk_premium > 0 else 0,
             'calculated_gross': round(calculated_gross, 2),  # For verification
-            'components_match': abs(totals['annual_premium'] - calculated_gross) < max(1.0, math.sqrt(accepted_count) * 0.50)
+            'components_delta': round(components_delta, 2),
+            'components_basis': 'sum_of_priced_lives',
+            'components_match': abs(components_delta) < 0.01,
+            'expense_loading_by_formula': round(expense_by_formula, 2),
+            'profit_margin_by_formula': round(profit_by_formula, 2),
         }
         
         # Accepted-book average only. Scores at or above the decline
@@ -5325,7 +5347,7 @@ def reconcile_simulation_with_kernel(simulation: Dict[str, Any]) -> Dict[str, An
     portfolio_delta = round(gross - expected_total, 2)
 
     return {
-        'reconciled': component_check and abs(portfolio_delta) < max(1.0, math.sqrt(accepted) * 0.50),
+        'reconciled': component_check and abs(portfolio_delta) < 0.05,
         'representative_customer': {
             'age': rep_age,
             'adl_level': rep_adl,

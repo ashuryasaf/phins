@@ -159,6 +159,16 @@ def test_kernel_handles_disability_exclusion_for_high_adl():
     # Mortality is still priced, with the underwriting loading applied
     assert components.mortality_premium_annual > 0
     assert components.integrity_checks["components_sum_to_total"]
+    assert components.integrity_checks["published_components_sum_to_total"]
+    assert abs(
+        components.annual_premium
+        - (
+            components.risk_premium_annual
+            + components.savings_premium_annual
+            + components.expense_loading_annual
+            + components.profit_margin_annual
+        )
+    ) < 0.001
 
 
 def test_savings_rate_is_truly_parametric():

@@ -1178,15 +1178,45 @@ def price_policy(
 
     annual_premium = risk_premium + savings_premium + expense_loading + profit_margin
 
+    # Published cents must form an exact ledger: the billed annual premium
+    # is rounded once, the other components are rounded independently, and
+    # one line carries the residual cent so that
+    # risk + savings + expense + profit == annual_premium to the cent for
+    # every priced life. Without this, each life leaks up to two cents and
+    # a 100k-life book drifts several dollars away from its own components.
+    # The residual sits on the profit line; a product with no profit load
+    # keeps that line at exactly zero and settles the cent on risk premium.
+    annual_premium_cents = round(annual_premium, 2)
+    savings_premium_cents = round(savings_premium, 2)
+    expense_loading_cents = round(expense_loading, 2)
+    if config.profit_margin_pct > 0.0:
+        risk_premium_cents = round(risk_premium, 2)
+        profit_margin_cents = round(
+            annual_premium_cents
+            - risk_premium_cents
+            - savings_premium_cents
+            - expense_loading_cents,
+            2,
+        )
+    else:
+        profit_margin_cents = round(profit_margin, 2)
+        risk_premium_cents = round(
+            annual_premium_cents
+            - savings_premium_cents
+            - expense_loading_cents
+            - profit_margin_cents,
+            2,
+        )
+
     components = PremiumComponents(
-        annual_premium=round(annual_premium, 2),
+        annual_premium=annual_premium_cents,
         monthly_premium=round(annual_premium / 12.0, 2),
-        risk_premium_annual=round(risk_premium, 2),
+        risk_premium_annual=risk_premium_cents,
         mortality_premium_annual=round(mortality_premium, 2),
         disability_premium_annual=round(disability_premium, 2),
-        savings_premium_annual=round(savings_premium, 2),
-        expense_loading_annual=round(expense_loading, 2),
-        profit_margin_annual=round(profit_margin, 2),
+        savings_premium_annual=savings_premium_cents,
+        expense_loading_annual=expense_loading_cents,
+        profit_margin_annual=profit_margin_cents,
         pv_mortality_claims=round(pv_mortality, 2),
         pv_disability_claims=round(pv_disability, 2),
         pv_total_risk_claims=round(pv_total, 2),
@@ -1241,6 +1271,18 @@ def price_policy(
                 - (risk_premium + savings_premium + expense_loading + profit_margin)
             )
             < 1e-6,
+            # The same identity on the published cents. One component
+            # carries the rounding residual, so this holds exactly.
+            "published_components_sum_to_total": abs(
+                annual_premium_cents
+                - (
+                    risk_premium_cents
+                    + savings_premium_cents
+                    + expense_loading_cents
+                    + profit_margin_cents
+                )
+            )
+            < 0.005,
             "non_negative_components": all(
                 v >= -1e-9
                 for v in (

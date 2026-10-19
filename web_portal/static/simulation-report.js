@@ -66,7 +66,7 @@
     check('premium components sum to gross premium', near(
       num(prof.risk_premium) + num(prof.savings_premium) + num(prof.expense_loading) + num(prof.profit_margin),
       prof.gross_premium,
-      1
+      0.01
     ));
     check('portfolio annual premium matches gross premium', near(summary.total_annual_premium, prof.gross_premium, 1));
     check('portfolio risk premium matches profitability', near(summary.total_risk_premium, prof.risk_premium, 1));
