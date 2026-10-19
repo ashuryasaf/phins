@@ -15,13 +15,18 @@ from urllib.request import Request, urlopen
 
 import web_portal.server as portal
 from services.solution_video_blueprints import (
+    JOIN_INTRO_KEYS,
+    JOIN_INTRO_OUTLINES,
     SOLUTION_KEYS,
     SOLUTION_OUTLINES,
+    SolutionBlueprintError,
     apply_blueprint_edit,
     blueprint_checksum,
+    campaign_id_for,
     canonical_narration,
     fresh_blueprint,
     growth_blueprint,
+    parse_campaign_id,
     prompt_override,
     verify_blueprint,
 )
@@ -78,6 +83,35 @@ def test_blueprint_source_matches_the_public_solution_page():
     assert set(page) == set(SOLUTION_KEYS)
     for key, outline in SOLUTION_OUTLINES.items():
         assert page[key] == outline["bullets"]
+
+
+def test_join_intro_catalog_stays_off_the_solution_page():
+    assert set(JOIN_INTRO_KEYS).isdisjoint(set(SOLUTION_KEYS))
+    assert "insurance" not in SOLUTION_KEYS
+    saved = apply_blueprint_edit(
+        "insurance",
+        None,
+        narration="The unified contract opens in chat.",
+        theme="Quiet navy desk",
+    )
+    assert saved["campaign_id"] == "JOIN-insurance"
+    assert saved["source_bullets"] == JOIN_INTRO_OUTLINES["insurance"]["bullets"]
+    assert saved["group"] == "join"
+    assert verify_blueprint(saved)
+    assert saved["checksum"] == blueprint_checksum(saved)
+    saved["narration"] = "tampered"
+    assert not verify_blueprint(saved)
+    assert parse_campaign_id("JOIN-insurance") == "insurance"
+    assert parse_campaign_id("SOL-insurance") == ""
+    assert parse_campaign_id("JOIN-billing") == ""
+    assert campaign_id_for("billing") == "SOL-billing"
+    assert fresh_blueprint("welcome")["integrity_ok"] is True
+    try:
+        fresh_blueprint("not-a-path")
+    except SolutionBlueprintError:
+        pass
+    else:
+        raise AssertionError("unknown intro key was accepted")
 
 
 def test_edit_keeps_canonical_bullets_and_checksum():
@@ -697,4 +731,93 @@ def test_solution_blueprint_send_follows_the_selected_engine():
         else:
             portal.DESIGN_SETTINGS["solution_video_blueprints"] = blueprints_before
         portal.save_ledger_data()
+        srv.stop()
+
+
+def test_join_intro_send_stores_a_library_job_without_assigning_the_page():
+    srv = _Server()
+    srv.start()
+    time.sleep(0.2)
+    base = f"http://127.0.0.1:{srv.port}"
+    try:
+        _json_request(base + "/api/health")
+    except Exception:
+        pass
+    token = "phins_test_join_blueprint_token"
+    _inject(token)
+    stub = _ReplicateStub()
+    original = portal.get_media_generation_service
+    portal.get_media_generation_service = lambda: stub
+    blueprints_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("solution_video_blueprints"))
+    slot = "join_intro_health_wallet_id"
+    slot_before = portal.DESIGN_SETTINGS.get(slot, "")
+    hero_before = portal.DESIGN_SETTINGS.get("hero_video_id", "")
+    assets_before = set(portal.MEDIA_ASSETS)
+    jobs_before = set(portal.MEDIA_PROCESSING_JOBS)
+    try:
+        status, denied = _json_request(base + "/api/admin/media/join-intro-blueprints")
+        assert status == 403
+
+        status, listing = _json_request(base + "/api/admin/media/join-intro-blueprints", token=token)
+        assert status == 200, listing
+        assert listing["total"] == len(JOIN_INTRO_KEYS)
+        keys = {item["solution_key"] for item in listing["blueprints"]}
+        assert keys == set(JOIN_INTRO_KEYS)
+        assert keys.isdisjoint(set(SOLUTION_KEYS))
+        wallet = next(item for item in listing["blueprints"] if item["solution_key"] == "health_wallet")
+        assert wallet["public_slot"] == slot
+        assert wallet["campaign_id"] == "JOIN-health_wallet"
+        assert wallet["integrity_ok"] is True
+
+        status, solutions = _json_request(base + "/api/admin/media/solution-blueprints", token=token)
+        assert status == 200
+        assert solutions["total"] == len(SOLUTION_KEYS)
+        assert "health_wallet" not in {item["solution_key"] for item in solutions["blueprints"]}
+
+        status, saved = _json_request(
+            base + "/api/admin/media/solution-blueprints",
+            method="POST",
+            token=token,
+            payload={
+                "solution_key": "health_wallet",
+                "narration": "The health wallet pays for daily care.",
+                "theme": "Quiet clinic",
+            },
+        )
+        assert status == 200, saved
+        assert verify_blueprint(saved["blueprint"])
+        assert portal.DESIGN_SETTINGS.get(slot, "") == slot_before
+
+        status, sent = _json_request(
+            base + "/api/admin/media/solution-blueprints/send",
+            method="POST",
+            token=token,
+            payload={
+                "solution_key": "health_wallet",
+                "provider": "replicate",
+                "provider_model": "google/veo-3.1-fast",
+                "poll_mode": "poll",
+                "auto_publish_to_hero": False,
+                "prompt_override": saved["blueprint"]["ready_prompt"],
+            },
+        )
+        assert status == 202, sent
+        assert sent["job"]["campaign_id"] == "JOIN-health_wallet"
+        assert sent["auto_publish_to_hero"] is False
+        assert portal.DESIGN_SETTINGS.get(slot, "") == slot_before
+        assert portal.DESIGN_SETTINGS.get("hero_video_id", "") == hero_before
+        assert "customer intro film was not replaced" in sent["message"]
+    finally:
+        portal.get_media_generation_service = original
+        for asset_id in list(portal.MEDIA_ASSETS):
+            if asset_id not in assets_before:
+                portal.MEDIA_ASSETS.pop(asset_id, None)
+        for job_id in list(portal.MEDIA_PROCESSING_JOBS):
+            if job_id not in jobs_before:
+                portal.MEDIA_PROCESSING_JOBS.pop(job_id, None)
+        if blueprints_before is None:
+            portal.DESIGN_SETTINGS.pop("solution_video_blueprints", None)
+        else:
+            portal.DESIGN_SETTINGS["solution_video_blueprints"] = blueprints_before
+        portal.DESIGN_SETTINGS[slot] = slot_before
         srv.stop()

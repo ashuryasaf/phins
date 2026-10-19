@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#060d1f" />
+  <title>Join PHINS</title>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ds-primary: #060d1f;
+      --ds-accent: #e3bf6f;
+      --ds-accent-strong: #f7e2a0;
+      --ink: #eaf1ff;
+      --ink-dim: rgba(234, 241, 255, 0.68);
+      --line: rgba(127, 178, 255, 0.16);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #060d1f;
+      color: var(--ink);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+    .backdrop {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background:
+        radial-gradient(1000px 600px at 80% -10%, rgba(21, 68, 155, 0.55), transparent 60%),
+        radial-gradient(800px 520px at 8% 110%, rgba(11, 92, 130, 0.4), transparent 60%),
+        #060d1f;
+    }
+    .landing-header {
+      position: sticky; top: 0; z-index: 20;
+      background: rgba(6, 13, 31, 0.72);
+      backdrop-filter: blur(18px);
+      border-bottom: 1px solid var(--line);
+    }
+    .header-inner {
+      max-width: 1100px; margin: 0 auto; padding: 14px 24px;
+      display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    }
+    .logo { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--ink); }
+    .logo img { width: 42px; height: 42px; display: block; }
+    .logo-text {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.2rem; font-weight: 600; letter-spacing: 0.28em;
+    }
+    .btn-login {
+      display: inline-flex; align-items: center;
+      padding: 10px 22px; text-decoration: none; color: #071022;
+      font-family: 'Space Grotesk', sans-serif; font-weight: 600; letter-spacing: 0.12em;
+      text-transform: uppercase; font-size: 0.82rem;
+      background: linear-gradient(135deg, var(--ds-accent-strong), var(--ds-accent));
+      border-radius: 999px;
+    }
+    main { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 48px 24px 80px; }
+    .hero { text-align: center; max-width: 760px; margin: 0 auto 36px; }
+    .hero img.mark { width: 96px; height: 96px; margin-bottom: 18px; }
+    h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(2.2rem, 6vw, 3.6rem);
+      letter-spacing: 0.18em; font-weight: 700;
+      background: linear-gradient(180deg, #ffffff 0%, #b7d3ff 70%, #7fa8e8 100%);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .tagline {
+      margin-top: 14px; letter-spacing: 0.28em; text-transform: uppercase;
+      color: var(--ds-accent); font-size: 0.78rem;
+    }
+    .lede { margin: 18px auto 0; max-width: 640px; color: var(--ink-dim); line-height: 1.6; }
+    .code-chip {
+      display: inline-block; margin-top: 18px; padding: 8px 16px;
+      border: 1px solid rgba(227, 191, 111, 0.45); border-radius: 999px;
+      font-family: 'Space Grotesk', sans-serif; letter-spacing: 0.08em;
+    }
+    .film {
+      margin: 22px auto 0; max-width: 720px; border-radius: 16px; overflow: hidden;
+      border: 1px solid var(--line); background: #040814;
+    }
+    .film[hidden] { display: none; }
+    video { width: 100%; display: block; max-height: 400px; background: #000; }
+    .grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px; margin-top: 28px;
+    }
+    .card {
+      border: 1px solid var(--line); border-radius: 18px; padding: 18px;
+      background: rgba(8, 18, 40, 0.72);
+    }
+    .eyebrow {
+      font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ds-accent);
+    }
+    h2 { font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; margin: 8px 0; }
+    .card p { color: var(--ink-dim); font-size: 0.92rem; line-height: 1.55; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    .path-cta, .path-login {
+      text-decoration: none; border-radius: 999px; padding: 10px 16px; font-size: 0.86rem;
+      font-family: 'Space Grotesk', sans-serif;
+    }
+    .path-cta {
+      color: #071022;
+      background: linear-gradient(135deg, var(--ds-accent-strong), var(--ds-accent));
+    }
+    .path-login { color: var(--ink); border: 1px solid var(--line); }
+    .note {
+      margin-top: 28px; color: var(--ink-dim); font-size: 0.88rem; line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="backdrop"></div>
+  <header class="landing-header">
+    <div class="header-inner">
+      <a class="logo" href="/">
+        <img src="/phins-logo.svg" alt="PHINS">
+        <span class="logo-text">PHINS</span>
+      </a>
+      <a class="btn-login" id="header-login" href="/login.html">Sign in</a>
+    </div>
+  </header>
+  <main>
+    <section class="hero">
+      <img class="mark" src="/phins-logo.svg" alt="">
+      <h1>JOIN PHINS</h1>
+      <p class="tagline">One ecosystem</p>
+      <p class="lede">
+        Customers, agents, and suppliers share one platform: the unified insurance contract,
+        the health wallet, investments, and credit that can be split across adjustable wallets.
+        Business to business, business to customer, and customer to business all start here.
+      </p>
+      <p class="code-chip" id="invite-chip" hidden>Invitation <strong id="invite-code-value"></strong></p>
+      <div class="film" id="film-welcome" hidden>
+        <video id="video-welcome" controls playsinline webkit-playsinline x5-playsinline x5-video-player-type="h5"></video>
+      </div>
+    </section>
+    <section class="grid" aria-label="Ways to join">
+      <article class="card">
+        <div class="eyebrow">B2C · contract</div>
+        <h2>Unified insurance contract</h2>
+        <p>Open the contract in chat. The invitation code is sent with the application, and underwriting and billing stay on their existing path.</p>
+        <div class="film" id="film-insurance" hidden>
+          <video id="video-insurance" controls playsinline webkit-playsinline></video>
+        </div>
+        <div class="actions">
+          <a class="path-cta" data-path="insurance" href="/apply-chat.html">Join in chat</a>
+        </div>
+      </article>
+      <article class="card">
+        <div class="eyebrow">B2C · wallet</div>
+        <h2>Health wallet</h2>
+        <p>Consultations, devices, and daily care. Opening an account carries the invitation code, then the wallet is on the customer dashboard.</p>
+        <div class="film" id="film-health_wallet" hidden>
+          <video id="video-health_wallet" controls playsinline webkit-playsinline></video>
+        </div>
+        <div class="actions">
+          <a class="path-cta" data-path="health_wallet" href="/register.html?next=health_wallet">Open an account</a>
+          <a class="path-login" data-next="health_wallet" href="/login.html?next=health_wallet">I already have an account</a>
+        </div>
+      </article>
+      <article class="card">
+        <div class="eyebrow">B2C · savings</div>
+        <h2>Investments</h2>
+        <p>Long-term savings sit beside the coverage. The invitation code is part of account opening.</p>
+        <div class="film" id="film-investments" hidden>
+          <video id="video-investments" controls playsinline webkit-playsinline></video>
+        </div>
+        <div class="actions">
+          <a class="path-cta" data-path="investments" href="/register.html?next=investments">Open an account</a>
+          <a class="path-login" data-next="investments" href="/login.html?next=investments">I already have an account</a>
+        </div>
+      </article>
+      <article class="card">
+        <div class="eyebrow">Credit</div>
+        <h2>Credit and adjustable wallets</h2>
+        <p>When a reward is released, it can go to premium credit, the health wallet, savings, or cash where that layer allows it. The acquisition expense is booked once.</p>
+        <div class="film" id="film-credit" hidden>
+          <video id="video-credit" controls playsinline webkit-playsinline></video>
+        </div>
+        <div class="actions">
+          <a class="path-cta" data-path="credit" href="/register.html?next=credit">Open an account</a>
+          <a class="path-login" data-next="credit" href="/login.html?next=credit">I already have an account</a>
+        </div>
+      </article>
+      <article class="card">
+        <div class="eyebrow">B2B · agent</div>
+        <h2>Join as an agent</h2>
+        <p>Open an account with the invitation code, then request the agent desk. Approval opens the agent tools. Agent invitation codes stay on the commission rail.</p>
+        <div class="film" id="film-agent" hidden>
+          <video id="video-agent" controls playsinline webkit-playsinline></video>
+        </div>
+        <div class="actions">
+          <a class="path-cta" data-path="agent" href="/register.html?next=agent">Open an account</a>
+          <a class="path-login" data-next="agent" href="/login.html?next=agent">I already have an account</a>
+        </div>
+      </article>
+      <article class="card">
+        <div class="eyebrow">C2B · supplier</div>
+        <h2>Join as a supplier</h2>
+        <p>Open an account with the invitation code, then request the supplier desk. Approval keeps the customer account and adds the supplier profile.</p>
+        <div class="film" id="film-supplier" hidden>
+          <video id="video-supplier" controls playsinline webkit-playsinline></video>
+        </div>
+        <div class="actions">
+          <a class="path-cta" data-path="supplier" href="/register.html?next=supplier">Open an account</a>
+          <a class="path-login" data-next="supplier" href="/login.html?next=supplier">I already have an account</a>
+        </div>
+      </article>
+    </section>
+    <p class="note">
+      One invited customer is one settlement. The fee is allocated when they pay and stays blocked until the hold ends, and only if they are still paying. It is not paid again when they choose premium credit, the health wallet, savings, or cash.
+    </p>
+  </main>
+  <script src="/page-surface-media.js"></script>
+  <script>
+    (function () {
+      var NEXT = {
+        health_wallet: '/dashboard.html#health-wallet',
+        investments: '/savings-portfolio.html',
+        credit: '/dashboard.html#billing-settings',
+        agent: '/dashboard.html#referrals',
+        supplier: '/dashboard.html#referrals'
+      };
+      var FILM_FIELDS = {
+        welcome: 'join_intro_welcome_url',
+        insurance: 'join_intro_insurance_url',
+        health_wallet: 'join_intro_health_wallet_url',
+        investments: 'join_intro_investments_url',
+        credit: 'join_intro_credit_url',
+        agent: 'join_intro_agent_url',
+        supplier: 'join_intro_supplier_url'
+      };
+      var FILMS = Object.keys(FILM_FIELDS);
+
+      function inviteCode() {
+        var raw = new URLSearchParams(window.location.search).get('code') || '';
+        var cleaned = raw.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 80);
+        try {
+          if (cleaned) sessionStorage.setItem('phins.inviteCode', cleaned);
+        } catch (err) {}
+        return cleaned;
+      }
+
+      function withCode(path, code) {
+        if (!code) return path;
+        var join = path.indexOf('?') === -1 ? '?' : '&';
+        return path + join + 'code=' + encodeURIComponent(code);
+      }
+
+      function mountFilms(settings) {
+        var media = window.PhinsPageMedia;
+        FILMS.forEach(function (key) {
+          var section = document.getElementById('film-' + key);
+          var video = document.getElementById('video-' + key);
+          var url = settings[FILM_FIELDS[key]] || '';
+          if (!section || !video) return;
+          if (!media || !media.isPlayableMediaUrl(url)) {
+            section.hidden = true;
+            video.removeAttribute('src');
+            return;
+          }
+          media.enableSpeaker(video);
+          video.playsInline = true;
+          section.hidden = false;
+          video.src = url;
+        });
+      }
+
+      var code = inviteCode();
+      var chip = document.getElementById('invite-chip');
+      var value = document.getElementById('invite-code-value');
+      if (code && chip && value) {
+        value.textContent = code;
+        chip.hidden = false;
+      }
+      document.querySelectorAll('a.path-cta').forEach(function (link) {
+        var path = link.getAttribute('data-path');
+        if (path === 'insurance') {
+          link.href = withCode('/apply-chat.html', code);
+          return;
+        }
+        var href = '/register.html?next=' + encodeURIComponent(path);
+        link.href = withCode(href, code);
+      });
+      document.querySelectorAll('a.path-login').forEach(function (link) {
+        var next = link.getAttribute('data-next') || '';
+        if (!NEXT[next]) {
+          link.href = '/login.html';
+          return;
+        }
+        link.href = '/login.html?next=' + encodeURIComponent(next);
+      });
+      var headerLogin = document.getElementById('header-login');
+      if (headerLogin) headerLogin.href = '/login.html';
+
+      fetch('/api/design/settings')
+        .then(function (response) { return response.json(); })
+        .then(function (settings) { mountFilms(settings || {}); })
+        .catch(function () {});
+    })();
+  </script>
+</body>
+</html>

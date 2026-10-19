@@ -87,6 +87,12 @@ def _request(url, method="GET", payload=None, token=None):
         return exc.code, json.loads(body) if body else {}
 
 
+def _request_text(url):
+    req = Request(url, method="GET")
+    with urlopen(req, timeout=5) as resp:
+        return resp.status, resp.read().decode("utf-8")
+
+
 def _snapshot():
     return {key: portal.DESIGN_SETTINGS.get(key, "") for key in _SLOT_KEYS}
 
@@ -767,4 +773,59 @@ def test_solution_theaters_fall_back_and_do_not_touch_design_slots():
         _restore(saved)
         for key, value in theater_saved.items():
             portal.DESIGN_SETTINGS[key] = value
+        srv.stop()
+
+
+def test_join_intro_film_is_type_checked_and_public_as_a_url():
+    srv = _ServerThread()
+    srv.start()
+    _warm(srv.base)
+    token = "phins_test_join_intro"
+    _admin(token)
+    saved = _snapshot()
+    slot = "join_intro_insurance_id"
+    slot_before = portal.DESIGN_SETTINGS.get(slot, "")
+    hero_before = portal.DESIGN_SETTINGS.get("hero_video_id", "")
+    photo_id = "media-join-photo"
+    video_id = "media-join-film"
+    try:
+        _asset(photo_id, "image", "/media-files/media-join-photo/still.jpg")
+        _asset(video_id, "video", "/media-files/media-join-film/intro.mp4")
+        status, rejected = _request(
+            srv.base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={slot: photo_id},
+        )
+        assert status == 400, rejected
+        assert slot in rejected["invalid_refs"]
+        assert portal.DESIGN_SETTINGS.get(slot, "") == slot_before
+
+        status, saved_body = _request(
+            srv.base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={slot: video_id},
+        )
+        assert status == 200, saved_body
+        assert portal.DESIGN_SETTINGS[slot] == video_id
+        assert portal.DESIGN_SETTINGS.get("hero_video_id", "") == hero_before
+
+        status, public = _request(srv.base + "/api/design/settings")
+        assert status == 200
+        assert public["join_intro_insurance_url"] == "/media-files/media-join-film/intro.mp4"
+        assert public["join_intro_welcome_url"] == ""
+        assert slot not in public
+        assert "join_intro_insurance_id" not in public
+
+        status, page = _request_text(srv.base + "/join.html")
+        assert status == 200
+        assert "apply-chat.html" in page
+        assert "join_intro_insurance_url" in page
+        assert "next=health_wallet" in page
+    finally:
+        portal.MEDIA_ASSETS.pop(photo_id, None)
+        portal.MEDIA_ASSETS.pop(video_id, None)
+        portal.DESIGN_SETTINGS[slot] = slot_before
+        _restore(saved)
         srv.stop()

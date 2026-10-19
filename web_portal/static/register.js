@@ -51,6 +51,13 @@ document.addEventListener('DOMContentLoaded', function () {
   const PENDING_REGISTRATION_KEY = 'phins.pendingRegistration.v1';
   const OTP_CONTEXT_KEY = 'phins.registrationOtpContext.v1';
 
+  function registrationNextToken() {
+    const raw = new URLSearchParams(window.location.search).get('next') || '';
+    const token = String(raw).toLowerCase().replace(/[^a-z_]/g, '');
+    const allowed = ['health_wallet', 'investments', 'credit', 'agent', 'supplier'];
+    return allowed.indexOf(token) === -1 ? '' : token;
+  }
+
   // ========== AUTO-FILL FROM URL PARAMETER ==========
   const urlParams = new URLSearchParams(window.location.search);
   const codeFromUrl = urlParams.get('code');
@@ -524,7 +531,8 @@ document.addEventListener('DOMContentLoaded', function () {
         codeValidation.innerHTML = ' Welcome to PHINS!';
         
         setTimeout(() => {
-          window.location.href = '/login.html';
+          const next = registrationNextToken();
+          window.location.href = next ? ('/login.html?next=' + encodeURIComponent(next)) : '/login.html';
         }, 2000);
       } else {
         let errorMsg = data.error || 'Unknown error';
