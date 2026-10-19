@@ -188,6 +188,20 @@ PHINS is a Python platform built around:
  writes go through `set_identity` / `reconcile_pipeline_identity`, and
  `/api/admin/customers/identity/report` reports rollout counters. Responses
  never carry a plaintext ID (see the §10 identity contract)
+- referral acquisition rewards (`services/referral_reward_service.py`,
+ `web_portal/api_referral_rewards.py`, `database/repositories/referral_reward_repository.py`):
+ a fixed admin fee (default $650) shared across up to 3 invitation layers
+ when a referred customer pays a premium. The expense is
+ `expense_breakdown.customer_acquisition`, recognized once at earn time.
+ The beneficiary accepts it into premium credit, the health wallet, savings,
+ or cash when that layer allows cash. Unfilled layers are retained and are
+ not expensed. Customer `REF-` codes use this rail; agent `AGI-` codes stay
+ on the commission rail and are not paid twice. A customer can request an
+ agent or supplier role (`PRO-{customer}-{role}`); approval opens that
+ profile and a role-switch token without rewriting `USERS.role`. An approved
+ agent invitation cap is 100 (customer cap stays 10). State is a checksummed
+ JSON book (`PHINS_REFERRAL_REWARDS_PATH`) or the four referral tables when
+ the database is on. A checksum mismatch is not paid
 - durable document archive (`services/customer_document_vault_service.py`):
  every application-chat, claim-chat and uploaded policy file is sealed by
  SHA-256 and filed into a per-entity lane. `services/document_durability_agent.py`
@@ -234,6 +248,7 @@ Preferred file-by-task:
 | Assessment center API | `web_portal/api_assessment_center.py`, `services/assessment_center_service.py` |
 | Chat intake (Phin, policy or claim) | `services/chat_application_service.py` or `services/claims_chat_service.py`, then `web_portal/api_chat_application.py` / `api_claims_chat.py` |
 | Customer identity (ID + nationality) | `services/customer_identity_service.py` (one writer), `web_portal/api_customer_identity.py` |
+| Referral CAC / professional roles | `services/referral_reward_service.py`, `web_portal/api_referral_rewards.py`, `database/repositories/referral_reward_repository.py` |
 | Document archive / durability probe | `services/customer_document_vault_service.py`, `services/document_durability_agent.py` |
 | Unified business plan / investor deck (`/business-plan.html`) | `services/business_plan_model.py` (factor register, `compute_plan`, `ROUND_SEED_ILS` / `ROUND_PRE_MONEY_ILS` — the one writer for seed / pre-money; `appraisal.sensitivity` grid), `services/business_plan_document.py` (narrative, placeholders, founder block, HTML/Markdown renderers), `services/business_plan_charts.py` (chart + Gantt specs read from the plan dict; one layout engine → inline SVG for HTML and `?charts=1`, reportlab Drawing for the PDF; Markdown carries `<!-- phins-chart {json} -->` directives plus a data table), `services/business_plan_sources.py` (figure lineage + research registry kept byte-equal with the pitch-dashboard `sourceRegistry`), `services/business_plan_portrait.py` (Pillow-processed founder portrait), `web_portal/server.py` (`GET /api/business-plan/model[?charts=1]`, `GET /api/business-plan/founder-portrait`); then `python3 scripts/build_business_plan.py` and `python3 scripts/generate_investor_pdfs.py --only unified-business-plan`; tests in `tests/test_business_plan.py` |
 | Premium / reserve / simulator pricing | `services/pricing_kernel.py` (sole writer), then `services/actuarial_service.py` and callers; refresh `tests/test_pricing_kernel.py`, `tests/test_actuarial_reserves.py`, `tests/test_ifrs17_waterfall_identities.py` deliberately |
@@ -278,6 +293,7 @@ Preferred file-by-task:
 |  |- api_chat_application.py          # Phin chat-style policy intake (loopback into /api/policies/create)
 |  |- api_claims_chat.py               # public claims chat (loopback into /api/claims/create)
 |  |- api_customer_identity.py         # ID + nationality master surface
+|  |- api_referral_rewards.py          # referral CAC, accept, professional role, role switch
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
 |                                        # (includes `static/locales/he.json` Hebrew i18n)
@@ -328,7 +344,7 @@ Preferred file-by-task:
 |  |- seeds.py
 |  |- migrate_data.py
 |  |- migrations/
-|  |- repositories/                     # 20 *_repository.py + base.py
+|  |- repositories/                     # 21 *_repository.py + base.py
 |- security/
 |  |- vault.py
 |  |- auth_tokens.py
@@ -418,6 +434,7 @@ Database patterns:
 - Assessment loop / intake / AI cost: `assessment_records`,
   `business_inquiries`, `ai_usage`
 - Durable agent state (A4): `agent_artifacts`, `video_jobs`
+- Referral acquisition book: `referral_rewards`
 
 Common ID prefixes:
 
@@ -446,7 +463,8 @@ When changing or adding an API endpoint:
    `web_portal/api_assessment_center.py`,
    `web_portal/api_chat_application.py` (Phin policy intake),
    `web_portal/api_claims_chat.py` (public claims chat), or
-   `web_portal/api_customer_identity.py` (ID + nationality).
+   `web_portal/api_customer_identity.py` (ID + nationality), or
+   `web_portal/api_referral_rewards.py` (referral CAC and professional roles).
 3. Verify the extension is actually wired; `server.py` imports extension
    dispatchers conditionally and can run without them.
 4. Reuse service-layer logic from `services/` instead of embedding new business
@@ -485,8 +503,8 @@ When changing persistence or schema behavior:
 Key facts:
 
 - Storage modes include in-memory, SQLite, and PostgreSQL.
-- `DatabaseManager` exposes 43 repository properties (see §4 for the full list).
-- Repository modules (20 `*_repository.py` + `base.py`):
+- `DatabaseManager` exposes 44 repository properties (see §4 for the full list).
+- Repository modules (21 `*_repository.py` + `base.py`):
   `customer_repository.py`, `policy_repository.py`, `claim_repository.py`,
   `underwriting_repository.py`, `billing_repository.py`,
   `user_repository.py`, `session_repository.py`, `audit_repository.py`,
@@ -502,7 +520,9 @@ Key facts:
   `ai_usage_repository.py`, `agent_artifact_repository.py` (generic durable
   agent state, sha256-checksummed payloads verified on load, DB-side prune)
   and `video_job_repository.py` (video job lifecycle; `mark_terminal` is a
-  conditional UPDATE so exactly one racer wins).
+  conditional UPDATE so exactly one racer wins),
+  `referral_reward_repository.py` (program config, join edges, reward rows,
+  professional-role requests).
 - Connection handling includes recovery logic; avoid bypassing existing session
   patterns without a clear reason.
 
