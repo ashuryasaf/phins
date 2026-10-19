@@ -3261,6 +3261,137 @@ class MediaDesignDocument(Base):
                           nullable=False)
 
 
+class ReferralProgramConfig(Base):
+    """Singleton admin program for the referral acquisition reward.
+
+    One row (``id='active'``). ``payload_json`` is the validated program
+    (fee, layer shares, destination policy). ``checksum`` is the sha256 of
+    that canonical JSON; a mismatch is not applied.
+    """
+    __tablename__ = 'referral_program_config'
+
+    id = Column(String(40), primary_key=True)
+    payload_json = Column(Text, nullable=False)
+    checksum = Column(String(64), nullable=False)
+    updated_at = Column(String(40), nullable=True)
+    updated_by = Column(String(80), nullable=True)
+
+
+class ReferralLink(Base):
+    """Direct invitation edge: who brought this customer in.
+
+    The reward chain walks ``customers.referred_by``; this row is the durable
+    join record (code, time, when they became paying). One row per referee.
+    """
+    __tablename__ = 'referral_links'
+
+    id = Column(String(80), primary_key=True)
+    referee_customer_id = Column(String(50), unique=True, nullable=False)
+    referrer_customer_id = Column(String(50), index=True, nullable=False)
+    invitation_code = Column(String(80), nullable=True)
+    referee_name = Column(String(120), nullable=True)
+    joined_at = Column(String(40), nullable=False)
+    paying_at = Column(String(40), nullable=True)
+    notified_join = Column(Boolean, default=False, nullable=False)
+
+
+class ReferralReward(Base):
+    """One layer of a customer-acquisition reward.
+
+    Identity is ``RWRD-{referee}-L{layer}`` plus the unique
+    (referee, layer) constraint, so a paying customer can fund each referrer
+    layer at most once. Amounts are integer cents snapshotted from the program
+    that was in force when the customer became paying. ``checksum`` covers the
+    money fields; a mismatch is quarantined and never paid out.
+    """
+    __tablename__ = 'referral_rewards'
+    __table_args__ = (
+        UniqueConstraint('referee_customer_id', 'layer', name='uq_referral_reward_referee_layer'),
+    )
+
+    id = Column(String(80), primary_key=True)
+    referee_customer_id = Column(String(50), index=True, nullable=False)
+    beneficiary_customer_id = Column(String(50), index=True, nullable=False)
+    layer = Column(Integer, nullable=False)
+    invitation_code = Column(String(80), nullable=True)
+    status = Column(String(20), nullable=False, index=True)  # held|earned|dispatched|forfeited
+    settlement_id = Column(String(80), nullable=True, index=True)
+    hold_months = Column(Integer, nullable=False, default=0)
+    release_at = Column(String(40), nullable=True)
+    fee_cents = Column(Integer, nullable=False, default=0)
+    share_bps = Column(Integer, nullable=False, default=0)
+    amount_cents = Column(Integer, nullable=False, default=0)
+    currency = Column(String(8), nullable=False, default='USD')
+    program_shares_json = Column(Text, nullable=True)
+    policy_json = Column(Text, nullable=True)
+    allocation_json = Column(Text, nullable=True)
+    posted_json = Column(Text, nullable=True)
+    books_tx_id = Column(String(80), nullable=True)
+    ledger_entry_id = Column(String(80), nullable=True)
+    earned_at = Column(String(40), nullable=True)
+    dispatched_at = Column(String(40), nullable=True)
+    checksum = Column(String(64), nullable=False, default='')
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ProfessionalRequest(Base):
+    """A customer asking to also operate as an agent or a supplier.
+
+    One row per customer per role. Approval opens that role without removing
+    the customer account, so the same person can stand on both sides.
+    """
+    __tablename__ = 'professional_requests'
+    __table_args__ = (
+        UniqueConstraint('customer_id', 'requested_role', name='uq_professional_request_customer_role'),
+    )
+
+    id = Column(String(140), primary_key=True)
+    customer_id = Column(String(50), index=True, nullable=False)
+    login_username = Column(String(254), nullable=True)
+    requested_role = Column(String(20), nullable=False)
+    status = Column(String(20), nullable=False, index=True)  # pending|approved|rejected
+    supplier_type = Column(String(40), nullable=True)
+    company_name = Column(String(160), nullable=True)
+    note = Column(Text, nullable=True)
+    agent_id = Column(String(50), nullable=True)
+    supplier_id = Column(String(50), nullable=True)
+    invitation_code = Column(String(80), nullable=True)
+    reviewed_by = Column(String(80), nullable=True)
+    reviewed_at = Column(String(40), nullable=True)
+    review_note = Column(Text, nullable=True)
+    created_at = Column(String(40), nullable=False)
+    updated_at = Column(String(40), nullable=True)
+
+
+class ReferralSettlement(Base):
+    """One acquisition settlement for one affiliated paying customer.
+
+    The layer rows share this id. The balance sheet carries a single expense
+    for ``allocated_cents`` while the reward is blocked, and one reversing
+    expense if the paid balance lapses before acceptance. ``checksum`` covers
+    the money fields and the release date.
+    """
+    __tablename__ = 'referral_settlements'
+
+    id = Column(String(80), primary_key=True)
+    referee_customer_id = Column(String(50), unique=True, nullable=False, index=True)
+    fee_cents = Column(Integer, nullable=False, default=0)
+    allocated_cents = Column(Integer, nullable=False, default=0)
+    retained_cents = Column(Integer, nullable=False, default=0)
+    status = Column(String(20), nullable=False, index=True)  # held|releasable|settled|reversed
+    hold_months = Column(Integer, nullable=False, default=0)
+    paying_at = Column(String(40), nullable=True)
+    release_at = Column(String(40), nullable=True)
+    reversed_at = Column(String(40), nullable=True)
+    books_tx_id = Column(String(80), nullable=True)
+    reversal_tx_id = Column(String(80), nullable=True)
+    ledger_entry_id = Column(String(80), nullable=True)
+    released_ledger_id = Column(String(80), nullable=True)
+    reversal_ledger_id = Column(String(80), nullable=True)
+    checksum = Column(String(64), nullable=False, default='')
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class SignedDocumentBlob(Base):
     """Checksummed bytes for a sealed signature or one use-ledger entry.
 

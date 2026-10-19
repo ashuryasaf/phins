@@ -54,6 +54,7 @@ from .business_inquiry_repository import BusinessInquiryRepository
 from .ai_usage_repository import AIUsageRepository
 from .agent_artifact_repository import AgentArtifactRepository
 from .video_job_repository import VideoJobRepository
+from .referral_reward_repository import ReferralRewardRepository
 
 __all__ = [
     'BaseRepository',
@@ -100,4 +101,5 @@ __all__ = [
     'AIUsageRepository',
     'AgentArtifactRepository',
     'VideoJobRepository',
+    'ReferralRewardRepository',
 ]

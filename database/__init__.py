@@ -276,6 +276,9 @@ _UPGRADE_NEW_COLUMNS = [
     # External-call gateway (agent attribution + budget refusals) on AI usage rows.
     ('ai_usage_records', 'agent_id', 'VARCHAR(80)', None),
     ('ai_usage_records', 'blocked', 'BOOLEAN', 'FALSE'),
+    ('referral_rewards', 'settlement_id', 'VARCHAR(80)', None),
+    ('referral_rewards', 'hold_months', 'INTEGER', '0'),
+    ('referral_rewards', 'release_at', 'VARCHAR(40)', None),
 ]
 # Columns whose declared type must be widened on existing databases
 # (table_name, column_name, new_type).

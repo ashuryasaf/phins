@@ -59,6 +59,7 @@ TEMPLATE_PURPOSE = {
     'welcome': TRANSACTIONAL,
     'bill': TRANSACTIONAL,
     'reminder': TRANSACTIONAL,
+    'reward': TRANSACTIONAL,
     'message': RELATIONAL,
     'offer': RELATIONAL,
 }
