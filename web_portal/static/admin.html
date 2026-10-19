@@ -1472,6 +1472,7 @@
           <label style="font-size: 12px;">Layer 1 %<input id="cac-share-1" type="number" min="0" max="100" step="0.01" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
           <label style="font-size: 12px;">Layer 2 %<input id="cac-share-2" type="number" min="0" max="100" step="0.01" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
           <label style="font-size: 12px;">Layer 3 %<input id="cac-share-3" type="number" min="0" max="100" step="0.01" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
+          <label style="font-size: 12px;">Hold (months)<input id="cac-hold-months" type="number" min="0" max="60" step="1" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
         </div>
         <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
           <button type="button" onclick="saveReferralProgram()" style="background:#e3bf6f; color:#071022; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:600;">Save fee and shares</button>
@@ -6142,15 +6143,23 @@
         const totals = data.totals || {};
         const integrity = data.integrity || {};
         const requests = data.professional_requests || {};
-        summary.textContent = 'Booked $' + formatNumber(totals.expense_booked || 0, 2) +
-          ' · earned $' + formatNumber(totals.earned || 0, 2) +
-          ' · waiting for choice $' + formatNumber(totals.pending_choice || 0, 2) +
-          ' · retained $' + formatNumber(totals.retained || 0, 2) +
+        const plan = data.affiliated_plan || {};
+        summary.textContent = 'Single settlement. Booked $' + formatNumber(totals.expense_booked || 0, 2) +
+          ' · blocked $' + formatNumber(plan.blocked || totals.blocked || 0, 2) +
+          ' · releasable $' + formatNumber(plan.releasable || totals.pending_choice || 0, 2) +
+          ' · settled $' + formatNumber(plan.settled || totals.dispatched || 0, 2) +
+          ' · reversed $' + formatNumber(plan.reversed || 0, 2) +
+          ' · projected if balances hold $' + formatNumber(plan.projected_release || 0, 2) +
+          ' · affiliated ' + (plan.affiliated_customers || 0) +
+          ' paying ' + (plan.paying || 0) +
+          ' · hold ' + (plan.hold_months != null ? plan.hold_months : ((data.config || {}).hold_months || 0)) + ' months' +
           ' · integrity ' + (integrity.ok ? 'ok' : 'needs review') +
           ' · pending professional requests ' + (requests.pending || 0);
         const config = data.config || {};
         const fee = document.getElementById('cac-fee');
         if (fee && document.activeElement !== fee) fee.value = config.fee != null ? config.fee : '';
+        const hold = document.getElementById('cac-hold-months');
+        if (hold && document.activeElement !== hold) hold.value = config.hold_months != null ? config.hold_months : 3;
         (config.layers || []).forEach(function(layer) {
           const input = document.getElementById('cac-share-' + layer.layer);
           if (input && document.activeElement !== input) input.value = layer.share_percent;
@@ -6175,6 +6184,7 @@
     async function saveReferralProgram() {
       const payload = {
         fee: Number(document.getElementById('cac-fee').value),
+        hold_months: Number(document.getElementById('cac-hold-months').value),
         layers: [1, 2, 3].map(function(layer) {
           return { layer: layer, share_percent: Number(document.getElementById('cac-share-' + layer).value) };
         })

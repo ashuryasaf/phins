@@ -116,6 +116,17 @@ def test_default_fee_splits_evenly_across_three_layers():
     assert sum(remainder) == 100
 
 
+def _cac_settlement_amounts(referee):
+    amounts = []
+    for tx in portal.PHINS_BALANCE_SHEET.get("transactions") or []:
+        meta = tx.get("metadata") if isinstance(tx, dict) else None
+        if not isinstance(meta, dict):
+            continue
+        if meta.get("kind") == "cac_settlement" and meta.get("referee_customer_id") == referee:
+            amounts.append(tx.get("amount"))
+    return amounts
+
+
 def test_three_layer_chain_pays_referrers_and_not_the_referee():
     _customer("C0", name="Root")
     _customer("C1", "C0", "One")
@@ -131,11 +142,20 @@ def test_three_layer_chain_pays_referrers_and_not_the_referee():
     assert by_layer[3]["beneficiary_customer_id"] == "C0"
     assert by_layer[3]["amount_cents"] == 9750
     assert all(item["beneficiary_customer_id"] != "C3" for item in created)
+    assert {item["settlement_id"] for item in created} == {"CACSET-C3"}
+    assert {item["status"] for item in created} == {"held"}
+    settlement = rewards.SETTLEMENTS["C3"]
+    assert settlement["allocated_cents"] == 65000
+    assert settlement["status"] == "held"
+    assert settlement["books_tx_id"]
+    assert settlement["ledger_entry_id"]
     booked = portal.PHINS_BALANCE_SHEET["expense_breakdown"]["customer_acquisition"]
     assert booked == pytest.approx(650.0)
+    assert _cac_settlement_amounts("C3") == [pytest.approx(650.0)]
     again = rewards.on_customer_paying("C3")
     assert again == []
     assert portal.PHINS_BALANCE_SHEET["expense_breakdown"]["customer_acquisition"] == pytest.approx(650.0)
+    assert _cac_settlement_amounts("C3") == [pytest.approx(650.0)]
 
 
 def test_short_chain_retains_the_unfilled_layers():
@@ -175,6 +195,7 @@ def test_join_without_payment_creates_a_link_and_no_reward():
 
 
 def test_accept_posts_once_and_a_second_accept_is_rejected():
+    rewards.update_config({"hold_months": 0})
     _customer("C1", name="Direct")
     _customer("C2", "C1", "New")
     _pay("C2", "BILL-ACC")
@@ -191,6 +212,7 @@ def test_accept_posts_once_and_a_second_accept_is_rejected():
 
 
 def test_layer_three_rejects_cash():
+    rewards.update_config({"hold_months": 0})
     _customer("C0")
     _customer("C1", "C0")
     _customer("C2", "C1")
@@ -227,6 +249,7 @@ def test_bad_shares_leave_the_program_unchanged_and_history_is_snapshotted():
 
 
 def test_tampered_checksum_is_not_paid_and_a_bad_file_is_not_loaded():
+    rewards.update_config({"hold_months": 0})
     _customer("C1")
     _customer("C2", "C1")
     _pay("C2", "BILL-TAMPER")
@@ -411,6 +434,134 @@ def test_repository_round_trip():
         })
         links = {row["referee_customer_id"]: row for row in db.referral_rewards.list_links()}
         stored = {row["id"]: row for row in db.referral_rewards.list_rewards()}
+        db.referral_rewards.upsert_settlement({
+            "id": "CACSET-CUST-DB-REF",
+            "referee_customer_id": "CUST-DB-REF",
+            "fee_cents": 65000,
+            "allocated_cents": 39000,
+            "retained_cents": 26000,
+            "status": "held",
+            "hold_months": 3,
+            "paying_at": "2026-10-19T00:00:00Z",
+            "release_at": "2027-01-19T00:00:00Z",
+            "books_tx_id": "BS-1",
+            "ledger_entry_id": "CACSET-CUST-DB-REF",
+            "checksum": "settlement-checksum",
+        })
+        settlements = {row["referee_customer_id"]: row for row in db.referral_rewards.list_settlements()}
     assert links["CUST-DB-REF"]["notified_join"] is True
     assert stored["RWRD-DB1-L1"]["amount_cents"] == 39000
     assert stored["RWRD-DB1-L1"]["program_shares"] == [6000, 2500, 1500]
+    assert settlements["CUST-DB-REF"]["allocated_cents"] == 39000
+    assert settlements["CUST-DB-REF"]["hold_months"] == 3
+    assert settlements["CUST-DB-REF"]["release_at"] == "2027-01-19T00:00:00Z"
+
+
+def test_hold_months_clamps_to_the_end_of_the_month():
+    assert rewards._add_months("2026-01-31T00:00:00Z", 1) == "2026-02-28T00:00:00Z"
+    assert rewards._add_months("2024-01-31T00:00:00Z", 1) == "2024-02-29T00:00:00Z"
+    assert rewards._add_months("2026-03-15T12:00:00Z", 0) == "2026-03-15T12:00:00Z"
+
+
+def test_affiliated_cac_plan_blocks_the_fee_until_the_balance_holds(monkeypatch):
+    monkeypatch.setattr(rewards, "_now", lambda: "2026-01-15T00:00:00Z")
+    _customer("C1", name="Direct")
+    _customer("C2", "C1", "New")
+    _pay("C2", "BILL-PLAN")
+    rewards.on_customer_paying("C2")
+    plan = rewards.affiliated_cac_plan()
+    assert plan["hold_months"] == 3
+    assert plan["paying"] == 1
+    assert plan["affiliated_customers"] == 1
+    assert plan["allocated"] == pytest.approx(390.0)
+    assert plan["blocked"] == pytest.approx(390.0)
+    assert plan["projected_release"] == pytest.approx(390.0)
+    assert plan["releasable"] == pytest.approx(0.0)
+    assert plan["reversed"] == pytest.approx(0.0)
+    assert plan["per_paying_customer"] == pytest.approx(650.0)
+    with pytest.raises(RewardError) as exc:
+        rewards.accept_reward("RWRD-C2-L1", "C1")
+    assert exc.value.code == "held"
+    assert exc.value.to_dict()["release_at"] == "2026-04-15T00:00:00Z"
+    monkeypatch.setattr(rewards, "_now", lambda: "2026-04-15T00:00:00Z")
+    accepted = rewards.accept_reward("RWRD-C2-L1", "C1")
+    assert accepted["status"] == "dispatched"
+    assert rewards.SETTLEMENTS["C2"]["status"] == "settled"
+    assert rewards.SETTLEMENTS["C2"]["released_ledger_id"]
+    assert _cac_settlement_amounts("C2") == [390.0]
+    released = rewards.affiliated_cac_plan()
+    assert released["blocked"] == pytest.approx(0.0)
+    assert released["settled"] == pytest.approx(390.0)
+
+
+def test_lapsed_balance_reverses_the_single_settlement_once():
+    before = float(portal.PHINS_BALANCE_SHEET["expense_breakdown"].get("customer_acquisition") or 0)
+    _customer("C1", name="Direct")
+    _customer("C2", "C1", "New")
+    _pay("C2", "BILL-LAPSE")
+    rewards.on_customer_paying("C2")
+    assert portal.PHINS_BALANCE_SHEET["expense_breakdown"]["customer_acquisition"] == pytest.approx(before + 390.0)
+    portal.BILLING["BILL-LAPSE"]["status"] = "open"
+    rewards.on_customer_paying("C2")
+    assert portal.PHINS_BALANCE_SHEET["expense_breakdown"]["customer_acquisition"] == pytest.approx(before)
+    assert rewards.SETTLEMENTS["C2"]["status"] == "reversed"
+    assert rewards.REWARDS["RWRD-C2-L1"]["status"] == "forfeited"
+    with pytest.raises(RewardError) as exc:
+        rewards.accept_reward("RWRD-C2-L1", "C1")
+    assert exc.value.code == "forfeited"
+    portal.BILLING["BILL-LAPSE"]["status"] = "paid"
+    assert rewards.on_customer_paying("C2") == []
+    assert rewards.SETTLEMENTS["C2"]["status"] == "reversed"
+    assert portal.PHINS_BALANCE_SHEET["expense_breakdown"]["customer_acquisition"] == pytest.approx(before)
+    assert rewards.verify_integrity()["ok"] is True
+    plan = rewards.affiliated_cac_plan()
+    assert plan["reversed"] == pytest.approx(390.0)
+    assert plan["allocated"] == pytest.approx(0.0)
+
+
+def test_settlement_survives_a_reload_and_a_bad_checksum_is_not_paid():
+    _customer("C1", name="Direct")
+    _customer("C2", "C1", "New")
+    _pay("C2", "BILL-DURABLE")
+    rewards.on_customer_paying("C2")
+    release_at = rewards.SETTLEMENTS["C2"]["release_at"]
+    rewards.REWARDS.clear()
+    rewards.SETTLEMENTS.clear()
+    rewards.LINKS.clear()
+    rewards.QUARANTINE.clear()
+    rewards.FLAGS.clear()
+    rewards._loaded = False
+    rewards._ensure_loaded()
+    assert rewards.SETTLEMENTS["C2"]["status"] == "held"
+    assert rewards.SETTLEMENTS["C2"]["release_at"] == release_at
+    assert rewards.REWARDS["RWRD-C2-L1"]["status"] == "held"
+    assert rewards.REWARDS["RWRD-C2-L1"]["settlement_id"] == "CACSET-C2"
+    rewards.SETTLEMENTS["C2"]["checksum"] = "0" * 64
+    with pytest.raises(RewardError) as exc:
+        rewards.accept_reward("RWRD-C2-L1", "C1")
+    assert exc.value.code == "checksum"
+    assert rewards.verify_integrity()["ok"] is False
+
+
+def test_actuary_sets_the_hold_and_a_customer_cannot():
+    token, role = _login("actuary", "actuary123")
+    assert role == "actuary"
+    saved, status = _post("/api/admin/referral-rewards/hold", {"hold_months": 6}, token=token)
+    assert status == 200, saved
+    assert saved["hold_months"] == 6
+    assert saved["fee_cents"] == 65000
+    denied, status = _post("/api/admin/referral-rewards/config", {"fee": 10}, token=token)
+    assert status == 403, denied
+    book, status = _get("/api/admin/referral-rewards", token=token)
+    assert status == 200, book
+    assert book["affiliated_plan"]["hold_months"] == 6
+    assert "allocated" in book["affiliated_plan"]
+    accountant, _role = _login("accountant", "acct123")
+    denied, status = _post("/api/admin/referral-rewards/hold", {"hold_months": 1}, token=accountant)
+    assert status == 403, denied
+    email = "hold-customer@example.com"
+    _register("Hold Customer", email)
+    customer, _role = _login(email, "secure123456")
+    denied, status = _post("/api/admin/referral-rewards/hold", {"hold_months": 1}, token=customer)
+    assert status == 403, denied
+    assert rewards.get_config()["hold_months"] == 6

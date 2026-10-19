@@ -9986,9 +9986,12 @@ def _referral_reward_sheet_slice() -> Optional[Dict[str, Any]]:
         return {
             "expense_booked": totals.get("expense_booked"),
             "earned": totals.get("earned"),
+            "blocked": totals.get("blocked"),
             "dispatched": totals.get("dispatched"),
             "pending_choice": totals.get("pending_choice"),
             "retained": totals.get("retained"),
+            "hold_months": (summary.get("config") or {}).get("hold_months"),
+            "affiliated_plan": summary.get("affiliated_plan") or {},
             "integrity_ok": bool((summary.get("integrity") or {}).get("ok")),
             "professional_requests": summary.get("professional_requests") or {},
         }

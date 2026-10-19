@@ -11,8 +11,14 @@ for that layer: premium credit, health wallet, savings, or cash.
 The fee does not grow with the premium and it does not continue past the
 third layer, so the cost of acquiring one paying customer is capped and known
 before the invitation goes out. A layer with nobody standing on it is retained
-by the company and is not expensed. Agent commission (a percentage of premium,
-locked per affiliation) is a different rail and is not paid again here.
+by the company and is not expensed. One paying customer produces one
+settlement: a single acquisition expense for the sum of the layers that
+exist. That amount is allocated immediately and blocked from the referrer
+until a hold of ``hold_months`` (the default is 3, set by an admin or an
+actuary) has elapsed and the affiliated customer is still paying. If the
+paid balance lapses before anyone accepts, the settlement is reversed and
+is not booked again. Agent commission (a percentage of premium, locked per
+affiliation) is a different rail and is not paid again here.
 
 Amounts are integer cents. The layer split uses the largest-remainder method
 so the three shares plus the retained remainder equal the fee exactly, and a
@@ -30,7 +36,7 @@ import json
 import os
 import secrets
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -43,16 +49,24 @@ _STATE_ENV = "PHINS_REFERRAL_REWARDS_PATH"
 CONFIG: Dict[str, Any] = {}
 LINKS: Dict[str, Dict[str, Any]] = {}          # referee_customer_id -> link
 REWARDS: Dict[str, Dict[str, Any]] = {}        # reward id -> reward
+SETTLEMENTS: Dict[str, Dict[str, Any]] = {}    # referee_customer_id -> one settlement
 REQUESTS: Dict[str, Dict[str, Any]] = {}       # request id -> professional request
 QUARANTINE: List[Dict[str, Any]] = []
 FLAGS: Dict[str, Any] = {}
 
 _loaded = False
-_CHECK_FIELDS = (
+_LEGACY_REWARD_FIELDS = (
     "id", "referee_customer_id", "beneficiary_customer_id", "layer", "status",
     "fee_cents", "share_bps", "amount_cents", "currency", "program_shares",
     "policy", "allocation", "posted", "books_tx_id", "ledger_entry_id",
     "earned_at", "dispatched_at",
+)
+_CHECK_FIELDS = _LEGACY_REWARD_FIELDS + ("settlement_id", "hold_months", "release_at")
+_SETTLEMENT_FIELDS = (
+    "id", "referee_customer_id", "fee_cents", "allocated_cents", "retained_cents",
+    "status", "hold_months", "paying_at", "release_at", "reversed_at",
+    "books_tx_id", "reversal_tx_id", "ledger_entry_id",
+    "released_ledger_id", "reversal_ledger_id",
 )
 
 
@@ -65,11 +79,34 @@ class RewardError(ValueError):
         self.code = code
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"error": str(self), "code": self.code}
+        body = {"error": str(self), "code": self.code}
+        release_at = getattr(self, "release_at", None)
+        if release_at:
+            body["release_at"] = release_at
+        return body
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _add_months(stamp: str, months: int) -> str:
+    """Calendar months after ``stamp``. The day clamps to the last day of the month."""
+    text = str(stamp or "").replace("Z", "+00:00")
+    moment = datetime.fromisoformat(text)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    months = int(months)
+    index = moment.month - 1 + months
+    year = moment.year + index // 12
+    month = index % 12 + 1
+    if month == 12:
+        following = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        following = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+    last_day = (following - timedelta(days=1)).day
+    shifted = moment.replace(year=year, month=month, day=min(moment.day, last_day))
+    return shifted.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _canon(payload: Any) -> str:
@@ -146,6 +183,7 @@ def default_config() -> Dict[str, Any]:
         "customer_invitation_cap": 10,
         "agent_invitation_cap": 100,
         "agent_default_rate_percent": 10,
+        "hold_months": 3,
         "auto_dispatch": False,
         "layers": [
             {
@@ -195,6 +233,12 @@ def _validate_config(raw: Dict[str, Any]) -> Dict[str, Any]:
     rate = int(raw.get("agent_default_rate_percent") or 0)
     if rate < 0 or rate > 100:
         raise RewardError("Agent default rate must be between 0 and 100 percent")
+    if "hold_months" in raw and raw.get("hold_months") is not None:
+        hold_months = int(raw.get("hold_months"))
+    else:
+        hold_months = 3
+    if hold_months < 0 or hold_months > 60:
+        raise RewardError("Hold must be between 0 and 60 months")
     incoming = raw.get("layers")
     if not isinstance(incoming, list) or len(incoming) != 3:
         raise RewardError("Exactly three layers are required")
@@ -252,6 +296,7 @@ def _validate_config(raw: Dict[str, Any]) -> Dict[str, Any]:
         "customer_invitation_cap": customer_cap,
         "agent_invitation_cap": agent_cap,
         "agent_default_rate_percent": rate,
+        "hold_months": hold_months,
         "auto_dispatch": bool(raw.get("auto_dispatch", False)),
         "layers": [by_layer[n] for n in LAYERS],
     }
@@ -276,6 +321,7 @@ def config_to_admin(cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         "customer_invitation_cap": cfg["customer_invitation_cap"],
         "agent_invitation_cap": cfg["agent_invitation_cap"],
         "agent_default_rate_percent": cfg["agent_default_rate_percent"],
+        "hold_months": int(cfg.get("hold_months", 3)),
         "auto_dispatch": cfg["auto_dispatch"],
         "layers": [
             {
@@ -295,7 +341,7 @@ def _admin_to_internal(raw: Dict[str, Any], previous: Dict[str, Any]) -> Dict[st
     """Merge an admin patch (dollars and percents) onto the current program."""
     base = config_to_admin(previous)
     for key in ("enabled", "max_layers", "customer_invitation_cap", "agent_invitation_cap",
-                "agent_default_rate_percent", "auto_dispatch"):
+                "agent_default_rate_percent", "hold_months", "auto_dispatch"):
         if key in raw and raw[key] is not None:
             base[key] = raw[key]
     if raw.get("fee") is not None:
@@ -336,6 +382,7 @@ def _admin_to_internal(raw: Dict[str, Any], previous: Dict[str, Any]) -> Dict[st
         "customer_invitation_cap": base["customer_invitation_cap"],
         "agent_invitation_cap": base["agent_invitation_cap"],
         "agent_default_rate_percent": base["agent_default_rate_percent"],
+        "hold_months": base.get("hold_months", 3),
         "auto_dispatch": base["auto_dispatch"],
         "layers": layers,
     })
@@ -365,7 +412,26 @@ def _repo():
 
 
 def _reward_checksum(reward: Dict[str, Any]) -> str:
-    return _sha({key: reward.get(key) for key in _CHECK_FIELDS})
+    # Rows sealed before the single-settlement hold have no settlement id.
+    # Their checksum stays over the original field list.
+    fields = _CHECK_FIELDS if reward.get("settlement_id") else _LEGACY_REWARD_FIELDS
+    return _sha({key: reward.get(key) for key in fields})
+
+
+def _settlement_checksum(settlement: Dict[str, Any]) -> str:
+    return _sha({key: settlement.get(key) for key in _SETTLEMENT_FIELDS})
+
+
+def _seal_settlement(settlement: Dict[str, Any]) -> Dict[str, Any]:
+    settlement["checksum"] = _settlement_checksum(settlement)
+    return settlement
+
+
+def _settlement_intact(settlement: Dict[str, Any]) -> bool:
+    stated = str(settlement.get("checksum") or "")
+    if not stated or settlement.get("_quarantined"):
+        return False
+    return stated == _settlement_checksum(settlement)
 
 
 def _seal(reward: Dict[str, Any]) -> Dict[str, Any]:
@@ -386,6 +452,7 @@ def _envelope() -> Dict[str, Any]:
         "config": CONFIG,
         "links": list(LINKS.values()),
         "rewards": list(REWARDS.values()),
+        "settlements": list(SETTLEMENTS.values()),
         "requests": list(REQUESTS.values()),
     }
 
@@ -398,6 +465,15 @@ def _save_file() -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(blob, sort_keys=True), encoding="utf-8")
     os.replace(tmp, path)
+
+
+def _persist_settlement(settlement: Dict[str, Any]) -> None:
+    _seal_settlement(settlement)
+    if _db_enabled():
+        with _repo() as db:
+            db.referral_rewards.upsert_settlement(settlement)
+        return
+    _save_file()
 
 
 def _persist_reward(reward: Dict[str, Any]) -> None:
@@ -466,9 +542,25 @@ def _load_file() -> None:
     for reward in state.get("rewards") or []:
         if isinstance(reward, dict):
             _apply_reward(reward)
+    for settlement in state.get("settlements") or []:
+        if isinstance(settlement, dict):
+            _apply_settlement(settlement)
     for req in state.get("requests") or []:
         if isinstance(req, dict) and req.get("id"):
             REQUESTS[str(req["id"])] = req
+
+
+def _apply_settlement(settlement: Dict[str, Any]) -> None:
+    referee = str(settlement.get("referee_customer_id") or "")
+    if not referee:
+        return
+    if not _settlement_intact(settlement):
+        QUARANTINE.append({"id": settlement.get("id"), "reason": "settlement_checksum_mismatch"})
+        blocked = dict(settlement)
+        blocked["_quarantined"] = True
+        SETTLEMENTS[referee] = blocked
+        return
+    SETTLEMENTS[referee] = settlement
 
 
 def _hydrate_db() -> None:
@@ -477,6 +569,7 @@ def _hydrate_db() -> None:
             stored = db.referral_rewards.get_config()
             links = db.referral_rewards.list_links()
             rewards = db.referral_rewards.list_rewards()
+            settlements = db.referral_rewards.list_settlements()
             requests = db.referral_rewards.list_requests()
     except Exception:
         FLAGS["db_unreadable"] = True
@@ -494,6 +587,8 @@ def _hydrate_db() -> None:
         LINKS[str(link["referee_customer_id"])] = link
     for reward in rewards:
         _apply_reward(reward)
+    for settlement in settlements:
+        _apply_settlement(settlement)
     for req in requests:
         REQUESTS[str(req["id"])] = req
 
@@ -519,6 +614,7 @@ def reset_referral_rewards() -> None:
         CONFIG.update(default_config())
         LINKS.clear()
         REWARDS.clear()
+        SETTLEMENTS.clear()
         REQUESTS.clear()
         QUARANTINE.clear()
         FLAGS.clear()
@@ -622,33 +718,85 @@ def chain_of(referee_id: str, customers: Optional[Dict[str, Any]] = None,
     return found
 
 
-def _book_expense(reward: Dict[str, Any]) -> Optional[str]:
-    """Recognize the CAC expense once. A retry finds the existing entry."""
+def _sheet_transactions() -> List[Dict[str, Any]]:
+    portal = _portal()
+    sheet = getattr(portal, "PHINS_BALANCE_SHEET", None) if portal else None
+    if not isinstance(sheet, dict):
+        return []
+    rows = sheet.get("transactions") or []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _find_sheet_tx(kind: str, settlement_id: str) -> Optional[str]:
+    for tx in _sheet_transactions():
+        meta = tx.get("metadata") if isinstance(tx.get("metadata"), dict) else {}
+        if meta.get("kind") == kind and meta.get("settlement_id") == settlement_id:
+            return str(tx.get("tx_id") or "")
+    return None
+
+
+def _ensure_acquisition_category() -> None:
+    portal = _portal()
+    sheet = getattr(portal, "PHINS_BALANCE_SHEET", None) if portal else None
+    if not isinstance(sheet, dict):
+        return
+    breakdown = sheet.setdefault("expense_breakdown", {})
+    if isinstance(breakdown, dict):
+        breakdown.setdefault("customer_acquisition", 0.0)
+
+
+def _book_settlement(settlement: Dict[str, Any], reward_ids: Sequence[str]) -> Optional[str]:
+    """Recognize the acquisition expense once for this settlement."""
     portal = _portal()
     if portal is None or not hasattr(portal, "record_balance_sheet_transaction"):
         return None
-    sheet = getattr(portal, "PHINS_BALANCE_SHEET", None)
-    if isinstance(sheet, dict):
-        breakdown = sheet.setdefault("expense_breakdown", {})
-        if isinstance(breakdown, dict):
-            breakdown.setdefault("customer_acquisition", 0.0)
-        for tx in sheet.get("transactions") or []:
-            meta = tx.get("metadata") if isinstance(tx, dict) else None
-            if isinstance(meta, dict) and meta.get("reward_id") == reward["id"] and meta.get("kind") == "cac_reward":
-                return str(tx.get("tx_id") or "")
+    _ensure_acquisition_category()
+    existing = _find_sheet_tx("cac_settlement", settlement["id"])
+    if existing:
+        return existing
     posted = portal.record_balance_sheet_transaction(
         tx_type="expense",
         category="customer_acquisition",
-        amount=dollars(reward["amount_cents"]),
-        description=f"Referral acquisition reward {reward['id']} layer {reward['layer']}",
+        amount=dollars(settlement["allocated_cents"]),
+        description=f"Referral acquisition settlement {settlement['id']}",
         actor="referral_rewards",
-        customer_id=reward["beneficiary_customer_id"],
+        customer_id=settlement["referee_customer_id"],
         metadata={
-            "reward_id": reward["id"],
-            "kind": "cac_reward",
-            "referee_customer_id": reward["referee_customer_id"],
-            "layer": reward["layer"],
-            "fee_cents": reward["fee_cents"],
+            "kind": "cac_settlement",
+            "settlement_id": settlement["id"],
+            "referee_customer_id": settlement["referee_customer_id"],
+            "fee_cents": settlement["fee_cents"],
+            "allocated_cents": settlement["allocated_cents"],
+            "retained_cents": settlement["retained_cents"],
+            "hold_months": settlement["hold_months"],
+            "reward_ids": list(reward_ids),
+        },
+    )
+    return str((posted or {}).get("tx_id") or "")
+
+
+def _reverse_books(settlement: Dict[str, Any]) -> Optional[str]:
+    """Back the single expense out. A second call finds the reversal already posted."""
+    portal = _portal()
+    if portal is None or not hasattr(portal, "record_balance_sheet_transaction"):
+        return settlement.get("reversal_tx_id")
+    _ensure_acquisition_category()
+    existing = _find_sheet_tx("cac_settlement_reversal", settlement["id"])
+    if existing:
+        return existing
+    posted = portal.record_balance_sheet_transaction(
+        tx_type="expense",
+        category="customer_acquisition",
+        amount=-dollars(settlement["allocated_cents"]),
+        description=f"Reversal of referral acquisition settlement {settlement['id']}",
+        actor="referral_rewards",
+        customer_id=settlement["referee_customer_id"],
+        metadata={
+            "kind": "cac_settlement_reversal",
+            "settlement_id": settlement["id"],
+            "referee_customer_id": settlement["referee_customer_id"],
+            "reverses": settlement.get("books_tx_id"),
+            "allocated_cents": settlement["allocated_cents"],
         },
     )
     return str((posted or {}).get("tx_id") or "")
@@ -819,10 +967,11 @@ def _policy_snapshot(cfg: Dict[str, Any], layer: int) -> Dict[str, Any]:
 
 
 def on_customer_paying(customer_id: str, billing: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    """Earn one reward per referrer layer once this customer has a paid premium.
+    """Allocate one settlement for this paying customer, split across the chain.
 
-    Idempotent. A second call, a second bill, or a second app instance finds
-    the same ids and does not book the expense again.
+    Idempotent. A second call finds the same settlement and does not book
+    the expense again. The layers stay blocked until ``release_at``. If the
+    paid balance is gone before anyone accepts, the settlement is reversed.
     """
     referee = str(customer_id or "").strip()
     if not referee:
@@ -830,6 +979,11 @@ def on_customer_paying(customer_id: str, billing: Optional[Dict[str, Any]] = Non
     created: List[Dict[str, Any]] = []
     with _LOCK:
         _ensure_loaded()
+        existing = SETTLEMENTS.get(referee)
+        if existing is not None:
+            if existing.get("status") != "reversed" and not existing.get("_quarantined"):
+                _refresh_settlement_locked(existing, billing)
+            return []
         if not CONFIG.get("enabled", True):
             return []
         if not _is_paying(referee, billing):
@@ -842,14 +996,17 @@ def on_customer_paying(customer_id: str, billing: Optional[Dict[str, Any]] = Non
         amounts = allocate_cents(int(cfg["fee_cents"]), shares)
         found = chain_of(referee, customers, cfg["max_layers"])
         link = LINKS.get(referee)
+        paying_at = _now()
         if link is not None and not link.get("paying_at"):
-            link["paying_at"] = _now()
+            link["paying_at"] = paying_at
             _persist_link(link)
+        elif link is not None and link.get("paying_at"):
+            paying_at = str(link["paying_at"])
+        hold_months = int(cfg.get("hold_months", 3))
+        release_at = _add_months(paying_at, hold_months)
+        settlement_id = f"CACSET-{referee}"
+        pending: List[Dict[str, Any]] = []
         for layer, beneficiary in found:
-            reward_id = f"RWRD-{referee}-L{layer}"
-            existing = REWARDS.get(reward_id)
-            if existing is not None:
-                continue
             amount = amounts[layer - 1]
             if amount <= 0 or beneficiary == referee:
                 continue
@@ -857,13 +1014,16 @@ def on_customer_paying(customer_id: str, billing: Optional[Dict[str, Any]] = Non
             code = ""
             if link and str(link.get("referrer_customer_id")) == str(direct):
                 code = str(link.get("invitation_code") or "")
-            reward = {
+            reward_id = f"RWRD-{referee}-L{layer}"
+            if REWARDS.get(reward_id) is not None:
+                continue
+            pending.append({
                 "id": reward_id,
                 "referee_customer_id": referee,
                 "beneficiary_customer_id": beneficiary,
                 "layer": layer,
                 "invitation_code": code if layer == 1 else "",
-                "status": "earned",
+                "status": "held",
                 "fee_cents": int(cfg["fee_cents"]),
                 "share_bps": shares[layer - 1],
                 "amount_cents": amount,
@@ -874,37 +1034,80 @@ def on_customer_paying(customer_id: str, billing: Optional[Dict[str, Any]] = Non
                 "posted": {},
                 "books_tx_id": None,
                 "ledger_entry_id": None,
-                "earned_at": _now(),
+                "earned_at": paying_at,
                 "dispatched_at": None,
-            }
+                "settlement_id": settlement_id,
+                "hold_months": hold_months,
+                "release_at": release_at,
+            })
+        if not pending:
+            return []
+        allocated = sum(int(item["amount_cents"]) for item in pending)
+        settlement = {
+            "id": settlement_id,
+            "referee_customer_id": referee,
+            "fee_cents": int(cfg["fee_cents"]),
+            "allocated_cents": allocated,
+            "retained_cents": int(cfg["fee_cents"]) - allocated,
+            "status": "held",
+            "hold_months": hold_months,
+            "paying_at": paying_at,
+            "release_at": release_at,
+            "reversed_at": None,
+            "books_tx_id": None,
+            "reversal_tx_id": None,
+            "ledger_entry_id": None,
+            "released_ledger_id": None,
+            "reversal_ledger_id": None,
+        }
+        SETTLEMENTS[referee] = settlement
+        for reward in pending:
             _seal(reward)
-            REWARDS[reward_id] = reward
-            try:
-                reward["books_tx_id"] = _book_expense(reward)
-                reward["ledger_entry_id"] = _anchor(reward, "referral.reward.earned", "CAC")
+            REWARDS[reward["id"]] = reward
+        try:
+            settlement["books_tx_id"] = _book_settlement(settlement, [item["id"] for item in pending])
+            settlement["ledger_entry_id"] = _anchor_settlement(
+                settlement, "referral.settlement.allocated", settlement_id,
+            )
+            for reward in pending:
+                reward["books_tx_id"] = settlement["books_tx_id"]
+                reward["ledger_entry_id"] = settlement["ledger_entry_id"]
                 _persist_reward(reward)
-            except Exception:
-                REWARDS.pop(reward_id, None)
-                raise
-            _sync_stats(reward)
-            created.append(reward)
+                _sync_stats(reward)
+            _persist_settlement(settlement)
+            _refresh_settlement_locked(settlement, billing)
             if cfg.get("auto_dispatch"):
-                try:
-                    _dispatch_locked(reward, None)
-                except RewardError as exc:
-                    reward["dispatch_error"] = str(exc)
-                    _persist_reward(reward)
+                for reward in pending:
+                    if reward.get("status") != "earned":
+                        continue
+                    try:
+                        _dispatch_locked(reward, None)
+                    except RewardError as exc:
+                        reward["dispatch_error"] = str(exc)
+                        _persist_reward(reward)
+        except Exception:
+            for reward in pending:
+                REWARDS.pop(reward["id"], None)
+            SETTLEMENTS.pop(referee, None)
+            raise
+        created = list(pending)
     for reward in created:
-        if reward.get("status") == "dispatched":
-            continue
-        _deliver(
-            reward["beneficiary_customer_id"],
-            f"You earned {dollars(reward['amount_cents']):.2f} USD from a PHINS invitation",
-            f"A customer in your invitation chain started paying. "
-            f"Layer {reward['layer']} of your acquisition reward is "
-            f"${dollars(reward['amount_cents']):.2f}. Open Referrals and choose "
-            "premium credit, health wallet, savings, or cash.",
-        )
+        amount = f"{dollars(reward['amount_cents']):.2f}"
+        if reward.get("status") == "held":
+            _deliver(
+                reward["beneficiary_customer_id"],
+                f"{amount} USD from a PHINS invitation is allocated and blocked",
+                f"Layer {reward['layer']} (${amount}) is allocated and blocked until "
+                f"{reward.get('release_at')}. It is released only if that customer is still paying.",
+            )
+        elif reward.get("status") != "dispatched":
+            _deliver(
+                reward["beneficiary_customer_id"],
+                f"You earned {amount} USD from a PHINS invitation",
+                f"A customer in your invitation chain is still paying. "
+                f"Layer {reward['layer']} of your acquisition reward is ${amount}. "
+                "Open Referrals and choose premium credit, health wallet, savings, or cash.",
+            )
     return [dict(item) for item in created]
 
 
@@ -929,18 +1132,149 @@ def recompute(customers: Optional[Dict[str, Any]] = None,
             )
             if not before and customer_id in LINKS:
                 joined += 1
-        if _is_paying(str(customer_id), billing):
+        if _is_paying(str(customer_id), billing) or str(customer_id) in SETTLEMENTS:
             earned += len(on_customer_paying(str(customer_id), billing))
+    with _LOCK:
+        _ensure_loaded()
+        _refresh_all_locked(billing)
     anchored = _backfill_anchors()
     return {"links_recorded": joined, "rewards_created": earned, "anchors_written": anchored}
+
+
+def _rewards_for(referee: str) -> List[Dict[str, Any]]:
+    return [reward for reward in REWARDS.values() if str(reward.get("referee_customer_id")) == str(referee)]
+
+
+def _anchor_settlement(settlement: Dict[str, Any], event_type: str, entry_id: str) -> Optional[str]:
+    portal = _portal()
+    ledger = getattr(portal, "platform_event_ledger", None) if portal else None
+    if ledger is None or not hasattr(ledger, "append_event"):
+        return None
+    try:
+        entry = ledger.append_event(
+            event_type=event_type,
+            entity_type="referral_settlement",
+            entity_id=settlement["id"],
+            customer_id=settlement["referee_customer_id"],
+            actor="referral_rewards",
+            amount=dollars(settlement.get("allocated_cents") or 0),
+            currency="USD",
+            payload={
+                "settlement_id": settlement["id"],
+                "referee_customer_id": settlement["referee_customer_id"],
+                "status": settlement.get("status"),
+                "hold_months": settlement.get("hold_months"),
+                "release_at": settlement.get("release_at"),
+                "allocated_cents": settlement.get("allocated_cents"),
+                "retained_cents": settlement.get("retained_cents"),
+                "books_tx_id": settlement.get("books_tx_id"),
+                "reversal_tx_id": settlement.get("reversal_tx_id"),
+            },
+            entry_id=entry_id,
+        )
+    except Exception:
+        return None
+    return str((entry or {}).get("id") or entry_id)
+
+
+def _reverse_settlement_locked(settlement: Dict[str, Any]) -> None:
+    if settlement.get("status") == "reversed" or settlement.get("_quarantined"):
+        return
+    if any(reward.get("status") == "dispatched" for reward in _rewards_for(settlement["referee_customer_id"])):
+        return
+    settlement["reversal_tx_id"] = _reverse_books(settlement)
+    settlement["status"] = "reversed"
+    settlement["reversed_at"] = _now()
+    settlement["reversal_ledger_id"] = _anchor_settlement(
+        settlement, "referral.settlement.reversed", f"CACREV-{settlement['id']}",
+    )
+    for reward in _rewards_for(settlement["referee_customer_id"]):
+        if reward.get("status") in ("held", "earned") and _reward_intact(reward):
+            reward["status"] = "forfeited"
+            _persist_reward(reward)
+    _persist_settlement(settlement)
+
+
+def _refresh_settlement_locked(settlement: Dict[str, Any],
+                               billing: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Release a held settlement, or reverse it when the paid balance is gone."""
+    if settlement.get("_quarantined") or settlement.get("status") in ("settled", "reversed"):
+        return settlement
+    referee = str(settlement.get("referee_customer_id") or "")
+    rewards = _rewards_for(referee)
+    dispatched = any(reward.get("status") == "dispatched" for reward in rewards)
+    paying = _is_paying(referee, billing)
+    if not paying and not dispatched and settlement.get("status") in ("held", "releasable"):
+        _reverse_settlement_locked(settlement)
+        return settlement
+    release_at = str(settlement.get("release_at") or "")
+    if paying and release_at and _now() >= release_at and settlement.get("status") == "held":
+        settlement["status"] = "releasable"
+        for reward in rewards:
+            if reward.get("status") == "held" and _reward_intact(reward):
+                reward["status"] = "earned"
+                _persist_reward(reward)
+        _persist_settlement(settlement)
+    return settlement
+
+
+def _refresh_all_locked(billing: Optional[Dict[str, Any]] = None) -> None:
+    for settlement in list(SETTLEMENTS.values()):
+        _refresh_settlement_locked(settlement, billing)
+
+
+def _maybe_settle_locked(settlement: Dict[str, Any]) -> None:
+    if settlement.get("status") in ("settled", "reversed", None) or settlement.get("_quarantined"):
+        return
+    rewards = [
+        reward for reward in _rewards_for(settlement["referee_customer_id"])
+        if int(reward.get("amount_cents") or 0) > 0
+    ]
+    if not rewards or any(reward.get("status") != "dispatched" for reward in rewards):
+        return
+    settlement["status"] = "settled"
+    settlement["released_ledger_id"] = _anchor_settlement(
+        settlement, "referral.settlement.released", f"CACREL-{settlement['id']}",
+    )
+    _persist_settlement(settlement)
 
 
 def _backfill_anchors() -> int:
     written = 0
     with _LOCK:
         _ensure_loaded()
+        for settlement in list(SETTLEMENTS.values()):
+            if settlement.get("_quarantined"):
+                continue
+            changed = False
+            if not settlement.get("ledger_entry_id"):
+                anchor = _anchor_settlement(
+                    settlement, "referral.settlement.allocated", settlement["id"],
+                )
+                if anchor:
+                    settlement["ledger_entry_id"] = anchor
+                    changed = True
+                    written += 1
+            if settlement.get("status") == "reversed" and not settlement.get("reversal_ledger_id"):
+                anchor = _anchor_settlement(
+                    settlement, "referral.settlement.reversed", f"CACREV-{settlement['id']}",
+                )
+                if anchor:
+                    settlement["reversal_ledger_id"] = anchor
+                    changed = True
+                    written += 1
+            if settlement.get("status") == "settled" and not settlement.get("released_ledger_id"):
+                anchor = _anchor_settlement(
+                    settlement, "referral.settlement.released", f"CACREL-{settlement['id']}",
+                )
+                if anchor:
+                    settlement["released_ledger_id"] = anchor
+                    changed = True
+                    written += 1
+            if changed:
+                _persist_settlement(settlement)
         for reward in list(REWARDS.values()):
-            if reward.get("ledger_entry_id"):
+            if reward.get("ledger_entry_id") or reward.get("settlement_id"):
                 continue
             anchor = _anchor(reward, "referral.reward.earned", "CAC")
             if anchor:
@@ -1076,9 +1410,42 @@ _POSTERS = {
 }
 
 
+def _release_guard(reward: Dict[str, Any]) -> None:
+    """Block acceptance until the hold has elapsed and the affiliated balance holds."""
+    settlement_id = reward.get("settlement_id")
+    if not settlement_id:
+        if reward.get("status") == "forfeited":
+            raise RewardError("This reward was forfeited", status=409, code="forfeited")
+        return
+    settlement = SETTLEMENTS.get(str(reward.get("referee_customer_id")))
+    if settlement is None or settlement.get("id") != settlement_id:
+        raise RewardError("Settlement is missing; payout is blocked", status=409, code="settlement_missing")
+    if not _settlement_intact(settlement):
+        raise RewardError("Settlement checksum does not match; payout is blocked", status=409, code="checksum")
+    _refresh_settlement_locked(settlement)
+    status = reward.get("status")
+    if status == "forfeited" or settlement.get("status") == "reversed":
+        raise RewardError("This reward was forfeited because the affiliated customer is no longer paying",
+                          status=409, code="forfeited")
+    if status == "held" or settlement.get("status") == "held":
+        exc = RewardError(
+            f"This reward is blocked until {settlement.get('release_at')}",
+            status=409, code="held",
+        )
+        exc.release_at = settlement.get("release_at")
+        raise exc
+    if not _is_paying(str(reward.get("referee_customer_id"))):
+        if any(item.get("status") == "dispatched" for item in _rewards_for(reward["referee_customer_id"])):
+            raise RewardError("The affiliated customer is no longer paying", status=409, code="balance_lapsed")
+        _reverse_settlement_locked(settlement)
+        raise RewardError("This reward was forfeited because the affiliated customer is no longer paying",
+                          status=409, code="forfeited")
+
+
 def _dispatch_locked(reward: Dict[str, Any], raw_allocation: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if reward.get("status") == "dispatched":
         return reward
+    _release_guard(reward)
     if reward.get("status") != "earned":
         raise RewardError(f"Reward is {reward.get('status')}", status=409, code="not_earned")
     if not _reward_intact(reward):
@@ -1098,6 +1465,9 @@ def _dispatch_locked(reward: Dict[str, Any], raw_allocation: Optional[Dict[str, 
     _anchor(reward, "referral.reward.dispatched", "CACDISPATCH")
     _persist_reward(reward)
     _sync_stats(reward)
+    settlement = SETTLEMENTS.get(str(reward.get("referee_customer_id")))
+    if settlement is not None:
+        _maybe_settle_locked(settlement)
     return reward
 
 
@@ -1125,7 +1495,7 @@ def accept_all(customer_id: str, allocation: Optional[Dict[str, Any]] = None) ->
         ids = [
             reward["id"] for reward in REWARDS.values()
             if str(reward.get("beneficiary_customer_id")) == str(customer_id)
-            and reward.get("status") == "earned"
+            and reward.get("status") in ("earned", "held")
         ]
     dispatched = []
     failed = []
@@ -1330,6 +1700,10 @@ def public_reward(reward: Dict[str, Any]) -> Dict[str, Any]:
         "referee_name": _first_name(reward["referee_customer_id"]),
         "earned_at": reward.get("earned_at"),
         "dispatched_at": reward.get("dispatched_at"),
+        "release_at": reward.get("release_at"),
+        "hold_months": reward.get("hold_months"),
+        "blocked": reward.get("status") == "held",
+        "settlement_id": reward.get("settlement_id"),
         "allowed": list(policy.get("allowed") or []),
         "cash_cap_percent": bps_to_percent(int(policy.get("cash_cap_bps") or 0)),
         "default": {k: bps_to_percent(v) for k, v in (policy.get("default_bps") or {}).items()},
@@ -1381,22 +1755,24 @@ def _tools(customer_id: str) -> Dict[str, Any]:
 def customer_dashboard(customer_id: str) -> Dict[str, Any]:
     with _LOCK:
         _ensure_loaded()
+        _refresh_all_locked()
         customer_id = str(customer_id or "")
-        rewards = [
-            public_reward(reward) for reward in REWARDS.values()
-            if str(reward.get("beneficiary_customer_id")) == customer_id
-        ]
+        mine = [reward for reward in REWARDS.values()
+                if str(reward.get("beneficiary_customer_id")) == customer_id
+                and reward.get("status") != "forfeited"]
+        rewards = [public_reward(reward) for reward in mine]
         rewards.sort(key=lambda item: item.get("earned_at") or "", reverse=True)
         outgoing = [link for link in LINKS.values() if str(link.get("referrer_customer_id")) == customer_id]
-        earned = sum(int(r["amount_cents"]) for r in REWARDS.values()
-                     if str(r.get("beneficiary_customer_id")) == customer_id)
-        dispatched = sum(int(r["amount_cents"]) for r in REWARDS.values()
-                         if str(r.get("beneficiary_customer_id")) == customer_id and r.get("status") == "dispatched")
+        earned = sum(int(r["amount_cents"]) for r in mine)
+        blocked = sum(int(r["amount_cents"]) for r in mine if r.get("status") == "held")
+        waiting = sum(int(r["amount_cents"]) for r in mine if r.get("status") == "earned")
+        dispatched = sum(int(r["amount_cents"]) for r in mine if r.get("status") == "dispatched")
         program = config_to_admin()
         return {
             "enabled": bool(CONFIG.get("enabled", True)),
             "currency": "USD",
             "fee": program["fee"],
+            "hold_months": program["hold_months"],
             "max_layers": program["max_layers"],
             "invitation_cap": invitation_cap_for(customer_id),
             "layers": program["layers"],
@@ -1404,8 +1780,9 @@ def customer_dashboard(customer_id: str) -> Dict[str, Any]:
             "rewards": rewards,
             "totals": {
                 "earned": dollars(earned),
+                "blocked": dollars(blocked),
                 "dispatched": dollars(dispatched),
-                "pending_choice": dollars(earned - dispatched),
+                "pending_choice": dollars(waiting),
                 "count": len(rewards),
             },
             "direct_referrals": len(outgoing),
@@ -1426,9 +1803,19 @@ def update_config(patch: Dict[str, Any], updated_by: str = "admin") -> Dict[str,
         CONFIG.update(updated)
         _persist_config()
         _audit("program_updated", "referral_program", "active", {
-            "version": updated["version"], "fee_cents": updated["fee_cents"], "by": updated_by,
+            "version": updated["version"], "fee_cents": updated["fee_cents"],
+            "hold_months": updated["hold_months"], "by": updated_by,
         })
         return config_to_admin()
+
+
+def set_hold_months(months: Any, updated_by: str = "actuary") -> Dict[str, Any]:
+    """Change only the hold. Fee and layer shares stay on the admin path."""
+    try:
+        parsed = int(months)
+    except (TypeError, ValueError) as exc:
+        raise RewardError("hold_months must be a whole number of months") from exc
+    return update_config({"hold_months": parsed}, updated_by)
 
 
 def get_config() -> Dict[str, Any]:
@@ -1447,21 +1834,77 @@ def list_requests(status: Optional[str] = None) -> List[Dict[str, Any]]:
         return [dict(item) for item in items]
 
 
+def _plan_locked() -> Dict[str, Any]:
+    """Affiliated-customer CAC plan: what is booked, blocked, and still conditional."""
+    allocated = blocked = releasable = settled = reversed_cents = projected = 0
+    referees = set(LINKS) | set(SETTLEMENTS)
+    paying = sum(1 for referee in referees if _is_paying(referee))
+    for settlement in SETTLEMENTS.values():
+        cents = int(settlement.get("allocated_cents") or 0)
+        status = settlement.get("status")
+        if status == "reversed":
+            reversed_cents += cents
+            continue
+        allocated += cents
+        if status == "settled":
+            settled += cents
+    for reward in REWARDS.values():
+        cents = int(reward.get("amount_cents") or 0)
+        if reward.get("status") == "held":
+            blocked += cents
+            if _is_paying(str(reward.get("referee_customer_id") or "")):
+                projected += cents
+        elif reward.get("status") == "earned":
+            releasable += cents
+        elif reward.get("status") == "dispatched":
+            pass
+        elif reward.get("status") == "forfeited":
+            pass
+    fee = int((CONFIG or default_config()).get("fee_cents") or 0)
+    return {
+        "affiliated_customers": len(referees),
+        "paying": paying,
+        "hold_months": int((CONFIG or {}).get("hold_months", 3)),
+        "settlements": len(SETTLEMENTS),
+        "allocated": dollars(allocated),
+        "blocked": dollars(blocked),
+        "releasable": dollars(releasable),
+        "settled": dollars(settled),
+        "reversed": dollars(reversed_cents),
+        "projected_release": dollars(projected),
+        "per_paying_customer": dollars(fee),
+        "fee_cents": fee,
+    }
+
+
+def affiliated_cac_plan() -> Dict[str, Any]:
+    """Planning view of acquisition cost across affiliated customers."""
+    with _LOCK:
+        _ensure_loaded()
+        _refresh_all_locked()
+        return _plan_locked()
+
+
 def book_summary() -> Dict[str, Any]:
     """Admin view: the acquisition expense, where it went, and whether it ties."""
     with _LOCK:
         _ensure_loaded()
+        _refresh_all_locked()
         integrity = verify_integrity()
         by_layer = {str(n): {"count": 0, "amount_cents": 0} for n in LAYERS}
         by_dest = {dest: 0 for dest in DESTINATIONS}
-        earned = dispatched = 0
+        earned = dispatched = blocked = 0
         for reward in REWARDS.values():
+            if reward.get("status") == "forfeited":
+                continue
             cents = int(reward.get("amount_cents") or 0)
             earned += cents
             slot = by_layer.get(str(reward.get("layer")))
             if slot is not None:
                 slot["count"] += 1
                 slot["amount_cents"] += cents
+            if reward.get("status") == "held":
+                blocked += cents
             if reward.get("status") == "dispatched":
                 dispatched += cents
                 allocation = reward.get("allocation") or {}
@@ -1490,8 +1933,9 @@ def book_summary() -> Dict[str, Any]:
                 "paying": sum(1 for link in LINKS.values() if link.get("paying_at")),
                 "rewards": len(REWARDS),
                 "earned": dollars(earned),
+                "blocked": dollars(blocked),
                 "dispatched": dollars(dispatched),
-                "pending_choice": dollars(earned - dispatched),
+                "pending_choice": dollars(earned - dispatched - blocked),
                 "retained": dollars(retained),
                 "expense_booked": round(booked, 2),
                 "by_layer": {
@@ -1506,6 +1950,7 @@ def book_summary() -> Dict[str, Any]:
                 "rejected": sum(1 for item in requests if item.get("status") == "rejected"),
             },
             "integrity": integrity,
+            "affiliated_plan": _plan_locked(),
             "quarantine": list(QUARANTINE),
             "flags": dict(FLAGS),
         }
@@ -1535,8 +1980,14 @@ def verify_integrity() -> Dict[str, Any]:
                 issues.append({"code": "amount_drift", "detail": reward["id"]})
         else:
             issues.append({"code": "shares", "detail": reward["id"]})
-        expected_expense += int(reward.get("amount_cents") or 0)
-        if reward.get("status") == "dispatched":
+        status = reward.get("status")
+        if status == "forfeited":
+            posted = reward.get("posted") or {}
+            if posted:
+                issues.append({"code": "forfeited_posted", "detail": reward["id"]})
+        else:
+            expected_expense += int(reward.get("amount_cents") or 0)
+        if status == "dispatched":
             allocation = reward.get("allocation") or {}
             if sum(int(allocation.get(d) or 0) for d in DESTINATIONS) != 10000:
                 issues.append({"code": "allocation", "detail": reward["id"]})
@@ -1548,8 +1999,15 @@ def verify_integrity() -> Dict[str, Any]:
                         issues.append({"code": "missing_leg", "detail": f"{reward['id']}:{dest}"})
                     if cents == 0 and dest in posted:
                         issues.append({"code": "extra_leg", "detail": f"{reward['id']}:{dest}"})
-        elif reward.get("status") != "earned":
+        elif status == "held":
+            if reward.get("posted"):
+                issues.append({"code": "held_posted", "detail": reward["id"]})
+        elif status not in ("earned", "forfeited"):
             issues.append({"code": "bad_status", "detail": reward["id"]})
+        if reward.get("settlement_id"):
+            settlement = SETTLEMENTS.get(str(reward.get("referee_customer_id")))
+            if settlement is None or settlement.get("id") != reward.get("settlement_id"):
+                issues.append({"code": "settlement_missing", "detail": reward["id"]})
     # One fee per paying referee: paid layers + retained == snapshotted fee.
     by_referee: Dict[str, List[Dict[str, Any]]] = {}
     for reward in REWARDS.values():
@@ -1561,17 +2019,54 @@ def verify_integrity() -> Dict[str, Any]:
             issues.append({"code": "fee_snapshot_mismatch", "detail": referee})
         if paid > fee:
             issues.append({"code": "over_fee", "detail": referee})
+        settlement = SETTLEMENTS.get(referee)
+        live = [item for item in group if item.get("status") != "forfeited"]
+        if settlement is None:
+            if any(item.get("settlement_id") for item in group):
+                issues.append({"code": "settlement_missing", "detail": referee})
+        else:
+            if not _settlement_intact(settlement):
+                issues.append({"code": "settlement_checksum", "detail": settlement.get("id") or referee})
+            else:
+                live_cents = sum(int(item.get("amount_cents") or 0) for item in live)
+                if settlement.get("status") == "reversed":
+                    if live_cents:
+                        issues.append({"code": "reversed_still_live", "detail": referee})
+                    if not settlement.get("reversal_tx_id"):
+                        issues.append({"code": "reversal_missing", "detail": referee})
+                elif int(settlement.get("allocated_cents") or 0) != sum(int(item.get("amount_cents") or 0) for item in group):
+                    issues.append({"code": "settlement_amount", "detail": referee})
+                if int(settlement.get("allocated_cents") or 0) + int(settlement.get("retained_cents") or 0) != int(settlement.get("fee_cents") or 0):
+                    issues.append({"code": "settlement_fee", "detail": referee})
+                if settlement.get("status") == "settled" and any(item.get("status") != "dispatched" for item in group):
+                    issues.append({"code": "settled_open", "detail": referee})
+    for referee, settlement in SETTLEMENTS.items():
+        if referee not in by_referee and not settlement.get("_quarantined"):
+            issues.append({"code": "orphan_settlement", "detail": settlement.get("id") or referee})
     portal = _portal()
     sheet = getattr(portal, "PHINS_BALANCE_SHEET", None) if portal else None
     if isinstance(sheet, dict):
         booked_cents = int(round(float((sheet.get("expense_breakdown") or {}).get("customer_acquisition") or 0) * 100))
         tx_cents = 0
+        settlement_hits: Dict[str, int] = {}
         for tx in sheet.get("transactions") or []:
             if not isinstance(tx, dict):
                 continue
             meta = tx.get("metadata") if isinstance(tx.get("metadata"), dict) else {}
-            if meta.get("kind") == "cac_reward" and tx.get("category") == "customer_acquisition":
+            kind = meta.get("kind")
+            if kind in ("cac_reward", "cac_settlement", "cac_settlement_reversal") and tx.get("category") == "customer_acquisition":
                 tx_cents += int(round(float(tx.get("amount") or 0) * 100))
+                if kind == "cac_settlement" and meta.get("settlement_id"):
+                    key = str(meta["settlement_id"])
+                    settlement_hits[key] = settlement_hits.get(key, 0) + 1
+        for settlement_id, hits in settlement_hits.items():
+            if hits != 1:
+                issues.append({"code": "duplicate_settlement_expense", "detail": settlement_id})
+        for settlement in SETTLEMENTS.values():
+            if settlement.get("_quarantined") or settlement.get("status") == "reversed":
+                continue
+            if settlement["id"] not in settlement_hits:
+                issues.append({"code": "books_missing", "detail": settlement["id"]})
         if tx_cents != expected_expense:
             issues.append({"code": "books_vs_rewards", "detail": f"transactions={tx_cents} rewards={expected_expense}"})
         if booked_cents != tx_cents:

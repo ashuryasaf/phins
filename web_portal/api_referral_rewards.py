@@ -8,8 +8,9 @@ Routes (dispatched from ``web_portal/server.py``):
   GET  /api/customer/professional-requests         own agent/supplier requests
   POST /api/customer/professional-requests         {role, supplier_type?, company_name?, note?}
   POST /api/customer/role-switch                   {role: customer|agent|supplier}
-  GET  /api/admin/referral-rewards                 book, integrity, requests (admin, accountant)
+  GET  /api/admin/referral-rewards                 book, plan, integrity (admin, accountant, actuary)
   POST /api/admin/referral-rewards/config          admin program patch
+  POST /api/admin/referral-rewards/hold            {hold_months} admin or actuary
   POST /api/admin/referral-rewards/recompute       backfill joins and rewards
   POST /api/admin/professional-requests/review     {id, decision, note?}
 
@@ -26,7 +27,8 @@ from services import referral_reward_service as rewards
 from services.referral_reward_service import RewardError
 
 ADMIN_ROLES = {"admin"}
-BOOK_ROLES = {"admin", "accountant"}
+BOOK_ROLES = {"admin", "accountant", "actuary"}
+HOLD_ROLES = {"admin", "actuary"}
 OWN_ROLES = {"customer", "agent", "supplier"}
 
 Result = Optional[Tuple[int, Dict[str, Any]]]
@@ -64,6 +66,14 @@ def _book(session: Optional[Dict[str, Any]]) -> Result:
     if not session:
         return 401, {"error": "Authentication required"}
     if _role(session) not in BOOK_ROLES:
+        return 403, {"error": "Forbidden"}
+    return None
+
+
+def _hold(session: Optional[Dict[str, Any]]) -> Result:
+    if not session:
+        return 401, {"error": "Authentication required"}
+    if _role(session) not in HOLD_ROLES:
         return 403, {"error": "Forbidden"}
     return None
 
@@ -164,6 +174,7 @@ def dispatch_get(path: str, session: Optional[Dict[str, Any]], query: Dict[str, 
             return status, summary
         summary["recent_rewards"] = rewards.recent_rewards(20)
         summary["requests"] = rewards.list_requests()
+        summary["affiliated_plan"] = summary.get("affiliated_plan") or rewards.affiliated_cac_plan()
         return 200, summary
     return None
 
@@ -206,6 +217,11 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]], body: Dict[str, 
         if denied:
             return denied
         return _call(rewards.update_config, body, str(session.get("username") or "admin"))
+    if path == "/api/admin/referral-rewards/hold":
+        denied = _hold(session)
+        if denied:
+            return denied
+        return _call(rewards.set_hold_months, body.get("hold_months"), str(session.get("username") or "actuary"))
     if path == "/api/admin/referral-rewards/recompute":
         denied = _admin(session)
         if denied:

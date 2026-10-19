@@ -10392,8 +10392,10 @@
         const copy = document.getElementById('referral-program-copy');
         if (copy) {
           copy.textContent = 'The acquisition fee is $' + fee + ' across up to ' + (data.max_layers || 3) +
-            ' layers. Earned $' + formatNumber((data.totals || {}).earned || 0, 2) +
-            ', waiting for your choice $' + formatNumber((data.totals || {}).pending_choice || 0, 2) + '.';
+            ' layers. It is one settlement, blocked for ' + (data.hold_months != null ? data.hold_months : 3) +
+            ' months while the affiliated customer stays paid. Allocated $' + formatNumber((data.totals || {}).earned || 0, 2) +
+            ', blocked $' + formatNumber((data.totals || {}).blocked || 0, 2) +
+            ', ready to accept $' + formatNumber((data.totals || {}).pending_choice || 0, 2) + '.';
         }
         const earnedEl = document.getElementById('referral-rewards');
         if (earnedEl && data.totals) earnedEl.textContent = '$' + formatNumber(data.totals.earned || 0, 2);
@@ -10412,10 +10414,14 @@
                 ' value="' + escReferral(defaults[dest] != null ? defaults[dest] : 0) +
                 '" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:6px;"></label>';
             }).join('');
+            const blockedNote = reward.status === 'held'
+              ? '<div style="margin-top:6px;color:#92400e;">Allocated and blocked until ' + escReferral(reward.release_at || '') + '. It releases only if the invited customer is still paying.</div>'
+              : '';
             return '<div style="border:1px solid #e6e6e6;border-radius:10px;padding:12px;">' +
               '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">' +
               '<strong>Layer ' + escReferral(reward.layer) + ' · $' + formatNumber(reward.amount, 2) + '</strong>' +
-              '<span>' + escReferral(reward.status) + (reward.referee_name ? ' · ' + escReferral(reward.referee_name) : '') + '</span></div>' +
+              '<span>' + escReferral(reward.blocked ? 'blocked' : reward.status) + (reward.referee_name ? ' · ' + escReferral(reward.referee_name) : '') + '</span></div>' +
+              blockedNote +
               '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:8px;">' + fields + '</div>' +
               (locked ? '' : '<button type="button" onclick="acceptReward(\'' + escReferral(reward.id) + '\')" style="margin-top:8px;background:#15803d;color:white;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;">Accept this reward</button>') +
               '</div>';

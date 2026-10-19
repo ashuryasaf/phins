@@ -3314,7 +3314,10 @@ class ReferralReward(Base):
     beneficiary_customer_id = Column(String(50), index=True, nullable=False)
     layer = Column(Integer, nullable=False)
     invitation_code = Column(String(80), nullable=True)
-    status = Column(String(20), nullable=False, index=True)  # earned|dispatched
+    status = Column(String(20), nullable=False, index=True)  # held|earned|dispatched|forfeited
+    settlement_id = Column(String(80), nullable=True, index=True)
+    hold_months = Column(Integer, nullable=False, default=0)
+    release_at = Column(String(40), nullable=True)
     fee_cents = Column(Integer, nullable=False, default=0)
     share_bps = Column(Integer, nullable=False, default=0)
     amount_cents = Column(Integer, nullable=False, default=0)
@@ -3358,6 +3361,35 @@ class ProfessionalRequest(Base):
     review_note = Column(Text, nullable=True)
     created_at = Column(String(40), nullable=False)
     updated_at = Column(String(40), nullable=True)
+
+
+class ReferralSettlement(Base):
+    """One acquisition settlement for one affiliated paying customer.
+
+    The layer rows share this id. The balance sheet carries a single expense
+    for ``allocated_cents`` while the reward is blocked, and one reversing
+    expense if the paid balance lapses before acceptance. ``checksum`` covers
+    the money fields and the release date.
+    """
+    __tablename__ = 'referral_settlements'
+
+    id = Column(String(80), primary_key=True)
+    referee_customer_id = Column(String(50), unique=True, nullable=False, index=True)
+    fee_cents = Column(Integer, nullable=False, default=0)
+    allocated_cents = Column(Integer, nullable=False, default=0)
+    retained_cents = Column(Integer, nullable=False, default=0)
+    status = Column(String(20), nullable=False, index=True)  # held|releasable|settled|reversed
+    hold_months = Column(Integer, nullable=False, default=0)
+    paying_at = Column(String(40), nullable=True)
+    release_at = Column(String(40), nullable=True)
+    reversed_at = Column(String(40), nullable=True)
+    books_tx_id = Column(String(80), nullable=True)
+    reversal_tx_id = Column(String(80), nullable=True)
+    ledger_entry_id = Column(String(80), nullable=True)
+    released_ledger_id = Column(String(80), nullable=True)
+    reversal_ledger_id = Column(String(80), nullable=True)
+    checksum = Column(String(64), nullable=False, default='')
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class SignedDocumentBlob(Base):

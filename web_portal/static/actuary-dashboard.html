@@ -1757,6 +1757,20 @@
             </div>
           </div>
 
+          <div class="card" id="cac-hold-card">
+            <div class="card-title">Affiliated-customer acquisition plan</div>
+            <p style="color:var(--text-light);margin-bottom:12px;font-size:0.9rem;">
+              One settlement per paying affiliated customer. The fee is on the books immediately and blocked from the referrer until the hold ends, and only if that customer is still paying. A lapsed balance reverses the expense.
+            </p>
+            <div id="cac-plan-summary" style="margin-bottom:12px;">Loading the acquisition plan…</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
+              <label style="font-size:0.85rem;">Hold (months)
+                <input id="cac-hold-months" type="number" min="0" max="60" step="1" class="form-input" style="display:block;margin-top:4px;max-width:120px;">
+              </label>
+              <button class="btn btn-primary" type="button" onclick="saveCacHold()">Save hold</button>
+            </div>
+          </div>
+
           <div class="card">
             <div class="card-title">Reinsurance Balance Sheet Link</div>
             <div class="stats-grid">
@@ -5077,6 +5091,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         // show live balance-sheet figures instead of static zeros.
         loadReinsuranceOverview();
         loadReinsuranceContracts();
+        loadCacHoldPlan();
         openSectionFromHash();
         
       } catch (err) {
@@ -5087,6 +5102,48 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
 
     // Deep links such as /actuary-dashboard.html#section-underwriting (used by
     // the admin Monte Carlo "Open source" buttons) land on the named section.
+    async function loadCacHoldPlan() {
+      const summary = document.getElementById('cac-plan-summary');
+      if (!summary || !token) return;
+      try {
+        const response = await fetch('/api/admin/referral-rewards', {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!response.ok) {
+          summary.textContent = 'The acquisition plan is not available for this session.';
+          return;
+        }
+        const data = await response.json();
+        const plan = data.affiliated_plan || {};
+        summary.textContent = 'Affiliated ' + (plan.affiliated_customers || 0) +
+          ' · paying ' + (plan.paying || 0) +
+          ' · allocated $' + Number(plan.allocated || 0).toFixed(2) +
+          ' · blocked $' + Number(plan.blocked || 0).toFixed(2) +
+          ' · releasable $' + Number(plan.releasable || 0).toFixed(2) +
+          ' · settled $' + Number(plan.settled || 0).toFixed(2) +
+          ' · reversed $' + Number(plan.reversed || 0).toFixed(2) +
+          ' · projected if balances hold $' + Number(plan.projected_release || 0).toFixed(2);
+        const input = document.getElementById('cac-hold-months');
+        if (input && document.activeElement !== input) {
+          input.value = plan.hold_months != null ? plan.hold_months : 3;
+        }
+      } catch (err) {
+        summary.textContent = 'Could not load the acquisition plan.';
+      }
+    }
+
+    async function saveCacHold() {
+      const input = document.getElementById('cac-hold-months');
+      const response = await fetch('/api/admin/referral-rewards/hold', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hold_months: Number(input && input.value) })
+      });
+      const body = await response.json().catch(function() { return {}; });
+      alert(response.ok ? ('Hold saved at ' + (body.hold_months != null ? body.hold_months : '') + ' months.') : (body.error || 'Could not save the hold.'));
+      if (response.ok) loadCacHoldPlan();
+    }
+
     function openSectionFromHash() {
       const hash = (window.location.hash || '').replace(/^#/, '');
       if (!hash) return;

@@ -1,7 +1,7 @@
 """Durable store for the referral acquisition-reward book.
 
-Four tables, one session: the program config, the join edges, the reward
-rows, and professional-role requests. The service in
+Five tables, one session: the program config, the join edges, the reward
+rows, one settlement per affiliated customer, and professional-role requests. The service in
 ``services/referral_reward_service.py`` is the authority for amounts and
 checksums; this repository only reads and writes those rows.
 """
@@ -18,6 +18,7 @@ from database.models import (
     ReferralLink,
     ReferralProgramConfig,
     ReferralReward,
+    ReferralSettlement,
 )
 
 _REWARD_JSON = {
@@ -129,7 +130,8 @@ class ReferralRewardRepository:
         for field in ('referee_customer_id', 'beneficiary_customer_id', 'layer',
                       'invitation_code', 'status', 'fee_cents', 'share_bps',
                       'amount_cents', 'currency', 'books_tx_id', 'ledger_entry_id',
-                      'earned_at', 'dispatched_at', 'checksum'):
+                      'earned_at', 'dispatched_at', 'checksum', 'settlement_id',
+                      'hold_months', 'release_at'):
             if field in data:
                 setattr(row, field, data.get(field))
         for memory_key, column in _REWARD_JSON.items():
@@ -156,6 +158,52 @@ class ReferralRewardRepository:
             'ledger_entry_id': row.ledger_entry_id,
             'earned_at': row.earned_at,
             'dispatched_at': row.dispatched_at,
+            'checksum': row.checksum or '',
+            'settlement_id': row.settlement_id,
+            'hold_months': int(row.hold_months or 0),
+            'release_at': row.release_at,
+        }
+
+    # -- settlements --------------------------------------------------------
+    def list_settlements(self) -> List[Dict[str, Any]]:
+        rows = self.session.query(ReferralSettlement).all()
+        return [self._settlement_dict(row) for row in rows]
+
+    def upsert_settlement(self, data: Dict[str, Any]) -> None:
+        row = self.session.get(ReferralSettlement, data['id'])
+        if row is None:
+            row = ReferralSettlement(
+                id=data['id'],
+                referee_customer_id=data['referee_customer_id'],
+                status=data.get('status') or 'held',
+                checksum=data.get('checksum') or '',
+            )
+            self.session.add(row)
+        for field in ('referee_customer_id', 'fee_cents', 'allocated_cents', 'retained_cents',
+                      'status', 'hold_months', 'paying_at', 'release_at', 'reversed_at',
+                      'books_tx_id', 'reversal_tx_id', 'ledger_entry_id',
+                      'released_ledger_id', 'reversal_ledger_id', 'checksum'):
+            if field in data:
+                setattr(row, field, data.get(field))
+        self._commit()
+
+    def _settlement_dict(self, row: ReferralSettlement) -> Dict[str, Any]:
+        return {
+            'id': row.id,
+            'referee_customer_id': row.referee_customer_id,
+            'fee_cents': int(row.fee_cents or 0),
+            'allocated_cents': int(row.allocated_cents or 0),
+            'retained_cents': int(row.retained_cents or 0),
+            'status': row.status,
+            'hold_months': int(row.hold_months or 0),
+            'paying_at': row.paying_at,
+            'release_at': row.release_at,
+            'reversed_at': row.reversed_at,
+            'books_tx_id': row.books_tx_id,
+            'reversal_tx_id': row.reversal_tx_id,
+            'ledger_entry_id': row.ledger_entry_id,
+            'released_ledger_id': row.released_ledger_id,
+            'reversal_ledger_id': row.reversal_ledger_id,
             'checksum': row.checksum or '',
         }
 

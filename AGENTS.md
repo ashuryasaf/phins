@@ -191,17 +191,26 @@ PHINS is a Python platform built around:
 - referral acquisition rewards (`services/referral_reward_service.py`,
  `web_portal/api_referral_rewards.py`, `database/repositories/referral_reward_repository.py`):
  a fixed admin fee (default $650) shared across up to 3 invitation layers
- when a referred customer pays a premium. The expense is
- `expense_breakdown.customer_acquisition`, recognized once at earn time.
- The beneficiary accepts it into premium credit, the health wallet, savings,
- or cash when that layer allows cash. Unfilled layers are retained and are
- not expensed. Customer `REF-` codes use this rail; agent `AGI-` codes stay
- on the commission rail and are not paid twice. A customer can request an
- agent or supplier role (`PRO-{customer}-{role}`); approval opens that
- profile and a role-switch token without rewriting `USERS.role`. An approved
- agent invitation cap is 100 (customer cap stays 10). State is a checksummed
- JSON book (`PHINS_REFERRAL_REWARDS_PATH`) or the four referral tables when
- the database is on. A checksum mismatch is not paid
+ when a referred customer pays a premium. One affiliated customer is one
+ settlement (`CACSET-{referee}`): a single `customer_acquisition` expense
+ for the allocated layers, booked at allocation and blocked from the
+ referrer for `hold_months` (default 3, range 0–60). An admin or an actuary
+ sets the hold (`POST /api/admin/referral-rewards/hold`); fee and layer
+ shares stay admin-only. The reward is released only if that customer is
+ still paying when the hold ends. If the paid balance lapses before
+ acceptance, the expense is reversed and the settlement is not recreated.
+ Acceptance then posts premium credit, the health wallet, savings, or cash
+ when that layer allows cash, and does not book the expense again. Unfilled
+ layers are retained and are not expensed. Customer `REF-` codes use this
+ rail; agent `AGI-` codes stay on the commission rail and are not paid
+ twice. A customer can request an agent or supplier role
+ (`PRO-{customer}-{role}`); approval opens that profile and a role-switch
+ token without rewriting `USERS.role`. An approved agent invitation cap is
+ 100 (customer cap stays 10). `affiliated_cac_plan()` is the planning view
+ (allocated, blocked, releasable, settled, reversed, projected release).
+ State is a checksummed JSON book (`PHINS_REFERRAL_REWARDS_PATH`) or the
+ referral tables (including `referral_settlements`) when the database is
+ on. A checksum mismatch is not paid
 - durable document archive (`services/customer_document_vault_service.py`):
  every application-chat, claim-chat and uploaded policy file is sealed by
  SHA-256 and filed into a per-entity lane. `services/document_durability_agent.py`
