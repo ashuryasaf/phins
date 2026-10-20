@@ -572,7 +572,11 @@
 
     async function startClaim() {
         if (!state.external && !token()) {
-            window.location.href = '/login.html';
+            const params = new URLSearchParams(window.location.search);
+            const code = String(params.get('code') || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 80);
+            let next = '/login.html?next=claims';
+            if (code) next += '&code=' + encodeURIComponent(code);
+            window.location.href = next;
             return;
         }
         $('start-btn').disabled = true;

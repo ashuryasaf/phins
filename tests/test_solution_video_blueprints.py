@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 
 import web_portal.server as portal
 from services.solution_video_blueprints import (
+    JOIN_INTRO_ENGINE_IDS,
     JOIN_INTRO_KEYS,
     JOIN_INTRO_OUTLINES,
     SOLUTION_KEYS,
@@ -24,11 +25,14 @@ from services.solution_video_blueprints import (
     blueprint_checksum,
     campaign_id_for,
     canonical_narration,
+    engine_priority_checksum,
     fresh_blueprint,
     growth_blueprint,
+    normalize_engine_priority,
     parse_campaign_id,
     prompt_override,
     verify_blueprint,
+    verify_engine_priority,
 )
 
 
@@ -101,9 +105,36 @@ def test_join_intro_catalog_stays_off_the_solution_page():
     assert saved["checksum"] == blueprint_checksum(saved)
     saved["narration"] = "tampered"
     assert not verify_blueprint(saved)
+    assert "claims_chat" in JOIN_INTRO_KEYS
+    assert "claims" in SOLUTION_KEYS
+    assert "claims" not in JOIN_INTRO_KEYS
+    assert fresh_blueprint("claims_chat")["campaign_id"] == "JOIN-claims_chat"
+    assert fresh_blueprint("claims")["campaign_id"] == "SOL-claims"
+    assert parse_campaign_id("JOIN-claims_chat") == "claims_chat"
+    assert parse_campaign_id("JOIN-claims") == ""
+    assert parse_campaign_id("SOL-claims") == "claims"
     assert parse_campaign_id("JOIN-insurance") == "insurance"
     assert parse_campaign_id("SOL-insurance") == ""
     assert parse_campaign_id("JOIN-billing") == ""
+    catalog = list(JOIN_INTRO_ENGINE_IDS)
+    assert normalize_engine_priority(catalog) == catalog
+    digest = engine_priority_checksum(catalog)
+    assert verify_engine_priority(catalog, digest)
+    flipped = list(reversed(catalog))
+    assert normalize_engine_priority(flipped) == flipped
+    assert not verify_engine_priority(flipped, digest)
+    for bad in (
+        [],
+        ["replicate-veo"],
+        catalog + ["replicate-veo"],
+        ["not-an-engine", *catalog[1:]],
+        [1, *catalog[1:]],
+    ):
+        try:
+            normalize_engine_priority(bad)
+        except SolutionBlueprintError:
+            continue
+        raise AssertionError(f"engine priority accepted {bad!r}")
     assert campaign_id_for("billing") == "SOL-billing"
     assert fresh_blueprint("welcome")["integrity_ok"] is True
     try:
@@ -752,6 +783,8 @@ def test_join_intro_send_stores_a_library_job_without_assigning_the_page():
     slot = "join_intro_health_wallet_id"
     slot_before = portal.DESIGN_SETTINGS.get(slot, "")
     hero_before = portal.DESIGN_SETTINGS.get("hero_video_id", "")
+    priority_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("join_intro_engine_priority"))
+    checksum_before = portal.DESIGN_SETTINGS.get("join_intro_engine_priority_checksum")
     assets_before = set(portal.MEDIA_ASSETS)
     jobs_before = set(portal.MEDIA_PROCESSING_JOBS)
     try:
@@ -761,8 +794,15 @@ def test_join_intro_send_stores_a_library_job_without_assigning_the_page():
         status, listing = _json_request(base + "/api/admin/media/join-intro-blueprints", token=token)
         assert status == 200, listing
         assert listing["total"] == len(JOIN_INTRO_KEYS)
+        engines = listing["engines"]
+        assert engines["integrity_ok"] is True
+        assert engines["stored"] is False
+        assert engines["priority"] == list(JOIN_INTRO_ENGINE_IDS)
+        assert {item["id"] for item in engines["engines"]} == set(JOIN_INTRO_ENGINE_IDS)
         keys = {item["solution_key"] for item in listing["blueprints"]}
         assert keys == set(JOIN_INTRO_KEYS)
+        assert "claims_chat" in keys
+        assert "claims" not in keys
         assert keys.isdisjoint(set(SOLUTION_KEYS))
         wallet = next(item for item in listing["blueprints"] if item["solution_key"] == "health_wallet")
         assert wallet["public_slot"] == slot
@@ -802,11 +842,110 @@ def test_join_intro_send_stores_a_library_job_without_assigning_the_page():
             },
         )
         assert status == 202, sent
+        assert sent["provider"] == "replicate"
+        assert sent["provider_model"] == "google/veo-3.1-fast"
         assert sent["job"]["campaign_id"] == "JOIN-health_wallet"
         assert sent["auto_publish_to_hero"] is False
         assert portal.DESIGN_SETTINGS.get(slot, "") == slot_before
         assert portal.DESIGN_SETTINGS.get("hero_video_id", "") == hero_before
+        assert portal.DESIGN_SETTINGS.get("join_intro_engine_priority") == priority_before
         assert "customer intro film was not replaced" in sent["message"]
+
+        status, mismatch = _json_request(
+            base + "/api/admin/media/solution-blueprints/send",
+            method="POST",
+            token=token,
+            payload={
+                "solution_key": "health_wallet",
+                "engine_id": "replicate-veo",
+                "provider": "kling",
+                "provider_model": "kling-v2.6-pro",
+                "poll_mode": "poll",
+                "auto_publish_to_hero": False,
+                "prompt_override": saved["blueprint"]["ready_prompt"],
+            },
+        )
+        assert status == 409, mismatch
+        assert "provider" in mismatch["error"].lower()
+        assert portal.DESIGN_SETTINGS.get(slot, "") == slot_before
+
+        status, partial = _json_request(
+            base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={"join_intro_engine_priority": ["replicate-veo"]},
+        )
+        assert status == 400, partial
+        assert portal.DESIGN_SETTINGS.get("join_intro_engine_priority") == priority_before
+
+        flipped = list(reversed(JOIN_INTRO_ENGINE_IDS))
+        status, stored_order = _json_request(
+            base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={"join_intro_engine_priority": flipped},
+        )
+        assert status == 200, stored_order
+        assert portal.DESIGN_SETTINGS["join_intro_engine_priority"] == flipped
+        assert portal.DESIGN_SETTINGS["join_intro_engine_priority_checksum"] == engine_priority_checksum(flipped)
+
+        status, untouched = _json_request(
+            base + "/api/design/settings",
+            method="POST",
+            token=token,
+            payload={},
+        )
+        assert status == 200, untouched
+        assert portal.DESIGN_SETTINGS["join_intro_engine_priority"] == flipped
+
+        status, public = _json_request(base + "/api/design/settings")
+        assert status == 200
+        assert "join_intro_engine_priority" not in public
+        assert "join_intro_engine_priority_checksum" not in public
+
+        status, seedance = _json_request(
+            base + "/api/admin/media/solution-blueprints/send",
+            method="POST",
+            token=token,
+            payload={
+                "solution_key": "health_wallet",
+                "engine_id": "replicate-seedance",
+                "provider": "replicate",
+                "provider_model": "bytedance/seedance-2.0",
+                "poll_mode": "poll",
+                "auto_publish_to_hero": False,
+                "prompt_override": saved["blueprint"]["ready_prompt"],
+                "force": True,
+            },
+        )
+        assert status == 202, seedance
+        assert seedance["provider"] == "replicate"
+        assert seedance["provider_model"] == "bytedance/seedance-2.0"
+        assert portal.DESIGN_SETTINGS["join_intro_engine_priority"] == flipped
+        assert portal.DESIGN_SETTINGS.get(slot, "") == slot_before
+
+        jobs_before_block = set(portal.MEDIA_PROCESSING_JOBS)
+        portal.DESIGN_SETTINGS["join_intro_engine_priority_checksum"] = "0" * 64
+        status, blocked = _json_request(
+            base + "/api/admin/media/solution-blueprints/send",
+            method="POST",
+            token=token,
+            payload={
+                "solution_key": "health_wallet",
+                "engine_id": "replicate-veo",
+                "provider": "replicate",
+                "provider_model": "google/veo-3.1-fast",
+                "poll_mode": "poll",
+                "auto_publish_to_hero": False,
+                "prompt_override": saved["blueprint"]["ready_prompt"],
+                "force": True,
+            },
+        )
+        assert status == 409, blocked
+        assert "checksum" in blocked["error"].lower()
+        assert set(portal.MEDIA_PROCESSING_JOBS) == jobs_before_block
+        assert portal.DESIGN_SETTINGS["join_intro_engine_priority"] == flipped
+        assert portal.DESIGN_SETTINGS.get(slot, "") == slot_before
     finally:
         portal.get_media_generation_service = original
         for asset_id in list(portal.MEDIA_ASSETS):
@@ -820,4 +959,10 @@ def test_join_intro_send_stores_a_library_job_without_assigning_the_page():
         else:
             portal.DESIGN_SETTINGS["solution_video_blueprints"] = blueprints_before
         portal.DESIGN_SETTINGS[slot] = slot_before
+        if priority_before is None:
+            portal.DESIGN_SETTINGS.pop("join_intro_engine_priority", None)
+            portal.DESIGN_SETTINGS.pop("join_intro_engine_priority_checksum", None)
+        else:
+            portal.DESIGN_SETTINGS["join_intro_engine_priority"] = priority_before
+            portal.DESIGN_SETTINGS["join_intro_engine_priority_checksum"] = checksum_before
         srv.stop()

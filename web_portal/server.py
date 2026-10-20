@@ -3301,10 +3301,21 @@ def join_intro_slot_key(preview_key: str) -> str:
     return f'join_intro_{preview_key}_id'
 
 
+def join_intro_poster_slot_key(preview_key: str) -> str:
+    """Design-settings id for one customer-intro video thumbnail."""
+    return f'join_intro_{preview_key}_poster_id'
+
+
 for _join_key in JOIN_INTRO_KEYS:
     _join_slot = join_intro_slot_key(_join_key)
     MEDIA_PLACEMENT_SLOTS[_join_slot] = 'video'
     DESIGN_SETTINGS.setdefault(_join_slot, '')
+    _poster_slot = join_intro_poster_slot_key(_join_key)
+    MEDIA_PLACEMENT_SLOTS[_poster_slot] = 'image'
+    DESIGN_SETTINGS.setdefault(_poster_slot, '')
+
+MEDIA_PLACEMENT_SLOTS['join_background_id'] = 'image'
+DESIGN_SETTINGS.setdefault('join_background_id', '')
 
 # Public playback fields resolved from the asset record at read time.
 MEDIA_PLACEMENT_PUBLIC_URLS = {
@@ -3409,7 +3420,43 @@ def public_join_intro_urls() -> Dict[str, str]:
         urls[f'join_intro_{preview_key}_url'] = public_asset_playback_url(
             str(DESIGN_SETTINGS.get(join_intro_slot_key(preview_key)) or '')
         )
+        urls[f'join_intro_{preview_key}_poster_url'] = public_asset_playback_url(
+            str(DESIGN_SETTINGS.get(join_intro_poster_slot_key(preview_key)) or '')
+        )
+    urls['join_background_url'] = public_asset_playback_url(
+        str(DESIGN_SETTINGS.get('join_background_id') or '')
+    )
     return urls
+
+
+def join_intro_engine_state() -> Dict[str, Any]:
+    """Admin view of the intro generator order.
+
+    A missing record is the catalog order and is not written here. A stored
+    order with a bad checksum is reported and is not repaired.
+    """
+    from services.solution_video_blueprints import (
+        JOIN_INTRO_ENGINES,
+        JOIN_INTRO_ENGINE_IDS,
+        verify_engine_priority,
+    )
+
+    stored = DESIGN_SETTINGS.get('join_intro_engine_priority')
+    checksum = str(DESIGN_SETTINGS.get('join_intro_engine_priority_checksum') or '')
+    if not stored:
+        order = list(JOIN_INTRO_ENGINE_IDS)
+        ok = True
+        stored_flag = False
+    else:
+        ok = verify_engine_priority(stored, checksum)
+        order = list(stored) if ok and isinstance(stored, list) else []
+        stored_flag = True
+    return {
+        'engines': [dict(item) for item in JOIN_INTRO_ENGINES],
+        'priority': order,
+        'integrity_ok': ok,
+        'stored': stored_flag,
+    }
 
 
 def ensure_media_storage_dir() -> None:
@@ -6273,7 +6320,25 @@ def send_solution_video_blueprint(
         return status, {'error': image_error}
     requested_provider = str(payload.get('provider') or 'replicate').strip().lower() or 'replicate'
     requested_model = str(payload.get('provider_model') or '').strip()
-    if requested_provider == 'replicate':
+    if join_intro:
+        from services.solution_video_blueprints import engine_by_id
+        engine_state = join_intro_engine_state()
+        if engine_state.get('stored') and not engine_state.get('integrity_ok'):
+            return 409, {'error': 'Engine priority checksum mismatch. The blueprint was not sent.'}
+        priority = list(engine_state.get('priority') or [])
+        engine_id = str(payload.get('engine_id') or '').strip() or (priority[0] if priority else '')
+        engine = engine_by_id(engine_id)
+        if engine is None or engine_id not in priority:
+            return 409, {'error': 'Unknown video engine. The blueprint was not sent.'}
+        client_provider = str(payload.get('provider') or '').strip().lower()
+        client_model = str(payload.get('provider_model') or '').strip()
+        if client_provider and client_provider != engine['provider']:
+            return 409, {'error': 'The provider does not match the selected engine. The blueprint was not sent.'}
+        if client_model and client_model != engine['model']:
+            return 409, {'error': 'The model does not match the selected engine. The blueprint was not sent.'}
+        requested_provider = engine['provider']
+        requested_model = engine['model']
+    elif requested_provider == 'replicate':
         requested_model = solution_replicate_model(requested_model)
     provider, provider_error = validate_media_video_provider_selection(requested_provider, requested_model)
     if provider_error:
@@ -22954,6 +23019,7 @@ For claims or questions, please contact:
                 'success': True,
                 'blueprints': blueprints,
                 'total': len(blueprints),
+                'engines': join_intro_engine_state(),
             }, default=str).encode('utf-8'))
             return
 
@@ -23406,10 +23472,18 @@ For claims or questions, please contact:
             # GET /api/customer/invitations - List customer's own invitation codes
             if path == '/api/customer/invitations':
                 # Get customer's invitation codes from CUSTOMER_INVITATIONS
-                customer_codes = [
-                    code for code in CUSTOMER_INVITATIONS.values()
-                    if code.get('creator_customer_id') == customer_id
-                ]
+                from services.referral_reward_service import (
+                    affiliated_join_link,
+                    affiliation_for,
+                )
+                customer_codes = []
+                for code in CUSTOMER_INVITATIONS.values():
+                    if code.get('creator_customer_id') != customer_id:
+                        continue
+                    item = dict(code)
+                    item['join_link'] = affiliated_join_link(item.get('code'))
+                    item['registration_link'] = item['join_link']
+                    customer_codes.append(item)
                 customer_codes.sort(key=lambda x: x.get('created_at', ''), reverse=True)
                 
                 # Get referral stats
@@ -23430,7 +23504,8 @@ For claims or questions, please contact:
                     'used': len([c for c in customer_codes if get_status_lower(c) == 'used']),
                     'stats': stats,
                     'max_allowed': invitation_limit,
-                    'can_generate_more': len(customer_codes) < invitation_limit
+                    'can_generate_more': len(customer_codes) < invitation_limit,
+                    'affiliation': affiliation_for(customer_id),
                 }).encode('utf-8'))
                 return
             
@@ -39442,6 +39517,19 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
 
+                engine_order = None
+                if 'join_intro_engine_priority' in data:
+                    from services.solution_video_blueprints import (
+                        SolutionBlueprintError as _EnginePriorityError,
+                        normalize_engine_priority,
+                    )
+                    try:
+                        engine_order = normalize_engine_priority(data.get('join_intro_engine_priority'))
+                    except _EnginePriorityError as exc:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                        return
+
                 try:
                     previous_design = _snapshot_design_settings()
                 except Exception:
@@ -39471,6 +39559,10 @@ For claims or questions, please contact:
                             default=str(DESIGN_SETTINGS.get('apply_disclosure_version_label') or 'light'),
                         )
                     )
+                if engine_order is not None:
+                    from services.solution_video_blueprints import engine_priority_checksum
+                    DESIGN_SETTINGS['join_intro_engine_priority'] = engine_order
+                    DESIGN_SETTINGS['join_intro_engine_priority_checksum'] = engine_priority_checksum(engine_order)
 
                 # Data integrity: when admin assigns a media asset to the
                 # landing page (hero video / video poster) via Use or Save
@@ -42122,18 +42214,20 @@ For claims or questions, please contact:
                 # Also save to persistent file for Railway deployment persistence
                 save_invitation_codes_to_file()
                 
-                # Generate registration link from configured public origin
-                origin = public_portal_base_url()
-                registration_link = (
-                    f"{origin}/join.html?code={code}" if origin else f"/join.html?code={code}"
+                from services.referral_reward_service import (
+                    affiliated_join_link,
+                    affiliation_for,
                 )
+                registration_link = affiliated_join_link(code)
                 
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({
                     'success': True,
-                    'message': 'Referral code created successfully',
+                    'message': 'Join link created successfully',
                     'invitation': invitation,
+                    'join_link': registration_link,
                     'registration_link': registration_link,
+                    'affiliation': affiliation_for(customer_id),
                     'remaining_codes': invitation_limit - len(existing_codes) - 1,
                     'total_generated': len(existing_codes) + 1,
                     'max_allowed': invitation_limit

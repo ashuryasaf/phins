@@ -107,10 +107,15 @@
         <div class="note">Your proposed rate is sent to an admin, who <strong>locks the final commission rate in advance</strong>. Once approved, the invitation becomes shareable and the rate is fixed for every resulting affiliation.</div>
       </div>
 
-      <h2>Customer invitation rewards</h2>
+      <h2>Affiliated join link</h2>
       <div class="card">
-        <p class="muted">Commission on an agent invitation is this portal. The fixed acquisition reward for a customer invitation code is one settlement, allocated when they pay and blocked until the hold ends if they are still paying. Accept it on the customer dashboard: premium credit, the health wallet, savings, or cash.</p>
+        <p class="muted">This is the same join page an admin invitation opens. Send it to a customer, an agent, or a supplier. They choose that path on the page. The code on the link is yours, so the reward layers stay on the affiliation you are building. Commission invitations above are a separate rail.</p>
+        <label for="affiliated-join-link">Join link</label>
+        <input id="affiliated-join-link" readonly placeholder="Generate a join link from your customer account">
+        <p class="muted" id="affiliated-join-note" style="margin-top:8px"></p>
         <div class="row" style="margin-top:12px">
+          <button class="btn primary" id="affiliated-join-copy" type="button">Copy join link</button>
+          <button class="btn" id="affiliated-join-new" type="button">Generate join link</button>
           <button class="btn alt" id="switch-customer" type="button">Open the customer reward dashboard</button>
         </div>
       </div>
@@ -193,10 +198,34 @@
 
     function showApp(on){ $('#login').classList.toggle('hidden',on); $('#app').classList.toggle('hidden',!on); if(!on) loadCaptcha(); }
 
+    function absoluteJoinLink(link){
+      const value = String(link || '');
+      if(!value) return '';
+      if(/^https?:\/\//i.test(value)) return value;
+      if(value.charAt(0)==='/') return window.location.origin + value;
+      return value;
+    }
+
+    async function loadAffiliatedJoin(){
+      const box = document.getElementById('affiliated-join-link');
+      const note = document.getElementById('affiliated-join-note');
+      const {status, body} = await api('/api/customer/invitations');
+      if(status!==200){
+        if(note) note.textContent = 'Open this portal from your customer account to send your affiliated join link.';
+        return;
+      }
+      const active = (body.codes||[]).find(item => item.status==='active' && item.join_link);
+      if(box) box.value = active ? absoluteJoinLink(active.join_link) : '';
+      const above = (body.affiliation && body.affiliation.layers_above) || [];
+      const chain = above.map(item => 'Layer '+item.layer+' above you remains '+(item.name||item.customer_id)).join('. ');
+      if(note) note.textContent = chain || 'A new member who uses this link puts you at layer 1.';
+    }
+
     async function boot(){
       const me = await api('/api/agent/me');
       if(me.status!==200){ showApp(false); return; }
       showApp(true);
+      loadAffiliatedJoin();
       $('#who').textContent = (me.body.agent && me.body.agent.display_name) || 'Agent';
       renderKpis(me.body.summary);
       loadInvitations(); loadNetwork(); loadFunnel(); loadPayouts();
@@ -267,6 +296,22 @@
     document.addEventListener('keydown', e=>{ if(e.key==='Enter' && e.target && e.target.id==='cap-a') login(); });
     $('#inv-go').addEventListener('click', createInvitation);
     $('#logout').addEventListener('click', ()=>{ localStorage.removeItem('phins_token'); TOKEN=''; showApp(false); });
+    const copyJoin = document.getElementById('affiliated-join-copy');
+    if (copyJoin) copyJoin.addEventListener('click', async ()=>{
+      const value = (document.getElementById('affiliated-join-link')||{}).value || '';
+      if(!value){ toast('Generate a join link first'); return; }
+      try { await navigator.clipboard.writeText(value); toast('Join link copied'); }
+      catch(e){ toast('Could not copy the join link'); }
+    });
+    const newJoin = document.getElementById('affiliated-join-new');
+    if (newJoin) newJoin.addEventListener('click', async ()=>{
+      const {status, body} = await api('/api/customer/invitations/generate', {method:'POST', body:JSON.stringify({})});
+      if(status!==201){ toast((body&&body.error)||'Could not create a join link'); return; }
+      const box = document.getElementById('affiliated-join-link');
+      if(box) box.value = absoluteJoinLink(body.join_link || body.registration_link || '');
+      toast('Join link ready');
+      loadAffiliatedJoin();
+    });
     const switchCustomer = document.getElementById('switch-customer');
     if (switchCustomer) switchCustomer.addEventListener('click', async ()=>{
       const {status, body} = await api('/api/customer/role-switch', {method:'POST', body:JSON.stringify({role:'customer'})});

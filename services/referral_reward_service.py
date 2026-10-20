@@ -34,6 +34,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
 import threading
 from datetime import datetime, timedelta, timezone
@@ -900,6 +901,55 @@ def _approved_request(customer_id: str, role: str) -> Optional[Dict[str, Any]]:
     if req and req.get("status") == "approved":
         return req
     return None
+
+
+_JOIN_CODE_RE = re.compile(r"^[A-Za-z0-9-]{1,80}$")
+
+
+def affiliated_join_link(code: str) -> str:
+    """The public intro page for one invitation code.
+
+    The address is the same shape an admin invitation uses. The code is the
+    only query value, so the reward chain is the customer who issued it and
+    the layers already above that customer. A parent id is not written onto
+    the link.
+    """
+    cleaned = str(code or "").strip()
+    if not _JOIN_CODE_RE.fullmatch(cleaned):
+        return ""
+    origin = ""
+    portal = _portal()
+    getter = getattr(portal, "public_portal_base_url", None) if portal else None
+    if callable(getter):
+        try:
+            origin = str(getter() or "").strip().rstrip("/")
+        except Exception:
+            origin = ""
+    path = "/join.html?code=" + cleaned
+    return f"{origin}{path}" if origin else path
+
+
+def affiliation_for(customer_id: str) -> Dict[str, Any]:
+    """Layers already above this customer.
+
+    Someone who opens the join link is a new edge. This customer is layer 1
+    for that person. The people above stay on the layers they already hold.
+    """
+    with _LOCK:
+        _ensure_loaded()
+        customer_id = str(customer_id or "").strip()
+        above = []
+        for layer, parent in chain_of(customer_id):
+            above.append({
+                "layer": layer,
+                "customer_id": parent,
+                "name": _first_name(parent),
+            })
+        return {
+            "customer_id": customer_id,
+            "layers_above": above,
+            "invite_places_you_at_layer": 1,
+        }
 
 
 def invitation_cap_for(customer_id: str) -> int:
@@ -1790,6 +1840,7 @@ def customer_dashboard(customer_id: str) -> Dict[str, Any]:
             "professional": professional_status(customer_id),
             "supplier_types": supplier_type_values(),
             "tools": _tools(customer_id),
+            "affiliation": affiliation_for(customer_id),
         }
 
 

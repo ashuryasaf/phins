@@ -663,7 +663,8 @@ document.addEventListener('DOMContentLoaded', function () {
     investments: '/savings-portfolio.html',
     credit: '/dashboard.html#billing-settings',
     agent: '/dashboard.html#referrals',
-    supplier: '/dashboard.html#referrals'
+    supplier: '/dashboard.html#referrals',
+    claims: '/claims-chat.html?start=1'
   };
 
   function customerNextUrl() {
@@ -675,6 +676,24 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     var token = String(raw).toLowerCase().replace(/[^a-z_]/g, '');
     return CUSTOMER_NEXT[token] || '';
+  }
+
+  function loginInviteCode() {
+    var raw = '';
+    try {
+      raw = new URLSearchParams(window.location.search).get('code') || '';
+    } catch (err) {
+      raw = '';
+    }
+    return String(raw).toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 80);
+  }
+
+  function customerDestination(url) {
+    if (!url) return '';
+    if (url.indexOf('/claims-chat.html') !== 0) return url;
+    var code = loginInviteCode();
+    if (!code) return url;
+    return url + (url.indexOf('?') === -1 ? '?' : '&') + 'code=' + encodeURIComponent(code);
   }
 
   function getDashboardUrl(role) {
@@ -689,7 +708,7 @@ document.addEventListener('DOMContentLoaded', function () {
       case 'claims_adjuster': return '/claims-adjuster-dashboard.html';
       case 'accountant': return '/accountant-dashboard.html';
       case 'regulator': return '/regulator-dashboard.html';
-      case 'customer': return customerNextUrl() || '/dashboard.html';
+      case 'customer': return customerDestination(customerNextUrl()) || '/dashboard.html';
       default: return '/dashboard.html';
     }
   }
