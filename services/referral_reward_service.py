@@ -873,10 +873,12 @@ def _annual_premium_cents(customer_id: str) -> int:
         if str(policy.get("status") or "").lower() in closed:
             continue
         try:
-            total += Decimal(str(policy.get("annual_premium") or 0))
-            found = True
+            amount = Decimal(str(policy.get("annual_premium") or 0))
         except Exception:
             continue
+        if amount > 0:
+            total += amount
+            found = True
     if not found:
         rec = _customer_record(customer_id) or {}
         try:
