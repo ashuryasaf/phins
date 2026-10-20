@@ -1,7 +1,8 @@
-"""Referral acquisition rewards: fixed CAC, three layers, destination choice.
+"""Referral acquisition rewards: one fee, three adjustable layers, destination choice.
 
-The fee is snapshotted in cents. Unfilled layers are retained. Agent
-commission stays on the AGI rail and is not paid from this book.
+The fee is snapshotted in cents. Upper layers take their dollars from that fee
+and the rest stays with the direct affiliate. Agent commission stays on the
+AGI rail and is not paid from this book.
 """
 import json
 import os
@@ -138,11 +139,11 @@ def test_three_layer_chain_pays_referrers_and_not_the_referee():
     created = rewards.on_customer_paying("C3")
     by_layer = {item["layer"]: item for item in created}
     assert by_layer[1]["beneficiary_customer_id"] == "C2"
-    assert by_layer[1]["amount_cents"] == 39000
+    assert by_layer[1]["amount_cents"] == 50000
     assert by_layer[2]["beneficiary_customer_id"] == "C1"
-    assert by_layer[2]["amount_cents"] == 16250
+    assert by_layer[2]["amount_cents"] == 10000
     assert by_layer[3]["beneficiary_customer_id"] == "C0"
-    assert by_layer[3]["amount_cents"] == 9750
+    assert by_layer[3]["amount_cents"] == 5000
     assert all(item["beneficiary_customer_id"] != "C3" for item in created)
     assert {item["settlement_id"] for item in created} == {"CACSET-C3"}
     assert {item["status"] for item in created} == {"held"}
@@ -160,17 +161,19 @@ def test_three_layer_chain_pays_referrers_and_not_the_referee():
     assert _cac_settlement_amounts("C3") == [pytest.approx(650.0)]
 
 
-def test_short_chain_retains_the_unfilled_layers():
+def test_short_chain_pays_the_rest_to_the_direct_affiliate():
     _customer("C1", name="Direct")
     _customer("C2", "C1", "New")
     _pay("C2", "BILL-C2")
     created = rewards.on_customer_paying("C2")
     assert len(created) == 1
-    assert created[0]["amount_cents"] == 39000
-    assert portal.PHINS_BALANCE_SHEET["expense_breakdown"]["customer_acquisition"] == pytest.approx(390.0)
+    assert created[0]["amount_cents"] == 65000
+    assert portal.PHINS_BALANCE_SHEET["expense_breakdown"]["customer_acquisition"] == pytest.approx(650.0)
     summary = rewards.book_summary()
-    assert summary["totals"]["retained"] == pytest.approx(260.0)
+    assert summary["totals"]["retained"] == pytest.approx(0.0)
     assert summary["integrity"]["ok"] is True
+    assert summary["affiliated_plan"]["preview"]["alone"] == [650.0, 0.0, 0.0]
+    assert summary["affiliated_plan"]["preview"]["three_layers"] == [500.0, 100.0, 50.0]
 
 
 def test_cycle_and_self_referral_do_not_pay_the_referee():
@@ -206,7 +209,7 @@ def test_accept_posts_once_and_a_second_accept_is_rejected():
     assert accepted["status"] == "dispatched"
     wallet = portal.HEALTH_WALLETS["C1"]
     health_tx = next(tx for tx in wallet["transactions"] if tx["id"] == "REFREWARD-RWRD-C2-L1-health")
-    assert health_tx["amount"] == pytest.approx(195.0)
+    assert health_tx["amount"] == pytest.approx(325.0)
     assert "savings" in rewards.REWARDS["RWRD-C2-L1"]["posted"]
     with pytest.raises(RewardError) as exc:
         rewards.accept_reward("RWRD-C2-L1", "C1", {"health_wallet": 50, "savings": 50, "premium": 0, "cash": 0})
@@ -239,13 +242,20 @@ def test_bad_shares_leave_the_program_unchanged_and_history_is_snapshotted():
     with pytest.raises(RewardError):
         rewards.update_config({
             "layers": [
-                {"layer": 1, "share_percent": 80},
-                {"layer": 2, "share_percent": 80},
-                {"layer": 3, "share_percent": 80},
+                {"layer": 1, "amount": 650},
+                {"layer": 2, "amount": 400},
+                {"layer": 3, "amount": 400},
             ]
         })
     assert rewards.get_config()["fee_cents"] == before
-    rewards.update_config({"fee": 100})
+    rewards.update_config({
+        "fee": 100,
+        "layers": [
+            {"layer": 1, "amount": 100},
+            {"layer": 2, "amount": 15},
+            {"layer": 3, "amount": 5},
+        ],
+    })
     assert rewards.REWARDS["RWRD-C2-L1"]["amount_cents"] == original
     assert rewards.get_config()["fee"] == pytest.approx(100.0)
 
@@ -395,11 +405,11 @@ def test_registration_with_a_customer_code_earns_on_the_first_payment():
     portal.notify_referral_reward_for_paid_customer(referee)
     reward = rewards.REWARDS[f"RWRD-{referee}-L1"]
     assert reward["beneficiary_customer_id"] == referrer
-    assert reward["amount_cents"] == 39000
+    assert reward["amount_cents"] == 65000
     sheet, status = _get("/api/admin/balance-sheet", token=_login("admin", "admin123")[0])
     assert status == 200, sheet
-    assert sheet["balance_sheet"]["expense_breakdown"]["customer_acquisition"] == pytest.approx(390.0)
-    assert sheet["referral_rewards"]["earned"] == pytest.approx(390.0)
+    assert sheet["balance_sheet"]["expense_breakdown"]["customer_acquisition"] == pytest.approx(650.0)
+    assert sheet["referral_rewards"]["earned"] == pytest.approx(650.0)
 
 
 def test_repository_round_trip():
@@ -476,9 +486,9 @@ def test_affiliated_cac_plan_blocks_the_fee_until_the_balance_holds(monkeypatch)
     assert plan["hold_months"] == 3
     assert plan["paying"] == 1
     assert plan["affiliated_customers"] == 1
-    assert plan["allocated"] == pytest.approx(390.0)
-    assert plan["blocked"] == pytest.approx(390.0)
-    assert plan["projected_release"] == pytest.approx(390.0)
+    assert plan["allocated"] == pytest.approx(650.0)
+    assert plan["blocked"] == pytest.approx(650.0)
+    assert plan["projected_release"] == pytest.approx(650.0)
     assert plan["releasable"] == pytest.approx(0.0)
     assert plan["reversed"] == pytest.approx(0.0)
     assert plan["per_paying_customer"] == pytest.approx(650.0)
@@ -491,10 +501,10 @@ def test_affiliated_cac_plan_blocks_the_fee_until_the_balance_holds(monkeypatch)
     assert accepted["status"] == "dispatched"
     assert rewards.SETTLEMENTS["C2"]["status"] == "settled"
     assert rewards.SETTLEMENTS["C2"]["released_ledger_id"]
-    assert _cac_settlement_amounts("C2") == [390.0]
+    assert _cac_settlement_amounts("C2") == [650.0]
     released = rewards.affiliated_cac_plan()
     assert released["blocked"] == pytest.approx(0.0)
-    assert released["settled"] == pytest.approx(390.0)
+    assert released["settled"] == pytest.approx(650.0)
 
 
 def test_lapsed_balance_reverses_the_single_settlement_once():
@@ -503,7 +513,7 @@ def test_lapsed_balance_reverses_the_single_settlement_once():
     _customer("C2", "C1", "New")
     _pay("C2", "BILL-LAPSE")
     rewards.on_customer_paying("C2")
-    assert portal.PHINS_BALANCE_SHEET["expense_breakdown"]["customer_acquisition"] == pytest.approx(before + 390.0)
+    assert portal.PHINS_BALANCE_SHEET["expense_breakdown"]["customer_acquisition"] == pytest.approx(before + 650.0)
     portal.BILLING["BILL-LAPSE"]["status"] = "open"
     rewards.on_customer_paying("C2")
     assert portal.PHINS_BALANCE_SHEET["expense_breakdown"]["customer_acquisition"] == pytest.approx(before)
@@ -518,7 +528,7 @@ def test_lapsed_balance_reverses_the_single_settlement_once():
     assert portal.PHINS_BALANCE_SHEET["expense_breakdown"]["customer_acquisition"] == pytest.approx(before)
     assert rewards.verify_integrity()["ok"] is True
     plan = rewards.affiliated_cac_plan()
-    assert plan["reversed"] == pytest.approx(390.0)
+    assert plan["reversed"] == pytest.approx(650.0)
     assert plan["allocated"] == pytest.approx(0.0)
 
 
@@ -627,3 +637,205 @@ def test_affiliated_join_link_is_the_admin_page_and_keeps_the_chain():
     assert 'id="affiliated-join-link"' in supplier
     assert "function absoluteJoinLink" in supplier
     assert "/join.html?code=" in dashboard
+    assert rewards.REWARDS[f"RWRD-{grandchild}-L1"]["amount_cents"] == 55000
+    assert rewards.REWARDS[f"RWRD-{grandchild}-L2"]["amount_cents"] == 10000
+
+
+def test_legacy_share_config_becomes_a_waterfall_and_old_rewards_still_tie():
+    legacy = {
+        "version": 1,
+        "enabled": True,
+        "currency": "USD",
+        "fee_cents": 65000,
+        "max_layers": 3,
+        "customer_invitation_cap": 10,
+        "agent_invitation_cap": 100,
+        "agent_default_rate_percent": 10,
+        "hold_months": 3,
+        "auto_dispatch": False,
+        "layers": [
+            {"layer": 1, "share_bps": 6000, "allowed": ["premium"], "cash_cap_bps": 0,
+             "default_bps": {"premium": 10000, "health_wallet": 0, "savings": 0, "cash": 0}},
+            {"layer": 2, "share_bps": 2500, "allowed": ["premium"], "cash_cap_bps": 0,
+             "default_bps": {"premium": 10000, "health_wallet": 0, "savings": 0, "cash": 0}},
+            {"layer": 3, "share_bps": 1500, "allowed": ["premium"], "cash_cap_bps": 0,
+             "default_bps": {"premium": 10000, "health_wallet": 0, "savings": 0, "cash": 0}},
+        ],
+    }
+    loaded = rewards._validate_config(legacy)
+    assert loaded["layers"][0]["amount_cents"] == 65000
+    assert loaded["layers"][1]["amount_cents"] == 16250
+    assert loaded["layers"][2]["amount_cents"] == 9750
+    assert rewards.waterfall_amounts(65000, [65000, 16250, 9750], [1, 2, 3]) == [39000, 16250, 9750]
+    old = {
+        "id": "RWRD-OLD-L1",
+        "referee_customer_id": "OLD",
+        "beneficiary_customer_id": "PARENT",
+        "layer": 1,
+        "status": "earned",
+        "fee_cents": 65000,
+        "share_bps": 6000,
+        "amount_cents": 39000,
+        "currency": "USD",
+        "program_shares": [6000, 2500, 1500],
+        "policy": {"allowed": ["premium"], "cash_cap_bps": 0, "default_bps": {"premium": 10000}},
+        "allocation": None,
+        "posted": {},
+        "books_tx_id": None,
+        "ledger_entry_id": None,
+        "earned_at": "2026-01-01T00:00:00Z",
+        "dispatched_at": None,
+    }
+    rewards._seal(old)
+    assert rewards._reward_intact(old)
+    assert "allocation_method" not in (old.get("policy") or {})
+
+
+def test_premium_percent_uses_annual_premium_and_the_layer_proportions():
+    rewards.update_config({
+        "fee_mode": "premium_percent",
+        "premium_percent": 10,
+        "fee": 650,
+        "layers": [
+            {"layer": 1, "amount": 650},
+            {"layer": 2, "amount": 100},
+            {"layer": 3, "amount": 50},
+        ],
+    })
+    _customer("C0")
+    _customer("C1", "C0")
+    _customer("C2", "C1")
+    _customer("C3", "C2")
+    _pay("C3", "BILL-PCT")
+    assert rewards.on_customer_paying("C3") == []
+    portal.POLICIES["POL-PCT"] = {
+        "id": "POL-PCT",
+        "customer_id": "C3",
+        "status": "active",
+        "annual_premium": 2000,
+    }
+    created = rewards.on_customer_paying("C3")
+    expected = rewards.waterfall_amounts(20000, [65000, 10000, 5000], [1, 2, 3])
+    by_layer = {item["layer"]: item["amount_cents"] for item in created}
+    assert by_layer == {1: expected[0], 2: expected[1], 3: expected[2]}
+    assert sum(expected) == 20000
+    assert rewards.SETTLEMENTS["C3"]["fee_cents"] == 20000
+    assert rewards.SETTLEMENTS["C3"]["retained_cents"] == 0
+    assert rewards.REWARDS["RWRD-C3-L1"]["policy"]["premium_cents"] == 200000
+    assert rewards.verify_integrity()["ok"] is True
+    rewards.update_config({"fee_mode": "fixed", "fee": 700, "layers": [
+        {"layer": 1, "amount": 700},
+        {"layer": 2, "amount": 100},
+        {"layer": 3, "amount": 50},
+    ]})
+    assert rewards.REWARDS["RWRD-C3-L1"]["amount_cents"] == expected[0]
+
+
+def test_affiliate_book_totals_layers_blocked_and_destination_links(monkeypatch):
+    _customer("ROOT", name="Root Affiliate")
+    for index in range(3):
+        referee = f"D{index}"
+        _customer(referee, "ROOT", f"Direct {index}")
+        _pay(referee, f"BILL-{referee}")
+        rewards.on_customer_paying(referee)
+    _customer("MID", "ROOT", "Middle")
+    for index in range(5):
+        referee = f"S{index}"
+        _customer(referee, "MID", f"Second {index}")
+        _pay(referee, f"BILL-{referee}")
+        rewards.on_customer_paying(referee)
+    _customer("LOW", "MID", "Low")
+    for index in range(8):
+        referee = f"T{index}"
+        _customer(referee, "LOW", f"Third {index}")
+        _pay(referee, f"BILL-{referee}")
+        rewards.on_customer_paying(referee)
+    book = rewards.customer_dashboard("ROOT")["affiliation_book"]
+    assert book["affiliated_customers"] == 16
+    assert book["by_layer"]["1"] == {
+        "customers": 3, "amount": 1950.0, "blocked": 1950.0, "available": 0.0, "dispatched": 0.0,
+    }
+    assert book["by_layer"]["2"]["customers"] == 5
+    assert book["by_layer"]["2"]["amount"] == pytest.approx(500.0)
+    assert book["by_layer"]["3"]["customers"] == 8
+    assert book["by_layer"]["3"]["amount"] == pytest.approx(400.0)
+    assert book["blocked"] == pytest.approx(2850.0)
+    assert book["available"] == pytest.approx(0.0)
+    direct = next(row for row in book["rows"] if row["referee_customer_id"] == "D0")
+    assert direct["blocked_amount"] == pytest.approx(650.0)
+    assert {link["href"] for link in direct["links"]} >= {
+        "/dashboard.html#billing",
+        "/dashboard.html#health-wallet",
+        "/dashboard.html#investment-portfolio",
+    }
+    monkeypatch.setattr(rewards, "_now", lambda: "2099-01-01T00:00:00Z")
+    rewards._refresh_all_locked()
+    accepted = rewards.accept_reward("RWRD-D0-L1", "ROOT", {
+        "premium": 0, "health_wallet": 0, "savings": 100, "cash": 0,
+    })
+    assert accepted["distribution"] == "savings"
+    refreshed = rewards.customer_dashboard("ROOT")["affiliation_book"]
+    sent = next(row for row in refreshed["rows"] if row["referee_customer_id"] == "D0")
+    assert sent["status"] == "dispatched"
+    assert sent["available_amount"] == pytest.approx(0.0)
+    assert sent["dispatched_amount"] == pytest.approx(650.0)
+    assert sent["links"] == [{
+        "destination": "savings",
+        "label": "Investments",
+        "href": "/dashboard.html#investment-portfolio",
+        "staff_href": "/savings-portfolio.html",
+    }]
+    plan = rewards.affiliated_cac_plan()
+    assert plan["by_layer"]["1"]["amount"] == pytest.approx(1950.0 + 5 * 550 + 8 * 500)
+    assert any(row["reward_id"] == "RWRD-D0-L1" and row["distribution"] == "savings" for row in plan["rows"])
+    assert rewards.verify_integrity()["ok"] is True
+
+
+def test_actuary_adjusts_the_layer_schedule_and_other_roles_cannot():
+    token, role = _login("actuary", "actuary123")
+    assert role == "actuary"
+    saved, status = _post("/api/admin/referral-rewards/plan", {
+        "fee_mode": "fixed",
+        "fee": 650,
+        "premium_percent": 12,
+        "layers": [
+            {"layer": 1, "amount": 650},
+            {"layer": 2, "amount": 80},
+            {"layer": 3, "amount": 40},
+        ],
+    }, token=token)
+    assert status == 200, saved
+    assert saved["fee_cents"] == 65000
+    assert saved["premium_percent"] == pytest.approx(12.0)
+    assert [layer["amount"] for layer in saved["layers"]] == [650.0, 80.0, 40.0]
+    assert saved["preview"]["three_layers"] == [530.0, 80.0, 40.0]
+    denied, status = _post("/api/admin/referral-rewards/config", {"fee": 10}, token=token)
+    assert status == 403, denied
+    accountant, _role = _login("accountant", "acct123")
+    denied, status = _post("/api/admin/referral-rewards/plan", {"fee": 10}, token=accountant)
+    assert status == 403, denied
+    email = "plan-customer@example.com"
+    _register("Plan Customer", email)
+    customer, _role = _login(email, "secure123456")
+    denied, status = _post("/api/admin/referral-rewards/plan", {"fee": 10}, token=customer)
+    assert status == 403, denied
+    book, status = _get("/api/admin/referral-rewards", token=token)
+    assert status == 200, book
+    assert book["affiliated_plan"]["schedule"][1]["amount"] == pytest.approx(80.0)
+    assert rewards.get_config()["layers"][2]["amount"] == pytest.approx(40.0)
+
+    static = Path(__file__).resolve().parents[1] / "web_portal" / "static"
+    actuary = (static / "actuary-dashboard.html").read_text(encoding="utf-8")
+    admin = (static / "admin.html").read_text(encoding="utf-8")
+    dashboard = (static / "dashboard.html").read_text(encoding="utf-8")
+    agent = (static / "agent-portal.html").read_text(encoding="utf-8")
+    supplier = (static / "supplier-portal.html").read_text(encoding="utf-8")
+    assert 'id="cac-plan-table"' in actuary
+    assert 'id="cac-plan-amount-2"' in actuary
+    assert "/api/admin/referral-rewards/plan" in actuary
+    assert 'id="cac-amount-1"' in admin
+    assert 'id="affiliation-book-table"' in dashboard
+    assert 'id="affiliation-book-table"' in agent
+    assert 'id="affiliation-book-table"' in supplier
+    assert "/savings-portfolio.html" in dashboard
+    assert "/billing.html" in dashboard

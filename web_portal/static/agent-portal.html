@@ -120,6 +120,13 @@
         </div>
       </div>
 
+      <h2>Affiliated-customer acquisition</h2>
+      <div class="card" style="overflow-x:auto">
+        <p class="muted" id="affiliation-book-summary">Loading your affiliation…</p>
+        <p class="muted"><a href="/billing.html">Billing</a> · <a href="/savings-portfolio.html">Investments</a> · <button type="button" id="affiliation-open-wallet" class="btn">Health wallet</button></p>
+        <table id="affiliation-book-table"><thead><tr><th>Affiliated customer</th><th>Layer</th><th>Amount</th><th>Blocked</th><th>Ready to use</th><th>Distribution</th></tr></thead><tbody></tbody></table>
+      </div>
+
       <h2>My invitations</h2>
       <div class="card" style="overflow-x:auto"><table id="inv-table"><thead><tr><th>Code</th><th>Type</th><th>Proposed</th><th>Locked</th><th>Status</th></tr></thead><tbody></tbody></table></div>
 
@@ -226,6 +233,7 @@
       if(me.status!==200){ showApp(false); return; }
       showApp(true);
       loadAffiliatedJoin();
+      loadAffiliationBook();
       $('#who').textContent = (me.body.agent && me.body.agent.display_name) || 'Agent';
       renderKpis(me.body.summary);
       loadInvitations(); loadNetwork(); loadFunnel(); loadPayouts();
@@ -312,6 +320,50 @@
       toast('Join link ready');
       loadAffiliatedJoin();
     });
+    async function openAffiliationSurface(href){
+      const {status, body} = await api('/api/customer/role-switch', {method:'POST', body:JSON.stringify({role:'customer'})});
+      if(status!==200 || !body.token){ toast((body&&body.error)||'Could not open the customer view'); return; }
+      TOKEN = body.token; localStorage.setItem('phins_token', TOKEN);
+      window.location.href = href;
+    }
+
+    async function loadAffiliationBook(){
+      const {status, body} = await api('/api/customer/referral-rewards');
+      const summary = document.getElementById('affiliation-book-summary');
+      const table = document.getElementById('affiliation-book-table');
+      if(!table) return;
+      if(status!==200){
+        if(summary) summary.textContent = 'The acquisition book opens from your customer account.';
+        return;
+      }
+      const book = body.affiliation_book || {};
+      const layers = book.by_layer || {};
+      const line = [1,2,3].map(function(layer){
+        const slot = layers[String(layer)] || {};
+        return (slot.customers||0)+' on layer '+layer+' totaling '+fmt(slot.amount||0);
+      }).join(' · ');
+      if(summary) summary.textContent = (book.affiliated_customers||0)+' affiliated customers · '+line+
+        ' · blocked '+fmt(book.blocked||0)+' · ready to use '+fmt(book.available||0);
+      const rows = book.rows || [];
+      table.querySelector('tbody').innerHTML = rows.length ? rows.map(function(row){
+        const links = (row.links||[]).map(function(link){
+          return '<button type="button" data-affiliation-href="'+escHtml(link.href)+'">'+escHtml(link.label)+'</button>';
+        }).join(', ');
+        const amount = row.booked===false ? ('Projected '+fmt(row.projected_amount||0)) : fmt(row.amount||0);
+        return '<tr><td>'+escHtml(row.referee_name||'')+'</td><td>'+escHtml(row.layer)+'</td><td>'+amount+
+          '</td><td>'+fmt(row.blocked_amount||0)+'</td><td>'+fmt(row.available_amount||0)+'</td><td>'+
+          escHtml(row.distribution || String(row.status||'').replace(/_/g,' '))+(links? ' · '+links : '')+'</td></tr>';
+      }).join('') : '<tr><td colspan="6" class="muted">No affiliated customers yet.</td></tr>';
+    }
+
+    document.addEventListener('click', function(event){
+      const button = event.target && event.target.closest ? event.target.closest('[data-affiliation-href]') : null;
+      if(!button) return;
+      openAffiliationSurface(button.getAttribute('data-affiliation-href'));
+    });
+    const walletLink = document.getElementById('affiliation-open-wallet');
+    if(walletLink) walletLink.addEventListener('click', function(){ openAffiliationSurface('/dashboard.html#health-wallet'); });
+
     const switchCustomer = document.getElementById('switch-customer');
     if (switchCustomer) switchCustomer.addEventListener('click', async ()=>{
       const {status, body} = await api('/api/customer/role-switch', {method:'POST', body:JSON.stringify({role:'customer'})});

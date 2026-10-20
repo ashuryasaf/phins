@@ -419,6 +419,18 @@
     </div>
 
     <div class="card" style="margin-bottom:16px">
+      <h3 style="margin:0 0 8px">Affiliated-customer acquisition</h3>
+      <p class="muted-text" id="affiliation-book-summary">Loading your affiliation…</p>
+      <p class="muted-text"><a href="/billing.html">Billing</a> · <a href="/savings-portfolio.html">Investments</a> · <button type="button" class="btn btn-outline" onclick="openAffiliationSurface('/dashboard.html#health-wallet')">Health wallet</button></p>
+      <div style="overflow-x:auto">
+        <table id="affiliation-book-table" style="width:100%;border-collapse:collapse">
+          <thead><tr><th>Affiliated customer</th><th>Layer</th><th>Amount</th><th>Blocked</th><th>Ready to use</th><th>Distribution</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
       <h3 style="margin:0 0 8px">Affiliated join link</h3>
       <p class="muted-text">Send the same join page an admin invitation opens. A customer, an agent, or a supplier chooses that path on the page. The code on the link is yours, so the reward layers stay on the affiliation you are building.</p>
       <input id="affiliated-join-link" readonly style="width:100%;margin:8px 0" placeholder="Generate a join link from your customer account">
@@ -1653,6 +1665,64 @@
       return value;
     }
 
+    function escAffiliation(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, function(ch) {
+        return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch];
+      });
+    }
+
+    function money(value) {
+      return '$' + Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    async function openAffiliationSurface(href) {
+      const token = getToken();
+      const response = await fetch('/api/customer/role-switch', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'customer' })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body.token) return;
+      localStorage.setItem('phins_token', body.token);
+      window.location.href = href;
+    }
+
+    async function loadAffiliationBook() {
+      const token = getToken();
+      const summary = document.getElementById('affiliation-book-summary');
+      const table = document.getElementById('affiliation-book-table');
+      if (!table || !token) return;
+      const response = await fetch('/api/customer/referral-rewards', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (summary) summary.textContent = 'The acquisition book opens from your customer account.';
+        return;
+      }
+      const book = body.affiliation_book || {};
+      const layers = book.by_layer || {};
+      const line = [1, 2, 3].map(function(layer) {
+        const slot = layers[String(layer)] || {};
+        return (slot.customers || 0) + ' on layer ' + layer + ' totaling ' + money(slot.amount || 0);
+      }).join(' · ');
+      if (summary) {
+        summary.textContent = (book.affiliated_customers || 0) + ' affiliated customers · ' + line +
+          ' · blocked ' + money(book.blocked || 0) + ' · ready to use ' + money(book.available || 0);
+      }
+      const rows = book.rows || [];
+      table.querySelector('tbody').innerHTML = rows.length ? rows.map(function(row) {
+        const links = (row.links || []).map(function(link) {
+          return '<button type="button" class="btn btn-outline" data-affiliation-href="' + escAffiliation(link.href) + '">' + escAffiliation(link.label) + '</button>';
+        }).join(' ');
+        const amount = row.booked === false ? ('Projected ' + money(row.projected_amount || 0)) : money(row.amount || 0);
+        return '<tr><td>' + escAffiliation(row.referee_name || '') + '</td><td>' + escAffiliation(row.layer) + '</td><td>' + amount +
+          '</td><td>' + money(row.blocked_amount || 0) + '</td><td>' + money(row.available_amount || 0) +
+          '</td><td>' + escAffiliation(row.distribution || String(row.status || '').replace(/_/g, ' ')) + ' ' + links + '</td></tr>';
+      }).join('') : '<tr><td colspan="6">No affiliated customers yet.</td></tr>';
+    }
+
     async function loadAffiliatedJoinLink() {
       const box = document.getElementById('affiliated-join-link');
       const note = document.getElementById('affiliated-join-note');
@@ -1698,6 +1768,12 @@
     }
 
     // Initialize
+    document.addEventListener('click', function(event) {
+      const button = event.target && event.target.closest ? event.target.closest('[data-affiliation-href]') : null;
+      if (!button) return;
+      openAffiliationSurface(button.getAttribute('data-affiliation-href'));
+    });
+
     document.addEventListener('DOMContentLoaded', async () => {
       selectSupplierPortalTab(getSupplierPortalRequestedTab());
       const session = await loadSession();
@@ -1707,7 +1783,8 @@
           loadOffers(),
           refreshOrders(),
           loadSettlementData(),
-          loadAffiliatedJoinLink()
+          loadAffiliatedJoinLink(),
+          loadAffiliationBook()
         ]);
       }
     });

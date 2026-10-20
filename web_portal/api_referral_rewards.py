@@ -10,6 +10,7 @@ Routes (dispatched from ``web_portal/server.py``):
   POST /api/customer/role-switch                   {role: customer|agent|supplier}
   GET  /api/admin/referral-rewards                 book, plan, integrity (admin, accountant, actuary)
   POST /api/admin/referral-rewards/config          admin program patch
+  POST /api/admin/referral-rewards/plan            fee basis and layer amounts (admin or actuary)
   POST /api/admin/referral-rewards/hold            {hold_months} admin or actuary
   POST /api/admin/referral-rewards/recompute       backfill joins and rewards
   POST /api/admin/professional-requests/review     {id, decision, note?}
@@ -217,6 +218,11 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]], body: Dict[str, 
         if denied:
             return denied
         return _call(rewards.update_config, body, str(session.get("username") or "admin"))
+    if path == "/api/admin/referral-rewards/plan":
+        denied = _hold(session)
+        if denied:
+            return denied
+        return _call(rewards.update_plan, body, str(session.get("username") or "actuary"))
     if path == "/api/admin/referral-rewards/hold":
         denied = _hold(session)
         if denied:
