@@ -1760,9 +1760,54 @@
           <div class="card" id="cac-hold-card">
             <div class="card-title">Affiliated-customer acquisition plan</div>
             <p style="color:var(--text-light);margin-bottom:12px;font-size:0.9rem;">
-              One settlement per paying affiliated customer. The fee is on the books immediately and blocked from the referrer until the hold ends, and only if that customer is still paying. A lapsed balance reverses the expense.
+              One settlement per paying affiliated customer. Layer 1 receives the full fee when that affiliate has nobody above them. Layer 2 and layer 3 take their amounts from the fee when those layers exist, and the rest stays with the new affiliation. The total can instead be a percent of the annual premium that affiliation sold, using these dollars as the proportion. The fee is on the books immediately and blocked until the hold ends, and only if that customer is still paying. A lapsed balance reverses the expense.
             </p>
             <div id="cac-plan-summary" style="margin-bottom:12px;">Loading the acquisition plan…</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:12px;">
+              <label style="font-size:0.85rem;">Fee basis
+                <select id="cac-plan-mode" class="form-input" style="display:block;margin-top:4px;">
+                  <option value="fixed">Fixed total</option>
+                  <option value="premium_percent">Percent of annual premium</option>
+                </select>
+              </label>
+              <label style="font-size:0.85rem;">Total fee (USD)
+                <input id="cac-plan-fee" type="number" min="0" step="0.01" class="form-input" style="display:block;margin-top:4px;max-width:140px;">
+              </label>
+              <label style="font-size:0.85rem;">Premium %
+                <input id="cac-plan-premium" type="number" min="0" max="100" step="0.01" class="form-input" style="display:block;margin-top:4px;max-width:120px;">
+              </label>
+              <label style="font-size:0.85rem;">Layer 1, full fee if alone
+                <input id="cac-plan-amount-1" type="number" min="0" step="0.01" class="form-input" style="display:block;margin-top:4px;max-width:140px;">
+              </label>
+              <label style="font-size:0.85rem;">Layer 2 from the fee
+                <input id="cac-plan-amount-2" type="number" min="0" step="0.01" class="form-input" style="display:block;margin-top:4px;max-width:140px;">
+              </label>
+              <label style="font-size:0.85rem;">Layer 3 from the fee
+                <input id="cac-plan-amount-3" type="number" min="0" step="0.01" class="form-input" style="display:block;margin-top:4px;max-width:140px;">
+              </label>
+              <button class="btn btn-primary" type="button" onclick="saveCacPlan()">Save layers</button>
+            </div>
+            <p id="cac-plan-preview" style="font-size:0.9rem;margin-bottom:12px;"></p>
+            <p style="font-size:0.9rem;margin-bottom:8px;">
+              <a href="/billing.html">Billing</a>
+              · <a href="/savings-portfolio.html">Investments</a>
+              · <a href="/dashboard.html#health-wallet">Health wallet</a>
+            </p>
+            <div style="overflow-x:auto;margin-bottom:12px;">
+              <table id="cac-plan-table" style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+                <thead>
+                  <tr>
+                    <th style="text-align:left;padding:8px;">Affiliated customer</th>
+                    <th style="text-align:left;padding:8px;">Layer</th>
+                    <th style="text-align:left;padding:8px;">Amount</th>
+                    <th style="text-align:left;padding:8px;">Blocked</th>
+                    <th style="text-align:left;padding:8px;">Ready to use</th>
+                    <th style="text-align:left;padding:8px;">Distribution</th>
+                  </tr>
+                </thead>
+                <tbody><tr><td colspan="6" style="padding:8px;">Loading the acquisition book…</td></tr></tbody>
+              </table>
+            </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
               <label style="font-size:0.85rem;">Hold (months)
                 <input id="cac-hold-months" type="number" min="0" max="60" step="1" class="form-input" style="display:block;margin-top:4px;max-width:120px;">
@@ -5115,11 +5160,18 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         }
         const data = await response.json();
         const plan = data.affiliated_plan || {};
+        const config = data.config || {};
+        const layers = plan.by_layer || {};
+        const layerLine = [1, 2, 3].map(function(layer) {
+          const slot = layers[String(layer)] || {};
+          return 'layer ' + layer + ' ' + (slot.customers || 0) + ' customers $' + Number(slot.amount || 0).toFixed(2);
+        }).join(' · ');
         summary.textContent = 'Affiliated ' + (plan.affiliated_customers || 0) +
           ' · paying ' + (plan.paying || 0) +
+          ' · ' + layerLine +
           ' · allocated $' + Number(plan.allocated || 0).toFixed(2) +
           ' · blocked $' + Number(plan.blocked || 0).toFixed(2) +
-          ' · releasable $' + Number(plan.releasable || 0).toFixed(2) +
+          ' · ready $' + Number(plan.releasable || 0).toFixed(2) +
           ' · settled $' + Number(plan.settled || 0).toFixed(2) +
           ' · reversed $' + Number(plan.reversed || 0).toFixed(2) +
           ' · projected if balances hold $' + Number(plan.projected_release || 0).toFixed(2);
@@ -5127,9 +5179,82 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         if (input && document.activeElement !== input) {
           input.value = plan.hold_months != null ? plan.hold_months : 3;
         }
+        const mode = document.getElementById('cac-plan-mode');
+        if (mode && document.activeElement !== mode) mode.value = plan.fee_mode || config.fee_mode || 'fixed';
+        const fee = document.getElementById('cac-plan-fee');
+        if (fee && document.activeElement !== fee) fee.value = plan.fee != null ? plan.fee : (config.fee || '');
+        const premium = document.getElementById('cac-plan-premium');
+        if (premium && document.activeElement !== premium) premium.value = plan.premium_percent != null ? plan.premium_percent : (config.premium_percent || '');
+        (plan.schedule || config.layers || []).forEach(function(layer) {
+          const field = document.getElementById('cac-plan-amount-' + layer.layer);
+          if (field && document.activeElement !== field) field.value = layer.amount;
+        });
+        const preview = document.getElementById('cac-plan-preview');
+        const shown = plan.preview || config.preview || {};
+        if (preview && shown.three_layers) {
+          preview.textContent = 'At the reference fee: alone $' + Number(shown.alone[0]).toFixed(2) +
+            ', two layers $' + Number(shown.two_layers[0]).toFixed(2) + ' / $' + Number(shown.two_layers[1]).toFixed(2) +
+            ', three layers $' + Number(shown.three_layers[0]).toFixed(2) + ' / $' + Number(shown.three_layers[1]).toFixed(2) +
+            ' / $' + Number(shown.three_layers[2]).toFixed(2) + '.';
+        }
+        renderCacPlanRows(plan);
       } catch (err) {
         summary.textContent = 'Could not load the acquisition plan.';
       }
+    }
+
+    function escCac(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, function(ch) {
+        return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch];
+      });
+    }
+
+    function renderCacPlanRows(plan) {
+      const table = document.getElementById('cac-plan-table');
+      if (!table) return;
+      const body = table.querySelector('tbody');
+      const rows = plan.rows || [];
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="6" style="padding:8px;">No affiliated rewards yet.</td></tr>';
+        return;
+      }
+      body.innerHTML = rows.map(function(row) {
+        const links = (row.links || []).map(function(link) {
+          return '<a href="' + escCac(link.staff_href || link.href) + '">' + escCac(link.label) + '</a>';
+        }).join(', ');
+        return '<tr>' +
+          '<td style="padding:8px;">' + escCac(row.referee_name || '') + '</td>' +
+          '<td style="padding:8px;">' + escCac(row.layer) + '</td>' +
+          '<td style="padding:8px;">$' + Number(row.amount || 0).toFixed(2) + '</td>' +
+          '<td style="padding:8px;">$' + Number(row.blocked_amount || 0).toFixed(2) + '</td>' +
+          '<td style="padding:8px;">$' + Number(row.available_amount || 0).toFixed(2) + '</td>' +
+          '<td style="padding:8px;">' + escCac(row.distribution || row.status || '') + (links ? ' · ' + links : '') + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+
+    async function saveCacPlan() {
+      const fee = Number(document.getElementById('cac-plan-fee').value);
+      const layer1 = Number(document.getElementById('cac-plan-amount-1').value);
+      if (fee !== layer1) {
+        alert('Layer 1 is the full fee when there is no upper affiliation, so it has to equal the total fee.');
+        return;
+      }
+      const response = await fetch('/api/admin/referral-rewards/plan', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fee_mode: document.getElementById('cac-plan-mode').value,
+          fee: fee,
+          premium_percent: Number(document.getElementById('cac-plan-premium').value),
+          layers: [1, 2, 3].map(function(layer) {
+            return { layer: layer, amount: Number(document.getElementById('cac-plan-amount-' + layer).value) };
+          })
+        })
+      });
+      const body = await response.json().catch(function() { return {}; });
+      alert(response.ok ? 'Acquisition layers saved.' : (body.error || 'Could not save the layers.'));
+      if (response.ok) loadCacHoldPlan();
     }
 
     async function saveCacHold() {

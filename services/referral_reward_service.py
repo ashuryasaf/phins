@@ -1,18 +1,22 @@
 """Referral acquisition-reward book.
 
 A new customer who registers with another customer's invitation code is an
-edge in a chain. When that customer pays a premium bill, PHINS recognizes a
-fixed customer-acquisition fee (the admin default is $650) and splits it
-across up to three referrers above them. The fee is an expense on the general
-reserves the moment it is earned. It is not moved into a personal balance
-until the referrer accepts it and chooses a destination the program allows
-for that layer: premium credit, health wallet, savings, or cash.
+edge in a chain. When that customer pays a premium bill, PHINS recognizes one
+customer-acquisition fee and divides it across up to three referrers above
+them. The default fee is $650. Layer 1 (the direct affiliate) receives that
+whole fee when nobody stands above them. Layer 2 takes $100 from the fee when
+that affiliate's own invitation succeeded, and layer 3 takes $50. Whatever is
+not taken by an upper layer stays with the direct affiliate. The total fee is
+adjustable, and the program can instead use a percent of the annual premium
+that affiliation sold. The same dollar schedule is then the proportion of the
+computed fee. The fee is an expense on the general reserves the moment it is
+earned. It is not moved into a personal balance until the referrer accepts it
+and chooses a destination the program allows for that layer: premium credit,
+health wallet, savings, or cash.
 
-The fee does not grow with the premium and it does not continue past the
-third layer, so the cost of acquiring one paying customer is capped and known
-before the invitation goes out. A layer with nobody standing on it is retained
-by the company and is not expensed. One paying customer produces one
-settlement: a single acquisition expense for the sum of the layers that
+The fee stops at the third layer, so the cost of acquiring one paying customer
+is capped and known before the invitation goes out. One paying customer
+produces one settlement: a single acquisition expense for the layers that
 exist. That amount is allocated immediately and blocked from the referrer
 until a hold of ``hold_months`` (the default is 3, set by an admin or an
 actuary) has elapsed and the affiliated customer is still paying. If the
@@ -20,9 +24,11 @@ paid balance lapses before anyone accepts, the settlement is reversed and
 is not booked again. Agent commission (a percentage of premium, locked per
 affiliation) is a different rail and is not paid again here.
 
-Amounts are integer cents. The layer split uses the largest-remainder method
-so the three shares plus the retained remainder equal the fee exactly, and a
-later change to the program never rewrites a reward that was already earned.
+Amounts are integer cents. A fixed fee pays the configured dollars exactly.
+A premium-percent fee uses the largest-remainder method so the layers equal
+the computed fee exactly. A later change to the program never rewrites a
+reward that was already earned. Rewards sealed under the older
+percentage-share program stay on that snapshot.
 Every reward id is ``RWRD-{referee}-L{layer}``, so the same paying customer
 cannot fund a layer twice. The durable copy is a checksummed JSON file when
 the portal is in memory, and the ``referral_rewards`` tables when the
@@ -168,18 +174,93 @@ def allocate_cents(total: int, weights_bps: Sequence[int]) -> List[int]:
     return floors
 
 
+def _weights_to_bps(weights: Sequence[int], total: int) -> List[int]:
+    """Express ``weights`` (which sum to ``total``) as basis points that sum to 10000."""
+    weights = [int(w) for w in weights]
+    total = int(total)
+    if total <= 0 or sum(weights) != total:
+        raise RewardError("Weights must add up to the total")
+    raw = [w * 10000 for w in weights]
+    floors = [r // total for r in raw]
+    leftover = 10000 - sum(floors)
+    order = sorted(range(len(weights)), key=lambda i: (-(raw[i] % total), i))
+    for k in range(leftover):
+        floors[order[k]] += 1
+    return floors
+
+
+def waterfall_amounts(fee_cents: int, schedule_cents: Sequence[int],
+                      filled_layers: Sequence[int]) -> List[int]:
+    """Split one acquisition fee across the layers that actually exist.
+
+    ``schedule_cents`` is ``[layer1_full, layer2, layer3]``. Layer 1's figure
+    is the reference total (the direct affiliate's amount when nobody is above
+    them). Layers 2 and 3 are taken from that total only when those affiliates
+    are in the chain. The remainder stays with layer 1. When ``fee_cents``
+    equals the reference, the configured dollars are paid exactly. Otherwise
+    the same proportions are applied to the computed fee.
+    """
+    fee = int(fee_cents)
+    schedule = [int(part) for part in schedule_cents]
+    if len(schedule) != 3:
+        raise RewardError("The layer schedule needs three amounts")
+    if fee < 0 or any(part < 0 for part in schedule):
+        raise RewardError("Amount cannot be negative")
+    present = {int(layer) for layer in filled_layers}
+    if fee == 0 or 1 not in present:
+        return [0, 0, 0]
+    reference = schedule[0]
+    if reference <= 0:
+        raise RewardError("The total fee must be positive")
+    if schedule[1] + schedule[2] > reference:
+        raise RewardError("Layer 2 and layer 3 together cannot exceed the total fee")
+    layer2 = schedule[1] if 2 in present else 0
+    layer3 = schedule[2] if 3 in present else 0
+    if fee == reference:
+        return [fee - layer2 - layer3, layer2, layer3]
+    weights = [reference - layer2 - layer3, layer2, layer3]
+    return allocate_cents(fee, _weights_to_bps(weights, reference))
+
+
+DESTINATION_LINKS: Dict[str, Dict[str, str]] = {
+    "premium": {
+        "label": "Billing",
+        "href": "/billing.html",
+        "customer_href": "/dashboard.html#billing",
+    },
+    "health_wallet": {
+        "label": "Health wallet",
+        "href": "/dashboard.html#health-wallet",
+        "customer_href": "/dashboard.html#health-wallet",
+    },
+    "savings": {
+        "label": "Investments",
+        "href": "/savings-portfolio.html",
+        "customer_href": "/dashboard.html#investment-portfolio",
+    },
+    "cash": {
+        "label": "Billing",
+        "href": "/billing.html",
+        "customer_href": "/dashboard.html#billing",
+    },
+}
+
+
 def default_config() -> Dict[str, Any]:
-    """$650, paid 60% / 25% / 15% across the three layers above the new customer.
+    """$650 total. Layer 1 keeps it all when alone; layer 2 takes $100; layer 3 takes $50.
 
     Layer 1 may take cash. Layers 2 and 3 stay inside the platform (premium,
     health wallet, savings) unless an admin opens cash for them. The default
-    split is a suggestion; the referrer chooses at acceptance.
+    split is a suggestion; the referrer chooses at acceptance. ``premium_rate_bps``
+    is the percent of annual premium used when ``fee_mode`` is ``premium_percent``.
     """
     return {
         "version": 1,
         "enabled": True,
         "currency": "USD",
+        "fee_mode": "fixed",
         "fee_cents": 65000,
+        "premium_rate_bps": 1000,
         "max_layers": 3,
         "customer_invitation_cap": 10,
         "agent_invitation_cap": 100,
@@ -189,21 +270,21 @@ def default_config() -> Dict[str, Any]:
         "layers": [
             {
                 "layer": 1,
-                "share_bps": 6000,
+                "amount_cents": 65000,
                 "allowed": ["premium", "health_wallet", "savings", "cash"],
                 "cash_cap_bps": 10000,
                 "default_bps": {"premium": 0, "health_wallet": 5000, "savings": 5000, "cash": 0},
             },
             {
                 "layer": 2,
-                "share_bps": 2500,
+                "amount_cents": 10000,
                 "allowed": ["premium", "health_wallet", "savings"],
                 "cash_cap_bps": 0,
                 "default_bps": {"premium": 4000, "health_wallet": 3000, "savings": 3000, "cash": 0},
             },
             {
                 "layer": 3,
-                "share_bps": 1500,
+                "amount_cents": 5000,
                 "allowed": ["premium", "health_wallet", "savings"],
                 "cash_cap_bps": 0,
                 "default_bps": {"premium": 10000, "health_wallet": 0, "savings": 0, "cash": 0},
@@ -216,12 +297,31 @@ def _blank_bps() -> Dict[str, int]:
     return {dest: 0 for dest in DESTINATIONS}
 
 
+def _layer_amount_cents(item: Dict[str, Any]) -> Optional[int]:
+    if item.get("amount_cents") is not None:
+        return int(item.get("amount_cents") or 0)
+    if item.get("amount") is not None:
+        return cents_from_dollars(item.get("amount"))
+    return None
+
+
 def _validate_config(raw: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(raw, dict):
         raise RewardError("Program config must be an object")
     fee = int(raw.get("fee_cents") or 0)
     if fee < 0 or fee > 10_000_000:
         raise RewardError("Fee must be between $0 and $100,000")
+    fee_mode = str(raw.get("fee_mode") or "fixed").strip().lower()
+    if fee_mode not in ("fixed", "premium_percent"):
+        raise RewardError("Fee basis must be fixed or a percent of annual premium")
+    if raw.get("premium_rate_bps") is not None:
+        premium_rate = int(raw.get("premium_rate_bps") or 0)
+    else:
+        premium_rate = 1000
+    if premium_rate < 0 or premium_rate > 10000:
+        raise RewardError("Premium percent must be between 0 and 100")
+    if fee_mode == "premium_percent" and premium_rate <= 0:
+        raise RewardError("Percent of annual premium must be greater than 0")
     max_layers = int(raw.get("max_layers") or 3)
     if max_layers not in LAYERS:
         raise RewardError("max_layers must be 1, 2, or 3")
@@ -280,19 +380,46 @@ def _validate_config(raw: Dict[str, Any]) -> Dict[str, Any]:
             raise RewardError(f"Layer {layer} default cash exceeds the cash cap")
         by_layer[layer] = {
             "layer": layer,
+            "amount_cents": _layer_amount_cents(item),
             "share_bps": int(item.get("share_bps") or 0),
             "allowed": allowed,
             "cash_cap_bps": cash_cap,
             "default_bps": default,
         }
-    shares = [by_layer[n]["share_bps"] for n in LAYERS]
-    if any(s < 0 or s > 10000 for s in shares) or sum(shares) != 10000:
-        raise RewardError("Layer shares must be non-negative and add up to 100%")
+    if any(by_layer[n]["amount_cents"] is None for n in LAYERS):
+        shares = [by_layer[n]["share_bps"] for n in LAYERS]
+        if fee <= 0 or any(part < 0 for part in shares) or sum(shares) != 10000:
+            raise RewardError("Each layer needs a dollar amount, or legacy shares that add up to 100%")
+        derived = allocate_cents(fee, shares)
+        # A saved percentage program becomes a waterfall: the direct affiliate's
+        # full amount is the fee, and the old upper shares are the carve-outs.
+        by_layer[1]["amount_cents"] = fee
+        by_layer[2]["amount_cents"] = derived[1]
+        by_layer[3]["amount_cents"] = derived[2]
+    amounts = [int(by_layer[n]["amount_cents"]) for n in LAYERS]
+    if any(part < 0 for part in amounts):
+        raise RewardError("A layer amount cannot be negative")
+    if amounts[0] != fee:
+        raise RewardError(
+            "Layer 1 is the full fee when that affiliate has nobody above them, so it must equal the total fee"
+        )
+    if amounts[1] + amounts[2] > fee:
+        raise RewardError("Layer 2 and layer 3 together cannot exceed the total fee")
+    if fee > 0:
+        display = waterfall_amounts(fee, amounts, LAYERS)
+        shares = _weights_to_bps(display, fee)
+    else:
+        shares = [10000, 0, 0]
+    for layer, share in zip(LAYERS, shares):
+        by_layer[layer]["share_bps"] = share
+        by_layer[layer]["amount_cents"] = amounts[layer - 1]
     return {
         "version": int(raw.get("version") or 1),
         "enabled": bool(raw.get("enabled", True)),
         "currency": "USD",
+        "fee_mode": fee_mode,
         "fee_cents": fee,
+        "premium_rate_bps": premium_rate,
         "max_layers": max_layers,
         "customer_invitation_cap": customer_cap,
         "agent_invitation_cap": agent_cap,
@@ -310,25 +437,48 @@ def _layer_policy(cfg: Dict[str, Any], layer: int) -> Dict[str, Any]:
     raise RewardError(f"Layer {layer} is not in the program")
 
 
+def _schedule_cents(cfg: Dict[str, Any]) -> List[int]:
+    return [int(item["amount_cents"]) for item in cfg["layers"]]
+
+
+def _preview_amounts(cfg: Dict[str, Any]) -> Dict[str, List[float]]:
+    schedule = _schedule_cents(cfg)
+    fee = int(cfg.get("fee_cents") or 0)
+    def pack(filled: Sequence[int]) -> List[float]:
+        if fee <= 0:
+            return [0.0, 0.0, 0.0]
+        return [dollars(part) for part in waterfall_amounts(fee, schedule, filled)]
+    return {
+        "alone": pack((1,)),
+        "two_layers": pack((1, 2)),
+        "three_layers": pack((1, 2, 3)),
+    }
+
+
 def config_to_admin(cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     cfg = cfg or CONFIG or default_config()
     return {
         "version": cfg["version"],
         "enabled": cfg["enabled"],
         "currency": cfg["currency"],
+        "fee_mode": cfg.get("fee_mode") or "fixed",
         "fee": dollars(cfg["fee_cents"]),
         "fee_cents": cfg["fee_cents"],
+        "premium_percent": bps_to_percent(int(cfg.get("premium_rate_bps") or 0)),
+        "premium_rate_bps": int(cfg.get("premium_rate_bps") or 0),
         "max_layers": cfg["max_layers"],
         "customer_invitation_cap": cfg["customer_invitation_cap"],
         "agent_invitation_cap": cfg["agent_invitation_cap"],
         "agent_default_rate_percent": cfg["agent_default_rate_percent"],
         "hold_months": int(cfg.get("hold_months", 3)),
         "auto_dispatch": cfg["auto_dispatch"],
+        "preview": _preview_amounts(cfg),
         "layers": [
             {
                 "layer": item["layer"],
-                "share_percent": bps_to_percent(item["share_bps"]),
-                "amount": dollars(allocate_cents(cfg["fee_cents"], [i["share_bps"] for i in cfg["layers"]])[item["layer"] - 1]),
+                "amount": dollars(int(item.get("amount_cents") or 0)),
+                "amount_cents": int(item.get("amount_cents") or 0),
+                "share_percent": bps_to_percent(int(item.get("share_bps") or 0)),
                 "allowed": list(item["allowed"]),
                 "cash_cap_percent": bps_to_percent(item["cash_cap_bps"]),
                 "default": {k: bps_to_percent(v) for k, v in item["default_bps"].items()},
@@ -341,14 +491,23 @@ def config_to_admin(cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
 def _admin_to_internal(raw: Dict[str, Any], previous: Dict[str, Any]) -> Dict[str, Any]:
     """Merge an admin patch (dollars and percents) onto the current program."""
     base = config_to_admin(previous)
-    for key in ("enabled", "max_layers", "customer_invitation_cap", "agent_invitation_cap",
-                "agent_default_rate_percent", "hold_months", "auto_dispatch"):
+    for key in ("enabled", "fee_mode", "max_layers", "customer_invitation_cap",
+                "agent_invitation_cap", "agent_default_rate_percent", "hold_months",
+                "auto_dispatch"):
         if key in raw and raw[key] is not None:
             base[key] = raw[key]
+    fee_set = False
     if raw.get("fee") is not None:
         base["fee"] = raw["fee"]
+        fee_set = True
     elif raw.get("fee_cents") is not None:
         base["fee"] = dollars(int(raw["fee_cents"]))
+        fee_set = True
+    if raw.get("premium_percent") is not None:
+        base["premium_percent"] = raw["premium_percent"]
+    elif raw.get("premium_rate_bps") is not None:
+        base["premium_percent"] = bps_to_percent(int(raw["premium_rate_bps"]))
+    layer1_set = False
     if isinstance(raw.get("layers"), list):
         by = {int(item["layer"]): dict(item) for item in base["layers"]}
         for patch in raw["layers"]:
@@ -356,7 +515,19 @@ def _admin_to_internal(raw: Dict[str, Any], previous: Dict[str, Any]) -> Dict[st
                 raise RewardError("Each layer patch needs a layer number")
             layer = int(patch["layer"])
             current = dict(by.get(layer) or {"layer": layer})
-            for key in ("share_percent", "allowed", "cash_cap_percent"):
+            if patch.get("share_percent") is not None and patch.get("amount") is None and patch.get("amount_cents") is None:
+                raise RewardError(
+                    "Set each layer as a dollar amount. The acquisition schedule is no longer a set of shares that must add to 100%"
+                )
+            if patch.get("amount") is not None:
+                current["amount"] = patch["amount"]
+                if layer == 1:
+                    layer1_set = True
+            elif patch.get("amount_cents") is not None:
+                current["amount"] = dollars(int(patch["amount_cents"]))
+                if layer == 1:
+                    layer1_set = True
+            for key in ("allowed", "cash_cap_percent"):
                 if key in patch and patch[key] is not None:
                     current[key] = patch[key]
             if isinstance(patch.get("default"), dict):
@@ -365,12 +536,16 @@ def _admin_to_internal(raw: Dict[str, Any], previous: Dict[str, Any]) -> Dict[st
                 current["default"] = merged_default
             by[layer] = current
         base["layers"] = [by[n] for n in LAYERS]
+    if fee_set and not layer1_set:
+        base["layers"][0]["amount"] = base["fee"]
+    elif layer1_set and not fee_set:
+        base["fee"] = base["layers"][0]["amount"]
     layers = []
     for item in base["layers"]:
         default = item.get("default") or {}
         layers.append({
             "layer": int(item["layer"]),
-            "share_bps": percent_to_bps(item.get("share_percent", 0)),
+            "amount_cents": cents_from_dollars(item.get("amount", 0)),
             "allowed": list(item.get("allowed") or []),
             "cash_cap_bps": percent_to_bps(item.get("cash_cap_percent", 0)),
             "default_bps": {dest: percent_to_bps(default.get(dest, 0)) for dest in DESTINATIONS},
@@ -378,7 +553,9 @@ def _admin_to_internal(raw: Dict[str, Any], previous: Dict[str, Any]) -> Dict[st
     return _validate_config({
         "version": int(previous.get("version") or 1),
         "enabled": base["enabled"],
+        "fee_mode": base.get("fee_mode") or "fixed",
         "fee_cents": cents_from_dollars(base["fee"]),
+        "premium_rate_bps": percent_to_bps(base.get("premium_percent", 0)),
         "max_layers": base["max_layers"],
         "customer_invitation_cap": base["customer_invitation_cap"],
         "agent_invitation_cap": base["agent_invitation_cap"],
@@ -599,7 +776,7 @@ def _ensure_loaded() -> None:
     if _loaded:
         return
     CONFIG.clear()
-    CONFIG.update(default_config())
+    CONFIG.update(_validate_config(default_config()))
     if _db_enabled():
         _hydrate_db()
     else:
@@ -612,7 +789,7 @@ def reset_referral_rewards() -> None:
     global _loaded
     with _LOCK:
         CONFIG.clear()
-        CONFIG.update(default_config())
+        CONFIG.update(_validate_config(default_config()))
         LINKS.clear()
         REWARDS.clear()
         SETTLEMENTS.clear()
@@ -668,6 +845,75 @@ def _first_name(customer_id: str) -> str:
 def _customer_record(customer_id: str) -> Optional[Dict[str, Any]]:
     rec = _customers().get(customer_id)
     return rec if isinstance(rec, dict) else None
+
+
+def _policies() -> Dict[str, Any]:
+    portal = _portal()
+    if portal is None:
+        return {}
+    policies = getattr(portal, "POLICIES", None)
+    return policies if isinstance(policies, dict) else {}
+
+
+def _annual_premium_cents(customer_id: str) -> int:
+    """Annual premium sold to this affiliated customer, in cents.
+
+    Active policy rows win. A customer record is used only when no policy
+    carries a premium, so the same premium is not counted twice.
+    """
+    customer_id = str(customer_id or "")
+    closed = {"cancelled", "canceled", "void", "declined", "lapsed", "terminated"}
+    total = Decimal("0")
+    found = False
+    for policy in _policies().values():
+        if not isinstance(policy, dict):
+            continue
+        if str(policy.get("customer_id") or "") != customer_id:
+            continue
+        if str(policy.get("status") or "").lower() in closed:
+            continue
+        try:
+            total += Decimal(str(policy.get("annual_premium") or 0))
+            found = True
+        except Exception:
+            continue
+    if not found:
+        rec = _customer_record(customer_id) or {}
+        try:
+            total = Decimal(str(rec.get("annual_premium") or 0))
+        except Exception:
+            total = Decimal("0")
+    if total < 0:
+        return 0
+    return cents_from_dollars(total)
+
+
+def _percent_of_cents(total_cents: int, rate_bps: int) -> int:
+    if int(total_cents) <= 0 or int(rate_bps) <= 0:
+        return 0
+    quantized = (Decimal(int(total_cents)) * Decimal(int(rate_bps)) / Decimal(10000)).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP,
+    )
+    return int(quantized)
+
+
+def _fee_basis_for(customer_id: str, cfg: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+    """The fee for this paying customer, and the schedule snapshot that produced it."""
+    schedule = _schedule_cents(cfg)
+    mode = str(cfg.get("fee_mode") or "fixed")
+    rate = int(cfg.get("premium_rate_bps") or 0)
+    premium = 0
+    if mode == "premium_percent":
+        premium = _annual_premium_cents(customer_id)
+        fee = _percent_of_cents(premium, rate)
+    else:
+        fee = int(cfg.get("fee_cents") or 0)
+    return fee, {
+        "fee_mode": mode,
+        "schedule_cents": schedule,
+        "premium_cents": premium,
+        "premium_rate_bps": rate,
+    }
 
 
 def _is_paying(customer_id: str, billing: Optional[Dict[str, Any]] = None) -> bool:
@@ -771,6 +1017,10 @@ def _book_settlement(settlement: Dict[str, Any], reward_ids: Sequence[str]) -> O
             "retained_cents": settlement["retained_cents"],
             "hold_months": settlement["hold_months"],
             "reward_ids": list(reward_ids),
+            "fee_mode": settlement.get("fee_mode"),
+            "premium_cents": settlement.get("premium_cents"),
+            "premium_rate_bps": settlement.get("premium_rate_bps"),
+            "schedule_cents": settlement.get("schedule_cents"),
         },
     )
     return str((posted or {}).get("tx_id") or "")
@@ -1007,12 +1257,18 @@ def on_customer_joined(*, referee_customer_id: str, referrer_customer_id: str,
     return {"recorded": True, "link": dict(LINKS.get(referee) or {})}
 
 
-def _policy_snapshot(cfg: Dict[str, Any], layer: int) -> Dict[str, Any]:
+def _policy_snapshot(cfg: Dict[str, Any], layer: int, basis: Dict[str, Any]) -> Dict[str, Any]:
     item = _layer_policy(cfg, layer)
     return {
         "allowed": list(item["allowed"]),
         "cash_cap_bps": int(item["cash_cap_bps"]),
         "default_bps": dict(item["default_bps"]),
+        "allocation_method": "waterfall",
+        "fee_mode": basis.get("fee_mode") or "fixed",
+        "schedule_cents": [int(part) for part in basis.get("schedule_cents") or []],
+        "premium_cents": int(basis.get("premium_cents") or 0),
+        "premium_rate_bps": int(basis.get("premium_rate_bps") or 0),
+        "filled_layers": [int(layer_no) for layer_no in basis.get("filled_layers") or []],
     }
 
 
@@ -1042,9 +1298,16 @@ def on_customer_paying(customer_id: str, billing: Optional[Dict[str, Any]] = Non
         if referee not in customers and referee not in LINKS:
             return []
         cfg = CONFIG
-        shares = [int(item["share_bps"]) for item in cfg["layers"]]
-        amounts = allocate_cents(int(cfg["fee_cents"]), shares)
         found = chain_of(referee, customers, cfg["max_layers"])
+        fee_cents, basis = _fee_basis_for(referee, cfg)
+        filled = [layer for layer, _beneficiary in found]
+        basis["filled_layers"] = filled
+        if fee_cents <= 0 or not filled:
+            return []
+        try:
+            amounts = waterfall_amounts(fee_cents, basis["schedule_cents"], filled)
+        except RewardError:
+            raise
         link = LINKS.get(referee)
         paying_at = _now()
         if link is not None and not link.get("paying_at"):
@@ -1056,6 +1319,7 @@ def on_customer_paying(customer_id: str, billing: Optional[Dict[str, Any]] = Non
         release_at = _add_months(paying_at, hold_months)
         settlement_id = f"CACSET-{referee}"
         pending: List[Dict[str, Any]] = []
+        paid_shares = _weights_to_bps(amounts, fee_cents) if sum(amounts) == fee_cents and fee_cents else [0, 0, 0]
         for layer, beneficiary in found:
             amount = amounts[layer - 1]
             if amount <= 0 or beneficiary == referee:
@@ -1074,12 +1338,12 @@ def on_customer_paying(customer_id: str, billing: Optional[Dict[str, Any]] = Non
                 "layer": layer,
                 "invitation_code": code if layer == 1 else "",
                 "status": "held",
-                "fee_cents": int(cfg["fee_cents"]),
-                "share_bps": shares[layer - 1],
+                "fee_cents": fee_cents,
+                "share_bps": paid_shares[layer - 1],
                 "amount_cents": amount,
                 "currency": "USD",
-                "program_shares": shares,
-                "policy": _policy_snapshot(cfg, layer),
+                "program_shares": paid_shares,
+                "policy": _policy_snapshot(cfg, layer, basis),
                 "allocation": None,
                 "posted": {},
                 "books_tx_id": None,
@@ -1096,9 +1360,13 @@ def on_customer_paying(customer_id: str, billing: Optional[Dict[str, Any]] = Non
         settlement = {
             "id": settlement_id,
             "referee_customer_id": referee,
-            "fee_cents": int(cfg["fee_cents"]),
+            "fee_cents": fee_cents,
             "allocated_cents": allocated,
-            "retained_cents": int(cfg["fee_cents"]) - allocated,
+            "retained_cents": fee_cents - allocated,
+            "fee_mode": basis.get("fee_mode") or "fixed",
+            "premium_cents": int(basis.get("premium_cents") or 0),
+            "premium_rate_bps": int(basis.get("premium_rate_bps") or 0),
+            "schedule_cents": list(basis.get("schedule_cents") or []),
             "status": "held",
             "hold_months": hold_months,
             "paying_at": paying_at,
@@ -1736,29 +2004,191 @@ def grant_for(customer_id: str, role: str) -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Views
 # ---------------------------------------------------------------------------
+def _distribution_choice(reward: Dict[str, Any]) -> Optional[str]:
+    allocation = reward.get("allocation") or {}
+    active = [dest for dest in DESTINATIONS if int(allocation.get(dest) or 0) > 0]
+    if not active:
+        return None
+    if len(active) == 1:
+        return active[0]
+    return "split"
+
+
+def _surface_links(destinations: Iterable[str]) -> List[Dict[str, str]]:
+    chosen = set(destinations)
+    links = []
+    for dest in DESTINATIONS:
+        if dest not in chosen:
+            continue
+        spec = DESTINATION_LINKS[dest]
+        links.append({
+            "destination": dest,
+            "label": spec["label"],
+            "href": spec["customer_href"],
+            "staff_href": spec["href"],
+        })
+    return links
+
+
+def _links_for_reward(reward: Dict[str, Any]) -> List[Dict[str, str]]:
+    allocation = reward.get("allocation") or {}
+    active = [dest for dest in DESTINATIONS if int(allocation.get(dest) or 0) > 0]
+    if active:
+        return _surface_links(active)
+    policy = reward.get("policy") or {}
+    return _surface_links(policy.get("allowed") or [])
+
+
 def public_reward(reward: Dict[str, Any]) -> Dict[str, Any]:
     policy = reward.get("policy") or {}
     allocation = reward.get("allocation") or {}
+    status = reward.get("status")
     return {
         "id": reward["id"],
         "layer": reward["layer"],
-        "status": reward["status"],
+        "status": status,
         "amount": dollars(reward["amount_cents"]),
         "amount_cents": reward["amount_cents"],
         "currency": reward.get("currency") or "USD",
         "referee_customer_id": reward["referee_customer_id"],
         "referee_name": _first_name(reward["referee_customer_id"]),
+        "beneficiary_customer_id": reward.get("beneficiary_customer_id"),
+        "beneficiary_name": _first_name(str(reward.get("beneficiary_customer_id") or "")),
         "earned_at": reward.get("earned_at"),
         "dispatched_at": reward.get("dispatched_at"),
         "release_at": reward.get("release_at"),
         "hold_months": reward.get("hold_months"),
-        "blocked": reward.get("status") == "held",
+        "blocked": status == "held",
+        "available": status == "earned",
         "settlement_id": reward.get("settlement_id"),
         "allowed": list(policy.get("allowed") or []),
         "cash_cap_percent": bps_to_percent(int(policy.get("cash_cap_bps") or 0)),
         "default": {k: bps_to_percent(v) for k, v in (policy.get("default_bps") or {}).items()},
         "allocation": {k: bps_to_percent(v) for k, v in allocation.items()} if allocation else None,
+        "distribution": _distribution_choice(reward),
+        "links": _links_for_reward(reward),
+        "fee_mode": policy.get("fee_mode") or "fixed",
         "posted": sorted((reward.get("posted") or {}).keys()),
+    }
+
+
+def _book_row(reward: Dict[str, Any], *, booked: bool = True,
+              projected_cents: int = 0) -> Dict[str, Any]:
+    status = reward.get("status")
+    cents = int(reward.get("amount_cents") or 0) if booked else 0
+    return {
+        "reward_id": reward.get("id"),
+        "referee_customer_id": reward.get("referee_customer_id"),
+        "referee_name": _first_name(str(reward.get("referee_customer_id") or "")),
+        "beneficiary_customer_id": reward.get("beneficiary_customer_id"),
+        "beneficiary_name": _first_name(str(reward.get("beneficiary_customer_id") or "")),
+        "layer": int(reward.get("layer") or 0),
+        "amount": dollars(cents),
+        "projected_amount": dollars(projected_cents) if not booked else None,
+        "booked": booked,
+        "status": status,
+        "blocked_amount": dollars(cents) if status == "held" else 0,
+        "available_amount": dollars(cents) if status == "earned" else 0,
+        "dispatched_amount": dollars(cents) if status == "dispatched" else 0,
+        "release_at": reward.get("release_at"),
+        "distribution": _distribution_choice(reward) if booked else None,
+        "allocation": public_reward(reward).get("allocation") if booked else None,
+        "links": _links_for_reward(reward) if booked else _surface_links(DESTINATIONS[:3]),
+    }
+
+
+def _empty_layer_bucket() -> Dict[str, Any]:
+    return {"customers": 0, "amount_cents": 0, "blocked_cents": 0, "available_cents": 0, "dispatched_cents": 0}
+
+
+def _layer_buckets(rewards: Iterable[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    buckets = {str(layer): _empty_layer_bucket() for layer in LAYERS}
+    for reward in rewards:
+        if reward.get("status") == "forfeited":
+            continue
+        slot = buckets.get(str(reward.get("layer")))
+        if slot is None:
+            continue
+        cents = int(reward.get("amount_cents") or 0)
+        slot["customers"] += 1
+        slot["amount_cents"] += cents
+        status = reward.get("status")
+        if status == "held":
+            slot["blocked_cents"] += cents
+        elif status == "earned":
+            slot["available_cents"] += cents
+        elif status == "dispatched":
+            slot["dispatched_cents"] += cents
+    return {
+        key: {
+            "customers": val["customers"],
+            "amount": dollars(val["amount_cents"]),
+            "blocked": dollars(val["blocked_cents"]),
+            "available": dollars(val["available_cents"]),
+            "dispatched": dollars(val["dispatched_cents"]),
+        }
+        for key, val in buckets.items()
+    }
+
+
+def _affiliate_book_locked(customer_id: str) -> Dict[str, Any]:
+    """One affiliate's acquisition book: layer counts, blocked versus ready, and where it went."""
+    mine = [reward for reward in REWARDS.values()
+            if str(reward.get("beneficiary_customer_id")) == customer_id]
+    booked = [reward for reward in mine if reward.get("status") != "forfeited"]
+    rows = [_book_row(reward) for reward in mine]
+    seen = {str(reward.get("referee_customer_id")) for reward in mine}
+    cfg = CONFIG or default_config()
+    awaiting = 0
+    customers = _customers()
+    candidates = set(LINKS) | {str(cid) for cid, rec in customers.items()
+                               if isinstance(rec, dict) and rec.get("referred_by")}
+    for referee in candidates:
+        if referee in seen or referee == customer_id:
+            continue
+        chain = chain_of(referee, customers, cfg.get("max_layers"))
+        hit = next(((layer, parent) for layer, parent in chain if parent == customer_id), None)
+        if hit is None:
+            continue
+        if SETTLEMENTS.get(referee) and not SETTLEMENTS[referee].get("_quarantined"):
+            continue
+        layer = hit[0]
+        filled = [item[0] for item in chain]
+        projected = 0
+        try:
+            projected_fee, projected_basis = _fee_basis_for(referee, cfg)
+            if projected_fee > 0:
+                projected = waterfall_amounts(
+                    projected_fee, projected_basis["schedule_cents"], filled,
+                )[layer - 1]
+        except RewardError:
+            projected = 0
+        rows.append(_book_row({
+            "id": None,
+            "referee_customer_id": referee,
+            "beneficiary_customer_id": customer_id,
+            "layer": layer,
+            "status": "awaiting_payment",
+            "amount_cents": 0,
+            "policy": {"allowed": list(DESTINATIONS)},
+        }, booked=False, projected_cents=projected))
+        awaiting += 1
+        seen.add(referee)
+    rows.sort(key=lambda item: (item.get("layer") or 0, item.get("referee_name") or ""))
+    return {
+        "affiliated_customers": len(booked),
+        "awaiting_customers": awaiting,
+        "blocked": dollars(sum(int(r.get("amount_cents") or 0) for r in booked if r.get("status") == "held")),
+        "available": dollars(sum(int(r.get("amount_cents") or 0) for r in booked if r.get("status") == "earned")),
+        "dispatched": dollars(sum(int(r.get("amount_cents") or 0) for r in booked if r.get("status") == "dispatched")),
+        "by_layer": _layer_buckets(booked),
+        "rows": rows,
+        "surfaces": {
+            "billing": "/billing.html",
+            "premium": "/dashboard.html#billing",
+            "health_wallet": "/dashboard.html#health-wallet",
+            "investments": "/savings-portfolio.html",
+        },
     }
 
 
@@ -1821,7 +2251,10 @@ def customer_dashboard(customer_id: str) -> Dict[str, Any]:
         return {
             "enabled": bool(CONFIG.get("enabled", True)),
             "currency": "USD",
+            "fee_mode": program["fee_mode"],
             "fee": program["fee"],
+            "premium_percent": program["premium_percent"],
+            "preview": program["preview"],
             "hold_months": program["hold_months"],
             "max_layers": program["max_layers"],
             "invitation_cap": invitation_cap_for(customer_id),
@@ -1837,11 +2270,45 @@ def customer_dashboard(customer_id: str) -> Dict[str, Any]:
             },
             "direct_referrals": len(outgoing),
             "paying_referrals": sum(1 for link in outgoing if link.get("paying_at")),
+            "affiliation_book": _affiliate_book_locked(customer_id),
             "professional": professional_status(customer_id),
             "supplier_types": supplier_type_values(),
             "tools": _tools(customer_id),
             "affiliation": affiliation_for(customer_id),
         }
+
+
+_PLAN_FIELDS = ("fee_mode", "fee", "fee_cents", "premium_percent", "premium_rate_bps", "layers")
+
+
+def update_plan(patch: Dict[str, Any], updated_by: str = "actuary") -> Dict[str, Any]:
+    """Adjust the fee basis and the three layer amounts. Destination rules stay as they are.
+
+    An admin or an actuary uses this from the affiliated-customer acquisition
+    plan. Invitation caps, cash rules, and the enabled flag stay on the admin
+    program route. A saved plan applies to fees earned after the change.
+    """
+    if not isinstance(patch, dict):
+        raise RewardError("Plan must be an object")
+    narrowed: Dict[str, Any] = {}
+    for key in _PLAN_FIELDS:
+        if key in patch:
+            narrowed[key] = patch[key]
+    if isinstance(narrowed.get("layers"), list):
+        layers = []
+        for item in narrowed["layers"]:
+            if not isinstance(item, dict):
+                raise RewardError("Each layer must be an object")
+            kept: Dict[str, Any] = {"layer": item.get("layer")}
+            if item.get("amount") is not None:
+                kept["amount"] = item["amount"]
+            if item.get("amount_cents") is not None:
+                kept["amount_cents"] = item["amount_cents"]
+            layers.append(kept)
+        narrowed["layers"] = layers
+    if not narrowed:
+        raise RewardError("Nothing to update on the acquisition plan")
+    return update_config(narrowed, updated_by)
 
 
 def update_config(patch: Dict[str, Any], updated_by: str = "admin") -> Dict[str, Any]:
@@ -1855,6 +2322,9 @@ def update_config(patch: Dict[str, Any], updated_by: str = "admin") -> Dict[str,
         _persist_config()
         _audit("program_updated", "referral_program", "active", {
             "version": updated["version"], "fee_cents": updated["fee_cents"],
+            "fee_mode": updated.get("fee_mode"),
+            "premium_rate_bps": updated.get("premium_rate_bps"),
+            "layer_amounts": [int(item["amount_cents"]) for item in updated["layers"]],
             "hold_months": updated["hold_months"], "by": updated_by,
         })
         return config_to_admin()
@@ -1911,11 +2381,30 @@ def _plan_locked() -> Dict[str, Any]:
             pass
         elif reward.get("status") == "forfeited":
             pass
-    fee = int((CONFIG or default_config()).get("fee_cents") or 0)
+    cfg = CONFIG or default_config()
+    fee = int(cfg.get("fee_cents") or 0)
+    program = config_to_admin(cfg)
+    live = [reward for reward in REWARDS.values() if reward.get("status") != "forfeited"]
+    by_dest = {dest: 0 for dest in DESTINATIONS}
+    for reward in live:
+        if reward.get("status") != "dispatched":
+            continue
+        allocation = reward.get("allocation") or {}
+        cents = int(reward.get("amount_cents") or 0)
+        if not allocation or cents <= 0:
+            continue
+        weights = [int(allocation.get(dest) or 0) for dest in DESTINATIONS]
+        if sum(weights) != 10000:
+            continue
+        parts = allocate_cents(cents, weights)
+        for dest, part in zip(DESTINATIONS, parts):
+            by_dest[dest] += part
+    rows = [_book_row(reward) for reward in REWARDS.values()]
+    rows.sort(key=lambda item: ((item.get("release_at") or ""), item.get("reward_id") or ""), reverse=True)
     return {
         "affiliated_customers": len(referees),
         "paying": paying,
-        "hold_months": int((CONFIG or {}).get("hold_months", 3)),
+        "hold_months": int(cfg.get("hold_months", 3)),
         "settlements": len(SETTLEMENTS),
         "allocated": dollars(allocated),
         "blocked": dollars(blocked),
@@ -1925,6 +2414,23 @@ def _plan_locked() -> Dict[str, Any]:
         "projected_release": dollars(projected),
         "per_paying_customer": dollars(fee),
         "fee_cents": fee,
+        "fee_mode": program["fee_mode"],
+        "fee": program["fee"],
+        "premium_percent": program["premium_percent"],
+        "schedule": [
+            {"layer": item["layer"], "amount": item["amount"], "amount_cents": item["amount_cents"]}
+            for item in program["layers"]
+        ],
+        "preview": program["preview"],
+        "by_layer": _layer_buckets(live),
+        "by_destination": {key: dollars(val) for key, val in by_dest.items()},
+        "rows": rows,
+        "surfaces": {
+            "billing": "/billing.html",
+            "health_wallet": "/dashboard.html#health-wallet",
+            "investments": "/savings-portfolio.html",
+            "plan": "/actuary-dashboard.html#cac-hold-card",
+        },
     }
 
 
@@ -2024,13 +2530,32 @@ def verify_integrity() -> Dict[str, Any]:
             issues.append({"code": "self_reward", "detail": reward["id"]})
         if int(reward.get("layer") or 0) not in LAYERS:
             issues.append({"code": "bad_layer", "detail": reward["id"]})
-        shares = [int(x) for x in (reward.get("program_shares") or [])]
-        if len(shares) == 3 and sum(shares) == 10000:
-            expected = allocate_cents(int(reward.get("fee_cents") or 0), shares)[int(reward["layer"]) - 1]
-            if expected != int(reward.get("amount_cents") or 0):
-                issues.append({"code": "amount_drift", "detail": reward["id"]})
+        policy = reward.get("policy") or {}
+        if policy.get("allocation_method") == "waterfall":
+            try:
+                expected_rows = waterfall_amounts(
+                    int(reward.get("fee_cents") or 0),
+                    policy.get("schedule_cents") or [],
+                    policy.get("filled_layers") or [],
+                )
+            except RewardError:
+                issues.append({"code": "schedule", "detail": reward["id"]})
+            else:
+                layer_no = int(reward.get("layer") or 0)
+                expected = expected_rows[layer_no - 1] if layer_no in LAYERS else -1
+                if expected != int(reward.get("amount_cents") or 0):
+                    issues.append({"code": "amount_drift", "detail": reward["id"]})
+                filled = [int(item) for item in (policy.get("filled_layers") or [])]
+                if layer_no not in filled:
+                    issues.append({"code": "filled_layers", "detail": reward["id"]})
         else:
-            issues.append({"code": "shares", "detail": reward["id"]})
+            shares = [int(x) for x in (reward.get("program_shares") or [])]
+            if len(shares) == 3 and sum(shares) == 10000:
+                expected = allocate_cents(int(reward.get("fee_cents") or 0), shares)[int(reward["layer"]) - 1]
+                if expected != int(reward.get("amount_cents") or 0):
+                    issues.append({"code": "amount_drift", "detail": reward["id"]})
+            else:
+                issues.append({"code": "shares", "detail": reward["id"]})
         status = reward.get("status")
         if status == "forfeited":
             posted = reward.get("posted") or {}
@@ -2068,6 +2593,36 @@ def verify_integrity() -> Dict[str, Any]:
         paid = sum(int(item.get("amount_cents") or 0) for item in group)
         if any(int(item.get("fee_cents") or 0) != fee for item in group):
             issues.append({"code": "fee_snapshot_mismatch", "detail": referee})
+        waterfall_group = [item for item in group if (item.get("policy") or {}).get("allocation_method") == "waterfall"]
+        if waterfall_group and len(waterfall_group) != len(group):
+            issues.append({"code": "schedule_mismatch", "detail": referee})
+        elif waterfall_group:
+            first = waterfall_group[0].get("policy") or {}
+            signature = (
+                list(first.get("schedule_cents") or []),
+                list(first.get("filled_layers") or []),
+                first.get("fee_mode"),
+            )
+            for item in waterfall_group[1:]:
+                policy = item.get("policy") or {}
+                other = (
+                    list(policy.get("schedule_cents") or []),
+                    list(policy.get("filled_layers") or []),
+                    policy.get("fee_mode"),
+                )
+                if other != signature:
+                    issues.append({"code": "schedule_mismatch", "detail": referee})
+                    break
+            else:
+                try:
+                    expected_rows = waterfall_amounts(fee, signature[0], signature[1])
+                except RewardError:
+                    issues.append({"code": "schedule", "detail": referee})
+                else:
+                    present = {int(item.get("layer") or 0) for item in group}
+                    for layer_no, cents in enumerate(expected_rows, start=1):
+                        if cents > 0 and layer_no not in present:
+                            issues.append({"code": "missing_layer", "detail": f"{referee}:L{layer_no}"})
         if paid > fee:
             issues.append({"code": "over_fee", "detail": referee})
         settlement = SETTLEMENTS.get(referee)
@@ -2137,5 +2692,4 @@ def recent_rewards(limit: int = 20) -> List[Dict[str, Any]]:
 
 
 # Validate the shipped default so a bad edit fails at import, not at payout.
-_validate_config(default_config())
-CONFIG.update(default_config())
+CONFIG.update(_validate_config(default_config()))

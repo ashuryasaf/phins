@@ -1467,16 +1467,28 @@
       <div id="referral-cac-panel" style="margin-top: 16px; background: rgba(255,255,255,0.1); border-radius: 10px; padding: 16px;">
         <h4 style="color: #f7e2a0; margin: 0 0 8px 0; font-size: 14px;">Referral acquisition reward</h4>
         <p id="referral-cac-summary" style="font-size: 13px; margin: 0 0 12px 0;">Loading the acquisition book…</p>
+        <p style="font-size: 12px; margin: 0 0 8px 0; opacity: 0.9;">Layer 1 receives the full fee when that affiliate has nobody above them. Layer 2 and layer 3 take their amounts from the fee when those layers exist, and the rest stays with the new affiliation. Percent mode uses the same dollars as the proportion of annual premium.</p>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px;">
-          <label style="font-size: 12px;">Fee (USD)<input id="cac-fee" type="number" min="0" step="0.01" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
-          <label style="font-size: 12px;">Layer 1 %<input id="cac-share-1" type="number" min="0" max="100" step="0.01" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
-          <label style="font-size: 12px;">Layer 2 %<input id="cac-share-2" type="number" min="0" max="100" step="0.01" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
-          <label style="font-size: 12px;">Layer 3 %<input id="cac-share-3" type="number" min="0" max="100" step="0.01" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
+          <label style="font-size: 12px;">Fee basis
+            <select id="cac-fee-mode" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;">
+              <option value="fixed">Fixed total</option>
+              <option value="premium_percent">Percent of annual premium</option>
+            </select>
+          </label>
+          <label style="font-size: 12px;">Total fee (USD)<input id="cac-fee" type="number" min="0" step="0.01" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
+          <label style="font-size: 12px;">Premium %<input id="cac-premium-percent" type="number" min="0" max="100" step="0.01" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
+          <label style="font-size: 12px;">Layer 1, full fee if alone<input id="cac-amount-1" type="number" min="0" step="0.01" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
+          <label style="font-size: 12px;">Layer 2 from the fee<input id="cac-amount-2" type="number" min="0" step="0.01" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
+          <label style="font-size: 12px;">Layer 3 from the fee<input id="cac-amount-3" type="number" min="0" step="0.01" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
           <label style="font-size: 12px;">Hold (months)<input id="cac-hold-months" type="number" min="0" max="60" step="1" style="width:100%; margin-top:4px; padding:6px; border-radius:6px; border:none;"></label>
         </div>
+        <p id="cac-preview" style="font-size: 12px; margin: 8px 0 0 0;"></p>
+        <div id="cac-plan-table-wrap" style="margin-top: 12px; overflow-x: auto;"></div>
         <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
-          <button type="button" onclick="saveReferralProgram()" style="background:#e3bf6f; color:#071022; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:600;">Save fee and shares</button>
+          <button type="button" onclick="saveReferralProgram()" style="background:#e3bf6f; color:#071022; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:600;">Save fee and layers</button>
           <button type="button" onclick="recomputeReferralRewards()" style="background:rgba(255,255,255,0.16); color:white; border:1px solid rgba(255,255,255,0.3); padding:8px 12px; border-radius:6px; cursor:pointer;">Recompute</button>
+          <a href="/billing.html" style="color:#f7e2a0; align-self:center;">Billing</a>
+          <a href="/actuary-dashboard.html#cac-hold-card" style="color:#f7e2a0; align-self:center;">Acquisition plan</a>
         </div>
         <div id="referral-request-list" style="margin-top: 12px; font-size: 13px;"></div>
       </div>
@@ -6158,12 +6170,25 @@
         const config = data.config || {};
         const fee = document.getElementById('cac-fee');
         if (fee && document.activeElement !== fee) fee.value = config.fee != null ? config.fee : '';
+        const mode = document.getElementById('cac-fee-mode');
+        if (mode && document.activeElement !== mode) mode.value = config.fee_mode || 'fixed';
+        const premium = document.getElementById('cac-premium-percent');
+        if (premium && document.activeElement !== premium) premium.value = config.premium_percent != null ? config.premium_percent : '';
         const hold = document.getElementById('cac-hold-months');
         if (hold && document.activeElement !== hold) hold.value = config.hold_months != null ? config.hold_months : 3;
         (config.layers || []).forEach(function(layer) {
-          const input = document.getElementById('cac-share-' + layer.layer);
-          if (input && document.activeElement !== input) input.value = layer.share_percent;
+          const input = document.getElementById('cac-amount-' + layer.layer);
+          if (input && document.activeElement !== input) input.value = layer.amount;
         });
+        const preview = document.getElementById('cac-preview');
+        const shown = plan.preview || config.preview || {};
+        if (preview && shown.three_layers) {
+          preview.textContent = 'Alone $' + formatNumber(shown.alone[0], 2) +
+            ' · two layers $' + formatNumber(shown.two_layers[0], 2) + ' / $' + formatNumber(shown.two_layers[1], 2) +
+            ' · three layers $' + formatNumber(shown.three_layers[0], 2) + ' / $' + formatNumber(shown.three_layers[1], 2) +
+            ' / $' + formatNumber(shown.three_layers[2], 2);
+        }
+        renderCacPlanTable(document.getElementById('cac-plan-table-wrap'), plan, true);
         const pending = (data.requests || []).filter(function(item) { return item.status === 'pending'; });
         const list = document.getElementById('referral-request-list');
         if (list) {
@@ -6181,12 +6206,52 @@
       }
     }
 
+    function renderCacPlanTable(host, plan, staff) {
+      if (!host) return;
+      const layers = plan.by_layer || {};
+      const rows = plan.rows || [];
+      const layerLine = [1, 2, 3].map(function(layer) {
+        const slot = layers[String(layer)] || {};
+        return layer + ': ' + (slot.customers || 0) + ' customers, $' + formatNumber(slot.amount || 0, 2);
+      }).join(' · ');
+      const body = rows.length ? rows.map(function(row) {
+        const links = (row.links || []).map(function(link) {
+          const href = staff ? (link.staff_href || link.href) : link.href;
+          return '<a href="' + escAdmin(href) + '">' + escAdmin(link.label) + '</a>';
+        }).join(', ');
+        return '<tr>' +
+          '<td style="padding:6px 8px;">' + escAdmin(row.referee_name || row.referee_customer_id || '') + '</td>' +
+          '<td style="padding:6px 8px;">' + escAdmin(row.layer) + '</td>' +
+          '<td style="padding:6px 8px;">$' + formatNumber(row.amount || 0, 2) + '</td>' +
+          '<td style="padding:6px 8px;">$' + formatNumber(row.blocked_amount || 0, 2) + '</td>' +
+          '<td style="padding:6px 8px;">$' + formatNumber(row.available_amount || 0, 2) + '</td>' +
+          '<td style="padding:6px 8px;">' + escAdmin(row.distribution || row.status || '') + (links ? ' · ' + links : '') + '</td>' +
+          '</tr>';
+      }).join('') : '<tr><td colspan="6" style="padding:8px;">No affiliated rewards yet.</td></tr>';
+      host.innerHTML = '<div style="font-size:12px; margin-bottom:6px;">' + escAdmin(layerLine) +
+        ' · blocked $' + formatNumber(plan.blocked || 0, 2) +
+        ' · ready $' + formatNumber(plan.releasable || 0, 2) + '</div>' +
+        '<table id="cac-plan-table" style="width:100%; border-collapse:collapse; font-size:12px; background:rgba(0,0,0,0.15);">' +
+        '<thead><tr><th style="text-align:left; padding:6px 8px;">Affiliated customer</th><th style="text-align:left; padding:6px 8px;">Layer</th>' +
+        '<th style="text-align:left; padding:6px 8px;">Amount</th><th style="text-align:left; padding:6px 8px;">Blocked</th>' +
+        '<th style="text-align:left; padding:6px 8px;">Ready</th><th style="text-align:left; padding:6px 8px;">Distribution</th></tr></thead><tbody>' +
+        body + '</tbody></table>';
+    }
+
     async function saveReferralProgram() {
+      const fee = Number(document.getElementById('cac-fee').value);
+      const layer1 = Number(document.getElementById('cac-amount-1').value);
+      if (fee !== layer1) {
+        alert('Layer 1 is the full fee when there is no upper affiliation, so it has to equal the total fee.');
+        return;
+      }
       const payload = {
-        fee: Number(document.getElementById('cac-fee').value),
+        fee_mode: document.getElementById('cac-fee-mode').value,
+        fee: fee,
+        premium_percent: Number(document.getElementById('cac-premium-percent').value),
         hold_months: Number(document.getElementById('cac-hold-months').value),
         layers: [1, 2, 3].map(function(layer) {
-          return { layer: layer, share_percent: Number(document.getElementById('cac-share-' + layer).value) };
+          return { layer: layer, amount: Number(document.getElementById('cac-amount-' + layer).value) };
         })
       };
       const response = await fetch('/api/admin/referral-rewards/config', {

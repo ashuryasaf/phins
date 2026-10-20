@@ -2052,6 +2052,33 @@
       <div id="referral-reward-panel" style="background: rgba(255,255,255,0.95); color: #333; border-radius: 12px; padding: 20px; margin-top: 20px;">
         <h3 style="margin: 0 0 8px 0; color: #0d47a1;">Acquisition rewards</h3>
         <p id="referral-program-copy" style="margin: 0 0 16px 0; color: #555;">When someone you invited pays, your share appears here. Accept it and choose where it goes.</p>
+        <div id="affiliation-book" style="margin-bottom: 16px;">
+          <h3 style="margin: 0 0 8px 0; color: #333; font-size: 1.05rem;">Your affiliated customers</h3>
+          <p id="affiliation-book-summary" style="margin: 0 0 8px 0; color: #555;">Loading your affiliation…</p>
+          <p style="margin: 0 0 8px 0; font-size: 0.9rem;">
+            <a href="/billing.html">Billing</a>
+            · <a href="#health-wallet">Health wallet</a>
+            · <a href="/savings-portfolio.html">Investments</a>
+            · <a href="#billing">Premium and cash</a>
+          </p>
+          <div style="overflow-x: auto;">
+            <table id="affiliation-book-table" style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+              <thead>
+                <tr style="background: #f8f9fa;">
+                  <th style="padding: 10px 12px; text-align: left;">Affiliated customer</th>
+                  <th style="padding: 10px 12px; text-align: left;">Layer</th>
+                  <th style="padding: 10px 12px; text-align: right;">Amount</th>
+                  <th style="padding: 10px 12px; text-align: right;">Blocked</th>
+                  <th style="padding: 10px 12px; text-align: right;">Ready to use</th>
+                  <th style="padding: 10px 12px; text-align: left;">Distribution</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="6" style="padding: 16px; text-align: center; color: #666;">Loading your affiliation…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
         <div id="referral-reward-list" style="display: grid; gap: 12px;"></div>
         <button type="button" onclick="acceptAllRewards()" style="margin-top: 12px; background: #0d47a1; color: white; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Accept all with the suggested split</button>
       </div>
@@ -10396,6 +10423,48 @@
       return allocation;
     }
 
+    function renderAffiliationBook(book, switchRole) {
+      const summary = document.getElementById('affiliation-book-summary');
+      const table = document.getElementById('affiliation-book-table');
+      if (!table) return;
+      const layers = book.by_layer || {};
+      const line = [1, 2, 3].map(function(layer) {
+        const slot = layers[String(layer)] || {};
+        return (slot.customers || 0) + ' on layer ' + layer + ' totaling $' + formatNumber(slot.amount || 0, 2);
+      }).join(' · ');
+      if (summary) {
+        summary.textContent = (book.affiliated_customers || 0) + ' affiliated customers · ' + line +
+          ' · blocked $' + formatNumber(book.blocked || 0, 2) +
+          ' · ready to use $' + formatNumber(book.available || 0, 2) +
+          (book.awaiting_customers ? (' · ' + book.awaiting_customers + ' not yet paying') : '');
+      }
+      const body = table.querySelector('tbody');
+      const rows = book.rows || [];
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="6" style="padding: 16px; text-align: center; color: #666;">No affiliated customers yet.</td></tr>';
+        return;
+      }
+      body.innerHTML = rows.map(function(row) {
+        const links = (row.links || []).map(function(link) {
+          if (switchRole) {
+            return '<button type="button" data-affiliation-href="' + escReferral(link.href) + '" style="background:none;border:none;color:#0d47a1;cursor:pointer;padding:0;">' + escReferral(link.label) + '</button>';
+          }
+          return '<a href="' + escReferral(link.href) + '">' + escReferral(link.label) + '</a>';
+        }).join(', ');
+        const amount = row.booked === false
+          ? ('Projected $' + formatNumber(row.projected_amount || 0, 2))
+          : ('$' + formatNumber(row.amount || 0, 2));
+        return '<tr style="border-top: 1px solid #eee;">' +
+          '<td style="padding: 10px 12px;">' + escReferral(row.referee_name || '') + '</td>' +
+          '<td style="padding: 10px 12px;">' + escReferral(row.layer) + '</td>' +
+          '<td style="padding: 10px 12px; text-align: right;">' + amount + '</td>' +
+          '<td style="padding: 10px 12px; text-align: right;">$' + formatNumber(row.blocked_amount || 0, 2) + '</td>' +
+          '<td style="padding: 10px 12px; text-align: right;">$' + formatNumber(row.available_amount || 0, 2) + '</td>' +
+          '<td style="padding: 10px 12px;">' + escReferral(row.distribution || (row.status || '').replace(/_/g, ' ')) +
+          (links ? ' · ' + links : '') + '</td></tr>';
+      }).join('');
+    }
+
     async function loadRewardProgram() {
       const list = document.getElementById('referral-reward-list');
       if (!list || !authToken) return;
@@ -10405,13 +10474,20 @@
         const data = await response.json();
         const fee = data.fee != null ? formatNumber(data.fee, 2) : '0.00';
         const copy = document.getElementById('referral-program-copy');
+        const basis = data.fee_mode === 'premium_percent'
+          ? (formatNumber(data.premium_percent || 0, 2) + '% of the annual premium that affiliation sold')
+          : ('a $' + fee + ' fee');
         if (copy) {
-          copy.textContent = 'The acquisition fee is $' + fee + ' across up to ' + (data.max_layers || 3) +
-            ' layers. It is one settlement, blocked for ' + (data.hold_months != null ? data.hold_months : 3) +
+          const preview = data.preview || {};
+          const three = preview.three_layers || [];
+          copy.textContent = 'The acquisition amount is ' + basis + '. Layer 1 keeps the full amount when nobody is above you' +
+            (three.length ? ('; with all three layers the split is $' + formatNumber(three[0], 2) + ' / $' + formatNumber(three[1], 2) + ' / $' + formatNumber(three[2], 2)) : '') +
+            '. It is one settlement, blocked for ' + (data.hold_months != null ? data.hold_months : 3) +
             ' months while the affiliated customer stays paid. Allocated $' + formatNumber((data.totals || {}).earned || 0, 2) +
             ', blocked $' + formatNumber((data.totals || {}).blocked || 0, 2) +
             ', ready to accept $' + formatNumber((data.totals || {}).pending_choice || 0, 2) + '.';
         }
+        renderAffiliationBook(data.affiliation_book || {}, false);
         const earnedEl = document.getElementById('referral-rewards');
         if (earnedEl && data.totals) earnedEl.textContent = '$' + formatNumber(data.totals.earned || 0, 2);
         const rows = data.rewards || [];

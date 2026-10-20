@@ -190,24 +190,32 @@ PHINS is a Python platform built around:
  never carry a plaintext ID (see the §10 identity contract)
 - referral acquisition rewards (`services/referral_reward_service.py`,
  `web_portal/api_referral_rewards.py`, `database/repositories/referral_reward_repository.py`):
- a fixed admin fee (default $650) shared across up to 3 invitation layers
- when a referred customer pays a premium. One affiliated customer is one
- settlement (`CACSET-{referee}`): a single `customer_acquisition` expense
- for the allocated layers, booked at allocation and blocked from the
- referrer for `hold_months` (default 3, range 0–60). An admin or an actuary
- sets the hold (`POST /api/admin/referral-rewards/hold`); fee and layer
- shares stay admin-only. The reward is released only if that customer is
- still paying when the hold ends. If the paid balance lapses before
- acceptance, the expense is reversed and the settlement is not recreated.
- Acceptance then posts premium credit, the health wallet, savings, or cash
- when that layer allows cash, and does not book the expense again. Unfilled
- layers are retained and are not expensed. Customer `REF-` codes use this
+ a customer-acquisition fee shared across up to 3 invitation layers
+ when a referred customer pays a premium. The default total is $650. Layer 1
+ receives that whole fee when nobody stands above them. Layer 2 takes $100
+ from the fee when that layer exists, and layer 3 takes $50; the rest stays
+ with the direct affiliate. An admin or an actuary sets the total, those
+ layer amounts, and whether the fee is fixed or a percent of the annual
+ premium sold (`POST /api/admin/referral-rewards/plan`). One affiliated
+ customer is one settlement (`CACSET-{referee}`): a single
+ `customer_acquisition` expense for the allocated layers, booked at
+ allocation and blocked from the referrer for `hold_months` (default 3,
+ range 0–60). An admin or an actuary sets the hold
+ (`POST /api/admin/referral-rewards/hold`). The reward is released only if
+ that customer is still paying when the hold ends. If the paid balance
+ lapses before acceptance, the expense is reversed and the settlement is
+ not recreated. Acceptance then posts premium credit, the health wallet,
+ savings, or cash when that layer allows cash, and does not book the
+ expense again. Each affiliate's book shows layer counts, blocked versus
+ ready, and the destination, with links to billing, the health wallet, and
+ investments. Customer `REF-` codes use this
  rail; agent `AGI-` codes stay on the commission rail and are not paid
  twice. A customer can request an agent or supplier role
  (`PRO-{customer}-{role}`); approval opens that profile and a role-switch
  token without rewriting `USERS.role`. An approved agent invitation cap is
  100 (customer cap stays 10). `affiliated_cac_plan()` is the planning view
- (allocated, blocked, releasable, settled, reversed, projected release).
+ (allocated, blocked, releasable, settled, reversed, projected release,
+ layer schedule, and one row per reward).
  State is a checksummed JSON book (`PHINS_REFERRAL_REWARDS_PATH`) or the
  referral tables (including `referral_settlements`) when the database is
  on. A checksum mismatch is not paid. Customer and admin invitation links
