@@ -418,6 +418,17 @@
       </button>
     </div>
 
+    <div class="card" style="margin-bottom:16px">
+      <h3 style="margin:0 0 8px">Affiliated join link</h3>
+      <p class="muted-text">Send the same join page an admin invitation opens. A customer, an agent, or a supplier chooses that path on the page. The code on the link is yours, so the reward layers stay on the affiliation you are building.</p>
+      <input id="affiliated-join-link" readonly style="width:100%;margin:8px 0" placeholder="Generate a join link from your customer account">
+      <p class="muted-text" id="affiliated-join-note"></p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn btn-outline" type="button" onclick="copyAffiliatedJoinLink()">Copy join link</button>
+        <button class="btn btn-outline" type="button" onclick="generateAffiliatedJoinLink()">Generate join link</button>
+      </div>
+    </div>
+
     <!-- Dashboard Stats -->
     <div class="dashboard-grid">
       <div class="stat-card">
@@ -1634,6 +1645,58 @@
       }
     }
 
+    function absoluteJoinLink(link) {
+      const value = String(link || '');
+      if (!value) return '';
+      if (/^https?:\/\//i.test(value)) return value;
+      if (value.charAt(0) === '/') return window.location.origin + value;
+      return value;
+    }
+
+    async function loadAffiliatedJoinLink() {
+      const box = document.getElementById('affiliated-join-link');
+      const note = document.getElementById('affiliated-join-note');
+      const token = getToken();
+      if (!token) return;
+      const response = await fetch('/api/customer/invitations', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (note) note.textContent = 'Open this portal from your customer account to send your affiliated join link.';
+        return;
+      }
+      const active = (body.codes || []).find(item => item.status === 'active' && item.join_link);
+      if (box) box.value = active ? absoluteJoinLink(active.join_link) : '';
+      const above = (body.affiliation && body.affiliation.layers_above) || [];
+      const chain = above.map(item => 'Layer ' + item.layer + ' above you remains ' + (item.name || item.customer_id)).join('. ');
+      if (note) note.textContent = chain || 'A new member who uses this link puts you at layer 1.';
+    }
+
+    async function copyAffiliatedJoinLink() {
+      const value = (document.getElementById('affiliated-join-link') || {}).value || '';
+      if (!value) return;
+      try { await navigator.clipboard.writeText(value); } catch (err) {}
+    }
+
+    async function generateAffiliatedJoinLink() {
+      const token = getToken();
+      const response = await fetch('/api/customer/invitations/generate', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: '{}'
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const note = document.getElementById('affiliated-join-note');
+        if (note) note.textContent = body.error || 'Could not create a join link';
+        return;
+      }
+      const box = document.getElementById('affiliated-join-link');
+      if (box) box.value = absoluteJoinLink(body.join_link || body.registration_link || '');
+      loadAffiliatedJoinLink();
+    }
+
     // Initialize
     document.addEventListener('DOMContentLoaded', async () => {
       selectSupplierPortalTab(getSupplierPortalRequestedTab());
@@ -1643,7 +1706,8 @@
           loadSupplierInfo(),
           loadOffers(),
           refreshOrders(),
-          loadSettlementData()
+          loadSettlementData(),
+          loadAffiliatedJoinLink()
         ]);
       }
     });

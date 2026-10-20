@@ -212,7 +212,14 @@ PHINS is a Python platform built around:
  referral tables (including `referral_settlements`) when the database is
  on. A checksum mismatch is not paid. Customer and admin invitation links
  open `/join.html?code=` (an older `/register.html?code=` link still
- accepts the code). The page carries that code into `apply-chat.html`,
+ accepts the code). A customer, including one who has opened the agent or
+ supplier desk, sends that same page (`affiliated_join_link`). The code is
+ the only query value, so the sender stays layer 1 and the layers already
+ above them stay on `chain_of`. When `BASE_URL` is set the link is that
+ origin; otherwise the desk completes a relative path with the host the
+ sender is using, so a customer on the public site copies
+ `https://www.phins.ai/join.html?code=` the same way an admin does. The
+ invitee chooses customer, agent, or supplier on the page. The page carries that code into `apply-chat.html`,
  into `claims-chat.html?start=1` (and `register.html?next=claims`), and
  into `register.html?next=` for the health wallet, investments, credit,
  and the agent or supplier request. `next` is an allowlisted token. A

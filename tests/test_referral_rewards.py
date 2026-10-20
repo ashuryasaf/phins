@@ -5,6 +5,8 @@ commission stays on the AGI rail and is not paid from this book.
 """
 import json
 import os
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from urllib.error import HTTPError
@@ -566,3 +568,62 @@ def test_actuary_sets_the_hold_and_a_customer_cannot():
     denied, status = _post("/api/admin/referral-rewards/hold", {"hold_months": 1}, token=customer)
     assert status == 403, denied
     assert rewards.get_config()["hold_months"] == 6
+
+
+def test_affiliated_join_link_is_the_admin_page_and_keeps_the_chain():
+    assert rewards.affiliated_join_link("bad code") == ""
+    assert rewards.affiliated_join_link("../join") == ""
+    sender_email = "affil-sender@example.com"
+    sender = _register("Affil Sender", sender_email)
+    token, _role = _login(sender_email, "secure123456")
+    issued, status = _post("/api/customer/invitations/generate", {}, token=token)
+    assert status == 201, issued
+    code = issued["invitation"]["code"]
+    link = issued["join_link"]
+    assert link == issued["registration_link"]
+    assert link.endswith("/join.html?code=" + code)
+    assert list(parse_qs(urlparse(link).query)) == ["code"]
+    assert "join_link" not in portal.CUSTOMER_INVITATIONS[code]
+    assert issued["affiliation"]["invite_places_you_at_layer"] == 1
+    assert issued["affiliation"]["layers_above"] == []
+
+    middle_email = "affil-middle@example.com"
+    middle = _register("Affil Middle", middle_email, code=code)
+    assert portal.CUSTOMERS[middle]["referred_by"] == sender
+    middle_token, _role = _login(middle_email, "secure123456")
+    child_issue, status = _post("/api/customer/invitations/generate", {}, token=middle_token)
+    assert status == 201, child_issue
+    child_code = child_issue["invitation"]["code"]
+    child_link = child_issue["join_link"]
+    assert child_link.endswith("/join.html?code=" + child_code)
+    assert sender not in child_link
+    above = child_issue["affiliation"]["layers_above"]
+    assert above[0]["layer"] == 1
+    assert above[0]["customer_id"] == sender
+    listing, status = _get("/api/customer/invitations", token=middle_token)
+    assert status == 200, listing
+    assert listing["codes"][0]["join_link"] == child_link
+    assert listing["affiliation"]["layers_above"][0]["customer_id"] == sender
+    book = rewards.customer_dashboard(middle)
+    assert book["affiliation"]["layers_above"][0]["customer_id"] == sender
+
+    grandchild = _register("Affil Grand", "affil-grand@example.com", code=child_code)
+    assert portal.CUSTOMERS[grandchild]["referred_by"] == middle
+    _pay(grandchild, "BILL-AFFIL-CHAIN")
+    portal.notify_referral_reward_for_paid_customer(grandchild)
+    assert rewards.REWARDS[f"RWRD-{grandchild}-L1"]["beneficiary_customer_id"] == middle
+    assert rewards.REWARDS[f"RWRD-{grandchild}-L2"]["beneficiary_customer_id"] == sender
+    assert f"RWRD-{grandchild}-L3" not in rewards.REWARDS
+
+    static = Path(__file__).resolve().parents[1] / "web_portal" / "static"
+    dashboard = (static / "dashboard.html").read_text(encoding="utf-8")
+    agent = (static / "agent-portal.html").read_text(encoding="utf-8")
+    supplier = (static / "supplier-portal.html").read_text(encoding="utf-8")
+    assert "Copy join link" in dashboard
+    assert "function absoluteJoinLink" in dashboard
+    assert "window.location.origin" in dashboard
+    assert 'id="affiliated-join-link"' in agent
+    assert "function absoluteJoinLink" in agent
+    assert 'id="affiliated-join-link"' in supplier
+    assert "function absoluteJoinLink" in supplier
+    assert "/join.html?code=" in dashboard

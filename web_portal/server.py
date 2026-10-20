@@ -23472,10 +23472,18 @@ For claims or questions, please contact:
             # GET /api/customer/invitations - List customer's own invitation codes
             if path == '/api/customer/invitations':
                 # Get customer's invitation codes from CUSTOMER_INVITATIONS
-                customer_codes = [
-                    code for code in CUSTOMER_INVITATIONS.values()
-                    if code.get('creator_customer_id') == customer_id
-                ]
+                from services.referral_reward_service import (
+                    affiliated_join_link,
+                    affiliation_for,
+                )
+                customer_codes = []
+                for code in CUSTOMER_INVITATIONS.values():
+                    if code.get('creator_customer_id') != customer_id:
+                        continue
+                    item = dict(code)
+                    item['join_link'] = affiliated_join_link(item.get('code'))
+                    item['registration_link'] = item['join_link']
+                    customer_codes.append(item)
                 customer_codes.sort(key=lambda x: x.get('created_at', ''), reverse=True)
                 
                 # Get referral stats
@@ -23496,7 +23504,8 @@ For claims or questions, please contact:
                     'used': len([c for c in customer_codes if get_status_lower(c) == 'used']),
                     'stats': stats,
                     'max_allowed': invitation_limit,
-                    'can_generate_more': len(customer_codes) < invitation_limit
+                    'can_generate_more': len(customer_codes) < invitation_limit,
+                    'affiliation': affiliation_for(customer_id),
                 }).encode('utf-8'))
                 return
             
@@ -42205,18 +42214,20 @@ For claims or questions, please contact:
                 # Also save to persistent file for Railway deployment persistence
                 save_invitation_codes_to_file()
                 
-                # Generate registration link from configured public origin
-                origin = public_portal_base_url()
-                registration_link = (
-                    f"{origin}/join.html?code={code}" if origin else f"/join.html?code={code}"
+                from services.referral_reward_service import (
+                    affiliated_join_link,
+                    affiliation_for,
                 )
+                registration_link = affiliated_join_link(code)
                 
                 self._set_json_headers(201)
                 self.wfile.write(json.dumps({
                     'success': True,
-                    'message': 'Referral code created successfully',
+                    'message': 'Join link created successfully',
                     'invitation': invitation,
+                    'join_link': registration_link,
                     'registration_link': registration_link,
+                    'affiliation': affiliation_for(customer_id),
                     'remaining_codes': invitation_limit - len(existing_codes) - 1,
                     'total_generated': len(existing_codes) + 1,
                     'max_allowed': invitation_limit
