@@ -658,6 +658,25 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
   
+  var CUSTOMER_NEXT = {
+    health_wallet: '/dashboard.html#health-wallet',
+    investments: '/savings-portfolio.html',
+    credit: '/dashboard.html#billing-settings',
+    agent: '/dashboard.html#referrals',
+    supplier: '/dashboard.html#referrals'
+  };
+
+  function customerNextUrl() {
+    var raw = '';
+    try {
+      raw = new URLSearchParams(window.location.search).get('next') || '';
+    } catch (err) {
+      raw = '';
+    }
+    var token = String(raw).toLowerCase().replace(/[^a-z_]/g, '');
+    return CUSTOMER_NEXT[token] || '';
+  }
+
   function getDashboardUrl(role) {
     switch (role) {
       case 'admin': return '/admin-portal.html';
@@ -670,7 +689,7 @@ document.addEventListener('DOMContentLoaded', function () {
       case 'claims_adjuster': return '/claims-adjuster-dashboard.html';
       case 'accountant': return '/accountant-dashboard.html';
       case 'regulator': return '/regulator-dashboard.html';
-      case 'customer':
+      case 'customer': return customerNextUrl() || '/dashboard.html';
       default: return '/dashboard.html';
     }
   }

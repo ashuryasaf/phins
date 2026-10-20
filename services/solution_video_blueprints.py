@@ -21,6 +21,7 @@ MAX_NARRATION_CHARS = 800
 MAX_THEME_CHARS = 240
 _ASSET_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$")
 _CAMPAIGN_PREFIX = "SOL-"
+_JOIN_CAMPAIGN_PREFIX = "JOIN-"
 
 # Canonical public outline. Keys match ``data-preview`` / theater slots.
 # Editing a blueprint copies these lines; it does not rewrite the page.
@@ -159,9 +160,91 @@ SOLUTION_OUTLINES: Dict[str, Dict[str, Any]] = {
 
 SOLUTION_KEYS = tuple(SOLUTION_OUTLINES.keys())
 
+# Customer intro films on /join.html. Kept out of SOLUTION_KEYS so the
+# public solutions page and its SOL- campaigns stay a separate catalog.
+JOIN_INTRO_OUTLINES: Dict[str, Dict[str, Any]] = {
+    "welcome": {
+        "title": "Welcome to PHINS",
+        "group": "join",
+        "bullets": [
+            "PHINS connects customers, agents, and suppliers in one ecosystem",
+            "An invitation opens the insurance contract, the wallets, and the professional desks",
+            "One acquisition settlement stays blocked until the hold ends and the invited customer is still paying",
+        ],
+    },
+    "insurance": {
+        "title": "Unified contract",
+        "group": "join",
+        "bullets": [
+            "The unified insurance contract is opened in a guided chat",
+            "The invitation code travels with that application",
+            "Underwriting, billing, and the policy record stay on their existing path",
+        ],
+    },
+    "health_wallet": {
+        "title": "Health wallet",
+        "group": "join",
+        "bullets": [
+            "The health wallet pays for consultations, devices, and daily care",
+            "An invitation code is carried into account opening",
+            "A released reward can be accepted into this wallet when that layer allows it",
+        ],
+    },
+    "investments": {
+        "title": "Investments",
+        "group": "join",
+        "bullets": [
+            "Savings and investments sit beside the coverage",
+            "An invitation code is carried into account opening",
+            "A released reward can be directed into long-term savings when that layer allows it",
+        ],
+    },
+    "credit": {
+        "title": "Credit and wallets",
+        "group": "join",
+        "bullets": [
+            "Premium credit and the wallet split are chosen when a reward is released",
+            "The split follows the layer set by an admin",
+            "The acquisition expense is booked once, at allocation",
+        ],
+    },
+    "agent": {
+        "title": "Agent desk",
+        "group": "join",
+        "bullets": [
+            "A customer can request the agent desk from the referral page",
+            "Approval opens the agent tools and a larger invitation cap",
+            "Agent invitation codes stay on the commission rail",
+        ],
+    },
+    "supplier": {
+        "title": "Supplier desk",
+        "group": "join",
+        "bullets": [
+            "A customer can request the supplier desk from the same referral page",
+            "Approval opens the supplier profile beside the customer account",
+            "Supplier invitations keep their own registration link",
+        ],
+    },
+}
+
+JOIN_INTRO_KEYS = tuple(JOIN_INTRO_OUTLINES.keys())
+
 
 class SolutionBlueprintError(ValueError):
     """A blueprint edit or send was rejected before any provider call."""
+
+
+def outline_for(solution_key: str) -> Optional[Dict[str, Any]]:
+    """Canonical outline for a solution walkthrough or a customer-intro film."""
+    key = str(solution_key or "").strip()
+    if key in SOLUTION_OUTLINES:
+        return SOLUTION_OUTLINES[key]
+    return JOIN_INTRO_OUTLINES.get(key)
+
+
+def is_join_intro_key(solution_key: str) -> bool:
+    return str(solution_key or "").strip() in JOIN_INTRO_OUTLINES
 
 
 def canonical_narration(solution_key: str) -> str:
@@ -170,17 +253,25 @@ def canonical_narration(solution_key: str) -> str:
     A saved blueprint keeps the narration it was sealed with. This text is
     only the fresh default and the result of an explicit reset.
     """
-    outline = SOLUTION_OUTLINES[solution_key]
+    outline = outline_for(solution_key)
+    if outline is None:
+        raise SolutionBlueprintError(f"Unknown solution: {solution_key}")
     return " ".join(f"{bullet.rstrip('.')}." for bullet in outline["bullets"])
 
 
 def campaign_id_for(solution_key: str) -> str:
-    return f"{_CAMPAIGN_PREFIX}{solution_key}"
+    key = str(solution_key or "").strip()
+    if key in JOIN_INTRO_OUTLINES:
+        return f"{_JOIN_CAMPAIGN_PREFIX}{key}"
+    return f"{_CAMPAIGN_PREFIX}{key}"
 
 
 def parse_campaign_id(campaign_id: str) -> str:
-    """Return the solution key for a ``SOL-`` campaign id, or ''."""
+    """Return the key for a ``SOL-`` or ``JOIN-`` campaign id, or ''."""
     text = str(campaign_id or "").strip()
+    if text.startswith(_JOIN_CAMPAIGN_PREFIX):
+        key = text[len(_JOIN_CAMPAIGN_PREFIX):]
+        return key if key in JOIN_INTRO_OUTLINES else ""
     if not text.startswith(_CAMPAIGN_PREFIX):
         return ""
     key = text[len(_CAMPAIGN_PREFIX):]
@@ -225,10 +316,10 @@ def blueprint_checksum(record: Dict[str, Any]) -> str:
 
 
 def fresh_blueprint(solution_key: str) -> Dict[str, Any]:
-    outline = SOLUTION_OUTLINES.get(str(solution_key or "").strip())
+    key = str(solution_key or "").strip()
+    outline = outline_for(key)
     if outline is None:
         raise SolutionBlueprintError(f"Unknown solution: {solution_key}")
-    key = str(solution_key).strip()
     record = {
         "solution_key": key,
         "title": outline["title"],
@@ -251,7 +342,7 @@ def verify_blueprint(record: Dict[str, Any]) -> bool:
     if not isinstance(record, dict):
         return False
     key = str(record.get("solution_key") or "").strip()
-    outline = SOLUTION_OUTLINES.get(key)
+    outline = outline_for(key)
     if outline is None:
         return False
     if list(record.get("source_bullets") or []) != list(outline["bullets"]):
@@ -274,7 +365,8 @@ def apply_blueprint_edit(
 ) -> Dict[str, Any]:
     """Return a new checksummed blueprint. Canonical bullets are not client-writable."""
     key = str(solution_key or "").strip()
-    if key not in SOLUTION_OUTLINES:
+    outline = outline_for(key)
+    if outline is None:
         raise SolutionBlueprintError(f"Unknown solution: {solution_key}")
     base = fresh_blueprint(key)
     if isinstance(current, dict) and str(current.get("solution_key") or "") == key:
@@ -293,9 +385,9 @@ def apply_blueprint_edit(
         base["reference_image_asset_id"] = _clean_asset_id(reference_image_asset_id)
     if not str(base.get("narration") or "").strip():
         raise SolutionBlueprintError("Narration is required")
-    base["source_bullets"] = list(SOLUTION_OUTLINES[key]["bullets"])
-    base["title"] = SOLUTION_OUTLINES[key]["title"]
-    base["group"] = SOLUTION_OUTLINES[key]["group"]
+    base["source_bullets"] = list(outline["bullets"])
+    base["title"] = outline["title"]
+    base["group"] = outline["group"]
     base["campaign_id"] = campaign_id_for(key)
     base["stored"] = True
     base["checksum"] = blueprint_checksum(base)

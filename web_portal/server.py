@@ -3291,6 +3291,21 @@ for _theater_key in SOLUTIONS_THEATER_KEYS:
     MEDIA_PLACEMENT_SLOTS[_theater_slot] = 'video'
     DESIGN_SETTINGS.setdefault(_theater_slot, '')
 
+# Customer intro films (/join.html). One video per path. An empty slot
+# stays blank — there is no bundled fallback — and a photo cannot be stored.
+from services.solution_video_blueprints import JOIN_INTRO_KEYS
+
+
+def join_intro_slot_key(preview_key: str) -> str:
+    """Design-settings id for one customer-intro film."""
+    return f'join_intro_{preview_key}_id'
+
+
+for _join_key in JOIN_INTRO_KEYS:
+    _join_slot = join_intro_slot_key(_join_key)
+    MEDIA_PLACEMENT_SLOTS[_join_slot] = 'video'
+    DESIGN_SETTINGS.setdefault(_join_slot, '')
+
 # Public playback fields resolved from the asset record at read time.
 MEDIA_PLACEMENT_PUBLIC_URLS = {
     'apply_disclosure_video_id': 'apply_disclosure_video_url',
@@ -3379,6 +3394,20 @@ def public_solutions_theater_urls() -> Dict[str, str]:
         )
         urls[f'solutions_theater_{preview_key}_url'] = (
             assigned or solutions_theater_fallback_path(preview_key)
+        )
+    return urls
+
+
+def public_join_intro_urls() -> Dict[str, str]:
+    """Resolve each customer-intro film. An unassigned slot is an empty URL.
+
+    The intro page hides that player. No bundled file is invented, and the
+    raw asset id is not part of this map.
+    """
+    urls = {}
+    for preview_key in JOIN_INTRO_KEYS:
+        urls[f'join_intro_{preview_key}_url'] = public_asset_playback_url(
+            str(DESIGN_SETTINGS.get(join_intro_slot_key(preview_key)) or '')
         )
     return urls
 
@@ -6020,8 +6049,13 @@ def load_solution_video_blueprint(solution_key: str) -> Dict[str, Any]:
 
 def solution_video_blueprint_view(solution_key: str) -> Dict[str, Any]:
     """Admin view of one blueprint plus whether its film is the public slot."""
+    from services.solution_video_blueprints import is_join_intro_key
+
     record = load_solution_video_blueprint(solution_key)
-    slot_key = solutions_theater_slot_key(solution_key)
+    if is_join_intro_key(solution_key):
+        slot_key = join_intro_slot_key(solution_key)
+    else:
+        slot_key = solutions_theater_slot_key(solution_key)
     public_asset_id = str(DESIGN_SETTINGS.get(slot_key) or '')
     last_asset_id = str(record.get('last_asset_id') or '')
     view = dict(record)
@@ -6046,6 +6080,11 @@ def list_solution_video_blueprints() -> List[Dict[str, Any]]:
     from services.solution_video_blueprints import SOLUTION_KEYS
 
     return [solution_video_blueprint_view(key) for key in SOLUTION_KEYS]
+
+
+def list_join_intro_video_blueprints() -> List[Dict[str, Any]]:
+    """Customer-intro briefs only. Solution walkthroughs are a separate list."""
+    return [solution_video_blueprint_view(key) for key in JOIN_INTRO_KEYS]
 
 
 def _persist_solution_blueprint_unlocked(record: Dict[str, Any]) -> bool:
@@ -6208,6 +6247,7 @@ def send_solution_video_blueprint(
     from services.solution_video_blueprints import (
         SolutionBlueprintError,
         growth_blueprint,
+        is_join_intro_key,
         prompt_override,
     )
 
@@ -6215,6 +6255,7 @@ def send_solution_video_blueprint(
         record = load_solution_video_blueprint(solution_key)
     except SolutionBlueprintError as exc:
         return 400, {'error': str(exc)}
+    join_intro = is_join_intro_key(solution_key)
     if not record.get('integrity_ok'):
         return 409, {'error': 'Solution blueprint integrity check failed'}
     spoken = prompt_override(record)
@@ -6303,7 +6344,11 @@ def send_solution_video_blueprint(
             f'Solution blueprint sent to {provider}'
             + (f' ({provider_model})' if provider_model else '')
             + f' at {duration_seconds} seconds. The prompt is the solution script. '
-            'The public walkthrough was not replaced.'
+            + (
+                'The customer intro film was not replaced.'
+                if join_intro else
+                'The public walkthrough was not replaced.'
+            )
         ),
         'provider': provider,
         'provider_model': provider_model,
@@ -22893,6 +22938,25 @@ For claims or questions, please contact:
             }, default=str).encode('utf-8'))
             return
 
+        if path == '/api/admin/media/join-intro-blueprints':
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+            try:
+                blueprints = list_join_intro_video_blueprints()
+            except Exception as exc:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'success': True,
+                'blueprints': blueprints,
+                'total': len(blueprints),
+            }, default=str).encode('utf-8'))
+            return
+
         if path == '/api/admin/media/video-jobs':
             if not require_role(session, ['admin', 'media']):
                 self._set_json_headers(403)
@@ -23026,6 +23090,7 @@ For claims or questions, please contact:
                 public_settings.update(public_placement_video_urls())
                 public_settings.update(public_page_media_urls())
                 public_settings.update(public_solutions_theater_urls())
+                public_settings.update(public_join_intro_urls())
                 self.wfile.write(json.dumps(public_settings).encode('utf-8'))
             return
         
@@ -42060,7 +42125,7 @@ For claims or questions, please contact:
                 # Generate registration link from configured public origin
                 origin = public_portal_base_url()
                 registration_link = (
-                    f"{origin}/register.html?code={code}" if origin else f"/register.html?code={code}"
+                    f"{origin}/join.html?code={code}" if origin else f"/join.html?code={code}"
                 )
                 
                 self._set_json_headers(201)

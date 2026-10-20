@@ -278,6 +278,40 @@ def test_uploaded_video_players_default_to_speaker():
     assert "player.volume = 1" in admin_media
 
 
+def test_customer_relations_tab_assigns_one_film_per_intro_path():
+    content = ADMIN_MEDIA_PATH.read_text(encoding="utf-8")
+    join = (ADMIN_MEDIA_PATH.parent / "join.html").read_text(encoding="utf-8")
+    login = (ADMIN_MEDIA_PATH.parent / "login.js").read_text(encoding="utf-8")
+    register = (ADMIN_MEDIA_PATH.parent / "register.js").read_text(encoding="utf-8")
+    assert 'data-tab="customer-relations"' in content
+    assert 'id="tab-customer-relations"' in content
+    assert "const JOIN_INTRO_SLOTS" in content
+    assert "saveJoinIntroAssignments" in content
+    assert "sendJoinIntroBlueprint" in content
+    assert "/api/admin/media/join-intro-blueprints" in content
+    assert "return PLACEMENT_SLOTS.filter(slot => slot.kind === media.type);" in content
+    assert "PLACEMENT_SLOTS.concat(THEATER_SLOTS).concat(JOIN_INTRO_SLOTS)" in content
+    for key in (
+        "welcome",
+        "insurance",
+        "health_wallet",
+        "investments",
+        "credit",
+        "agent",
+        "supplier",
+    ):
+        assert f"join_intro_{key}_id" in content, key
+        assert f"join_intro_{key}_url" in join, key
+        assert f'data-path="{key}"' in join or key == "welcome", key
+    assert 'href="/apply-chat.html"' in join
+    assert "next=health_wallet" in join
+    assert "CUSTOMER_NEXT" in login
+    assert "health_wallet: '/dashboard.html#health-wallet'" in login
+    assert "function registrationNextToken(" in register
+    assert "/join.html?code=" in (ADMIN_MEDIA_PATH.parent / "dashboard.html").read_text(encoding="utf-8")
+    assert "register.html?code=" not in (ADMIN_MEDIA_PATH.parent / "dashboard.html").read_text(encoding="utf-8")
+
+
 def test_register_page_applies_branding():
     content = REGISTER_PATH.read_text(encoding="utf-8")
     assert "applyBranding" in content

@@ -385,6 +385,7 @@ def test_registration_with_a_customer_code_earns_on_the_first_payment():
     issued, status = _post("/api/customer/invitations/generate", {}, token=token)
     assert status == 201, issued
     code = issued["invitation"]["code"]
+    assert f"/join.html?code={code}" in issued["registration_link"]
     referee = _register("Referee", "referee-rewards@example.com", code=code)
     assert portal.CUSTOMERS[referee]["referred_by"] == referrer
     assert referee in rewards.LINKS

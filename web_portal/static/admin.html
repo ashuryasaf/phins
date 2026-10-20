@@ -9614,7 +9614,7 @@
         
         // Generate registration link with code pre-filled
         const baseUrl = window.location.origin;
-        lastInvitationLink = `${baseUrl}/register.html?code=${encodeURIComponent(lastGeneratedCode)}`;
+        lastInvitationLink = `${baseUrl}/join.html?code=${encodeURIComponent(lastGeneratedCode)}`;
         
         // Show result panel
         const resultPanel = document.getElementById('invitation-result-panel');
@@ -9750,7 +9750,7 @@ Welcome to PHINS Portal! `;
         showToast(' Generate a code first');
         return;
       }
-      const message = `PHINS Invitation! Code: ${lastGeneratedCode} | Register: ${lastInvitationLink}`;
+      const message = `PHINS Invitation! Code: ${lastGeneratedCode} | Join: ${lastInvitationLink}`;
       // SMS link format varies by device
       const smsUrl = `sms:?body=${encodeURIComponent(message)}`;
       window.location.href = smsUrl;

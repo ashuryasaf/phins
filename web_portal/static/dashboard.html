@@ -10613,7 +10613,7 @@
     
     // Copy specific code to clipboard
     function copyCodeToClipboard(code) {
-      const link = `${window.location.origin}/register.html?code=${code}`;
+      const link = `${window.location.origin}/join.html?code=${code}`;
       navigator.clipboard.writeText(link).then(() => {
         showNotification(' Referral link copied!', 'success');
       }).catch(() => {
@@ -10638,7 +10638,7 @@
         showNotification(' Generate a code first', 'error');
         return;
       }
-      const message = ` Join PHINS Insurance!\n\nUse my referral code: ${referralData.lastGeneratedCode}\n\nRegister here: ${referralData.lastGeneratedLink}`;
+      const message = ` Join PHINS Insurance!\n\nUse my referral code: ${referralData.lastGeneratedCode}\n\nJoin here: ${referralData.lastGeneratedLink}`;
       const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
       window.open(url, '_blank');
     }
@@ -10650,14 +10650,14 @@
         return;
       }
       const subject = ' PHINS Referral - Join me on PHINS Insurance!';
-      const body = `Hi there!\n\nI'd like to invite you to join PHINS Insurance. Use my referral code and we both get rewards!\n\nReferral Code: ${referralData.lastGeneratedCode}\n\nRegister here: ${referralData.lastGeneratedLink}\n\nSee you there!`;
+      const body = `Hi there!\n\nI'd like to invite you to join PHINS Insurance. Use my referral code and we both get rewards!\n\nReferral Code: ${referralData.lastGeneratedCode}\n\nJoin here: ${referralData.lastGeneratedLink}\n\nSee you there!`;
       window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     }
     
     // Share specific code
     function shareCode(code) {
-      const link = `${window.location.origin}/register.html?code=${code}`;
-      const message = ` Join PHINS Insurance!\n\nUse my referral code: ${code}\n\nRegister here: ${link}`;
+      const link = `${window.location.origin}/join.html?code=${code}`;
+      const message = ` Join PHINS Insurance!\n\nUse my referral code: ${code}\n\nJoin here: ${link}`;
       const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
       window.open(url, '_blank');
     }

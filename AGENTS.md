@@ -210,7 +210,15 @@ PHINS is a Python platform built around:
  (allocated, blocked, releasable, settled, reversed, projected release).
  State is a checksummed JSON book (`PHINS_REFERRAL_REWARDS_PATH`) or the
  referral tables (including `referral_settlements`) when the database is
- on. A checksum mismatch is not paid
+ on. A checksum mismatch is not paid. Customer and admin invitation links
+ open `/join.html?code=` (an older `/register.html?code=` link still
+ accepts the code). The page carries that code into `apply-chat.html` and
+ into `register.html?next=` for the health wallet, investments, credit,
+ and the agent or supplier request. `next` is an allowlisted token.
+ Media assigns one video per path on the Customer relations tab
+ (`join_intro_{key}_id`); an empty slot stays blank. The generator reuses
+ the solution blueprint seal with campaign ids `JOIN-{key}` and does not
+ write the public slot
 - durable document archive (`services/customer_document_vault_service.py`):
  every application-chat, claim-chat and uploaded policy file is sealed by
  SHA-256 and filed into a per-entity lane. `services/document_durability_agent.py`
@@ -258,6 +266,7 @@ Preferred file-by-task:
 | Chat intake (Phin, policy or claim) | `services/chat_application_service.py` or `services/claims_chat_service.py`, then `web_portal/api_chat_application.py` / `api_claims_chat.py` |
 | Customer identity (ID + nationality) | `services/customer_identity_service.py` (one writer), `web_portal/api_customer_identity.py` |
 | Referral CAC / professional roles | `services/referral_reward_service.py`, `web_portal/api_referral_rewards.py`, `database/repositories/referral_reward_repository.py` |
+| Customer intro / invitation landing | `web_portal/static/join.html`; films `join_intro_*` on the media Customer relations tab; briefs in `services/solution_video_blueprints.py` (`JOIN_INTRO_OUTLINES`, `JOIN-` campaigns) |
 | Document archive / durability probe | `services/customer_document_vault_service.py`, `services/document_durability_agent.py` |
 | Unified business plan / investor deck (`/business-plan.html`) | `services/business_plan_model.py` (factor register, `compute_plan`, `ROUND_SEED_ILS` / `ROUND_PRE_MONEY_ILS` — the one writer for seed / pre-money; `appraisal.sensitivity` grid), `services/business_plan_document.py` (narrative, placeholders, founder block, HTML/Markdown renderers), `services/business_plan_charts.py` (chart + Gantt specs read from the plan dict; one layout engine → inline SVG for HTML and `?charts=1`, reportlab Drawing for the PDF; Markdown carries `<!-- phins-chart {json} -->` directives plus a data table), `services/business_plan_sources.py` (figure lineage + research registry kept byte-equal with the pitch-dashboard `sourceRegistry`), `services/business_plan_portrait.py` (Pillow-processed founder portrait), `web_portal/server.py` (`GET /api/business-plan/model[?charts=1]`, `GET /api/business-plan/founder-portrait`); then `python3 scripts/build_business_plan.py` and `python3 scripts/generate_investor_pdfs.py --only unified-business-plan`; tests in `tests/test_business_plan.py` |
 | Premium / reserve / simulator pricing | `services/pricing_kernel.py` (sole writer), then `services/actuarial_service.py` and callers; refresh `tests/test_pricing_kernel.py`, `tests/test_actuarial_reserves.py`, `tests/test_ifrs17_waterfall_identities.py` deliberately |
@@ -1025,4 +1034,4 @@ If you update this file again:
 
 ---
 
-Last updated: October 16, 2026
+Last updated: October 19, 2026

@@ -1130,6 +1130,7 @@
         <div class="main-tabs" role="tablist" aria-label="Media Dashboard Sections">
             <button class="main-tab active" data-tab="media" onclick="switchMainTab('media')" role="tab">Media</button>
             <button class="main-tab" data-tab="solution-views" onclick="switchMainTab('solution-views')" role="tab">Solution Views</button>
+            <button class="main-tab" data-tab="customer-relations" onclick="switchMainTab('customer-relations')" role="tab">Customer relations</button>
             <button class="main-tab" data-tab="growth-agent" onclick="switchMainTab('growth-agent')" role="tab">Growth Agent</button>
             <button class="main-tab" data-tab="video-agents" onclick="switchMainTab('video-agents')" role="tab">Video Agents</button>
             <button class="main-tab" data-tab="design" onclick="switchMainTab('design')" role="tab">Design</button>
@@ -1907,6 +1908,100 @@ Notes:
             </section>
         </div>
 
+        <div id="tab-customer-relations" class="tab-content" style="display: none;">
+            <section class="assignments-section">
+                <h2>Customer intro films</h2>
+                <p style="margin: -6px 0 14px; font-size: 0.82rem; color: rgba(255,255,255,0.82);">
+                    Each row is one path on the public join page. Leave a row empty and that player stays hidden. Choosing a library video replaces only that film. The invitation code, the contract, and the wallets are not changed here.
+                </p>
+                <div class="assignment-grid">
+                    <div class="assignment-card">
+                        <div class="assignment-label">Welcome</div>
+                        <select id="assign-join-intro-welcome" class="assignment-select" onchange="updateAssignment('join_intro_welcome')">
+                            <option value="">-- No video --</option>
+                        </select>
+                        <div class="assignment-status" id="status-join-intro-welcome"><span></span> Not configured</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">Unified contract</div>
+                        <select id="assign-join-intro-insurance" class="assignment-select" onchange="updateAssignment('join_intro_insurance')">
+                            <option value="">-- No video --</option>
+                        </select>
+                        <div class="assignment-status" id="status-join-intro-insurance"><span></span> Not configured</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">Health wallet</div>
+                        <select id="assign-join-intro-health-wallet" class="assignment-select" onchange="updateAssignment('join_intro_health_wallet')">
+                            <option value="">-- No video --</option>
+                        </select>
+                        <div class="assignment-status" id="status-join-intro-health-wallet"><span></span> Not configured</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">Investments</div>
+                        <select id="assign-join-intro-investments" class="assignment-select" onchange="updateAssignment('join_intro_investments')">
+                            <option value="">-- No video --</option>
+                        </select>
+                        <div class="assignment-status" id="status-join-intro-investments"><span></span> Not configured</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">Credit and wallets</div>
+                        <select id="assign-join-intro-credit" class="assignment-select" onchange="updateAssignment('join_intro_credit')">
+                            <option value="">-- No video --</option>
+                        </select>
+                        <div class="assignment-status" id="status-join-intro-credit"><span></span> Not configured</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">Agent desk</div>
+                        <select id="assign-join-intro-agent" class="assignment-select" onchange="updateAssignment('join_intro_agent')">
+                            <option value="">-- No video --</option>
+                        </select>
+                        <div class="assignment-status" id="status-join-intro-agent"><span></span> Not configured</div>
+                    </div>
+                    <div class="assignment-card">
+                        <div class="assignment-label">Supplier desk</div>
+                        <select id="assign-join-intro-supplier" class="assignment-select" onchange="updateAssignment('join_intro_supplier')">
+                            <option value="">-- No video --</option>
+                        </select>
+                        <div class="assignment-status" id="status-join-intro-supplier"><span></span> Not configured</div>
+                    </div>
+                </div>
+                <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-primary" onclick="saveJoinIntroAssignments()">Save Customer Relations</button>
+                    <a href="/join.html" target="_blank" class="btn btn-secondary">Preview intro</a>
+                </div>
+                <div class="blueprint-studio" id="join-blueprint-studio">
+                    <h3>Customer intro video blueprint</h3>
+                    <p>
+                        Each path keeps its own brief. The narration starts from the lines above and can be edited, given a theme, and pointed at a library image. Send stores the film in the media library. It does not replace the public intro until you use Save Customer Relations.
+                    </p>
+                    <label for="join-blueprint-function">Path</label>
+                    <select id="join-blueprint-function" onchange="showJoinIntroBlueprint(this.value)"></select>
+                    <div class="blueprint-source" id="join-blueprint-source"></div>
+                    <label for="join-blueprint-narration">Spoken text</label>
+                    <textarea id="join-blueprint-narration" maxlength="800"></textarea>
+                    <label for="join-blueprint-theme">Descriptive theme</label>
+                    <input id="join-blueprint-theme" type="text" maxlength="240" placeholder="Optional look and setting">
+                    <label for="join-blueprint-reference">Screenshot reference</label>
+                    <select id="join-blueprint-reference">
+                        <option value="">None</option>
+                    </select>
+                    <label for="join-blueprint-provider">Generator</label>
+                    <select id="join-blueprint-provider">
+                        <option value="replicate">Replicate</option>
+                        <option value="gemini">Gemini</option>
+                        <option value="kling">Kling</option>
+                    </select>
+                    <video id="join-blueprint-player" controls playsinline style="display:none;width:100%;max-height:240px;margin-top:10px;background:#000;border-radius:10px;"></video>
+                    <div class="blueprint-actions">
+                        <button type="button" class="btn btn-secondary" onclick="clickSaveJoinIntroBlueprint(false)">Save blueprint</button>
+                        <button type="button" class="btn btn-secondary" onclick="clickSaveJoinIntroBlueprint(true)">Reset text</button>
+                        <button type="button" class="btn btn-primary" onclick="sendJoinIntroBlueprint()">Generate video</button>
+                    </div>
+                    <div class="blueprint-status" id="join-blueprint-status">Loading customer intro blueprints.</div>
+                </div>
+            </section>
+        </div>
+
         <div id="tab-design" class="tab-content" style="display: none;">
             <section class="design-section">
                 <h2>Appearance Settings</h2>
@@ -2268,8 +2363,19 @@ Notes:
             { key: 'solutions_theater_individuals', field: 'solutions_theater_individuals_id', kind: 'video', label: 'Individuals walkthrough', chip: 'Wallet', bundled: true },
             { key: 'solutions_theater_enterprises', field: 'solutions_theater_enterprises_id', kind: 'video', label: 'Enterprises walkthrough', chip: 'Enterprises', bundled: true }
         ];
+        // Customer intro films. Kept off PLACEMENT_SLOTS and THEATER_SLOTS so
+        // the Use dialog and a design save cannot clear them.
+        const JOIN_INTRO_SLOTS = [
+            { key: 'join_intro_welcome', field: 'join_intro_welcome_id', kind: 'video', label: 'Join welcome', chip: 'Welcome' },
+            { key: 'join_intro_insurance', field: 'join_intro_insurance_id', kind: 'video', label: 'Join contract', chip: 'Contract' },
+            { key: 'join_intro_health_wallet', field: 'join_intro_health_wallet_id', kind: 'video', label: 'Join health wallet', chip: 'Wallet' },
+            { key: 'join_intro_investments', field: 'join_intro_investments_id', kind: 'video', label: 'Join investments', chip: 'Invest' },
+            { key: 'join_intro_credit', field: 'join_intro_credit_id', kind: 'video', label: 'Join credit', chip: 'Credit' },
+            { key: 'join_intro_agent', field: 'join_intro_agent_id', kind: 'video', label: 'Join agent', chip: 'Agent' },
+            { key: 'join_intro_supplier', field: 'join_intro_supplier_id', kind: 'video', label: 'Join supplier', chip: 'Supplier' }
+        ];
         function assignmentSlots() {
-            return PLACEMENT_SLOTS.concat(THEATER_SLOTS);
+            return PLACEMENT_SLOTS.concat(THEATER_SLOTS).concat(JOIN_INTRO_SLOTS);
         }
         let assignments = {
             hero_video: '',
@@ -2350,7 +2456,7 @@ Notes:
         // textContent.  Iframe-backed tabs lazy-load on first activation to
         // keep the dashboard fast and to avoid spawning embedded sub-pages
         // that the operator never opens.
-        const VALID_MAIN_TABS = ['media', 'solution-views', 'growth-agent', 'video-agents', 'design', 'layout', 'branding'];
+        const VALID_MAIN_TABS = ['media', 'solution-views', 'customer-relations', 'growth-agent', 'video-agents', 'design', 'layout', 'branding'];
 
         function switchMainTab(tabName, options = {}) {
             const updateHash = options.updateHash !== false;
@@ -2375,6 +2481,9 @@ Notes:
 
             if (tabName === 'solution-views') {
                 loadSolutionBlueprints();
+            }
+            if (tabName === 'customer-relations') {
+                loadJoinIntroBlueprints();
             }
             if (updateHash) {
                 const desiredHash = tabName === 'media' ? '' : `#${tabName}`;
@@ -2418,6 +2527,8 @@ Notes:
         function resolveInitialTab() {
             const raw = (window.location.hash || '').replace(/^#/, '').trim().toLowerCase();
             const candidate = raw === 'growth' ? 'growth-agent'
+                            : raw === 'join' ? 'customer-relations'
+                            : raw === 'customer' ? 'customer-relations'
                             : raw === 'solutions' ? 'solution-views'
                             : raw === 'solution-theaters' ? 'solution-views'
                             : raw === 'video' ? 'video-agents'
@@ -2788,6 +2899,187 @@ Notes:
                 showToast('Blueprint saved. Public walkthrough unchanged.', 'success');
             } catch (err) {
                 blueprintStatus(err.message);
+                showToast(err.message, 'error');
+            }
+        }
+
+        let joinIntroBlueprints = [];
+
+        function joinBlueprintStatus(message) {
+            const el = document.getElementById('join-blueprint-status');
+            if (el) el.textContent = message;
+        }
+
+        function selectedJoinBlueprint() {
+            const key = document.getElementById('join-blueprint-function')?.value || '';
+            return joinIntroBlueprints.find(item => item.solution_key === key) || null;
+        }
+
+        function fillJoinReferenceOptions(selectedId) {
+            const select = document.getElementById('join-blueprint-reference');
+            if (!select) return;
+            const images = (mediaAssets || []).filter(asset => asset && asset.type === 'image');
+            const options = ['<option value="">None</option>'].concat(images.map(asset => {
+                const id = escHtml(asset.id);
+                const name = escHtml(asset.name || asset.id);
+                const selected = asset.id === selectedId ? ' selected' : '';
+                return `<option value="${id}"${selected}>${name}</option>`;
+            }));
+            select.innerHTML = options.join('');
+            if (selectedId && !images.some(asset => asset.id === selectedId)) {
+                select.insertAdjacentHTML('beforeend', `<option value="${escHtml(selectedId)}" selected>Missing image ${escHtml(selectedId)}</option>`);
+            }
+        }
+
+        function showJoinIntroBlueprint(key) {
+            const blueprint = joinIntroBlueprints.find(item => item.solution_key === key) || joinIntroBlueprints[0];
+            if (!blueprint) return;
+            const select = document.getElementById('join-blueprint-function');
+            if (select && select.value !== blueprint.solution_key) select.value = blueprint.solution_key;
+            const narration = document.getElementById('join-blueprint-narration');
+            const theme = document.getElementById('join-blueprint-theme');
+            if (narration) narration.value = blueprint.narration || '';
+            if (theme) theme.value = blueprint.theme || '';
+            fillJoinReferenceOptions(blueprint.reference_image_asset_id || '');
+            const source = document.getElementById('join-blueprint-source');
+            if (source) {
+                const bullets = Array.isArray(blueprint.source_bullets) ? blueprint.source_bullets : [];
+                source.textContent = bullets.join(' · ');
+            }
+            const player = document.getElementById('join-blueprint-player');
+            if (player) {
+                if (blueprint.playback_url) {
+                    player.style.display = 'block';
+                    player.src = blueprint.playback_url;
+                    player.muted = false;
+                    player.volume = 1;
+                } else {
+                    player.style.display = 'none';
+                    player.removeAttribute('src');
+                }
+            }
+            const integrity = blueprint.integrity_ok ? 'checksum verified' : 'checksum mismatch — save or reset before generating';
+            const stored = blueprint.last_asset_id ? `Library asset ${blueprint.last_asset_id}.` : 'No library film yet.';
+            const pub = blueprint.replaces_public_film
+                ? 'This library film is the public intro.'
+                : 'Public intro film unchanged.';
+            joinBlueprintStatus(`${blueprint.title}. ${integrity}. ${stored} ${pub}`);
+        }
+
+        async function loadJoinIntroBlueprints() {
+            const token = getToken();
+            if (!token) {
+                joinBlueprintStatus('Sign in as admin or media to edit customer intro films.');
+                return;
+            }
+            try {
+                const response = await fetch('/api/admin/media/join-intro-blueprints', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Could not load blueprints');
+                joinIntroBlueprints = Array.isArray(data.blueprints) ? data.blueprints : [];
+                const select = document.getElementById('join-blueprint-function');
+                if (!select) return;
+                const current = select.value;
+                select.innerHTML = joinIntroBlueprints.map(item => (
+                    `<option value="${escHtml(item.solution_key)}">${escHtml(item.title)}</option>`
+                )).join('');
+                const next = joinIntroBlueprints.some(item => item.solution_key === current)
+                    ? current
+                    : (joinIntroBlueprints[0] && joinIntroBlueprints[0].solution_key);
+                if (next) showJoinIntroBlueprint(next);
+            } catch (err) {
+                joinBlueprintStatus(err.message);
+            }
+        }
+
+        async function saveJoinIntroBlueprint(resetText) {
+            const blueprint = selectedJoinBlueprint();
+            if (!blueprint) return null;
+            const token = getToken();
+            const payload = {
+                solution_key: blueprint.solution_key,
+                narration: document.getElementById('join-blueprint-narration')?.value || '',
+                theme: document.getElementById('join-blueprint-theme')?.value || '',
+                reference_image_asset_id: document.getElementById('join-blueprint-reference')?.value || '',
+                reset_text: !!resetText
+            };
+            joinBlueprintStatus('Saving blueprint…');
+            const response = await fetch('/api/admin/media/solution-blueprints', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Save failed');
+            const saved = data.blueprint;
+            joinIntroBlueprints = joinIntroBlueprints.map(item => (
+                item.solution_key === saved.solution_key ? saved : item
+            ));
+            showJoinIntroBlueprint(saved.solution_key);
+            return saved;
+        }
+
+        async function clickSaveJoinIntroBlueprint(resetText) {
+            try {
+                const saved = await saveJoinIntroBlueprint(resetText);
+                if (saved) showToast('Blueprint saved. Public intro film unchanged.', 'success');
+            } catch (err) {
+                joinBlueprintStatus(err.message);
+                showToast(err.message, 'error');
+            }
+        }
+
+        async function saveJoinIntroAssignments() {
+            if (useSaveInFlight) return;
+            useSaveInFlight = true;
+            try {
+                const ok = await persistAssignments(JOIN_INTRO_SLOTS.map(slot => slot.key));
+                if (ok) showToast('Customer intro films saved', 'success');
+            } catch (e) {
+                showToast('Error: ' + e.message, 'error');
+            } finally {
+                useSaveInFlight = false;
+            }
+        }
+
+        async function sendJoinIntroBlueprint() {
+            const blueprint = selectedJoinBlueprint();
+            if (!blueprint) return;
+            const token = getToken();
+            try {
+                const saved = await saveJoinIntroBlueprint(false);
+                if (!saved || !saved.ready_prompt) throw new Error('Save the blueprint before generating');
+                const providerName = document.getElementById('join-blueprint-provider')?.value || 'replicate';
+                const requestBody = {
+                    solution_key: saved.solution_key,
+                    provider: providerName,
+                    poll_mode: 'poll',
+                    auto_publish_to_hero: false,
+                    prompt_override: saved.ready_prompt
+                };
+                if (saved.reference_image_asset_id) {
+                    requestBody.reference_image_asset_id = saved.reference_image_asset_id;
+                }
+                joinBlueprintStatus('Generating…');
+                const response = await fetch('/api/admin/media/solution-blueprints/send', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Generate failed');
+                showToast(data.message || 'Film stored in the library. The public intro was not replaced.', 'success');
+                await loadJoinIntroBlueprints();
+            } catch (err) {
+                joinBlueprintStatus(err.message);
                 showToast(err.message, 'error');
             }
         }
