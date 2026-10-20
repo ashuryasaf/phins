@@ -288,6 +288,10 @@ def test_customer_relations_tab_assigns_one_film_per_intro_path():
     assert "const JOIN_INTRO_SLOTS" in content
     assert "saveJoinIntroAssignments" in content
     assert "sendJoinIntroBlueprint" in content
+    assert "saveJoinEnginePriority" in content
+    assert "join_intro_engine_priority" in content
+    assert 'id="join-blueprint-engine"' in content
+    assert "engine_id: engine.id" in content
     assert "/api/admin/media/join-intro-blueprints" in content
     assert "return PLACEMENT_SLOTS.filter(slot => slot.kind === media.type);" in content
     assert "PLACEMENT_SLOTS.concat(THEATER_SLOTS).concat(JOIN_INTRO_SLOTS)" in content
@@ -299,10 +303,19 @@ def test_customer_relations_tab_assigns_one_film_per_intro_path():
         "credit",
         "agent",
         "supplier",
+        "claims_chat",
     ):
         assert f"join_intro_{key}_id" in content, key
+        assert f"join_intro_{key}_poster_id" in content, key
         assert f"join_intro_{key}_url" in join, key
-        assert f'data-path="{key}"' in join or key == "welcome", key
+        assert f"join_intro_{key}_poster_url" in join, key
+        assert f'data-path="{key}"' in join or key in {"welcome", "claims_chat"}, key
+    assert 'data-path="claims"' in join
+    assert "join_background_id" in content
+    assert "join_background_url" in join
+    assert "claims-chat.html?start=1" in join
+    assert "claims: '/claims-chat.html?start=1'" in login
+    assert "'claims'" in register
     assert 'href="/apply-chat.html"' in join
     assert "next=health_wallet" in join
     assert "CUSTOMER_NEXT" in login

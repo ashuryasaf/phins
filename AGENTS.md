@@ -212,13 +212,20 @@ PHINS is a Python platform built around:
  referral tables (including `referral_settlements`) when the database is
  on. A checksum mismatch is not paid. Customer and admin invitation links
  open `/join.html?code=` (an older `/register.html?code=` link still
- accepts the code). The page carries that code into `apply-chat.html` and
+ accepts the code). The page carries that code into `apply-chat.html`,
+ into `claims-chat.html?start=1` (and `register.html?next=claims`), and
  into `register.html?next=` for the health wallet, investments, credit,
- and the agent or supplier request. `next` is an allowlisted token.
- Media assigns one video per path on the Customer relations tab
- (`join_intro_{key}_id`); an empty slot stays blank. The generator reuses
- the solution blueprint seal with campaign ids `JOIN-{key}` and does not
- write the public slot
+ and the agent or supplier request. `next` is an allowlisted token. A
+ claim filing does not book a second acquisition expense. Media assigns
+ one video per path (the claims film key is `claims_chat`, separate from the solutions claims walkthrough), one image thumbnail (`join_intro_{key}_poster_id`),
+ and one page background (`join_background_id`) on the Customer relations
+ tab; an empty slot stays blank. The generator reuses the solution
+ blueprint seal with campaign ids `JOIN-{key}`. Engine order is a full
+ permutation of `JOIN_INTRO_ENGINES` (`replicate-veo`, `replicate-seedance`,
+ `kling`, `gemini-veo`) stored with `join_intro_engine_priority_checksum`.
+ A missing record uses the catalog order and is not written. A bad
+ checksum blocks that send. The send does not write the public slot or
+ the stored priority
 - durable document archive (`services/customer_document_vault_service.py`):
  every application-chat, claim-chat and uploaded policy file is sealed by
  SHA-256 and filed into a per-entity lane. `services/document_durability_agent.py`

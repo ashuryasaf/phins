@@ -198,6 +198,19 @@
         </div>
       </article>
       <article class="card">
+        <div class="eyebrow">Claims</div>
+        <h2>File a claim</h2>
+        <p>Open the claims chat. The invitation code stays on the link. The claim follows the existing claims path, and a new account carries the same code.</p>
+        <div class="film" id="film-claims_chat" hidden>
+          <video id="video-claims_chat" controls playsinline webkit-playsinline></video>
+        </div>
+        <div class="actions">
+          <a class="path-cta" data-path="claims" href="/claims-chat.html?start=1">File a claim</a>
+          <a class="path-cta" data-path="claims-account" href="/register.html?next=claims">Open an account</a>
+          <a class="path-login" data-next="claims" href="/login.html?next=claims">I already have an account</a>
+        </div>
+      </article>
+      <article class="card">
         <div class="eyebrow">C2B · supplier</div>
         <h2>Join as a supplier</h2>
         <p>Open an account with the invitation code, then request the supplier desk. Approval keeps the customer account and adds the supplier profile.</p>
@@ -222,7 +235,8 @@
         investments: '/savings-portfolio.html',
         credit: '/dashboard.html#billing-settings',
         agent: '/dashboard.html#referrals',
-        supplier: '/dashboard.html#referrals'
+        supplier: '/dashboard.html#referrals',
+        claims: '/claims-chat.html?start=1'
       };
       var FILM_FIELDS = {
         welcome: 'join_intro_welcome_url',
@@ -231,7 +245,18 @@
         investments: 'join_intro_investments_url',
         credit: 'join_intro_credit_url',
         agent: 'join_intro_agent_url',
-        supplier: 'join_intro_supplier_url'
+        supplier: 'join_intro_supplier_url',
+        claims_chat: 'join_intro_claims_chat_url'
+      };
+      var POSTER_FIELDS = {
+        welcome: 'join_intro_welcome_poster_url',
+        insurance: 'join_intro_insurance_poster_url',
+        health_wallet: 'join_intro_health_wallet_poster_url',
+        investments: 'join_intro_investments_poster_url',
+        credit: 'join_intro_credit_poster_url',
+        agent: 'join_intro_agent_poster_url',
+        supplier: 'join_intro_supplier_poster_url',
+        claims_chat: 'join_intro_claims_chat_poster_url'
       };
       var FILMS = Object.keys(FILM_FIELDS);
 
@@ -262,11 +287,21 @@
             video.removeAttribute('src');
             return;
           }
+          var poster = settings[POSTER_FIELDS[key]] || '';
           media.enableSpeaker(video);
           video.playsInline = true;
+          if (media.isPlayableMediaUrl(poster)) video.poster = poster;
+          else video.removeAttribute('poster');
           section.hidden = false;
           video.src = url;
         });
+        if (media && media.isPlayableMediaUrl(settings.join_background_url)) {
+          media.applyBackground(
+            document.querySelector('.backdrop'),
+            settings.join_background_url,
+            'linear-gradient(rgba(4,9,22,0.78), rgba(4,9,22,0.88))'
+          );
+        }
       }
 
       var code = inviteCode();
@@ -282,6 +317,11 @@
           link.href = withCode('/apply-chat.html', code);
           return;
         }
+        if (path === 'claims') {
+          link.href = withCode('/claims-chat.html?start=1', code);
+          return;
+        }
+        if (path === 'claims-account') path = 'claims';
         var href = '/register.html?next=' + encodeURIComponent(path);
         link.href = withCode(href, code);
       });
@@ -291,7 +331,9 @@
           link.href = '/login.html';
           return;
         }
-        link.href = '/login.html?next=' + encodeURIComponent(next);
+        var href = '/login.html?next=' + encodeURIComponent(next);
+        if (next === 'claims') href = withCode(href, code);
+        link.href = href;
       });
       var headerLogin = document.getElementById('header-login');
       if (headerLogin) headerLogin.href = '/login.html';

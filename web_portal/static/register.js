@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function registrationNextToken() {
     const raw = new URLSearchParams(window.location.search).get('next') || '';
     const token = String(raw).toLowerCase().replace(/[^a-z_]/g, '');
-    const allowed = ['health_wallet', 'investments', 'credit', 'agent', 'supplier'];
+    const allowed = ['health_wallet', 'investments', 'credit', 'agent', 'supplier', 'claims'];
     return allowed.indexOf(token) === -1 ? '' : token;
   }
 

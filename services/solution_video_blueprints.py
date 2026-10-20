@@ -226,7 +226,46 @@ JOIN_INTRO_OUTLINES: Dict[str, Dict[str, Any]] = {
             "Supplier invitations keep their own registration link",
         ],
     },
+    "claims_chat": {
+        "title": "Claims chat",
+        "group": "join",
+        "bullets": [
+            "A claim opens in chat at the public claims desk",
+            "The invitation code stays on that link",
+            "The claim record follows the existing claims path",
+        ],
+    },
 }
+
+# Adjustable generator order for customer-intro films. The id is the only
+# value an admin can store. Provider and model are looked up here.
+JOIN_INTRO_ENGINES: tuple = (
+    {
+        "id": "replicate-veo",
+        "provider": "replicate",
+        "model": "google/veo-3.1-fast",
+        "label": "Replicate · Veo",
+    },
+    {
+        "id": "replicate-seedance",
+        "provider": "replicate",
+        "model": "bytedance/seedance-2.0",
+        "label": "Replicate · Seedance",
+    },
+    {
+        "id": "kling",
+        "provider": "kling",
+        "model": "kling-v2.6-pro",
+        "label": "Kling",
+    },
+    {
+        "id": "gemini-veo",
+        "provider": "gemini",
+        "model": "veo-3.1-generate-preview",
+        "label": "Gemini · Veo",
+    },
+)
+JOIN_INTRO_ENGINE_IDS = tuple(item["id"] for item in JOIN_INTRO_ENGINES)
 
 JOIN_INTRO_KEYS = tuple(JOIN_INTRO_OUTLINES.keys())
 
@@ -245,6 +284,52 @@ def outline_for(solution_key: str) -> Optional[Dict[str, Any]]:
 
 def is_join_intro_key(solution_key: str) -> bool:
     return str(solution_key or "").strip() in JOIN_INTRO_OUTLINES
+
+
+def engine_by_id(engine_id: str) -> Optional[Dict[str, Any]]:
+    key = str(engine_id or "").strip()
+    for item in JOIN_INTRO_ENGINES:
+        if item["id"] == key:
+            return dict(item)
+    return None
+
+
+def engine_priority_checksum(order: List[str]) -> str:
+    """Checksum of the saved engine order. Catalog labels are not included."""
+    encoded = json.dumps(list(order), ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def normalize_engine_priority(value: Any) -> List[str]:
+    """Require every catalog engine once. Unknown or repeated ids are refused."""
+    if not isinstance(value, list) or not value:
+        raise SolutionBlueprintError("Engine priority must list every video engine once")
+    ordered: List[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise SolutionBlueprintError("Engine priority must list engine ids")
+        engine_id = item.strip()
+        if engine_by_id(engine_id) is None:
+            raise SolutionBlueprintError(f"Unknown video engine: {engine_id}")
+        if engine_id in ordered:
+            raise SolutionBlueprintError(f"Duplicate video engine: {engine_id}")
+        ordered.append(engine_id)
+    if set(ordered) != set(JOIN_INTRO_ENGINE_IDS):
+        raise SolutionBlueprintError("Engine priority must include every video engine once")
+    return ordered
+
+
+def verify_engine_priority(order: Any, checksum: Any) -> bool:
+    """True when the stored order matches the catalog and its checksum."""
+    try:
+        normalized = normalize_engine_priority(order)
+    except SolutionBlueprintError:
+        return False
+    expected = engine_priority_checksum(normalized)
+    stored = str(checksum or "")
+    if len(stored) != len(expected):
+        return False
+    return hmac.compare_digest(stored, expected)
 
 
 def canonical_narration(solution_key: str) -> str:
