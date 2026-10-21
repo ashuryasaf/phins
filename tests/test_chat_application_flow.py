@@ -307,6 +307,62 @@ def test_pause_and_resume_with_otp_rechallenge():
     assert "continued" in stages
 
 
+def test_resume_after_last_answer_still_offers_submission():
+    """A verified resume with every answer on file must offer submission.
+
+    The welcome line alone used to come back with step=null and no
+    ready_to_finalize, so the dock cleared and the applicant could not continue.
+    """
+    email = "chat.applicant.ready.resume@example.com"
+    app_id, resume_code = _start_and_verify(email, name="Shim Levi")
+    _complete_questionnaire(app_id, resume_code)
+    _answer(app_id, 500000, resume_code=resume_code)
+    _answer(app_id, "20", resume_code=resume_code)
+    _answer(app_id, "none", resume_code=resume_code)
+    _answer(app_id, "skip", resume_code=resume_code)
+    _answer(app_id, "monthly", resume_code=resume_code)
+    _answer(app_id, {
+        "card_number": "5555 5555 5555 4444",
+        "cardholder_name": "SHIM LEVI",
+        "expiry_month": "12", "expiry_year": "2031", "cvv": "123",
+    }, resume_code=resume_code)
+    _answer(app_id, "yes", resume_code=resume_code)
+    _answer(app_id, "agree", resume_code=resume_code)
+    signed = _answer(app_id, _signature_payload("Shim Levi"), resume_code=resume_code)
+    assert signed.get("ready_to_finalize") is True
+
+    status, paused = _post(f"/api/chat-application/{app_id}/pause",
+                           {"resume_code": resume_code})
+    assert status == 200, paused
+
+    status, resumed = _post("/api/chat-application/resume",
+                            {"resume_code": resume_code, "email": email})
+    assert status == 200, resumed
+    assert resumed["otp_required"] is True
+    otp = resumed["otp"]
+
+    status, verified = _post(f"/api/chat-application/{app_id}/otp/verify", {
+        "verification_id": otp["verification_id"],
+        "otp_code": otp["demo_otp_code"],
+        "resume_code": resume_code,
+    })
+    assert status == 200, verified
+    texts = [m.get("text") or "" for m in verified.get("messages") or []]
+    assert sum("Welcome back, Shim!" in text for text in texts) == 1, texts
+    assert any("Identity confirmed" in text for text in texts), texts
+    prior = [m.get("text") or "" for m in verified.get("transcript") or []]
+    assert not any("Identity confirmed" in text for text in prior), prior
+    assert verified.get("step") is None
+    assert verified.get("ready_to_finalize") is True
+    assert any(m.get("kind") == "ready_to_finalize" for m in verified["messages"])
+    assert verified["progress"]["percent"] == 100
+
+    status, filed = _post(f"/api/chat-application/{app_id}/finalize",
+                          {"resume_code": resume_code})
+    assert status == 201, filed
+    assert filed["policy"]["id"].startswith("POL")
+
+
 def test_early_pause_resumes_before_email_is_captured():
     # Pausing before the email step still hands out a resume code, so the code
     # alone must be enough to reopen the (pre-contact) session.

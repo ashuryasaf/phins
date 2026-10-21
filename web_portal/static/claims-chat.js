@@ -8,8 +8,10 @@
     const API = '/api/claims-chat';
     const STORE_KEY = 'phins.claimsChat.v1';
     const state = {
-        appId: null, resumeCode: null, email: null, step: null,
-        otp: null, otpChannel: null, busy: false, submitted: false,
+        appId: null, resumeCode: null, email: null, step: null, liveStep: null,
+        editing: null, editable: [],
+        otp: null, otpChannel: null, busy: false, submitted: false, readyToFinalize: false,
+        otpVerifying: false,
         external: /\/file-a-claim\.html$/i.test(location.pathname),
     };
 
@@ -129,10 +131,36 @@
         return payload;
     }
 
+    function renderReadyToFinalize() {
+        state.readyToFinalize = true;
+        state.step = null;
+        state.liveStep = null;
+        state.editing = null;
+        dockHtml(
+            '<div class="dock-row" style="justify-content:center;">'
+            + '<button class="chip chip-go" id="file-claim" type="button">File this claim</button>'
+            + '</div>'
+        );
+        const btn = $('file-claim');
+        if (btn) btn.addEventListener('click', finalize);
+        scrollDown();
+    }
+
     function renderStep(step) {
         state.step = step;
+        if (!state.editing) state.liveStep = step;
         dockError('');
-        if (!step) { dock().innerHTML = ''; return; }
+        if (!step) {
+            if (state.readyToFinalize) {
+                renderReadyToFinalize();
+                return;
+            }
+            dock().innerHTML = '';
+            return;
+        }
+        // An edit form replaces the dock temporarily. Keep a resumed file's
+        // submit offer so Cancel can put that control back.
+        if (!state.editing) state.readyToFinalize = false;
         const input = step.input || { type: 'text' };
         switch (input.type) {
             case 'profile': renderProfile(input); break;
@@ -160,7 +188,7 @@
         const send = () => {
             const raw = field.value.trim();
             if (!raw) return;
-            submitAnswer(input.type === 'number' ? Number(raw) : raw, raw);
+            commitAnswer(input.type === 'number' ? Number(raw) : raw, raw);
         };
         $('dock-send').addEventListener('click', send);
         field.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
@@ -188,7 +216,7 @@
             if (!name || !email || !phone) { dockError('Name, email, and mobile are all required.'); return; }
             state.email = email.toLowerCase();
             saveLocal();
-            submitAnswer({ name, email, phone, confirm: true }, 'Confirmed: ' + name);
+            commitAnswer({ name, email, phone, confirm: true }, 'Confirmed: ' + name);
         });
     }
 
@@ -201,7 +229,7 @@
         dock().querySelectorAll('.chip').forEach((chip) => {
             chip.addEventListener('click', () => {
                 const v = chip.dataset.value;
-                submitAnswer(v, (input.labels || {})[v] || v);
+                commitAnswer(v, (input.labels || {})[v] || v);
             });
         });
     }
@@ -219,7 +247,7 @@
         const btn = $('consent-submit');
         const refresh = () => { btn.disabled = !boxes.every((b) => b.checked); };
         boxes.forEach((b) => b.addEventListener('change', refresh));
-        btn.addEventListener('click', () => submitAnswer('agree', 'I agree — all three confirmations'));
+        btn.addEventListener('click', () => commitAnswer('agree', 'I agree — all three confirmations'));
     }
 
     function renderSignature(input) {
@@ -278,7 +306,7 @@
             const idNumber = $('dock-id-number').value.trim();
             if (!name || !nat || !idNumber) { dockError('Name, nationality, and ID are required.'); return; }
             if (!hasInk) { dockError('Please draw your signature.'); return; }
-            submitAnswer({
+            commitAnswer({
                 name, nationality: nat, id_number: idNumber,
                 signature_data: canvas.toDataURL('image/png'), method: 'drawn_canvas',
             }, 'Signed: ' + name);
@@ -305,7 +333,7 @@
         $('mb-doc').addEventListener('click', () => $('doc-file-input').click());
         $('mb-audio-file').addEventListener('click', () => $('audio-file-input').click());
         $('mb-video-file').addEventListener('click', () => $('video-file-input').click());
-        $('mb-done').addEventListener('click', () => submitAnswer('done', 'Evidence attached'));
+        $('mb-done').addEventListener('click', () => commitAnswer('done', 'Evidence attached'));
     }
 
     async function toggleVoice() {
@@ -450,20 +478,131 @@
     }
 
     async function verifyOtp(code) {
+        if (state.otpVerifying) return;
         if (!code || code.length < 6) { dockError('Enter the 6-digit code.'); return; }
+        state.otpVerifying = true;
         addBubble('user', '••••••');
-        const { status, data } = await api('POST', '/' + state.appId + '/otp/verify', withCode({
-            verification_id: state.otp && state.otp.verification_id,
-            otp_code: code,
-        }));
-        if (status !== 200) {
-            addBubble('bot', richText(data.error || 'That code is not right.'));
-            renderOtp(state.otp || {});
-            return;
+        try {
+            const { status, data } = await api('POST', '/' + state.appId + '/otp/verify', withCode({
+                verification_id: state.otp && state.otp.verification_id,
+                otp_code: code,
+            }));
+            if (status !== 200) {
+                addBubble('bot', richText(data.error || 'That code is not right.'));
+                renderOtp(state.otp || {});
+                return;
+            }
+            setProgress(data.progress);
+            rememberEditable(data.editable);
+            try {
+                await playMessages(data.messages);
+            } catch (err) {
+                addBubble('bot', 'I have your place in the claim. Use the control below to continue.');
+            }
+            if (data.ready_to_finalize) {
+                renderReadyToFinalize();
+            } else {
+                state.readyToFinalize = false;
+                renderStep(data.step);
+            }
+        } finally {
+            state.otpVerifying = false;
         }
-        setProgress(data.progress);
-        await playMessages(data.messages);
-        renderStep(data.step);
+    }
+
+    function rememberEditable(list) {
+        if (Array.isArray(list)) state.editable = list;
+        const btn = $('edit-answers-btn');
+        if (!btn) return;
+        btn.hidden = state.submitted || !(state.editable && state.editable.length);
+    }
+
+    function cancelEdit() {
+        state.editing = null;
+        if (state.readyToFinalize) renderReadyToFinalize();
+        else renderStep(state.liveStep);
+    }
+
+    function beginEdit(item) {
+        state.editing = item;
+        renderStep({ id: item.id, prompt: item.prompt, input: item.input || { type: 'text' } });
+        const inner = dock().querySelector('.dock-inner');
+        if (!inner) return;
+        const note = document.createElement('div');
+        note.className = 'edit-banner';
+        note.textContent = 'Editing ' + item.label + '. The earlier answer stays on file'
+            + (item.display ? ': ' + item.display : '') + '.';
+        inner.insertBefore(note, inner.firstChild);
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'link-btn';
+        cancel.textContent = 'Cancel edit';
+        cancel.addEventListener('click', cancelEdit);
+        inner.appendChild(cancel);
+    }
+
+    function openEditPicker() {
+        if (state.busy || state.submitted || !(state.editable && state.editable.length)) return;
+        const rows = state.editable.map((item) => (
+            '<button type="button" class="edit-row" data-step="' + escapeHtml(item.id) + '">'
+            + '<strong>' + escapeHtml(item.label) + '</strong>'
+            + (item.edited ? '<span class="edit-flag">edited</span>' : '')
+            + '<span>' + escapeHtml(item.display || '') + '</span></button>'
+        )).join('');
+        dockHtml(
+            '<p class="edit-banner">Choose an answer to change. PHINS keeps the earlier answer and the time of the change.</p>'
+            + '<div class="edit-picker">' + rows + '</div>'
+            + '<button type="button" class="link-btn" id="edit-cancel">Back to the current question</button>'
+        );
+        dock().querySelectorAll('.edit-row').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const item = (state.editable || []).find((row) => row.id === btn.getAttribute('data-step'));
+                if (item) beginEdit(item);
+            });
+        });
+        const cancel = $('edit-cancel');
+        if (cancel) cancel.addEventListener('click', cancelEdit);
+    }
+
+    function commitAnswer(value, displayText) {
+        if (state.editing) return submitEdit(value, displayText);
+        return submitAnswer(value, displayText);
+    }
+
+    async function submitEdit(value, displayText) {
+        if (state.busy || !state.editing) return;
+        const editing = state.editing;
+        state.busy = true;
+        dock().innerHTML = '';
+        addBubble('user', richText(displayText !== undefined ? displayText : String(value)));
+        try {
+            const { status, data } = await api('POST', '/' + state.appId + '/edit', withCode({
+                step: editing.id,
+                value: value,
+            }));
+            rememberEditable(data.editable);
+            setProgress(data.progress);
+            await playMessages(data.messages);
+            if (status >= 400) {
+                beginEdit(editing);
+                dockError(data.error || 'That change was not saved.');
+                return;
+            }
+            state.editing = null;
+            if (data.otp_required) {
+                await requestOtp('email');
+            } else if (data.ready_to_finalize) {
+                await finalize();
+            } else {
+                renderStep(data.step);
+            }
+        } catch (err) {
+            addBubble('bot', 'Connection hiccup — your progress is saved. Try that again.');
+            beginEdit(editing);
+        } finally {
+            state.busy = false;
+            scrollDown();
+        }
     }
 
     async function submitAnswer(value, displayText) {
@@ -474,6 +613,7 @@
         try {
             const { status, data } = await api('POST', '/' + state.appId + '/message', withCode({ value }));
             setProgress(data.progress);
+            rememberEditable(data.editable);
             await playMessages(data.messages);
             if (data.otp_required) {
                 await requestOtp('email');
@@ -555,6 +695,8 @@
             return;
         }
         state.submitted = true;
+        state.readyToFinalize = false;
+        rememberEditable([]);
         clearLocal();
         await playMessages(data.messages);
         showDocuments(data);
@@ -641,6 +783,7 @@
         }
         await playMessages(data.transcript, { instant: true });
         setProgress(data.progress);
+        rememberEditable(data.editable);
         renderStep(data.step);
     }
 
@@ -673,6 +816,8 @@
             resumeClaim($('resume-code-input').value.trim(), $('resume-email-input').value.trim());
         });
         $('pause-btn').addEventListener('click', pauseClaim);
+        const editBtn = $('edit-answers-btn');
+        if (editBtn) editBtn.addEventListener('click', openEditPicker);
         $('resume-pill').addEventListener('click', () => {
             navigator.clipboard?.writeText(state.resumeCode || '');
         });

@@ -168,8 +168,20 @@ PHINS is a Python platform built around:
  block) and the claim model (`MUTUALLY_EXCLUSIVE` default, `INDEPENDENT`) are
  parameters. Sandbox, simulator, IFRS 17 waterfall and the actuary dashboard
  all reprice through it — never through a parallel path
-- chat intake (Phin) is a parallel surface to the classic forms:
- `services/chat_application_service.py` (+ `chat_application_i18n.py`) runs
+- chat intake (Phin) is a parallel surface to the classic forms.
+  Any committed answer on `/apply-chat.html` and `/file-a-claim.html` can be
+  edited until filing. Edits are an append-only checksum chain
+  (`services/chat_answer_revisions.py`); card numbers and full national IDs
+  are not stored. `POST .../edit` needs the resume code (a staff session
+  cannot rewrite the answer). `GET .../process-review` is the staff-only
+  quick and full review (admin, underwriter, claims) of identity, health,
+  billing last4, edit times, and prior files matched by email, name, or
+  identity hash. Filing seals that chain on the ledger
+  (`chat.process_sealed` / `claims_chat.process_sealed`; the seal sits on
+  the ledger row) and refuses a broken chain. After the session is gone the
+  same review is rebuilt from that seal. The page is
+  `/chat-process-review.html`.
+  `services/chat_application_service.py` (+ `chat_application_i18n.py`) runs
  the conversational state machine, `web_portal/api_chat_application.py`
  handles OTP + invitation attribution + ledger writes and finalises through
  a loopback `POST /api/policies/create`, and `services/claims_chat_service.py`

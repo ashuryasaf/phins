@@ -22,7 +22,7 @@ _STAFF_ROLES = {
     "claims", "claims_adjuster", "claims_agent", "claims_manager", "adjuster",
 }
 _OTP_CHANNELS = ("email", "sms", "whatsapp")
-_ID_RE = re.compile(r"^/api/claims-chat/(CLCHAT-[A-Z0-9]+)(/[a-z/]+)?$")
+_ID_RE = re.compile(r"^/api/claims-chat/(CLCHAT-[A-Z0-9]+)(/[a-z0-9/_-]+)?$")
 _OTP_UNAVAILABLE = (
     "I can't send a verification code from this server right now. "
     "Please try again shortly."
@@ -489,6 +489,10 @@ def _handle_finalize(application_id: str, handler, token: Optional[str],
         })
     marked = svc.mark_submitted(application_id, created["id"])
     _pop_events(marked)
+    submission = marked.get("submission") or {}
+    if isinstance(live, dict) and submission.get("revision_head"):
+        live["chat_process_head"] = submission.get("revision_head")
+        live["chat_edit_count"] = submission.get("edit_count")
     return 201, {
         "success": True,
         "claim": {
@@ -517,6 +521,40 @@ def _handle_finalize(application_id: str, handler, token: Optional[str],
     }
 
 
+def _can_read_process_review(session: Optional[Dict[str, Any]]) -> bool:
+    from services.chat_answer_revisions import PROCESS_REVIEW_ROLES
+    return bool(session) and str(session.get("role") or "").lower() in PROCESS_REVIEW_ROLES
+
+
+def _review_from_ledger(application_id: str) -> Optional[Dict[str, Any]]:
+    from services.chat_answer_revisions import latest_seal, load_books, review_from_seal
+
+    try:
+        entries = list(_portal().TRANSACTION_LEDGER.values())
+    except Exception as exc:
+        logger.warning("Claims process review ledger scan failed: %s", exc)
+        return None
+    seal = latest_seal(entries, application_id, "claims_chat.process_sealed")
+    if not seal:
+        return None
+    review = review_from_seal(seal, load_books())
+    review.pop("ok", None)
+    return review
+
+
+def _handle_process_review(application_id: str, session: Optional[Dict[str, Any]]) -> Tuple[int, Dict[str, Any]]:
+    if not _can_read_process_review(session):
+        return 403, {"error": "Staff access required"}
+    review = _service().process_review(application_id)
+    if review.get("ok"):
+        review.pop("ok", None)
+        return 200, review
+    sealed = _review_from_ledger(application_id)
+    if sealed:
+        return 200, sealed
+    return review.get("status_code", 404), {"error": review.get("error") or "Claim chat not found"}
+
+
 def dispatch_get(path: str, session: Optional[Dict[str, Any]],
                  query: Dict[str, Any]) -> Optional[Tuple[int, Dict[str, Any]]]:
     if not path.startswith("/api/claims-chat"):
@@ -525,6 +563,8 @@ def dispatch_get(path: str, session: Optional[Dict[str, Any]],
     if not match:
         return 404, {"error": "Not found"}
     application_id, tail = match.group(1), (match.group(2) or "")
+    if tail == "/process-review":
+        return _handle_process_review(application_id, session)
     resume = ""
     raw = (query or {}).get("resume_code") or ""
     if isinstance(raw, list):
@@ -618,6 +658,20 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]],
     if not match:
         return 404, {"error": "Not found"}
     application_id, tail = match.group(1), (match.group(2) or "")
+    if tail == "/edit":
+        customer_id = None
+        if session and _role(session) == "customer":
+            customer_id = session.get("customer_id")
+        if not svc.authorize(
+            application_id, body.get("resume_code"), staff=False, customer_id=customer_id,
+        ):
+            return 403, {"error": "A valid resume code is required"}
+        result = svc.edit_answer(application_id, str(body.get("step") or ""), body.get("value"))
+        _pop_events(result)
+        status_code = 200 if result.pop("ok", False) else result.pop("status_code", 400)
+        if status_code >= 400 and "error" not in result:
+            result["error"] = "Invalid answer"
+        return status_code, result
     if not _authorize(application_id, body, session):
         return 403, {"error": "A valid resume code (or staff session) is required"}
 
