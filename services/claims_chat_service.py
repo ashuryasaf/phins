@@ -1225,17 +1225,30 @@ class ClaimsChatService:
                 kind="ack")]
             step = self._next_step(session)
             step_pub = self._step_public(session, step)
+            ready = False
             if step_pub:
                 messages.append(self._transcript_add(
                     session, "bot", step_pub["prompt"], kind="question",
                     meta={"step": step_pub["id"]}))
+            elif self._identity_verified(session):
+                # Every answer is already on file. A verified resume must hand
+                # the filing back; an empty next step leaves the dock blank.
+                messages.append(self._transcript_add(
+                    session, "bot",
+                    "That's the whole notice. Your answers are saved — "
+                    "file the claim when you're ready, or edit an answer first.",
+                    kind="ready_to_finalize"))
+                ready = True
             events.extend(self._ledger_message(session, msg) for msg in messages)
-            return {
+            result = {
                 "ok": True, "messages": messages, "step": step_pub,
                 "progress": self._progress(session), "ledger_events": events,
                 "editable": self._editable(session),
                 "transcript": list(session["transcript"]),
             }
+            if ready:
+                result["ready_to_finalize"] = True
+            return result
 
     def attach_media(self, application_id: str, *, kind: str, name: str,
                      mime_type: str, data_b64: str,

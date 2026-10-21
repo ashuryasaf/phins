@@ -10,7 +10,8 @@
     const state = {
         appId: null, resumeCode: null, email: null, step: null, liveStep: null,
         editing: null, editable: [],
-        otp: null, otpChannel: null, busy: false, submitted: false,
+        otp: null, otpChannel: null, busy: false, submitted: false, readyToFinalize: false,
+        otpVerifying: false,
         external: /\/file-a-claim\.html$/i.test(location.pathname),
     };
 
@@ -130,11 +131,34 @@
         return payload;
     }
 
+    function renderReadyToFinalize() {
+        state.readyToFinalize = true;
+        state.step = null;
+        state.liveStep = null;
+        state.editing = null;
+        dockHtml(
+            '<div class="dock-row" style="justify-content:center;">'
+            + '<button class="chip chip-go" id="file-claim" type="button">File this claim</button>'
+            + '</div>'
+        );
+        const btn = $('file-claim');
+        if (btn) btn.addEventListener('click', finalize);
+        scrollDown();
+    }
+
     function renderStep(step) {
         state.step = step;
         if (!state.editing) state.liveStep = step;
         dockError('');
-        if (!step) { dock().innerHTML = ''; return; }
+        if (!step) {
+            if (state.readyToFinalize) {
+                renderReadyToFinalize();
+                return;
+            }
+            dock().innerHTML = '';
+            return;
+        }
+        state.readyToFinalize = false;
         const input = step.input || { type: 'text' };
         switch (input.type) {
             case 'profile': renderProfile(input); break;
@@ -452,21 +476,40 @@
     }
 
     async function verifyOtp(code) {
+        if (state.otpVerifying) return;
         if (!code || code.length < 6) { dockError('Enter the 6-digit code.'); return; }
+        state.otpVerifying = true;
         addBubble('user', '••••••');
-        const { status, data } = await api('POST', '/' + state.appId + '/otp/verify', withCode({
-            verification_id: state.otp && state.otp.verification_id,
-            otp_code: code,
-        }));
-        if (status !== 200) {
-            addBubble('bot', richText(data.error || 'That code is not right.'));
-            renderOtp(state.otp || {});
-            return;
+        try {
+            const { status, data } = await api('POST', '/' + state.appId + '/otp/verify', withCode({
+                verification_id: state.otp && state.otp.verification_id,
+                otp_code: code,
+            }));
+            if (status !== 200) {
+                if (state.readyToFinalize) {
+                    renderReadyToFinalize();
+                    return;
+                }
+                addBubble('bot', richText(data.error || 'That code is not right.'));
+                renderOtp(state.otp || {});
+                return;
+            }
+            setProgress(data.progress);
+            rememberEditable(data.editable);
+            try {
+                await playMessages(data.messages);
+            } catch (err) {
+                addBubble('bot', 'I have your place in the claim. Use the control below to continue.');
+            }
+            if (data.ready_to_finalize) {
+                renderReadyToFinalize();
+            } else {
+                state.readyToFinalize = false;
+                renderStep(data.step);
+            }
+        } finally {
+            state.otpVerifying = false;
         }
-        setProgress(data.progress);
-        rememberEditable(data.editable);
-        await playMessages(data.messages);
-        renderStep(data.step);
     }
 
     function rememberEditable(list) {
@@ -478,7 +521,8 @@
 
     function cancelEdit() {
         state.editing = null;
-        renderStep(state.liveStep);
+        if (state.readyToFinalize) renderReadyToFinalize();
+        else renderStep(state.liveStep);
     }
 
     function beginEdit(item) {
@@ -653,6 +697,7 @@
             return;
         }
         state.submitted = true;
+        state.readyToFinalize = false;
         rememberEditable([]);
         clearLocal();
         await playMessages(data.messages);

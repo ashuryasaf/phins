@@ -1902,10 +1902,24 @@ class ChatPolicyApplicationService:
                 events.append(self._journey_add(session, "otp_verified"))
             step = self._next_step(session)
             step_pub = self._step_public(session, step)
+            ready = False
             if step_pub:
                 bot_msgs.append(self._transcript_add(session, "bot", step_pub["prompt"],
                                                      kind="question",
                                                      meta={"step": step_pub["id"]}))
+            elif _identity_verified(session):
+                # Every answer is already on file. A verified resume must hand
+                # the submission back; an empty next step leaves the dock blank
+                # and the applicant cannot continue.
+                bot_msgs.append(self._transcript_add(
+                    session, "bot",
+                    _i18n_msg(
+                        session, "resume_ready",
+                        "That's everything I need. Your answers are saved — "
+                        "submit the application when you're ready, or edit an answer first.",
+                    ),
+                    kind="ready_to_finalize"))
+                ready = True
             events.extend(self._ledger_for_message(session, m) for m in bot_msgs)
             result = {
                 "ok": True, "messages": bot_msgs, "step": step_pub,
@@ -1916,6 +1930,8 @@ class ChatPolicyApplicationService:
                 "phone_verified": bool(session.get("phone_verified")),
                 "identity_verified": _identity_verified(session),
             }
+            if ready:
+                result["ready_to_finalize"] = True
             if prior_transcript is not None:
                 result["transcript"] = prior_transcript
             return result

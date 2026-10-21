@@ -392,3 +392,62 @@ def test_resume_code_required_for_stranger():
         {"value": "nope@example.com"},
     )
     assert status == 403, blocked
+
+
+def test_resume_after_last_answer_still_offers_filing():
+    """A verified claims resume with every answer on file must offer filing."""
+    _warm_port()
+    import web_portal.server as portal
+    customer_id = "CUST-CHAT-CLAIM-READY"
+    email = "ready.claim@example.com"
+    policy_id = "POL-CHAT-CLAIM-READY"
+    portal.CUSTOMERS[customer_id] = {
+        "id": customer_id,
+        "name": "Dana Levi",
+        "email": email,
+        "phone": "+1-555-0100",
+        "status": "active",
+    }
+    portal.POLICIES[policy_id] = {
+        "id": policy_id,
+        "customer_id": customer_id,
+        "type": "life",
+        "status": "active",
+        "coverage_amount": 500000,
+        "start_date": "2020-01-01",
+    }
+    token = _staff_token()
+    app_id, resume = _file_until_signature(
+        token, claimant_email=email, email=email, policy_id=policy_id,
+    )
+    status, paused = _post(
+        f"/api/claims-chat/{app_id}/pause", {"resume_code": resume}, token,
+    )
+    assert status == 200, paused
+
+    status, resumed = _post("/api/claims-chat/resume", {
+        "resume_code": resume, "email": email,
+    })
+    assert status == 200, resumed
+    assert resumed["otp_required"] is True
+    otp = resumed["otp"]
+    status, verified = _post(
+        f"/api/claims-chat/{app_id}/otp/verify",
+        {
+            "verification_id": otp["verification_id"],
+            "otp_code": otp["demo_otp_code"],
+            "resume_code": resume,
+        },
+        token,
+    )
+    assert status == 200, verified
+    assert verified.get("step") is None
+    assert verified.get("ready_to_finalize") is True
+    ready_msgs = [m for m in verified.get("messages") or [] if m.get("kind") == "ready_to_finalize"]
+    assert len(ready_msgs) == 1
+
+    status, filed = _post(
+        f"/api/claims-chat/{app_id}/finalize", {"resume_code": resume}, token,
+    )
+    assert status == 201, filed
+    assert filed["claim"]["id"]

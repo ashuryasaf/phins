@@ -27,6 +27,8 @@
         busy: false,
         mediaCount: 0,
         submitted: false,
+        readyToFinalize: false,
+        otpVerifying: false,
     };
 
     // ---- DOM ----------------------------------------------------------
@@ -344,11 +346,35 @@
 
     function clearDock() { dock().innerHTML = ''; }
 
+    function renderReadyToFinalize() {
+        state.readyToFinalize = true;
+        state.step = null;
+        state.liveStep = null;
+        state.editing = null;
+        dockHtml(
+            '<div class="dock-row" style="justify-content:center;">'
+            + '<button class="chip chip-go" id="submit-application" type="button">Submit my application</button>'
+            + '</div>'
+        );
+        const btn = $('submit-application');
+        if (btn) btn.addEventListener('click', finalize);
+        afterLayoutScroll();
+    }
+
     function renderStep(step) {
         state.step = step;
         if (!state.editing) state.liveStep = step;
         dockError('');
-        if (!step) { clearDock(); afterLayoutScroll(); return; }
+        if (!step) {
+            if (state.readyToFinalize) {
+                renderReadyToFinalize();
+                return;
+            }
+            clearDock();
+            afterLayoutScroll();
+            return;
+        }
+        state.readyToFinalize = false;
         const input = step.input || { type: 'text' };
         switch (input.type) {
             case 'text':
@@ -956,39 +982,58 @@
     }
 
     async function verifyOtp(code) {
+        if (state.otpVerifying) return;
         if (!code || code.length !== 6) { dockError('Please enter all 6 digits.'); return; }
+        state.otpVerifying = true;
         dockError('');
         stickToBottom = true;
         addBubble('user', escapeHtml('\u2022'.repeat(6)));
-        const { status, data } = await api('POST', `/${state.appId}/otp/verify`, {
-            verification_id: state.otp && state.otp.verification_id,
-            otp_code: code,
-            resume_code: state.resumeCode,
-        });
-        if (status !== 200) {
-            const t = addTyping(); await sleep(500); t.remove();
-            addBubble('bot', richText(data.error || 'That code is not right - try again.'));
-            renderOtpDock();
+        try {
+            const { status, data } = await api('POST', `/${state.appId}/otp/verify`, {
+                verification_id: state.otp && state.otp.verification_id,
+                otp_code: code,
+                resume_code: state.resumeCode,
+            });
+            if (status !== 200) {
+                if (state.readyToFinalize) {
+                    renderReadyToFinalize();
+                    return;
+                }
+                const t = addTyping(); await sleep(500); t.remove();
+                addBubble('bot', richText(data.error || 'That code is not right - try again.'));
+                renderOtpDock();
+                afterLayoutScroll();
+                return;
+            }
+            state.otp = null;
+            setProgress(data.progress);
+            rememberEditable(data.editable);
+            // On a secure fresh-page resume the server returns the prior
+            // conversation only after the fresh OTP passes - replay it so the chat
+            // is restored. Skip it on the same-tab continue path where the live
+            // conversation is already rendered, to avoid duplicating history.
+            stickToBottom = true;
+            try {
+                if (state.otpRestoreTranscript && data.transcript && data.transcript.length) {
+                    await playMessages(data.transcript, { instant: true });
+                }
+                await playMessages(data.messages);
+            } catch (err) {
+                addBubble('bot', 'I have your place in the application. Use the control below to continue.');
+            }
+            state.otpRestoreTranscript = false;
+            if (data.ready_to_finalize) {
+                renderReadyToFinalize();
+            } else {
+                state.readyToFinalize = false;
+                renderStep(data.step);
+            }
+            // Keep following through the rest of the application after OTP.
+            stickToBottom = true;
             afterLayoutScroll();
-            return;
+        } finally {
+            state.otpVerifying = false;
         }
-        state.otp = null;
-        setProgress(data.progress);
-        rememberEditable(data.editable);
-        // On a secure fresh-page resume the server returns the prior
-        // conversation only after the fresh OTP passes - replay it so the chat
-        // is restored. Skip it on the same-tab continue path where the live
-        // conversation is already rendered, to avoid duplicating history.
-        stickToBottom = true;
-        if (state.otpRestoreTranscript && data.transcript && data.transcript.length) {
-            await playMessages(data.transcript, { instant: true });
-        }
-        state.otpRestoreTranscript = false;
-        await playMessages(data.messages);
-        renderStep(data.step);
-        // Keep following through the rest of the application after OTP.
-        stickToBottom = true;
-        afterLayoutScroll();
     }
 
     // ---- conversation ----------------------------------------------------
@@ -1002,7 +1047,8 @@
 
     function cancelEdit() {
         state.editing = null;
-        renderStep(state.liveStep);
+        if (state.readyToFinalize) renderReadyToFinalize();
+        else renderStep(state.liveStep);
     }
 
     function beginEdit(item) {
@@ -1143,6 +1189,7 @@
             return;
         }
         state.submitted = true;
+        state.readyToFinalize = false;
         rememberEditable([]);
         clearLocal();
         await playMessages(data.messages);
