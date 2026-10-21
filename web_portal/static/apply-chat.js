@@ -374,7 +374,9 @@
             afterLayoutScroll();
             return;
         }
-        state.readyToFinalize = false;
+        // An edit form replaces the dock temporarily. Keep a resumed file's
+        // submit offer so Cancel can put that control back.
+        if (!state.editing) state.readyToFinalize = false;
         const input = step.input || { type: 'text' };
         switch (input.type) {
             case 'text':
@@ -995,10 +997,6 @@
                 resume_code: state.resumeCode,
             });
             if (status !== 200) {
-                if (state.readyToFinalize) {
-                    renderReadyToFinalize();
-                    return;
-                }
                 const t = addTyping(); await sleep(500); t.remove();
                 addBubble('bot', richText(data.error || 'That code is not right - try again.'));
                 renderOtpDock();
