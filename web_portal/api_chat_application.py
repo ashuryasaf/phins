@@ -23,6 +23,8 @@ Routes
 POST ``/api/chat-application/start``                 (public)
 POST ``/api/chat-application/resume``                (public, code+email)
 POST ``/api/chat-application/<id>/message``          (public, session-scoped)
+POST ``/api/chat-application/<id>/edit``             (resume code; staff cannot rewrite)
+GET  ``/api/chat-application/<id>/process-review``   (admin, underwriter, claims)
 POST ``/api/chat-application/<id>/otp/request``      (public)
 POST ``/api/chat-application/<id>/otp/verify``       (public)
 POST ``/api/chat-application/<id>/media``            (public, verified only)
@@ -56,7 +58,7 @@ logger = logging.getLogger("phins.chat_application.api")
 
 _STAFF_ROLES = {"admin", "underwriter", "actuary", "analyst", "accountant"}
 
-_ID_RE = re.compile(r"^/api/chat-application/(CHAPP-[A-Z0-9-]+)(/[a-z/]+)?$")
+_ID_RE = re.compile(r"^/api/chat-application/(CHAPP-[A-Z0-9-]+)(/[a-z0-9/_-]+)?$")
 
 # Per-IP session starts within a rolling hour (basic abuse guard - the OTP
 # service has its own rate limits for verification attempts).
@@ -874,6 +876,11 @@ def _handle_finalize(application_id: str, handler) -> Tuple[int, Dict[str, Any]]
             "error": outcome.get("error"),
             "submission": outcome.get("submission")}
     _pop_and_write_events(outcome)
+    _stamp_process_head(
+        str(underwriting.get("id") or ""),
+        application_id,
+        outcome.get("submission") or {},
+    )
 
     # Single-use claim code so the applicant can open "Track my application"
     # and finish account setup with just a password (see
@@ -925,6 +932,75 @@ def _handle_finalize(application_id: str, handler) -> Tuple[int, Dict[str, Any]]
             "track_url": f"/track-application.html?code={claim['claim_code']}",
         }
     return 201, response
+
+
+def _can_read_process_review(session: Optional[Dict[str, Any]]) -> bool:
+    from services.chat_answer_revisions import PROCESS_REVIEW_ROLES
+    return bool(session) and str(session.get("role") or "").lower() in PROCESS_REVIEW_ROLES
+
+
+def _ledger_values() -> list:
+    try:
+        try:
+            from web_portal import server as portal
+        except ImportError:
+            import server as portal  # type: ignore
+        return list(getattr(portal, "TRANSACTION_LEDGER", {}).values())
+    except Exception as exc:
+        logger.warning("Process review ledger scan failed: %s", exc)
+        return []
+
+
+def _review_from_ledger(application_id: str, event_type: str) -> Optional[Dict[str, Any]]:
+    from services.chat_answer_revisions import latest_seal, load_books, review_from_seal
+
+    seal = latest_seal(_ledger_values(), application_id, event_type)
+    if not seal:
+        return None
+    review = review_from_seal(seal, load_books())
+    review.pop("ok", None)
+    return review
+
+
+def _handle_process_review(application_id: str, session: Optional[Dict[str, Any]],
+                           event_type: str) -> Tuple[int, Dict[str, Any]]:
+    if not _can_read_process_review(session):
+        return 403, {"error": "Staff access required"}
+    review = _service().process_review(application_id)
+    if review.get("ok"):
+        review.pop("ok", None)
+        return 200, review
+    sealed = _review_from_ledger(application_id, event_type)
+    if sealed:
+        return 200, sealed
+    return review.get("status_code", 404), {"error": review.get("error") or "Application not found"}
+
+
+def _stamp_process_head(underwriting_id: str, application_id: str,
+                        submission: Dict[str, Any]) -> None:
+    """Remember the revision head on an in-memory underwriting row.
+
+    Database rows keep the seal on the ledger (`chat.process_sealed`). A plain
+    dict store also carries the head so the underwriter queue can link it.
+    """
+    head = submission.get("revision_head")
+    if not underwriting_id or not head:
+        return
+    try:
+        try:
+            from web_portal import server as portal
+        except ImportError:
+            import server as portal  # type: ignore
+        store = getattr(portal, "UNDERWRITING_APPLICATIONS", None)
+        if type(store) is not dict:
+            return
+        row = store.get(underwriting_id)
+        if isinstance(row, dict):
+            row["chat_process_head"] = head
+            row["chat_edit_count"] = submission.get("edit_count")
+            row.setdefault("chat_application_id", application_id)
+    except Exception as exc:
+        logger.warning("Chat process head stamp failed for %s: %s", underwriting_id, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -1022,6 +1098,8 @@ def dispatch_get(path: str, session: Optional[Dict[str, Any]],
         return value
 
     svc = _service()
+    if tail == "/process-review":
+        return _handle_process_review(application_id, session, "chat.process_sealed")
     staff = _is_staff(session)
     if not svc.authorize_access(application_id, _qp("resume_code"), staff):
         return 403, {"error": "A valid resume code (or staff session) is required"}
@@ -1091,6 +1169,16 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]],
     if not match:
         return 404, {"error": "Not found"}
     application_id, tail = match.group(1), (match.group(2) or "")
+
+    if tail == "/edit":
+        if not svc.authorize_applicant(application_id, body.get("resume_code")):
+            return 403, {"error": "A valid resume code is required"}
+        result = svc.edit_answer(application_id, str(body.get("step") or ""), body.get("value"))
+        _pop_and_write_events(result)
+        status_code = 200 if result.pop("ok", False) else result.pop("status_code", 400)
+        if status_code >= 400 and "error" not in result:
+            result["error"] = "Invalid answer"
+        return status_code, result
 
     # Every id-scoped mutation (advance answers, attach media, request/verify
     # OTP, pause, finalize) must prove possession of the resume code (or be a

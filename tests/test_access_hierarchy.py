@@ -30,6 +30,11 @@ def test_customer_cannot_open_staff_pages_or_admin_apis():
     assert decision["redirect"] == "/dashboard.html"
     assert surface_decision("customer", "/admin.html")["redirect"] == "/dashboard.html"
     assert surface_decision("customer", "/underwriter-dashboard.html")["allowed"] is False
+    assert surface_decision("customer", "/chat-process-review.html")["allowed"] is False
+    assert surface_decision("underwriter", "/chat-process-review.html")["allowed"] is True
+    assert surface_decision("claims_adjuster", "/chat-process-review.html")["allowed"] is True
+    assert surface_decision("admin", "/chat-process-review.html")["allowed"] is True
+    assert surface_decision("accountant", "/chat-process-review.html")["allowed"] is False
     assert api_denial("customer", "GET", "/api/admin/customers") == ACCESS_DENIED
     assert api_denial("customer", "POST", "/api/admin/pipeline-process-all") == ACCESS_DENIED
     assert api_denial("customer", "GET", "/api/pipeline/summary") == ACCESS_DENIED

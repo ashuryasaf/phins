@@ -20,6 +20,7 @@ Integrity rules:
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import html
 import json
@@ -692,6 +693,85 @@ class ClaimsChatService:
             },
         }
 
+    def _record_revision(self, session: Dict[str, Any], step_id: str, action: str,
+                         previous: Any, current: Any) -> Dict[str, Any]:
+        from services.chat_answer_revisions import append_revision, safe_display
+
+        revisions = session.setdefault("revisions", [])
+        rev = append_revision(
+            revisions,
+            step_id=step_id,
+            action=action,
+            at=_utc_now_iso(),
+            previous=previous,
+            current=current,
+            previous_display=safe_display(step_id, previous) if action != "set" else None,
+            current_display=None if action == "withdrawn" else safe_display(step_id, current),
+        )
+        session["revision_head"] = rev["checksum"]
+        return rev
+
+    def _ledger_revision(self, session: Dict[str, Any], rev: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "event_type": "claims_chat.answer_revised",
+            "entity_type": "claims_chat",
+            "entity_id": session["id"],
+            "customer_id": session.get("customer_id"),
+            "actor": "claimant",
+            "entry_id": f"REV-{session['id']}-{int(rev['seq']):04d}",
+            "payload": {
+                "application_id": session["id"],
+                "seq": rev["seq"],
+                "step_id": rev["step_id"],
+                "category": rev["category"],
+                "action": rev["action"],
+                "at": rev["at"],
+                "previous_display": rev.get("previous_display"),
+                "current_display": rev.get("current_display"),
+                "checksum": rev["checksum"],
+                "prev_checksum": rev["prev_checksum"],
+                "changed": rev.get("changed"),
+            },
+        }
+
+    def _chain_problem(self, session: Dict[str, Any]) -> Optional[str]:
+        from services.chat_answer_revisions import verify_revisions
+
+        ok, reason = verify_revisions(session.get("revisions") or [])
+        return None if ok else reason
+
+    def _history_problem(self, session: Dict[str, Any]) -> Optional[str]:
+        from services.chat_answer_revisions import history_gap
+
+        return history_gap(
+            session.get("revisions") or [],
+            session.get("answers") or {},
+            [step["id"] for step in self._steps_for(session)],
+        )
+
+    def _editable(self, session: Dict[str, Any]) -> List[Dict[str, Any]]:
+        from services.chat_answer_revisions import category_for, label_for, safe_display, summarize_edits
+
+        summary = summarize_edits(session.get("revisions") or [])
+        items = []
+        for step in self._steps_for(session):
+            if step["id"] not in session.get("answers", {}):
+                continue
+            public = self._step_public(session, step) or {}
+            info = summary.get(step["id"]) or {}
+            items.append({
+                "id": step["id"],
+                "label": label_for(step["id"]),
+                "category": category_for(step["id"]),
+                "display": info.get("display") or safe_display(step["id"], session["answers"].get(step["id"])),
+                "edited": int(info.get("edit_count") or 0) > 0,
+                "edit_count": int(info.get("edit_count") or 0),
+                "last_edited_at": info.get("last_edited_at"),
+                "prompt": public.get("prompt") or label_for(step["id"]),
+                "input": public.get("input") or {"type": "text"},
+            })
+        return items
+
     def _bind_customer(self, session: Dict[str, Any], customer_id: str,
                        profile: Dict[str, str], policies: List[Dict[str, Any]]) -> None:
         session["customer_id"] = customer_id
@@ -730,6 +810,9 @@ class ClaimsChatService:
                 "verified_via": None,
                 "otp": {},
                 "answers": {},
+                "revisions": [],
+                "rejected_edits": [],
+                "revision_head": None,
                 "media": [],
                 "transcript": [],
                 "journey": [],
@@ -869,6 +952,9 @@ class ClaimsChatService:
             if step["id"] != "signature":
                 session["answers"][step["id"]] = cleaned
             self._apply(session, step["id"], cleaned, events)
+            stored = session["answers"].get(step["id"], cleaned)
+            rev = self._record_revision(session, step["id"], "set", None, stored)
+            events.append(self._ledger_revision(session, rev))
 
             messages: List[Dict[str, Any]] = []
             response: Dict[str, Any] = {"ok": True}
@@ -903,9 +989,194 @@ class ClaimsChatService:
             response.update({
                 "messages": messages,
                 "progress": self._progress(session),
+                "editable": self._editable(session),
                 "ledger_events": events,
             })
             return response
+
+    def edit_answer(self, application_id: str, step_id: str, value: Any) -> Dict[str, Any]:
+        from services.chat_answer_revisions import category_for, remember_rejection, safe_display, same_answer
+
+        with self._lock:
+            session = self._get(application_id)
+            if not session:
+                return {"ok": False, "status_code": 404, "error": "Claim chat not found"}
+            if session["status"] == "submitted":
+                return {"ok": False, "status_code": 409, "error": "This claim was already filed."}
+            if session["status"] == "pending_reverify":
+                return {"ok": False, "status_code": 403, "error": "OTP_REQUIRED",
+                        "message": "Verify a fresh code before continuing."}
+            if session["status"] == "paused" and self._identity_verified(session):
+                return {"ok": False, "status_code": 403, "error": "OTP_REQUIRED",
+                        "message": "Verify a fresh code before continuing."}
+            if session["status"] == "paused":
+                session["status"] = "in_progress"
+            chain = self._chain_problem(session)
+            if chain:
+                return {"ok": False, "status_code": 409, "error": chain}
+
+            step_id = str(step_id or "").strip()
+            step = next((item for item in self._steps_for(session) if item["id"] == step_id), None)
+            if step is None or step_id not in session["answers"]:
+                return {"ok": False, "status_code": 409,
+                        "error": "That answer is not on the file yet.",
+                        "editable": self._editable(session)}
+
+            ok, cleaned = step["validate"](value, session)
+            events: List[Dict[str, Any]] = []
+            if not ok:
+                remember_rejection(
+                    session, step_id=step_id, display=safe_display(step_id, value),
+                    reason=str(cleaned), at=_utc_now_iso(),
+                )
+                bot_entry = self._transcript_add(
+                    session, "bot", str(cleaned), kind="validation_error",
+                    meta={"step": step_id, "edit": True})
+                events.append(self._ledger_message(session, bot_entry))
+                events.append({
+                    "event_type": "claims_chat.answer_revision_rejected",
+                    "entity_type": "claims_chat",
+                    "entity_id": session["id"],
+                    "customer_id": session.get("customer_id"),
+                    "actor": "claimant",
+                    "payload": {
+                        "application_id": session["id"],
+                        "step_id": step_id,
+                        "category": category_for(step_id),
+                        "display": safe_display(step_id, value),
+                        "reason": str(cleaned)[:240],
+                    },
+                })
+                return {
+                    "ok": False, "status_code": 400, "error": str(cleaned),
+                    "messages": [bot_entry], "step": self._step_public(session, step),
+                    "editable": self._editable(session),
+                    "progress": self._progress(session), "ledger_events": events,
+                }
+
+            previous = copy.deepcopy(session["answers"].get(step_id))
+            if same_answer(step_id, previous, cleaned):
+                bot_entry = self._transcript_add(
+                    session, "bot", "That matches what I already have, so I left it unchanged.",
+                    kind="ack", meta={"step": step_id, "edit": True, "unchanged": True})
+                events.append(self._ledger_message(session, bot_entry))
+                return {
+                    "ok": True, "unchanged": True, "messages": [bot_entry],
+                    "step": self._step_public(session, self._next_step(session)),
+                    "editable": self._editable(session),
+                    "progress": self._progress(session), "ledger_events": events,
+                }
+
+            old_customer = session.get("customer_id")
+            old_email = (session.get("contact") or {}).get("email")
+            old_phone = (session.get("contact") or {}).get("phone")
+            if step_id != "signature":
+                session["answers"][step_id] = cleaned
+            self._apply(session, step_id, cleaned, events)
+            stored = session["answers"].get(step_id, cleaned)
+            rev = self._record_revision(session, step_id, "edit", previous, stored)
+            events.append(self._ledger_revision(session, rev))
+            events.append(self._journey(session, "answer_edited", {
+                "step_id": step_id, "category": rev["category"], "checksum": rev["checksum"],
+            }))
+
+            if step_id == "claimant" and session.get("customer_id") != old_customer:
+                for later_id in [item["id"] for item in self._steps_for(session) if item["id"] != "claimant"]:
+                    if later_id in session["answers"]:
+                        dropped = session["answers"].pop(later_id)
+                        withdrawn = self._record_revision(session, later_id, "withdrawn", dropped, None)
+                        events.append(self._ledger_revision(session, withdrawn))
+
+            user_entry = self._transcript_add(
+                session, "user", safe_display(step_id, stored),
+                kind="answer_edit", meta={"step": step_id, "edit": True})
+            events.append(self._ledger_message(session, user_entry))
+            messages = [self._transcript_add(
+                session, "bot",
+                "Updated. I kept the earlier answer on the file and recorded this change.",
+                kind="ack", meta={"step": step_id, "edit": True, "edited_at": rev["at"]})]
+
+            response: Dict[str, Any] = {"ok": True, "edited": True, "edited_step": step_id}
+            contact_changed = (
+                step_id == "profile" and self._identity_verified(session) and (
+                    (session.get("contact") or {}).get("email") != old_email
+                    or (session.get("contact") or {}).get("phone") != old_phone
+                )
+            )
+            if contact_changed:
+                session["status"] = "pending_reverify"
+                session["email_verified"] = False
+                session["phone_verified"] = False
+                messages.append(self._transcript_add(
+                    session, "bot",
+                    "The contact details changed, so I need a fresh code before we continue. "
+                    "The earlier contact stays on the file.",
+                    kind="otp_challenge"))
+                response["otp_required"] = True
+                response["otp_channels"] = ["email", "sms", "whatsapp"]
+                response["masked_email"] = _mask_email((session.get("contact") or {}).get("email") or "")
+                response["masked_phone"] = _mask_phone((session.get("contact") or {}).get("phone"))
+            else:
+                nxt = self._next_step(session)
+                if nxt is None and self._identity_verified(session):
+                    messages.append(self._transcript_add(
+                        session, "bot",
+                        "That's the whole notice. I'll seal the file, file the claim, "
+                        "notify you, and hand it to the claims pipeline.",
+                        kind="ready_to_finalize"))
+                    response["ready_to_finalize"] = True
+                elif nxt is not None:
+                    step_pub = self._step_public(session, nxt)
+                    messages.append(self._transcript_add(
+                        session, "bot", step_pub["prompt"], kind="question",
+                        meta={"step": step_pub["id"]}))
+                    response["step"] = step_pub
+            events.extend(self._ledger_message(session, msg) for msg in messages)
+            response.update({
+                "messages": messages,
+                "progress": self._progress(session),
+                "editable": self._editable(session),
+                "revision_head": session.get("revision_head"),
+                "ledger_events": events,
+            })
+            return response
+
+    def process_review(self, application_id: str) -> Dict[str, Any]:
+        from services.chat_answer_revisions import build_review, load_books, subject_from_claim
+
+        with self._lock:
+            session = self._get(application_id)
+            if not session:
+                return {"ok": False, "status_code": 404, "error": "Claim chat not found"}
+            peers = []
+            for other_id, other in self._sessions.items():
+                if other_id == session["id"]:
+                    continue
+                subject = subject_from_claim(other)
+                peers.append({
+                    "id": other_id,
+                    "status": other.get("status"),
+                    "email": subject.get("email"),
+                    "name": subject.get("name"),
+                    "national_id_hash": subject.get("national_id_hash"),
+                    "updated_at": other.get("updated_at"),
+                })
+            exclude = [session["id"]]
+            submission = session.get("submission") or {}
+            exclude.append(submission.get("claim_id"))
+            review = build_review(
+                kind="claim",
+                application_id=session["id"],
+                status=session["status"],
+                subject=subject_from_claim(session),
+                revisions=session.get("revisions") or [],
+                rejected_edits=session.get("rejected_edits") or [],
+                books=load_books(),
+                peers=peers,
+                exclude_ids=[item for item in exclude if item],
+            )
+            review["source"] = "session"
+            return review
 
     def contact_email(self, application_id: str) -> Optional[str]:
         session = self._get(application_id)
@@ -962,6 +1233,7 @@ class ClaimsChatService:
             return {
                 "ok": True, "messages": messages, "step": step_pub,
                 "progress": self._progress(session), "ledger_events": events,
+                "editable": self._editable(session),
                 "transcript": list(session["transcript"]),
             }
 
@@ -1129,6 +1401,7 @@ class ClaimsChatService:
                 "transcript": [] if otp_required else list(session["transcript"]),
                 "step": step,
                 "progress": self._progress(session),
+                "editable": [] if otp_required else self._editable(session),
                 "ledger_events": [self._journey(session, "continued")],
             }
 
@@ -1158,6 +1431,9 @@ class ClaimsChatService:
             if missing:
                 return {"ok": False, "status_code": 409,
                         "error": f"Still missing answers for: {', '.join(missing)}"}
+            history = self._history_problem(session)
+            if history:
+                return {"ok": False, "status_code": 409, "error": history}
             sig = session["answers"].get("signature") if isinstance(session["answers"].get("signature"), dict) else {}
             if not sig.get("id_number") or not sig.get("nationality"):
                 return {"ok": False, "status_code": 409, "error": "A signed identity is required to file."}
@@ -1379,12 +1655,18 @@ class ClaimsChatService:
             if isinstance(sig, dict):
                 sig.pop("id_number", None)
                 sig.pop("signature_data", None)
+            from services.chat_answer_revisions import build_seal
+
+            seal = build_seal(session, kind="claim")
+            session["process_seal"] = seal
             session["submission"] = {
                 "claim_id": claim_id,
                 "customer_id": session.get("customer_id"),
                 "policy_id": (session.get("facts") or {}).get("policy_id"),
                 "payload_checksum": session.get("payload_checksum"),
                 "document_sha256": session.get("document_sha256"),
+                "revision_head": seal.get("revision_head"),
+                "edit_count": seal.get("edit_count"),
                 "submitted_at": _utc_now_iso(),
             }
             first = str((session.get("contact") or {}).get("name") or "").split(" ")[0]
@@ -1400,8 +1682,23 @@ class ClaimsChatService:
                     "claim_id": claim_id,
                     "payload_checksum": session.get("payload_checksum"),
                     "document_sha256": session.get("document_sha256"),
+                    "revision_head": seal.get("revision_head"),
+                    "edit_count": seal.get("edit_count"),
                 }),
                 self._ledger_message(session, message),
+                {
+                    "event_type": "claims_chat.process_sealed",
+                    "entity_type": "claims_chat",
+                    "entity_id": session["id"],
+                    "customer_id": session.get("customer_id"),
+                    "actor": "claimant",
+                    "entry_id": f"SEAL-{session['id']}",
+                    "payload": {
+                        "application_id": session["id"],
+                        "claim_id": claim_id,
+                        "seal": seal,
+                    },
+                },
             ]
             return {"ok": True, "messages": [message], "submission": session["submission"],
                     "ledger_events": events}
@@ -1421,6 +1718,7 @@ class ClaimsChatService:
             "document_html": session.get("document_html") if session["status"] == "submitted" else None,
             "document_sha256": session.get("document_sha256"),
             "customer_id": session.get("customer_id"),
+            "editable": self._editable(session) if session["status"] != "submitted" else [],
         }
 
 

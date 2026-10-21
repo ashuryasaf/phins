@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat process review - PHINS</title>
+    <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root { color-scheme: dark; }
+        body { margin: 0; font-family: Inter, sans-serif; background: #060d1f; color: #e8eef8; }
+        header { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 18px 24px; border-bottom: 1px solid rgba(201,162,75,0.35); }
+        h1 { font-family: "Space Grotesk", sans-serif; font-size: 1.35rem; margin: 0; }
+        a { color: #e3bf6f; }
+        main { max-width: 1080px; margin: 0 auto; padding: 24px; }
+        .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        input, button { font: inherit; }
+        input { background: #0d1830; color: #fff; border: 1px solid rgba(201,162,75,0.45); border-radius: 10px; padding: 10px 12px; min-width: 280px; }
+        button, .tab { background: transparent; color: #e3bf6f; border: 1px solid rgba(201,162,75,0.55); border-radius: 999px; padding: 8px 14px; cursor: pointer; }
+        button.active, .tab.active { background: #e3bf6f; color: #06101f; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 18px; }
+        .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(201,162,75,0.28); border-radius: 16px; padding: 16px; }
+        .card h2 { margin: 0 0 10px; font-size: 0.95rem; letter-spacing: 0.06em; text-transform: uppercase; color: #e3bf6f; }
+        .muted { color: #9aabc4; font-size: 0.88rem; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); vertical-align: top; }
+        .ok { color: #8ddea8; } .bad { color: #ff8d8d; }
+        .error { color: #ffb4b4; }
+        code { font-family: "Space Grotesk", monospace; font-size: 0.82rem; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Chat process review</h1>
+        <a href="/underwriter-dashboard.html">Underwriting</a>
+    </header>
+    <main>
+        <form class="row" id="lookup">
+            <input id="file-id" placeholder="CHAPP-… or CLCHAT-…" autocomplete="off" spellcheck="false">
+            <button type="submit">Open</button>
+            <button type="button" class="tab active" id="tab-quick">Quick</button>
+            <button type="button" class="tab" id="tab-full">Full</button>
+        </form>
+        <p class="muted" id="status-line">For underwriting and claims staff. Applicants do not see this view.</p>
+        <div id="quick"></div>
+        <div id="full" hidden></div>
+    </main>
+    <script>
+        const $ = (id) => document.getElementById(id);
+        const token = localStorage.getItem('phins_token') || '';
+        let review = null;
+        let mode = 'quick';
+
+        function esc(value) {
+            return String(value == null || value === '' ? '—' : value)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function lines(pairs) {
+            return pairs.map(([label, value]) => '<div><span class="muted">' + esc(label) + '</span><br>' + esc(value) + '</div>').join('');
+        }
+
+        function render() {
+            if (!review) return;
+            const quick = review.quick || {};
+            const personal = quick.personal || {};
+            const health = quick.health || {};
+            const billing = quick.billing || {};
+            const edits = quick.edits || {};
+            const prior = quick.prior || {};
+            const integrity = review.integrity || {};
+            $('status-line').innerHTML = esc(review.application_id) + ' · ' + esc(review.status)
+                + ' · <span class="' + (integrity.ok ? 'ok' : 'bad') + '">'
+                + (integrity.ok ? 'Answer chain intact' : 'Answer chain failed') + '</span>'
+                + (integrity.head ? ' · <code>' + esc(String(integrity.head).slice(0, 16)) + '…</code>' : '');
+            $('quick').innerHTML = '<div class="grid">'
+                + '<section class="card"><h2>Identity</h2>' + lines([
+                    ['Name', personal.name], ['Email', personal.email], ['Mobile', personal.phone],
+                    ['Date of birth', personal.dob], ['Nationality', personal.nationality],
+                    ['ID last 4', personal.national_id_last4], ['City', personal.city], ['Country', personal.country]
+                ]) + '</section>'
+                + '<section class="card"><h2>Health</h2>' + lines([
+                    ['Main problems', health.main_problems || health.what_happened],
+                    ['Conditions', health.medical_conditions], ['Surgery', health.surgery_detail || health.surgery],
+                    ['Medications', health.medications], ['Tobacco', health.tobacco],
+                    ['Daily function', health.daily_function], ['Claim type', health.claim_type],
+                    ['Disclosure', health.disclosure]
+                ]) + '</section>'
+                + '<section class="card"><h2>Billing</h2>' + lines([
+                    ['Frequency', billing.billing_frequency], ['Auto-pay', billing.auto_pay],
+                    ['Card last 4', billing.card_last4], ['Cardholder', billing.cardholder_name],
+                    ['Expiry', [billing.expiry_month, billing.expiry_year].filter(Boolean).join('/') || null],
+                    ['Policy', billing.policy_id], ['Claimed', billing.claimed_amount]
+                ]) + '</section>'
+                + '<section class="card"><h2>Edits</h2>' + lines([
+                    ['Identity', edits.identity], ['Health', edits.health], ['Billing', edits.billing],
+                    ['Total', edits.total], ['Last edit', edits.last_edited_at]
+                ]) + '<p class="muted">Prior files: ' + esc(prior.count) + ' · triggered by '
+                + esc((prior.triggered_by || []).join(', ') || 'none') + '</p></section>'
+                + '</div>'
+                + priorTable(prior.items || []);
+            const full = review.full || {};
+            $('full').innerHTML = '<section class="card" style="margin-top:18px"><h2>Intention</h2>'
+                + table(['When', 'What', 'From', 'To'], (full.intention || []).map((row) => [
+                    row.edited_at, row.label, row.from, row.withdrawn ? 'withdrawn' : row.to
+                ]))
+                + '</section><section class="card" style="margin-top:14px"><h2>Every recorded answer</h2>'
+                + table(['When', 'Action', 'Step', 'Earlier', 'Current'], (full.revisions || []).map((row) => [
+                    row.at, row.action, row.step_id, row.previous_display, row.current_display
+                ]))
+                + '</section><section class="card" style="margin-top:14px"><h2>Earlier files and contradictions</h2>'
+                + priorTable(full.prior || [])
+                + table(['Field', 'Now', 'Earlier file'], (full.contradictions || []).map((row) => [
+                    row.label || row.field, row.current, row.previous
+                ]))
+                + '</section>';
+            $('quick').hidden = mode !== 'quick';
+            $('full').hidden = mode !== 'full';
+        }
+
+        function table(headers, rows) {
+            if (!rows.length) return '<p class="muted">None recorded.</p>';
+            return '<table><thead><tr>' + headers.map((h) => '<th>' + esc(h) + '</th>').join('')
+                + '</tr></thead><tbody>'
+                + rows.map((row) => '<tr>' + row.map((cell) => '<td>' + esc(cell) + '</td>').join('') + '</tr>').join('')
+                + '</tbody></table>';
+        }
+
+        function priorTable(items) {
+            return '<section class="card" style="margin-top:14px"><h2>Previous applications</h2>'
+                + table(['Kind', 'Id', 'Status', 'Triggered by', 'When'], items.map((item) => [
+                    item.kind, item.id, item.status, (item.triggered_by || []).join(', '), item.when
+                ])) + '</section>';
+        }
+
+        async function load(id) {
+            const fileId = String(id || '').trim().toUpperCase();
+            if (!fileId) return;
+            const root = fileId.startsWith('CLCHAT-') ? '/api/claims-chat/' : '/api/chat-application/';
+            $('status-line').textContent = 'Loading ' + fileId + '…';
+            const response = await fetch(root + encodeURIComponent(fileId) + '/process-review', {
+                headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+            });
+            const data = await response.json().catch(() => ({}));
+            if (response.status === 401) {
+                window.location.href = '/login.html';
+                return;
+            }
+            if (!response.ok) {
+                review = null;
+                $('quick').innerHTML = '';
+                $('full').innerHTML = '';
+                $('status-line').innerHTML = '<span class="error">' + esc(data.error || 'Could not open this review') + '</span>';
+                return;
+            }
+            review = data;
+            history.replaceState(null, '', '?id=' + encodeURIComponent(fileId));
+            render();
+        }
+
+        $('lookup').addEventListener('submit', (event) => {
+            event.preventDefault();
+            load($('file-id').value);
+        });
+        $('tab-quick').addEventListener('click', () => {
+            mode = 'quick';
+            $('tab-quick').classList.add('active');
+            $('tab-full').classList.remove('active');
+            render();
+        });
+        $('tab-full').addEventListener('click', () => {
+            mode = 'full';
+            $('tab-full').classList.add('active');
+            $('tab-quick').classList.remove('active');
+            render();
+        });
+        const initial = new URLSearchParams(location.search).get('id');
+        if (initial) {
+            $('file-id').value = initial;
+            load(initial);
+        }
+    </script>
+</body>
+</html>

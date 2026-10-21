@@ -18,6 +18,9 @@
         resumeCode: null,
         email: null,
         step: null,          // current step descriptor from the API
+        liveStep: null,
+        editing: null,
+        editable: [],
         otp: null,           // {verification_id, channel, maskedEmail, maskedPhone}
         otpChannel: null,    // 'email' | 'sms' | 'whatsapp'
         otpRestoreTranscript: false, // replay transcript after OTP only on a fresh-page resume
@@ -343,6 +346,7 @@
 
     function renderStep(step) {
         state.step = step;
+        if (!state.editing) state.liveStep = step;
         dockError('');
         if (!step) { clearDock(); afterLayoutScroll(); return; }
         const input = step.input || { type: 'text' };
@@ -415,7 +419,7 @@
         const send = () => {
             const value = field.value.trim();
             if (!value) return;
-            submitAnswer(input.type === 'number' ? Number(value) : value, value);
+            commitAnswer(input.type === 'number' ? Number(value) : value, value);
         };
         $('dock-send').addEventListener('click', send);
         field.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
@@ -449,7 +453,7 @@
                 value = suggest.composePhone(dial.value, field.value) || value;
             }
             if (!value) return;
-            submitAnswer(value, value);
+            commitAnswer(value, value);
         };
         $('dock-send').addEventListener('click', send);
         field.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
@@ -465,7 +469,7 @@
         dock().querySelectorAll('.chip').forEach((chip) => {
             chip.addEventListener('click', () => {
                 const v = chip.dataset.value;
-                submitAnswer(v, (input.labels || {})[v] || cap(v));
+                commitAnswer(v, (input.labels || {})[v] || cap(v));
             });
         });
     }
@@ -499,7 +503,7 @@
         });
         $('multi-confirm').addEventListener('click', () => {
             const values = selected.size ? Array.from(selected) : ['none'];
-            submitAnswer(values, values.map(cap).join(', '));
+            commitAnswer(values, values.map(cap).join(', '));
         });
     }
 
@@ -523,7 +527,7 @@
         paint();
         slider.addEventListener('input', paint);
         $('slider-confirm').addEventListener('click', () => {
-            submitAnswer(Number(slider.value),
+            commitAnswer(Number(slider.value),
                 input.format === 'currency' ? fmtMoney(Number(slider.value), 0) : slider.value);
         });
     }
@@ -550,7 +554,7 @@
         });
         $('cc-submit').addEventListener('click', () => {
             const digits = $('cc-number').value.replace(/\D/g, '');
-            submitAnswer({
+            commitAnswer({
                 card_number: digits,
                 cardholder_name: $('cc-name').value.trim(),
                 expiry_month: $('cc-month').value.trim(),
@@ -578,7 +582,7 @@
         const btn = $('consent-submit');
         const refresh = () => { btn.disabled = !boxes.every((b) => b.checked); };
         boxes.forEach((b) => b.addEventListener('change', refresh));
-        btn.addEventListener('click', () => submitAnswer('agree', 'I agree - all three confirmations'));
+        btn.addEventListener('click', () => commitAnswer('agree', 'I agree - all three confirmations'));
     }
 
     function renderSignature(input) {
@@ -678,7 +682,7 @@
             if (!idNumber) { dockError('Please enter your ID number.'); return; }
             if (!hasInk) { dockError('Please draw your signature in the panel.'); return; }
             const signatureData = canvas.toDataURL('image/png');
-            submitAnswer({
+            commitAnswer({
                 name,
                 nationality,
                 id_number: idNumber,
@@ -720,7 +724,7 @@
         dock().querySelectorAll('.chip[data-value]').forEach((chip) => {
             chip.addEventListener('click', () => {
                 stopVoiceRecorder();
-                submitAnswer(chip.dataset.value,
+                commitAnswer(chip.dataset.value,
                     chip.dataset.value === 'done' ? 'Done - continue' : 'Skip for now');
             });
         });
@@ -970,6 +974,7 @@
         }
         state.otp = null;
         setProgress(data.progress);
+        rememberEditable(data.editable);
         // On a secure fresh-page resume the server returns the prior
         // conversation only after the fresh OTP passes - replay it so the chat
         // is restored. Skip it on the same-tab continue path where the live
@@ -988,6 +993,103 @@
 
     // ---- conversation ----------------------------------------------------
 
+    function rememberEditable(list) {
+        if (Array.isArray(list)) state.editable = list;
+        const btn = $('edit-answers-btn');
+        if (!btn) return;
+        btn.hidden = state.submitted || !(state.editable && state.editable.length);
+    }
+
+    function cancelEdit() {
+        state.editing = null;
+        renderStep(state.liveStep);
+    }
+
+    function beginEdit(item) {
+        state.editing = item;
+        renderStep({ id: item.id, prompt: item.prompt, input: item.input || { type: 'text' } });
+        const inner = dock().querySelector('.dock-inner');
+        if (!inner) return;
+        const note = document.createElement('div');
+        note.className = 'edit-banner';
+        note.textContent = 'Editing ' + item.label + '. The earlier answer stays on file'
+            + (item.display ? ': ' + item.display : '') + '.';
+        inner.insertBefore(note, inner.firstChild);
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'link-btn';
+        cancel.textContent = 'Cancel edit';
+        cancel.addEventListener('click', cancelEdit);
+        inner.appendChild(cancel);
+    }
+
+    function openEditPicker() {
+        if (state.busy || state.submitted || !(state.editable && state.editable.length)) return;
+        const rows = state.editable.map((item) => (
+            '<button type="button" class="edit-row" data-step="' + escapeHtml(item.id) + '">'
+            + '<strong>' + escapeHtml(item.label) + '</strong>'
+            + (item.edited ? '<span class="edit-flag">edited</span>' : '')
+            + '<span>' + escapeHtml(item.display || '') + '</span></button>'
+        )).join('');
+        dockHtml(
+            '<p class="edit-banner">Choose an answer to change. PHINS keeps the earlier answer and the time of the change.</p>'
+            + '<div class="edit-picker">' + rows + '</div>'
+            + '<button type="button" class="link-btn" id="edit-cancel">Back to the current question</button>'
+        );
+        dock().querySelectorAll('.edit-row').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const item = (state.editable || []).find((row) => row.id === btn.getAttribute('data-step'));
+                if (item) beginEdit(item);
+            });
+        });
+        const cancel = $('edit-cancel');
+        if (cancel) cancel.addEventListener('click', cancelEdit);
+    }
+
+    function commitAnswer(value, displayText) {
+        if (state.editing) return submitEdit(value, displayText);
+        return submitAnswer(value, displayText);
+    }
+
+    async function submitEdit(value, displayText) {
+        if (state.busy || !state.editing) return;
+        const editing = state.editing;
+        state.busy = true;
+        stickToBottom = true;
+        clearDock();
+        addBubble('user', richText(displayText !== undefined ? displayText : String(value)));
+        try {
+            const { status, data } = await api('POST', `/${state.appId}/edit`, {
+                step: editing.id,
+                value,
+                resume_code: state.resumeCode,
+            });
+            rememberEditable(data.editable);
+            setProgress(data.progress);
+            await playMessages(data.messages);
+            if (status >= 400) {
+                beginEdit(editing);
+                dockError(data.error || 'That change was not saved.');
+                afterLayoutScroll();
+                return;
+            }
+            state.editing = null;
+            if (data.otp_required) {
+                renderOtpChannelDock(data);
+            } else if (data.ready_to_finalize) {
+                await finalize();
+            } else {
+                renderStep(data.step);
+            }
+            afterLayoutScroll();
+        } catch (err) {
+            addBubble('bot', 'Connection hiccup - your progress is saved. Try that again.');
+            beginEdit(editing);
+        } finally {
+            state.busy = false;
+        }
+    }
+
     async function submitAnswer(value, displayText) {
         if (state.busy) return;
         state.busy = true;
@@ -997,6 +1099,7 @@
         try {
             const { status, data } = await api('POST', `/${state.appId}/message`, { value, resume_code: state.resumeCode });
             setProgress(data.progress);
+            rememberEditable(data.editable);
             await playMessages(data.messages);
             if (status >= 400 && !data.messages) {
                 addBubble('bot', richText(data.error || 'Something went wrong - try again.'));
@@ -1040,6 +1143,7 @@
             return;
         }
         state.submitted = true;
+        rememberEditable([]);
         clearLocal();
         await playMessages(data.messages);
         const login = data.provisioned_login || {};
@@ -1132,6 +1236,7 @@
         saveLocal();
         switchToChat();
         setProgress(data.progress);
+        rememberEditable(data.editable);
         await playMessages(data.messages);
         renderStep(data.step);
         afterLayoutScroll();
@@ -1193,6 +1298,7 @@
         await playMessages(data.transcript || [], { instant: true });
         await playMessages(data.messages || []);
         setProgress(data.progress);
+        rememberEditable(data.editable);
         renderStep(data.step);
         afterLayoutScroll();
     }
@@ -1235,6 +1341,8 @@
                 $('resume-email-input').value.trim());
         });
         $('pause-btn').addEventListener('click', pauseApplication);
+        const editBtn = $('edit-answers-btn');
+        if (editBtn) editBtn.addEventListener('click', openEditPicker);
         $('resume-pill').addEventListener('click', () => {
             navigator.clipboard?.writeText(state.resumeCode || '');
             $('resume-pill-code').textContent = 'Copied!';
