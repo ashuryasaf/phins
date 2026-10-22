@@ -299,6 +299,7 @@ Preferred file-by-task:
 | Assessment center API | `web_portal/api_assessment_center.py`, `services/assessment_center_service.py` |
 | Chat intake (Phin, policy or claim) | `services/chat_application_service.py` or `services/claims_chat_service.py`, then `web_portal/api_chat_application.py` / `api_claims_chat.py` |
 | Customer identity (ID + nationality) | `services/customer_identity_service.py` (one writer), `web_portal/api_customer_identity.py` |
+| Admin desk (mailboxes, diary, letters, tables) | `services/admin_desk_service.py`, `services/admin_desk_mail.py` (GoDaddy read-only attribution + one-time vault password), `web_portal/api_admin_desk.py`, `/admin-desk.html` |
 | Referral CAC / professional roles | `services/referral_reward_service.py`, `web_portal/api_referral_rewards.py`, `database/repositories/referral_reward_repository.py` |
 | Customer intro / invitation landing | `web_portal/static/join.html`; films `join_intro_*` on the media Customer relations tab; briefs in `services/solution_video_blueprints.py` (`JOIN_INTRO_OUTLINES`, `JOIN-` campaigns) |
 | Document archive / durability probe | `services/customer_document_vault_service.py`, `services/document_durability_agent.py` |
@@ -793,6 +794,21 @@ Environment variables commonly used:
  apply)
 - **Delivery bidding (B11):** `PHINS_DELIVERY_SLA_TICK_SECONDS` (SLA clock
  interval for closing elapsed bidding windows, default 60)
+- **Admin desk:** an admin saves a mailbox password once on
+  `/admin-desk.html`. The value is Fernet-encrypted in
+  `PHINS_ADMIN_DESK_MAIL_VAULT_PATH` (else the Railway volume, `/data`, or the
+  temp dir) and is not written on the mailbox record. A vault that cannot
+  encrypt refuses the save. `PHINS_ADMIN_DESK_MAIL_ASAF` (and
+  `PHINS_ADMIN_DESK_MAIL_ACTUARY`, `_UNDERWRITING`, `_CLAIMS`, `_ACCOUNTANT`,
+  `_COMPLIANCE`) remain an optional env credential; the name is stored on the
+  binding, the value is not. A mailbox stays disabled until one of those is
+  set and an admin enables it. `GODADDY_API_TOKEN` (or `GODADDY_PAT`, or
+  `GODADDY_API_KEY` + `GODADDY_API_SECRET`) is read-only: domain ownership,
+  `GET /v1/email/mailboxes`, and eligibility. The desk does not create a
+  mailbox. Microsoft 365 mail keeps the saved password in the vault and does
+  not send it to IMAP. GoDaddy Email / Titan logs in once at
+  `imap.secureserver.net:993`. Send stays refused until a provider adapter
+  is connected. The desk page is `/admin-desk.html`.
 - **Transcription:** `PHINS_TRANSCRIPTION_PROVIDER`
  (`openai_compatible`|`disabled`), `PHINS_TRANSCRIPTION_ENDPOINT`,
  `PHINS_TRANSCRIPTION_API_KEY`, `PHINS_TRANSCRIPTION_MODEL`

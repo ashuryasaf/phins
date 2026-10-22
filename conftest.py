@@ -105,6 +105,12 @@ os.environ.setdefault(
     "PHINS_REFERRAL_REWARDS_PATH",
     str(Path(tempfile.gettempdir()) / f"phins_test_referral_rewards_{os.getpid()}.json"),
 )
+# Admin-desk mailbox passwords are Fernet blobs in this file. Keep the test
+# copy out of the checkout and out of the default temp name a dev server uses.
+os.environ.setdefault(
+    "PHINS_ADMIN_DESK_MAIL_VAULT_PATH",
+    str(Path(tempfile.gettempdir()) / f"phins_test_mail_vault_{os.getpid()}.json"),
+)
 
 
 _httpd = None
@@ -155,6 +161,7 @@ def pytest_sessionfinish(session, exitstatus):  # type: ignore[no-redef]
         "PHINS_INVITATION_CODES_PATH",
         "PHINS_KEYRING_PATH",
         "PHINS_REFERRAL_REWARDS_PATH",
+        "PHINS_ADMIN_DESK_MAIL_VAULT_PATH",
     ):
         path = os.environ.get(var, "")
         if f"_{os.getpid()}.json" in path:

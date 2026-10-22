@@ -4499,6 +4499,11 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     if storyboard_get is not None:
         return storyboard_get
 
+    from web_portal.api_admin_desk import dispatch_get as desk_get
+    desk_result = desk_get(path, session, query_params)
+    if desk_result is not None:
+        return desk_result
+
     # Admin operations view over every registered software agent.
     if path == '/api/admin/ai-agents/health':
         return handle_ai_agents_health(session, query_params)
@@ -4723,6 +4728,11 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
     storyboard_post = dispatch_storyboard_post(path, session, body_data)
     if storyboard_post is not None:
         return storyboard_post
+
+    from web_portal.api_admin_desk import dispatch_post as desk_post
+    desk_result = desk_post(path, session, body_data)
+    if desk_result is not None:
+        return desk_result
 
     # Audited threshold promotion (A6) — the calibration loop's one mutating step.
     if path == AI_AGENTS_PROMOTE_PATH:
