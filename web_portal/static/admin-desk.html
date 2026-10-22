@@ -45,7 +45,7 @@
   <header>
     <div>
       <h1>PHINS Admin Desk</h1>
-      <p>Registered mailboxes, the meeting diary, and PHINS letters and tables. Send stays off until a mailbox credential is set.</p>
+      <p>Registered mailboxes, the meeting diary, and PHINS letters and tables. A mailbox password is saved once for email use. Send stays off.</p>
     </div>
     <a href="/admin.html">Admin home</a>
   </header>
@@ -107,6 +107,13 @@ Letter,Admin,Ready</textarea>
           <pre id="preview" class="sig"></pre>
         </section>
       </div>
+      <section id="mail-connect" style="margin-top:16px">
+        <h2>Email account</h2>
+        <div id="mail-report" class="sig">Select an account.</div>
+        <label for="mail-password">Mailbox password, saved once for email</label>
+        <input id="mail-password" type="password" autocomplete="new-password">
+        <button id="save-password" type="button">Save password</button>
+      </section>
       <section style="margin-top:16px">
         <h2>Letter preview</h2>
         <iframe id="preview-frame" title="Letter preview"></iframe>
@@ -159,9 +166,10 @@ Letter,Admin,Ready</textarea>
         button.type = "button";
         button.className = "account" + (mailbox.id === selected ? " on" : "");
         const ready = mailbox.enabled && mailbox.secret_configured;
+        const saved = mailbox.password_saved ? "password saved" : "password not saved";
         button.innerHTML = "<strong>" + (mailbox.address || mailbox.desk) + "</strong><br><span class='tag'>" +
-          mailbox.desk + " · " + (ready ? "enabled" : "disabled") + " · " + mailbox.secret_ref + "</span>";
-        button.addEventListener("click", function () { selected = mailbox.id; render(); });
+          mailbox.desk + " · " + (ready ? "enabled" : "disabled") + " · " + saved + "</span>";
+        button.addEventListener("click", function () { selected = mailbox.id; render(); loadAttribution(); });
         accounts.appendChild(button);
       });
       const current = (deskState.mailboxes || []).find(function (item) { return item.id === selected; }) || deskState.mailboxes[0];
@@ -170,6 +178,8 @@ Letter,Admin,Ready</textarea>
         sig.textContent = current.desk + "\n" + (current.address || "address not set") +
           "\nprofile " + current.signature_id + "\n" + current.signature_sha256;
       }
+      const connect = document.getElementById("mail-connect");
+      connect.style.display = deskState.can_manage_mail ? "block" : "none";
       const diary = document.getElementById("diary");
       const rows = deskState.diary || [];
       const body = rows.map(function (row) {
@@ -188,7 +198,47 @@ Letter,Admin,Ready</textarea>
       }
       deskState = await api("/api/admin/ai-agents/desk");
       render();
+      await loadAttribution();
       setStatus("Desk loaded. " + deskState.mailboxes.length + " mailbox row(s). Send is not connected.", "ok");
+    }
+
+    function attributionText(report) {
+      const dns = report.dns || {};
+      const api = report.godaddy_api || {};
+      const lines = [];
+      lines.push(dns.nameservers_at_godaddy ? "Domain DNS is on GoDaddy." : "Domain DNS is not on GoDaddy nameservers.");
+      lines.push("Mail product: " + (report.mail_product || dns.mail_product || "unknown") + ".");
+      if (report.imap_host || dns.imap_host) lines.push("Mail host: " + (report.imap_host || dns.imap_host) + ".");
+      if (dns.tenant_name) lines.push("Tenant: " + dns.tenant_name + ".");
+      if (report.verdict === "listed_on_account") {
+        lines.push("The GoDaddy mailbox list for this account includes " + report.address + ".");
+      } else if (report.verdict === "exists_on_owned_domain") {
+        lines.push("GoDaddy reports " + report.address + " already exists on a domain this account owns.");
+      } else if (report.verdict === "eligible_on_account") {
+        lines.push("The address can be created on this GoDaddy account. It is not in the mailbox list.");
+      } else if (report.verdict === "different_account") {
+        lines.push("This GoDaddy token does not own " + report.domain + ".");
+      } else if (report.verdict === "token_not_configured") {
+        lines.push("The GoDaddy API token is not set on this server, so the mailbox list was not read.");
+      } else if (api.reason) {
+        lines.push("GoDaddy check: " + api.reason + ".");
+      }
+      if (report.password_saved) lines.push("Password is saved for email use.");
+      return lines.join("\n");
+    }
+
+    async function loadAttribution() {
+      const reportEl = document.getElementById("mail-report");
+      if (!deskState || !deskState.can_manage_mail) {
+        reportEl.textContent = "";
+        return;
+      }
+      try {
+        const report = await api("/api/admin/ai-agents/desk/mailboxes/" + selected + "/attribution");
+        reportEl.textContent = attributionText(report);
+      } catch (error) {
+        reportEl.textContent = error.message;
+      }
     }
 
     async function download(documentId, format) {
@@ -205,6 +255,21 @@ Letter,Admin,Ready</textarea>
       link.style.marginRight = "8px";
       return { link: link, file: file, blob: blob };
     }
+
+    document.getElementById("save-password").addEventListener("click", async function () {
+      const field = document.getElementById("mail-password");
+      const password = field.value;
+      if (!password) { setStatus("Enter the mailbox password.", "bad"); return; }
+      try {
+        const saved = await api("/api/admin/ai-agents/desk/mailboxes/" + selected + "/password", {
+          method: "POST",
+          body: JSON.stringify({ password: password })
+        });
+        field.value = "";
+        await load();
+        setStatus(saved.connection_note || "Password saved for email use.", "ok");
+      } catch (error) { setStatus(error.message, "bad"); }
+    });
 
     document.getElementById("add-diary").addEventListener("click", async function () {
       const when = document.getElementById("d-when").value.trim().split(" ");

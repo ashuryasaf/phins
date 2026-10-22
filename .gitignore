@@ -36,6 +36,7 @@ TestResults.xml
 # Credential files
 credentials.json
 secrets.json
+phins_admin_desk_mail_vault.json
 *.credentials
 service-account*.json
 

@@ -17,6 +17,8 @@ from services.admin_desk_service import (
     create_table,
     import_diary,
     send_draft,
+    mailbox_attribution,
+    save_mailbox_password,
     set_mailbox_address,
     set_mailbox_enabled,
 )
@@ -62,6 +64,8 @@ def dispatch_get(path: str, session: Optional[Dict], query_params: Optional[Dict
         if not fmt:
             return 400, {"error": "format is required"}
         return _call(lambda: document_file(parts[1], fmt, _role(session)))
+    if len(parts) == 3 and parts[0] == "mailboxes" and parts[2] == "attribution":
+        return _call(lambda: mailbox_attribution(parts[1], _role(session)))
     return 404, {"error": "Desk route was not found"}
 
 
@@ -82,6 +86,11 @@ def dispatch_post(path: str, session: Optional[Dict], body: Optional[Dict]) -> O
         ))
     if len(parts) == 3 and parts[0] == "mailboxes" and parts[2] == "enable":
         return _call(lambda: set_mailbox_enabled(parts[1], bool(payload.get("enabled")), role, actor))
+    if len(parts) == 3 and parts[0] == "mailboxes" and parts[2] == "password":
+        raw_password = payload.get("password")
+        if not isinstance(raw_password, str):
+            return 400, {"error": "Enter the mailbox password"}
+        return _call(lambda: save_mailbox_password(parts[1], raw_password, role, actor))
     if parts == ["diary"]:
         return _call(lambda: add_diary(payload, role, actor))
     if parts == ["diary", "import"]:

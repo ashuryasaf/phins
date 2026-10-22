@@ -3,7 +3,10 @@
 The mailbox itself stays at the provider. This module is the staff desk:
 
 * one registry row per address, starting with asaf@phins.ai, disabled until
-  that row's secret env var is set and an admin enables it
+  an admin enables it. The mailbox password is saved once in the vault
+  (``services/admin_desk_mail.py``). An env var on ``secret_ref`` still counts.
+  The GoDaddy token is only used to read whether that address is on the
+  same account as the domain. It is never used to create a mailbox.
 * a signature profile copied from the document block that desk already uses
 * the meeting diary, checksummed, with contradictions kept
 * letters and tables rendered once and exported as HTML, PDF, docx, xlsx,
@@ -195,11 +198,20 @@ def profile_for_desk(desk: str) -> Dict[str, Any]:
     raise DeskError("Signature profile not found", 404)
 
 
-def secret_configured(secret_ref: str) -> bool:
-    return bool(str(os.environ.get(secret_ref) or "").strip())
+def secret_configured(secret_ref: str, mailbox_id: str = "") -> bool:
+    if bool(str(os.environ.get(secret_ref) or "").strip()):
+        return True
+    if not mailbox_id:
+        return False
+    from services.admin_desk_mail import password_saved
+
+    return password_saved(mailbox_id)
 
 
 def _mailbox_public(record: Dict[str, Any]) -> Dict[str, Any]:
+    from services.admin_desk_mail import connection_note, password_saved
+
+    error = str(record.get("connection_error") or "")
     return {
         "id": record["id"],
         "desk": record["desk"],
@@ -207,8 +219,14 @@ def _mailbox_public(record: Dict[str, Any]) -> Dict[str, Any]:
         "address": record["address"],
         "provider": record.get("provider") or "",
         "secret_ref": record["secret_ref"],
-        "secret_configured": secret_configured(record["secret_ref"]),
+        "secret_configured": secret_configured(record["secret_ref"], record["id"]),
+        "password_saved": password_saved(record["id"]),
         "enabled": bool(record.get("enabled")),
+        "mail_product": record.get("mail_product") or "",
+        "imap_host": record.get("imap_host") or "",
+        "connection_state": record.get("connection_state") or "",
+        "connection_error": error,
+        "connection_note": connection_note(error),
         "signature_id": record["signature_id"],
         "signature_sha256": record["signature_sha256"],
         "checksum": record["checksum"],
@@ -332,7 +350,12 @@ def _note_fault(store, key: str, reason: str) -> None:
 
 
 def _audit(actor: str, action: str, entity_id: str, details: Dict[str, Any]) -> str:
-    safe = {key: value for key, value in details.items() if "secret" not in key.lower() or key == "secret_ref"}
+    safe = {}
+    for key, value in details.items():
+        lowered = key.lower()
+        if "password" in lowered or ("secret" in lowered and key != "secret_ref"):
+            continue
+        safe[key] = value
     record_id = "aud-" + uuid.uuid4().hex[:12]
     _store()[record_id] = stamp({
         "record_type": "audit",
@@ -400,7 +423,7 @@ def set_mailbox_enabled(mailbox_id: str, enabled: bool, role: Optional[str], act
     if _role(role) != "admin":
         raise DeskError("Admin access required", 403)
     record = get_mailbox(mailbox_id, "admin")
-    if enabled and not secret_configured(record["secret_ref"]):
+    if enabled and not secret_configured(record["secret_ref"], record["id"]):
         raise DeskError("secret_not_configured", 409)
     if enabled and not str(record.get("address") or "").strip():
         raise DeskError("Set the mailbox address before enabling it", 409)
@@ -412,6 +435,72 @@ def set_mailbox_enabled(mailbox_id: str, enabled: bool, role: Optional[str], act
         "enabled": bool(enabled),
         "secret_ref": record["secret_ref"],
         "address": record.get("address") or "",
+    })
+    return _mailbox_public(stored)
+
+
+def mailbox_attribution(mailbox_id: str, role: Optional[str]) -> Dict[str, Any]:
+    """Read-only GoDaddy check for one registered address. Admin only."""
+    if _role(role) != "admin":
+        raise DeskError("Admin access required", 403)
+    record = get_mailbox(mailbox_id, "admin")
+    address = str(record.get("address") or "").strip()
+    if not address:
+        raise DeskError("Set the mailbox address before checking it", 409)
+    from services.admin_desk_mail import attribute_mailbox, password_saved
+
+    report = attribute_mailbox(address)
+    report["id"] = record["id"]
+    report["password_saved"] = password_saved(record["id"])
+    return report
+
+
+def save_mailbox_password(
+    mailbox_id: str,
+    password: str,
+    role: Optional[str],
+    actor: str,
+    *,
+    dns_lookup=None,
+    imap_factory=None,
+    transport=None,
+) -> Dict[str, Any]:
+    """Store the mailbox password once, then connect only if the host accepts it."""
+    if _role(role) != "admin":
+        raise DeskError("Admin access required", 403)
+    record = get_mailbox(mailbox_id, "admin")
+    address = str(record.get("address") or "").strip()
+    if not address:
+        raise DeskError("Set the mailbox address before saving a password", 409)
+    from services.admin_desk_mail import (
+        MailVaultError,
+        attribute_mailbox,
+        connect_saved_password,
+        save_password,
+    )
+
+    try:
+        save_password(record["id"], password)
+    except MailVaultError as exc:
+        raise DeskError(exc.message, exc.status) from exc
+    report = attribute_mailbox(address, transport=transport, dns_lookup=dns_lookup)
+    try:
+        code = connect_saved_password(record["id"], address, report, imap_factory=imap_factory)
+    except MailVaultError as exc:
+        raise DeskError(exc.message, exc.status) from exc
+    updated = dict(record)
+    updated["mail_product"] = report.get("mail_product") or ""
+    updated["imap_host"] = report.get("imap_host") or ""
+    updated["connection_state"] = "connected" if code == "connected" else "saved"
+    updated["connection_error"] = "" if code == "connected" else code
+    updated["connection_checked_at"] = _now()
+    stored = stamp(updated)
+    _store()[record["id"]] = stored
+    _audit(actor, "admin_desk.password_saved", record["id"], {
+        "address": address,
+        "mail_product": updated["mail_product"],
+        "connection_state": updated["connection_state"],
+        "connection_error": updated["connection_error"],
     })
     return _mailbox_public(stored)
 
@@ -928,7 +1017,7 @@ def send_draft(draft_id: str, role: Optional[str], actor: str) -> Dict[str, Any]
     if record.get("status") == "failed":
         return _draft_public(record)
     mailbox = get_mailbox(record["mailbox_id"], role)
-    if not mailbox.get("enabled") or not secret_configured(mailbox["secret_ref"]):
+    if not mailbox.get("enabled") or not secret_configured(mailbox["secret_ref"], mailbox["id"]):
         updated = dict(record)
         updated["status"] = "failed"
         updated["send_error"] = "mailbox_not_ready"
@@ -1017,4 +1106,5 @@ def overview(role: Optional[str]) -> Dict[str, Any]:
         "faults": faults,
         "phases": phases,
         "send_connected": False,
+        "can_manage_mail": _role(role) == "admin",
     }
