@@ -132,6 +132,11 @@ Letter,Admin,Ready</textarea>
       statusEl.className = "status" + (kind ? " " + kind : "");
     }
 
+    function loginRefused(record) {
+      const code = record && record.connection_error;
+      return code === "auth_failed" || code === "probe_failed";
+    }
+
     async function api(path, options) {
       const response = await fetch(path, Object.assign({
         headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" }
@@ -167,8 +172,9 @@ Letter,Admin,Ready</textarea>
         button.className = "account" + (mailbox.id === selected ? " on" : "");
         const ready = mailbox.enabled && mailbox.secret_configured;
         const saved = mailbox.password_saved ? "password saved" : "password not saved";
+        const credential = loginRefused(mailbox) ? (mailbox.connection_note || "login refused") : saved;
         button.innerHTML = "<strong>" + (mailbox.address || mailbox.desk) + "</strong><br><span class='tag'>" +
-          mailbox.desk + " · " + (ready ? "enabled" : "disabled") + " · " + saved + "</span>";
+          mailbox.desk + " · " + (ready ? "enabled" : "disabled") + " · " + credential + "</span>";
         button.addEventListener("click", function () { selected = mailbox.id; render(); loadAttribution(); });
         accounts.appendChild(button);
       });
@@ -267,7 +273,10 @@ Letter,Admin,Ready</textarea>
         });
         field.value = "";
         await load();
-        setStatus(saved.connection_note || "Password saved for email use.", "ok");
+        setStatus(
+          saved.connection_note || "Password saved for email use.",
+          loginRefused(saved) ? "bad" : "ok"
+        );
       } catch (error) { setStatus(error.message, "bad"); }
     });
 

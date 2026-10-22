@@ -357,7 +357,31 @@ def test_titan_mailbox_logs_in_once_with_the_saved_password():
     assert seen["logout"] is True
     assert saved["connection_state"] == "connected"
     assert saved["connection_error"] == ""
+    assert saved["connection_note"] == "Password saved, and the mailbox accepted it."
     assert "desk-mail-password" not in json.dumps(saved)
+
+
+def test_refused_titan_login_stays_visible_on_the_mailbox():
+    class Client:
+        def __init__(self, host, port, timeout=None):
+            pass
+
+        def login(self, user, password):
+            raise Exception("AUTHENTICATIONFAILED")
+
+        def logout(self):
+            return "OK", [b""]
+
+    saved = desk.save_mailbox_password(
+        "mbx-admin", "desk-mail-password", "admin", "admin",
+        dns_lookup=_titan_dns, imap_factory=Client,
+    )
+    assert saved["connection_state"] == "saved"
+    assert saved["connection_error"] == "auth_failed"
+    assert saved["connection_note"] == "Password saved for email use. The mailbox refused the login."
+    listed = next(row for row in desk.list_mailboxes("admin") if row["id"] == "mbx-admin")
+    assert listed["connection_error"] == "auth_failed"
+    assert listed["connection_note"] == saved["connection_note"]
 
 
 def test_only_an_admin_can_save_a_mailbox_password():
@@ -378,6 +402,7 @@ def test_http_desk_scopes_mailboxes_and_serves_the_page():
         assert response.status == 200
     assert "PHINS Admin Desk" in page
     assert "Save password" in page
+    assert "auth_failed" in page and "probe_failed" in page
     status, body = _http("GET", "/api/admin/ai-agents/desk", token=admin)
     assert body["can_manage_mail"] is True
     assert status == 200

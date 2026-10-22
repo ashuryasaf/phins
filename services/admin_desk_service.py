@@ -212,6 +212,7 @@ def _mailbox_public(record: Dict[str, Any]) -> Dict[str, Any]:
     from services.admin_desk_mail import connection_note, password_saved
 
     error = str(record.get("connection_error") or "")
+    state = str(record.get("connection_state") or "")
     return {
         "id": record["id"],
         "desk": record["desk"],
@@ -224,9 +225,9 @@ def _mailbox_public(record: Dict[str, Any]) -> Dict[str, Any]:
         "enabled": bool(record.get("enabled")),
         "mail_product": record.get("mail_product") or "",
         "imap_host": record.get("imap_host") or "",
-        "connection_state": record.get("connection_state") or "",
+        "connection_state": state,
         "connection_error": error,
-        "connection_note": connection_note(error),
+        "connection_note": connection_note(error or state),
         "signature_id": record["signature_id"],
         "signature_sha256": record["signature_sha256"],
         "checksum": record["checksum"],
