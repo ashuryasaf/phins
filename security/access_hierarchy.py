@@ -49,6 +49,10 @@ STAFF_PAGES: Dict[str, FrozenSet[str]] = {
     "/admin.html": frozenset(),
     "/admin-portal.html": frozenset(),
     "/admin-agents.html": frozenset(),
+    "/admin-desk.html": frozenset({
+        "actuary", "underwriter", "claims", "claims_adjuster", "adjuster",
+        "accountant", "compliance", "founder",
+    }),
     "/admin-foundations.html": frozenset(),
     "/admin-supplier-dashboard.html": frozenset(),
     "/admin-media.html": frozenset({"media"}),

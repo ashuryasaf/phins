@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PHINS Admin Desk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --navy:#0e2f63; --ink:#142033; --muted:#5b6b82; --line:#d7e0ee; --gold:#c6a15b; --paper:#f4f7fb; --white:#fff; --bad:#8c2f2f; --ok:#1d6b3a; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: Inter, sans-serif; color:var(--ink); background:var(--paper); }
+    header { background:var(--navy); color:#fff; padding:16px 24px; display:flex; justify-content:space-between; align-items:center; gap:16px; }
+    header h1 { margin:0; font-family:"Space Grotesk", sans-serif; font-size:22px; letter-spacing:.04em; }
+    header p { margin:4px 0 0; color:#d5deee; font-size:13px; }
+    a { color:var(--gold); }
+    header a { color:#f3e2b3; }
+    main { display:grid; grid-template-columns: 280px 1fr; gap:16px; padding:16px; }
+    section, aside { background:var(--white); border:1px solid var(--line); border-radius:10px; padding:14px; }
+    h2 { margin:0 0 8px; font-size:16px; }
+    .phases { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 16px; padding:0 16px; }
+    .phase { border:1px solid var(--line); background:#fff; border-radius:999px; padding:4px 10px; font-size:12px; }
+    .phase.ready { border-color:#1d6b3a; color:var(--ok); }
+    .phase.wait { color:var(--muted); }
+    button, .btn { background:var(--navy); color:#fff; border:0; border-radius:8px; padding:8px 12px; font:inherit; cursor:pointer; }
+    button.secondary { background:#fff; color:var(--navy); border:1px solid var(--line); }
+    label { display:block; font-size:12px; color:var(--muted); margin:8px 0 4px; }
+    input, textarea, select { width:100%; border:1px solid var(--line); border-radius:8px; padding:8px; font:inherit; }
+    textarea { min-height:72px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th, td { text-align:left; border-top:1px solid var(--line); padding:6px 4px; vertical-align:top; }
+    .account { display:block; width:100%; text-align:left; background:#fff; color:var(--ink); border:1px solid var(--line); margin:0 0 8px; }
+    .account.on { border-color:var(--navy); }
+    .tag { font-size:11px; color:var(--muted); }
+    .status { min-height:1.2em; font-size:13px; margin:8px 0; }
+    .status.bad { color:var(--bad); }
+    .status.ok { color:var(--ok); }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+    iframe { width:100%; height:280px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+    .sig { white-space:pre-line; font-size:13px; background:var(--paper); padding:8px; border-radius:8px; }
+    @media (max-width: 900px) { main, .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>PHINS Admin Desk</h1>
+      <p>Registered mailboxes, the meeting diary, and PHINS letters and tables. Send stays off until a mailbox credential is set.</p>
+    </div>
+    <a href="/admin.html">Admin home</a>
+  </header>
+  <div id="phases" class="phases"></div>
+  <main>
+    <aside>
+      <h2>Accounts</h2>
+      <div id="accounts"></div>
+      <h2>Signature</h2>
+      <div id="signature" class="sig">Select an account.</div>
+    </aside>
+    <div>
+      <p id="status" class="status"></p>
+      <div class="grid">
+        <section>
+          <h2>Diary</h2>
+          <div id="diary"></div>
+          <label for="d-who">Counterparty</label>
+          <input id="d-who" value="New counterparty">
+          <label for="d-when">Date and time</label>
+          <input id="d-when" value="2026-10-22 09:00">
+          <label for="d-why">Purpose</label>
+          <input id="d-why" value="Follow-up noted on the desk">
+          <button id="add-diary" type="button">Add meeting</button>
+        </section>
+        <section>
+          <h2>Letter</h2>
+          <label for="letter-title">Title</label>
+          <input id="letter-title" value="Meeting follow-up">
+          <label for="letter-body">Body</label>
+          <textarea id="letter-body">Thank you for the time today. The next step is noted in the diary.</textarea>
+          <button id="make-letter" type="button">Seal letter</button>
+          <div id="letter-files"></div>
+        </section>
+        <section>
+          <h2>Table</h2>
+          <label for="table-title">Title</label>
+          <input id="table-title" value="Desk queue">
+          <label for="table-headers">Headers, comma separated</label>
+          <input id="table-headers" value="Item,Owner,State">
+          <label for="table-rows">Rows, one per line, comma separated</label>
+          <textarea id="table-rows">Diary,Admin,Ready
+Letter,Admin,Ready</textarea>
+          <label for="table-source">Source citation</label>
+          <input id="table-source" value="Typed on the admin desk">
+          <button id="make-table" type="button">Seal table</button>
+          <div id="table-files"></div>
+        </section>
+        <section>
+          <h2>Reply draft</h2>
+          <label for="mail-to">To</label>
+          <input id="mail-to" value="investor@example.com">
+          <label for="mail-subject">Subject</label>
+          <input id="mail-subject" value="PHINS follow-up">
+          <label for="mail-body">Message</label>
+          <textarea id="mail-body">Sharing the sealed letter from the desk.</textarea>
+          <button id="make-draft" type="button" class="secondary">Preview</button>
+          <button id="send-draft" type="button">Confirm send</button>
+          <pre id="preview" class="sig"></pre>
+        </section>
+      </div>
+      <section style="margin-top:16px">
+        <h2>Letter preview</h2>
+        <iframe id="preview-frame" title="Letter preview"></iframe>
+      </section>
+    </div>
+  </main>
+  <script>
+    const token = localStorage.getItem("phins_token") || sessionStorage.getItem("phins_token") || "";
+    const statusEl = document.getElementById("status");
+    let selected = "mbx-admin";
+    let lastDraft = "";
+    let deskState = null;
+
+    function setStatus(text, kind) {
+      statusEl.textContent = text;
+      statusEl.className = "status" + (kind ? " " + kind : "");
+    }
+
+    async function api(path, options) {
+      const response = await fetch(path, Object.assign({
+        headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" }
+      }, options || {}));
+      const body = await response.json();
+      if (!response.ok) {
+        const error = new Error(body.error || ("Request failed (" + response.status + ")"));
+        error.status = response.status;
+        throw error;
+      }
+      return body;
+    }
+
+    function signatureLines(mailbox) {
+      const profile = (deskState && deskState.mailboxes || []).find(function (item) { return item.id === mailbox.id; });
+      return profile;
+    }
+
+    function render() {
+      const phases = document.getElementById("phases");
+      phases.innerHTML = "";
+      (deskState.phases || []).forEach(function (phase) {
+        const span = document.createElement("span");
+        span.className = "phase " + (phase.state === "ready" ? "ready" : "wait");
+        span.textContent = phase.id + " " + phase.name + " · " + (phase.state === "ready" ? "ready" : "waiting for credential");
+        phases.appendChild(span);
+      });
+      const accounts = document.getElementById("accounts");
+      accounts.innerHTML = "";
+      (deskState.mailboxes || []).forEach(function (mailbox) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "account" + (mailbox.id === selected ? " on" : "");
+        const ready = mailbox.enabled && mailbox.secret_configured;
+        button.innerHTML = "<strong>" + (mailbox.address || mailbox.desk) + "</strong><br><span class='tag'>" +
+          mailbox.desk + " · " + (ready ? "enabled" : "disabled") + " · " + mailbox.secret_ref + "</span>";
+        button.addEventListener("click", function () { selected = mailbox.id; render(); });
+        accounts.appendChild(button);
+      });
+      const current = (deskState.mailboxes || []).find(function (item) { return item.id === selected; }) || deskState.mailboxes[0];
+      const sig = document.getElementById("signature");
+      if (current) {
+        sig.textContent = current.desk + "\n" + (current.address || "address not set") +
+          "\nprofile " + current.signature_id + "\n" + current.signature_sha256;
+      }
+      const diary = document.getElementById("diary");
+      const rows = deskState.diary || [];
+      const body = rows.map(function (row) {
+        return "<tr><td>" + row.date + " " + row.time + "</td><td>" + row.counterparty +
+          "</td><td>" + row.status + "</td></tr>";
+      }).join("");
+      diary.innerHTML = "<table><thead><tr><th>When</th><th>With</th><th>Status</th></tr></thead><tbody>" +
+        body + "</tbody></table><p class='tag'>" + rows.length + " meetings · contradictions " +
+        (deskState.contradictions || []).length + "</p>";
+    }
+
+    async function load() {
+      if (!token) {
+        setStatus("Sign in on the login page, then return here.", "bad");
+        return;
+      }
+      deskState = await api("/api/admin/ai-agents/desk");
+      render();
+      setStatus("Desk loaded. " + deskState.mailboxes.length + " mailbox row(s). Send is not connected.", "ok");
+    }
+
+    async function download(documentId, format) {
+      const file = await api("/api/admin/ai-agents/desk/documents/" + documentId + "?format=" + format);
+      const binary = atob(file.data_b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: file.media_type });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = file.filename;
+      link.textContent = format + " · " + file.sha256.slice(0, 12);
+      link.style.display = "inline-block";
+      link.style.marginRight = "8px";
+      return { link: link, file: file, blob: blob };
+    }
+
+    document.getElementById("add-diary").addEventListener("click", async function () {
+      const when = document.getElementById("d-when").value.trim().split(" ");
+      try {
+        await api("/api/admin/ai-agents/desk/diary", {
+          method: "POST",
+          body: JSON.stringify({
+            date: when[0] || "",
+            time: when.slice(1).join(" ") || "—",
+            counterparty: document.getElementById("d-who").value,
+            location: "Desk",
+            purpose: document.getElementById("d-why").value,
+            status: "Scheduled"
+          })
+        });
+        await load();
+        setStatus("Meeting saved on the server diary.", "ok");
+      } catch (error) { setStatus(error.message, "bad"); }
+    });
+
+    document.getElementById("make-letter").addEventListener("click", async function () {
+      try {
+        const current = (deskState.mailboxes || []).find(function (item) { return item.id === selected; });
+        const letter = await api("/api/admin/ai-agents/desk/documents/letter", {
+          method: "POST",
+          body: JSON.stringify({
+            title: document.getElementById("letter-title").value,
+            body: document.getElementById("letter-body").value,
+            desk: current ? current.desk : "admin"
+          })
+        });
+        const slot = document.getElementById("letter-files");
+        slot.innerHTML = "";
+        const html = await download(letter.id, "html");
+        const text = await html.blob.text();
+        document.getElementById("preview-frame").srcdoc = text;
+        slot.appendChild(html.link);
+        for (const format of ["pdf", "docx"]) {
+          slot.appendChild((await download(letter.id, format)).link);
+        }
+        setStatus("Letter sealed. payload " + letter.payload_sha256.slice(0, 12) + " · signature " + letter.signature_sha256.slice(0, 12), "ok");
+      } catch (error) { setStatus(error.message, "bad"); }
+    });
+
+    document.getElementById("make-table").addEventListener("click", async function () {
+      try {
+        const current = (deskState.mailboxes || []).find(function (item) { return item.id === selected; });
+        const headers = document.getElementById("table-headers").value.split(",").map(function (cell) { return cell.trim(); });
+        const rows = document.getElementById("table-rows").value.split("\n").filter(Boolean).map(function (line) {
+          return line.split(",").map(function (cell) { return cell.trim(); });
+        });
+        const table = await api("/api/admin/ai-agents/desk/documents/table", {
+          method: "POST",
+          body: JSON.stringify({
+            title: document.getElementById("table-title").value,
+            headers: headers,
+            rows: rows,
+            source: document.getElementById("table-source").value,
+            desk: current ? current.desk : "admin"
+          })
+        });
+        const slot = document.getElementById("table-files");
+        slot.innerHTML = "";
+        for (const format of ["xlsx", "csv", "pdf"]) {
+          slot.appendChild((await download(table.id, format)).link);
+        }
+        setStatus("Table sealed from the cited source. payload " + table.payload_sha256.slice(0, 12), "ok");
+      } catch (error) { setStatus(error.message, "bad"); }
+    });
+
+    document.getElementById("make-draft").addEventListener("click", async function () {
+      try {
+        const draft = await api("/api/admin/ai-agents/desk/drafts", {
+          method: "POST",
+          body: JSON.stringify({
+            mailbox_id: selected,
+            to: document.getElementById("mail-to").value,
+            subject: document.getElementById("mail-subject").value,
+            body: document.getElementById("mail-body").value,
+            attachment_ids: []
+          })
+        });
+        lastDraft = draft.id;
+        document.getElementById("preview").textContent = "From " + (draft.from || "(address not set)") +
+          "\nTo " + draft.to + "\n\n" + draft.preview + "\n\npreview " + draft.preview_sha256;
+        setStatus("Draft stored. Nothing has been sent.", "ok");
+      } catch (error) { setStatus(error.message, "bad"); }
+    });
+
+    document.getElementById("send-draft").addEventListener("click", async function () {
+      if (!lastDraft) { setStatus("Preview a draft first.", "bad"); return; }
+      try {
+        const result = await api("/api/admin/ai-agents/desk/drafts/" + lastDraft + "/send", { method: "POST", body: "{}" });
+        setStatus("Send refused (" + result.send_error + "). The draft stayed on the desk. sent=" + result.sent, "bad");
+      } catch (error) { setStatus(error.message, "bad"); }
+    });
+
+    load().catch(function (error) { setStatus(error.message, "bad"); });
+  </script>
+</body>
+</html>
