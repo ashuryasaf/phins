@@ -28,6 +28,21 @@ class SessionRepository(BaseRepository[Session]):
         """Get all sessions for a customer"""
         return self.filter_by(customer_id=customer_id)
     
+    def delete_all_sessions(self) -> int:
+        """Delete every session row. Returns the number removed.
+
+        Used by the cyber-desk crisis drop. The statement has no caller
+        input. Business tables are not touched.
+        """
+        try:
+            count = self.session.query(Session).delete(synchronize_session=False)
+            self.session.commit()
+            return int(count or 0)
+        except Exception as e:
+            logger.error(f"Error deleting all sessions: {e}")
+            self.session.rollback()
+            raise
+
     def delete_expired_sessions(self) -> int:
         """
         Delete all expired sessions, returns count of deleted sessions.

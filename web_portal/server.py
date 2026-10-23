@@ -31,7 +31,7 @@ import tempfile
 import re
 import shutil
 import subprocess
-from typing import Dict, Any, Tuple, Optional, List
+from typing import Dict, Any, Tuple, Optional, List, Mapping
 
 # Ensure repository-root imports work when the server is executed as a script
 # (e.g. `python3 web_portal/server.py` on Railway).
@@ -14770,8 +14770,13 @@ def _mint_auth_token(
     in the startup secret audit and in live warnings.
     """
     try:
+        try:
+            from services.cyber_crisis import current_session_generation
+            generation = current_session_generation()
+        except Exception:
+            generation = 0
         token, claims = _auth_tokens.create_token(
-            username, role, customer_id, expires
+            username, role, customer_id, expires, generation=generation,
         )
         return token, claims.jti
     except TokenSecretError as exc:
@@ -14792,6 +14797,39 @@ def _create_signed_token_v1(username: str, role: str, customer_id: str | None, e
 
 # Public alias preserved for any external callers / tests that imported the
 # old symbol. New code should prefer ``_mint_auth_token``.
+def _stamp_session_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Mark a new login with the current crisis generation.
+
+    A later drop-all advances the generation. Sessions stamped with the
+    previous one stop validating, including the operator who confirmed
+    the drop. Business records are not part of this stamp.
+    """
+    stamped = dict(payload)
+    try:
+        from services.cyber_crisis import current_session_generation
+        stamped['session_generation'] = current_session_generation()
+    except Exception:
+        stamped.setdefault('session_generation', 0)
+    stamped.setdefault('issued_at', datetime.now().timestamp())
+    return stamped
+
+
+def _session_closed_by_crisis(claims: Dict[str, Any] | None) -> bool:
+    try:
+        from services.cyber_crisis import session_generation_blocks
+        return bool(session_generation_blocks(claims))
+    except Exception:
+        return False
+
+
+def _crisis_drop_in_effect() -> bool:
+    try:
+        from services.cyber_crisis import current_session_generation
+        return current_session_generation() > 0
+    except Exception:
+        return False
+
+
 def _create_signed_token(username: str, role: str, customer_id: str | None, expires: datetime) -> str:
     """Create an auth token (v2 if signing key is available, else v1)."""
     token, _token_jti = _mint_auth_token(username, role, customer_id, expires)
@@ -14856,7 +14894,21 @@ def validate_session(token: str) -> dict[str, str] | None:
 
     signed_result = _auth_tokens.verify_any_token(token)
     if signed_result is not None:
-        return signed_result
+        if not _session_closed_by_crisis(signed_result):
+            return signed_result
+        # Closed generation. A legacy v1 login made after the drop keeps
+        # the new generation on the in-memory record (the token itself
+        # cannot carry it).
+        with STATE_LOCK:
+            cached = SESSIONS.get(token)
+        if isinstance(cached, dict) and not _session_closed_by_crisis(cached):
+            try:
+                if datetime.now() > datetime.fromisoformat(cached['expires']):
+                    return None
+            except (KeyError, ValueError, TypeError):
+                return None
+            return cached
+        return None
     
     # Fallback: Check local SESSIONS dict (legacy tokens or same-instance)
     if token.startswith('phins_'):
@@ -14873,7 +14925,14 @@ def validate_session(token: str) -> dict[str, str] | None:
                         return None
                 except (KeyError, ValueError):
                     return None
+                if _session_closed_by_crisis(session):
+                    return None
                 return session
+
+    # After a crisis drop, database rows cannot prove they were issued
+    # under the new generation. v2 tokens do not need this fallback.
+    if _crisis_drop_in_effect():
+        return None
     
     # Database fallback (if available)
     if USE_DATABASE and database_enabled:
@@ -15471,14 +15530,14 @@ def update_regulator_credentials(session: Dict[str, Any] | None, body: Dict[str,
 
     expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
     token, token_jti = _mint_auth_token(new_username, REGULATOR_ROLE, None, expires)
-    session_payload = {
+    session_payload = _stamp_session_payload({
         'username': new_username,
         'expires': expires.isoformat(),
         'customer_id': None,
         'role': REGULATOR_ROLE,
         'ip_address': (session or {}).get('ip_address'),
         'jti': token_jti,
-    }
+    })
     with STATE_LOCK:
         SESSIONS[token] = session_payload
     try:
@@ -17987,6 +18046,16 @@ def _generate_security_ai_report(
     protections.append("Rate Limiting & Brute-Force Protection: ACTIVE")
     protections.append("Input Validation (SQLi/XSS/Path Traversal): ACTIVE")
     protections.append("Login Lockout After Failed Attempts: ACTIVE")
+    protections.append("Crisis drop-all (OTP, every session including the operator): READY")
+    try:
+        from services.cyber_crisis import get_crisis_center
+        _autopilot_mode = get_crisis_center().autopilot_mode()
+    except Exception:
+        _autopilot_mode = 'assess'
+    if _autopilot_mode == 'assess':
+        protections.append("24/7 cyber autopilot (read-only, checksummed): ACTIVE")
+    else:
+        protections.append("24/7 cyber autopilot (read-only, checksummed): OFF")
 
     return {
         'risk_level': risk_level,
@@ -18001,6 +18070,209 @@ def _generate_security_ai_report(
             f"{active_alerts} active alerts, {quarantined} files quarantined."
         ),
     }
+
+
+def _crisis_integrity_sources() -> Dict[str, Any]:
+    """Business maps the crisis drop must not rewrite. Read-only."""
+    sources: Dict[str, Any] = {}
+    for name, mapping in (
+        ('customers', CUSTOMERS),
+        ('policies', POLICIES),
+        ('claims', CLAIMS),
+        ('billing', BILLING),
+    ):
+        if isinstance(mapping, dict):
+            sources[name] = mapping
+    return sources
+
+
+def _delete_all_sessions_from_db() -> int:
+    """Remove every persisted session row. No caller input reaches the query."""
+    if not (USE_DATABASE and database_enabled):
+        return 0
+    from database.manager import DatabaseManager as _DBMgr
+    with _DBMgr() as db:
+        return int(db.sessions.delete_all_sessions() or 0)
+
+
+_crisis_durable_bound = False
+_cyber_autopilot_started = False
+
+
+def _bind_crisis_durable() -> None:
+    """Share the session generation through agent_artifacts when the DB is on."""
+    global _crisis_durable_bound
+    if _crisis_durable_bound:
+        return
+    _crisis_durable_bound = True
+    try:
+        from services.cyber_crisis import bind_durable_generation
+    except Exception:
+        return
+
+    def _read():
+        if not (USE_DATABASE and database_enabled):
+            return None
+        from database.manager import DatabaseManager as _DBMgr
+        with _DBMgr() as db:
+            return db.agent_artifacts.get_payload('cyber-crisis-session-generation')
+
+    def _write(payload: Mapping[str, Any]) -> bool:
+        if not (USE_DATABASE and database_enabled):
+            return True
+        from database.manager import DatabaseManager as _DBMgr
+        with _DBMgr() as db:
+            return bool(db.agent_artifacts.upsert(
+                'cyber-crisis-session-generation',
+                agent_id='cyber_crisis',
+                kind='session_generation',
+                payload=dict(payload),
+                subject_type='cyber_crisis',
+                subject_id='session_generation',
+            ))
+
+    bind_durable_generation(_read, _write)
+
+
+def _cyber_pipeline_telemetry() -> Dict[str, Any]:
+    """Counts and control flags for the autopilot. Does not copy record bodies."""
+    _bind_crisis_durable()
+    try:
+        from services.cyber_crisis import crisis_public_status
+        crisis = crisis_public_status()
+    except Exception:
+        crisis = {'generation_intact': True, 'journal_intact': True}
+
+    def _len(mapping: Any) -> int:
+        try:
+            return len(mapping)
+        except Exception:
+            return 0
+
+    alerts = 0
+    try:
+        if _ids_enabled:
+            alerts = len([
+                item for item in ids_get_active_alerts(include_acknowledged=False)
+                if not item.get('acknowledged')
+            ])
+    except Exception:
+        alerts = 0
+    quarantined = 0
+    try:
+        if _file_scanner_enabled:
+            quarantined = len(get_quarantine_log(30) or [])
+    except Exception:
+        quarantined = 0
+    lockouts = 0
+    try:
+        now_ts = datetime.now().timestamp()
+        for value in list(FAILED_LOGINS.values()):
+            if not isinstance(value, dict):
+                continue
+            try:
+                locked_until = float(value.get('lockout_until') or 0)
+            except (TypeError, ValueError):
+                locked_until = 0
+            if locked_until > now_ts:
+                lockouts += 1
+    except Exception:
+        lockouts = 0
+    permanent = 0
+    try:
+        permanent = sum(
+            1 for item in BLOCKED_IPS.values()
+            if isinstance(item, dict) and item.get('permanent')
+        )
+    except Exception:
+        permanent = 0
+    return {
+        'firewall_enabled': bool(_firewall_enabled),
+        'ids_enabled': bool(_ids_enabled),
+        'file_scanner_enabled': bool(_file_scanner_enabled),
+        'request_sanitizer_enabled': bool(_request_sanitizer_enabled),
+        'generation_intact': bool(crisis.get('generation_intact', True)),
+        'journal_intact': bool(crisis.get('journal_intact', True)),
+        'malicious_attempts': _len(MALICIOUS_ATTEMPTS),
+        'blocked_ips': _len(BLOCKED_IPS),
+        'permanent_blocks': permanent,
+        'active_alerts': alerts,
+        'lockouts': lockouts,
+        'quarantined': quarantined,
+        'active_sessions': _len(SESSIONS),
+        'customers': _len(CUSTOMERS),
+        'policies': _len(POLICIES),
+        'claims': _len(CLAIMS),
+        'billing': _len(BILLING),
+    }
+
+
+def _cyber_autopilot_tick() -> Dict[str, Any]:
+    _bind_crisis_durable()
+    from services.cyber_crisis import get_crisis_center
+    return get_crisis_center().assess(_cyber_pipeline_telemetry())
+
+
+def _ensure_cyber_autopilot_thread() -> None:
+    """Keep the assessment center running when the process is otherwise idle."""
+    global _cyber_autopilot_started
+    if _cyber_autopilot_started:
+        return
+    _cyber_autopilot_started = True
+    if str(os.environ.get('PHINS_TEST_MODE', '')).lower() in ('1', 'true', 'yes', 'y'):
+        return
+    if str(os.environ.get('PHINS_CYBER_AUTOPILOT_THREAD', 'true')).lower() in (
+        '0', 'false', 'no', 'n',
+    ):
+        return
+
+    def _loop() -> None:
+        while True:
+            try:
+                from services.cyber_crisis import autopilot_cadence_seconds
+                interval = max(5.0, float(autopilot_cadence_seconds() or 60.0))
+            except Exception:
+                interval = 60.0
+            try:
+                _cyber_autopilot_tick()
+            except Exception:
+                pass
+            threading.Event().wait(interval)
+
+    threading.Thread(
+        target=_loop, name='phins-cyber-autopilot', daemon=True,
+    ).start()
+
+
+def confirm_crisis_drop(
+    *,
+    username: str,
+    email: str,
+    verification_id: str,
+    otp_code: str,
+    ip_address: str,
+) -> Dict[str, Any]:
+    """Consume the crisis one-time code and close every open session.
+
+    The caller is included. Customer, policy, claim, and billing maps are
+    only fingerprinted.
+    """
+    _bind_crisis_durable()
+    from services.cyber_crisis import get_crisis_center
+    from services.otp_security_service import get_otp_security_service
+    return get_crisis_center().confirm_drop(
+        get_otp_security_service(),
+        username=username,
+        email=email,
+        verification_id=verification_id,
+        otp_code=otp_code,
+        ip_address=ip_address,
+        sessions=SESSIONS,
+        lock=STATE_LOCK,
+        revoke_jti=_auth_tokens.revoke_token,
+        delete_db_sessions=_delete_all_sessions_from_db,
+        integrity_sources=_crisis_integrity_sources(),
+    )
 
 
 def cleanup_stale_data():
@@ -18061,7 +18333,12 @@ def cleanup_stale_data():
             MALICIOUS_ATTEMPTS[:] = MALICIOUS_ATTEMPTS[-1000:]
 
     _auth_tokens.prune_revocations(now=timestamp)
-    
+
+    try:
+        _cyber_autopilot_tick()
+    except Exception:
+        pass
+
     if expired_sessions or expired_limits or expired_lockouts or expired_blocks:
         print(f"🧹 Cleanup: Removed {len(expired_sessions)} sessions, {len(expired_limits)} rate limits, "
               f"{len(expired_lockouts)} lockouts, {len(expired_blocks)} blocks")
@@ -20783,14 +21060,14 @@ class PortalHandler(BaseHTTPRequestHandler):
                 auth_token, token_jti = _mint_auth_token(
                     matched['username'], matched['role'], matched.get('customer_id'), expires
                 )
-                _session_payload = {
+                _session_payload = _stamp_session_payload({
                     'username': matched['username'],
                     'expires': expires.isoformat(),
                     'customer_id': matched.get('customer_id'),
                     'role': matched['role'],
                     'ip_address': client_ip,
                     'jti': token_jti,
-                }
+                })
                 with STATE_LOCK:
                     SESSIONS[auth_token] = _session_payload
                 _persist_session_to_db(auth_token, _session_payload)
@@ -21922,6 +22199,7 @@ For claims or questions, please contact:
     def do_GET(self):
         # Periodic cleanup of stale data
         cleanup_stale_data()
+        _ensure_cyber_autopilot_thread()
 
         # Resolve client identity early so /health cannot bypass IP blocks.
         # Rate limiting is still bypassed for health outside test mode (LB probes).
@@ -23793,6 +24071,18 @@ For claims or questions, please contact:
                 except Exception:
                     pass
 
+                crisis_status: Dict[str, Any] = {}
+                autopilot_status: Dict[str, Any] = {}
+                try:
+                    from services.cyber_crisis import crisis_public_status
+                    crisis_status = crisis_public_status()
+                except Exception:
+                    crisis_status = {}
+                try:
+                    autopilot_status = _cyber_autopilot_tick()
+                except Exception:
+                    autopilot_status = {}
+
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
                     'timestamp': now.isoformat(),
@@ -23807,6 +24097,8 @@ For claims or questions, please contact:
                     'quarantine': quarantine_data,
                     'ai_report': ai_report,
                     'sessions': session_overview,
+                    'crisis': crisis_status,
+                    'autopilot': autopilot_status,
                     'system': {
                         'firewall_enabled': _firewall_enabled,
                         'file_scanner_enabled': _file_scanner_enabled,
@@ -38632,6 +38924,7 @@ For claims or questions, please contact:
     def do_POST(self):
         # Periodic cleanup of stale data
         cleanup_stale_data()
+        _ensure_cyber_autopilot_thread()
         
         # Security checks
         client_ip = self.client_address[0]
@@ -43651,14 +43944,14 @@ For claims or questions, please contact:
 
                     # Store in local SESSIONS for faster same-instance lookups
                     # and persist to DB so sessions survive container restarts.
-                    _session_payload = {
+                    _session_payload = _stamp_session_payload({
                         'username': username,
                         'expires': expires.isoformat(),
                         'customer_id': customer_id,
                         'role': role,
                         'ip_address': client_ip,
                         'jti': token_jti,
-                    }
+                    })
                     with STATE_LOCK:
                         SESSIONS[token] = _session_payload
                     _persist_session_to_db(token, _session_payload)
@@ -43947,12 +44240,12 @@ For claims or questions, please contact:
 
                 expires = datetime.now() + timedelta(seconds=SESSION_TIMEOUT)
                 token, token_jti = _mint_auth_token(email, 'customer', customer_id, expires)
-                session_payload = {
+                session_payload = _stamp_session_payload({
                     'username': email,
                     'role': 'customer',
                     'customer_id': customer_id,
                     'expires': expires.isoformat(),
-                }
+                })
                 if token_jti:
                     session_payload['jti'] = token_jti
                 with STATE_LOCK:
@@ -45790,14 +46083,14 @@ For claims or questions, please contact:
                 )
                 
                 # Store in SESSIONS and persist to DB for restart survival.
-                _supplier_session = {
+                _supplier_session = _stamp_session_payload({
                     'username': supplier_info['id'],
                     'role': 'supplier',
                     'supplier_id': supplier_info['id'],
                     'company_name': supplier_info['company_name'],
                     'expires': expires.isoformat(),
                     'jti': token_jti,
-                }
+                })
                 with STATE_LOCK:
                     SESSIONS[token] = _supplier_session
                 _persist_session_to_db(token, _supplier_session)

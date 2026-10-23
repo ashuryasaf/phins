@@ -157,6 +157,10 @@ class TokenClaims:
     jti: str
     issued_at: float
     expires_at: float
+    # Crisis drop-all generation. 0 is every token minted before the first
+    # drop. ``validate_session`` rejects a token whose generation is not the
+    # current one, which is how a drop closes stateless sessions too.
+    generation: int = 0
 
     def to_session_dict(self) -> Dict[str, Any]:
         """Return the shape expected by ``validate_session`` in server.py."""
@@ -168,6 +172,8 @@ class TokenClaims:
             "expires": expires_iso,
             "jti": self.jti,
             "token_version": 2,
+            "issued_at": self.issued_at,
+            "session_generation": int(self.generation),
         }
 
 
@@ -192,6 +198,7 @@ def create_token(
     *,
     issued_at: Optional[datetime] = None,
     jti: Optional[str] = None,
+    generation: int = 0,
 ) -> Tuple[str, TokenClaims]:
     """Mint a v2 token along with the decoded claims.
 
@@ -208,6 +215,12 @@ def create_token(
     jti = jti or secrets.token_urlsafe(16)
     issued_at_ts = int(issued_at.timestamp())
     expires_at_ts = int(expires_at.timestamp())
+    try:
+        generation = int(generation)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("generation must be an integer") from exc
+    if generation < 0:
+        raise ValueError("generation must be >= 0")
 
     payload = {
         "sub": username,
@@ -217,6 +230,7 @@ def create_token(
         "exp": expires_at_ts,
         "jti": jti,
         "v": 2,
+        "gen": generation,
     }
     payload_bytes = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode(
         "utf-8"
@@ -232,6 +246,7 @@ def create_token(
         jti=jti,
         issued_at=float(payload["iat"]),
         expires_at=float(payload["exp"]),
+        generation=generation,
     )
     return token, claims
 
@@ -301,6 +316,18 @@ def verify_v2_token(token: str) -> Optional[TokenClaims]:
     if not username or not role or not jti:
         return None
 
+    # Tokens minted before crisis generations existed carry no ``gen`` and
+    # are generation 0. A non-integer claim is rejected outright.
+    if "gen" in payload:
+        try:
+            generation = int(payload.get("gen"))
+        except (TypeError, ValueError):
+            return None
+        if generation < 0:
+            return None
+    else:
+        generation = 0
+
     if is_revoked(jti):
         return None
 
@@ -311,6 +338,7 @@ def verify_v2_token(token: str) -> Optional[TokenClaims]:
         jti=jti,
         issued_at=iat,
         expires_at=exp,
+        generation=generation,
     )
 
 
