@@ -1409,6 +1409,8 @@ def render_markdown(report: Mapping[str, Any], lang: str = "en") -> str:
     lines = [
         f"# PHINS admin report {report.get('report_id')}",
         "",
+        "PHINS — Personal Health Insurance & Savings",
+        "",
         answer,
         "",
         f"Question: {report.get('question')}",
@@ -1454,40 +1456,128 @@ def render_markdown(report: Mapping[str, Any], lang: str = "en") -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _esc(value: Any) -> str:
+    import html as html_lib
+    return html_lib.escape(str(value if value is not None else ""))
+
+
+def _metric_grid(items: Sequence[Tuple[str, Any]]) -> str:
+    shown = [(label, value) for label, value in items if value is not None and value != ""]
+    if not shown:
+        return ""
+    cells = "".join(
+        "<div class=\"metric\"><strong>{value}</strong><span>{label}</span></div>".format(
+            value=_esc(value), label=_esc(label),
+        )
+        for label, value in shown
+    )
+    return "<div class=\"metric-grid\">" + cells + "</div>"
+
+
+def _document_metrics(facts: Mapping[str, Any], lang: str) -> str:
+    he = lang == "he"
+    window = facts.get("portfolio_window") or {}
+    open_n = facts.get("open_normal") or {}
+    floor = open_n.get("at_age_floor") or {}
+    items: List[Tuple[str, Any]] = []
+    if isinstance(window, Mapping) and "lives" in window:
+        items.append(("חלון התיק" if he else "Portfolio window", window.get("lives")))
+    if isinstance(open_n, Mapping) and "lives" in open_n:
+        items.append(("נורמלית פתוחה" if he else "Open normal", open_n.get("lives")))
+        items.append(("היארעות נכות" if he else "Disability incidence", open_n.get("incidence_lives")))
+    if isinstance(floor, Mapping):
+        items.append(("ADL 3 בגיל הרצפה" if he else "ADL 3 at the age floor", floor.get("average_years")))
+        items.append(("תוחלת בריאה" if he else "Healthy curtate years", floor.get("healthy_curtate_years")))
+    customer = facts.get("customer") or {}
+    if isinstance(customer, Mapping) and customer.get("customer_id"):
+        items.append(("לקוח" if he else "Customer", customer.get("customer_id")))
+    return _metric_grid(items)
+
+
 def render_html(report: Mapping[str, Any], lang: str = "en") -> str:
     from services.phins_document import render_phins_document
-    import html as html_lib
 
     lang = "he" if lang == "he" else "en"
+    he = lang == "he"
     answer = (report.get("answer") or {}).get(lang) or (report.get("answer") or {}).get("en") or ""
-    body = ["<p>{}</p>".format(html_lib.escape(answer))]
     facts = report.get("facts") or {}
+    body = [
+        "<p class=\"sub\">{}</p>".format(_esc(report.get("question") or "")),
+        "<p class=\"note\">{}</p>".format(_esc(answer)),
+        _document_metrics(facts, lang),
+    ]
+    planning = report.get("planning") or {}
+    if planning:
+        reason = planning.get("reason_he") if he else planning.get("reason_en")
+        name = planning.get("name_he") if he else planning.get("name_en")
+        body.append("<div class=\"summary-box\"><strong>{}</strong><p>{}</p></div>".format(
+            _esc(name or ""), _esc(reason or ""),
+        ))
     rows = (facts.get("open_normal") or {}).get("rows") or []
     if rows:
-        body.append("<table><thead><tr><th>Age</th><th>Lives</th><th>i(x)</th><th>ADL 3 years</th><th>Healthy years</th></tr></thead><tbody>")
+        heads = (
+            ("גיל", "חיים", "i(x)", "שנות ADL 3", "שנים בריאות")
+            if he else
+            ("Age", "Lives", "i(x)", "ADL 3 years", "Healthy years")
+        )
+        body.append("<h2>{}</h2>".format("גילאים בזנב" if he else "Ages in the tail"))
+        body.append("<table><thead><tr>" + "".join("<th>{}</th>".format(_esc(head)) for head in heads) + "</tr></thead><tbody>")
         for row in rows:
             body.append(
                 "<tr><td>{age}</td><td>{lives}</td><td>{ix}</td><td>{years}</td><td>{healthy}</td></tr>".format(
-                    age=html_lib.escape(str(row.get("age"))),
-                    lives=html_lib.escape(str(row.get("lives"))),
-                    ix=html_lib.escape(str(row.get("disability_incidence_per_life"))),
-                    years=html_lib.escape(str(row.get("adl3_average_years"))),
-                    healthy=html_lib.escape(str(row.get("healthy_curtate_years"))),
+                    age=_esc(row.get("age")),
+                    lives=_esc(row.get("lives")),
+                    ix=_esc(row.get("disability_incidence_per_life")),
+                    years=_esc(row.get("adl3_average_years")),
+                    healthy=_esc(row.get("healthy_curtate_years")),
                 )
             )
         body.append("</tbody></table>")
+    decades = facts.get("decades") or []
+    if decades:
+        body.append("<h2>{}</h2>".format("עשורים" if he else "Decades"))
+        body.append("<table><thead><tr><th>{}</th><th>{}</th></tr></thead><tbody>".format(
+            "רצועה" if he else "Band", "חיים" if he else "Lives",
+        ))
+        for row in decades:
+            body.append("<tr><td>{}–{}</td><td>{}</td></tr>".format(
+                _esc(row.get("age_min")), _esc(row.get("age_max")), _esc(row.get("lives")),
+            ))
+        body.append("</tbody></table>")
+    desks = [row for row in (report.get("dashboards") or []) if row.get("admin_open")]
+    if desks:
+        body.append("<h2>{}</h2><p>".format("לוחות" if he else "Dashboards"))
+        body.append(" ".join(
+            "<a href=\"{}\">{}</a>".format(_esc(row.get("path")), _esc(row.get("label_he") if he else row.get("label_en")))
+            for row in desks
+        ))
+        body.append("</p>")
     integrity = report.get("integrity") or {}
-    footer = "Seal {seal} · {formula} · read only".format(
-        seal=html_lib.escape(str(integrity.get("facts_sha256") or "")),
-        formula=html_lib.escape(str(integrity.get("formula_id") or "")),
-    )
+    if he:
+        footer = "חותם {seal} · {formula} · קריאה בלבד".format(
+            seal=_esc(integrity.get("facts_sha256") or ""),
+            formula=_esc(integrity.get("formula_id") or ""),
+        )
+        eyebrow = "ניהול AI ו-BI"
+    else:
+        footer = "Seal {seal} · {formula} · read only".format(
+            seal=_esc(integrity.get("facts_sha256") or ""),
+            formula=_esc(integrity.get("formula_id") or ""),
+        )
+        eyebrow = "Admin AI & BI"
     document = render_phins_document(
         title="PHINS admin report",
-        eyebrow="Admin AI & BI",
+        eyebrow=eyebrow,
         subtitle=str(report.get("report_id") or ""),
-        body_html="\n".join(body),
+        body_html="\n".join(part for part in body if part),
         footer=footer,
     )
-    if lang == "he":
+    if he:
         document = document.replace('<html lang="en">', '<html lang="he" dir="rtl">', 1)
+        document = document.replace(
+            "</head>",
+            "<style>html[dir=rtl] .phins-doc th,html[dir=rtl] .phins-doc td{text-align:right}"
+            "html[dir=rtl] .phins-doc-kicker{text-align:left}</style></head>",
+            1,
+        )
     return document

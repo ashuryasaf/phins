@@ -312,6 +312,10 @@ def test_role_gate_is_admin_and_manager_only():
     assert body["integrity"]["facts_sha256"] in download["content"]
     html = render_html(body, "he")
     assert 'lang="he"' in html
+    assert "phins-doc-wordmark" in html
+    assert "phins-doc-banner" in html
+    assert "Personal Health Insurance" in html
+    assert "metric-grid" in html
     assert body["facts"]["open_normal"]["at_age_floor"]["average_years"] is None or str(
         body["facts"]["open_normal"]["at_age_floor"]["age"]
     ) in html
@@ -346,5 +350,9 @@ def test_admin_mic_routes_data_questions_and_links_desks():
     report = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "admin-ai-report.html"
     page = report.read_text(encoding="utf-8")
     assert "phins-doc-return.js" in page
+    assert "phins-doc-banner" in page
+    assert 'src="/phins-logo.svg"' in page
+    assert "phins-doc-wordmark" in page
+    assert "Personal Health Insurance" in page
     assert "/api/admin/ai-bi/reports/" in page
     assert "facts_sha256" in page

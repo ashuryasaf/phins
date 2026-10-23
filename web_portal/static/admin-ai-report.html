@@ -6,76 +6,94 @@
 <title>PHINS admin report</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/phins-theme.css">
+<link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
 <link rel="stylesheet" href="/phins-document.css">
 <script src="/phins-doc-return.js"></script>
 <script src="/ui-clarity.js"></script>
 <style>
-  body { margin: 0; background: #f4f7fb; color: #142033; font-family: Inter, sans-serif; }
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 18px 64px; }
-  h1, h2 { font-family: "Space Grotesk", Inter, sans-serif; }
-  .banner { background: linear-gradient(135deg, #060d1f 0%, #0d1b3e 100%); color: #f7f4ea; border-radius: 16px; padding: 22px; }
-  .gold { color: #e3bf6f; letter-spacing: 0.04em; font-size: 0.78rem; text-transform: uppercase; }
-  .answer { font-size: 1.05rem; line-height: 1.55; margin: 14px 0 0; }
-  .bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
-  button, .linkish {
-    border: 1px solid rgba(227, 191, 111, 0.7); background: rgba(227, 191, 111, 0.14);
-    color: inherit; border-radius: 999px; padding: 8px 12px; cursor: pointer; font: inherit;
+  .phins-doc { max-width: 1080px; }
+  .phins-doc-logo img { width: 52px; height: 52px; display: block; }
+  #kicker { display: block; font-family: "Space Grotesk", Inter, sans-serif; font-size: 15px; font-weight: 600; opacity: 1; }
+  .phins-screen-only { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+  #report-doc button {
+    font-family: Inter, "Segoe UI", sans-serif;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 8px 12px;
+    cursor: pointer;
+    border: 1px solid rgba(227, 191, 111, 0.7);
+    background: rgba(227, 191, 111, 0.14);
+    color: #f7e2a0;
   }
-  .banner button { color: #f7e2a0; }
-  .card { background: white; border-radius: 14px; padding: 16px 18px; margin-top: 14px; box-shadow: 0 8px 24px rgba(6, 13, 31, 0.06); }
-  label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: #546e7a; }
+  #report-doc .phins-doc-body button { color: var(--phins-navy); background: var(--phins-ice); border-color: var(--phins-line); }
+  #report-doc #apply, #report-doc #ask-btn {
+    background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+    color: #f7e2a0;
+    border: 0;
+  }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--phins-muted); }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
-  input, select { padding: 8px 10px; border-radius: 8px; border: 1px solid #d5deea; font: inherit; color: #142033; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-  th, td { text-align: start; padding: 6px 8px; border-bottom: 1px solid #e6edf5; }
-  .seal { font-family: ui-monospace, monospace; font-size: 0.75rem; word-break: break-all; color: #37506e; }
-  .warn { background: #fff6e8; border-radius: 12px; padding: 12px 14px; }
-  .desks { display: flex; flex-wrap: wrap; gap: 8px; }
-  .desks a { color: #0d47a1; text-decoration: none; background: #eef4ff; border-radius: 999px; padding: 6px 10px; font-size: 0.82rem; }
+  input, select { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--phins-line); font: inherit; color: var(--phins-ink); background: #fff; }
+  .desks, #affiliated { display: flex; flex-wrap: wrap; gap: 8px; }
+  .desks a { color: var(--phins-navy); text-decoration: none; background: var(--phins-ice); border: 1px solid var(--phins-line); border-radius: 999px; padding: 6px 10px; font-size: 0.82rem; }
   .ask { display: flex; gap: 8px; flex-wrap: wrap; }
   .ask input { flex: 1; min-width: 220px; }
-  html[dir="rtl"] body { text-align: right; }
+  #answer { font-size: 1.05rem; line-height: 1.55; }
+  .seal { font-family: ui-monospace, monospace; word-break: break-all; }
+  html[dir="rtl"] .phins-doc th, html[dir="rtl"] .phins-doc td { text-align: right; }
+  html[dir="rtl"] .phins-doc-kicker { text-align: left; }
+  .phins-doc-body section + section { border-top: 1px solid var(--phins-line); margin-top: 18px; padding-top: 16px; }
+  @media print { .phins-screen-only, #variant-section, #ask-section { display: none !important; } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header class="banner">
-    <div class="gold" id="eyebrow">Admin AI &amp; BI</div>
-    <h1 id="title" style="margin:6px 0 0;font-size:1.45rem;">Report</h1>
-    <p class="answer" id="answer"></p>
-    <div class="bar">
+<article class="phins-doc" id="report-doc">
+  <header class="phins-doc-banner">
+    <div class="phins-doc-brand">
+      <div class="phins-doc-logo"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
+      <div>
+        <div class="phins-doc-wordmark">PHINS</div>
+        <div class="phins-doc-tagline">Personal Health Insurance &amp; Savings</div>
+      </div>
+    </div>
+    <div class="phins-doc-kicker"><span id="kicker">Admin AI &amp; BI</span><span id="title">Report</span></div>
+  </header>
+  <div class="phins-doc-gold"></div>
+  <div class="phins-doc-body">
+    <p class="note" id="answer"></p>
+    <div id="metrics"></div>
+    <div class="phins-screen-only">
       <button type="button" id="lang-en">English</button>
       <button type="button" id="lang-he">עברית</button>
       <button type="button" id="dl-json">JSON</button>
       <button type="button" id="dl-md">Markdown</button>
       <button type="button" id="dl-html">HTML</button>
     </div>
-  </header>
-  <section class="card" id="planning" hidden></section>
-  <section class="card">
-    <h2 style="margin-top:0;font-size:1.05rem;" id="variants-title">Variants</h2>
-    <form id="variants" class="grid"></form>
-    <div class="bar"><button type="button" id="apply" style="background:#0d1b3e;color:#f7e2a0;">Apply</button></div>
-    <div class="desks" id="affiliated" style="margin-top:12px;"></div>
-  </section>
-  <section class="card">
-    <h2 style="margin-top:0;font-size:1.05rem;" id="ask-title">Ask a follow-up</h2>
-    <div class="ask">
-      <input id="ask-input" type="text" placeholder="Ask from the stored books">
-      <button type="button" id="ask-btn" style="background:#0d1b3e;color:#f7e2a0;">Ask</button>
-    </div>
-  </section>
-  <section class="card" id="tables"></section>
-  <section class="card">
-    <h2 style="margin-top:0;font-size:1.05rem;" id="desk-title">Dashboards</h2>
-    <div class="desks" id="desks"></div>
-  </section>
-  <section class="card">
-    <h2 style="margin-top:0;font-size:1.05rem;" id="seal-title">Integrity</h2>
+    <section id="planning" hidden></section>
+    <section id="variant-section" class="phins-screen-only" style="display:block;">
+      <h2 id="variants-title">Variants</h2>
+      <form id="variants" class="grid"></form>
+      <div class="phins-screen-only"><button type="button" id="apply">Apply</button></div>
+      <div id="affiliated"></div>
+    </section>
+    <section id="ask-section" class="phins-screen-only" style="display:block;">
+      <h2 id="ask-title">Ask a follow-up</h2>
+      <div class="ask">
+        <input id="ask-input" type="text" placeholder="Ask from the stored books">
+        <button type="button" id="ask-btn">Ask</button>
+      </div>
+    </section>
+    <section id="tables"></section>
+    <section>
+      <h2 id="desk-title">Dashboards</h2>
+      <div class="desks" id="desks"></div>
+    </section>
+  </div>
+  <footer class="phins-doc-foot">
+    <div id="seal-title">Integrity</div>
     <p class="seal" id="seal"></p>
-  </section>
-</div>
+  </footer>
+</article>
 <script>
 (function () {
   var report = null;
@@ -106,6 +124,7 @@
   function applyLang() {
     document.documentElement.lang = lang;
     document.documentElement.dir = lang === "he" ? "rtl" : "ltr";
+    text("kicker", lang === "he" ? "ניהול AI ו-BI" : "Admin AI & BI");
     text("variants-title", lang === "he" ? "תרחישים" : "Variants");
     text("ask-title", lang === "he" ? "שאלת המשך" : "Ask a follow-up");
     text("desk-title", lang === "he" ? "לוחות" : "Dashboards");
@@ -116,6 +135,7 @@
     text("title", report.report_id || "");
     text("answer", copy(report.answer));
     renderPlanning();
+    renderMetrics();
     renderVariants();
     renderAffiliated();
     renderTables();
@@ -123,12 +143,31 @@
     renderSeal();
   }
 
+  function renderMetrics() {
+    var node = document.getElementById("metrics");
+    var facts = (report && report.facts) || {};
+    var windowRow = facts.portfolio_window || {};
+    var openN = facts.open_normal || {};
+    var floor = openN.at_age_floor || {};
+    var items = [];
+    if (windowRow.lives != null) items.push([lang === "he" ? "חלון התיק" : "Portfolio window", windowRow.lives]);
+    if (openN.lives != null) items.push([lang === "he" ? "נורמלית פתוחה" : "Open normal", openN.lives]);
+    if (openN.incidence_lives != null) items.push([lang === "he" ? "היארעות נכות" : "Disability incidence", openN.incidence_lives]);
+    if (floor.average_years != null) items.push([lang === "he" ? "ADL 3 בגיל הרצפה" : "ADL 3 at the age floor", floor.average_years]);
+    if (floor.healthy_curtate_years != null) items.push([lang === "he" ? "תוחלת בריאה" : "Healthy curtate years", floor.healthy_curtate_years]);
+    var customer = facts.customer || {};
+    if (customer.customer_id) items.push([lang === "he" ? "לקוח" : "Customer", customer.customer_id]);
+    node.innerHTML = items.length ? "<div class=\"metric-grid\">" + items.map(function (item) {
+      return "<div class=\"metric\"><strong>" + esc(item[1]) + "</strong><span>" + esc(item[0]) + "</span></div>";
+    }).join("") + "</div>" : "";
+  }
+
   function renderPlanning() {
     var node = document.getElementById("planning");
     var plan = report && report.planning;
     if (!plan) { node.hidden = true; node.innerHTML = ""; return; }
     node.hidden = false;
-    node.className = "card warn";
+    node.className = "note";
     node.innerHTML = "<strong>" + esc(lang === "he" ? plan.name_he : plan.name_en) + "</strong><p>" +
       esc(lang === "he" ? plan.reason_he : plan.reason_en) + "</p>" +
       (plan.url ? "<a href=\"" + esc(plan.url) + "\">" + esc(plan.url) + "</a>" : "");

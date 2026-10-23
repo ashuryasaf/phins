@@ -507,6 +507,24 @@
     #admin-ai-assistant-panel[data-minimized="true"] #admin-ai-query-row {
       margin-bottom: 0 !important;
     }
+    .admin-ai-letterhead {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: -6px -6px 12px;
+      padding-bottom: 10px;
+      border-bottom: 4px solid transparent;
+      border-image: linear-gradient(90deg, #b8893b 0%, #f7e2a0 42%, #e3bf6f 100%) 1;
+    }
+    .admin-ai-letterhead img { width: 36px; height: 36px; display: block; }
+    .admin-ai-letterhead strong {
+      display: block;
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      letter-spacing: 0.08em;
+      color: #0e2f63;
+      font-size: 0.95rem;
+    }
+    .admin-ai-letterhead span { display: block; color: #5b6b82; font-size: 0.72rem; }
     .admin-ai-action-btn {
       background: rgba(255,255,255,0.12);
       border: 1px solid rgba(255,255,255,0.3);
@@ -3648,7 +3666,14 @@
         : '';
       const reportId = adminAssistantEscapeHtml(report.report_id || '');
       area.innerHTML = `
-        <div style="font-weight:700;margin-bottom:6px;">${reportId}</div>
+        <div class="admin-ai-letterhead">
+          <img src="/phins-logo.svg" alt="PHINS emblem">
+          <div>
+            <strong>PHINS</strong>
+            <span>Personal Health Insurance &amp; Savings</span>
+          </div>
+        </div>
+        <div style="font-weight:700;margin-bottom:6px;font-family:'Space Grotesk',Inter,sans-serif;color:#0e2f63;">${reportId}</div>
         <div style="line-height:1.45;">${adminAssistantEscapeHtml(answer)}</div>
         ${planLine}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
