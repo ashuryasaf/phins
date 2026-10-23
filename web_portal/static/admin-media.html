@@ -2723,11 +2723,8 @@ Notes:
                     const data = await response.json();
                     mediaAssets = Array.isArray(data) ? data : (data.assets || []);
                     mediaLibraryReady = true;
-                    if (currentMainTab === 'investor-deck' && window.InvestorDeckLab) {
-                        InvestorDeckLab.mount(document.getElementById('investor-deck-lab'), {
-                            mode: 'edit',
-                            images: function () { return mediaAssets; }
-                        });
+                    if (currentMainTab === 'investor-deck' && window.InvestorDeckLab && InvestorDeckLab.syncImages) {
+                        InvestorDeckLab.syncImages(document.getElementById('investor-deck-lab'), function () { return mediaAssets; });
                     }
                     renderMediaGrid();
                     updateStats();

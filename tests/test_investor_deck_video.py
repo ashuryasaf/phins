@@ -113,6 +113,22 @@ def test_only_a_matching_clip_enters_the_stream():
     assert drifted["integrity_ok"] is True
     assert drifted["figures_current"] is False
     assert drifted["in_stream"] is False
+    shifted = dict(plan)
+    shifted["content_hash"] = "a" * 64
+    assert sealed["sealed_plan_hash"] != shifted["content_hash"]
+    kept = scene_view(spec, sealed, shifted, asset)
+    assert kept["narration"] == sealed["sealed_narration"]
+    assert kept["figures_current"] is True
+    assert kept["in_stream"] is True
+    assert kept["playback_url"].startswith("data:video/mp4")
+    hash_line = spec_for("s13p03")
+    sealed_hash = seal_for_send("s13p03", None, plan, used_presenter_ids=[], rng=random.Random(4))
+    sealed_hash["last_asset_id"] = "asset-2"
+    sealed_hash["asset_checksum"] = "abc123"
+    spoken_hash = scene_view(hash_line, sealed_hash, shifted, asset)
+    assert spoken_hash["narration"] != sealed_hash["sealed_narration"]
+    assert spoken_hash["figures_current"] is False
+    assert spoken_hash["in_stream"] is False
 
 
 def test_theme_change_drops_the_film_link_and_reset_clears_the_seal():

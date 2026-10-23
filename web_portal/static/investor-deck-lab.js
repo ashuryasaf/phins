@@ -72,6 +72,31 @@
         return svg;
     }
 
+    function armClip(video) {
+        if (!video || video.dataset.armed === '1') return;
+        // A later scene starts from the previous clip's ended event, which is
+        // not a user gesture. play() during the click clears that restriction
+        // on this element; pause before a frame so the film does not overlap.
+        video.muted = true;
+        try {
+            var pending = video.play();
+            video.pause();
+            try { video.currentTime = 0; } catch (e) { /* metadata not in yet */ }
+            video.muted = false;
+            video.dataset.armed = '1';
+            if (pending && pending.catch) pending.catch(function () {});
+        } catch (e) {
+            video.muted = false;
+        }
+    }
+
+    function armOtherClips(state, currentIndex) {
+        state.clips.forEach(function (clip, index) {
+            if (index === currentIndex) return;
+            armClip(clip.querySelector('video'));
+        });
+    }
+
     function renderStream(root, data, state) {
         var host = root.querySelector('[data-idl-stream]');
         if (!host) return;
@@ -89,7 +114,7 @@
                 ? '<div class="idl-side">' + chart + photo + reference + '</div>'
                 : '';
             return '<article class="idl-clip" data-stream-index="' + index + '">' +
-                '<video playsinline preload="' + (index === 0 ? 'auto' : 'metadata') + '" src="' + esc(scene.playback_url) + '"></video>' +
+                '<video playsinline webkit-playsinline preload="' + (index === 0 ? 'auto' : 'metadata') + '" src="' + esc(scene.playback_url) + '"></video>' +
                 aside +
                 '<div class="idl-caption"><strong>Slide ' + esc(scene.slide_no) + ' · ' + esc(scene.slide_title) +
                 '</strong><br>Paragraph ' + esc(scene.paragraph_no) + ' of ' + esc(scene.paragraph_count) +
@@ -115,22 +140,34 @@
     function playAt(state, index) {
         if (!state.clips.length || index < 0 || index >= state.clips.length) return;
         state.cursor = index;
+        state.blocked = false;
         state.clips.forEach(function (clip, clipIndex) {
             clip.classList.toggle('is-current', clipIndex === index);
-            var video = clip.querySelector('video');
-            if (!video) return;
-            if (clipIndex !== index && !video.paused) video.pause();
+            var node = clip.querySelector('video');
+            if (!node) return;
+            if (clipIndex !== index && !node.paused) node.pause();
         });
         var current = state.clips[index];
         var video = current.querySelector('video');
+        if (!video) return;
         var upcoming = state.clips[index + 1];
         if (upcoming) {
             var nextVideo = upcoming.querySelector('video');
             if (nextVideo) nextVideo.preload = 'auto';
         }
         if (current.scrollIntoView) current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        video.muted = false;
+        var generation = (state.generation || 0) + 1;
+        state.generation = generation;
         var played = video.play();
-        if (played && played.catch) played.catch(function () {});
+        if (played && played.catch) {
+            played.catch(function (err) {
+                if (state.generation !== generation) return;
+                if (err && err.name === 'AbortError') return;
+                state.blocked = true;
+                if (state.root) setStatus(state.root, 'The film stopped. Press Play the film to continue.');
+            });
+        }
     }
 
     function groupSlides(scenes) {
@@ -167,6 +204,13 @@
             html += '<option value="' + esc(selected) + '" selected>Missing image ' + esc(selected) + '</option>';
         }
         return html;
+    }
+
+    function syncImages(target, images) {
+        if (!target || !target.querySelectorAll) return;
+        target.querySelectorAll('select[data-idl-photo-select]').forEach(function (select) {
+            select.innerHTML = imageOptions(images, select.value);
+        });
     }
 
     function renderEditor(root, data, images) {
@@ -291,7 +335,7 @@
         }
         var mode = options && options.mode === 'edit' ? 'edit' : 'watch';
         var images = options && options.images;
-        var state = { clips: [], cursor: 0, data: null };
+        var state = { clips: [], cursor: 0, data: null, root: target, blocked: false };
         target.innerHTML = '<div class="idl">' +
             '<div class="idl-stage">' +
             '<p class="idl-note">Part II, one 15-second scene per paragraph. The film plays the scenes that exist, in order, and skips the rest. Charts and the founder portrait are the plan’s own, shown beside the clip. The spoken line is the paragraph as the plan fills it.</p>' +
@@ -301,7 +345,11 @@
             (mode === 'edit' ? '<div data-idl-editor></div>' : '') +
             '</div>';
         var play = target.querySelector('[data-idl-play]');
-        if (play) play.addEventListener('click', function () { playAt(state, 0); });
+        if (play) play.addEventListener('click', function () {
+            var index = state.blocked ? state.cursor : 0;
+            armOtherClips(state, index);
+            playAt(state, index);
+        });
         if (mode === 'edit') {
             var onEditClick = function (event) {
                 var send = event.target && event.target.getAttribute && event.target.getAttribute('data-idl-send');
@@ -325,5 +373,5 @@
         });
     }
 
-    window.InvestorDeckLab = { mount: mount };
+    window.InvestorDeckLab = { mount: mount, syncImages: syncImages };
 })();

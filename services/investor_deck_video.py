@@ -474,8 +474,10 @@ def scene_view(
         integrity_ok = False
     narration = fill_narration(str(spec["template"]), plan)
     sealed = str(record.get("sealed_narration") or "")
-    plan_hash = str(plan.get("content_hash") or "")
-    figures_current = bool(sealed) and sealed == narration and str(record.get("sealed_plan_hash") or "") == plan_hash
+    # The whole-plan content hash changes when any slide or census figure
+    # changes. A clip stays current while its sealed line is still this
+    # paragraph; narration equality is that check.
+    figures_current = bool(sealed) and sealed == narration
     presenter = presenter_by_id(str(record.get("presenter_id") or ""))
     asset_info = asset if isinstance(asset, dict) else {}
     asset_type = str(asset_info.get("type") or "")
