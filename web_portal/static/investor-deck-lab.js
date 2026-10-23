@@ -5,6 +5,7 @@
    come from the plan, not from the generated frame. */
 (function () {
     var STYLE_ID = 'investor-deck-lab-style';
+    var mountedEditClicks = new WeakMap();
 
     function token() {
         try {
@@ -283,6 +284,11 @@
     function mount(target, options) {
         if (!target) return;
         ensureStyle();
+        var priorClick = mountedEditClicks.get(target);
+        if (priorClick) {
+            target.removeEventListener('click', priorClick);
+            mountedEditClicks.delete(target);
+        }
         var mode = options && options.mode === 'edit' ? 'edit' : 'watch';
         var images = options && options.images;
         var state = { clips: [], cursor: 0, data: null };
@@ -297,7 +303,7 @@
         var play = target.querySelector('[data-idl-play]');
         if (play) play.addEventListener('click', function () { playAt(state, 0); });
         if (mode === 'edit') {
-            target.addEventListener('click', function (event) {
+            var onEditClick = function (event) {
                 var send = event.target && event.target.getAttribute && event.target.getAttribute('data-idl-send');
                 var reassign = event.target && event.target.getAttribute && event.target.getAttribute('data-idl-reassign');
                 var reset = event.target && event.target.getAttribute && event.target.getAttribute('data-idl-reset');
@@ -310,7 +316,9 @@
                 }).catch(function (err) {
                     setStatus(target, err.message || 'Request failed');
                 });
-            });
+            };
+            mountedEditClicks.set(target, onEditClick);
+            target.addEventListener('click', onEditClick);
         }
         refresh(target, mode, images, state).catch(function (err) {
             setStatus(target, err.message || 'The investor deck could not be loaded');
