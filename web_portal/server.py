@@ -3112,6 +3112,9 @@ def serialize_media_job(job: Dict[str, Any], include_callback: bool = False) -> 
         'campaign_id': job.get('campaign_id'),
         'blueprint_index': job.get('blueprint_index'),
         'solution_key': str(job.get('solution_key') or ''),
+        'deck_scene_key': str(job.get('deck_scene_key') or ''),
+        'plan_content_hash': str(job.get('plan_content_hash') or ''),
+        'duration_seconds': safe_int(job.get('duration_seconds'), 0),
         'blueprint_checksum': str(job.get('blueprint_checksum') or ''),
         'generated_asset_id': job.get('generated_asset_id'),
         'provider_operation_name': job.get('provider_operation_name', ''),
@@ -5369,6 +5372,8 @@ def create_media_video_job(
     duration_seconds: int = 8,
     aspect_ratio: str = '',
     resolution: str = '720p',
+    deck_scene_key: str = '',
+    plan_content_hash: str = '',
 ) -> Dict[str, Any]:
     """Create a provider-backed video generation job.
 
@@ -5450,6 +5455,8 @@ def create_media_video_job(
         'webhook_deliveries': [],
         'solution_key': str(solution_key or ''),
         'blueprint_checksum': str(blueprint_checksum or ''),
+        'deck_scene_key': str(deck_scene_key or ''),
+        'plan_content_hash': str(plan_content_hash or ''),
     }
     MEDIA_PROCESSING_JOBS[job_id] = job
 
@@ -5831,12 +5838,20 @@ def _finalize_media_video_job_locked(job: Dict[str, Any], poll_result: Dict[str,
             except OSError:
                 pass
         attach_generated_video_thumbnail(asset)
-    if job.get('solution_key'):
+    if job.get('solution_key') and not job.get('deck_scene_key'):
         meta = asset.get('metadata') if isinstance(asset.get('metadata'), dict) else {}
         meta = dict(meta)
         meta['solution_key'] = str(job.get('solution_key') or '')
         meta['blueprint_checksum'] = str(job.get('blueprint_checksum') or '')
         meta['generated_from'] = 'solution_video_blueprint'
+        asset['metadata'] = meta
+    if job.get('deck_scene_key'):
+        meta = asset.get('metadata') if isinstance(asset.get('metadata'), dict) else {}
+        meta = dict(meta)
+        meta['deck_scene_key'] = str(job.get('deck_scene_key') or '')
+        meta['plan_content_hash'] = str(job.get('plan_content_hash') or '')
+        meta['blueprint_checksum'] = str(job.get('blueprint_checksum') or '')
+        meta['generated_from'] = 'investor_deck_scene'
         asset['metadata'] = meta
     MEDIA_ASSETS[asset_id] = asset
     provider_output_url = str(download_url or '').strip()
@@ -5871,8 +5886,10 @@ def _finalize_media_video_job_locked(job: Dict[str, Any], poll_result: Dict[str,
                     str(job.get('message') or 'Generated video saved to media library.')
                     + ' Landing hero was not updated; durable design storage failed.'
                 )
-    if job.get('solution_key'):
+    if job.get('solution_key') and not job.get('deck_scene_key'):
         note_solution_video_asset(job, asset_id)
+    if job.get('deck_scene_key'):
+        note_investor_deck_video_asset(job, asset_id)
     return asset
 
 
@@ -6424,6 +6441,474 @@ def send_solution_video_blueprint(
         'blueprint': solution_video_blueprint_view(solution_key),
         'job': serialize_media_job(job, include_callback=True),
     }
+
+
+_INVESTOR_DECK_LOCK = threading.RLock()
+_INVESTOR_DECK_FIELDS = (
+    'scene_key', 'source_template', 'presenter_id', 'theme',
+    'reference_image_asset_id', 'sealed_narration', 'sealed_plan_hash',
+    'sealed_plan_version', 'campaign_id', 'last_job_id', 'last_asset_id',
+    'asset_checksum', 'stored', 'checksum', 'updated_at', 'updated_by',
+)
+
+
+def _investor_deck_store() -> Dict[str, Any]:
+    raw = DESIGN_SETTINGS.get('investor_deck_scenes')
+    return raw if isinstance(raw, dict) else {}
+
+
+def _investor_deck_plan() -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """The plan the document is showing: saved factors when an admin has saved them.
+
+    A settings read that fails is an error. Canonical defaults are not
+    substituted for a plan the server could not load.
+    """
+    from services.business_plan_model import compute_plan
+    from services.business_plan_settings import get_business_plan_settings
+
+    saved = get_business_plan_settings().saved_factors()
+    plan = compute_plan(saved or None)
+    meta = {
+        'content_hash': str(plan.get('content_hash') or ''),
+        'plan_version': str(plan.get('plan_version') or ''),
+        'factors_source': 'saved' if saved else 'canonical',
+        'integrity_all_hold': (plan.get('integrity') or {}).get('all_hold') is True,
+    }
+    return plan, meta
+
+
+def _investor_deck_charts(plan: Dict[str, Any]) -> Dict[str, Any]:
+    from services.business_plan_charts import chart_by_id, render_svg
+    from services.investor_deck_video import chart_ids
+
+    charts: Dict[str, Any] = {}
+    for chart_id in chart_ids():
+        spec = chart_by_id(plan, chart_id)
+        charts[chart_id] = {
+            'id': chart_id,
+            'title': str(spec.get('title') or ''),
+            'svg': render_svg(spec),
+        }
+    return charts
+
+
+def _investor_deck_photo_url() -> str:
+    """Founder portrait route when a checksummed library image is assigned."""
+    asset_id = str(DESIGN_SETTINGS.get('founder_portrait_id') or '').strip()
+    asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
+    if not isinstance(asset, dict) or str(asset.get('type') or '') != 'image':
+        return ''
+    if not str(asset.get('checksum') or '').strip():
+        return ''
+    return '/api/business-plan/founder-portrait'
+
+
+def _investor_deck_reference_url(asset_id: str) -> str:
+    image_id = str(asset_id or '').strip()
+    asset = MEDIA_ASSETS.get(image_id) if image_id else None
+    if not isinstance(asset, dict) or str(asset.get('type') or '') != 'image':
+        return ''
+    if not str(asset.get('checksum') or '').strip():
+        return ''
+    return media_asset_url(asset)
+
+
+def _persist_investor_deck_scene_unlocked(record: Dict[str, Any]) -> bool:
+    key = str(record.get('scene_key') or '').strip()
+    if not key:
+        return False
+    try:
+        previous = _snapshot_design_settings()
+    except Exception:
+        return False
+    store = DESIGN_SETTINGS.get('investor_deck_scenes')
+    if not isinstance(store, dict):
+        store = {}
+        DESIGN_SETTINGS['investor_deck_scenes'] = store
+    slim = {field: record.get(field) for field in _INVESTOR_DECK_FIELDS if field in record}
+    store[key] = _copy_json_value(slim)
+    DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
+    if seal_design_settings(force=True):
+        return True
+    _restore_design_settings(previous)
+    return False
+
+
+def _persist_investor_deck_scene(record: Dict[str, Any]) -> bool:
+    with _INVESTOR_DECK_LOCK:
+        return _persist_investor_deck_scene_unlocked(record)
+
+
+def load_investor_deck_scene(scene_key: str) -> Dict[str, Any]:
+    from services.investor_deck_video import fresh_scene, spec_for, verify_scene
+
+    spec = spec_for(scene_key)
+    if spec is None:
+        from services.investor_deck_video import InvestorDeckError
+        raise InvestorDeckError(f'Unknown investor-deck scene: {scene_key}')
+    stored = _investor_deck_store().get(scene_key)
+    if not isinstance(stored, dict):
+        return fresh_scene(spec)
+    record = dict(stored)
+    record['stored'] = True
+    record['integrity_ok'] = verify_scene(record, spec)
+    return record
+
+
+def investor_deck_lab_view() -> Dict[str, Any]:
+    """Slides, the current spoken lines, and the film of clips that still match."""
+    from services.investor_deck_video import (
+        SCENE_ENGINES,
+        catalog,
+        clip_is_scene_length,
+        scene_view,
+        stream_of,
+    )
+
+    plan, meta = _investor_deck_plan()
+    photo_url = _investor_deck_photo_url()
+    store = _investor_deck_store()
+    scenes = []
+    for spec in catalog():
+        stored = store.get(spec['scene_key'])
+        record = stored if isinstance(stored, dict) else None
+        asset_id = str((record or {}).get('last_asset_id') or '')
+        asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
+        brief = None
+        if isinstance(asset, dict):
+            brief = {
+                'type': str(asset.get('type') or ''),
+                'checksum': str(asset.get('checksum') or ''),
+                'playback_url': media_asset_url(asset) if str(asset.get('checksum') or '') else '',
+            }
+        reference_id = str((record or {}).get('reference_image_asset_id') or '')
+        scenes.append(scene_view(
+            spec,
+            record,
+            plan,
+            brief,
+            photo_url=photo_url,
+            reference_url=_investor_deck_reference_url(reference_id),
+        ))
+    try:
+        service = get_media_generation_service()
+    except Exception:
+        service = None
+    probe = getattr(service, '_kling_use_evolink_profile', None)
+
+    def _evolink(model: str) -> bool:
+        if not callable(probe):
+            return False
+        try:
+            return bool(probe(model))
+        except Exception:
+            return False
+
+    capabilities = media_video_provider_capabilities() if service is not None else {}
+    providers = capabilities.get('providers') if isinstance(capabilities, dict) else {}
+    if not isinstance(providers, dict):
+        providers = {}
+    engines = []
+    for engine in SCENE_ENGINES:
+        provider_config = providers.get(engine['provider'])
+        if not isinstance(provider_config, dict) or not provider_config.get('enabled'):
+            continue
+        seconds = clip_is_scene_length(
+            engine['provider'], engine['model'], evolink=_evolink(engine['model']),
+        )
+        if seconds == 15:
+            engines.append(dict(engine))
+    stream = stream_of(scenes)
+    return {
+        'success': True,
+        'duration_seconds': 15,
+        'plan': meta,
+        'slide_count': len({scene['slide_no'] for scene in scenes}),
+        'scene_count': len(scenes),
+        'stream_count': len(stream),
+        'scenes': scenes,
+        'stream': stream,
+        'charts': _investor_deck_charts(plan),
+        'engines': engines,
+        'photo_url': photo_url,
+    }
+
+
+def save_investor_deck_scene(scene_key: str, payload: Dict[str, Any], *, actor: str) -> Dict[str, Any]:
+    from services.investor_deck_video import InvestorDeckError, apply_scene_edit
+
+    current = _investor_deck_store().get(scene_key)
+    try:
+        record = apply_scene_edit(
+            scene_key,
+            current if isinstance(current, dict) else None,
+            theme=payload.get('theme') if 'theme' in payload else None,
+            reference_image_asset_id=(
+                payload.get('reference_image_asset_id')
+                if 'reference_image_asset_id' in payload else None
+            ),
+            reset=bool(payload.get('reset')),
+        )
+    except InvestorDeckError:
+        raise
+    image_id = str(record.get('reference_image_asset_id') or '')
+    if image_id:
+        asset = MEDIA_ASSETS.get(image_id)
+        if not isinstance(asset, dict) or str(asset.get('type') or '') != 'image':
+            raise InvestorDeckError('Photo reference must be an image in the media library')
+        if not str(asset.get('checksum') or '').strip():
+            raise InvestorDeckError('Photo reference has no checksum')
+    record['updated_at'] = datetime.now().isoformat()
+    record['updated_by'] = actor or 'admin'
+    if not _persist_investor_deck_scene(record):
+        raise InvestorDeckError('Investor deck scene could not be stored durably')
+    view = investor_deck_lab_view()
+    scene = next((item for item in view['scenes'] if item['scene_key'] == scene_key), None)
+    return scene or {}
+
+
+def note_investor_deck_video_asset(job: Dict[str, Any], asset_id: str) -> None:
+    """Link a finished library video when it still matches the sealed scene."""
+    from services.investor_deck_video import parse_campaign_id, verify_scene, spec_for
+
+    key = str(job.get('deck_scene_key') or '') or parse_campaign_id(str(job.get('campaign_id') or ''))
+    if not key or not asset_id:
+        return
+    asset = MEDIA_ASSETS.get(asset_id)
+    checksum = str((asset or {}).get('checksum') or '').strip()
+    if not isinstance(asset, dict) or str(asset.get('type') or '') != 'video' or not checksum:
+        return
+    spec = spec_for(key)
+    if spec is None:
+        return
+    with _INVESTOR_DECK_LOCK:
+        try:
+            record = load_investor_deck_scene(key)
+        except Exception:
+            return
+        if not record.get('stored') or not verify_scene(record, spec):
+            return
+        if str(record.get('checksum') or '') != str(job.get('blueprint_checksum') or ''):
+            return
+        if str(record.get('sealed_plan_hash') or '') != str(job.get('plan_content_hash') or ''):
+            return
+        record['last_job_id'] = str(job.get('id') or '')
+        record['last_asset_id'] = str(asset_id)
+        record['asset_checksum'] = checksum
+        _persist_investor_deck_scene_unlocked(record)
+
+
+def _investor_deck_used_presenters(except_key: str = '') -> List[str]:
+    used = []
+    for key, record in _investor_deck_store().items():
+        if key == except_key or not isinstance(record, dict):
+            continue
+        presenter_id = str(record.get('presenter_id') or '')
+        if presenter_id:
+            used.append(presenter_id)
+    return used
+
+
+def send_investor_deck_scene(
+    scene_key: str,
+    payload: Dict[str, Any],
+    *,
+    actor: str,
+) -> Tuple[int, Dict[str, Any]]:
+    """Submit one deck paragraph through the growth-agent video job path.
+
+    The prompt is the paragraph filled from the current plan. The clip is
+    15 seconds. Public placements, the plan, and other scenes are not written.
+    """
+    from services.investor_deck_video import (
+        InvestorDeckError,
+        SCENE_SECONDS,
+        clip_is_scene_length,
+        engine_by_id,
+        growth_brief,
+        prompt_override,
+        spec_for,
+    )
+
+    spec = spec_for(scene_key)
+    if spec is None:
+        return 400, {'error': f'Unknown investor-deck scene: {scene_key}'}
+    try:
+        plan, meta = _investor_deck_plan()
+    except Exception as exc:
+        return 503, {'error': f'The business plan could not be loaded: {exc}'}
+    if not meta.get('integrity_all_hold'):
+        return 409, {'error': 'Plan identities do not hold. Nothing was sent.'}
+    try:
+        current = load_investor_deck_scene(scene_key)
+    except InvestorDeckError as exc:
+        return 400, {'error': str(exc)}
+    if current.get('stored') and not current.get('integrity_ok'):
+        return 409, {'error': 'Scene checksum mismatch. Reset the scene before sending.'}
+    image_id = str(payload.get('reference_image_asset_id') or current.get('reference_image_asset_id') or '').strip()
+    if 'reference_image_asset_id' in payload:
+        image_id = str(payload.get('reference_image_asset_id') or '').strip()
+    image_data_url, image_error = _solution_send_reference(image_id) if image_id else ('', '')
+    if image_error:
+        status = 409 if 'checksum' in image_error else 400
+        return status, {'error': image_error}
+    engine = engine_by_id(str(payload.get('engine_id') or '').strip())
+    if engine is not None:
+        requested_provider = engine['provider']
+        requested_model = engine['model']
+        client_provider = str(payload.get('provider') or '').strip().lower()
+        client_model = str(payload.get('provider_model') or '').strip()
+        if client_provider and client_provider != requested_provider:
+            return 409, {'error': 'The provider does not match the selected engine. Nothing was sent.'}
+        if client_model and client_model != requested_model:
+            return 409, {'error': 'The model does not match the selected engine. Nothing was sent.'}
+    else:
+        requested_provider = str(payload.get('provider') or 'replicate').strip().lower() or 'replicate'
+        requested_model = str(payload.get('provider_model') or '').strip()
+        if requested_provider == 'replicate' and not requested_model:
+            requested_model = 'bytedance/seedance-2.0'
+    service = get_media_generation_service()
+    probe = getattr(service, '_kling_use_evolink_profile', None)
+    evolink = False
+    if callable(probe):
+        try:
+            evolink = bool(probe(requested_model))
+        except Exception:
+            evolink = False
+    seconds = clip_is_scene_length(requested_provider, requested_model, evolink=evolink)
+    if seconds != SCENE_SECONDS:
+        from services.media_generation_service import MediaGenerationService
+        actual = MediaGenerationService.clip_duration(
+            requested_provider, requested_model, SCENE_SECONDS, evolink=evolink,
+        )
+        return 409, {
+            'error': (
+                f'Investor deck scenes are {SCENE_SECONDS} seconds. '
+                f'This engine\'s clip is {actual} seconds. Nothing was sent.'
+            ),
+        }
+    provider, provider_error = validate_media_video_provider_selection(requested_provider, requested_model)
+    if provider_error:
+        status = 503 if 'not connected' in provider_error else 400
+        return status, {
+            'error': provider_error,
+            'reason': 'provider_not_configured' if 'not connected' in provider_error else 'provider_invalid',
+            'diagnostics': diagnose_media_video_providers(),
+        }
+    theme = payload.get('theme') if 'theme' in payload else None
+    reference = payload.get('reference_image_asset_id') if 'reference_image_asset_id' in payload else None
+    try:
+        record = seal_for_send_investor_deck(
+            scene_key,
+            current if current.get('stored') else None,
+            plan,
+            reassign_presenter=bool(payload.get('reassign_presenter')),
+            theme=theme,
+            reference_image_asset_id=reference,
+        )
+    except InvestorDeckError as exc:
+        return 400, {'error': str(exc)}
+    spoken = prompt_override(record)
+    client_prompt = payload.get('prompt_override')
+    if client_prompt is not None and str(client_prompt).strip() and str(client_prompt).strip() != spoken:
+        return 409, {'error': 'The prompt is the deck paragraph. Nothing was sent.'}
+    record['updated_at'] = datetime.now().isoformat()
+    record['updated_by'] = actor or 'admin'
+    if not _persist_investor_deck_scene(record):
+        return 503, {'error': 'Investor deck scene could not be stored durably'}
+    brief = growth_brief(record)
+    callback_base_url = str(payload.get('callback_base_url') or '').strip() or configured_media_callback_base_url()
+    poll_mode = resolve_media_video_completion_mode(payload.get('poll_mode'), callback_base_url)
+    campaign_id = str(record.get('campaign_id') or '')
+    force = bool(payload.get('force') or payload.get('force_regenerate'))
+    if not force:
+        existing = find_duplicate_media_video_job(media_video_request_fingerprint(
+            campaign_id=campaign_id,
+            blueprint_index=0,
+            provider=provider,
+            provider_model=requested_model,
+            prompt=build_media_video_prompt(campaign_id, brief, spoken),
+            image_data_url=image_data_url,
+        ))
+        if existing is not None:
+            return 200, {
+                'success': True,
+                'deduplicated': True,
+                'message': 'An identical investor-deck scene already exists.',
+                'scene': _investor_deck_scene_from_lab(scene_key),
+                'job': dict(serialize_media_job(existing, include_callback=True), deduplicated=True),
+            }
+    job = create_media_video_job(
+        campaign_id=campaign_id,
+        blueprint_index=0,
+        blueprint=brief,
+        requested_by=actor or 'admin',
+        provider=provider,
+        callback_base_url=callback_base_url,
+        provider_model=requested_model,
+        image_data_url=image_data_url,
+        auto_publish_to_hero=False,
+        prompt_override=spoken,
+        blueprint_checksum=str(record.get('checksum') or ''),
+        duration_seconds=SCENE_SECONDS,
+        deck_scene_key=scene_key,
+        plan_content_hash=str(record.get('sealed_plan_hash') or ''),
+    )
+    with _INVESTOR_DECK_LOCK:
+        linked = load_investor_deck_scene(scene_key)
+        if linked.get('integrity_ok') and linked.get('checksum') == record.get('checksum'):
+            linked['last_job_id'] = str(job.get('id') or '')
+            linked['updated_at'] = datetime.now().isoformat()
+            linked['updated_by'] = actor or 'admin'
+            _persist_investor_deck_scene_unlocked(linked)
+    if poll_mode == 'webhook':
+        start_media_job_polling(job['id'], delay_seconds=max(safe_int(payload.get('webhook_fallback_seconds'), 30), 5))
+    else:
+        start_media_job_polling(job['id'], delay_seconds=max(safe_int(payload.get('poll_delay_seconds'), 1), 1))
+    return 202, {
+        'success': True,
+        'deduplicated': False,
+        'message': (
+            f'Investor deck scene sent to {provider}'
+            + (f' ({requested_model})' if requested_model else '')
+            + f' at {SCENE_SECONDS} seconds. The prompt is the deck paragraph. '
+            'The plan and the public pages were not changed.'
+        ),
+        'provider': provider,
+        'provider_model': requested_model,
+        'poll_mode': poll_mode,
+        'duration_seconds': SCENE_SECONDS,
+        'auto_publish_to_hero': False,
+        'scene': _investor_deck_scene_from_lab(scene_key),
+        'job': serialize_media_job(job, include_callback=True),
+    }
+
+
+def seal_for_send_investor_deck(
+    scene_key: str,
+    current: Optional[Dict[str, Any]],
+    plan: Dict[str, Any],
+    *,
+    reassign_presenter: bool = False,
+    theme: Any = None,
+    reference_image_asset_id: Any = None,
+) -> Dict[str, Any]:
+    from services.investor_deck_video import seal_for_send
+
+    return seal_for_send(
+        scene_key,
+        current,
+        plan,
+        used_presenter_ids=_investor_deck_used_presenters(except_key=scene_key),
+        reassign_presenter=reassign_presenter,
+        theme=theme,
+        reference_image_asset_id=reference_image_asset_id,
+    )
+
+
+def _investor_deck_scene_from_lab(scene_key: str) -> Dict[str, Any]:
+    view = investor_deck_lab_view()
+    return next((item for item in view['scenes'] if item['scene_key'] == scene_key), {})
 
 
 def latest_campaign_video_blueprints(campaign_id: str) -> Tuple[Dict[str, Any], List[Dict[str, Any]], str]:
@@ -23267,6 +23752,21 @@ For claims or questions, please contact:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
                 return
+
+        if path == '/api/admin/media/investor-deck':
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+            try:
+                payload = investor_deck_lab_view()
+            except Exception as exc:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': f'The investor deck could not be prepared: {exc}'}).encode('utf-8'))
+                return
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
 
         if path == '/api/admin/media/solution-blueprints':
             if not require_role(session, ['admin', 'media']):
@@ -41455,6 +41955,48 @@ For claims or questions, please contact:
                 import traceback
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e), 'traceback': traceback.format_exc()}).encode('utf-8'))
+            return
+
+        # ========== INVESTOR DECK LAB ==========
+        if path in {'/api/admin/media/investor-deck', '/api/admin/media/investor-deck/send'}:
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            if not isinstance(data, dict):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request body'}).encode('utf-8'))
+                return
+            scene_key = str(data.get('scene_key') or '').strip()
+            actor = (session or {}).get('username', 'admin')
+            from services.investor_deck_video import InvestorDeckError
+            try:
+                if path.endswith('/send'):
+                    status_code, payload = send_investor_deck_scene(scene_key, data, actor=actor)
+                else:
+                    scene = save_investor_deck_scene(scene_key, data, actor=actor)
+                    status_code, payload = 200, {
+                        'success': True,
+                        'message': 'Investor deck scene saved. The plan was not changed.',
+                        'scene': scene,
+                    }
+            except InvestorDeckError as exc:
+                status_code, payload = 400, {'error': str(exc)}
+            except Exception as exc:
+                status_code, payload = 500, {'error': str(exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
 
         # ========== SOLUTION VIDEO BLUEPRINTS ==========

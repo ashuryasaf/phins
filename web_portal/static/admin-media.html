@@ -1152,6 +1152,7 @@
     <div class="main-container">
         <!-- Main Navigation Tabs -->
         <div class="main-tabs" role="tablist" aria-label="Media Dashboard Sections">
+            <button class="main-tab" data-tab="investor-deck" onclick="switchMainTab('investor-deck')" role="tab">Investor Deck Lab</button>
             <button class="main-tab active" data-tab="media" onclick="switchMainTab('media')" role="tab">Media</button>
             <button class="main-tab" data-tab="solution-views" onclick="switchMainTab('solution-views')" role="tab">Solution Views</button>
             <button class="main-tab" data-tab="customer-relations" onclick="switchMainTab('customer-relations')" role="tab">Customer relations</button>
@@ -1775,6 +1776,10 @@ Notes:
         </div><!-- End Video Agents Tab -->
 
         <!-- Design Tab Content -->
+        <div id="tab-investor-deck" class="tab-content" style="display: none;">
+            <div id="investor-deck-lab"></div>
+        </div>
+
         <div id="tab-solution-views" class="tab-content" style="display: none;">
             <section class="assignments-section solution-views-assignments">
                 <h2>Solution walkthroughs</h2>
@@ -2402,6 +2407,7 @@ Notes:
     <!-- Toast Container -->
     <div class="toast-container" id="toast-container"></div>
     
+    <script src="/investor-deck-lab.js"></script>
     <script>
         // ==================== STATE ====================
         let mediaAssets = [];
@@ -2549,7 +2555,7 @@ Notes:
         // textContent.  Iframe-backed tabs lazy-load on first activation to
         // keep the dashboard fast and to avoid spawning embedded sub-pages
         // that the operator never opens.
-        const VALID_MAIN_TABS = ['media', 'solution-views', 'customer-relations', 'growth-agent', 'video-agents', 'design', 'layout', 'branding'];
+        const VALID_MAIN_TABS = ['investor-deck', 'media', 'solution-views', 'customer-relations', 'growth-agent', 'video-agents', 'design', 'layout', 'branding'];
 
         function switchMainTab(tabName, options = {}) {
             const updateHash = options.updateHash !== false;
@@ -2572,6 +2578,12 @@ Notes:
                 hydrateEmbeddedFrame(panel);
             }
 
+            if (tabName === 'investor-deck' && window.InvestorDeckLab) {
+                InvestorDeckLab.mount(document.getElementById('investor-deck-lab'), {
+                    mode: 'edit',
+                    images: function () { return mediaAssets; }
+                });
+            }
             if (tabName === 'solution-views') {
                 loadSolutionBlueprints();
             }
@@ -2619,7 +2631,9 @@ Notes:
 
         function resolveInitialTab() {
             const raw = (window.location.hash || '').replace(/^#/, '').trim().toLowerCase();
-            const candidate = raw === 'growth' ? 'growth-agent'
+            const candidate = raw === 'deck' ? 'investor-deck'
+                            : raw === 'investor' ? 'investor-deck'
+                            : raw === 'growth' ? 'growth-agent'
                             : raw === 'join' ? 'customer-relations'
                             : raw === 'customer' ? 'customer-relations'
                             : raw === 'solutions' ? 'solution-views'
@@ -2709,6 +2723,9 @@ Notes:
                     const data = await response.json();
                     mediaAssets = Array.isArray(data) ? data : (data.assets || []);
                     mediaLibraryReady = true;
+                    if (currentMainTab === 'investor-deck' && window.InvestorDeckLab && InvestorDeckLab.syncImages) {
+                        InvestorDeckLab.syncImages(document.getElementById('investor-deck-lab'), function () { return mediaAssets; });
+                    }
                     renderMediaGrid();
                     updateStats();
                     populateAssignmentSelects();

@@ -2824,6 +2824,13 @@
             <a href="/investor-docs/phins-unified-business-plan.md" class="exec-dl-btn" style="background:rgba(255,255,255,0.1);color:#fff;border-color:rgba(255,255,255,0.3);">Markdown</a>
             <a href="/api/business-plan/model" class="exec-dl-btn" style="background:rgba(255,255,255,0.1);color:#fff;border-color:rgba(255,255,255,0.3);">Model JSON</a>
           </div>
+          <div id="investor-deck-film" style="margin-top:14px;"></div>
+          <script src="/investor-deck-lab.js"></script>
+          <script>
+            if (window.InvestorDeckLab) {
+              InvestorDeckLab.mount(document.getElementById('investor-deck-film'), { mode: 'watch' });
+            }
+          </script>
         </div>
 
         <div style="background:linear-gradient(135deg,#f3e8ff 0%,#fff 60%);border:2px solid var(--blue-mid);border-radius:14px;padding:18px;box-shadow:var(--shadow);grid-column:1/-1;">
