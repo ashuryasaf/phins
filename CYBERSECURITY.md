@@ -55,6 +55,31 @@ Flows that revoke tokens:
   the current one, so the actor remains logged in on their current device.
 - Admin IP-block flows indirectly invalidate future logins via the lockout
   counter (not via token revocation).
+- `POST /api/security/crisis/drop-all/confirm` (admin, after
+  `.../request`): closes every open session, including the admin who
+  confirmed it. v2 tokens carry `gen`. The drop advances a checksummed
+  generation (`services/cyber_crisis.py`) and any token from an earlier
+  generation stops validating, which is what makes a stateless session die
+  the way a restart would. The one-time code is purpose `crisis_lockdown`
+  from the OTP service, bound to that admin, and consumed once. The generic
+  OTP route cannot mint it. Customer, policy, claim, and billing records
+  are fingerprinted before and after and are not written. The journal entry
+  is sealed before the generation moves; if that seal fails, nothing is
+  closed. A checksum mismatch on the journal refuses the next drop until an
+  admin reseals it (the broken file is kept). Set `PHINS_CRISIS_OTP_EMAIL`
+  when the admin username is not an email address.
+
+### 2.2.1 Cyber autopilot
+
+`/cyber-security.html` runs a 24/7 assessment of the same pipeline (edge
+controls, detection signals, session generation, crisis journal). Each
+assessment is a hash-chained record. An unchanged input inside
+`PHINS_CYBER_AUTOPILOT_CADENCE_SECONDS` (default 60) reuses the previous
+record instead of writing another. The autopilot never closes sessions. A
+high score tells the operator to use Drop all. Pause it with
+`POST /api/security/autopilot` `{"mode":"off"}`. The background thread is
+on unless `PHINS_TEST_MODE` is set or `PHINS_CYBER_AUTOPILOT_THREAD` is
+false. State lives in `PHINS_CYBER_CRISIS_DIR`.
 
 ### 2.3 Password storage
 

@@ -600,6 +600,110 @@
       background: rgba(0,212,255,0.2);
     }
 
+    .crisis-box {
+      border: 1px solid rgba(255, 68, 68, 0.35);
+      background: rgba(255, 68, 68, 0.06);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+
+    .crisis-title {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      margin-bottom: 6px;
+    }
+
+    .crisis-copy {
+      color: var(--cyber-muted);
+      font-size: 0.8rem;
+      line-height: 1.5;
+      margin-bottom: 10px;
+    }
+
+    .crisis-check {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      font-size: 0.78rem;
+      margin-bottom: 10px;
+    }
+
+    .crisis-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .crisis-btn {
+      background: rgba(0, 212, 255, 0.1);
+      border: 1px solid var(--cyber-border);
+      color: var(--cyber-accent);
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      font-weight: 600;
+      font-family: inherit;
+    }
+
+    .crisis-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .crisis-btn-danger {
+      background: rgba(255, 68, 68, 0.15);
+      border-color: rgba(255, 68, 68, 0.5);
+      color: #ffb4b4;
+    }
+
+    .crisis-step label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--cyber-muted);
+      margin-bottom: 8px;
+    }
+
+    .crisis-step input[type="text"] {
+      display: block;
+      margin-top: 4px;
+      width: 140px;
+      background: var(--cyber-bg);
+      color: var(--cyber-text);
+      border: 1px solid var(--cyber-border);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .crisis-message {
+      font-size: 0.75rem;
+      line-height: 1.45;
+      min-height: 1em;
+    }
+
+    .pipeline-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 8px 0;
+    }
+
+    .pipeline-chip {
+      font-size: 0.68rem;
+      border-radius: 999px;
+      padding: 3px 8px;
+      border: 1px solid var(--cyber-border);
+      color: var(--cyber-muted);
+    }
+
+    .pipeline-chip.up { color: var(--cyber-green); border-color: rgba(0,255,136,0.35); }
+    .pipeline-chip.watch { color: var(--cyber-orange); border-color: rgba(255,170,0,0.4); }
+    .pipeline-chip.down { color: var(--cyber-red); border-color: rgba(255,68,68,0.45); }
+
     /* Empty state */
     .empty-state {
       text-align: center;
@@ -650,6 +754,7 @@
       <a href="#ai-report" class="active">AI Report</a>
       <a href="#threats">Threats</a>
       <a href="#logins">Logins</a>
+      <a href="#autopilot">Autopilot</a>
       <a href="#applications">Applications</a>
       <a href="#suppliers">Suppliers</a>
       <a href="#firewall">Firewall</a>
@@ -729,7 +834,44 @@
         <span class="panel-badge badge-count" id="login-count">0</span>
       </div>
       <div class="panel-body">
+        <div class="crisis-box" id="crisis-drop">
+          <div class="crisis-title">Drop all sessions</div>
+          <p class="crisis-copy">Closes every open session, including yours, the way a restart does. Policies, claims, billing, and customer records stay as they are. The one-time code is issued by the verification service and works once.</p>
+          <label class="crisis-check">
+            <input type="checkbox" id="crisis-ack">
+            <span>I understand this signs me out as well.</span>
+          </label>
+          <div class="crisis-actions">
+            <button type="button" class="crisis-btn" id="crisis-request" disabled>Send one-time code</button>
+          </div>
+          <div id="crisis-step2" class="crisis-step" hidden>
+            <label>One-time code
+              <input id="crisis-otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8">
+            </label>
+            <button type="button" class="crisis-btn crisis-btn-danger" id="crisis-confirm">Drop all sessions</button>
+          </div>
+          <div id="crisis-message" class="crisis-message"></div>
+          <div id="crisis-meta" class="crisis-copy"></div>
+        </div>
         <div id="login-log"></div>
+      </div>
+    </div>
+
+    <div class="panel" id="autopilot">
+      <div class="panel-header">
+        <div class="panel-title">Autopilot <span class="panel-badge badge-live" id="autopilot-badge">24/7</span></div>
+        <span class="panel-badge badge-count" id="autopilot-score">—</span>
+      </div>
+      <div class="panel-body">
+        <p class="crisis-copy">Continuous assessment across the security pipeline. Each record is checksummed against the one before it. Autopilot does not close sessions. A high score is the signal to use Drop all.</p>
+        <div id="autopilot-status"></div>
+        <div class="crisis-actions">
+          <button type="button" class="crisis-btn" id="autopilot-on">Assess</button>
+          <button type="button" class="crisis-btn" id="autopilot-off">Pause</button>
+          <button type="button" class="crisis-btn" id="autopilot-reseal" hidden>Reseal assessment chain</button>
+          <button type="button" class="crisis-btn" id="journal-reseal" hidden>Reseal crisis journal</button>
+        </div>
+        <div id="autopilot-message" class="crisis-message"></div>
       </div>
     </div>
 
@@ -984,6 +1126,8 @@ function renderDashboard(data) {
 
   // Login Activity
   renderLoginActivity(login, data);
+  renderCrisisStatus(safeObj(data.crisis));
+  renderAutopilot(safeObj(data.autopilot));
 
   // Applications
   document.getElementById('app-count').textContent = apps.total_applications || 0;
@@ -1121,6 +1265,174 @@ function renderLoginActivity(login, data) {
       <div class="log-detail">${e.text}</div>
     </div>
   `).join('');
+}
+
+function esc(value) {
+  return safeStr(value).replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+function renderCrisisStatus(crisis) {
+  const meta = document.getElementById('crisis-meta');
+  if (!meta) return;
+  const generation = safeNum(crisis.generation);
+  const journal = crisis.journal_intact === false ? 'journal checksum failed' : 'journal intact';
+  const generationState = crisis.generation_intact === false ? 'generation checksum failed' : 'generation intact';
+  meta.textContent = `Session generation ${generation}. ${generationState}. ${journal}. Business records are not closed by this command.`;
+  const journalBtn = document.getElementById('journal-reseal');
+  if (journalBtn) journalBtn.hidden = crisis.journal_intact !== false;
+}
+
+function renderAutopilot(autopilot) {
+  const el = document.getElementById('autopilot-status');
+  if (!el) return;
+  const mode = safeStr(autopilot.mode) || 'assess';
+  const badge = document.getElementById('autopilot-badge');
+  if (badge) badge.textContent = mode === 'assess' ? '24/7' : 'PAUSED';
+  const scoreEl = document.getElementById('autopilot-score');
+  const record = autopilot.risk_level ? autopilot : safeObj(autopilot.last);
+  const score = record.risk_score == null ? '—' : safeNum(record.risk_score);
+  const level = safeStr(record.risk_level || '');
+  if (scoreEl) scoreEl.textContent = level ? `${level} ${score}` : String(score);
+  const pipeline = safeObj(record.pipeline);
+  const chips = Object.entries(pipeline).map(([name, state]) => {
+    const kind = ['up', 'watch', 'down'].includes(safeStr(state)) ? safeStr(state) : 'watch';
+    return `<span class="pipeline-chip ${kind}">${esc(name.replace(/_/g, ' '))} ${esc(kind)}</span>`;
+  }).join('');
+  const findingSource = safeArr(autopilot.findings).length ? autopilot.findings : record.findings;
+  const findings = safeArr(findingSource).slice(0, 6).map(item =>
+    `<div class="ai-finding">${esc(item)}</div>`
+  ).join('');
+  const recommendations = safeArr(record.recommendations).slice(0, 4).map(item =>
+    `<div class="ai-rec">${esc(item)}</div>`
+  ).join('');
+  const held = autopilot.coalesced ? 'Unchanged since the last pass.' : '';
+  const chain = autopilot.chain_intact === false ? 'Assessment chain checksum failed.' : 'Assessment chain intact.';
+  el.innerHTML = `
+    <div class="log-detail">${esc(chain)} ${esc(held)}</div>
+    <div class="pipeline-row">${chips || '<span class="pipeline-chip">waiting for the first pass</span>'}</div>
+    ${findings}
+    ${recommendations}
+  `;
+  const reseal = document.getElementById('autopilot-reseal');
+  if (reseal) reseal.hidden = autopilot.chain_intact !== false;
+}
+
+let crisisVerificationId = '';
+
+function crisisMessage(text, ok) {
+  const el = document.getElementById('crisis-message');
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.color = ok ? 'var(--cyber-green)' : 'var(--cyber-orange)';
+}
+
+async function requestCrisisDrop() {
+  const button = document.getElementById('crisis-request');
+  button.disabled = true;
+  crisisMessage('Requesting a one-time code…', true);
+  try {
+    const res = await fetch('/api/security/crisis/drop-all/request', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const data = await res.json();
+    if (!res.ok || data.success === false) {
+      crisisMessage(data.error || 'The code could not be issued.', false);
+      button.disabled = !document.getElementById('crisis-ack').checked;
+      return;
+    }
+    crisisVerificationId = data.verification_id || '';
+    document.getElementById('crisis-step2').hidden = false;
+    const input = document.getElementById('crisis-otp');
+    if (data.demo_otp_code) input.value = data.demo_otp_code;
+    const where = data.masked_email ? ` Sent to ${data.masked_email}.` : '';
+    crisisMessage(`Code issued.${where} Confirming closes every session, including this one.`, true);
+  } catch (err) {
+    crisisMessage(err.message || 'The code request failed.', false);
+    button.disabled = !document.getElementById('crisis-ack').checked;
+  }
+}
+
+async function confirmCrisisDrop() {
+  const button = document.getElementById('crisis-confirm');
+  if (!document.getElementById('crisis-ack').checked) {
+    crisisMessage('Confirm that this signs you out as well.', false);
+    return;
+  }
+  if (!crisisVerificationId) {
+    crisisMessage('Request a one-time code first.', false);
+    return;
+  }
+  button.disabled = true;
+  crisisMessage('Verifying the code and closing sessions…', true);
+  try {
+    const res = await fetch('/api/security/crisis/drop-all/confirm', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        verification_id: crisisVerificationId,
+        otp_code: document.getElementById('crisis-otp').value.trim(),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.dropped) {
+      crisisMessage(data.error || 'The drop was refused. Sessions are still open.', false);
+      button.disabled = false;
+      return;
+    }
+    const intact = data.integrity_intact === false
+      ? ' Business-record fingerprint changed during the drop; review it.'
+      : ' Business records were not modified.';
+    crisisMessage(`Closed ${safeNum(data.sessions_dropped)} session(s), including this one.${intact}`, true);
+    localStorage.removeItem('phins_token');
+    window.location.href = '/login.html';
+  } catch (err) {
+    crisisMessage(err.message || 'The drop did not complete.', false);
+    button.disabled = false;
+  }
+}
+
+async function setAutopilotMode(mode) {
+  const message = document.getElementById('autopilot-message');
+  try {
+    const res = await fetch('/api/security/autopilot', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      message.textContent = data.error || 'Autopilot mode was not saved.';
+      return;
+    }
+    message.textContent = mode === 'assess'
+      ? 'Autopilot is assessing the pipeline.'
+      : 'Autopilot is paused. It will not record new assessments.';
+    loadDashboard();
+  } catch (err) {
+    message.textContent = err.message || 'Autopilot mode was not saved.';
+  }
+}
+
+async function resealAutopilot(target) {
+  const message = document.getElementById('autopilot-message');
+  try {
+    const res = await fetch('/api/security/autopilot', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reseal', target }),
+    });
+    const data = await res.json();
+    message.textContent = data.archive
+      ? `Previous chain kept as ${data.archive}.`
+      : (data.error || 'Reseal finished.');
+    loadDashboard();
+  } catch (err) {
+    message.textContent = err.message || 'Reseal did not finish.';
+  }
 }
 
 function renderApplications(apps) {
@@ -1355,6 +1667,16 @@ document.querySelectorAll('.cyber-nav a[href^="#"]').forEach(link => {
     link.classList.add('active');
   });
 });
+
+document.getElementById('crisis-ack').addEventListener('change', (event) => {
+  document.getElementById('crisis-request').disabled = !event.target.checked;
+});
+document.getElementById('crisis-request').addEventListener('click', requestCrisisDrop);
+document.getElementById('crisis-confirm').addEventListener('click', confirmCrisisDrop);
+document.getElementById('autopilot-on').addEventListener('click', () => setAutopilotMode('assess'));
+document.getElementById('autopilot-off').addEventListener('click', () => setAutopilotMode('off'));
+document.getElementById('autopilot-reseal').addEventListener('click', () => resealAutopilot('autopilot'));
+document.getElementById('journal-reseal').addEventListener('click', () => resealAutopilot('journal'));
 
 // Initial load
 loadDashboard();

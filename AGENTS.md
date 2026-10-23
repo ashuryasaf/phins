@@ -863,6 +863,20 @@ Environment variables commonly used:
 - **Security:** `SESSION_SECRET_KEY`, `PHINS_ENCRYPTION_KEY`,
   `PHINS_ENFORCE_SECRET_POLICY`, `PHINS_EMERGENCY_UNLOCK_KEY`,
   `ALLOW_LEGACY_DEMO_PASSWORDS`
+- **Cyber crisis drop / autopilot:** admin Login Activity on
+  `/cyber-security.html`. `POST /api/security/crisis/drop-all/request` then
+  `.../confirm` with the OTP service (`crisis_lockdown`, one use). The drop
+  advances a checksummed session generation and closes every open session,
+  including the admin who confirmed it. Customer, policy, claim, and billing
+  records are only fingerprinted. A broken crisis journal refuses the drop
+  until an admin reseals it. `PHINS_CRISIS_OTP_EMAIL` is the code address
+  when the admin username is not an email. `PHINS_CYBER_CRISIS_DIR` holds
+  the generation file, journal, and autopilot chain. Autopilot
+  (`GET`/`POST /api/security/autopilot`, mode `assess` or `off`,
+  `PHINS_CYBER_AUTOPILOT_CADENCE_SECONDS`, `PHINS_CYBER_AUTOPILOT_THREAD`)
+  is a read-only 24/7 pipeline assessment and does not close sessions.
+  With the database on, the generation is also an `agent_artifacts` row
+  (`cyber-crisis-session-generation`) so other instances see the drop.
 - **Customer identity (personal ID + nationality):**
   `PHINS_IDENTITY_REQUIRED` (strict gate on applications/claims; defaults
   on except under `PHINS_TEST_MODE`), `PHINS_IDENTITY_HASH_KEY` (explicit

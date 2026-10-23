@@ -92,6 +92,9 @@ class OTPPurpose(str, Enum):
     PHONE_VERIFICATION = "phone_verification"
     TRANSACTION = "transaction"
     DEVICE_VERIFICATION = "device_verification"
+    # Crisis control on the cyber desk. A login or reset code cannot
+    # satisfy this purpose; the drop-all route consumes it once.
+    CRISIS_LOCKDOWN = "crisis_lockdown"
 
 
 class ChallengeType(str, Enum):
