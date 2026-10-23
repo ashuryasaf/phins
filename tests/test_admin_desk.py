@@ -44,7 +44,7 @@ def test_seed_mailbox_is_disabled_and_hides_the_secret():
 
 def test_other_desks_are_slots_on_the_same_registry():
     rows = {row["desk"]: row for row in desk.list_mailboxes("admin")}
-    assert set(rows) == {"admin", "actuary", "underwriting", "claims", "accountant", "compliance"}
+    assert set(rows) == {"admin", "actuary", "underwriting", "claims", "accountant", "compliance", "development"}
     assert rows["actuary"]["address"] == ""
     assert rows["claims"]["signature_id"] == "sig-claims-v1"
 
@@ -393,6 +393,114 @@ def test_only_an_admin_can_save_a_mailbox_password():
     assert raised.value.status == 403
 
 
+def test_pipeline_network_hides_secrets_and_customer_names_from_an_actuary():
+    from services.admin_desk_network import desk_for_role, project_directory
+    assert desk_for_role("actuary") == "actuary"
+    assert desk_for_role("development") == "development"
+    for role_name, desk_name in desk._ROLE_DESK.items():
+        assert desk_for_role(role_name) == desk_name
+    directory = [
+        {"username": "actuary", "name": "Actuary User", "role": "actuary", "online": True},
+        {"username": "underwriter", "name": "John Underwriter", "role": "underwriter"},
+        {"username": "asaf@phins.ai", "name": "Asaf PHINS", "role": "admin", "hash": "secret-hash-value"},
+        {"username": "efrat@phins.ai", "name": "Efrat PHINS", "role": "customer", "password": "secret-password-value"},
+    ]
+    admin_view = project_directory(directory, "admin")
+    assert any(user["username"] == "efrat@phins.ai" for user in admin_view["users"])
+    assert "secret-hash-value" not in json.dumps(admin_view)
+    assert "secret-password-value" not in json.dumps(admin_view)
+    actuary_view = project_directory(directory, "actuary")
+    names = [user["username"] for user in actuary_view["users"]]
+    assert "efrat@phins.ai" not in names
+    assert "underwriter" in names
+    assert actuary_view["stage_counts"]["customer"] == 1
+    assert "underwriting" in actuary_view["share_targets"]
+    assert "development" in actuary_view["share_targets"]
+    assert "admin" in actuary_view["share_targets"]
+    assert "customer" not in actuary_view["share_targets"]
+
+
+def test_share_to_desk_is_immutable_and_scoped():
+    sent = desk.create_share(
+        "underwriting", "Brief", "A read", "Review the meeting note.",
+        "actuary", "actuary", client_key="brief-1",
+    )
+    assert sent["from_desk"] == "actuary"
+    assert sent["to_desk"] == "underwriting"
+    assert sent["body_sha256"]
+    again = desk.create_share(
+        "underwriting", "Brief", "A read", "Review the meeting note.",
+        "actuary", "actuary", client_key="brief-1",
+    )
+    assert again["checksum"] == sent["checksum"]
+    with pytest.raises(desk.DeskError) as raised:
+        desk.create_share(
+            "underwriting", "Brief", "A read", "A different note.",
+            "actuary", "actuary", client_key="brief-1",
+        )
+    assert raised.value.status == 409
+    stored = desk._read(desk._store(), sent["id"])
+    assert stored["body"] == "Review the meeting note."
+    with pytest.raises(desk.DeskError) as raised:
+        desk.create_share("customer", "No", "No", "Do not send this.", "actuary", "actuary")
+    assert raised.value.status == 403
+    with pytest.raises(desk.DeskError) as raised:
+        desk.create_share("underwriting", "Secret", "No", "password: hunter2", "actuary", "actuary")
+    assert raised.value.status == 400
+    visible = [row["id"] for row in desk.list_shares("underwriter")]
+    assert sent["id"] in visible
+    hidden = [row["id"] for row in desk.list_shares("claims_adjuster")]
+    assert sent["id"] not in hidden
+    with pytest.raises(desk.DeskError) as raised:
+        desk.acknowledge_share(sent["id"], "actuary", "actuary")
+    assert raised.value.status == 403
+    ack = desk.acknowledge_share(sent["id"], "underwriter", "underwriter")
+    second = desk.acknowledge_share(sent["id"], "underwriter", "underwriter")
+    assert second["checksum"] == ack["checksum"]
+    assert desk._read(desk._store(), sent["id"])["checksum"] == sent["checksum"]
+
+
+def test_next_move_comes_from_the_meeting_and_the_share():
+    moves = desk.next_moves("actuary", today="2026-10-23")
+    assert moves["advisory"] is True
+    assert moves["writes_ledger"] is False
+    texts = [item["text"] for item in moves["moves"]]
+    assert any("Investor meeting" in text and "2026-06-11" in text for text in texts)
+    share = desk.create_share(
+        "underwriting", "Capital question", "Before Thursday", "Read the brief only.",
+        "actuary", "actuary",
+    )
+    underwriter = desk.next_moves("underwriter", today="2026-10-23")
+    assert any(item["source_id"] == share["id"] and item["kind"] == "answer_share" for item in underwriter["moves"])
+    desk.acknowledge_share(share["id"], "underwriter", "underwriter")
+    cleared = desk.next_moves("underwriter", today="2026-10-23")
+    assert all(item["source_id"] != share["id"] for item in cleared["moves"])
+    store = desk._store()
+    tampered = dict(desk._read(store, "diary-seed-02"))
+    tampered["purpose"] = "changed"
+    store["diary-seed-02"] = tampered
+    after = desk.next_moves("admin", today="2026-10-23")
+    assert all(item["source_id"] != "diary-seed-02" for item in after["moves"])
+
+
+def test_unauthorized_use_is_counted_from_denials_only():
+    from services.admin_desk_network import note_access_denial, reset_denials, unauthorized_report
+    reset_denials()
+    for _ in range(3):
+        note_access_denial("customer-1", "customer", "GET", "/api/admin/customers?token=secret", "Access denied")
+    note_access_denial("underwriter", "underwriter", "POST", "/api/health-wallet/deposit", "Access denied")
+    report = unauthorized_report(failed_logins={"ada": {"count": 3, "locked": False}}, malicious_count=0)
+    kinds = {item["kind"] for item in report["anomalies"]}
+    assert "repeated_access_denial" in kinds
+    assert "customer_private_reach" in kinds
+    assert "login_failure_burst" in kinds
+    blob = json.dumps(report)
+    assert "secret" not in blob
+    assert "token=" not in blob
+    again = unauthorized_report(failed_logins={"ada": {"count": 3}}, malicious_count=0)
+    assert again["checksum"] == report["checksum"]
+
+
 def test_http_desk_scopes_mailboxes_and_serves_the_page():
     desk.reset_for_tests()
     admin = _login("admin", "admin123")
@@ -403,8 +511,11 @@ def test_http_desk_scopes_mailboxes_and_serves_the_page():
     assert "PHINS Admin Desk" in page
     assert "Save password" in page
     assert "auth_failed" in page and "probe_failed" in page
+    assert "Share to desk" in page
+    assert "Next move" in page
     status, body = _http("GET", "/api/admin/ai-agents/desk", token=admin)
     assert body["can_manage_mail"] is True
+    assert body["can_edit_diary"] is True
     assert status == 200
     assert any(row["address"] == "asaf@phins.ai" and row["enabled"] is False for row in body["mailboxes"])
     actuary = _login("actuary", "actuary123")
@@ -430,3 +541,36 @@ def test_http_desk_scopes_mailboxes_and_serves_the_page():
     )
     assert status == 403
     assert "desk-mail-password" not in json.dumps(denied)
+    status, shared = _http(
+        "POST", "/api/admin/ai-agents/desk/shares", token=actuary,
+        payload={"to_desk": "underwriting", "subject": "Capital brief", "need": "A read",
+                 "body": "Review the meeting note only.", "client_key": "http-brief"},
+    )
+    assert status == 200, shared
+    assert shared["from_desk"] == "actuary"
+    underwriter = _login("underwriter", "under123")
+    status, uw = _http("GET", "/api/admin/ai-agents/desk", token=underwriter)
+    assert status == 200, uw
+    assert any(row["id"] == shared["id"] for row in uw["shares"])
+    claims = _login("claims_adjuster", "claims123")
+    status, claims_desk = _http("GET", "/api/admin/ai-agents/desk", token=claims)
+    assert status == 200, claims_desk
+    assert all(row["id"] != shared["id"] for row in claims_desk["shares"])
+    assert "Capital brief" not in json.dumps(claims_desk)
+    status, actuary_desk = _http("GET", "/api/admin/ai-agents/desk", token=actuary)
+    assert all(user["role"] != "customer" for user in actuary_desk["network"]["users"])
+    assert actuary_desk["network"]["stage_counts"]["customer"] >= 1
+    assert any("Investor meeting" in move["text"] for move in actuary_desk["next_moves"]["moves"])
+    assert any(row.get("counterparty") == "Investor meeting" for row in actuary_desk["diary"])
+    assert actuary_desk["can_edit_diary"] is False
+    for _ in range(3):
+        status, denied_cyber = _http("GET", "/api/security/dashboard", token=actuary)
+        assert status == 403
+    status, cyber = _http("GET", "/api/security/dashboard", token=admin)
+    assert status == 200, cyber
+    anomalies = cyber["unauthorized_use"]["anomalies"]
+    assert any(
+        item["kind"] == "repeated_access_denial"
+        and item["subject"] == "actuary GET /api/security/dashboard"
+        for item in anomalies
+    )

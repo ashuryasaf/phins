@@ -111,6 +111,12 @@ os.environ.setdefault(
     "PHINS_ADMIN_DESK_MAIL_VAULT_PATH",
     str(Path(tempfile.gettempdir()) / f"phins_test_mail_vault_{os.getpid()}.json"),
 )
+# Crisis session-generation and autopilot chains are checksummed files.
+# Keep them out of the checkout and out of a dev server's default temp name.
+os.environ.setdefault(
+    "PHINS_CYBER_CRISIS_DIR",
+    str(Path(tempfile.gettempdir()) / f"phins_test_cyber_crisis_{os.getpid()}"),
+)
 
 
 _httpd = None

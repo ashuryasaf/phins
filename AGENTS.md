@@ -299,7 +299,7 @@ Preferred file-by-task:
 | Assessment center API | `web_portal/api_assessment_center.py`, `services/assessment_center_service.py` |
 | Chat intake (Phin, policy or claim) | `services/chat_application_service.py` or `services/claims_chat_service.py`, then `web_portal/api_chat_application.py` / `api_claims_chat.py` |
 | Customer identity (ID + nationality) | `services/customer_identity_service.py` (one writer), `web_portal/api_customer_identity.py` |
-| Admin desk (mailboxes, diary, letters, tables) | `services/admin_desk_service.py`, `services/admin_desk_mail.py` (GoDaddy read-only attribution + one-time vault password), `web_portal/api_admin_desk.py`, `/admin-desk.html` |
+| Admin desk (mailboxes, diary, letters, tables, pipeline shares) | `services/admin_desk_service.py`, `services/admin_desk_network.py` (pipeline map, share-to-desk, meeting next move), `services/admin_desk_mail.py`, `web_portal/api_admin_desk.py`, `/admin-desk.html` |
 | Referral CAC / professional roles | `services/referral_reward_service.py`, `web_portal/api_referral_rewards.py`, `database/repositories/referral_reward_repository.py` |
 | Customer intro / invitation landing | `web_portal/static/join.html`; films `join_intro_*` on the media Customer relations tab; briefs in `services/solution_video_blueprints.py` (`JOIN_INTRO_OUTLINES`, `JOIN-` campaigns) |
 | Document archive / durability probe | `services/customer_document_vault_service.py`, `services/document_durability_agent.py` |
@@ -822,7 +822,14 @@ Environment variables commonly used:
   mailbox. Microsoft 365 mail keeps the saved password in the vault and does
   not send it to IMAP. GoDaddy Email / Titan logs in once at
   `imap.secureserver.net:993`. Send stays refused until a provider adapter
-  is connected. The desk page is `/admin-desk.html`.
+  is connected. Share-to-desk is a direct channel among associate desks
+  (admin, development, actuary, underwriting, claims, accountant, compliance).
+  A share is checksummed and immutable; an acknowledgement is a second record.
+  The next move is read from intact diary rows and unanswered shares and does
+  not write the ledger. Customers and the regulator stay on the pipeline map
+  and do not receive those shares. `/cyber-security.html` reads
+  `unauthorized_use` on `GET /api/security/dashboard` (denial ring, login
+  bursts, malicious-attempt count). The desk page is `/admin-desk.html`.
 - **Transcription:** `PHINS_TRANSCRIPTION_PROVIDER`
  (`openai_compatible`|`disabled`), `PHINS_TRANSCRIPTION_ENDPOINT`,
  `PHINS_TRANSCRIPTION_API_KEY`, `PHINS_TRANSCRIPTION_MODEL`
@@ -877,6 +884,20 @@ Environment variables commonly used:
 - **Security:** `SESSION_SECRET_KEY`, `PHINS_ENCRYPTION_KEY`,
   `PHINS_ENFORCE_SECRET_POLICY`, `PHINS_EMERGENCY_UNLOCK_KEY`,
   `ALLOW_LEGACY_DEMO_PASSWORDS`
+- **Cyber crisis drop / autopilot:** admin Login Activity on
+  `/cyber-security.html`. `POST /api/security/crisis/drop-all/request` then
+  `.../confirm` with the OTP service (`crisis_lockdown`, one use). The drop
+  advances a checksummed session generation and closes every open session,
+  including the admin who confirmed it. Customer, policy, claim, and billing
+  records are only fingerprinted. A broken crisis journal refuses the drop
+  until an admin reseals it. `PHINS_CRISIS_OTP_EMAIL` is the code address
+  when the admin username is not an email. `PHINS_CYBER_CRISIS_DIR` holds
+  the generation file, journal, and autopilot chain. Autopilot
+  (`GET`/`POST /api/security/autopilot`, mode `assess` or `off`,
+  `PHINS_CYBER_AUTOPILOT_CADENCE_SECONDS`, `PHINS_CYBER_AUTOPILOT_THREAD`)
+  is a read-only 24/7 pipeline assessment and does not close sessions.
+  With the database on, the generation is also an `agent_artifacts` row
+  (`cyber-crisis-session-generation`) so other instances see the drop.
 - **Customer identity (personal ID + nationality):**
   `PHINS_IDENTITY_REQUIRED` (strict gate on applications/claims; defaults
   on except under `PHINS_TEST_MODE`), `PHINS_IDENTITY_HASH_KEY` (explicit

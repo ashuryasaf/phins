@@ -919,6 +919,16 @@ def handle_otp_request(client_ip: str, body_data: Dict, user_agent: str = "") ->
             "error_code": "UNSUPPORTED_PURPOSE",
         }
 
+    # Crisis drop-all codes are minted only for the signed-in admin, on the
+    # cyber desk. This generic route trusts a caller-supplied email, so it
+    # must not issue that purpose.
+    if str(purpose).strip().lower() == 'crisis_lockdown':
+        return 400, {
+            "success": False,
+            "error": "Crisis lockdown codes are issued from the cyber security desk.",
+            "error_code": "UNSUPPORTED_PURPOSE",
+        }
+
     # SMS / 'both' delivery is refused here for the same reason: this generic
     # endpoint identifies the subject solely by a caller-supplied email and
     # cannot prove the caller controls the supplied phone. Honouring a
@@ -4490,6 +4500,191 @@ def dispatch_storyboard_post(path: str, session: Optional[Dict], body: Dict) -> 
 # ROUTE DISPATCHER
 # ============================================================================
 
+def _crisis_role_guard(session: Optional[Dict]) -> Optional[Tuple[int, Dict]]:
+    if not session:
+        return 401, {"error": "Authentication required"}
+    if str(session.get("role") or "").lower() != "admin":
+        return 403, {"error": "Admin access required"}
+    return None
+
+
+def _crisis_admin_email(session: Dict) -> str:
+    """Address that receives the drop-all code. Never taken from the request body."""
+    username = str(session.get("username") or "").strip()
+    user: Dict[str, Any] = {}
+    try:
+        user = _portal_module().USERS.get(username) or {}
+    except Exception:
+        user = {}
+    if not isinstance(user, dict):
+        user = {}
+    email = str(user.get("email") or "").strip()
+    if "@" in email:
+        return email
+    if "@" in username:
+        return username
+    configured = (os.environ.get("PHINS_CRISIS_OTP_EMAIL") or "").strip()
+    if "@" in configured:
+        return configured
+    if str(os.environ.get("PHINS_TEST_MODE", "")).lower() in ("1", "true", "yes", "y"):
+        safe = "".join(ch for ch in username if ch.isalnum() or ch in "._-") or "admin"
+        return f"{safe}@phins.local"
+    return ""
+
+
+def handle_crisis_drop_request(
+    session: Dict, client_ip: str, user_agent: str = "",
+) -> Tuple[int, Dict]:
+    """POST /api/security/crisis/drop-all/request — mint the crisis OTP."""
+    denied = _crisis_role_guard(session)
+    if denied:
+        return denied
+    if not OTP_SERVICE_AVAILABLE:
+        return 503, {"error": "OTP security service not available"}
+    email = _crisis_admin_email(session)
+    if not email:
+        return 409, {
+            "error": "No crisis verification address is configured for this admin",
+            "code": "crisis_contact_unavailable",
+        }
+    username = str(session.get("username") or "")
+    service = get_otp_security_service()
+    result = service.create_otp_verification(
+        user_type="staff",
+        user_id=username,
+        email=email,
+        purpose=OTPPurpose.CRISIS_LOCKDOWN,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        delivery_channel="email",
+    )
+    if not result.success:
+        return 400, {
+            "success": False,
+            "error": result.message or "Could not issue a crisis code",
+            "code": result.error_code,
+        }
+    try:
+        from services.cyber_crisis import get_crisis_center
+        get_crisis_center().bind_challenge(result.verification_id, username, email)
+    except Exception:
+        return 503, {"error": "Crisis control is unavailable", "code": "crisis_unavailable"}
+
+    response_data, otp_code, _delivery = _prepare_otp_client_response(result.to_dict())
+    sent = False
+    send_error = None
+    if otp_code:
+        sent, send_error = _send_otp_via_channel(
+            delivery_channel="email",
+            otp_code=otp_code,
+            expiry_seconds=int(response_data.get("expires_in_seconds") or 300),
+            purpose="crisis_lockdown",
+            email=email,
+            phone=None,
+            ip_address=client_ip,
+            verification_id=result.verification_id,
+        )
+    response_data["notification_sent"] = bool(sent)
+    response_data["purpose"] = "crisis_lockdown"
+    response_data["requester_included"] = True
+    if sent and send_error:
+        response_data["notification_error"] = send_error
+    if not sent and not _demo_otp_exposure_allowed():
+        response_data["success"] = False
+        response_data["error"] = "Unable to deliver the crisis code right now."
+        response_data["code"] = "OTP_DELIVERY_FAILED"
+        response_data.pop("demo_otp_code", None)
+        return 503, response_data
+    return 200, response_data
+
+
+def handle_crisis_drop_confirm(
+    session: Dict, body_data: Dict, client_ip: str,
+) -> Tuple[int, Dict]:
+    """POST /api/security/crisis/drop-all/confirm — OTP, then drop every session."""
+    denied = _crisis_role_guard(session)
+    if denied:
+        return denied
+    verification_id = str((body_data or {}).get("verification_id") or "").strip()
+    otp_code = str((body_data or {}).get("otp_code") or "").strip()
+    if not verification_id or not otp_code:
+        return 400, {"error": "verification_id and otp_code are required"}
+    email = _crisis_admin_email(session)
+    if not email:
+        return 409, {
+            "error": "No crisis verification address is configured for this admin",
+            "code": "crisis_contact_unavailable",
+        }
+    try:
+        portal = _portal_module()
+        result = portal.confirm_crisis_drop(
+            username=str(session.get("username") or ""),
+            email=email,
+            verification_id=verification_id,
+            otp_code=otp_code,
+            ip_address=client_ip,
+        )
+    except Exception:
+        logger.exception("crisis drop failed")
+        return 503, {"error": "Crisis drop could not be completed", "code": "crisis_unavailable"}
+    status = int(result.get("status") or (200 if result.get("ok") else 400))
+    if result.get("ok"):
+        public = {
+            key: value for key, value in result.items()
+            if key not in ("ok", "status")
+        }
+        return 200, public
+    return status, {
+        "error": result.get("error") or "Crisis drop was refused",
+        "code": result.get("code"),
+    }
+
+
+def handle_cyber_autopilot_get(session: Dict) -> Tuple[int, Dict]:
+    denied = _crisis_role_guard(session)
+    if denied:
+        return denied
+    try:
+        portal = _portal_module()
+        assessment = portal._cyber_autopilot_tick()
+    except Exception:
+        logger.exception("cyber autopilot tick failed")
+        return 503, {"error": "Autopilot assessment is unavailable"}
+    if assessment.get("ok") is False:
+        return int(assessment.get("status") or 503), {
+            "error": assessment.get("error") or "Autopilot assessment is unavailable",
+            "code": assessment.get("code"),
+        }
+    return 200, assessment
+
+
+def handle_cyber_autopilot_post(session: Dict, body_data: Dict) -> Tuple[int, Dict]:
+    denied = _crisis_role_guard(session)
+    if denied:
+        return denied
+    try:
+        from services.cyber_crisis import get_crisis_center
+        center = get_crisis_center()
+    except Exception:
+        return 503, {"error": "Autopilot is unavailable"}
+    action = str((body_data or {}).get("action") or "").strip().lower()
+    actor = str(session.get("username") or "")
+    if action == "reseal":
+        target = str((body_data or {}).get("target") or "autopilot").strip().lower()
+        if target == "journal":
+            result = center.reseal_journal(actor)
+        else:
+            result = center.reseal_autopilot(actor)
+        return 200, result
+    result = center.set_autopilot_mode(str((body_data or {}).get("mode") or ""))
+    if result.get("ok") is False:
+        return int(result.get("status") or 400), {
+            "error": result.get("error") or "Autopilot mode was refused",
+            "code": result.get("code"),
+        }
+    return 200, result
+
+
 def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -> Optional[Tuple[int, Dict]]:
     """
     Dispatch GET requests to appropriate handlers.
@@ -4503,6 +4698,9 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     desk_result = desk_get(path, session, query_params)
     if desk_result is not None:
         return desk_result
+
+    if path == '/api/security/autopilot':
+        return handle_cyber_autopilot_get(session)
 
     # Admin operations view over every registered software agent.
     if path == '/api/admin/ai-agents/health':
@@ -4737,6 +4935,15 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
     # Audited threshold promotion (A6) — the calibration loop's one mutating step.
     if path == AI_AGENTS_PROMOTE_PATH:
         return handle_ai_agent_threshold_promote(session, body_data)
+
+    if path == '/api/security/crisis/drop-all/request':
+        return handle_crisis_drop_request(session, client_ip, user_agent)
+
+    if path == '/api/security/crisis/drop-all/confirm':
+        return handle_crisis_drop_confirm(session, body_data, client_ip)
+
+    if path == '/api/security/autopilot':
+        return handle_cyber_autopilot_post(session, body_data)
 
     # Security: CAPTCHA
     if path == '/api/security/captcha':
