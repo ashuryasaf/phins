@@ -3755,6 +3755,12 @@
 
       const dataQuestion = adminAssistantIsDataQuestion(raw);
       const resolved = adminAssistantActionFromQuery(query);
+      // A named command still runs when those words also mark a desk
+      // question ("balance sheet", "ledger", "open media").
+      if (resolved?.actionId && !resolved.tabId) {
+        await adminAssistantRunAction(resolved.actionId);
+        return;
+      }
       if (!dataQuestion && resolved?.tabId) {
         adminAssistantSwitchTab(resolved.tabId);
         if (resolved.actionId) {
@@ -3762,11 +3768,6 @@
         } else {
           adminAssistantNavigateToTabSection();
         }
-        return;
-      }
-
-      if (!dataQuestion && resolved?.actionId) {
-        await adminAssistantRunAction(resolved.actionId);
         return;
       }
 

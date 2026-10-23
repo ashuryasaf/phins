@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
 from pathlib import Path
 
 from security.access_hierarchy import ACCESS_DENIED, api_denial, surface_decision
@@ -14,6 +15,7 @@ from services.actuarial_service import (
 )
 from services.adl3_disabled_life_expectancy import adl3_row_at, adl3_rows_for_tables
 from services.admin_ai_bi_service import (
+    _fmt_exact,
     answer_query,
     clear_reports,
     dashboard_catalog,
@@ -329,6 +331,52 @@ def test_post_extension_gate_includes_the_ai_bi_desk():
     assert "'/api/admin/ai-bi'" in content
 
 
+def test_exact_formatter_keeps_scientific_tokens():
+    assert _fmt_exact(None) == "withheld"
+    assert _fmt_exact(100000) == "100,000"
+    assert _fmt_exact(1.5) == "1.5"
+    assert _fmt_exact(1e-05) == "1e-05"
+    assert _fmt_exact(2e-06) == "2e-06"
+    assert _fmt_exact(-1e-05) == "-1e-05"
+    assert _fmt_exact(1.2e-05) == "1.2e-05"
+
+
+def test_tiny_population_cohort_answers_instead_of_crashing():
+    report = answer_query(QUESTION, variants={"population": 1})
+    assert report["facts"]["applied"]["population"] == 1
+    for lang in ("en", "he"):
+        extra = numbers_in(report["answer"][lang]) - numbers_in(report["facts"])
+        assert not extra, (lang, extra)
+    status, body = dispatch_post(
+        "/api/admin/ai-bi/query",
+        {"role": "admin", "username": "admin"},
+        {"question": QUESTION, "variants": {"population": 1}},
+    )
+    assert status == 200, body
+
+
+def test_calendar_year_is_not_parsed_as_population():
+    standard = (
+        "how many 85+ can be adl and for how many years they are expected to live"
+    )
+    year = answer_query(standard + " in 2026")
+    dated = answer_query("as of 2026-10-23, " + standard)
+    assert year["facts"]["applied"]["population"] == 100000
+    assert dated["facts"]["applied"]["population"] == 100000
+    sized = answer_query(
+        "how many 85+ of 50000 in 2026 can be adl "
+        "and for how many years they are expected to live"
+    )
+    assert sized["facts"]["applied"]["population"] == 50000
+    grouped = answer_query(
+        "how many 85+ of 100,000 can be adl "
+        "and for how many years they are expected to live"
+    )
+    assert grouped["facts"]["applied"]["population"] == 100000
+    overridden = answer_query(standard + " in 2026", variants={"population": 2026})
+    assert overridden["facts"]["applied"]["population"] == 2026
+
+
 def test_admin_mic_routes_data_questions_and_links_desks():
     content = ADMIN.read_text(encoding="utf-8")
     for needle in (
@@ -356,3 +404,76 @@ def test_admin_mic_routes_data_questions_and_links_desks():
     assert "Personal Health Insurance" in page
     assert "/api/admin/ai-bi/reports/" in page
     assert "facts_sha256" in page
+
+
+def _js_function(source: str, signature: str) -> str:
+    start = source.find(signature)
+    assert start >= 0, signature
+    brace = source.find("{", start)
+    depth = 0
+    for index in range(brace, len(source)):
+        char = source[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:index + 1]
+    raise AssertionError(signature)
+
+
+def test_mic_commands_win_over_overlapping_data_markers():
+    content = ADMIN.read_text(encoding="utf-8")
+    script = "\n".join((
+        _js_function(content, "function adminAssistantIsDataQuestion("),
+        _js_function(content, "function adminAssistantActionFromQuery("),
+        _js_function(content, "async function adminAssistantProcessQuery("),
+        """
+        const calls = [];
+        const input = { value: '' };
+        global.document = { getElementById: () => input };
+        global.adminAssistantSetStatus = (kind, text) => calls.push(['status', kind, text]);
+        global.adminAssistantRunAction = async (id) => calls.push(['action', id]);
+        global.adminAssistantSwitchTab = (id) => calls.push(['tab', id]);
+        global.adminAssistantNavigateToTabSection = () => calls.push(['navigate']);
+        global.adminAssistantAskData = async (raw) => calls.push(['data', raw]);
+        const cases = [
+          ['Reconcile balance sheet', 'action', 'reconcile_balance_sheet'],
+          ['Sync policy ledgers', 'action', 'sync_policy_ledgers'],
+          ['Sync claims ledger', 'action', 'sync_claims_ledger'],
+          ['Open media', 'action', 'open_media_dashboard'],
+          ['customer ledger', 'action', 'sync_customer_ledgers'],
+          ['how many 85+ of 100k can be ADL', 'data', 'how many 85+ of 100k can be ADL'],
+          ['what is the balance sheet', 'data', 'what is the balance sheet'],
+          ['activate media', 'data', 'activate media'],
+          ['balance sheet', 'data', 'balance sheet'],
+          ['refresh customers', 'tab', 'customers']
+        ];
+        const results = [];
+        for (const [text, kind, detail] of cases) {
+          calls.length = 0;
+          input.value = text;
+          await adminAssistantProcessQuery();
+          results.push({ text, kind, detail, calls: calls.slice() });
+        }
+        console.log(JSON.stringify(results));
+        """,
+    ))
+    completed = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    results = json.loads(completed.stdout)
+    for row in results:
+        kind = row["calls"][0][0]
+        assert kind == row["kind"], row
+        if row["kind"] == "action":
+            assert row["calls"][0][1] == row["detail"], row
+        elif row["kind"] == "tab":
+            assert row["calls"][0][1] == row["detail"], row
+            assert row["calls"][1] == ["action", "refresh_active_tab"], row
+        else:
+            assert row["calls"][0][1] == row["detail"], row

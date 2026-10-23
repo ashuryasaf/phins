@@ -249,9 +249,14 @@ def _parse_population(question: str) -> Optional[int]:
     match = re.search(r"(\d{1,3}(?:,\d{3})+)", question)
     if match:
         return int(match.group(1).replace(",", ""))
-    match = re.search(r"\b(\d{4,8})\b", question)
-    if match:
-        return int(match.group(1))
+    # A bare 4-digit calendar year, including the year in 2026-10-23,
+    # is not a cohort size. The standard book stays in place.
+    for match in re.finditer(r"\b(\d{4,8})\b", question):
+        token = match.group(1)
+        number = int(token)
+        if len(token) == 4 and 1900 <= number <= 2100:
+            continue
+        return number
     return None
 
 
@@ -587,6 +592,9 @@ def _fmt_exact(value: Optional[float]) -> str:
     if value is None:
         return "withheld"
     raw = json.dumps(value)
+    # json.dumps emits 1e-05 with no decimal point. int() cannot parse that.
+    if "e" in raw or "E" in raw:
+        return raw
     if "." not in raw:
         return f"{int(raw):,}"
     whole, frac = raw.split(".", 1)
