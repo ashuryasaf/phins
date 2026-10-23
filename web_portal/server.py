@@ -21589,6 +21589,12 @@ class PortalHandler(BaseHTTPRequestHandler):
         message = api_denial(get_effective_role(session), method, path)
         if not message:
             return False
+        try:
+            from services.admin_desk_network import note_access_denial
+            actor = str((session or {}).get("username") or "")
+            note_access_denial(actor, get_effective_role(session), method, path, message)
+        except Exception:
+            pass
         if method in ('POST', 'PUT', 'DELETE', 'PATCH'):
             self._discard_unread_body()
         self._set_json_headers(403)
@@ -23880,6 +23886,17 @@ For claims or questions, please contact:
         # ── Comprehensive Cyber Security Dashboard API ──
         if path == '/api/security/dashboard':
             if not require_role(session, ['admin']):
+                try:
+                    from services.admin_desk_network import note_access_denial
+                    note_access_denial(
+                        str((session or {}).get('username') or ''),
+                        get_effective_role(session),
+                        'GET',
+                        path,
+                        'Admin access required',
+                    )
+                except Exception:
+                    pass
                 self._set_json_headers(403)
                 self.wfile.write(json.dumps({'error': 'Admin access required'}).encode('utf-8'))
                 return
@@ -24082,10 +24099,21 @@ For claims or questions, please contact:
                     autopilot_status = _cyber_autopilot_tick()
                 except Exception:
                     autopilot_status = {}
+                try:
+                    from services.admin_desk_network import unauthorized_report
+                    unauthorized_use = unauthorized_report(
+                        failed_logins=login_activity.get('failed_logins') or {},
+                        malicious_count=threat_intel.get('total_malicious_attempts') or 0,
+                    )
+                except Exception:
+                    unauthorized_use = {
+                        'denial_count': 0, 'anomaly_count': 0, 'anomalies': [], 'checksum': '',
+                    }
 
                 self._set_json_headers()
                 self.wfile.write(json.dumps({
                     'timestamp': now.isoformat(),
+                    'unauthorized_use': unauthorized_use,
                     'login_activity': login_activity,
                     'application_stats': app_stats,
                     'supplier_stats': supplier_stats,

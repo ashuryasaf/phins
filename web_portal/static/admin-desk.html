@@ -45,7 +45,7 @@
   <header>
     <div>
       <h1>PHINS Admin Desk</h1>
-      <p>Registered mailboxes, the meeting diary, and PHINS letters and tables. A mailbox password is saved once for email use. Send stays off.</p>
+      <p>The pipeline of active desks, a direct share to an associate, and the next move from the meeting diary. A mailbox password is saved once for email use. Send stays off.</p>
     </div>
     <a href="/admin.html">Admin home</a>
   </header>
@@ -61,15 +61,40 @@
       <p id="status" class="status"></p>
       <div class="grid">
         <section>
+          <h2>Next move</h2>
+          <div id="next-moves" class="sig">The meeting brain is loading.</div>
+        </section>
+        <section>
+          <h2>Pipeline</h2>
+          <div id="network"></div>
+        </section>
+      </div>
+      <section style="margin-top:16px">
+        <h2>Share to desk</h2>
+        <label for="share-to">Associate desk</label>
+        <select id="share-to"></select>
+        <label for="share-subject">Subject</label>
+        <input id="share-subject" value="Reserve question for the next meeting">
+        <label for="share-need">Need</label>
+        <input id="share-need" value="A read before the brief">
+        <label for="share-body">Work</label>
+        <textarea id="share-body">Please review the meeting brief. No figures are changed from this note.</textarea>
+        <button id="share-send" type="button">Share to desk</button>
+        <div id="shares"></div>
+      </section>
+      <div class="grid">
+        <section>
           <h2>Diary</h2>
           <div id="diary"></div>
-          <label for="d-who">Counterparty</label>
-          <input id="d-who" value="New counterparty">
-          <label for="d-when">Date and time</label>
-          <input id="d-when" value="2026-10-22 09:00">
-          <label for="d-why">Purpose</label>
-          <input id="d-why" value="Follow-up noted on the desk">
-          <button id="add-diary" type="button">Add meeting</button>
+          <div id="diary-editor">
+            <label for="d-who">Counterparty</label>
+            <input id="d-who" value="New counterparty">
+            <label for="d-when">Date and time</label>
+            <input id="d-when" value="2026-10-22 09:00">
+            <label for="d-why">Purpose</label>
+            <input id="d-why" value="Follow-up noted on the desk">
+            <button id="add-diary" type="button">Add meeting</button>
+          </div>
         </section>
         <section>
           <h2>Letter</h2>
@@ -186,6 +211,8 @@ Letter,Admin,Ready</textarea>
       }
       const connect = document.getElementById("mail-connect");
       connect.style.display = deskState.can_manage_mail ? "block" : "none";
+      const editor = document.getElementById("diary-editor");
+      if (editor) editor.style.display = deskState.can_edit_diary ? "block" : "none";
       const diary = document.getElementById("diary");
       const rows = deskState.diary || [];
       const body = rows.map(function (row) {
@@ -195,6 +222,66 @@ Letter,Admin,Ready</textarea>
       diary.innerHTML = "<table><thead><tr><th>When</th><th>With</th><th>Status</th></tr></thead><tbody>" +
         body + "</tbody></table><p class='tag'>" + rows.length + " meetings · contradictions " +
         (deskState.contradictions || []).length + "</p>";
+      renderBrain();
+    }
+
+    function renderBrain() {
+      const moves = (deskState.next_moves && deskState.next_moves.moves) || [];
+      const box = document.getElementById("next-moves");
+      box.textContent = "";
+      moves.forEach(function (move) {
+        const line = document.createElement("div");
+        line.textContent = move.text;
+        box.appendChild(line);
+      });
+      const network = deskState.network || {};
+      const net = document.getElementById("network");
+      net.textContent = "";
+      (network.stages || []).forEach(function (stage) {
+        const row = document.createElement("div");
+        row.className = "tag";
+        const names = (network.users || []).filter(function (user) { return user.stage === stage.stage; })
+          .map(function (user) { return user.name + (user.online ? " · online" : ""); });
+        row.textContent = stage.order + " " + stage.stage + " · " + stage.count +
+          (names.length ? " · " + names.join(", ") : "");
+        net.appendChild(row);
+      });
+      const select = document.getElementById("share-to");
+      const previous = select.value;
+      select.textContent = "";
+      (deskState.share_targets || []).forEach(function (desk) {
+        const option = document.createElement("option");
+        option.value = desk;
+        option.textContent = desk;
+        select.appendChild(option);
+      });
+      if (previous) select.value = previous;
+      const shares = document.getElementById("shares");
+      shares.textContent = "";
+      (deskState.shares || []).forEach(function (share) {
+        const line = document.createElement("div");
+        line.className = "tag";
+        line.textContent = share.from_desk + " → " + share.to_desk + " · " + share.subject +
+          (share.acked ? " · acknowledged" : " · delivered") + " · " + share.checksum.slice(0, 12);
+        if (!share.acked && share.to_desk === (network.caller_desk || "")) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "secondary";
+          button.textContent = "Acknowledge";
+          button.style.marginLeft = "8px";
+          button.addEventListener("click", function () { acknowledge(share.id); });
+          line.appendChild(button);
+        }
+        shares.appendChild(line);
+      });
+    }
+
+    async function acknowledge(shareId) {
+      try {
+        await api("/api/admin/ai-agents/desk/shares/" + shareId + "/ack", { method: "POST", body: "{}" });
+        await load();
+        setStatus("Share acknowledged. The original note is unchanged.", "ok");
+      } catch (error) { setStatus(error.message, "bad"); }
     }
 
     async function load() {
@@ -261,6 +348,22 @@ Letter,Admin,Ready</textarea>
       link.style.marginRight = "8px";
       return { link: link, file: file, blob: blob };
     }
+
+    document.getElementById("share-send").addEventListener("click", async function () {
+      try {
+        const share = await api("/api/admin/ai-agents/desk/shares", {
+          method: "POST",
+          body: JSON.stringify({
+            to_desk: document.getElementById("share-to").value,
+            subject: document.getElementById("share-subject").value,
+            need: document.getElementById("share-need").value,
+            body: document.getElementById("share-body").value
+          })
+        });
+        await load();
+        setStatus("Shared to " + share.to_desk + ". checksum " + share.checksum.slice(0, 12), "ok");
+      } catch (error) { setStatus(error.message, "bad"); }
+    });
 
     document.getElementById("save-password").addEventListener("click", async function () {
       const field = document.getElementById("mail-password");

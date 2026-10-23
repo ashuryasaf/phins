@@ -11,14 +11,16 @@ from typing import Dict, Optional, Tuple
 
 from services.admin_desk_service import DeskError, document_file, overview
 from services.admin_desk_service import (
+    acknowledge_share,
     add_diary,
     create_draft,
     create_letter,
+    create_share,
     create_table,
     import_diary,
-    send_draft,
     mailbox_attribution,
     save_mailbox_password,
+    send_draft,
     set_mailbox_address,
     set_mailbox_enabled,
 )
@@ -38,6 +40,34 @@ def _role(session: Optional[Dict]) -> str:
     return str(session.get("role") or "")
 
 
+def _directory() -> list:
+    """Active accounts for the pipeline map. Password material is not copied."""
+    try:
+        import web_portal.server as portal
+    except Exception:
+        return []
+    online = set()
+    try:
+        for session in getattr(portal, "SESSIONS", {}).values():
+            if isinstance(session, dict) and session.get("username"):
+                online.add(str(session.get("username")))
+    except Exception:
+        online = set()
+    source = getattr(portal, "_FALLBACK_USERS", {}) or {}
+    rows = []
+    for username, record in source.items():
+        if not isinstance(record, dict):
+            continue
+        rows.append({
+            "username": str(username),
+            "name": record.get("name") or str(username),
+            "role": record.get("role") or "",
+            "active": record.get("active") is not False,
+            "online": str(username) in online,
+        })
+    return rows
+
+
 def _call(fn):
     try:
         return 200, fn()
@@ -52,7 +82,7 @@ def dispatch_get(path: str, session: Optional[Dict], query_params: Optional[Dict
         return 401, {"error": "Authentication required"}
     tail = path[len(PREFIX):].strip("/")
     if tail == "":
-        return _call(lambda: overview(_role(session)))
+        return _call(lambda: overview(_role(session), _directory()))
     parts = [part for part in tail.split("/") if part]
     if len(parts) == 2 and parts[0] == "documents":
         fmt = ""
@@ -113,6 +143,18 @@ def dispatch_post(path: str, session: Optional[Dict], body: Optional[Dict]) -> O
             role,
             actor,
         ))
+    if parts == ["shares"]:
+        return _call(lambda: create_share(
+            str(payload.get("to_desk") or ""),
+            str(payload.get("subject") or ""),
+            str(payload.get("need") or ""),
+            str(payload.get("body") or ""),
+            role,
+            actor,
+            str(payload.get("client_key") or ""),
+        ))
+    if len(parts) == 3 and parts[0] == "shares" and parts[2] == "ack":
+        return _call(lambda: acknowledge_share(parts[1], role, actor))
     if parts == ["drafts"]:
         return _call(lambda: create_draft(
             str(payload.get("mailbox_id") or ""),
