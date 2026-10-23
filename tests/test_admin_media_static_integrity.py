@@ -53,6 +53,9 @@ def test_admin_media_sends_design_settings_on_save():
         "solutions_theater_deep_research_id",
         "solutions_theater_regulation_id",
         "solutions_theater_individuals_id",
+        "data-tab=\"investor-deck\"",
+        "Investor Deck Lab",
+        "investor-deck-lab.js",
         "data-tab=\"solution-views\"",
         "saveTheaterAssignments",
         "Solution Views",
@@ -72,6 +75,18 @@ def test_admin_media_sends_design_settings_on_save():
         "brandSettings:",
     ):
         assert token in content, token
+
+
+def test_investor_deck_lab_tab_is_a_mount_point():
+    content = ADMIN_MEDIA_PATH.read_text(encoding="utf-8")
+    pitch = ADMIN_MEDIA_PATH.with_name("pitch-dashboard.html").read_text(encoding="utf-8")
+    assert 'id="tab-investor-deck"' in content
+    assert 'id="investor-deck-lab"' in content
+    assert "InvestorDeckLab.mount" in content
+    assert "id=\"investor-deck-film\"" in pitch
+    assert "InvestorDeckLab.mount" in pitch
+    assert 'src="/investor-deck-lab.js"' in pitch
+    assert "Unified Business Plan · Investor Deck · Appendices · One standard" in pitch
 
 
 def test_solution_views_tab_leaves_design_controls_intact():

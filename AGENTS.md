@@ -303,7 +303,7 @@ Preferred file-by-task:
 | Referral CAC / professional roles | `services/referral_reward_service.py`, `web_portal/api_referral_rewards.py`, `database/repositories/referral_reward_repository.py` |
 | Customer intro / invitation landing | `web_portal/static/join.html`; films `join_intro_*` on the media Customer relations tab; briefs in `services/solution_video_blueprints.py` (`JOIN_INTRO_OUTLINES`, `JOIN-` campaigns) |
 | Document archive / durability probe | `services/customer_document_vault_service.py`, `services/document_durability_agent.py` |
-| Unified business plan / investor deck (`/business-plan.html`) | `services/business_plan_model.py` (factor register, `compute_plan`, `ROUND_SEED_ILS` / `ROUND_PRE_MONEY_ILS` — the one writer for seed / pre-money; `appraisal.sensitivity` grid), `services/business_plan_document.py` (narrative, placeholders, founder block, HTML/Markdown renderers), `services/business_plan_charts.py` (chart + Gantt specs read from the plan dict; one layout engine → inline SVG for HTML and `?charts=1`, reportlab Drawing for the PDF; Markdown carries `<!-- phins-chart {json} -->` directives plus a data table), `services/business_plan_sources.py` (figure lineage + research registry kept byte-equal with the pitch-dashboard `sourceRegistry`), `services/business_plan_portrait.py` (Pillow-processed founder portrait), `web_portal/server.py` (`GET /api/business-plan/model[?charts=1]`, `GET /api/business-plan/founder-portrait`); then `python3 scripts/build_business_plan.py` and `python3 scripts/generate_investor_pdfs.py --only unified-business-plan`; tests in `tests/test_business_plan.py` |
+| Unified business plan / investor deck (`/business-plan.html`) | `services/business_plan_model.py` (factor register, `compute_plan`, `ROUND_SEED_ILS` / `ROUND_PRE_MONEY_ILS` — the one writer for seed / pre-money; `appraisal.sensitivity` grid), `services/business_plan_document.py` (narrative, placeholders, founder block, HTML/Markdown renderers), `services/business_plan_charts.py` (chart + Gantt specs read from the plan dict; one layout engine → inline SVG for HTML and `?charts=1`, reportlab Drawing for the PDF; Markdown carries `<!-- phins-chart {json} -->` directives plus a data table), `services/business_plan_sources.py` (figure lineage + research registry kept byte-equal with the pitch-dashboard `sourceRegistry`), `services/business_plan_portrait.py` (Pillow-processed founder portrait), `services/investor_deck_video.py` (Part II paragraph scenes; the plan is not written), `web_portal/server.py` (`GET /api/business-plan/model[?charts=1]`, `GET /api/business-plan/founder-portrait`); then `python3 scripts/build_business_plan.py` and `python3 scripts/generate_investor_pdfs.py --only unified-business-plan`; tests in `tests/test_business_plan.py` |
 | Premium / reserve / simulator pricing | `services/pricing_kernel.py` (sole writer), then `services/actuarial_service.py` and callers; refresh `tests/test_pricing_kernel.py`, `tests/test_actuarial_reserves.py`, `tests/test_ifrs17_waterfall_identities.py` deliberately |
 | Business rule/workflow | `services/`, then the route or engine that calls it |
 | Database/schema/repository | `database/models.py`, `database/manager.py`, `database/repositories/`, `database/config.py` |
@@ -758,6 +758,20 @@ Environment variables commonly used:
  Sealed scene files join into one checksummed film that can be assigned to
  login, solutions, and disclaimer slots. A checksum mismatch is reported;
  library bytes are never rewritten to force a chain.
+- **Investor deck lab:** Part II of the unified plan is filmed one paragraph
+ at a time (`services/investor_deck_video.py`,
+ `GET`/`POST /api/admin/media/investor-deck`). The spoken line is that
+ bullet filled from the saved factor set (canonical when nothing is saved).
+ A client prompt that differs is refused. Each scene is 15 seconds, so an
+ engine whose clip is shorter is refused. Presenters are chosen from a
+ fixed roster that spreads sex, age, and appearance. Charts and the founder
+ portrait are the plan's own and are shown beside the clip; the generator
+ is not asked to draw them. The film on `/pitch-dashboard.html` (unified
+ plan card) and the Investor Deck Lab tab on `/admin-media.html` plays only
+ scenes whose library video checksum matches and whose sealed line is still
+ the current paragraph. A missing or stale scene is omitted and the next
+ stored scene follows. The plan, its factors, and public placements are
+ not written.
 - **BI analytics (B10):** `PHINS_BI_SNAPSHOT_DIR` also holds
  `materialized_views.json` (served by `/api/bi/*` when fingerprint, checksum
  and age < cache TTL all match); `PHINS_BI_REMATERIALIZE_DELAY_SECONDS`
