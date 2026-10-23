@@ -34,6 +34,11 @@ OPERATIONAL_STAFF_ROLES: FrozenSet[str] = frozenset({
 # May pass the /api/admin/ prefix. Handlers still narrow further.
 ADMIN_API_ROLES: FrozenSet[str] = OPERATIONAL_STAFF_ROLES | frozenset({"media"})
 
+# The development desk shares and acknowledges notes on /admin-desk.html.
+# It is not operational staff, and routes such as /api/admin/customers use
+# this prefix as their only gate, so only the desk API is opened.
+_DEVELOPMENT_DESK_API = "/api/admin/ai-agents/desk"
+
 # Another principal's own portal. Admin does not inherit these.
 PRIVATE_PORTAL_PAGES: Dict[str, FrozenSet[str]] = {
     "/supplier-dashboard.html": frozenset({"supplier"}),
@@ -239,9 +244,14 @@ def api_denial(role: Optional[str], method: str, path: Optional[str]) -> Optiona
     normalized_method = str(method or "GET").strip().upper()
 
     if normalized_path.startswith("/api/admin/"):
-        if normalized_role not in ADMIN_API_ROLES:
-            return ACCESS_DENIED
-        return None
+        if normalized_role in ADMIN_API_ROLES:
+            return None
+        if normalized_role == "development" and (
+            normalized_path == _DEVELOPMENT_DESK_API
+            or normalized_path.startswith(_DEVELOPMENT_DESK_API + "/")
+        ):
+            return None
+        return ACCESS_DENIED
 
     if normalized_path in _STAFF_ONLY_EXACT:
         if not is_operational_staff(normalized_role):
