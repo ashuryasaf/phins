@@ -39399,6 +39399,8 @@ For claims or questions, please contact:
             # These endpoints need JSON body parsing
             security_paths = ['/api/security/', '/api/foundations', '/api/admin/foundations',
                               '/api/admin/ai-agents/',
+                              # Admin AI & BI desk (read-only query and report downloads).
+                              '/api/admin/ai-bi',
                               # Storyboard editor (create, save, render, end-frame).
                               '/api/admin/media/storyboards']
             is_extension_path = any(path.startswith(p) for p in security_paths)

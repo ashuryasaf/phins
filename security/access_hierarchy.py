@@ -39,6 +39,10 @@ ADMIN_API_ROLES: FrozenSet[str] = OPERATIONAL_STAFF_ROLES | frozenset({"media"})
 # this prefix as their only gate, so only the desk API is opened.
 _DEVELOPMENT_DESK_API = "/api/admin/ai-agents/desk"
 
+# Full-book AI/BI desk. Operational staff keep their own dashboards.
+# A manager may use this path and no other /api/admin/ route.
+ADMIN_AI_BI_API = "/api/admin/ai-bi"
+
 # Another principal's own portal. Admin does not inherit these.
 PRIVATE_PORTAL_PAGES: Dict[str, FrozenSet[str]] = {
     "/supplier-dashboard.html": frozenset({"supplier"}),
@@ -78,6 +82,7 @@ STAFF_PAGES: Dict[str, FrozenSet[str]] = {
     "/corporate-legal-dashboard.html": frozenset(),
     "/nda-dashboard.html": frozenset(),
     "/settlement-approval.html": frozenset({"accountant"}),
+    "/admin-ai-report.html": frozenset({"manager"}),
     **PRIVATE_PORTAL_PAGES,
 }
 
@@ -245,6 +250,11 @@ def api_denial(role: Optional[str], method: str, path: Optional[str]) -> Optiona
 
     if normalized_path.startswith("/api/admin/"):
         if normalized_role in ADMIN_API_ROLES:
+            return None
+        if normalized_role == "manager" and (
+            normalized_path == ADMIN_AI_BI_API
+            or normalized_path.startswith(ADMIN_AI_BI_API + "/")
+        ):
             return None
         if normalized_role == "development" and (
             normalized_path == _DEVELOPMENT_DESK_API

@@ -902,6 +902,18 @@
         <a href="/admin-desk.html">Desk</a>
         <a href="/admin-foundations.html">Community</a>
         <a href="/admin-media.html">Media</a>
+        <a href="/accountant-dashboard.html">Accountant</a>
+        <a href="/customer-management.html">Customers</a>
+        <a href="/risk-dashboard.html">Risk</a>
+        <a href="/risk-reports-dashboard.html">Risk reports</a>
+        <a href="/video-agents.html">Video</a>
+        <a href="/storyboard-editor.html">Storyboard</a>
+        <a href="/corporate-legal-dashboard.html">Legal</a>
+        <a href="/nda-dashboard.html">NDA</a>
+        <a href="/assessment-center.html">Assessment</a>
+        <a href="/chat-process-review.html">Chat review</a>
+        <a href="/settlement-approval.html">Settlements</a>
+        <a href="/admin-portal.html">Portal</a>
         <span data-assessments-nav data-assessments-role="admin">Assessments</span>
         <a href="/cyber-security.html">Cyber Security</a>
         <a href="/pitch-dashboard.html" target="_blank">IL Pitch</a>
@@ -1012,7 +1024,7 @@
           <div style="width:46px;height:46px;background:linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;animation:pulse-ai 2s ease-in-out infinite;" aria-hidden="true"></div>
           <div>
             <div class="admin-ai-mic-title" style="font-weight:700;font-size:1.02rem;line-height:1.2;">Admin AI Mic</div>
-            <div style="font-size:0.78rem;color:#e3bf6f;letter-spacing:0.04em;">Voice and text commands for every admin function</div>
+            <div style="font-size:0.78rem;color:#e3bf6f;letter-spacing:0.04em;">Voice, text, and questions answered from the books</div>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
@@ -1031,6 +1043,7 @@
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Allocate savings"<br>• "Generate missing bills"<br>• "Export customers"</div>
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Sync policy ledgers"<br>• "Sync claims ledger"<br>• "Probability analysis"</div>
           <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "Business inquiries"<br>• "Show test data"<br>• "Generate all videos"</div>
+          <div style="background:rgba(255,255,255,0.08);padding:8px;border-radius:8px;">• "How many 85+ of 100k can be ADL?"<br>• "Full report about CUST-…"<br>• "List every dashboard"</div>
         </div>
         <p style="margin:10px 0 0 0;font-size:0.78rem;opacity:0.9;"> High-impact actions are confirmation-gated for data integrity.</p>
       </div>
@@ -1040,7 +1053,7 @@
           <input
             id="admin-ai-query-input"
             type="text"
-            placeholder="e.g. 'run actuary simulation', 'open console', 'refresh customers'"
+            placeholder="Ask the books, e.g. how many 85+ of 100k can be ADL, or run a command"
             style="width:100%;padding:14px 16px;border-radius:12px;border:2px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.95);font-size:0.95rem;outline:none;"
             onkeypress="if(event.key==='Enter') adminAssistantProcessQuery()"
           >
@@ -1053,6 +1066,7 @@
           ></button>
         </div>
         <button onclick="adminAssistantProcessQuery()" style="background:linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);border:none;color:#071022;padding:12px 18px;border-radius:12px;cursor:pointer;font-weight:700;">Ask</button>
+        <button onclick="adminAssistantShowDashboards()" style="background:rgba(227,191,111,0.14);border:1px solid rgba(227,191,111,0.55);color:#f7e2a0;padding:12px 16px;border-radius:12px;cursor:pointer;font-weight:700;">Desks</button>
         <button onclick="adminAssistantRunAction('refresh_active_tab')" style="background:rgba(227,191,111,0.14);border:1px solid rgba(227,191,111,0.55);color:#f7e2a0;padding:12px 16px;border-radius:12px;cursor:pointer;font-weight:700;">Refresh</button>
       </div>
 
@@ -2975,6 +2989,7 @@
     const adminAssistantState = {
       activeTab: 'overview',
       recentActions: [],
+      chat: [],
       recognition: null,
       isListening: false
     };
@@ -3161,6 +3176,19 @@
         fn: async () => { window.open('/actuary-dashboard.html', '_blank'); },
         integrity: 'safe'
       },
+      open_accountant_dashboard: { label: 'Accountant', fn: async () => { window.open('/accountant-dashboard.html', '_blank'); }, integrity: 'safe' },
+      open_risk_dashboard: { label: 'Risk', fn: async () => { window.open('/risk-dashboard.html', '_blank'); }, integrity: 'safe' },
+      open_risk_reports: { label: 'Risk reports', fn: async () => { window.open('/risk-reports-dashboard.html', '_blank'); }, integrity: 'safe' },
+      open_video_agents: { label: 'Video agents', fn: async () => { window.open('/video-agents.html', '_blank'); }, integrity: 'safe' },
+      open_legal_dashboard: { label: 'Legal', fn: async () => { window.open('/corporate-legal-dashboard.html', '_blank'); }, integrity: 'safe' },
+      open_nda_dashboard: { label: 'NDA', fn: async () => { window.open('/nda-dashboard.html', '_blank'); }, integrity: 'safe' },
+      open_customer_book: { label: 'Customer book', fn: async () => { window.open('/customer-management.html', '_blank'); }, integrity: 'safe' },
+      open_cyber_dashboard: { label: 'Cyber security', fn: async () => { window.open('/cyber-security.html', '_blank'); }, integrity: 'safe' },
+      open_admin_desk: { label: 'Admin desk', fn: async () => { window.open('/admin-desk.html', '_blank'); }, integrity: 'safe' },
+      open_chat_review: { label: 'Chat review', fn: async () => { window.open('/chat-process-review.html', '_blank'); }, integrity: 'safe' },
+      open_assessment_center: { label: 'Assessments', fn: async () => { window.open('/assessment-center.html', '_blank'); }, integrity: 'safe' },
+      open_storyboard: { label: 'Storyboard', fn: async () => { window.open('/storyboard-editor.html', '_blank'); }, integrity: 'safe' },
+      open_media_dashboard: { label: 'Media', fn: async () => { window.open('/admin-media.html', '_blank'); }, integrity: 'safe' },
       system_health: {
         label: 'System Health Check',
         fn: async () => { await adminRunSystemHealth(); },
@@ -3369,6 +3397,19 @@
         { test: ['open console', 'go to console', 'terminal', 'go to terminal', 'show console'], action: 'open_console' },
         { test: ['system health', 'health check', 'api health', 'server health', 'status check'], action: 'system_health' },
         { test: ['actuary dashboard', 'open actuary', 'go to actuary'], action: 'open_actuary_dashboard' },
+        { test: ['accountant dashboard', 'open accountant'], action: 'open_accountant_dashboard' },
+        { test: ['risk reports', 'open risk reports'], action: 'open_risk_reports' },
+        { test: ['risk dashboard', 'open risk'], action: 'open_risk_dashboard' },
+        { test: ['video agents', 'open video'], action: 'open_video_agents' },
+        { test: ['legal dashboard', 'open legal'], action: 'open_legal_dashboard' },
+        { test: ['nda dashboard', 'open nda'], action: 'open_nda_dashboard' },
+        { test: ['customer book', 'open customers'], action: 'open_customer_book' },
+        { test: ['cyber security', 'open cyber'], action: 'open_cyber_dashboard' },
+        { test: ['admin desk', 'open desk'], action: 'open_admin_desk' },
+        { test: ['chat process review', 'chat review'], action: 'open_chat_review' },
+        { test: ['assessment center', 'open assessments'], action: 'open_assessment_center' },
+        { test: ['storyboard editor', 'open storyboard'], action: 'open_storyboard' },
+        { test: ['open media', 'media dashboard', 'admin media'], action: 'open_media_dashboard' },
         { test: ['ai bi', 'bi insights', 'ai insights', 'business intelligence'], action: 'run_ai_bi_insights' },
         { test: ['reconcile', 'reconciliation'], action: 'reconcile_balance_sheet' },
         { test: ['cleanup', 'clean demo', 'demo data'], action: 'cleanup_demo_data' },
@@ -3534,6 +3575,8 @@
         return;
       }
       try {
+        const langSel = document.getElementById('language-selector');
+        recognition.lang = langSel && langSel.value === 'he' ? 'he-IL' : 'en-US';
         recognition.start();
       } catch (err) {
         adminAssistantSetStatus('warning', ' Voice recognition could not start');
@@ -3570,17 +3613,124 @@
       adminAssistantProcessQuery();
     }
 
+    function adminAssistantIsDataQuestion(query) {
+      const q = String(query || '').toLowerCase();
+      if (q.includes('?')) return true;
+      const markers = [
+        'how many', 'how long', 'how much', 'how old',
+        'expected to live', 'life expectancy', 'for how many years', 'years they',
+        'age distribution', 'standard age', 'can be adl',
+        'full report', 'report about', 'report on', 'customer report',
+        'cust-', 'balance sheet', 'ledger',
+        'sim-', 'recent simulation', 'specific simulation', 'latest simulation',
+        'list dashboard', 'every dashboard', 'all dashboards', 'which dashboard',
+        'activate media', 'open media', 'media feature',
+        'underwriting issue', 'claims issue', 'book snapshot',
+        '100k', '100,000',
+        'כמה', 'תוחלת', 'דוח', 'לקוח', 'מאזן', 'סימולציה', 'מדיה', 'דשבורד', 'תביע', 'חיתום', 'התפלגות'
+      ];
+      return markers.some(marker => q.includes(marker));
+    }
+
+    function adminAssistantOpenReport(reportId) {
+      if (!reportId) return;
+      window.open('/admin-ai-report.html?id=' + encodeURIComponent(reportId), '_blank');
+    }
+
+    function adminAssistantRenderDataAnswer(report) {
+      const area = document.getElementById('admin-ai-response-area');
+      if (!area || !report) return;
+      const answer = (report.answer && (report.answer.en || report.answer.he)) || '';
+      const seal = (report.integrity && report.integrity.facts_sha256) || '';
+      const planning = report.planning;
+      const planLine = planning
+        ? `<div style="margin-top:8px;color:#8a5a00;">${adminAssistantEscapeHtml(planning.reason_en || '')}</div>`
+        : '';
+      const reportId = adminAssistantEscapeHtml(report.report_id || '');
+      area.innerHTML = `
+        <div style="font-weight:700;margin-bottom:6px;">${reportId}</div>
+        <div style="line-height:1.45;">${adminAssistantEscapeHtml(answer)}</div>
+        ${planLine}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+          <button class="admin-ai-action-btn" onclick="adminAssistantOpenReport('${reportId}')">Open report</button>
+          <button class="admin-ai-action-btn" onclick="adminAssistantShowDashboards()">All dashboards</button>
+        </div>
+        <div style="margin-top:8px;font-size:0.75rem;color:#78909c;word-break:break-all;">${adminAssistantEscapeHtml(seal)}</div>
+      `;
+    }
+
+    async function adminAssistantAskData(rawQuestion) {
+      const question = String(rawQuestion || '').trim();
+      if (!question) return;
+      adminAssistantSetStatus('ready', ' Reading the books...');
+      const panel = document.getElementById('admin-ai-assistant-panel');
+      if (panel && panel.dataset.minimized === 'true' && typeof toggleAdminAIPanel === 'function') {
+        toggleAdminAIPanel();
+      }
+      try {
+        const response = await fetch('/api/admin/ai-bi/query', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Query refused');
+        try {
+          sessionStorage.setItem('phins-aibi-' + data.report_id, JSON.stringify(data));
+        } catch (err) {}
+        adminAssistantState.chat.unshift({ question, reportId: data.report_id });
+        if (adminAssistantState.chat.length > 6) {
+          adminAssistantState.chat = adminAssistantState.chat.slice(0, 6);
+        }
+        adminAssistantRenderDataAnswer(data);
+        adminAssistantOpenReport(data.report_id);
+        adminAssistantSetStatus('success', ' Report ready');
+      } catch (err) {
+        adminAssistantSetStatus('error', ' Query failed');
+        const area = document.getElementById('admin-ai-response-area');
+        if (area) {
+          area.innerHTML = `<div style="color:#c62828;font-weight:600;">${adminAssistantEscapeHtml(err && err.message ? err.message : 'Query failed')}</div>`;
+        }
+      }
+    }
+
+    async function adminAssistantShowDashboards() {
+      const panel = document.getElementById('admin-ai-assistant-panel');
+      if (panel && panel.dataset.minimized === 'true' && typeof toggleAdminAIPanel === 'function') {
+        toggleAdminAIPanel();
+      }
+      const area = document.getElementById('admin-ai-response-area');
+      try {
+        const response = await fetch('/api/admin/ai-bi/dashboards', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Dashboards unavailable');
+        const links = (data.items || []).filter(item => item.admin_open).map(item =>
+          `<a class="admin-ai-quick-btn" href="${adminAssistantEscapeHtml(item.path)}">${adminAssistantEscapeHtml(item.label_en)}</a>`
+        ).join('');
+        if (area) {
+          area.innerHTML = `<div style="font-weight:700;margin-bottom:8px;">Dashboards</div><div style="display:flex;flex-wrap:wrap;gap:8px;">${links}</div>`;
+        }
+        adminAssistantSetStatus('success', ' Dashboards listed');
+      } catch (err) {
+        adminAssistantSetStatus('error', ' Dashboards unavailable');
+      }
+    }
+
     async function adminAssistantProcessQuery() {
       const input = document.getElementById('admin-ai-query-input');
       if (!input) return;
-      const query = (input.value || '').trim().toLowerCase();
+      const raw = (input.value || '').trim();
+      const query = raw.toLowerCase();
       if (!query) {
         adminAssistantSetStatus('warning', ' Enter a command');
         return;
       }
 
+      const dataQuestion = adminAssistantIsDataQuestion(raw);
       const resolved = adminAssistantActionFromQuery(query);
-      if (resolved?.tabId) {
+      if (!dataQuestion && resolved?.tabId) {
         adminAssistantSwitchTab(resolved.tabId);
         if (resolved.actionId) {
           await adminAssistantRunAction(resolved.actionId);
@@ -3590,12 +3740,12 @@
         return;
       }
 
-      if (resolved?.actionId) {
+      if (!dataQuestion && resolved?.actionId) {
         await adminAssistantRunAction(resolved.actionId);
         return;
       }
 
-      adminAssistantSetStatus('warning', ' Try: "run actuary simulation", "open console", "system health", "refresh customers"');
+      await adminAssistantAskData(raw);
     }
 
     function adminAssistantEscapeHtml(value) {

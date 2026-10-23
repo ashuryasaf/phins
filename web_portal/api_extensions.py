@@ -4690,6 +4690,11 @@ def dispatch_get(path: str, session: Dict, query_params: Dict, client_ip: str) -
     Dispatch GET requests to appropriate handlers.
     Returns (status_code, response_dict) or None if path not handled.
     """
+    from web_portal.api_admin_ai_bi import dispatch_get as ai_bi_get
+    ai_bi_result = ai_bi_get(path, session, query_params)
+    if ai_bi_result is not None:
+        return ai_bi_result
+
     storyboard_get = dispatch_storyboard_get(path, session)
     if storyboard_get is not None:
         return storyboard_get
@@ -4923,6 +4928,11 @@ def dispatch_post(path: str, session: Dict, body_data: Dict, client_ip: str, use
     Dispatch POST requests to appropriate handlers.
     Returns (status_code, response_dict) or None if path not handled.
     """
+    from web_portal.api_admin_ai_bi import dispatch_post as ai_bi_post
+    ai_bi_result = ai_bi_post(path, session, body_data)
+    if ai_bi_result is not None:
+        return ai_bi_result
+
     storyboard_post = dispatch_storyboard_post(path, session, body_data)
     if storyboard_post is not None:
         return storyboard_post
