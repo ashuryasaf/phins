@@ -812,6 +812,17 @@
     <div class="kpi-card kpi-blue"><div class="kpi-label">Suppliers</div><div class="kpi-value" id="kpi-suppliers">0</div><div class="kpi-sub">Registered</div></div>
   </div>
 
+  <div class="panel panel-full" id="unauthorized" style="margin-bottom:24px">
+    <div class="panel-header">
+      <div class="panel-title">Unauthorized use <span class="panel-badge badge-live">LIVE</span></div>
+      <span class="panel-badge badge-count" id="unauth-count">0</span>
+    </div>
+    <div class="panel-body">
+      <div id="unauth-summary" style="font-size:0.85rem;color:var(--cyber-muted);margin-bottom:8px"></div>
+      <div id="unauth-list"></div>
+    </div>
+  </div>
+
   <!-- Main Panels -->
   <div class="panels-grid">
 
@@ -1159,9 +1170,43 @@ function renderDashboard(data) {
   // Events
   document.getElementById('events-count-badge').textContent = events.length;
   renderEvents(events);
+  renderUnauthorized(safeObj(data.unauthorized_use));
 
   document.getElementById('last-updated').textContent =
     `Last updated: ${new Date().toLocaleTimeString('en-GB')} | Next refresh in ${document.getElementById('refresh-interval').value}s`;
+}
+
+function renderUnauthorized(report) {
+  const summary = document.getElementById('unauth-summary');
+  const list = document.getElementById('unauth-list');
+  const count = document.getElementById('unauth-count');
+  if (!summary || !list || !count) return;
+  const anomalies = safeArr(report.anomalies);
+  count.textContent = String(safeNum(report.anomaly_count));
+  summary.textContent = 'Denials recorded: ' + safeNum(report.denial_count) +
+    ' · anomalies: ' + safeNum(report.anomaly_count) +
+    (report.checksum ? ' · ' + String(report.checksum).slice(0, 12) : '');
+  list.textContent = '';
+  if (!anomalies.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.textContent = 'No unauthorized-use anomaly in the current window.';
+    list.appendChild(empty);
+    return;
+  }
+  anomalies.forEach(function (item) {
+    const row = document.createElement('div');
+    row.className = 'log-entry log-warning';
+    const title = document.createElement('div');
+    title.className = 'log-type';
+    title.textContent = String(item.kind || 'anomaly') + ' · ' + String(item.count || 0);
+    const detail = document.createElement('div');
+    detail.className = 'log-detail';
+    detail.textContent = String(item.subject || '') + ' · ' + String(item.evidence || '');
+    row.appendChild(title);
+    row.appendChild(detail);
+    list.appendChild(row);
+  });
 }
 
 function renderThreatChart(attempts) {

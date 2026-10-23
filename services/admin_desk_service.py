@@ -43,6 +43,7 @@ _ROLE_DESK = {
     "adjuster": "claims",
     "accountant": "accountant",
     "compliance": "compliance",
+    "development": "development",
 }
 _ALL_DESK_ROLES = frozenset({"admin", "founder"})
 
@@ -113,6 +114,16 @@ _PROFILE_SOURCES = (
             "Personal Health Insurance & Savings",
         ],
     },
+    {
+        "id": "sig-development-v1",
+        "desk": "development",
+        "version": 1,
+        "source": "phins_document.py letterhead",
+        "lines": [
+            "PHINS development desk",
+            "Personal Health Insurance & Savings",
+        ],
+    },
 )
 
 _MAILBOX_SEED = (
@@ -122,6 +133,7 @@ _MAILBOX_SEED = (
     {"id": "mbx-claims", "desk": "claims", "role": "claims_adjuster", "address": "", "secret_ref": "PHINS_ADMIN_DESK_MAIL_CLAIMS"},
     {"id": "mbx-accountant", "desk": "accountant", "role": "accountant", "address": "", "secret_ref": "PHINS_ADMIN_DESK_MAIL_ACCOUNTANT"},
     {"id": "mbx-compliance", "desk": "compliance", "role": "compliance", "address": "", "secret_ref": "PHINS_ADMIN_DESK_MAIL_COMPLIANCE"},
+    {"id": "mbx-development", "desk": "development", "role": "development", "address": "", "secret_ref": "PHINS_ADMIN_DESK_MAIL_DEVELOPMENT"},
 )
 
 # Same dates, times, counterparties, locations, and status as the
@@ -275,8 +287,10 @@ def _new_store():
 def reset_for_tests() -> None:
     """Drop the process store so a test starts from the seed."""
     global _STORE, _SEEDED
+    from services.admin_desk_network import reset_denials
     from services.hydrated_store import reset_shared_stores
 
+    reset_denials()
     reset_shared_stores()
     with _LOCK:
         _STORE = None
@@ -297,21 +311,22 @@ def _store():
 
 def _seed(store) -> None:
     profiles = _profiles()
-    if store.get("mbx-admin") is None:
-        for spec in _MAILBOX_SEED:
-            profile = profiles["sig-" + spec["desk"] + "-v1"]
-            store[spec["id"]] = stamp({
-                "record_type": "mailbox",
-                "id": spec["id"],
-                "desk": spec["desk"],
-                "role": spec["role"],
-                "address": spec["address"],
-                "provider": "",
-                "secret_ref": spec["secret_ref"],
-                "enabled": False,
-                "signature_id": profile["id"],
-                "signature_sha256": profile["checksum"],
-            })
+    for spec in _MAILBOX_SEED:
+        if store.get(spec["id"]) is not None:
+            continue
+        profile = profiles["sig-" + spec["desk"] + "-v1"]
+        store[spec["id"]] = stamp({
+            "record_type": "mailbox",
+            "id": spec["id"],
+            "desk": spec["desk"],
+            "role": spec["role"],
+            "address": spec["address"],
+            "provider": "",
+            "secret_ref": spec["secret_ref"],
+            "enabled": False,
+            "signature_id": profile["id"],
+            "signature_sha256": profile["checksum"],
+        })
     existing = [key for key in store.keys() if str(key).startswith("diary-seed-")]
     if not existing:
         for index, row in enumerate(_DIARY_SEED, start=1):
@@ -506,12 +521,16 @@ def save_mailbox_password(
     return _mailbox_public(stored)
 
 
-def list_diary(role: Optional[str]) -> List[Dict[str, Any]]:
-    if not _visible("admin", role):
-        raise DeskError("Diary access required", 403)
+def _diary_rows() -> List[Dict[str, Any]]:
     rows = _records(_store(), "diary")
     rows.sort(key=lambda item: (str(item.get("date")), str(item.get("id"))))
     return [_diary_public(row) for row in rows]
+
+
+def list_diary(role: Optional[str]) -> List[Dict[str, Any]]:
+    if not _visible("admin", role):
+        raise DeskError("Diary access required", 403)
+    return _diary_rows()
 
 
 def _diary_public(record: Dict[str, Any]) -> Dict[str, Any]:
@@ -1076,10 +1095,200 @@ def list_drafts(role: Optional[str]) -> List[Dict[str, Any]]:
     return rows
 
 
-def overview(role: Optional[str]) -> Dict[str, Any]:
+def _caller_desk(role: Optional[str]) -> str:
+    if _role(role) in _ALL_DESK_ROLES:
+        return "admin"
+    return _ROLE_DESK.get(_role(role), "")
+
+
+def _share_visible(record: Dict[str, Any], role: Optional[str]) -> bool:
+    if _role(role) in _ALL_DESK_ROLES:
+        return True
+    desk = _caller_desk(role)
+    if not desk:
+        return False
+    return record.get("from_desk") == desk or record.get("to_desk") == desk
+
+
+def _clean_share_text(value: Any, limit: int) -> str:
+    text = str(value or "").strip()
+    if len(text) > limit:
+        raise DeskError("That note is too long", 400)
+    lowered = text.lower()
+    if "password:" in lowered or "national_id" in lowered or "id_number" in lowered:
+        raise DeskError("Share the work, not a credential or an identity number", 400)
+    return text
+
+
+def list_shares(role: Optional[str]) -> List[Dict[str, Any]]:
+    if desks_for_role(role) == [] and _role(role) not in _ALL_DESK_ROLES:
+        raise DeskError("Desk access required", 403)
+    if not _caller_desk(role):
+        raise DeskError("Desk access required", 403)
+    acked = {
+        row.get("share_id")
+        for row in _records(_store(), "share_ack")
+        if row.get("share_id")
+    }
+    rows = []
+    for record in _records(_store(), "share"):
+        if _share_visible(record, role):
+            public = _share_public(record)
+            public["acked"] = record["id"] in acked
+            rows.append(public)
+    rows.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    return rows
+
+
+def _share_public(record: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": record["id"],
+        "from_desk": record.get("from_desk") or "",
+        "to_desk": record.get("to_desk") or "",
+        "actor": record.get("actor") or "",
+        "subject": record.get("subject") or "",
+        "need": record.get("need") or "",
+        "body": record.get("body") or "",
+        "body_sha256": record.get("body_sha256") or "",
+        "status": record.get("status") or "",
+        "created_at": record.get("created_at") or "",
+        "checksum": record["checksum"],
+    }
+
+
+def create_share(
+    to_desk: str,
+    subject: str,
+    need: str,
+    body: str,
+    role: Optional[str],
+    actor: str,
+    client_key: str = "",
+) -> Dict[str, Any]:
+    from services.admin_desk_network import share_targets
+
+    origin = _caller_desk(role)
+    if not origin:
+        raise DeskError("Desk access required", 403)
+    target = str(to_desk or "").strip().lower()
+    if target not in share_targets(origin):
+        raise DeskError("That desk does not take a direct share", 403)
+    title = _clean_share_text(subject, 180)
+    if not title:
+        raise DeskError("Subject is required", 400)
+    note = _clean_share_text(need, 400)
+    message = _clean_share_text(body, 4000)
+    if not message:
+        raise DeskError("Describe the work", 400)
+    key = str(client_key or "").strip()[:80]
+    store = _store()
+    if key:
+        for record in _records(store, "share"):
+            if record.get("client_key") != key or record.get("from_desk") != origin:
+                continue
+            same = (
+                record.get("to_desk") == target
+                and record.get("subject") == title
+                and record.get("need") == note
+                and record.get("body") == message
+            )
+            if same:
+                return _share_public(record)
+            _note_fault(store, record["id"], "share client_key contradiction")
+            raise DeskError("share_conflict", 409)
+    record_id = "shr-" + uuid.uuid4().hex[:12]
+    stored = stamp({
+        "record_type": "share",
+        "id": record_id,
+        "client_key": key,
+        "from_desk": origin,
+        "to_desk": target,
+        "actor": actor or origin,
+        "subject": title,
+        "need": note,
+        "body": message,
+        "body_sha256": _sha256(message),
+        "status": "delivered",
+        "created_at": _now(),
+    })
+    store[record_id] = stored
+    _audit(actor, "admin_desk.share", record_id, {
+        "from_desk": origin,
+        "to_desk": target,
+        "body_sha256": stored["body_sha256"],
+    })
+    public = _share_public(stored)
+    public["acked"] = False
+    return public
+
+
+def acknowledge_share(share_id: str, role: Optional[str], actor: str) -> Dict[str, Any]:
+    store = _store()
+    record = _read(store, share_id)
+    if not record or record.get("record_type") != "share" or not _share_visible(record, role):
+        raise DeskError("Share not found", 404)
+    desk = _caller_desk(role)
+    if _role(role) not in _ALL_DESK_ROLES and record.get("to_desk") != desk:
+        raise DeskError("The receiving desk acknowledges the share", 403)
+    ack_id = "ack-" + _sha256("{0}:{1}".format(share_id, actor or desk))[:16]
+    existing = _read(store, ack_id)
+    if existing and existing.get("record_type") == "share_ack":
+        return {
+            "id": existing["id"],
+            "share_id": existing.get("share_id"),
+            "share_checksum": existing.get("share_checksum"),
+            "checksum": existing["checksum"],
+        }
+    stored = stamp({
+        "record_type": "share_ack",
+        "id": ack_id,
+        "share_id": share_id,
+        "share_checksum": record["checksum"],
+        "actor": actor or desk,
+        "desk": desk,
+        "created_at": _now(),
+    })
+    store[ack_id] = stored
+    _audit(actor, "admin_desk.share_ack", ack_id, {
+        "share_id": share_id,
+        "share_checksum": record["checksum"],
+    })
+    return {
+        "id": stored["id"],
+        "share_id": share_id,
+        "share_checksum": record["checksum"],
+        "checksum": stored["checksum"],
+    }
+
+
+def desk_network(role: Optional[str], directory: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    if not _caller_desk(role):
+        raise DeskError("Desk access required", 403)
+    from services.admin_desk_network import project_directory
+
+    projected = project_directory(directory or [], role)
+    return stamp({"record_type": "network", **projected})
+
+
+def next_moves(role: Optional[str], today: str = "") -> Dict[str, Any]:
+    desk_name = _caller_desk(role)
+    if not desk_name:
+        raise DeskError("Desk access required", 403)
+    from services.admin_desk_network import next_move_rows
+
+    day = str(today or _now()[:10])
+    diary = _records(_store(), "diary")
+    shares = [row for row in _records(_store(), "share") if _share_visible(row, role)]
+    acked = [row.get("share_id") for row in _records(_store(), "share_ack")]
+    body = next_move_rows(diary, shares, acked, desk_name, day)
+    return stamp({"record_type": "next_moves", **body})
+
+
+def overview(role: Optional[str], directory: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     mailboxes = list_mailboxes(role)
-    diary = list_diary(role) if _visible("admin", role) else []
-    contradictions = list_contradictions(role) if _visible("admin", role) else []
+    editable_diary = _role(role) in _ALL_DESK_ROLES
+    diary = _diary_rows() if editable_diary or _caller_desk(role) else []
+    contradictions = list_contradictions(role) if editable_diary else []
     documents = list_documents(role)
     drafts = list_drafts(role)
     ready_mail = any(item["enabled"] and item["secret_configured"] for item in mailboxes)
@@ -1088,7 +1297,7 @@ def overview(role: Optional[str]) -> Dict[str, Any]:
         {"id": "1", "name": "Diary", "state": "ready"},
         {"id": "2", "name": "Remember mail", "state": "ready" if ready_mail else "waiting_for_credential"},
         {"id": "3", "name": "Calendar", "state": "waiting_for_credential"},
-        {"id": "4", "name": "Missions", "state": "waiting_for_credential"},
+        {"id": "4", "name": "Missions", "state": "ready"},
         {"id": "5", "name": "Send and reply", "state": "waiting_for_credential"},
         {"id": "6", "name": "Every registered mailbox", "state": "ready"},
         {"id": "7", "name": "Letters and tables", "state": "ready"},
@@ -1097,6 +1306,7 @@ def overview(role: Optional[str]) -> Dict[str, Any]:
         {"id": row["id"], "subject_id": row.get("subject_id"), "reason": row.get("reason")}
         for row in _records(_store(), "fault")
     ] if _role(role) in _ALL_DESK_ROLES else []
+    network = desk_network(role, directory)
     return {
         "agent_id": AGENT_ID,
         "mailboxes": mailboxes,
@@ -1108,4 +1318,9 @@ def overview(role: Optional[str]) -> Dict[str, Any]:
         "phases": phases,
         "send_connected": False,
         "can_manage_mail": _role(role) == "admin",
+        "can_edit_diary": editable_diary,
+        "network": network,
+        "shares": list_shares(role),
+        "next_moves": next_moves(role),
+        "share_targets": list(network.get("share_targets") or []),
     }

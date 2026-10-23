@@ -91,6 +91,17 @@ def test_shared_operational_surfaces_stay_open():
     assert surface_decision("supplier", "/dashboard.html")["redirect"] == "/supplier-dashboard.html"
 
 
+def test_development_desk_reaches_its_api_and_not_the_rest_of_admin():
+    assert surface_decision("development", "/admin-desk.html")["allowed"] is True
+    assert api_denial("development", "GET", "/api/admin/ai-agents/desk") is None
+    assert api_denial("development", "POST", "/api/admin/ai-agents/desk/shares") is None
+    assert api_denial("development", "POST", "/api/admin/ai-agents/desk/shares/shr-1/ack") is None
+    assert api_denial("development", "GET", "/api/admin/customers") == ACCESS_DENIED
+    assert api_denial("development", "POST", "/api/admin/pipeline-process-all") == ACCESS_DENIED
+    assert api_denial("development", "GET", "/api/pipeline/summary") == ACCESS_DENIED
+    assert api_denial("development", "GET", "/api/health-wallet") == ACCESS_DENIED
+
+
 def test_anonymous_api_gate_does_not_invent_a_role():
     assert api_denial("", "GET", "/api/admin/customers") is None
     assert api_denial(None, "POST", "/api/health-wallet/purchase") is None
@@ -206,6 +217,39 @@ def test_http_customer_is_blocked_from_admin_and_other_customers():
         portal.POLICIES.pop("POL-HIER-A", None)
         portal.POLICIES.pop("POL-HIER-B", None)
         portal.CUSTOMERS.pop("CUST-HIER-B", None)
+
+
+def test_http_development_desk_loads_and_shares_without_an_admin_denial():
+    token = _session("phins_hierarchy_development", "development")
+    try:
+        status, body = _get("/api/admin/ai-agents/desk", token)
+        assert status == 200, body
+        assert body.get("error") != ACCESS_DENIED
+        assert body.get("network", {}).get("caller_desk") == "development"
+        assert "actuary" in (body.get("share_targets") or [])
+        assert "development" not in (body.get("share_targets") or [])
+        assert [row.get("desk") for row in body.get("mailboxes") or []] == ["development"]
+
+        status, shared = _post(
+            "/api/admin/ai-agents/desk/shares",
+            {
+                "to_desk": "actuary",
+                "subject": "Build note",
+                "need": "A read",
+                "body": "Review the meeting note only.",
+                "client_key": "development-desk-gate",
+            },
+            token,
+        )
+        assert status == 200, shared
+        assert shared.get("from_desk") == "development"
+        assert shared.get("to_desk") == "actuary"
+
+        status, denied = _get("/api/admin/customers", token)
+        assert status == 403
+        assert denied.get("error") == ACCESS_DENIED
+    finally:
+        _cleanup(token, "development")
 
 
 def test_http_admin_keeps_operations_and_loses_customer_private_actions():
