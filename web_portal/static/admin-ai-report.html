@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PHINS admin report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+<link rel="stylesheet" href="/phins-document.css">
+<script src="/phins-doc-return.js"></script>
+<script src="/ui-clarity.js"></script>
+<style>
+  .phins-doc { max-width: 1080px; }
+  .phins-doc-logo img { width: 52px; height: 52px; display: block; }
+  #kicker { display: block; font-family: "Space Grotesk", Inter, sans-serif; font-size: 15px; font-weight: 600; opacity: 1; }
+  .phins-screen-only { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+  #report-doc button {
+    font-family: Inter, "Segoe UI", sans-serif;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 8px 12px;
+    cursor: pointer;
+    border: 1px solid rgba(227, 191, 111, 0.7);
+    background: rgba(227, 191, 111, 0.14);
+    color: #f7e2a0;
+  }
+  #report-doc .phins-doc-body button { color: var(--phins-navy); background: var(--phins-ice); border-color: var(--phins-line); }
+  #report-doc #apply, #report-doc #ask-btn {
+    background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+    color: #f7e2a0;
+    border: 0;
+  }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--phins-muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  input, select { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--phins-line); font: inherit; color: var(--phins-ink); background: #fff; }
+  .desks, #affiliated { display: flex; flex-wrap: wrap; gap: 8px; }
+  .desks a { color: var(--phins-navy); text-decoration: none; background: var(--phins-ice); border: 1px solid var(--phins-line); border-radius: 999px; padding: 6px 10px; font-size: 0.82rem; }
+  .ask { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ask input { flex: 1; min-width: 220px; }
+  #answer { font-size: 1.05rem; line-height: 1.55; }
+  .seal { font-family: ui-monospace, monospace; word-break: break-all; }
+  html[dir="rtl"] .phins-doc th, html[dir="rtl"] .phins-doc td { text-align: right; }
+  html[dir="rtl"] .phins-doc-kicker { text-align: left; }
+  .phins-doc-body section + section { border-top: 1px solid var(--phins-line); margin-top: 18px; padding-top: 16px; }
+  @media print { .phins-screen-only, #variant-section, #ask-section { display: none !important; } }
+</style>
+</head>
+<body>
+<article class="phins-doc" id="report-doc">
+  <header class="phins-doc-banner">
+    <div class="phins-doc-brand">
+      <div class="phins-doc-logo"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
+      <div>
+        <div class="phins-doc-wordmark">PHINS</div>
+        <div class="phins-doc-tagline">Personal Health Insurance &amp; Savings</div>
+      </div>
+    </div>
+    <div class="phins-doc-kicker"><span id="kicker">Admin AI &amp; BI</span><span id="title">Report</span></div>
+  </header>
+  <div class="phins-doc-gold"></div>
+  <div class="phins-doc-body">
+    <p class="note" id="answer"></p>
+    <div id="metrics"></div>
+    <div class="phins-screen-only">
+      <button type="button" id="lang-en">English</button>
+      <button type="button" id="lang-he">עברית</button>
+      <button type="button" id="dl-json">JSON</button>
+      <button type="button" id="dl-md">Markdown</button>
+      <button type="button" id="dl-html">HTML</button>
+    </div>
+    <section id="planning" hidden></section>
+    <section id="variant-section" class="phins-screen-only" style="display:block;">
+      <h2 id="variants-title">Variants</h2>
+      <form id="variants" class="grid"></form>
+      <div class="phins-screen-only"><button type="button" id="apply">Apply</button></div>
+      <div id="affiliated"></div>
+    </section>
+    <section id="ask-section" class="phins-screen-only" style="display:block;">
+      <h2 id="ask-title">Ask a follow-up</h2>
+      <div class="ask">
+        <input id="ask-input" type="text" placeholder="Ask from the stored books">
+        <button type="button" id="ask-btn">Ask</button>
+      </div>
+    </section>
+    <section id="tables"></section>
+    <section>
+      <h2 id="desk-title">Dashboards</h2>
+      <div class="desks" id="desks"></div>
+    </section>
+  </div>
+  <footer class="phins-doc-foot">
+    <div id="seal-title">Integrity</div>
+    <p class="seal" id="seal"></p>
+  </footer>
+</article>
+<script>
+(function () {
+  var report = null;
+  var lang = "en";
+  var params = new URLSearchParams(window.location.search);
+  var reportId = params.get("id") || "";
+
+  function token() {
+    return localStorage.getItem("phins_token") || "";
+  }
+
+  function esc(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function text(id, value) {
+    var node = document.getElementById(id);
+    if (node) node.textContent = value;
+  }
+
+  function copy(block) {
+    if (!block) return "";
+    return block[lang] || block.en || "";
+  }
+
+  function applyLang() {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === "he" ? "rtl" : "ltr";
+    text("kicker", lang === "he" ? "ניהול AI ו-BI" : "Admin AI & BI");
+    text("variants-title", lang === "he" ? "תרחישים" : "Variants");
+    text("ask-title", lang === "he" ? "שאלת המשך" : "Ask a follow-up");
+    text("desk-title", lang === "he" ? "לוחות" : "Dashboards");
+    text("seal-title", lang === "he" ? "שלמות" : "Integrity");
+    text("apply", lang === "he" ? "החל" : "Apply");
+    text("ask-btn", lang === "he" ? "שאל" : "Ask");
+    if (!report) return;
+    text("title", report.report_id || "");
+    text("answer", copy(report.answer));
+    renderPlanning();
+    renderMetrics();
+    renderVariants();
+    renderAffiliated();
+    renderTables();
+    renderDesks();
+    renderSeal();
+  }
+
+  function renderMetrics() {
+    var node = document.getElementById("metrics");
+    var facts = (report && report.facts) || {};
+    var windowRow = facts.portfolio_window || {};
+    var openN = facts.open_normal || {};
+    var floor = openN.at_age_floor || {};
+    var items = [];
+    if (windowRow.lives != null) items.push([lang === "he" ? "חלון התיק" : "Portfolio window", windowRow.lives]);
+    if (openN.lives != null) items.push([lang === "he" ? "נורמלית פתוחה" : "Open normal", openN.lives]);
+    if (openN.incidence_lives != null) items.push([lang === "he" ? "היארעות נכות" : "Disability incidence", openN.incidence_lives]);
+    if (floor.average_years != null) items.push([lang === "he" ? "ADL 3 בגיל הרצפה" : "ADL 3 at the age floor", floor.average_years]);
+    if (floor.healthy_curtate_years != null) items.push([lang === "he" ? "תוחלת בריאה" : "Healthy curtate years", floor.healthy_curtate_years]);
+    var customer = facts.customer || {};
+    if (customer.customer_id) items.push([lang === "he" ? "לקוח" : "Customer", customer.customer_id]);
+    node.innerHTML = items.length ? "<div class=\"metric-grid\">" + items.map(function (item) {
+      return "<div class=\"metric\"><strong>" + esc(item[1]) + "</strong><span>" + esc(item[0]) + "</span></div>";
+    }).join("") + "</div>" : "";
+  }
+
+  function renderPlanning() {
+    var node = document.getElementById("planning");
+    var plan = report && report.planning;
+    if (!plan) { node.hidden = true; node.innerHTML = ""; return; }
+    node.hidden = false;
+    node.className = "note";
+    node.innerHTML = "<strong>" + esc(lang === "he" ? plan.name_he : plan.name_en) + "</strong><p>" +
+      esc(lang === "he" ? plan.reason_he : plan.reason_en) + "</p>" +
+      (plan.url ? "<a href=\"" + esc(plan.url) + "\">" + esc(plan.url) + "</a>" : "");
+  }
+
+  function renderVariants() {
+    var form = document.getElementById("variants");
+    var schema = (report.variants && report.variants.schema) || [];
+    var applied = (report.variants && report.variants.applied) || {};
+    form.innerHTML = schema.map(function (field) {
+      var label = lang === "he" ? field.label_he : field.label_en;
+      var value = applied[field.key];
+      if (field.type === "enum") {
+        var options = (field.values || []).map(function (item) {
+          return "<option value=\"" + esc(item) + "\"" + (String(item) === String(value) ? " selected" : "") + ">" + esc(item) + "</option>";
+        }).join("");
+        return "<label>" + esc(label) + "<select name=\"" + esc(field.key) + "\">" + options + "</select></label>";
+      }
+      return "<label>" + esc(label) + "<input name=\"" + esc(field.key) + "\" value=\"" + esc(value) + "\"></label>";
+    }).join("");
+  }
+
+  function renderAffiliated() {
+    var node = document.getElementById("affiliated");
+    node.innerHTML = (report.affiliated || []).map(function (item, index) {
+      var label = lang === "he" ? item.label_he : item.label_en;
+      return "<button type=\"button\" data-aff=\"" + index + "\">" + esc(label) + "</button>";
+    }).join("");
+  }
+
+  function renderTables() {
+    var node = document.getElementById("tables");
+    var facts = report.facts || {};
+    var rows = (facts.open_normal && facts.open_normal.rows) || [];
+    var decades = facts.decades || [];
+    var html = "";
+    if (rows.length) {
+      html += "<h2 style=\"margin-top:0;font-size:1.05rem;\">" + (lang === "he" ? "גילאים בזנב" : "Ages in the tail") + "</h2>";
+      html += "<table><thead><tr><th>Age</th><th>Lives</th><th>i(x)</th><th>ADL 3</th><th>Healthy</th></tr></thead><tbody>";
+      rows.forEach(function (row) {
+        html += "<tr><td>" + esc(row.age) + "</td><td>" + esc(row.lives) + "</td><td>" +
+          esc(row.disability_incidence_per_life) + "</td><td>" + esc(row.adl3_average_years) +
+          "</td><td>" + esc(row.healthy_curtate_years) + "</td></tr>";
+      });
+      html += "</tbody></table>";
+    }
+    if (decades.length) {
+      html += "<h2 style=\"font-size:1.05rem;\">" + (lang === "he" ? "עשורים" : "Decades") + "</h2><table><thead><tr><th>Band</th><th>Lives</th></tr></thead><tbody>";
+      decades.forEach(function (row) {
+        html += "<tr><td>" + esc(row.age_min) + "–" + esc(row.age_max) + "</td><td>" + esc(row.lives) + "</td></tr>";
+      });
+      html += "</tbody></table>";
+    }
+    var customer = facts.customer;
+    if (customer && customer.customer_id) {
+      html += "<h2 style=\"font-size:1.05rem;\">" + esc(customer.customer_id) + "</h2>";
+      html += "<p>" + esc(JSON.stringify({
+        policies: (customer.policies || []).length,
+        claims: (customer.claims || []).length,
+        underwriting: (customer.underwriting || []).length,
+        billing: (customer.billing || []).length
+      })) + "</p>";
+    }
+    node.innerHTML = html || "<p>" + (lang === "he" ? "אין טבלת גילאים בשאלה הזו." : "This question has no age table.") + "</p>";
+  }
+
+  function renderDesks() {
+    var node = document.getElementById("desks");
+    node.innerHTML = (report.dashboards || []).filter(function (row) { return row.admin_open; }).map(function (row) {
+      var label = lang === "he" ? row.label_he : row.label_en;
+      return "<a href=\"" + esc(row.path) + "\">" + esc(label) + "</a>";
+    }).join("");
+  }
+
+  function renderSeal() {
+    var integrity = report.integrity || {};
+    text("seal", (integrity.formula_id || "") + " · " + (integrity.facts_sha256 || "") +
+      (integrity.read_only ? " · read only" : ""));
+  }
+
+  function show(next) {
+    if (!next || !next.report_id) {
+      text("answer", (next && next.error) || "Report unavailable");
+      return;
+    }
+    report = next;
+    lang = report.lang === "he" ? "he" : lang;
+    try { sessionStorage.setItem("phins-aibi-" + report.report_id, JSON.stringify(report)); } catch (err) {}
+    if (report.report_id && report.report_id !== reportId) {
+      reportId = report.report_id;
+      history.replaceState(null, "", "/admin-ai-report.html?id=" + encodeURIComponent(reportId));
+    }
+    applyLang();
+  }
+
+  async function fetchReport(id) {
+    var response = await fetch("/api/admin/ai-bi/reports/" + encodeURIComponent(id), {
+      headers: { "Authorization": "Bearer " + token() }
+    });
+    var data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Report unavailable");
+    return data;
+  }
+
+  async function ask(question, variants) {
+    var response = await fetch("/api/admin/ai-bi/query", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + token(), "Content-Type": "application/json" },
+      body: JSON.stringify({ question: question, variants: variants || {}, lang: lang })
+    });
+    var data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Query refused");
+    show(data);
+  }
+
+  function readVariants() {
+    var applied = Object.assign({}, (report.variants && report.variants.applied) || {});
+    document.querySelectorAll("#variants [name]").forEach(function (field) {
+      applied[field.name] = field.value;
+    });
+    return applied;
+  }
+
+  async function download(format) {
+    var response = await fetch(
+      "/api/admin/ai-bi/reports/" + encodeURIComponent(report.report_id) +
+      "/download?format=" + format + "&lang=" + lang,
+      { headers: { "Authorization": "Bearer " + token() } }
+    );
+    var data = await response.json();
+    if (!response.ok) { text("answer", data.error || "Download refused"); return; }
+    var blob = new Blob([data.content], { type: data.media_type || "text/plain" });
+    var link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = data.filename || ("report." + format);
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  document.getElementById("lang-en").onclick = function () { lang = "en"; applyLang(); };
+  document.getElementById("lang-he").onclick = function () { lang = "he"; applyLang(); };
+  document.getElementById("dl-json").onclick = function () { download("json"); };
+  document.getElementById("dl-md").onclick = function () { download("md"); };
+  document.getElementById("dl-html").onclick = function () { download("html"); };
+  document.getElementById("apply").onclick = function () {
+    ask(report.question, readVariants()).catch(function (err) { text("answer", err.message); });
+  };
+  document.getElementById("ask-btn").onclick = function () {
+    var value = document.getElementById("ask-input").value.trim();
+    if (!value) return;
+    ask(value, {}).catch(function (err) { text("answer", err.message); });
+  };
+  document.getElementById("affiliated").onclick = function (event) {
+    var button = event.target.closest("[data-aff]");
+    if (!button || !report) return;
+    var item = (report.affiliated || [])[Number(button.getAttribute("data-aff"))];
+    if (!item) return;
+    var nextVariants = Object.assign({}, (report.variants && report.variants.applied) || {}, item.variants || {});
+    ask(item.question || report.question, item.question ? (item.variants || {}) : nextVariants)
+      .catch(function (err) { text("answer", err.message); });
+  };
+
+  var cached = null;
+  try { cached = JSON.parse(sessionStorage.getItem("phins-aibi-" + reportId) || "null"); } catch (err) { cached = null; }
+  if (cached && cached.report_id) show(cached);
+  if (reportId) {
+    fetchReport(reportId).then(function (fresh) {
+      if (!report || (fresh.integrity && report.integrity && fresh.integrity.facts_sha256 !== report.integrity.facts_sha256)) {
+        show(fresh);
+      }
+    }).catch(function (err) {
+      if (!report) text("answer", err.message);
+    });
+  } else if (!report) {
+    text("answer", "Open this window from the admin mic.");
+  }
+})();
+</script>
+</body>
+</html>

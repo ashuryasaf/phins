@@ -293,6 +293,7 @@ Preferred file-by-task:
 |---|---|
 | API route/response change | `web_portal/server.py`, then `web_portal/api_extensions.py` |
 | BI/analytics API | `web_portal/api_bi_analytics.py`, `services/bi_analytics_service.py` |
+| Admin AI Mic data desk | `services/admin_ai_bi_service.py`, `web_portal/api_admin_ai_bi.py`, `/admin-ai-report.html` |
 | Delivery/bidding API | `web_portal/api_delivery_bidding.py`, `services/delivery_bidding_service.py` |
 | Customer messaging / consent / escalation | `services/customer_agent/`, `web_portal/server.py` (`/api/admin/customers/{id}/contact`, `.../consent`, `.../interactions`) |
 | Agent ecosystem API | `web_portal/api_agent_ecosystem.py`, `services/agent_ecosystem_service.py` |
@@ -772,6 +773,7 @@ Environment variables commonly used:
  the current paragraph. A missing or stale scene is omitted and the next
  stored scene follows. The plan, its factors, and public placements are
  not written.
+- **Admin AI Mic data desk:** `POST /api/admin/ai-bi/query` (admin or manager only) answers from the actuarial tables, `SimulationParams`, the ADL 3 remaining-life rows, the live books, and simulations already stored on the process. A missing rate is withheld. The desk does not draw a new portfolio or write a store. A question that needs a new run returns `planning` and names the existing tool (portfolio simulator, Monte Carlo evaluation, or the assessment center). The report window is `/admin-ai-report.html` (variants, JSON/Markdown/HTML download, English/Hebrew). Optional narration uses the assessment LLM and is dropped when it introduces a number.
 - **BI analytics (B10):** `PHINS_BI_SNAPSHOT_DIR` also holds
  `materialized_views.json` (served by `/api/bi/*` when fingerprint, checksum
  and age < cache TTL all match); `PHINS_BI_REMATERIALIZE_DELAY_SECONDS`
