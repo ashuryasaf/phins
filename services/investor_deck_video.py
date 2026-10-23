@@ -370,7 +370,6 @@ def seal_for_send(
     elif presenter_by_id(current_presenter) is None:
         raise InvestorDeckError("Stored presenter is not in the roster. Reset the scene before sending.")
     previous_narration = str(record.get("sealed_narration") or "")
-    previous_hash = str(record.get("sealed_plan_hash") or "")
     previous_presenter = current_presenter
     record["sealed_narration"] = narration
     record["sealed_plan_hash"] = plan_hash
@@ -378,9 +377,12 @@ def seal_for_send(
     record["checksum"] = scene_checksum(record)
     record["integrity_ok"] = True
     record["stored"] = True
+    # The whole-plan content hash moves when any slide or census figure
+    # changes. That alone does not retire a clip whose spoken line and
+    # presenter are unchanged; clearing the link here would persist an empty
+    # asset before an identical job is reused, and that job would not reattach.
     if (
         previous_narration != narration
-        or previous_hash != plan_hash
         or previous_presenter != record["presenter_id"]
     ):
         record["last_asset_id"] = ""

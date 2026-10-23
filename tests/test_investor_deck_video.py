@@ -121,6 +121,17 @@ def test_only_a_matching_clip_enters_the_stream():
     assert kept["figures_current"] is True
     assert kept["in_stream"] is True
     assert kept["playback_url"].startswith("data:video/mp4")
+    sealed["last_job_id"] = "job-1"
+    resealed = seal_for_send("s06p01", sealed, shifted, used_presenter_ids=[], rng=random.Random(2))
+    assert resealed["sealed_narration"] == sealed["sealed_narration"]
+    assert resealed["sealed_plan_hash"] == shifted["content_hash"]
+    assert resealed["last_asset_id"] == "asset-1"
+    assert resealed["asset_checksum"] == "abc123"
+    assert resealed["last_job_id"] == "job-1"
+    assert verify_scene(resealed, spec)
+    still = scene_view(spec, resealed, shifted, asset)
+    assert still["in_stream"] is True
+    assert still["playback_url"].startswith("data:video/mp4")
     hash_line = spec_for("s13p03")
     sealed_hash = seal_for_send("s13p03", None, plan, used_presenter_ids=[], rng=random.Random(4))
     sealed_hash["last_asset_id"] = "asset-2"
@@ -129,6 +140,13 @@ def test_only_a_matching_clip_enters_the_stream():
     assert spoken_hash["narration"] != sealed_hash["sealed_narration"]
     assert spoken_hash["figures_current"] is False
     assert spoken_hash["in_stream"] is False
+    sealed_hash["last_job_id"] = "job-2"
+    dropped = seal_for_send("s13p03", sealed_hash, shifted, used_presenter_ids=[], rng=random.Random(4))
+    assert dropped["sealed_narration"] != sealed_hash["sealed_narration"]
+    assert dropped["sealed_plan_hash"] == shifted["content_hash"]
+    assert dropped["last_asset_id"] == ""
+    assert dropped["asset_checksum"] == ""
+    assert dropped["last_job_id"] == ""
 
 
 def test_theme_change_drops_the_film_link_and_reset_clears_the_seal():
