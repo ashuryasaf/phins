@@ -17,6 +17,7 @@ def _html() -> str:
 SECTION_IDS = [
     "investor-documents-section",
     "actuary-briefing-section",
+    "freilichman-meeting-24sep",
     "investor-meeting-section",
     "partner-meetings-13jul",
     "regulatory-meeting-27jul",
@@ -76,6 +77,7 @@ def test_pitch_fold_script_registers_sections():
         "aspire-ohayun-meeting-26oct",
         "uzan-followup-meeting-28oct",
         "dnr-benzvi-meeting-12nov",
+        "freilichman-meeting-24sep",
         "scenario-assessment-section",
         "techno-yes-section",
     ):
@@ -286,11 +288,56 @@ def test_oct2026_israel_book_identity_holds():
         assert "183,337,052" in section
 
 
+def test_freilichman_24sep_is_a_held_actuary_record():
+    html = _html()
+    briefing = html[html.index('id="actuary-briefing-section"'):html.index('id="freilichman-meeting-24sep"')]
+    assert "26 May 2026" in briefing
+    assert "Ori Freilichman" in briefing
+    assert 'href="#freilichman-meeting-24sep"' in briefing
+    section = html[html.index('id="freilichman-meeting-24sep"'):html.index('id="investor-meeting-section"')]
+    assert "Thursday 24 September 2026" in section
+    assert "22:00" in section
+    assert "F.IL.A.A." in section
+    assert "Held" in section
+    assert "regulatory proof-of-concept" in section
+    assert "12 October" in section
+    assert 'href="#regulatory-preruling-avi-ovadia"' in section
+    assert 'href="#actuary-briefing-section"' in section
+    assert 'href="#grove-vc-meeting-24sep"' in section
+    assert 'href="#unified-business-plan-card"' in section
+    assert 'href="/business-plan.html"' in section
+    assert 'href="/business-plan.html#part-deck"' in section
+    assert 'href="/business-plan.html#part-appendices"' in section
+    assert "/investor-docs/freilichman-meeting-24sep-brief.pdf" in section
+    assert "download" in section
+    for needle in ("4,518", "24,000 / 94,080 / 230,554", "13,554,000", "6,000,000", "unified-2026.10-v1"):
+        assert needle in section, needle
+    # Terms that were not set must stay unset.
+    assert "board of directors" in section
+    assert "did not subscribe" in section or "no subscription" in section
+    assert "26 May" in section
+    preruling = html[html.index('id="regulatory-preruling-avi-ovadia"'):html.index('id="fintl-vc-meetings-aug"')]
+    assert 'href="#freilichman-meeting-24sep"' in preruling
+    grove = html[html.index('id="grove-vc-meeting-24sep"'):html.index('id="aspire-invest-meeting-sep2026"')]
+    assert 'href="#freilichman-meeting-24sep"' in grove
+    assert 'time: "22:00"' in html
+    assert "Mr. Ori Freilichman, F.IL.A.A. — actuary" in html
+    assert 'status: "Held"' in html[html.index("Mr. Ori Freilichman, F.IL.A.A. — actuary"):html.index("Mr. Ori Freilichman, F.IL.A.A. — actuary") + 800]
+    record = (REPO / "web_portal/static/investor-docs/freilichman-meeting-24sep-brief.html").read_text(encoding="utf-8")
+    md = (REPO / "web_portal/static/investor-docs/freilichman-meeting-24sep-brief.md").read_text(encoding="utf-8")
+    assert "Ori Freilichman" in md and "22:00" in md and "Held" in md
+    assert "linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%)" in record
+    assert "Space Grotesk" in record and 'class="phins-doc-logo"' in record
+    pdf = (REPO / "web_portal/static/investor-docs/freilichman-meeting-24sep-brief.pdf").read_bytes()
+    assert pdf[:5] == b"%PDF-" and b"%%EOF" in pdf[-2048:]
+
+
 def test_oct2026_diary_seed_and_designed_briefs():
     import importlib.util
 
     html = _html()
-    assert 'var STORAGE_ID = "phins.il.meeting.diary.v9"' in html
+    assert 'var STORAGE_ID = "phins.il.meeting.diary.v10"' in html
+    assert "phins.il.meeting.diary.v9" in html
     for date, person in (
         ("2026-10-25", "Keshet Sirota-Leviner"),
         ("2026-10-26", "Eyal Ohayun"),

@@ -169,6 +169,10 @@ DOCUMENTS = [
      'investor-docs/dnr-benzvi-meeting-12nov-brief.pdf',
      'PHINS — D.N.R. Meeting Brief (12 November 2026) · '
      'Mr. Yosi Ben Zvi, CEO, D.N.R. Insurance Agency'),
+    ('investor-docs/freilichman-meeting-24sep-brief.md',
+     'investor-docs/freilichman-meeting-24sep-brief.pdf',
+     'PHINS — Actuary Meeting Record (24 September 2026) · '
+     'Mr. Ori Freilichman, F.IL.A.A.'),
 ]
 
 # Meeting briefs that also ship a self-contained HTML edition on the
@@ -198,6 +202,12 @@ DESIGNED_BRIEFS = {
         'eyebrow': 'Agency meeting · 12 November 2026',
         'subtitle': 'Mr. Yosi Ben Zvi · D.N.R. Insurance Agency',
         'footer': 'PHINS · Confidential · D.N.R. meeting brief · 12 November 2026 · canonical defaults of unified-2026.10-v1',
+    },
+    'investor-docs/freilichman-meeting-24sep-brief.md': {
+        'html': 'investor-docs/freilichman-meeting-24sep-brief.html',
+        'eyebrow': 'Actuary meeting · held 24 September 2026 · 22:00',
+        'subtitle': 'Mr. Ori Freilichman, F.IL.A.A.',
+        'footer': 'PHINS · Confidential · Freilichman meeting record · 24 September 2026 · canonical defaults of unified-2026.10-v1',
     },
 }
 

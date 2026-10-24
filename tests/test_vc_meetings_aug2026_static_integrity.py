@@ -137,8 +137,9 @@ def test_diary_seeds_aug_vc_meetings():
     assert "fintl-vc-meeting-5aug-brief.pdf" in pd
     assert "fintl-vc-meeting-6aug-brief.pdf" in pd
     assert "grove-vc-meeting-19aug-brief.pdf" in pd
-    # v9 is the live diary key (Oct–Nov 2026 meetings). v8 remains a fallback read.
-    assert 'var STORAGE_ID = "phins.il.meeting.diary.v9"' in pd
+    # v10 is the live diary key (24 Sep Freilichman). v9 and v8 remain fallback reads.
+    assert 'var STORAGE_ID = "phins.il.meeting.diary.v10"' in pd
+    assert "phins.il.meeting.diary.v9" in pd
     assert "phins.il.meeting.diary.v8" in pd
 
 
