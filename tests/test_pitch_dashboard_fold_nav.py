@@ -25,6 +25,10 @@ SECTION_IDS = [
     "grove-vc-meeting-19aug",
     "grove-vc-meeting-24sep",
     "aspire-invest-meeting-sep2026",
+    "nba-law-meeting-25oct",
+    "aspire-ohayun-meeting-26oct",
+    "uzan-followup-meeting-28oct",
+    "dnr-benzvi-meeting-12nov",
     "exec-summary-section",
     "scenario-assessment-section",
     "techno-yes-section",
@@ -68,6 +72,10 @@ def test_pitch_fold_script_registers_sections():
         "grove-vc-meeting-19aug",
         "grove-vc-meeting-24sep",
         "aspire-invest-meeting-sep2026",
+        "nba-law-meeting-25oct",
+        "aspire-ohayun-meeting-26oct",
+        "uzan-followup-meeting-28oct",
+        "dnr-benzvi-meeting-12nov",
         "scenario-assessment-section",
         "techno-yes-section",
     ):
@@ -211,3 +219,104 @@ def test_techno_yes_competitors_and_sources_are_referenced_not_registered():
     assert "evidenceStrength" not in block
     assert "aspire_scale_identity.py" in block
     assert "does not change any actuarial figure" in block
+
+
+# ---------------------------------------------------------------------------
+# 25 Oct – 12 Nov 2026 meetings. One Israel book, four points of view.
+# ---------------------------------------------------------------------------
+
+OCT_MEETINGS = (
+    ("nba-law-meeting-25oct", "nba-law-meeting-25oct-brief",
+     "Keshet Sirota-Leviner", "25 October 2026", "#regulatory-preruling-avi-ovadia"),
+    ("aspire-ohayun-meeting-26oct", "aspire-ohayun-meeting-26oct-brief",
+     "Eyal Ohayun", "26 October 2026", "#aspire-invest-meeting-sep2026"),
+    ("uzan-followup-meeting-28oct", "uzan-followup-meeting-28oct-brief",
+     "Meir Uzan", "28 October 2026", "#investor-meeting-section"),
+    ("dnr-benzvi-meeting-12nov", "dnr-benzvi-meeting-12nov-brief",
+     "Yosi Ben Zvi", "12 November 2026", "#partner-meetings-13jul"),
+)
+
+
+def _oct_section(html: str, section_id: str) -> str:
+    start = html.index(f'id="{section_id}"')
+    rest = html[start + 1:]
+    end = rest.index('<section id="')
+    return rest[:end]
+
+
+def test_oct2026_meetings_address_the_unified_plan_and_an_earlier_bar():
+    html = _html()
+    assert "Meetings that address this standard" in html
+    for section_id, stem, person, date, earlier in OCT_MEETINGS:
+        section = _oct_section(html, section_id)
+        assert person in section
+        assert date in section
+        assert 'href="#unified-business-plan-card"' in section
+        assert 'href="/business-plan.html"' in section
+        assert 'href="/business-plan.html#part-deck"' in section
+        assert 'href="/business-plan.html#part-appendices"' in section
+        assert f'href="{earlier}"' in section
+        assert f'/investor-docs/{stem}.html"' in section
+        assert f'/investor-docs/{stem}.pdf"' in section
+        assert "download" in section
+        for needle in ("4,518", "24,000 / 94,080 / 230,554", "13,554,000", "6,000,000", "unified-2026.10-v1"):
+            assert needle in section, (section_id, needle)
+    # This follow-up names Meir Uzan even if the configurator renames the June book.
+    uzan = _oct_section(html, "uzan-followup-meeting-28oct")
+    assert "inv-investor-name" not in uzan
+    # The September bar links forward and still does not carry this follow-up's seed.
+    aspire = html[html.index('id="aspire-invest-meeting-sep2026"'):html.index('id="nba-law-meeting-25oct"')]
+    assert 'href="#aspire-ohayun-meeting-26oct"' in aspire
+    assert "6,000,000" not in aspire
+    assert "₪6.0M" not in aspire
+
+
+def test_oct2026_israel_book_identity_holds():
+    assert 12_000 * 4_518 == 54_216_000
+    assert 59_040 * 4_518 == 266_742_720
+    assert 162_317 * 4_518 == 733_348_206
+    assert round(54_216_000 * 0.25) == 13_554_000
+    assert round(266_742_720 * 0.25) == 66_685_680
+    assert round(733_348_206 * 0.25) == 183_337_052
+    assert 2_400_000 + 1_200_000 + 1_500_000 + 900_000 == 6_000_000
+    html = _html()
+    for section_id, *_rest in OCT_MEETINGS:
+        section = _oct_section(html, section_id)
+        assert "54,216,000" in section
+        assert "183,337,052" in section
+
+
+def test_oct2026_diary_seed_and_designed_briefs():
+    import importlib.util
+
+    html = _html()
+    assert 'var STORAGE_ID = "phins.il.meeting.diary.v9"' in html
+    for date, person in (
+        ("2026-10-25", "Keshet Sirota-Leviner"),
+        ("2026-10-26", "Eyal Ohayun"),
+        ("2026-10-28", "Meir Uzan"),
+        ("2026-11-12", "Yosi Ben Zvi"),
+    ):
+        assert date in html
+        assert person in html
+    spec = importlib.util.spec_from_file_location(
+        "generate_investor_pdfs", REPO / "scripts" / "generate_investor_pdfs.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    docs = REPO / "web_portal" / "static" / "investor-docs"
+    srcs = {src for src, _pdf, _title in mod.DOCUMENTS}
+    for _section, stem, person, date, _earlier in OCT_MEETINGS:
+        md_name = f"investor-docs/{stem}.md"
+        assert md_name in srcs
+        assert md_name in mod.DESIGNED_BRIEFS
+        html_doc = (docs / f"{stem}.html").read_text(encoding="utf-8")
+        md = (docs / f"{stem}.md").read_text(encoding="utf-8")
+        assert person in md and date in md
+        assert "linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%)" in html_doc
+        assert "Space Grotesk" in html_doc
+        assert 'class="phins-doc-logo"' in html_doc
+        assert 'href="/business-plan.html"' in html_doc
+        pdf = (docs / f"{stem}.pdf").read_bytes()
+        assert pdf[:5] == b"%PDF-"
+        assert b"%%EOF" in pdf[-2048:]

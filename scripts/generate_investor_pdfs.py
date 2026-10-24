@@ -153,7 +153,53 @@ DOCUMENTS = [
     ('investor-docs/aspire-invest-nda-sep2026-he.md',
      'investor-docs/aspire-invest-nda-sep2026-he.pdf',
      'פינס — הסכם סודיות הדדי (אספייר-אינבסט · ספטמבר 2026)'),
+    ('investor-docs/nba-law-meeting-25oct-brief.md',
+     'investor-docs/nba-law-meeting-25oct-brief.pdf',
+     'PHINS — NBA Law Counsel Brief (25 October 2026) · '
+     'Adv. Keshet Sirota-Leviner, Naschitz Brandes Amir'),
+    ('investor-docs/aspire-ohayun-meeting-26oct-brief.md',
+     'investor-docs/aspire-ohayun-meeting-26oct-brief.pdf',
+     'PHINS — Aspire Follow-up Brief (26 October 2026) · '
+     'Mr. Eyal Ohayun, Head of Distribution, Aspire Capital'),
+    ('investor-docs/uzan-followup-meeting-28oct-brief.md',
+     'investor-docs/uzan-followup-meeting-28oct-brief.pdf',
+     'PHINS — Meir Uzan Follow-up Brief (28 October 2026) · '
+     'Local-market investor'),
+    ('investor-docs/dnr-benzvi-meeting-12nov-brief.md',
+     'investor-docs/dnr-benzvi-meeting-12nov-brief.pdf',
+     'PHINS — D.N.R. Meeting Brief (12 November 2026) · '
+     'Mr. Yosi Ben Zvi, CEO, D.N.R. Insurance Agency'),
 ]
+
+# Meeting briefs that also ship a self-contained HTML edition on the
+# unified document chrome (shield, navy/gold gradient, Inter + Space Grotesk).
+# The markdown remains the source; the HTML is regenerated with the PDF.
+DESIGNED_BRIEFS = {
+    'investor-docs/nba-law-meeting-25oct-brief.md': {
+        'html': 'investor-docs/nba-law-meeting-25oct-brief.html',
+        'eyebrow': 'Counsel brief · 25 October 2026',
+        'subtitle': 'Adv. Keshet Sirota-Leviner · NBA Law',
+        'footer': 'PHINS · Confidential · NBA Law counsel brief · 25 October 2026 · canonical defaults of unified-2026.10-v1',
+    },
+    'investor-docs/aspire-ohayun-meeting-26oct-brief.md': {
+        'html': 'investor-docs/aspire-ohayun-meeting-26oct-brief.html',
+        'eyebrow': 'Frontal follow-up · 26 October 2026',
+        'subtitle': 'Mr. Eyal Ohayun · Aspire Capital · local growth',
+        'footer': 'PHINS · Confidential · Aspire follow-up brief · 26 October 2026 · canonical defaults of unified-2026.10-v1',
+    },
+    'investor-docs/uzan-followup-meeting-28oct-brief.md': {
+        'html': 'investor-docs/uzan-followup-meeting-28oct-brief.html',
+        'eyebrow': 'Investor follow-up · 28 October 2026',
+        'subtitle': 'Mr. Meir Uzan · local market',
+        'footer': 'PHINS · Confidential · Meir Uzan follow-up brief · 28 October 2026 · canonical defaults of unified-2026.10-v1',
+    },
+    'investor-docs/dnr-benzvi-meeting-12nov-brief.md': {
+        'html': 'investor-docs/dnr-benzvi-meeting-12nov-brief.html',
+        'eyebrow': 'Agency meeting · 12 November 2026',
+        'subtitle': 'Mr. Yosi Ben Zvi · D.N.R. Insurance Agency',
+        'footer': 'PHINS · Confidential · D.N.R. meeting brief · 12 November 2026 · canonical defaults of unified-2026.10-v1',
+    },
+}
 
 # Sources rendered right-to-left (Hebrew). RTL documents use a Hebrew-capable
 # font, right-aligned paragraph styles with reportlab's RTL word wrap, and
@@ -874,6 +920,116 @@ def generate_one(md_path: str, pdf_path: str, title: str, styles) -> None:
     doc.build(story, onFirstPage=on_first, onLaterPages=on_later)
 
 
+def _inline_html(text: str) -> str:
+    """Markdown inline subset to HTML. Text is escaped before tags are added."""
+    codes = []
+
+    def _stash(match):
+        codes.append(match.group(1))
+        return f"\x00C{len(codes) - 1}\x00"
+
+    text = re.sub(r'`([^`]+)`', _stash, text)
+    text = html.escape(text)
+    text = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', text)
+    text = re.sub(
+        r'\[([^\]]+)\]\(([^)]+)\)',
+        lambda m: (
+            f'<a href="{html.escape(m.group(2), quote=True)}">{m.group(1)}</a>'
+        ),
+        text,
+    )
+    for i, span in enumerate(codes):
+        text = text.replace(
+            f"\x00C{i}\x00",
+            f"<code>{html.escape(span)}</code>",
+        )
+    return text
+
+
+def _markdown_to_brief_html(md_text: str) -> str:
+    """Pragmatic markdown subset to HTML for the designed meeting briefs.
+
+    Matches the constructs the PDF renderer accepts for these briefs:
+    ATX headings, paragraphs, bold, code spans, links, bullets, blockquotes,
+    and pipe tables. The result is inserted as the body of
+    ``render_phins_document`` and must not contain unescaped source text.
+    """
+    lines = md_text.splitlines()
+    out = []
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
+        if not stripped or (stripped.startswith('<!--') and stripped.endswith('-->')):
+            i += 1
+            continue
+        if '|' in stripped and i + 1 < len(lines) and re.match(
+            r'^\s*\|?[\s:|-]+\|[\s:|-]+$', lines[i + 1]
+        ):
+            rows = [_parse_table_row(stripped)]
+            i += 2
+            while i < len(lines) and '|' in lines[i] and lines[i].strip():
+                rows.append(_parse_table_row(lines[i]))
+                i += 1
+            head = ''.join(f'<th>{_inline_html(c)}</th>' for c in rows[0])
+            body_rows = []
+            for row in rows[1:]:
+                body_rows.append(
+                    '<tr>' + ''.join(f'<td>{_inline_html(c)}</td>' for c in row) + '</tr>'
+                )
+            out.append(
+                '<table><thead><tr>' + head + '</tr></thead><tbody>'
+                + ''.join(body_rows) + '</tbody></table>'
+            )
+            continue
+        m = re.match(r'^(#{1,6})\s+(.*)$', stripped)
+        if m:
+            level = min(len(m.group(1)), 3)
+            out.append(f'<h{level}>{_inline_html(m.group(2))}</h{level}>')
+            i += 1
+            continue
+        if stripped.startswith('>'):
+            buf = []
+            while i < len(lines) and lines[i].strip().startswith('>'):
+                buf.append(re.sub(r'^>\s?', '', lines[i].strip()))
+                i += 1
+            out.append('<blockquote><p>' + _inline_html(' '.join(buf)) + '</p></blockquote>')
+            continue
+        if stripped.startswith('- '):
+            items = []
+            while i < len(lines) and lines[i].strip().startswith('- '):
+                items.append(_inline_html(lines[i].strip()[2:]))
+                i += 1
+            out.append('<ul>' + ''.join(f'<li>{item}</li>' for item in items) + '</ul>')
+            continue
+        buf = [stripped]
+        i += 1
+        while i < len(lines) and lines[i].strip() and not lines[i].strip().startswith(('#', '>', '-', '|', '<')):
+            buf.append(lines[i].strip())
+            i += 1
+        out.append('<p>' + _inline_html(' '.join(buf)) + '</p>')
+    return '\n'.join(out)
+
+
+def write_designed_brief(md_path: str, html_path: str, meta: dict, title: str) -> None:
+    """Write the self-contained PHINS letterhead edition of a meeting brief."""
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if repo not in sys.path:
+        sys.path.insert(0, repo)
+    from services.phins_document import render_phins_document
+
+    with open(md_path, 'r', encoding='utf-8') as fh:
+        body = _markdown_to_brief_html(fh.read())
+    document = render_phins_document(
+        title=title,
+        eyebrow=meta['eyebrow'],
+        subtitle=meta['subtitle'],
+        body_html=body,
+        footer=html.escape(meta['footer']),
+    )
+    with open(html_path, 'w', encoding='utf-8') as fh:
+        fh.write(document)
+
+
 def _source_has_hebrew(md_path: str) -> bool:
     """True when a markdown source embeds Hebrew text needing build-time bidi."""
     with open(md_path, 'r', encoding='utf-8') as fh:
@@ -894,8 +1050,12 @@ def main(argv=None) -> int:
             pdf for _, pdf, _ in DOCUMENTS
             if not os.path.isfile(os.path.join(STATIC_DIR, pdf))
         ]
+        missing += [
+            meta['html'] for meta in DESIGNED_BRIEFS.values()
+            if not os.path.isfile(os.path.join(STATIC_DIR, meta['html']))
+        ]
         if missing:
-            print('Missing PDFs:', ', '.join(missing))
+            print('Missing investor documents:', ', '.join(missing))
             return 1
         print('All investor PDFs present.')
         return 0
@@ -944,6 +1104,13 @@ def main(argv=None) -> int:
         size_kb = os.path.getsize(pdf_path) / 1024
         generated.append(pdf_name)
         print(f"  ✓ {pdf_name} ({size_kb:.0f} KB)")
+        designed = DESIGNED_BRIEFS.get(md_name)
+        if designed:
+            html_name = designed['html']
+            html_path = os.path.join(STATIC_DIR, html_name)
+            write_designed_brief(md_path, html_path, designed, title)
+            html_kb = os.path.getsize(html_path) / 1024
+            print(f"  ✓ {html_name} ({html_kb:.0f} KB)")
     print(f"Generated {len(generated)} investor PDF(s) under {STATIC_DIR}")
     if skipped_rtl:
         print('  ! RTL rendering unavailable (needs a Hebrew-capable font and '
