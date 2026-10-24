@@ -106,7 +106,7 @@ def test_parse_query_percent_conveniences():
 def test_dashboard_has_configurator_and_switched_table():
     html = (STATIC / "pitch-dashboard.html").read_text(encoding="utf-8")
     start = html.index('id="aspire-invest-meeting-sep2026"')
-    end = html.index('id="exec-summary-section"')
+    end = html.index('id="nba-law-meeting-25oct"')
     section = html[start:end]
     assert 'id="aspire-configurator"' in section
     assert 'id="aspire-sav-elect"' in section

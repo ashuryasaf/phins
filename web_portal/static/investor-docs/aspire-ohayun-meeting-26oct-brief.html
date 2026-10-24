@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PHINS — Aspire Follow-up Brief (26 October 2026) · Mr. Eyal Ohayun, Head of Distribution, Aspire Capital</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+/* Shared letterhead for generated PHINS documents (claim notice, processing
+   record, probability report, risk reports). Self-contained: no external
+   assets except the inlined emblem. */
+:root {
+  --phins-navy: #0e2f63;
+  --phins-navy-deep: #060d1f;
+  --phins-navy-mid: #123f82;
+  --phins-gold: #c9a04e;
+  --phins-gold-strong: #f7e2a0;
+  --phins-ink: #12284c;
+  --phins-muted: #5b6b82;
+  --phins-ice: #f3f7fd;
+  --phins-line: #d5deea;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: #e8eef6;
+  color: var(--phins-ink);
+  font-family: Inter, "Segoe UI", sans-serif;
+  line-height: 1.5;
+}
+.phins-doc {
+  max-width: 920px;
+  margin: 24px auto;
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(6, 13, 31, 0.12);
+}
+.phins-doc-banner {
+  background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+  color: #fff;
+  padding: 22px 28px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+.phins-doc-brand { display: flex; gap: 12px; align-items: center; }
+.phins-doc-logo { width: 52px; height: 52px; flex: 0 0 52px; }
+.phins-doc-logo svg { width: 52px; height: 52px; display: block; }
+.phins-doc-wordmark {
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-size: 20px;
+}
+.phins-doc-tagline { font-size: 11px; letter-spacing: 0.03em; opacity: 0.84; }
+.phins-doc-kicker {
+  text-align: right;
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  font-weight: 600;
+  font-size: 15px;
+}
+.phins-doc-kicker span {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400;
+  font-size: 12px;
+  opacity: 0.82;
+  font-family: Inter, "Segoe UI", sans-serif;
+}
+.phins-doc-gold {
+  height: 4px;
+  background: linear-gradient(90deg, #b8893b 0%, #f7e2a0 42%, #e3bf6f 100%);
+}
+.phins-doc-body { padding: 24px 28px 8px; }
+.phins-doc h1, .phins-doc h2, .phins-doc h3 {
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  color: var(--phins-navy);
+  margin: 0 0 8px;
+}
+.phins-doc h1 { font-size: 22px; }
+.phins-doc h2 { font-size: 16px; margin-top: 8px; }
+.phins-doc .gold { color: var(--phins-gold); }
+.phins-doc .sub { color: var(--phins-muted); margin: 0 0 16px; font-size: 13px; }
+.phins-doc table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; }
+.phins-doc th, .phins-doc td {
+  border: 1px solid var(--phins-line);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+  font-size: 14px;
+}
+.phins-doc th {
+  background: var(--phins-ice);
+  color: var(--phins-navy);
+  font-weight: 600;
+}
+.phins-doc td code, .phins-doc code {
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--phins-navy-mid);
+}
+.phins-doc .seal, .phins-doc-foot {
+  font-size: 12px;
+  color: var(--phins-muted);
+}
+.phins-doc-foot {
+  padding: 14px 28px 20px;
+  border-top: 1px solid var(--phins-line);
+}
+.phins-doc .metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 0 0 18px;
+}
+.phins-doc .metric {
+  background: var(--phins-ice);
+  border: 1px solid var(--phins-line);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.phins-doc .metric strong {
+  display: block;
+  font-family: "Space Grotesk", Inter, sans-serif;
+  font-size: 1.45rem;
+  color: var(--phins-navy);
+}
+.phins-doc .metric.ok strong { color: #0f6b45; }
+.phins-doc .metric.warn strong { color: #8a5a12; }
+.phins-doc .metric.alert strong { color: #9b2c2c; }
+.phins-doc .metric span { color: var(--phins-muted); font-size: 12px; }
+.phins-doc .bar { height: 8px; background: #e5e7eb; border-radius: 4px; margin-top: 8px; }
+.phins-doc .bar-fill { height: 100%; border-radius: 4px; background: var(--phins-navy-mid); }
+.phins-doc .note {
+  background: var(--phins-ice);
+  border-left: 4px solid var(--phins-gold);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 0 0 16px;
+}
+.phins-doc .summary-box {
+  background: var(--phins-ice);
+  border: 1px solid var(--phins-line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin: 0 0 16px;
+}
+.phins-doc .metric-value { font-weight: 700; color: var(--phins-navy); font-size: 18px; }
+.phins-doc .metric-label { font-size: 11px; color: var(--phins-muted); }
+.phins-doc iframe.phins-file-frame {
+  width: 100%;
+  min-height: 70vh;
+  border: 1px solid var(--phins-line);
+  border-radius: 8px;
+  background: #fff;
+}
+/* Leave-document bar. Hidden in print so a saved PDF stays a document. */
+.phins-doc-return {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #fff;
+  border-bottom: 4px solid transparent;
+  border-image: linear-gradient(90deg, #b8893b 0%, #f7e2a0 42%, #e3bf6f 100%) 1;
+  font-family: Inter, "Segoe UI", sans-serif;
+  color: var(--phins-ink);
+}
+.phins-doc-return-note {
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  color: var(--phins-navy);
+}
+.phins-doc-return-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.phins-doc-return button {
+  font-family: Inter, "Segoe UI", sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.phins-doc-back {
+  background: #fff;
+  color: var(--phins-navy);
+  border: 1px solid var(--phins-line);
+}
+.phins-doc-close {
+  background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+  color: #fff;
+  border: 0;
+}
+@media print {
+  body { background: #fff; }
+  .phins-doc { box-shadow: none; margin: 0; max-width: none; border-radius: 0; }
+  .phins-doc-return { display: none !important; }
+  .phins-doc-body button { display: none !important; }
+}
+
+</style>
+</head>
+<body>
+<nav class="phins-doc-return" aria-label="Leave this document"><span class="phins-doc-return-note">PHINS document</span><span class="phins-doc-return-actions"><button type="button" class="phins-doc-back">Go back</button><button type="button" class="phins-doc-close">Close</button></span></nav>
+<script>
+/* PHINS document return bar.
+   Every report, file, or document a person can open must include this script
+   (or the markup from services/phins_document.py, which inlines it) so the
+   page is never a dead end. Chrome only: it does not read or rewrite document
+   data. Future generated documents call PhinsDocument.printReport /
+   render_phins_document, or load /phins-doc-return.js with a script tag.
+   This file is also inlined inside a script element, so it must never
+   contain a literal script tag: the HTML parser would close the element
+   there and print the rest of this source as page text.
+   Set data-phins-return="off" on <body> when the page already has its own
+   Go back and Close controls that call phinsDocGoBack / phinsDocClose. */
+(function (global) {
+    'use strict';
+
+    if (global.__phinsDocReturnInstalled) return;
+    global.__phinsDocReturnInstalled = true;
+
+    /* Role homes for the cross-pipeline checkout. Keep in sync with
+       PIPELINE_DOCUMENT_HOMES in services/phins_document.py. */
+    var PHINS_DOCUMENT_HOMES = {
+        admin: '/admin.html',
+        manager: '/admin.html',
+        underwriter: '/underwriter-dashboard.html',
+        claims: '/claims-adjuster-dashboard.html',
+        claims_adjuster: '/claims-adjuster-dashboard.html',
+        adjuster: '/claims-adjuster-dashboard.html',
+        accountant: '/accountant-dashboard.html',
+        actuary: '/actuary-dashboard.html',
+        supplier: '/supplier-portal.html',
+        regulator: '/regulator-dashboard.html',
+        customer: '/dashboard.html',
+        foundation: '/foundation-dashboard.html',
+        community: '/foundation-dashboard.html'
+    };
+
+    function framed() {
+        try { return global.top !== global.self; } catch (e) { return true; }
+    }
+
+    function sameOriginPath(value) {
+        if (!value || value.charAt(0) !== '/' || value.charAt(1) === '/' || value.indexOf('\\') !== -1) {
+            return '';
+        }
+        if (value.indexOf('..') !== -1) return '';
+        return value;
+    }
+
+    function phinsDocReturnTarget() {
+        try {
+            var q = new URLSearchParams(global.location.search || '');
+            var explicit = sameOriginPath(q.get('return') || '');
+            if (explicit) return explicit;
+        } catch (e) { /* keep going */ }
+        if (global.document.referrer) {
+            try {
+                var ref = new URL(global.document.referrer);
+                if (ref.origin === global.location.origin && ref.pathname !== global.location.pathname) {
+                    return ref.pathname + ref.search + ref.hash;
+                }
+            } catch (e2) { /* ignore */ }
+        }
+        var role = '';
+        try {
+            var raw = global.localStorage.getItem('session') || global.sessionStorage.getItem('session') || '';
+            if (raw) role = String((JSON.parse(raw) || {}).role || '').toLowerCase();
+        } catch (e3) { /* ignore */ }
+        return PHINS_DOCUMENT_HOMES[role] || '/documents.html';
+    }
+
+    function phinsDocGoBack() {
+        if (framed()) return;
+        try {
+            if (global.history.length > 1) {
+                global.history.back();
+                return;
+            }
+        } catch (e) { /* fall through */ }
+        global.location.href = phinsDocReturnTarget();
+    }
+
+    function phinsDocClose() {
+        if (framed()) return;
+        var target = phinsDocReturnTarget();
+        try { global.close(); } catch (e) { /* blocked */ }
+        global.setTimeout(function () {
+            if (!global.closed) global.location.href = target;
+        }, 180);
+    }
+
+    function ensureStyle() {
+        if (global.document.getElementById('phins-doc-return-style')) return;
+        var style = global.document.createElement('style');
+        style.id = 'phins-doc-return-style';
+        style.textContent = ''
+            + '.phins-doc-return{position:sticky;top:0;z-index:80;display:flex;justify-content:space-between;'
+            + 'align-items:center;gap:12px;padding:10px 16px;background:#fff;color:#12284c;'
+            + 'border-bottom:4px solid #c9a04e;font-family:Inter,"Segoe UI",sans-serif;}'
+            + '.phins-doc-return-note{font-family:"Space Grotesk",Inter,"Segoe UI",sans-serif;font-weight:600;'
+            + 'letter-spacing:.06em;font-size:12px;color:#0e2f63;}'
+            + '.phins-doc-return-actions{display:flex;gap:8px;flex-wrap:wrap;}'
+            + '.phins-doc-return button{font:600 13px Inter,"Segoe UI",sans-serif;border-radius:8px;padding:8px 14px;cursor:pointer;}'
+            + '.phins-doc-back{background:#fff;color:#0e2f63;border:1px solid #d5deea;}'
+            + '.phins-doc-close{background:linear-gradient(135deg,#060d1f 0%,#0e2f63 46%,#123f82 100%);color:#fff;border:0;}'
+            + '@media print{.phins-doc-return{display:none !important;}}';
+        (global.document.head || global.document.documentElement).appendChild(style);
+    }
+
+    function buildBar() {
+        var bar = global.document.createElement('nav');
+        bar.className = 'phins-doc-return';
+        bar.setAttribute('aria-label', 'Leave this document');
+        bar.innerHTML = '<span class="phins-doc-return-note">PHINS document</span>'
+            + '<span class="phins-doc-return-actions">'
+            + '<button type="button" class="phins-doc-back">Go back</button>'
+            + '<button type="button" class="phins-doc-close">Close</button>'
+            + '</span>';
+        return bar;
+    }
+
+    function mount() {
+        ensureStyle();
+        var existing = global.document.querySelector('.phins-doc-return');
+        var off = global.document.body && global.document.body.getAttribute('data-phins-return') === 'off';
+        if (framed()) {
+            if (existing) existing.hidden = true;
+            return;
+        }
+        if (!existing && !off && global.document.body) {
+            global.document.body.insertBefore(buildBar(), global.document.body.firstChild);
+        }
+    }
+
+    global.phinsDocGoBack = phinsDocGoBack;
+    global.phinsDocClose = phinsDocClose;
+    global.PHINS_DOCUMENT_HOMES = PHINS_DOCUMENT_HOMES;
+
+    global.document.addEventListener('click', function (event) {
+        var node = event.target && event.target.closest
+            ? event.target.closest('.phins-doc-back, .phins-doc-close')
+            : null;
+        if (!node || framed()) return;
+        event.preventDefault();
+        if (node.classList.contains('phins-doc-close')) phinsDocClose();
+        else phinsDocGoBack();
+    });
+
+    if (global.document.readyState === 'loading') {
+        global.document.addEventListener('DOMContentLoaded', mount);
+    } else {
+        mount();
+    }
+})(window);
+
+</script>
+<article class="phins-doc">
+  <header class="phins-doc-banner">
+    <div class="phins-doc-brand">
+      <div class="phins-doc-logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="PHINS emblem">
+  <defs>
+    <linearGradient id="phinsShield" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0e2f63"/>
+      <stop offset="55%" stop-color="#123f82"/>
+      <stop offset="100%" stop-color="#081c3f"/>
+    </linearGradient>
+    <linearGradient id="phinsGold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f7e2a0"/>
+      <stop offset="45%" stop-color="#e3bf6f"/>
+      <stop offset="100%" stop-color="#b8893b"/>
+    </linearGradient>
+    <linearGradient id="phinsFin" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4fd8ff"/>
+      <stop offset="55%" stop-color="#6ea8ff"/>
+      <stop offset="100%" stop-color="#b7d9ff"/>
+    </linearGradient>
+    <linearGradient id="phinsWave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4fd8ff" stop-opacity="0.15"/>
+      <stop offset="50%" stop-color="#7fe3ff"/>
+      <stop offset="100%" stop-color="#4fd8ff" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Shield body -->
+  <path d="M60 6 L106 22 V57 C106 88 86 108 60 116 C34 108 14 88 14 57 V22 Z"
+        fill="url(#phinsShield)"/>
+  <!-- Gold rim -->
+  <path d="M60 6 L106 22 V57 C106 88 86 108 60 116 C34 108 14 88 14 57 V22 Z"
+        fill="none" stroke="url(#phinsGold)" stroke-width="4" stroke-linejoin="round"/>
+  <!-- Inner keyline -->
+  <path d="M60 14 L98 27.5 V56.5 C98 83 81 100.5 60 107.5 C39 100.5 22 83 22 56.5 V27.5 Z"
+        fill="none" stroke="#ffffff" stroke-opacity="0.14" stroke-width="1.5"/>
+
+  <!-- Guiding star -->
+  <path d="M60 22 L62.2 28.2 L68.5 28.4 L63.5 32.2 L65.3 38.3 L60 34.7 L54.7 38.3 L56.5 32.2 L51.5 28.4 L57.8 28.2 Z"
+        fill="url(#phinsGold)"/>
+
+  <!-- Dolphin fin -->
+  <path d="M40 76 C44.5 57 57 44 80 38.5 C72.5 50.5 70.5 61 73 73.5 C61.5 66.5 49 69 40 76 Z"
+        fill="url(#phinsFin)"/>
+  <!-- Fin highlight -->
+  <path d="M46 70 C51 58 60 49 72 44.5 C67 53 65.5 61 66.8 69.5 C59.5 65.5 52 66.5 46 70 Z"
+        fill="#ffffff" fill-opacity="0.16"/>
+
+  <!-- Waves -->
+  <path d="M32 84 Q42 77.5 52 84 T72 84 T92 84" fill="none"
+        stroke="url(#phinsWave)" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M40 93 Q49 87.5 58 93 T76 93" fill="none"
+        stroke="url(#phinsWave)" stroke-width="2.4" stroke-linecap="round" opacity="0.7"/>
+</svg></div>
+      <div>
+        <div class="phins-doc-wordmark">PHINS</div>
+        <div class="phins-doc-tagline">Personal Health Insurance &amp; Savings</div>
+      </div>
+    </div>
+    <div class="phins-doc-kicker">Frontal follow-up · 26 October 2026<span>Mr. Eyal Ohayun · Aspire Capital · local growth</span></div>
+  </header>
+  <div class="phins-doc-gold"></div>
+  <div class="phins-doc-body">
+<h1>PHINS — Aspire Follow-up Brief (26 October 2026)</h1>
+<blockquote><p><strong>Internal · Confidential.</strong> Monday 26 October 2026 frontal meeting with Mr. Eyal Ohayun (public profile: Eyal Ohayon), Head of Distribution at Aspire Capital (Aspire-Invest). This is the follow-up to the September 2026 Aspire-Invest pack. He is a local potential investor. The house is a growth-driven Israeli capital-markets firm, and his interest is local market growth. The September pack tabled no ask and no bid. This follow-up may table the canonical seed only. It does not invent a price.</p></blockquote>
+<h2>Meeting facts</h2>
+<table><thead><tr><th>Item</th><th>Detail</th></tr></thead><tbody><tr><td>Date</td><td>Monday 26 October 2026</td></tr><tr><td>Time</td><td>TBC · 60 minutes (hard timebox)</td></tr><tr><td>Format</td><td>Frontal · in person</td></tr><tr><td>Counterparty</td><td>Mr. Eyal Ohayun — Head of Distribution, Aspire Capital</td></tr><tr><td>House</td><td>Aspire-Invest · https://aspire-invest.com/ · 150 Menachem Begin, Tel Aviv · founder and CEO Hanna Hollander</td></tr><tr><td>Public profile</td><td>VP of Sales and Distribution Channels at Aspire Investment House (from March 2026). Prior: senior distribution roles at Menora Mivtachim and The Phoenix</td></tr><tr><td>Continues</td><td>Aspire-Invest September 2026 pack (<code>#aspire-invest-meeting-sep2026</code>) — Chief Distribution and Chief Investments, date then TBA, no ask and no bid</td></tr><tr><td>Interest</td><td>Local market growth · potential investment · distribution bench</td></tr><tr><td>One standard</td><td>Unified Business Plan · Investor Deck · Appendices (<code>#unified-business-plan-card</code>)</td></tr><tr><td>Status</td><td>Scheduled</td></tr><tr><td>Pack</td><td>Pitch dashboard — Aspire Ohayun 26.10 section</td></tr></tbody></table>
+<p><strong>Purpose.</strong> Give the head of distribution a professional read on local growth: the Israel anchor book, how a digital MGA uses an agent and distribution house, and whether Aspire can take a step on the canonical seed. OECD partner markets stay in the appendix. They are not the lead.</p>
+<h2>What changed since the September pack</h2>
+<ul><li>The counterparty is now named, and the meeting is frontal at the house.</li><li>The September rule was <strong>no fundraising ask and no bidding price</strong>. That rule still binds the September section. This follow-up is allowed to state the canonical round and is not allowed to negotiate a different one.</li><li>The 12 October 2026 Authority pre-ruling track is open. It is not an approval. Sales remain Gate 5, <strong>1 January 2027</strong>.</li><li>The unified plan is the one standard the September charts already used. Do not bring a second Israel book.</li></ul>
+<h2>Elevator — 45 seconds</h2>
+<p>Aspire already sits on distribution and investments. PHINS is the operating system a local growth story can run on: AI recommends, the ledger decides, a licensed carrier holds the risk, and PHINS keeps 25%. The Israel book, not a global tour, is the growth: <strong>24,000 / 94,080 / 230,554</strong> policies in force and PHINS net revenue <strong>ILS 13,554,000 / 66,685,680 / 183,337,052</strong>. The round, if he wants it, is <strong>ILS 6,000,000 on ILS 24,000,000 pre-money</strong>.</p>
+<h2>Point of view — local growth, distribution first</h2>
+<p>Lead with what a distribution chief can diligence.</p>
+<ul><li><strong>Israel is the launch market.</strong> New issues 25,000 / 75,000 / 150,000 from 1 January 2027. End-of-year in-force 24,000 / 94,080 / 230,554. That is the path to the 250,000-issued scale identity already in the September pack.</li><li><strong>Two layers, still uncollapsed.</strong> Technology is in production. The first product is the unified contract (life face ILS 1,000,000, disability ILS 250,000 below 65, 3+ ADL, kernel premium ILS 4,518). Issuance waits on a designated carrier and the Authority path.</li><li><strong>Distribution is a budget line, not a slogan.</strong> Use of seed allocates <strong>ILS 1,500,000 (25%)</strong> to distribution and local partnerships.</li><li><strong>The house fit.</strong> Aspire&#x27;s public profile already includes an agent house and a pension insurance agency. Eyal&#x27;s career is distribution at scale. The conversation is whether that bench wants the Israel book, not whether PHINS should become a second investment house.</li><li><strong>Savings stay separate.</strong> A savings add-on is a different filing. It is not this risk product and it is not split 25/75.</li></ul>
+<h2>PHINS strength for this point of view</h2>
+<ul><li><strong>The growth is calculated, not narrated.</strong> Average in-force 12,000 / 59,040 / 162,317 times ILS 4,518 is the risk GWP 54,216,000 / 266,742,720 / 733,348,206. Twenty-five percent is the PHINS line. He can recompute it in the room.</li><li><strong>Automation is what makes a local book scalable.</strong> Planning benchmarks, not actuarial rates: underwriting about 92%, billing about 96%, claims about 88%. Agents stay in the channel; the operating cost of the policy falls because the platform does the repeatable work.</li><li><strong>A later local-insurer option is already described.</strong> Years 1–3 PHINS is the digital MGA. After year 3 a turnover option can move the 75% insurance take into a PHINS-group Israeli insurer. That is a local-growth path. It is an option, not a promise.</li><li><strong>Integrity is the institutional product.</strong> A capital-markets house can test the hash-chained record. AI does not post.</li></ul>
+<h2>60-minute run of show</h2>
+<table><thead><tr><th>Minutes</th><th>Segment</th><th>Talking points</th></tr></thead><tbody><tr><td>00–05</td><td>Bridge</td><td>Thank him for taking the September pack forward. Frontal, 60-minute hard stop. Today is local growth.</td></tr><tr><td>05–15</td><td>Why this room</td><td>His distribution bench. Aspire&#x27;s agent house and pension agency. No global tour.</td></tr><tr><td>15–28</td><td>Israel book</td><td>ILS 4,518. 25/75. In-force 24,000 / 94,080 / 230,554. Walk one year on a calculator if he wants.</td></tr><tr><td>28–40</td><td>Two layers</td><td>Technology in production. Product filed, not approved. Not a licensed insurer. Savings are a separate filing.</td></tr><tr><td>40–52</td><td>The round</td><td>Canonical seed only: ILS 6,000,000 / 24,000,000 / 30,000,000. Distribution line ILS 1,500,000. If he offers a different price, stay on this book.</td></tr><tr><td>52–60</td><td>Close</td><td>A named next step: diligence, NDA, or a pass. Log the Meeting Diary.</td></tr></tbody></table>
+<h2>Do not open</h2>
+<ul><li>A bid, a discount, or a side letter on valuation.</li><li>Partner-market GWP as if it were the Israel plan. Group figures live in the unified plan for a later question.</li><li>Any statement that Aspire, Hanna Hollander, or Eyal has committed.</li><li>The September section&#x27;s prohibition: do not paste this ask back into that section.</li></ul>
+<h2>Decision outputs</h2>
+<ul><li>His read on local growth: distribution partnership, investment, both, or neither.</li><li>Whether Aspire will look at the canonical seed.</li><li>The document he wants next: unified plan, September business plan, or NDA.</li><li>A date. Outcome logged in the Meeting Diary. Nothing is written to the ledger.</li></ul>
+<h2>The one standard this meeting addresses</h2>
+<table><thead><tr><th>Piece</th><th>Address</th></tr></thead><tbody><tr><td>Unified business plan</td><td><a href="/business-plan.html">Open the unified plan</a></td></tr><tr><td>Investor deck</td><td><a href="/business-plan.html#part-deck">Open the investor deck</a></td></tr><tr><td>Appendices A–H</td><td><a href="/business-plan.html#part-appendices">Open appendices A–H</a></td></tr><tr><td>Pitch-dashboard bar</td><td><a href="/pitch-dashboard.html#unified-business-plan-card">Unified Business Plan bar</a></td></tr><tr><td>Earlier bar</td><td><a href="/pitch-dashboard.html#aspire-invest-meeting-sep2026">Aspire-Invest September pack</a></td></tr><tr><td>Plan identity</td><td><code>unified-2026.10-v1</code></td></tr></tbody></table>
+<h2>Data integrity</h2>
+<p>Every figure in this brief is a canonical default of plan identity <code>unified-2026.10-v1</code>. Israel anchor, 2027 / 2028 / 2029: annual risk premium ILS 4,518; PHINS take 25% and carrier share 75%; new issues 25,000 / 75,000 / 150,000; end-of-year in-force 24,000 / 94,080 / 230,554; average in-force 12,000 / 59,040 / 162,317; risk GWP ILS 54,216,000 / 266,742,720 / 733,348,206; PHINS net revenue ILS 13,554,000 / 66,685,680 / 183,337,052; insurance take ILS 40,662,000 / 200,057,040 / 550,011,154. Checks: 12,000 × 4,518 = 54,216,000; 59,040 × 4,518 = 266,742,720; 162,317 × 4,518 = 733,348,206. Seed ILS 6,000,000; pre-money ILS 24,000,000; post-money ILS 30,000,000; dilution 20%. Use of seed: ILS 2,400,000 (40%), ILS 1,200,000 (20%), ILS 1,500,000 (25%), ILS 900,000 (15%); sum ILS 6,000,000. These are forward-looking planning assumptions, not commitments. This brief does not write the platform ledger.</p>
+  </div>
+  <footer class="phins-doc-foot">PHINS · Confidential · Aspire follow-up brief · 26 October 2026 · canonical defaults of unified-2026.10-v1</footer>
+</article>
+</body>
+</html>

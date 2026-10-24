@@ -71,7 +71,7 @@ def _load_generator():
 
 def _aspire_section(html: str) -> str:
     start = html.index('id="aspire-invest-meeting-sep2026"')
-    end = html.index('id="exec-summary-section"')
+    end = html.index('id="nba-law-meeting-25oct"')
     return html[start:end]
 
 

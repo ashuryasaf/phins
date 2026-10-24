@@ -109,7 +109,7 @@ def test_figures_match_investor_meeting_book():
 
 def test_diary_seeds_the_follow_up_and_bumps_storage():
     pd = _read(STATIC / "pitch-dashboard.html")
-    assert 'var STORAGE_ID = "phins.il.meeting.diary.v8"' in pd
+    assert 'var STORAGE_ID = "phins.il.meeting.diary.v9"' in pd
     assert "2026-09-24" in pd
     assert "Mr. Lotan Levkovitch — Partner, Grove VC (1:1 follow-up)" in pd
     assert "TBC · 30 min" in pd
