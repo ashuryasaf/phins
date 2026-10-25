@@ -172,7 +172,14 @@ PHINS is a Python platform built around:
   Any committed answer on `/apply-chat.html` and `/file-a-claim.html` can be
   edited until filing. Edits are an append-only checksum chain
   (`services/chat_answer_revisions.py`); card numbers and full national IDs
-  are not stored. `POST .../edit` needs the resume code (a staff session
+  are not stored. The working apply-chat session, including its resume code,
+  is checksummed and reloaded after a restart (`agent_artifacts`
+  `chat_application` / `session` when the database is on, otherwise one file
+  per application under `PHINS_CHAT_SESSIONS_DIR`). A checksum mismatch is
+  not resumed. Filing still redacts the card and the full national ID before
+  the seal. A policy already created for that chat is adopted so a restart
+  does not file a second one, and a crashed finalize does not leave the code
+  stuck in flight. `POST .../edit` needs the resume code (a staff session
   cannot rewrite the answer). `GET .../process-review` is the staff-only
   quick and full review (admin, underwriter, claims) of identity, health,
   billing last4, edit times, and prior files matched by email, name, or
