@@ -776,7 +776,9 @@ Environment variables commonly used:
  in the navy/gold letterhead. A library video combines with a slide only as
  a checksummed pointer in `investor_deck_slide_media`
  (`GET`/`POST /api/admin/media/investor-deck/presentation`); a mismatch is
- omitted and the library file is not rewritten. The spoken line is a short
+ omitted and the library file is not rewritten. Slide video, watermark, and
+ chrome seals share `_INVESTOR_DECK_LOCK` with scene seals, because a failed
+ seal restores the whole design snapshot. The spoken line is a short
  script (`short_script`): a paragraph with no placeholder is spoken in full,
  and a paragraph that fills a figure is not recited — those figures stay on
  the slide and the generator is not asked to draw them. Presenters are 35 or

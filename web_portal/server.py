@@ -6829,6 +6829,11 @@ def _persist_investor_deck_watermark_unlocked(record: Optional[Dict[str, Any]]) 
     return False
 
 
+def _persist_investor_deck_watermark(record: Optional[Dict[str, Any]]) -> bool:
+    with _INVESTOR_DECK_LOCK:
+        return _persist_investor_deck_watermark_unlocked(record)
+
+
 def save_investor_deck_watermark(payload: Dict[str, Any], *, actor: str) -> Dict[str, Any]:
     """Point the deck watermark at library images, or clear that pointer.
 
@@ -6839,7 +6844,7 @@ def save_investor_deck_watermark(payload: Dict[str, Any], *, actor: str) -> Dict
     from services.investor_deck_video import InvestorDeckError, assign_watermark
 
     if payload.get('clear') is True:
-        if not _persist_investor_deck_watermark_unlocked(None):
+        if not _persist_investor_deck_watermark(None):
             raise InvestorDeckError('The watermark could not be stored durably')
         return investor_deck_presentation_view(can_assign=True)
     raw = payload.get('asset_ids')
@@ -6877,7 +6882,7 @@ def save_investor_deck_watermark(payload: Dict[str, Any], *, actor: str) -> Dict
             raise InvestorDeckError('The library file was not left intact. Nothing was stored.')
     record['updated_at'] = datetime.now().isoformat()
     record['updated_by'] = actor or 'admin'
-    if not _persist_investor_deck_watermark_unlocked(record):
+    if not _persist_investor_deck_watermark(record):
         raise InvestorDeckError('The watermark could not be stored durably')
     return investor_deck_presentation_view(can_assign=True)
 
@@ -6921,6 +6926,11 @@ def _persist_investor_deck_chrome_unlocked(slide_no: int, record: Optional[Dict[
     return False
 
 
+def _persist_investor_deck_chrome(slide_no: int, record: Optional[Dict[str, Any]]) -> bool:
+    with _INVESTOR_DECK_LOCK:
+        return _persist_investor_deck_chrome_unlocked(slide_no, record)
+
+
 def save_investor_deck_slide_chrome(payload: Dict[str, Any], *, actor: str) -> Dict[str, Any]:
     """Save one slide's theme, gradient, wash, and embedded image.
 
@@ -6933,7 +6943,7 @@ def save_investor_deck_slide_chrome(payload: Dict[str, Any], *, actor: str) -> D
 
     slide_no = parse_slide_no(payload.get('slide_no'))
     if payload.get('clear') is True:
-        if not _persist_investor_deck_chrome_unlocked(slide_no, None):
+        if not _persist_investor_deck_chrome(slide_no, None):
             raise InvestorDeckError('The slide look could not be stored durably')
         return investor_deck_presentation_view(can_assign=True)
     current = _investor_deck_chrome_store().get(str(slide_no))
@@ -6980,7 +6990,7 @@ def save_investor_deck_slide_chrome(payload: Dict[str, Any], *, actor: str) -> D
             raise InvestorDeckError('The library file was not left intact. Nothing was stored.')
     record['updated_at'] = datetime.now().isoformat()
     record['updated_by'] = actor or 'admin'
-    if not _persist_investor_deck_chrome_unlocked(slide_no, record):
+    if not _persist_investor_deck_chrome(slide_no, record):
         raise InvestorDeckError('The slide look could not be stored durably')
     return investor_deck_presentation_view(can_assign=True)
 
