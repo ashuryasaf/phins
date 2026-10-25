@@ -402,22 +402,107 @@ def _validate_id_number(raw: Any, nationality: Any = None) -> Tuple[bool, str]:
     return True, cleaned.upper()
 
 
-def _signature_image_ok(data_url: Any) -> Tuple[bool, str, str]:
-    """Validate a drawn PNG data-URL and return (ok, error_or_empty, sha256)."""
+# A blank or guideline-only canvas compresses to a real PNG and used to pass a
+# byte-length check. Ink is dark pigment: paper and the pale baseline are not.
+_SIGNATURE_MAX_BYTES = 1_500_000
+_SIGNATURE_MIN_INK_PIXELS = 8
+
+
+def _fold_name(value: Any) -> str:
+    return " ".join(str(value or "").lower().split())
+
+
+def _signature_png_bytes(data_url: Any) -> Tuple[bool, str, bytes]:
+    """Decode a drawn-signature data URL. Blank paper is not a signature."""
     raw = str(data_url or "").strip()
     if not raw.startswith("data:image/png;base64,"):
-        return False, "Please draw your signature in the signature panel.", ""
+        return False, "Please draw your signature in the signature panel.", b""
     b64 = raw.split(",", 1)[1].strip()
-    if len(b64) < 80:
-        return False, "Please draw your signature in the signature panel.", ""
     try:
         blob = base64.b64decode(b64, validate=False)
     except Exception:
-        return False, "Please draw your signature in the signature panel.", ""
-    if len(blob) < 60:
-        return False, "Please draw your signature in the signature panel.", ""
+        return False, "Please draw your signature in the signature panel.", b""
+    if not blob.startswith(b"\x89PNG\r\n\x1a\n"):
+        return False, "Please draw your signature in the signature panel.", b""
+    if len(blob) > _SIGNATURE_MAX_BYTES:
+        return False, "That signature image is too large.", b""
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+    except ImportError:
+        return False, "Please draw your signature in the signature panel.", b""
+    previous_limit = getattr(Image, "MAX_IMAGE_PIXELS", None)
+    Image.MAX_IMAGE_PIXELS = 4_000_000
+    try:
+        with Image.open(BytesIO(blob)) as image:
+            image.load()
+            width, height = image.size
+            if width < 2 or height < 2 or width > 4000 or height > 2000:
+                return False, "Please draw your signature in the signature panel.", b""
+            pixels = image.convert("RGBA").tobytes()
+    except Exception:
+        return False, "Please draw your signature in the signature panel.", b""
+    finally:
+        Image.MAX_IMAGE_PIXELS = previous_limit
+    ink = 0
+    for index in range(0, len(pixels), 4):
+        red, green, blue, alpha = pixels[index:index + 4]
+        if alpha > 40 and (red + green + blue) < 520 and min(red, green, blue) < 180:
+            ink += 1
+            if ink >= _SIGNATURE_MIN_INK_PIXELS:
+                break
+    if ink < _SIGNATURE_MIN_INK_PIXELS:
+        return False, "Please draw your signature in the signature panel.", b""
+    return True, "", blob
+
+
+def _signature_image_ok(data_url: Any) -> Tuple[bool, str, str]:
+    """Validate a drawn PNG data-URL and return (ok, error_or_empty, sha256)."""
+    ok, err, blob = _signature_png_bytes(data_url)
+    if not ok:
+        return False, err, ""
+    return True, "", hashlib.sha256(blob).hexdigest()
+
+
+def inspect_drawn_signature(image_data: Any, expected_sha256: Any = "") -> Dict[str, Any]:
+    """Confirm signature bytes match the digest that will be stored with them.
+
+    A missing image is ``present: False`` (classic applications). Bytes that
+    do not match ``expected_sha256``, or a digest with no image, are refused
+    so a swapped canvas cannot be applied under an old seal.
+    """
+    raw = str(image_data or "").strip()
+    expected = str(expected_sha256 or "").strip().lower()
+    if not raw and not expected:
+        return {"ok": True, "present": False, "sha256": "", "data_b64": "", "error": ""}
+    if expected and not raw:
+        return {
+            "ok": False,
+            "present": False,
+            "sha256": expected,
+            "data_b64": "",
+            "error": "The signature seal has no image.",
+        }
+    ok, err, blob = _signature_png_bytes(raw)
+    if not ok:
+        return {"ok": False, "present": True, "sha256": "", "data_b64": "", "error": err}
     digest = hashlib.sha256(blob).hexdigest()
-    return True, "", digest
+    if expected and expected != digest:
+        return {
+            "ok": False,
+            "present": True,
+            "sha256": digest,
+            "data_b64": "",
+            "error": "The drawn signature does not match its integrity seal.",
+        }
+    return {
+        "ok": True,
+        "present": True,
+        "sha256": digest,
+        "data_b64": base64.b64encode(blob).decode("ascii"),
+        "error": "",
+    }
 
 
 def _validate_signature(value: Any, session: Dict[str, Any]) -> Tuple[bool, Any]:
@@ -442,13 +527,10 @@ def _validate_signature(value: Any, session: Dict[str, Any]) -> Tuple[bool, Any]
     if len(typed) < 2 or len(typed) > 120:
         return False, "Please type your full legal name to sign."
     expected = str((session.get("contact") or {}).get("name") or "").strip()
-    if expected:
-        def _fold(s: str) -> str:
-            return " ".join(s.lower().split())
-        if _fold(typed) != _fold(expected):
-            return False, (
-                f"Signature must match the name on this application ({expected})."
-            )
+    if expected and _fold_name(typed) != _fold_name(expected):
+        return False, (
+            f"Signature must match the name on this application ({expected})."
+        )
 
     # Nationality decides which ID format/checksum applies; it is mandatory so
     # the identity master records (nationality, ID) together for this person.
@@ -908,6 +990,31 @@ class ChatPolicyApplicationService:
             })
         return items
 
+    def _withdraw_signature(self, session: Dict[str, Any],
+                            events: List[Dict[str, Any]]) -> bool:
+        """Drop a signature that no longer matches the name on the file.
+
+        The revision chain records the withdrawal. Flattened identity and
+        image copies are removed with it so a later filing cannot apply the
+        old canvas to a different legal name.
+        """
+        answers = session.get("answers") or {}
+        if "signature" not in answers and not answers.get("signature_name"):
+            return False
+        previous = answers.pop("signature", None)
+        if previous is not None:
+            rev = self._record_revision(session, "signature", "withdrawn", previous, None)
+            events.append(self._ledger_revision(session, rev))
+        for key in (
+            "signature_name", "signature_at", "signature_method",
+            "signature_image_sha256", "signature_data", "id_number",
+            "nationality", "national_id_hash", "national_id_last4",
+        ):
+            answers.pop(key, None)
+        session.pop("signature_name", None)
+        session.pop("signature_at", None)
+        return True
+
     def _withdraw_inapplicable(self, session: Dict[str, Any],
                                events: List[Dict[str, Any]]) -> None:
         applicable = {step["id"] for step in self._steps_for(session)}
@@ -1004,6 +1111,13 @@ class ChatPolicyApplicationService:
         elif step["id"] == "signature":
             # Signature panel asks for nationality (drives the ID format check);
             # prefill with the residence country, editable by the applicant.
+            # The legal name is prefilled so the drawn signature is applied to
+            # the name already on the file.
+            public_input["name_default"] = (
+                session.get("answers", {}).get("name")
+                or (session.get("contact") or {}).get("name")
+                or ""
+            )
             public_input["nationality_default"] = (
                 session.get("answers", {}).get("country")
                 or (session.get("contact") or {}).get("country")
@@ -1131,17 +1245,26 @@ class ChatPolicyApplicationService:
         elif step_id == "signature":
             # cleaned is the structured signature dict from _validate_signature
             sig = cleaned if isinstance(cleaned, dict) else {"name": cleaned}
+            from services.chat_answer_revisions import identity_pointer
+
+            pointer = identity_pointer(sig.get("nationality"), sig.get("id_number"))
             session["signature_name"] = sig.get("name")
             session["signature_at"] = _utc_now_iso()
             session["answers"]["signature_name"] = sig.get("name")
             session["answers"]["signature_at"] = session["signature_at"]
             session["answers"]["signature_method"] = sig.get("method") or "drawn_canvas"
             session["answers"]["id_number"] = sig.get("id_number")
-            session["answers"]["nationality"] = sig.get("nationality")
+            session["answers"]["nationality"] = pointer.get("nationality") or sig.get("nationality")
+            session["answers"]["national_id_last4"] = pointer.get("national_id_last4")
+            session["answers"]["national_id_hash"] = pointer.get("national_id_hash")
             session["answers"]["signature_image_sha256"] = sig.get("image_sha256")
             # Keep raw PNG until finalize copies it into the UW payload.
             if sig.get("signature_data"):
                 session["answers"]["signature_data"] = sig.get("signature_data")
+            stored_sig = session["answers"].get("signature")
+            if isinstance(stored_sig, dict):
+                stored_sig["national_id_last4"] = pointer.get("national_id_last4")
+                stored_sig["national_id_hash"] = pointer.get("national_id_hash")
             events.append(self._journey_add(
                 session, "signed",
                 meta={
@@ -2203,6 +2326,15 @@ class ChatPolicyApplicationService:
                 meta={"step_id": step_id, "category": rev["category"],
                       "checksum": rev["checksum"], "at": rev["at"]}))
             self._withdraw_inapplicable(session, events)
+            signature_withdrawn = False
+            if step_id == "name":
+                signed = ""
+                current_sig = session["answers"].get("signature")
+                if isinstance(current_sig, dict):
+                    signed = str(current_sig.get("name") or "")
+                signed = signed or str(session["answers"].get("signature_name") or "")
+                if signed and _fold_name(signed) != _fold_name(cleaned):
+                    signature_withdrawn = self._withdraw_signature(session, events)
             if step_id in DISCLOSURE_INVALIDATING and step_id != "prior_disclosure":
                 if "prior_disclosure" in session["answers"]:
                     disclosed = session["answers"].pop("prior_disclosure")
@@ -2221,6 +2353,12 @@ class ChatPolicyApplicationService:
                 "Updated. I kept the earlier answer on the file and recorded this change.",
                 kind="ack", meta={"step": step_id, "edit": True, "category": rev["category"],
                                   "edited_at": rev["at"]})]
+            if signature_withdrawn:
+                bot_msgs.append(self._transcript_add(
+                    session, "bot",
+                    "The name on this application changed, so the earlier electronic "
+                    "signature no longer applies. Please sign again before filing.",
+                    kind="ack", meta={"step": "signature", "edit": True, "withdrawn": True}))
             ack = self._acknowledge(session, step_id, stored)
             if ack:
                 bot_msgs.append(self._transcript_add(
@@ -2427,8 +2565,18 @@ class ChatPolicyApplicationService:
             if not session:
                 return {"ok": False, "status_code": 404, "error": "Application not found"}
             step = self._next_step(session)
-            answers_public = {k: ("***" if k == "payment_card" else v)
-                              for k, v in session["answers"].items()}
+            from services.chat_answer_revisions import redact_answer
+
+            answers_public: Dict[str, Any] = {}
+            for key, value in session["answers"].items():
+                if key in ("signature_data", "id_number"):
+                    continue
+                if key == "payment_card":
+                    answers_public[key] = "***"
+                elif key == "signature":
+                    answers_public[key] = redact_answer("signature", value)
+                else:
+                    answers_public[key] = value
             state = {
                 "ok": True,
                 "application_id": session["id"],
@@ -2677,6 +2825,32 @@ class ChatPolicyApplicationService:
             history = self._history_problem(session)
             if history:
                 return {"ok": False, "status_code": 409, "error": history}
+            signed_name = ""
+            sig = session["answers"].get("signature")
+            if isinstance(sig, dict):
+                signed_name = str(sig.get("name") or "")
+            signed_name = signed_name or str(session["answers"].get("signature_name") or "")
+            legal_name = str((session.get("contact") or {}).get("name") or "")
+            if _fold_name(signed_name) != _fold_name(legal_name):
+                return {
+                    "ok": False,
+                    "status_code": 409,
+                    "error": (
+                        "Your electronic signature must match the name on this "
+                        "application. Please sign again."
+                    ),
+                }
+            image = sig.get("signature_data") if isinstance(sig, dict) else ""
+            image = image or session["answers"].get("signature_data") or ""
+            expected = sig.get("image_sha256") if isinstance(sig, dict) else ""
+            expected = expected or session["answers"].get("signature_image_sha256") or ""
+            inspected = inspect_drawn_signature(image, expected)
+            if not inspected.get("ok") or not inspected.get("present"):
+                return {
+                    "ok": False,
+                    "status_code": 409,
+                    "error": inspected.get("error") or "A drawn electronic signature is required.",
+                }
             # Do not submit lives the actuary's underwriting rules decline: the
             # kernel quote flags these, and the portfolio path skips them.
             # Callers MUST queue a senior-UW referral record so staff can
@@ -2760,9 +2934,25 @@ class ChatPolicyApplicationService:
                     "expiry_month": card.get("expiry_month"),
                     "expiry_year": card.get("expiry_year"),
                 }
-            # Redact raw signature PNG after submission (hash remains for integrity).
-            if session["answers"].get("signature_data"):
-                session["answers"]["signature_data"] = None
+            # Redact the raw signature PNG and the full national ID. The hash,
+            # last4, and nationality stay so the seal still identifies the signer.
+            sig = session["answers"].get("signature")
+            if isinstance(sig, dict):
+                if not sig.get("national_id_hash"):
+                    from services.chat_answer_revisions import identity_pointer
+
+                    pointer = identity_pointer(sig.get("nationality"), sig.get("id_number"))
+                    sig["national_id_last4"] = pointer.get("national_id_last4")
+                    sig["national_id_hash"] = pointer.get("national_id_hash")
+                    session["answers"]["national_id_last4"] = pointer.get("national_id_last4")
+                    session["answers"]["national_id_hash"] = pointer.get("national_id_hash")
+                last4 = sig.get("national_id_last4") or session["answers"].get("national_id_last4")
+                sig.pop("signature_data", None)
+                sig.pop("id_number", None)
+                if last4:
+                    sig["national_id_last4"] = last4
+            session["answers"]["signature_data"] = None
+            session["answers"].pop("id_number", None)
             from services.chat_answer_revisions import build_seal
 
             seal = build_seal(session, kind="policy_application")

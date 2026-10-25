@@ -156,6 +156,62 @@ def test_policy_contract_includes_declarations_billing_and_seal():
     )
     assert again["payload"]["policy_id"] == "POL-1"
     assert "PHINS-PORTAL-TEST" in contract["html"]
+    assert contract["payload"]["signature_image_sha256"] == ""
+    assert '<img class="sig-image"' not in contract["html"]
+
+
+def test_contract_embeds_matching_signature_and_withholds_a_mismatch():
+    """The drawn PNG is applied only when its bytes hash to the sealed digest."""
+    import base64
+    import hashlib
+
+    raw = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+"
+        "FABJADveWkH6oAAAAAElFTkSuQmCC"
+    )
+    digest = hashlib.sha256(raw).hexdigest()
+    policy = {
+        "id": "POL-SIG",
+        "type": "phins_unified",
+        "coverage_amount": 100000,
+        "monthly_premium": 40,
+        "annual_premium": 480,
+    }
+    customer = {"id": "CUST-SIG", "name": "Dana Levi", "email": "dana@example.com"}
+    app = {
+        "id": "UW-SIG",
+        "signature_name": "Dana Levi",
+        "signature_at": "2026-08-16T12:00:00+00:00",
+        "signature_method": "drawn_canvas",
+        "signature_image_sha256": digest,
+        "questionnaire_responses": {
+            "signature_name": "Dana Levi",
+            "signature_image_sha256": digest,
+            "signature_image_b64": base64.b64encode(raw).decode("ascii"),
+            "signature_method": "drawn_canvas",
+        },
+    }
+    contract = build_policy_contract(policy=policy, customer=customer, app=app)
+    assert contract["payload"]["signature_image_sha256"] == digest
+    assert contract["payload"]["signature_method"] == "drawn_canvas"
+    assert '<img class="sig-image"' in contract["html"]
+    assert "data:image/png;base64," in contract["html"]
+    assert digest in contract["html"]
+    # Pixels are not part of the integrity body; only the digest is.
+    assert "signature_image_b64" not in contract["payload"]
+    assert "data:image" not in json.dumps({
+        k: v for k, v in contract["payload"].items() if k != "integrity_hash"
+    })
+
+    swapped = dict(app)
+    swapped["questionnaire_responses"] = dict(app["questionnaire_responses"])
+    swapped["questionnaire_responses"]["signature_image_b64"] = base64.b64encode(
+        b"\x89PNG\r\n\x1a\nnot-the-sealed-bytes"
+    ).decode("ascii")
+    withheld = build_policy_contract(policy=policy, customer=customer, app=swapped)
+    assert withheld["payload"]["signature_image_sha256"] == digest
+    assert '<img class="sig-image"' not in withheld["html"]
+    assert digest in withheld["html"]
 
 
 def test_find_prior_records_by_email():

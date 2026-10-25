@@ -13111,6 +13111,31 @@ def _identity_masked(value):
         return None
 
 
+def _verified_application_signature(data):
+    """Check a drawn signature before any customer or policy row is created.
+
+    Classic applications with no signature image are unchanged. A chat filing,
+    or any payload that includes signature bytes or a digest, must carry a PNG
+    whose SHA-256 matches the digest. Blank ink and a swapped image are refused
+    so the signature is never applied under a broken seal.
+    """
+    sig = data.get('signature') if isinstance(data.get('signature'), dict) else {}
+    image = sig.get('image_data') or ''
+    expected = sig.get('image_sha256') or ''
+    channel = str(data.get('application_channel') or '').strip().lower()
+    try:
+        from services.chat_application_service import inspect_drawn_signature
+        inspected = inspect_drawn_signature(image, expected)
+    except Exception as exc:
+        print(f"Signature inspection failed: {exc}")
+        return {'ok': False, 'error': 'Electronic signature could not be verified.'}
+    if not inspected.get('ok'):
+        return inspected
+    if channel == 'chat' and not inspected.get('present'):
+        return {'ok': False, 'error': 'A drawn electronic signature is required.'}
+    return inspected
+
+
 def _identity_precheck(customer_id, national_id=None, nationality=None):
     """Strict-mode validation to run *before* a pipeline creates a customer.
 
@@ -52179,6 +52204,13 @@ For claims or questions, please contact:
                     data.get('nationality') or data.get('customer_nationality')
                     or _signature_payload.get('nationality') or ''
                 )
+                _sig_seal = _verified_application_signature(data)
+                if not _sig_seal.get('ok'):
+                    self._set_json_headers(409)
+                    self.wfile.write(json.dumps({
+                        'error': _sig_seal.get('error') or 'Electronic signature could not be applied.',
+                    }).encode('utf-8'))
+                    return
                 identity_gate = _identity_precheck(customer_id, _raw_national_id, _raw_nationality)
                 if identity_gate:
                     self._set_json_headers(identity_gate[0])
@@ -52448,7 +52480,61 @@ For claims or questions, please contact:
                             'error': file_info.get('error', ''),
                         }
                         print(f"   📄 Stored UW file {file_id}: {file_meta['name']} ({file_meta['size']} bytes) sha256={sealed['sha256'][:12]}")
-                
+
+                _sig_b64 = str(_sig_seal.get('data_b64') or '')
+                _sig_sha = str(_sig_seal.get('sha256') or '')
+                _sig_doc_id = ''
+                if _sig_b64 and _sig_sha:
+                    sig_file_id = f"UW-SIG-{uw_id}"
+                    sig_name = 'electronic-signature.png'
+                    mirrored = mirror_upload_to_document_store(
+                        file_name=sig_name,
+                        data_b64=_sig_b64,
+                        sha256=_sig_sha,
+                        mime_type='image/png',
+                        document_type='electronic_signature',
+                        entity_type='underwriting',
+                        entity_id=uw_id,
+                        customer_id=customer_id,
+                        uploaded_by=customer_email or customer_id or 'applicant',
+                        uploaded_by_role='applicant',
+                        description=f'Electronic signature for underwriting application {uw_id}',
+                    )
+                    _sig_doc_id = mirrored.get('persistent_doc_id') or ''
+                    sig_meta = {
+                        'id': sig_file_id,
+                        'name': sig_name,
+                        'type': 'image/png',
+                        'size': len(base64.b64decode(_sig_b64)),
+                        'uploaded_at': datetime.now().isoformat(),
+                        'sha256': _sig_sha,
+                        'persistent_doc_id': _sig_doc_id,
+                        'process_hashtag': 'electronic_signature',
+                        'process_tag': '#electronic_signature',
+                    }
+                    files_metadata.append(sig_meta)
+                    documents_index.append({
+                        'type': 'electronic_signature',
+                        'name': sig_name,
+                        'sha256': _sig_sha,
+                        'persistent_doc_id': _sig_doc_id or None,
+                        'source': 'electronic_signature',
+                        'size': sig_meta['size'],
+                    })
+                    UNDERWRITING_FILES[sig_file_id] = {
+                        **sig_meta,
+                        'application_id': uw_id,
+                        'customer_id': customer_id,
+                        'data': _sig_b64,
+                        'kind': 'electronic_signature',
+                        'storage_path': mirrored.get('storage_path') or '',
+                    }
+                    files_count = int(files_count or 0) + 1
+                else:
+                    _sig_b64 = ''
+                    _sig_sha = ''
+                    _sig_doc_id = ''
+
                 submitted_at = datetime.now().isoformat()
                 
                 UNDERWRITING_APPLICATIONS[uw_id] = {
@@ -52479,10 +52565,23 @@ For claims or questions, please contact:
                         else None,
                         # Masked: the number itself lives encrypted on the customer.
                         'id_number': _id_number_masked,
-                        'signature_image_sha256': (
+                        'signature_method': (data.get('signature') or {}).get('method')
+                            if isinstance(data.get('signature'), dict) else None,
+                        'nationality': (
+                            (identity_result.get('reference') or {}).get('nationality')
+                            or _raw_nationality
+                            or None
+                        ),
+                        'signature_image_sha256': _sig_sha or (
                             (data.get('signature') or {}).get('image_sha256')
                             if isinstance(data.get('signature'), dict) else None
                         ),
+                        # Verified PNG (raw base64). The contract embeds it only
+                        # when this decodes to signature_image_sha256. The column
+                        # survives the database filter that drops top-level fields.
+                        'signature_image_b64': _sig_b64 or None,
+                        'signature_document_id': _sig_doc_id or None,
+                        'customer_identity': identity_result.get('reference'),
                     },
                     'medical_exam_required': data.get('medical_exam_required', False),
                     'submitted_date': submitted_at,
@@ -52497,10 +52596,13 @@ For claims or questions, please contact:
                         if isinstance(data.get('signature'), dict) else None,
                     'signature_method': (data.get('signature') or {}).get('method')
                         if isinstance(data.get('signature'), dict) else None,
-                    'signature_image_sha256': (data.get('signature') or {}).get('image_sha256')
-                        if isinstance(data.get('signature'), dict) else None,
-                    'signature_image_data': (data.get('signature') or {}).get('image_data')
-                        if isinstance(data.get('signature'), dict) else None,
+                    'signature_image_sha256': _sig_sha or (
+                        (data.get('signature') or {}).get('image_sha256')
+                        if isinstance(data.get('signature'), dict) else None
+                    ),
+                    'signature_image_data': (
+                        f'data:image/png;base64,{_sig_b64}' if _sig_b64 else None
+                    ),
                     'id_number': _id_number_masked,
                     # PII-free identity pointer (nationality, hash, last4) shared by
                     # every pipeline; None when the customer has not recorded one yet.

@@ -769,6 +769,20 @@ body.chat-apply-page {
     margin-top: 6px;
     padding: 0 4px;
 }
+/* The pad is white paper on a dark dock. The shared hint/link colors are
+   light-on-navy, so they disappear here unless restated for the paper. */
+.sig-pad-actions .link-btn {
+    display: inline;
+    margin: 0;
+    color: #0d2a5c;
+    font-weight: 600;
+}
+.sig-pad-actions .link-btn:hover { color: #123f82; }
+.sig-pad-actions .dock-hint {
+    color: #3d4d6b;
+    margin-top: 0;
+    text-align: end;
+}
 
 /* ===== RTL chat layout ===== */
 [dir="rtl"] .msg-row.bot { flex-direction: row-reverse; }

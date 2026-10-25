@@ -61,6 +61,75 @@ def _norm(value: Any) -> str:
     return aliases.get(text, text)
 
 
+def _signature_bytes_b64(value: Any) -> str:
+    text = str(value or "").strip()
+    if text.startswith("data:image/png;base64,"):
+        text = text.split(",", 1)[1].strip()
+    return text
+
+
+def _png_sha256(raw_b64: str) -> str:
+    import base64
+
+    try:
+        blob = base64.b64decode(raw_b64, validate=False)
+    except Exception:
+        return ""
+    if not blob.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ""
+    return hashlib.sha256(blob).hexdigest()
+
+
+def signature_view(app: Dict[str, Any]) -> Dict[str, Any]:
+    """Name, digest, and image URL for a contract.
+
+    The image is applied only when the stored PNG decodes to the recorded
+    SHA-256. A mismatch or a digest with no bytes leaves the image off the
+    document; the digest itself still sits in the integrity seal.
+    """
+    import base64
+
+    q = _questionnaire_of(app)
+    sig = app.get("signature") if isinstance(app.get("signature"), dict) else {}
+    name = str(
+        app.get("signature_name") or q.get("signature_name") or sig.get("name") or ""
+    )
+    signed_at = str(
+        app.get("signature_at") or q.get("signature_at") or sig.get("signed_at") or ""
+    )
+    method = str(
+        app.get("signature_method") or q.get("signature_method") or sig.get("method") or ""
+    )
+    expected = str(
+        app.get("signature_image_sha256")
+        or q.get("signature_image_sha256")
+        or sig.get("image_sha256")
+        or ""
+    ).strip().lower()
+    candidates = (
+        q.get("signature_image_b64"),
+        app.get("signature_image_data"),
+        sig.get("image_data"),
+    )
+    data_url = ""
+    for candidate in candidates:
+        raw_b64 = _signature_bytes_b64(candidate)
+        if not raw_b64 or not expected:
+            continue
+        digest = _png_sha256(raw_b64)
+        if digest and digest == expected:
+            blob = base64.b64decode(raw_b64, validate=False)
+            data_url = "data:image/png;base64," + base64.b64encode(blob).decode("ascii")
+            break
+    return {
+        "name": name,
+        "signed_at": signed_at,
+        "method": method,
+        "image_sha256": expected,
+        "data_url": data_url,
+    }
+
+
 def _questionnaire_of(record: Dict[str, Any]) -> Dict[str, Any]:
     q = record.get("questionnaire_responses") or record.get("questionnaire") or {}
     if isinstance(q, str):
@@ -563,6 +632,7 @@ def build_policy_contract(
         "signature_at": app.get("signature_at") or q.get("signature_at"),
         "consent": q.get("consent") or "agree",
     }
+    drawn = signature_view(app)
 
     savings_annual = float(
         quote.get("savings_premium_annual")
@@ -605,6 +675,8 @@ def build_policy_contract(
         "billing_frequency": (bill or {}).get("billing_frequency") or payment.get("billing_frequency") or "monthly",
         "media_count": len(media or []),
         "media_sha256": [m.get("sha256") for m in (media or []) if m.get("sha256")],
+        "signature_image_sha256": drawn.get("image_sha256") or "",
+        "signature_method": drawn.get("method") or "",
     }
     seal = _integrity_hash(body)
     body["integrity_hash"] = seal
@@ -650,8 +722,18 @@ def build_policy_contract(
     freq = html.escape(str(body.get("billing_frequency") or "monthly").title())
     due = html.escape(str((bill or {}).get("due_date") or "Per schedule"))
     bill_id = html.escape(str((bill or {}).get("id") or "—"))
-    sig_name = html.escape(str(declarations.get("signature_name") or "—"))
-    sig_at = html.escape(str(declarations.get("signature_at") or ""))
+    sig_name = html.escape(str(drawn.get("name") or declarations.get("signature_name") or "—"))
+    sig_at = html.escape(str(drawn.get("signed_at") or declarations.get("signature_at") or ""))
+    sig_hash = html.escape(str(drawn.get("image_sha256") or ""))
+    sig_img = ""
+    if drawn.get("data_url"):
+        sig_src = html.escape(str(drawn["data_url"]), quote=True)
+        sig_img = (
+            f'<img class="sig-image" alt="Drawn electronic signature" src="{sig_src}"/>'
+        )
+    sig_hash_line = (
+        f'<div class="sig-meta">SHA-256 {sig_hash}</div>' if sig_hash else ""
+    )
     cust_id = html.escape(str(body["customer_id"] or ""))
 
     html_doc = f"""<!DOCTYPE html>
@@ -908,7 +990,15 @@ def build_policy_contract(
     color: var(--navy-mid);
     -webkit-text-fill-color: transparent;
   }}
-  .sig-meta {{ font-size: 11px; color: var(--muted); margin-top: 2px; }}
+  .sig-meta {{ font-size: 11px; color: var(--muted); margin-top: 2px; word-break: break-all; }}
+  .sig-image {{
+    display: block;
+    margin-top: 8px;
+    max-width: 280px;
+    height: auto;
+    background: #fff;
+    border-bottom: 2px solid var(--gold-deep);
+  }}
   .portal {{
     display: grid;
     grid-template-columns: 1.2fr 0.8fr;
@@ -994,6 +1084,10 @@ def build_policy_contract(
       -webkit-text-fill-color: var(--navy-mid) !important;
       color: var(--navy-mid) !important;
     }}
+    .sig-image {{
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }}
     /* .brand-word sits on the dark navy banner (not flattened in print),
        so navy would be invisible — use a light gold fill instead. */
     .brand-word {{
@@ -1039,7 +1133,9 @@ def build_policy_contract(
         <tr><td class="k">Phone</td><td class="v">{phone}</td></tr>
         <tr><td class="k">Electronic signature</td><td class="v">
           <div class="sig">{sig_name}</div>
+          {sig_img}
           <div class="sig-meta">{sig_at}</div>
+          {sig_hash_line}
         </td></tr>
       </table>
 
