@@ -821,6 +821,34 @@ def _loopback_policy_create(handler, payload: Dict[str, Any]) -> Tuple[int, Dict
         return 502, {"error": "Could not reach the policy creation service"}
 
 
+def existing_chat_policy(application_id: str) -> Optional[Dict[str, Any]]:
+    """A policy already filed for this chat, so a restarted finalize must not file again."""
+    import web_portal.server as portal
+
+    found: Optional[Dict[str, Any]] = None
+    apps = getattr(portal, "UNDERWRITING_APPLICATIONS", {}) or {}
+    for app in apps.values():
+        if not isinstance(app, dict):
+            continue
+        if str(app.get("chat_application_id") or "") != str(application_id or ""):
+            continue
+        if str(app.get("source") or "") == "chat_adl_referral":
+            continue
+        policy_id = str(app.get("policy_id") or "")
+        if not policy_id or policy_id in ("None", "not_created"):
+            continue
+        found = {
+            "policy_id": policy_id,
+            "underwriting_id": str(app.get("id") or ""),
+            "customer_id": str(app.get("customer_id") or ""),
+            "policy_status": app.get("status"),
+            "annual_premium": app.get("annual_premium"),
+            "monthly_premium": app.get("monthly_premium"),
+        }
+        break
+    return found
+
+
 def _handle_finalize(application_id: str, handler) -> Tuple[int, Dict[str, Any]]:
     svc = _service()
     prep = svc.prepare_finalize(application_id)
@@ -854,7 +882,22 @@ def _handle_finalize(application_id: str, handler) -> Tuple[int, Dict[str, Any]]
 
     payload = prep["payload"]
     checksum = prep["checksum"]
-    status, created = _loopback_policy_create(handler, payload)
+    # The durable session can outlive the process that created the policy.
+    # Adopt that policy instead of filing a second one under the same resume code.
+    existing = existing_chat_policy(application_id)
+    if existing:
+        status, created = 200, {
+            "policy": {
+                "id": existing["policy_id"],
+                "status": existing.get("policy_status"),
+                "annual_premium": existing.get("annual_premium"),
+                "monthly_premium": existing.get("monthly_premium"),
+            },
+            "underwriting": {"id": existing["underwriting_id"], "status": "pending"},
+            "customer": {"id": existing.get("customer_id")},
+        }
+    else:
+        status, created = _loopback_policy_create(handler, payload)
     if status not in (200, 201):
         # Release the in-flight guard so the applicant can retry submission.
         svc.clear_finalizing(application_id)

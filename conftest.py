@@ -10,6 +10,7 @@ Why this exists:
 from __future__ import annotations
 
 import os
+import shutil
 import socket
 import sys
 import threading
@@ -117,6 +118,13 @@ os.environ.setdefault(
     "PHINS_CYBER_CRISIS_DIR",
     str(Path(tempfile.gettempdir()) / f"phins_test_cyber_crisis_{os.getpid()}"),
 )
+# Apply-chat resume codes are checksummed session files when the database is
+# off. Keep that directory out of the checkout and out of a dev server's
+# default temp name so a test restart cannot reopen another run's application.
+os.environ.setdefault(
+    "PHINS_CHAT_SESSIONS_DIR",
+    str(Path(tempfile.gettempdir()) / f"phins_test_chat_sessions_{os.getpid()}"),
+)
 
 
 _httpd = None
@@ -175,6 +183,9 @@ def pytest_sessionfinish(session, exitstatus):  # type: ignore[no-redef]
                 Path(path).unlink(missing_ok=True)
             except OSError:
                 pass
+    chat_dir = os.environ.get("PHINS_CHAT_SESSIONS_DIR", "")
+    if f"_{os.getpid()}" in chat_dir:
+        shutil.rmtree(chat_dir, ignore_errors=True)
 
 
 def pytest_runtest_setup(item):  # type: ignore[no-redef]

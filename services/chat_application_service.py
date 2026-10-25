@@ -871,10 +871,98 @@ _PRE_OTP_STEPS = {"name", "email", "phone"}
 class ChatPolicyApplicationService:
     """Stateful chat application store + broker-bot conversation engine."""
 
-    def __init__(self) -> None:
+    def __init__(self, sessions_dir: Optional[str] = None) -> None:
         self._lock = threading.RLock()
+        self._guard_depth = 0
+        self._baselines: Dict[str, Optional[str]] = {}
         self._sessions: Dict[str, Dict[str, Any]] = {}
         self._resume_index: Dict[str, str] = {}
+        from services.chat_session_store import open_chat_session_store
+
+        self._store = open_chat_session_store(sessions_dir)
+        self._load_durable_sessions()
+
+    def _guard(self):
+        """The session lock, plus a durable write of whatever this turn changed."""
+        service = self
+
+        class _Guard:
+            def __enter__(self):
+                service._lock.acquire()
+                service._guard_depth += 1
+                if service._guard_depth == 1:
+                    service._baselines = {}
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                try:
+                    if service._guard_depth == 1:
+                        service._flush_durable()
+                finally:
+                    service._guard_depth -= 1
+                    service._lock.release()
+                return False
+
+        return _Guard()
+
+    def _session_digest(self, session: Dict[str, Any]) -> str:
+        from services.chat_session_store import session_digest
+
+        return session_digest(session)
+
+    def _flush_durable(self) -> None:
+        baselines = self._baselines
+        self._baselines = {}
+        for app_id, baseline in baselines.items():
+            session = self._sessions.get(app_id)
+            if not session:
+                continue
+            try:
+                current = self._session_digest(session)
+            except (TypeError, ValueError) as exc:
+                logger.error("chat session %s could not be sealed: %s", app_id, exc)
+                continue
+            if baseline is not None and baseline == current:
+                continue
+            self._store.save(session)
+
+    def _load_durable_sessions(self) -> None:
+        try:
+            loaded, rejected = self._store.load()
+        except Exception as exc:
+            logger.error("chat sessions could not be restored: %s", exc)
+            return
+        winners: Dict[str, Dict[str, Any]] = {}
+        released: set = set()
+        for session in loaded:
+            # A crash during finalize must not leave the code stuck in flight.
+            # A policy row created before the crash is adopted on the next filing.
+            if session.get("status") != "submitted" and session.get("finalizing"):
+                session["finalizing"] = False
+                released.add(session.get("id"))
+            code = str(session.get("resume_code") or "")
+            previous = winners.get(code)
+            if previous is None or str(session.get("updated_at") or "") >= str(previous.get("updated_at") or ""):
+                if previous is not None:
+                    rejected += 1
+                    logger.error(
+                        "chat session %s repeats a resume code; it was not resumed",
+                        previous.get("id"),
+                    )
+                winners[code] = session
+            else:
+                rejected += 1
+                logger.error(
+                    "chat session %s repeats a resume code; it was not resumed",
+                    session.get("id"),
+                )
+        for session in winners.values():
+            self._sessions[session["id"]] = session
+            self._resume_index[session["resume_code"]] = session["id"]
+            if session.get("id") in released:
+                self._store.save(session)
+        if rejected:
+            logger.error("chat session restore skipped %s document(s)", rejected)
 
     # ------------------------------------------------------------------
     # helpers
@@ -889,7 +977,13 @@ class ChatPolicyApplicationService:
         return app_id, resume_code
 
     def _get(self, application_id: str) -> Optional[Dict[str, Any]]:
-        return self._sessions.get(str(application_id or "").strip())
+        session = self._sessions.get(str(application_id or "").strip())
+        if session is not None and self._guard_depth and session["id"] not in self._baselines:
+            try:
+                self._baselines[session["id"]] = self._session_digest(session)
+            except (TypeError, ValueError):
+                self._baselines[session["id"]] = None
+        return session
 
     def _transcript_add(self, session: Dict[str, Any], role: str, text: str,
                         kind: str = "text", meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -1295,7 +1389,7 @@ class ChatPolicyApplicationService:
                       invite: Optional[Dict[str, Any]] = None,
                       started_by: str = "applicant",
                       language: str = "en") -> Dict[str, Any]:
-        with self._lock:
+        with self._guard():
             app_id, resume_code = self._generate_ids()
             lang = normalize_language(language)
             session: Dict[str, Any] = {
@@ -1329,6 +1423,8 @@ class ChatPolicyApplicationService:
             }
             self._sessions[app_id] = session
             self._resume_index[resume_code] = app_id
+            if self._guard_depth:
+                self._baselines.setdefault(app_id, None)
 
             events: List[Dict[str, Any]] = []
             if invite:
@@ -1392,7 +1488,7 @@ class ChatPolicyApplicationService:
 
     def submit_answer(self, application_id: str, value: Any,
                       step_id: Optional[str] = None) -> Dict[str, Any]:
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if not session:
                 return {"ok": False, "status_code": 404, "error": "Application not found"}
@@ -1952,7 +2048,7 @@ class ChatPolicyApplicationService:
 
     def note_otp_requested(self, application_id: str, verification_id: str,
                            channel: str = "email") -> Dict[str, Any]:
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if not session:
                 return {"ok": False, "status_code": 404, "error": "Application not found"}
@@ -1975,19 +2071,19 @@ class ChatPolicyApplicationService:
                     "channel": normalized}
 
     def contact_email(self, application_id: str) -> Optional[str]:
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             return session["contact"].get("email") if session else None
 
     def contact_phone(self, application_id: str) -> Optional[str]:
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if not session:
                 return None
             return session["contact"].get("phone")
 
     def otp_channel(self, application_id: str) -> Optional[str]:
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if not session:
                 return None
@@ -1995,7 +2091,7 @@ class ChatPolicyApplicationService:
             return pending or session.get("otp_channel")
 
     def pending_verification_id(self, application_id: str) -> Optional[str]:
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             return (session or {}).get("otp", {}).get("verification_id")
 
@@ -2004,7 +2100,7 @@ class ChatPolicyApplicationService:
 
     def mark_identity_verified(self, application_id: str,
                                channel: str = "email") -> Dict[str, Any]:
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if not session:
                 return {"ok": False, "status_code": 404, "error": "Application not found"}
@@ -2081,7 +2177,7 @@ class ChatPolicyApplicationService:
     def attach_media(self, application_id: str, *, kind: str, name: str,
                      mime_type: str, data_b64: str,
                      duration_seconds: Optional[float] = None) -> Dict[str, Any]:
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if not session:
                 return {"ok": False, "status_code": 404, "error": "Application not found"}
@@ -2253,7 +2349,7 @@ class ChatPolicyApplicationService:
             same_answer,
         )
 
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if not session:
                 return {"ok": False, "status_code": 404, "error": "Application not found"}
@@ -2435,7 +2531,7 @@ class ChatPolicyApplicationService:
     def process_review(self, application_id: str) -> Dict[str, Any]:
         from services.chat_answer_revisions import build_review, load_books, subject_from_policy
 
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if not session:
                 return {"ok": False, "status_code": 404, "error": "Application not found"}
@@ -2476,7 +2572,7 @@ class ChatPolicyApplicationService:
     # ------------------------------------------------------------------
 
     def pause_session(self, application_id: str) -> Dict[str, Any]:
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if not session:
                 return {"ok": False, "status_code": 404, "error": "Application not found"}
@@ -2495,7 +2591,7 @@ class ChatPolicyApplicationService:
                     "messages": [bot_entry], "ledger_events": events}
 
     def resume_session(self, resume_code: str, email: str) -> Dict[str, Any]:
-        with self._lock:
+        with self._guard():
             code = str(resume_code or "").strip().upper()
             app_id = self._resume_index.get(code)
             session = self._sessions.get(app_id) if app_id else None
@@ -2575,7 +2671,7 @@ class ChatPolicyApplicationService:
             str(resume_code).strip().upper() == session["resume_code"]
 
     def get_state(self, application_id: str, *, staff: bool = False) -> Dict[str, Any]:
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if not session:
                 return {"ok": False, "status_code": 404, "error": "Application not found"}
@@ -2815,7 +2911,7 @@ class ChatPolicyApplicationService:
         return payload
 
     def prepare_finalize(self, application_id: str) -> Dict[str, Any]:
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if not session:
                 return {"ok": False, "status_code": 404, "error": "Application not found"}
@@ -2901,7 +2997,7 @@ class ChatPolicyApplicationService:
         ``paused`` + the prior verified flags keeps the re-challenge
         guarantee intact for the next resume.
         """
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if session and session["status"] == "pending_reverify":
                 snapshot = session.get("_reverify_snapshot") or {}
@@ -2916,7 +3012,7 @@ class ChatPolicyApplicationService:
 
     def clear_finalizing(self, application_id: str) -> None:
         """Release the in-flight finalize guard (e.g. when the loopback fails)."""
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if session and session["status"] != "submitted":
                 session["finalizing"] = False
@@ -2925,7 +3021,7 @@ class ChatPolicyApplicationService:
                        underwriting_id: str, customer_id: Optional[str],
                        checksum: str,
                        provisioned_login: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if not session:
                 return {"ok": False, "status_code": 404, "error": "Application not found"}
@@ -3041,7 +3137,7 @@ class ChatPolicyApplicationService:
         outcome the classic form surfaces via email/portal, without breaking
         resume-code tracking.
         """
-        with self._lock:
+        with self._guard():
             session = self._get(chat_application_id)
             if not session:
                 return {"ok": False, "status_code": 404, "error": "Application not found"}
@@ -3168,7 +3264,7 @@ class ChatPolicyApplicationService:
         Chat sessions live in process memory; the underwriter dashboard reads
         ``UNDERWRITING_APPLICATIONS``. This snapshot is the bridge.
         """
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if not session:
                 return None
@@ -3231,7 +3327,7 @@ class ChatPolicyApplicationService:
 
     def mark_senior_referred(self, application_id: str, *, underwriting_id: str) -> Dict[str, Any]:
         """Record that staff now have a durable queue row for this chat file."""
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if not session:
                 return {"ok": False, "status_code": 404, "error": "Application not found"}
@@ -3257,7 +3353,7 @@ class ChatPolicyApplicationService:
         Submitted sessions that already have an underwriting id are omitted;
         those rows live on ``UNDERWRITING_APPLICATIONS``. No card data.
         """
-        with self._lock:
+        with self._guard():
             sessions = list(self._sessions.values())
         rows: List[Dict[str, Any]] = []
         for session in sessions:
@@ -3297,7 +3393,7 @@ class ChatPolicyApplicationService:
         return rows
 
     def funnel_snapshot(self) -> Dict[str, Any]:
-        with self._lock:
+        with self._guard():
             sessions = list(self._sessions.values())
         stages = {
             "started": 0, "contact_captured": 0, "otp_verified": 0,
@@ -3365,7 +3461,7 @@ class ChatPolicyApplicationService:
         }
 
     def journey_for(self, application_id: str) -> Optional[Dict[str, Any]]:
-        with self._lock:
+        with self._guard():
             session = self._get(application_id)
             if not session:
                 return None
