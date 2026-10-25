@@ -2683,6 +2683,7 @@
     </div>
     <nav class="pitch-nav" id="pitch-nav" aria-label="Pitch sections">
       <a href="#investor-documents-section" class="pitch-nav-link">Investor Documents</a>
+      <a href="/investor-deck.html" class="pitch-nav-link">Investor Deck</a>
       <a href="#signed-use-section" class="pitch-nav-link">Signed documents</a>
       <a href="#actuary-briefing-section" class="pitch-nav-link">Actuary Briefing</a>
       <a href="#investor-meeting-section" class="pitch-nav-link">Investor Meeting</a>
@@ -2819,10 +2820,11 @@
         <div id="unified-business-plan-card" style="background:linear-gradient(135deg,#060d1f 0%,#0e2f63 46%,#123f82 100%);color:#eaf1ff;border:1px solid rgba(201,160,78,0.55);border-radius:14px;padding:18px;box-shadow:var(--shadow);grid-column:1/-1;">
           <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#f7e2a0;margin-bottom:6px;">Unified Business Plan · Investor Deck · Appendices · One standard</div>
           <h3 style="margin:0 0 8px 0;font-size:13pt;color:#fff;">PHINS Unified Business Plan <span style="font-size:8pt;font-weight:700;color:#071022;background:linear-gradient(180deg,#f7e2a0 0%,#e3bf6f 100%);border-radius:20px;padding:2px 9px;vertical-align:middle;">adjustable factors · reconciles to the Investor Meeting book</span></h3>
-          <p style="font-size:9.5pt;color:rgba(234,241,255,0.88);margin:0 0 12px 0;">The one plan to hand to VCs, angels, carriers, reinsurers and supervisors: business plan, twelve-slide investor deck and appendices A–H (actuarial basis and pricing kernel, carrier and reinsurance view, regulatory pathway by market, technology standard, data integrity and methodology, financial tables, milestone calendar, glossary). Every figure regenerates from one factor register behind <code style="color:#f7e2a0;">/api/business-plan/model</code>; the anchor book is this page's Israel identity (ILS 4,518 · 25% / 75% · 24,000 / 94,080 / 230,554) extended to five years and into OECD partner markets. Planning assumptions never write public evidence.</p>
+          <p style="font-size:9.5pt;color:rgba(234,241,255,0.88);margin:0 0 12px 0;">The one plan to hand to VCs, angels, carriers, reinsurers and supervisors: business plan, thirteen-slide investor deck and appendices A–H (actuarial basis and pricing kernel, carrier and reinsurance view, regulatory pathway by market, technology standard, data integrity and methodology, financial tables, milestone calendar, glossary). Every figure regenerates from one factor register behind <code style="color:#f7e2a0;">/api/business-plan/model</code>; the anchor book is this page's Israel identity (ILS 4,518 · 25% / 75% · 24,000 / 94,080 / 230,554) extended to five years and into OECD partner markets. Planning assumptions never write public evidence.</p>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <a href="/business-plan.html" class="exec-dl-btn" style="background:linear-gradient(180deg,#f7e2a0 0%,#e3bf6f 100%);color:#071022;border-color:transparent;font-weight:800;">Open the unified plan (live, adjustable)</a>
             <a href="/business-plan.html#part-deck" class="exec-dl-btn" style="background:rgba(255,255,255,0.1);color:#fff;border-color:rgba(255,255,255,0.3);">Investor deck</a>
+            <a href="/investor-deck.html" class="exec-dl-btn" style="background:linear-gradient(180deg,#f7e2a0 0%,#e3bf6f 100%);color:#071022;border-color:transparent;font-weight:800;">Present the 13 slides</a>
             <a href="/business-plan.html#part-appendices" class="exec-dl-btn" style="background:rgba(255,255,255,0.1);color:#fff;border-color:rgba(255,255,255,0.3);">Appendices A–H</a>
             <a href="/investor-docs/phins-unified-business-plan.pdf" class="exec-dl-btn" style="background:rgba(255,255,255,0.1);color:#fff;border-color:rgba(255,255,255,0.3);">⬇ PDF edition</a>
             <a href="/investor-docs/phins-unified-business-plan.md" class="exec-dl-btn" style="background:rgba(255,255,255,0.1);color:#fff;border-color:rgba(255,255,255,0.3);">Markdown</a>
@@ -12871,7 +12873,7 @@
       var DOC_PATH_HINT = /^\/(investor-docs|internal|legal)\//i;
       var DOC_PAGE_HINT = /\/(unicorn-|seed-|capital-markets-pitch|phins_business_plan|PHINS_Business_Plan)/i;
       // Root-level app destinations only (does not match /legal/nda.html etc.).
-      var APP_NAV_EXCLUDE = /^\/(admin(?:-[a-z0-9-]+)?|[a-z0-9-]+-dashboard|billing|unified-workbench|agent-portal|assessment-center|cyber-security|video-agents|customer-management|login|settings|apply|forgot-password|supplier-login|supplier-register|trading-terminal|nda)\.html?$/i;
+      var APP_NAV_EXCLUDE = /^\/(admin(?:-[a-z0-9-]+)?|[a-z0-9-]+-dashboard|billing|unified-workbench|agent-portal|assessment-center|cyber-security|video-agents|customer-management|login|settings|apply|forgot-password|supplier-login|supplier-register|trading-terminal|nda|investor-deck)\.html?$/i;
 
       function headerOffset() {
         var header = document.getElementById("pitch-top");

@@ -340,6 +340,7 @@
             '<div class="idl-stage">' +
             '<p class="idl-note">Part II, one 15-second scene per paragraph. The film plays the scenes that exist, in order, and skips the rest. Charts and the founder portrait are the plan’s own, shown beside the clip. The spoken line is the paragraph as the plan fills it.</p>' +
             '<div class="idl-row"><button type="button" class="idl-btn" data-idl-play>Play the film</button>' +
+            '<a class="idl-btn secondary" href="' + (mode === 'edit' ? '/investor-deck.html?edit=1' : '/investor-deck.html') + '">Present the 13 slides</a>' +
             (mode === 'watch' ? '<a class="idl-btn secondary" href="/admin-media.html#investor-deck">Open the investor deck lab</a>' : '') +
             '</div><div data-idl-stream></div><p class="idl-status" data-idl-status>Loading the deck…</p></div>' +
             (mode === 'edit' ? '<div data-idl-editor></div>' : '') +
