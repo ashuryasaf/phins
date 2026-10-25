@@ -6647,6 +6647,24 @@ def _investor_deck_media_store() -> Dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
+def _investor_deck_asset_brief(media: Dict[str, Any]) -> Dict[str, Any]:
+    checksum = str(media.get('checksum') or '')
+    return {
+        'type': str(media.get('type') or ''),
+        'checksum': checksum,
+        'playback_url': media_asset_url(media) if checksum else '',
+        'name': str(media.get('name') or ''),
+    }
+
+
+def _remember_investor_deck_asset(assets: Dict[str, Any], asset_id: str) -> None:
+    if not asset_id or asset_id in assets:
+        return
+    media = MEDIA_ASSETS.get(asset_id)
+    if isinstance(media, dict):
+        assets[asset_id] = _investor_deck_asset_brief(media)
+
+
 def _persist_investor_deck_media_unlocked(slide_no: int, record: Optional[Dict[str, Any]]) -> bool:
     """Store or drop one slide's video pointer. Placements and scenes stay put."""
     key = str(int(slide_no))
@@ -6702,16 +6720,12 @@ def investor_deck_presentation_view(*, can_assign: bool) -> Dict[str, Any]:
     for record in assignments.values():
         if not isinstance(record, dict):
             continue
-        media_id = str(record.get('asset_id') or '')
-        media = MEDIA_ASSETS.get(media_id) if media_id else None
-        if not isinstance(media, dict) or media_id in assets:
-            continue
-        assets[media_id] = {
-            'type': str(media.get('type') or ''),
-            'checksum': str(media.get('checksum') or ''),
-            'playback_url': media_asset_url(media) if str(media.get('checksum') or '') else '',
-            'name': str(media.get('name') or ''),
-        }
+        _remember_investor_deck_asset(assets, str(record.get('asset_id') or ''))
+    watermark_record = DESIGN_SETTINGS.get('investor_deck_watermark')
+    if isinstance(watermark_record, dict):
+        for item in watermark_record.get('images') or []:
+            if isinstance(item, dict):
+                _remember_investor_deck_asset(assets, str(item.get('asset_id') or ''))
     body = presentation_of(
         plan,
         assignments,
@@ -6719,6 +6733,7 @@ def investor_deck_presentation_view(*, can_assign: bool) -> Dict[str, Any]:
         scenes,
         photo_url=photo_url,
         charts=charts,
+        watermark=watermark_record if isinstance(watermark_record, dict) else None,
     )
     body['success'] = True
     body['plan'] = meta
@@ -6761,6 +6776,93 @@ def save_investor_deck_slide_media(payload: Dict[str, Any], *, actor: str) -> Di
     record['updated_by'] = actor or 'admin'
     if not _persist_investor_deck_media_unlocked(slide_no, record):
         raise InvestorDeckError('The slide video could not be stored durably')
+    return investor_deck_presentation_view(can_assign=True)
+
+
+def _persist_investor_deck_watermark_unlocked(record: Optional[Dict[str, Any]]) -> bool:
+    """Store or drop the watermark image list. Placements and files stay put."""
+    existing = DESIGN_SETTINGS.get('investor_deck_watermark')
+    if record is None and not isinstance(existing, dict):
+        return True
+    try:
+        previous = _snapshot_design_settings()
+    except Exception:
+        return False
+    if record is None:
+        DESIGN_SETTINGS.pop('investor_deck_watermark', None)
+    else:
+        images = []
+        for item in record.get('images') or []:
+            if not isinstance(item, dict):
+                continue
+            images.append({
+                'asset_id': item.get('asset_id'),
+                'asset_checksum': item.get('asset_checksum'),
+            })
+        slim = {
+            'images': images,
+            'checksum': record.get('checksum'),
+            'updated_at': record.get('updated_at'),
+            'updated_by': record.get('updated_by'),
+        }
+        DESIGN_SETTINGS['investor_deck_watermark'] = _copy_json_value(slim)
+    DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
+    if seal_design_settings(force=True):
+        return True
+    _restore_design_settings(previous)
+    return False
+
+
+def save_investor_deck_watermark(payload: Dict[str, Any], *, actor: str) -> Dict[str, Any]:
+    """Point the deck watermark at library images, or clear that pointer.
+
+    The plan, filmed scenes, slide videos, public placements, and the library
+    files are not written. A checksum the library does not currently hold is
+    refused and nothing is stored.
+    """
+    from services.investor_deck_video import InvestorDeckError, assign_watermark
+
+    if payload.get('clear') is True:
+        if not _persist_investor_deck_watermark_unlocked(None):
+            raise InvestorDeckError('The watermark could not be stored durably')
+        return investor_deck_presentation_view(can_assign=True)
+    raw = payload.get('asset_ids')
+    if raw is None:
+        raw = payload.get('images')
+    if not isinstance(raw, list) or not raw:
+        raise InvestorDeckError('Choose images from the media library')
+    chosen: List[Dict[str, str]] = []
+    fingerprints: List[tuple] = []
+    for item in raw:
+        client_checksum = None
+        if isinstance(item, str):
+            asset_id = item.strip()
+        elif isinstance(item, dict):
+            asset_id = str(item.get('asset_id') or '').strip()
+            client_checksum = item.get('asset_checksum')
+        else:
+            raise InvestorDeckError('Choose images from the media library')
+        asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
+        if not isinstance(asset, dict):
+            raise InvestorDeckError('That image is not in the media library')
+        if str(asset.get('type') or '') != 'image':
+            raise InvestorDeckError('A watermark uses images from the media library')
+        checksum = str(asset.get('checksum') or '').strip()
+        if not checksum:
+            raise InvestorDeckError('Media image has no checksum')
+        if client_checksum not in (None, '') and str(client_checksum).strip() != checksum:
+            raise InvestorDeckError('Media checksum does not match the library. Nothing was stored.')
+        chosen.append({'asset_id': asset_id, 'asset_checksum': checksum})
+        fingerprints.append((asset_id, checksum, str(asset.get('type') or '')))
+    record = assign_watermark(chosen)
+    for asset_id, checksum, kind in fingerprints:
+        asset = MEDIA_ASSETS.get(asset_id) or {}
+        if str(asset.get('checksum') or '') != checksum or str(asset.get('type') or '') != kind:
+            raise InvestorDeckError('The library file was not left intact. Nothing was stored.')
+    record['updated_at'] = datetime.now().isoformat()
+    record['updated_by'] = actor or 'admin'
+    if not _persist_investor_deck_watermark_unlocked(record):
+        raise InvestorDeckError('The watermark could not be stored durably')
     return investor_deck_presentation_view(can_assign=True)
 
 
@@ -42155,15 +42257,25 @@ For claims or questions, please contact:
             from services.investor_deck_video import InvestorDeckError
             actor = (session or {}).get('username', 'admin')
             try:
-                view = save_investor_deck_slide_media(data, actor=actor)
-                cleared = data.get('clear') is True
-                status_code, payload = 200, {
-                    'success': True,
-                    'message': (
+                if data.get('watermark') is True:
+                    view = save_investor_deck_watermark(data, actor=actor)
+                    cleared = data.get('clear') is True
+                    message = (
+                        'The watermark was removed. The library files were not changed.'
+                        if cleared else
+                        'The watermark is the selected library images. The plan and the library files were not changed.'
+                    )
+                else:
+                    view = save_investor_deck_slide_media(data, actor=actor)
+                    cleared = data.get('clear') is True
+                    message = (
                         'The video was removed from this slide. The library file was not changed.'
                         if cleared else
                         'The video is combined with this slide. The plan and the library file were not changed.'
-                    ),
+                    )
+                status_code, payload = 200, {
+                    'success': True,
+                    'message': message,
                     'presentation': view,
                 }
             except InvestorDeckError as exc:

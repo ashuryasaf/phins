@@ -80,7 +80,20 @@
   .deck-body {
     display: grid; grid-template-columns: 1.25fr 0.85fr; gap: 18px;
     padding: 22px 24px 18px; align-items: start; flex: 1;
+    position: relative; overflow: hidden;
   }
+  .deck-watermark {
+    position: absolute; inset: 0; z-index: 0; display: grid; gap: 0;
+    pointer-events: none; overflow: hidden;
+  }
+  .deck-watermark img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .deck-watermark::after {
+    content: ""; position: absolute; inset: 0;
+    background: rgba(255, 255, 255, 0.58);
+  }
+  .deck-body > :not(.deck-watermark) { position: relative; z-index: 1; }
   .deck-body.solo { grid-template-columns: 1fr; }
   .deck-no {
     font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
@@ -117,6 +130,13 @@
   .deck-assign {
     display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px;
   }
+  .deck-watermark-pick {
+    flex: 1 1 280px; border: 1px solid var(--line); border-radius: 10px;
+    margin: 0; padding: 8px 10px 10px; background: #fff;
+  }
+  .deck-watermark-pick legend { font-size: 12px; font-weight: 700; color: var(--navy); padding: 0 4px; }
+  #deck-watermark-images { display: flex; flex-direction: column; gap: 4px; max-height: 148px; overflow: auto; }
+  #deck-watermark-images label { font-weight: 500; font-size: 13px; display: flex; gap: 8px; align-items: center; }
   @media (max-width: 860px) {
     .deck-body, .deck-body.solo { grid-template-columns: 1fr; }
     h1 { font-size: 22px; }
@@ -166,6 +186,7 @@
     </header>
     <div class="deck-gold"></div>
     <div class="deck-body solo" id="deck-body">
+      <div class="deck-watermark" id="deck-watermark" hidden></div>
       <div>
         <p class="deck-no" id="deck-no"></p>
         <h1 id="deck-title">Investor deck</h1>
@@ -185,8 +206,14 @@
     </label>
     <button type="button" class="deck-btn" id="deck-combine">Combine with this slide</button>
     <button type="button" class="deck-btn secondary" id="deck-clear">Remove video</button>
+    <fieldset class="deck-watermark-pick">
+      <legend>Watermark background</legend>
+      <div id="deck-watermark-images"></div>
+    </fieldset>
+    <button type="button" class="deck-btn" id="deck-watermark-set">Use as watermark background</button>
+    <button type="button" class="deck-btn secondary" id="deck-watermark-clear">Remove watermark</button>
   </div>
-  <p class="deck-note">Figures are filled from the current plan. A library video plays only when its checksum still matches the pointer. The plan, its factors, and the library file are not rewritten.</p>
+  <p class="deck-note">Figures are filled from the current plan. A library video plays only when its checksum still matches the pointer. A watermark is a faint background of library images, each shown only while its checksum matches. The plan, its factors, and the library files are not rewritten.</p>
   <p class="deck-status" id="deck-status" role="status"></p>
 </div>
 <script src="/phins-doc-return.js"></script>
@@ -195,7 +222,7 @@
   var params = new URLSearchParams(window.location.search);
   if (params.get('embed') === '1') document.body.classList.add('is-embed');
   var wantEdit = params.get('edit') === '1';
-  var state = { slides: [], index: 0, data: null, mode: 'auto', videos: [] };
+  var state = { slides: [], index: 0, data: null, mode: 'auto', videos: [], images: [] };
 
   function token() {
     try {
@@ -207,6 +234,13 @@
   function esc(value) {
     return String(value == null ? '' : value)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function safeSrc(url) {
+    var text = String(url || '').trim();
+    if (text.indexOf('/') === 0 && text.indexOf('//') !== 0 && text.indexOf('\\') === -1) return text;
+    if (/^https?:\/\//i.test(text)) return text;
+    if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(text)) return text;
+    return '';
   }
   function headers(json) {
     var h = { 'Authorization': 'Bearer ' + token() };
@@ -265,6 +299,7 @@
     }
     side.innerHTML = parts.join('');
     document.getElementById('deck-body').classList.toggle('solo', side.innerHTML === '');
+    paintWatermark();
     var video = side.querySelector('video[data-filmed]');
     if (video) {
       video.addEventListener('ended', function () {
@@ -302,6 +337,11 @@
     if (current.media && current.media.withheld) {
       warn = 'A combined video was withheld because its checksum does not match the library. The file was not changed.';
     }
+    var mark = state.data && state.data.watermark;
+    if (mark && mark.withheld) {
+      warn = (warn ? warn + ' ' : '') +
+        'A watermark image was withheld because its checksum does not match the library. The file was not changed.';
+    }
     var plan = state.data && state.data.plan;
     if (plan && plan.integrity_all_hold === false) {
       warn = (warn ? warn + ' ' : '') + 'Plan identities do not hold. Figures are shown as computed.';
@@ -313,8 +353,45 @@
     setStatus(
       (plan && plan.factors_source ? plan.factors_source + ' plan' : 'Plan') +
       (hash ? ' · ' + hash : '') +
-      (mode === 'library' ? ' · library video' : mode === 'filmed' ? ' · filmed paragraphs' : '')
+      (mode === 'library' ? ' · library video' : mode === 'filmed' ? ' · filmed paragraphs' : '') +
+      (watermarkVisible() ? ' · watermark' : '')
     );
+  }
+  function watermarkImages() {
+    var mark = state.data && state.data.watermark;
+    return mark && Array.isArray(mark.images) ? mark.images : [];
+  }
+  function watermarkVisible() {
+    return watermarkImages().some(function (item) {
+      return item && item.intact && safeSrc(item.playback_url);
+    });
+  }
+  function paintWatermark() {
+    var node = document.getElementById('deck-watermark');
+    if (!node) return;
+    var images = watermarkImages().filter(function (item) {
+      return item && item.intact && safeSrc(item.playback_url);
+    });
+    if (!images.length) {
+      node.hidden = true;
+      node.innerHTML = '';
+      node.style.gridTemplateColumns = '';
+      return;
+    }
+    var cols = images.length === 1 ? 1 : (images.length <= 4 ? 2 : 3);
+    node.hidden = false;
+    node.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+    node.innerHTML = images.map(function (item) {
+      return '<img alt="" src="' + esc(safeSrc(item.playback_url)) + '">';
+    }).join('');
+  }
+  function syncWatermarkChecks() {
+    var ids = {};
+    watermarkImages().forEach(function (item) {
+      if (item && item.asset_id) ids[item.asset_id] = true;
+    });
+    var boxes = document.querySelectorAll('#deck-watermark-images input[type="checkbox"]');
+    for (var i = 0; i < boxes.length; i += 1) boxes[i].checked = !!ids[boxes[i].value];
   }
   function go(index) {
     if (!state.slides.length) return;
@@ -341,9 +418,9 @@
     var data = await response.json();
     if (!response.ok) throw new Error(data.error || 'The investor deck could not be loaded');
     applyPayload(data);
-    if (wantEdit && data.can_assign) await loadVideos();
+    if (wantEdit && data.can_assign) await loadLibrary();
   }
-  async function loadVideos() {
+  async function loadLibrary() {
     var response = await fetch('/api/media', { headers: headers(false) });
     var data = await response.json();
     if (!response.ok) {
@@ -352,6 +429,7 @@
     }
     var assets = Array.isArray(data) ? data : (data.assets || []);
     state.videos = assets.filter(function (asset) { return asset && asset.type === 'video'; });
+    state.images = assets.filter(function (asset) { return asset && asset.type === 'image'; });
     var select = document.getElementById('deck-videos');
     var current = slide();
     var selected = current && current.media ? current.media.asset_id : '';
@@ -360,6 +438,16 @@
       return '<option value="' + esc(id) + '"' + (id === selected ? ' selected' : '') + '>' +
         esc(asset.name || id) + '</option>';
     }).join('');
+    var chosen = {};
+    watermarkImages().forEach(function (item) {
+      if (item && item.asset_id) chosen[item.asset_id] = true;
+    });
+    var picker = document.getElementById('deck-watermark-images');
+    picker.innerHTML = state.images.length ? state.images.map(function (asset) {
+      var id = String(asset.id || '');
+      return '<label><input type="checkbox" value="' + esc(id) + '"' +
+        (chosen[id] ? ' checked' : '') + '> ' + esc(asset.name || id) + '</label>';
+    }).join('') : '<span>No images in the library yet.</span>';
   }
   async function postMedia(body) {
     setStatus('Saving the video pointer…');
@@ -371,6 +459,19 @@
     var data = await response.json();
     if (!response.ok) throw new Error(data.error || 'The video could not be combined');
     if (data.presentation) applyPayload(data.presentation);
+    setStatus(data.message || 'Saved.');
+  }
+  async function postWatermark(body) {
+    setStatus('Saving the watermark pointer…');
+    var response = await fetch('/api/admin/media/investor-deck/presentation', {
+      method: 'POST',
+      headers: headers(true),
+      body: JSON.stringify(body)
+    });
+    var data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'The watermark could not be saved');
+    if (data.presentation) applyPayload(data.presentation);
+    syncWatermarkChecks();
     setStatus(data.message || 'Saved.');
   }
   document.getElementById('deck-prev').addEventListener('click', function () { go(state.index - 1); });
@@ -408,6 +509,23 @@
     if (!current) return;
     postMedia({ slide_no: current.slide_no, clear: true }).catch(function (err) {
       setStatus(err.message || 'The video could not be removed');
+    });
+  });
+  document.getElementById('deck-watermark-set').addEventListener('click', function () {
+    var ids = [];
+    var boxes = document.querySelectorAll('#deck-watermark-images input:checked');
+    for (var i = 0; i < boxes.length; i += 1) ids.push(boxes[i].value);
+    if (!ids.length) {
+      setStatus('Choose library images for the watermark.');
+      return;
+    }
+    postWatermark({ watermark: true, asset_ids: ids }).catch(function (err) {
+      setStatus(err.message || 'The watermark could not be saved');
+    });
+  });
+  document.getElementById('deck-watermark-clear').addEventListener('click', function () {
+    postWatermark({ watermark: true, clear: true }).catch(function (err) {
+      setStatus(err.message || 'The watermark could not be removed');
     });
   });
   document.addEventListener('keydown', function (event) {

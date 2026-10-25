@@ -13,6 +13,10 @@ not written here.
 The 13-slide presentation (``presentation_of``) is the same Part II, one
 slide at a time. A library video combines with a slide only as a checksummed
 pointer. A mismatch is omitted and the library file is not rewritten.
+
+A watermark background is a separate checksummed list of library images
+(``investor_deck_watermark``). Each image is shown only while its checksum
+still matches. A mismatch omits that image and does not rewrite the file.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ from services.business_plan_document import (
 SCENE_SECONDS = 15
 CAMPAIGN_PREFIX = "DECK-"
 MAX_THEME_CHARS = 240
+WATERMARK_MAX_IMAGES = 6
 _ASSET_ID_RE_SOURCE = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$"
 
 # Elegant on-camera roster. Sex, age, and appearance are varied so a full
@@ -716,6 +721,118 @@ def _combined_media(
     return dict(empty, withheld=True)
 
 
+def watermark_checksum(record: Mapping[str, Any]) -> str:
+    """Checksum of the image list. Library bytes are not included."""
+    images: List[Dict[str, str]] = []
+    raw = record.get("images") if isinstance(record, Mapping) else None
+    for item in raw or []:
+        if not isinstance(item, Mapping):
+            images.append({"asset_id": "", "asset_checksum": ""})
+            continue
+        images.append({
+            "asset_id": str(item.get("asset_id") or ""),
+            "asset_checksum": str(item.get("asset_checksum") or ""),
+        })
+    encoded = json.dumps({"images": images}, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def verify_watermark(record: Mapping[str, Any]) -> bool:
+    if not isinstance(record, dict):
+        return False
+    images = record.get("images")
+    if not isinstance(images, list) or not images or len(images) > WATERMARK_MAX_IMAGES:
+        return False
+    digest = watermark_checksum(record)
+    stored = str(record.get("checksum") or "")
+    if not stored or len(stored) != len(digest):
+        return False
+    return hmac.compare_digest(stored, digest)
+
+
+def assign_watermark(images: Any) -> Dict[str, Any]:
+    """Seal library images as the deck watermark. The files are not copied."""
+    if isinstance(images, (str, bytes)) or not isinstance(images, Sequence):
+        raise InvestorDeckError("Choose images from the media library")
+    sealed: List[Dict[str, str]] = []
+    seen = set()
+    for item in images:
+        if isinstance(item, str):
+            asset_id: Any = item
+            checksum: Any = ""
+        elif isinstance(item, Mapping):
+            asset_id = item.get("asset_id")
+            checksum = item.get("asset_checksum")
+        else:
+            raise InvestorDeckError("Choose images from the media library")
+        cleaned = _clean_asset_id(asset_id)
+        if not cleaned:
+            raise InvestorDeckError("Choose images from the media library")
+        if cleaned in seen:
+            continue
+        seen.add(cleaned)
+        digest = str(checksum or "").strip()
+        if not digest or any(ch.isspace() for ch in digest) or len(digest) > 128:
+            raise InvestorDeckError("Media image has no checksum")
+        sealed.append({"asset_id": cleaned, "asset_checksum": digest})
+    if not sealed:
+        raise InvestorDeckError("Choose images from the media library")
+    if len(sealed) > WATERMARK_MAX_IMAGES:
+        raise InvestorDeckError(f"A watermark uses at most {WATERMARK_MAX_IMAGES} images")
+    record: Dict[str, Any] = {"images": sealed}
+    record["checksum"] = watermark_checksum(record)
+    return record
+
+
+def watermark_of(
+    record: Optional[Mapping[str, Any]],
+    assets: Optional[Mapping[str, Any]],
+) -> Dict[str, Any]:
+    """Show each library image only when the pointer and the file still match."""
+    empty: Dict[str, Any] = {"images": [], "intact": False, "withheld": False}
+    if not isinstance(record, dict) or not record.get("images"):
+        return empty
+    if not verify_watermark(record):
+        return {"images": [], "intact": False, "withheld": True}
+    rows: List[Dict[str, Any]] = []
+    any_withheld = False
+    any_shown = False
+    for item in record.get("images") or []:
+        if not isinstance(item, Mapping):
+            any_withheld = True
+            continue
+        asset_id = str(item.get("asset_id") or "")
+        info = assets.get(asset_id) if isinstance(assets, Mapping) else None
+        info = info if isinstance(info, dict) else {}
+        sealed = str(item.get("asset_checksum") or "")
+        actual = str(info.get("checksum") or "").strip()
+        kind = str(info.get("type") or "")
+        playback = str(info.get("playback_url") or info.get("url") or "")
+        if sealed and sealed == actual and kind == "image" and playback:
+            rows.append({
+                "asset_id": asset_id,
+                "playback_url": playback,
+                "name": str(info.get("name") or ""),
+                "intact": True,
+                "withheld": False,
+            })
+            any_shown = True
+        else:
+            rows.append({
+                "asset_id": asset_id,
+                "playback_url": "",
+                "name": str(info.get("name") or ""),
+                "intact": False,
+                "withheld": True,
+            })
+            any_withheld = True
+    return {
+        "images": rows,
+        "intact": any_shown and not any_withheld,
+        "withheld": any_withheld,
+    }
+
+
 def presentation_of(
     plan: Mapping[str, Any],
     assignments: Optional[Mapping[str, Any]] = None,
@@ -724,6 +841,7 @@ def presentation_of(
     *,
     photo_url: str = "",
     charts: Optional[Mapping[str, Any]] = None,
+    watermark: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Part II as slides. Figures are filled here and nowhere written back."""
     slides: List[Dict[str, Any]] = []
@@ -747,4 +865,5 @@ def presentation_of(
         "part": "II",
         "slide_count": len(slides),
         "slides": slides,
+        "watermark": watermark_of(watermark, assets),
     }

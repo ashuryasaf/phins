@@ -776,9 +776,13 @@ Environment variables commonly used:
  in the navy/gold letterhead. A library video combines with a slide only as
  a checksummed pointer in `investor_deck_slide_media`
  (`GET`/`POST /api/admin/media/investor-deck/presentation`); a mismatch is
- omitted and the library file is not rewritten. The media dashboard Investor
- Deck Lab embeds that page, and the pitch investor bar links it. Read access
- is staff plus media; only admin or media can attach a video.
+ omitted and the library file is not rewritten. A watermark background is a
+ checksummed list of up to six library images in `investor_deck_watermark`
+ on the same route; each image is shown only while its checksum matches, and
+ a mismatch omits that image without rewriting the file. The media dashboard
+ Investor Deck Lab embeds that page, and the pitch investor bar links it.
+ Read access is staff plus media; only admin or media can attach a video or
+ change the watermark.
 - **Admin AI Mic data desk:** `POST /api/admin/ai-bi/query` (admin or manager only) answers from the actuarial tables, `SimulationParams`, the ADL 3 remaining-life rows, the live books, and simulations already stored on the process. A missing rate is withheld. The desk does not draw a new portfolio or write a store. A question that needs a new run returns `planning` and names the existing tool (portfolio simulator, Monte Carlo evaluation, or the assessment center). The report window is `/admin-ai-report.html` (variants, JSON/Markdown/HTML download, English/Hebrew). Optional narration uses the assessment LLM and is dropped when it introduces a number.
 - **BI analytics (B10):** `PHINS_BI_SNAPSHOT_DIR` also holds
  `materialized_views.json` (served by `/api/bi/*` when fingerprint, checksum

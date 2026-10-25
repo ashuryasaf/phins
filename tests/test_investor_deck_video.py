@@ -17,7 +17,9 @@ from services.investor_deck_video import (
     SCENE_SECONDS,
     InvestorDeckError,
     apply_scene_edit,
+    WATERMARK_MAX_IMAGES,
     assign_slide_media,
+    assign_watermark,
     catalog,
     choose_presenter,
     clip_is_scene_length,
@@ -32,6 +34,7 @@ from services.investor_deck_video import (
     stream_of,
     verify_media_assignment,
     verify_scene,
+    verify_watermark,
 )
 
 
@@ -525,6 +528,8 @@ def test_presentation_is_part_ii_and_a_video_plays_only_when_the_checksum_matche
     assert founder["title"] == "Founder"
     assert founder["photo_url"].endswith("founder-portrait")
     assert view["slides"][0]["photo_url"] == ""
+    assert view["watermark"]["images"] == []
+    assert view["watermark"]["withheld"] is False
     image = dict(asset, type="image")
     withheld = presentation_of(plan, {"7": record}, {"vid-deck-1": image})
     assert withheld["slides"][6]["media"]["intact"] is False
@@ -565,6 +570,8 @@ def test_presentation_page_is_wired_and_does_not_bake_figures():
     assert "thirteen-slide investor deck" in pitch
     assert 'data-src="/investor-deck.html?embed=1&amp;edit=1"' in media
     assert "Chapter 2 · 13-slide deck" in media
+    assert 'id="deck-watermark"' in page
+    assert "Use as watermark background" in page
 
 
 def test_combine_video_stores_a_pointer_and_leaves_the_library_and_plan_alone():
@@ -637,6 +644,8 @@ def test_combine_video_stores_a_pointer_and_leaves_the_library_and_plan_alone():
         assert listing["plan"]["content_hash"] == plan_before
         assert listing["plan"]["integrity_all_hold"] is True
         assert "{" not in "".join(listing["slides"][0]["bullets"])
+        assert listing["watermark"]["images"] == []
+        assert listing["watermark"]["withheld"] is False
         status, blocked = _json_request(
             base + "/api/admin/media/investor-deck/presentation",
             method="POST",
@@ -768,4 +777,245 @@ def test_combine_video_stores_a_pointer_and_leaves_the_library_and_plan_alone():
         portal.SESSIONS.pop(admin, None)
         portal.SESSIONS.pop(actuary, None)
         portal.SESSIONS.pop(customer, None)
+        srv.stop()
+
+
+def test_watermark_is_library_images_and_a_mismatch_is_omitted():
+    plan = compute_plan()
+    plan_hash = plan["content_hash"]
+    gold = {"type": "image", "checksum": "g" * 64, "playback_url": "/media-files/gold/mark.png", "name": "Gold", "data": "keep-gold"}
+    navy = {"type": "image", "checksum": "n" * 64, "playback_url": "/media-files/navy/mark.png", "name": "Navy", "data": "keep-navy"}
+    record = assign_watermark([
+        {"asset_id": "img-gold", "asset_checksum": "g" * 64},
+        {"asset_id": "img-gold", "asset_checksum": "g" * 64},
+        {"asset_id": "img-navy", "asset_checksum": "n" * 64},
+    ])
+    assert verify_watermark(record)
+    assert [item["asset_id"] for item in record["images"]] == ["img-gold", "img-navy"]
+    view = presentation_of(plan, watermark=record, assets={"img-gold": gold, "img-navy": navy})
+    shown = view["watermark"]
+    assert shown["intact"] is True
+    assert [item["name"] for item in shown["images"]] == ["Gold", "Navy"]
+    assert shown["images"][0]["playback_url"].endswith("mark.png")
+    assert plan["content_hash"] == plan_hash
+    assert gold["data"] == "keep-gold"
+    assert navy["data"] == "keep-navy"
+    drifted = dict(navy, checksum="z" * 64)
+    partial = presentation_of(plan, watermark=record, assets={"img-gold": gold, "img-navy": drifted})
+    assert partial["watermark"]["withheld"] is True
+    assert partial["watermark"]["images"][0]["intact"] is True
+    assert partial["watermark"]["images"][1]["playback_url"] == ""
+    assert record["images"][1]["asset_checksum"] == "n" * 64
+    assert drifted["data"] == "keep-navy"
+    video = dict(gold, type="video")
+    refused = presentation_of(plan, watermark=record, assets={"img-gold": video, "img-navy": navy})
+    assert refused["watermark"]["images"][0]["withheld"] is True
+    assert refused["watermark"]["images"][1]["intact"] is True
+    tampered = dict(record, checksum="0" * 64)
+    broken = presentation_of(plan, watermark=tampered, assets={"img-gold": gold, "img-navy": navy})
+    assert broken["watermark"]["images"] == []
+    assert broken["watermark"]["withheld"] is True
+    assert tampered["checksum"] == "0" * 64
+    try:
+        assign_watermark([{"asset_id": f"img-{i}", "asset_checksum": "a" * 8} for i in range(WATERMARK_MAX_IMAGES + 1)])
+    except InvestorDeckError as exc:
+        assert "at most" in str(exc)
+    else:
+        raise AssertionError("too many watermark images were sealed")
+    try:
+        assign_watermark([])
+    except InvestorDeckError as exc:
+        assert "images" in str(exc).lower()
+    else:
+        raise AssertionError("an empty watermark was sealed")
+
+
+def test_watermark_stores_a_pointer_and_leaves_the_library_and_plan_alone():
+    srv = _Server()
+    srv.start()
+    time.sleep(0.2)
+    portal = srv.portal
+    base = f"http://127.0.0.1:{srv.port}"
+    try:
+        _json_request(base + "/api/health")
+    except Exception:
+        pass
+    admin = "phins_test_deck_watermark_admin"
+    actuary = "phins_test_deck_watermark_actuary"
+    portal.SESSIONS[admin] = {
+        "username": "deck-watermark-admin",
+        "role": "admin",
+        "customer_id": "",
+        "expires": (datetime.now() + timedelta(hours=1)).isoformat(),
+    }
+    portal.SESSIONS[actuary] = {
+        "username": "deck-watermark-actuary",
+        "role": "actuary",
+        "customer_id": "",
+        "expires": (datetime.now() + timedelta(hours=1)).isoformat(),
+    }
+    gold_bytes = "do-not-touch-gold"
+    navy_bytes = "do-not-touch-navy"
+    portal.MEDIA_ASSETS["img-mark-gold"] = {
+        "id": "img-mark-gold",
+        "type": "image",
+        "name": "Gold mark",
+        "checksum": "d" * 64,
+        "url": "/media-files/img-mark-gold/gold.png",
+        "data": gold_bytes,
+    }
+    portal.MEDIA_ASSETS["img-mark-navy"] = {
+        "id": "img-mark-navy",
+        "type": "image",
+        "name": "Navy mark",
+        "checksum": "e" * 64,
+        "url": "/media-files/img-mark-navy/navy.png",
+        "data": navy_bytes,
+    }
+    portal.MEDIA_ASSETS["vid-mark-film"] = {
+        "id": "vid-mark-film",
+        "type": "video",
+        "name": "Film",
+        "checksum": "f" * 64,
+        "url": "/media-files/vid-mark-film/film.mp4",
+        "data": "do-not-touch-film",
+    }
+    plan_before = compute_plan()["content_hash"]
+    hero_before = portal.DESIGN_SETTINGS.get("hero_video_id", "")
+    tagline_before = portal.DESIGN_SETTINGS.get("tagline")
+    media_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_slide_media"))
+    watermark_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_watermark"))
+    updated_before = portal.DESIGN_SETTINGS.get("updated_at")
+    path = base + "/api/admin/media/investor-deck/presentation"
+    try:
+        status, denied = _json_request(
+            path, method="POST", token=actuary,
+            payload={"watermark": True, "asset_ids": ["img-mark-gold"]},
+        )
+        assert status == 403
+        assert portal.DESIGN_SETTINGS.get("investor_deck_watermark") == watermark_before
+
+        status, video = _json_request(
+            path, method="POST", token=admin,
+            payload={"watermark": True, "asset_ids": ["vid-mark-film"]},
+        )
+        assert status == 400
+        assert "image" in video["error"].lower()
+        assert portal.MEDIA_ASSETS["vid-mark-film"]["data"] == "do-not-touch-film"
+
+        status, clash = _json_request(
+            path, method="POST", token=admin,
+            payload={"watermark": True, "images": [
+                {"asset_id": "img-mark-gold", "asset_checksum": "d" * 64},
+                {"asset_id": "img-mark-navy", "asset_checksum": "0" * 64},
+            ]},
+        )
+        assert status == 409
+        assert portal.MEDIA_ASSETS["img-mark-gold"]["data"] == gold_bytes
+        assert portal.MEDIA_ASSETS["img-mark-navy"]["checksum"] == "e" * 64
+        assert portal.DESIGN_SETTINGS.get("investor_deck_watermark") == watermark_before
+
+        status, saved = _json_request(
+            path, method="POST", token=admin,
+            payload={"watermark": True, "asset_ids": ["img-mark-gold", "img-mark-gold", "img-mark-navy"]},
+        )
+        assert status == 200, saved
+        assert "not changed" in saved["message"]
+        mark = saved["presentation"]["watermark"]
+        assert mark["intact"] is True
+        assert [item["name"] for item in mark["images"]] == ["Gold mark", "Navy mark"]
+        assert mark["images"][0]["playback_url"].endswith("gold.png")
+        stored = portal.DESIGN_SETTINGS["investor_deck_watermark"]
+        assert verify_watermark(stored)
+        assert [item["asset_id"] for item in stored["images"]] == ["img-mark-gold", "img-mark-navy"]
+        assert portal.MEDIA_ASSETS["img-mark-gold"]["data"] == gold_bytes
+        assert portal.MEDIA_ASSETS["img-mark-navy"]["data"] == navy_bytes
+        assert portal.DESIGN_SETTINGS.get("hero_video_id", "") == hero_before
+        assert portal.DESIGN_SETTINGS.get("investor_deck_slide_media") == media_before
+        assert compute_plan()["content_hash"] == plan_before
+        assert saved["presentation"]["plan"]["content_hash"] == plan_before
+
+        status, watched = _json_request(path, token=actuary)
+        assert status == 200
+        assert watched["can_assign"] is False
+        assert [item["playback_url"] for item in watched["watermark"]["images"]] == [
+            "/media-files/img-mark-gold/gold.png",
+            "/media-files/img-mark-navy/navy.png",
+        ]
+
+        stored["checksum"] = "0" * 64
+        status, withheld = _json_request(path, token=actuary)
+        assert withheld["watermark"]["withheld"] is True
+        assert withheld["watermark"]["images"] == []
+        assert portal.DESIGN_SETTINGS["investor_deck_watermark"]["checksum"] == "0" * 64
+        assert portal.MEDIA_ASSETS["img-mark-gold"]["data"] == gold_bytes
+
+        stored["checksum"] = assign_watermark(stored["images"])["checksum"]
+        portal.MEDIA_ASSETS["img-mark-navy"]["checksum"] = "c" * 64
+        status, drifted = _json_request(path, token=admin)
+        images = drifted["watermark"]["images"]
+        assert images[0]["intact"] is True
+        assert images[1]["playback_url"] == ""
+        assert images[1]["withheld"] is True
+        assert portal.DESIGN_SETTINGS["investor_deck_watermark"]["images"][1]["asset_checksum"] == "e" * 64
+        assert portal.MEDIA_ASSETS["img-mark-navy"]["data"] == navy_bytes
+        portal.MEDIA_ASSETS["img-mark-navy"]["checksum"] = "e" * 64
+
+        status, public = _json_request(base + "/api/design/settings")
+        assert status == 200
+        assert "investor_deck_watermark" not in public
+        assert gold_bytes not in json.dumps(public)
+        assert navy_bytes not in json.dumps(public)
+
+        status, settings = _json_request(
+            base + "/api/design/settings",
+            method="POST",
+            token=admin,
+            payload={
+                "tagline": tagline_before,
+                "investor_deck_watermark": {"checksum": "tampered", "images": []},
+            },
+        )
+        assert status == 200
+        assert verify_watermark(portal.DESIGN_SETTINGS["investor_deck_watermark"])
+        assert portal.DESIGN_SETTINGS["investor_deck_watermark"]["checksum"] != "tampered"
+
+        status, too_many = _json_request(
+            path, method="POST", token=admin,
+            payload={"watermark": True, "asset_ids": [f"img-missing-{i}" for i in range(WATERMARK_MAX_IMAGES + 1)]},
+        )
+        assert status == 400
+        assert verify_watermark(portal.DESIGN_SETTINGS["investor_deck_watermark"])
+
+        status, cleared = _json_request(
+            path, method="POST", token=admin,
+            payload={"watermark": True, "clear": True},
+        )
+        assert status == 200, cleared
+        assert cleared["presentation"]["watermark"]["images"] == []
+        assert cleared["presentation"]["watermark"]["withheld"] is False
+        assert "investor_deck_watermark" not in portal.DESIGN_SETTINGS
+        assert portal.MEDIA_ASSETS["img-mark-gold"]["data"] == gold_bytes
+        assert portal.DESIGN_SETTINGS.get("investor_deck_slide_media") == media_before
+        assert compute_plan()["content_hash"] == plan_before
+        assert portal.DESIGN_SETTINGS.get("hero_video_id", "") == hero_before
+    finally:
+        for asset_id in ("img-mark-gold", "img-mark-navy", "vid-mark-film"):
+            portal.MEDIA_ASSETS.pop(asset_id, None)
+        if watermark_before is None:
+            portal.DESIGN_SETTINGS.pop("investor_deck_watermark", None)
+        else:
+            portal.DESIGN_SETTINGS["investor_deck_watermark"] = watermark_before
+        if media_before is None:
+            portal.DESIGN_SETTINGS.pop("investor_deck_slide_media", None)
+        else:
+            portal.DESIGN_SETTINGS["investor_deck_slide_media"] = media_before
+        portal.DESIGN_SETTINGS["tagline"] = tagline_before
+        portal.DESIGN_SETTINGS["hero_video_id"] = hero_before
+        if updated_before is None:
+            portal.DESIGN_SETTINGS.pop("updated_at", None)
+        else:
+            portal.DESIGN_SETTINGS["updated_at"] = updated_before
+        portal.SESSIONS.pop(admin, None)
+        portal.SESSIONS.pop(actuary, None)
         srv.stop()
