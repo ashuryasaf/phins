@@ -198,8 +198,21 @@ def redact_answer(step_id: str, value: Any) -> Any:
         }
     if step_id == "signature" and isinstance(value, dict):
         pointer = identity_pointer(
-            value.get("nationality"), value.get("id_number"), value.get("id_last4"),
+            value.get("nationality"),
+            value.get("id_number"),
+            value.get("national_id_last4") or value.get("id_last4"),
         )
+        # After filing, the number is gone and the stored pointer is the record.
+        if not pointer.get("national_id_hash") and value.get("national_id_hash"):
+            pointer = {
+                "nationality": pointer.get("nationality") or value.get("nationality"),
+                "national_id_last4": (
+                    pointer.get("national_id_last4")
+                    or value.get("national_id_last4")
+                    or value.get("id_last4")
+                ),
+                "national_id_hash": value.get("national_id_hash"),
+            }
         return {
             "name": value.get("name") or "",
             "nationality": pointer.get("nationality"),
@@ -227,7 +240,9 @@ def safe_display(step_id: str, value: Any) -> str:
         return f"Card ending {last4}" if last4 else "Card on file"
     if step_id == "signature" and isinstance(value, dict):
         pointer = identity_pointer(
-            value.get("nationality"), value.get("id_number"), value.get("id_last4"),
+            value.get("nationality"),
+            value.get("id_number"),
+            value.get("national_id_last4") or value.get("id_last4"),
         )
         last4 = pointer.get("national_id_last4") or ""
         name = value.get("name") or ""
@@ -614,12 +629,28 @@ def _billing_block(answers: Mapping[str, Any]) -> Dict[str, Any]:
 def subject_from_policy(session: Mapping[str, Any]) -> Dict[str, Any]:
     contact = session.get("contact") or {}
     answers = session.get("answers") or {}
+    sig = answers.get("signature") if isinstance(answers.get("signature"), dict) else {}
     pointer = identity_pointer(
-        answers.get("nationality"), answers.get("id_number"), None,
+        answers.get("nationality") or sig.get("nationality"),
+        answers.get("id_number") or sig.get("id_number"),
+        answers.get("national_id_last4") or sig.get("national_id_last4") or sig.get("id_last4"),
     )
     if not pointer.get("national_id_hash"):
-        sig = answers.get("signature") if isinstance(answers.get("signature"), dict) else {}
-        pointer = identity_pointer(sig.get("nationality"), sig.get("id_number"), sig.get("id_last4")) or pointer
+        stored = answers.get("national_id_hash") or sig.get("national_id_hash")
+        if stored:
+            pointer = {
+                "nationality": (
+                    pointer.get("nationality")
+                    or answers.get("nationality")
+                    or sig.get("nationality")
+                ),
+                "national_id_last4": (
+                    pointer.get("national_id_last4")
+                    or answers.get("national_id_last4")
+                    or sig.get("national_id_last4")
+                ),
+                "national_id_hash": stored,
+            }
     return {
         "customer_id": session.get("customer_id"),
         "name": contact.get("name") or answers.get("name"),

@@ -644,53 +644,125 @@
         afterLayoutScroll();
 
         const canvas = $('sig-pad');
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         let drawing = false;
-        let hasInk = false;
-        const pos = (e) => {
-            const r = canvas.getBoundingClientRect();
-            const src = e.touches ? e.touches[0] : e;
-            return {
-                x: (src.clientX - r.left) * (canvas.width / r.width),
-                y: (src.clientY - r.top) * (canvas.height / r.height),
-            };
-        };
-        const start = (e) => {
-            e.preventDefault();
-            drawing = true;
-            const p = pos(e);
+        let lastPoint = null;
+        let fitted = false;
+
+        // Bitmap matches the box the applicant sees. Strokes are CSS pixels
+        // on a device-pixel backing store, so a retina pad does not drop the
+        // line. Paper is opaque white; the guideline is pale enough that the
+        // server still requires real ink.
+        function fitCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            const cssW = rect.width;
+            const cssH = rect.height || 140;
+            if (cssW < 2 || cssH < 2) return false;
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const bw = Math.max(1, Math.round(cssW * dpr));
+            const bh = Math.max(1, Math.round(cssH * dpr));
+            if (canvas.width !== bw || canvas.height !== bh) {
+                canvas.width = bw;
+                canvas.height = bh;
+            }
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, cssW, cssH);
+            ctx.strokeStyle = '#d7dce6';
+            ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.moveTo(p.x, p.y);
-        };
-        const move = (e) => {
-            if (!drawing) return;
-            e.preventDefault();
-            const p = pos(e);
-            ctx.lineWidth = 2.2;
+            ctx.moveTo(16, cssH * 0.78);
+            ctx.lineTo(Math.max(17, cssW - 16), cssH * 0.78);
+            ctx.stroke();
+            ctx.strokeStyle = '#0d2a5c';
+            ctx.lineWidth = 2.4;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
+            fitted = true;
+            drawing = false;
+            lastPoint = null;
+            return true;
+        }
+        if (!fitCanvas()) {
+            requestAnimationFrame(() => { if (!drawing) fitCanvas(); });
+        }
+
+        function pos(e) {
+            const r = canvas.getBoundingClientRect();
+            const src = (e.touches && e.touches[0]) ? e.touches[0] : e;
+            const w = r.width || 1;
+            const h = r.height || 1;
+            return {
+                x: (src.clientX - r.left) * (canvas.clientWidth / w),
+                y: (src.clientY - r.top) * (canvas.clientHeight / h),
+            };
+        }
+        function darkInkCount() {
+            if (!fitted) return 0;
+            let pixels;
+            try {
+                pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            } catch (err) {
+                return 0;
+            }
+            let n = 0;
+            for (let i = 0; i < pixels.length; i += 4) {
+                const r = pixels[i];
+                const g = pixels[i + 1];
+                const b = pixels[i + 2];
+                const a = pixels[i + 3];
+                if (a > 40 && (r + g + b) < 520 && Math.min(r, g, b) < 180) {
+                    n += 1;
+                    if (n >= 8) return n;
+                }
+            }
+            return n;
+        }
+        const start = (e) => {
+            if (!fitted && !fitCanvas()) return;
+            if (e.cancelable) e.preventDefault();
+            drawing = true;
+            lastPoint = pos(e);
+            if (canvas.setPointerCapture && e.pointerId != null) {
+                try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* already released */ }
+            }
+        };
+        const move = (e) => {
+            if (!drawing || !lastPoint) return;
+            if (e.cancelable) e.preventDefault();
+            const p = pos(e);
             ctx.strokeStyle = '#0d2a5c';
+            ctx.lineWidth = 2.4;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(lastPoint.x, lastPoint.y);
             ctx.lineTo(p.x, p.y);
             ctx.stroke();
-            hasInk = true;
-            $('sig-hint').textContent = 'Signature captured';
+            lastPoint = p;
+            if (darkInkCount() >= 8) $('sig-hint').textContent = 'Signature captured';
         };
-        const end = () => { drawing = false; };
-        canvas.addEventListener('mousedown', start);
-        canvas.addEventListener('mousemove', move);
-        canvas.addEventListener('mouseup', end);
-        canvas.addEventListener('mouseleave', end);
-        canvas.addEventListener('touchstart', start, { passive: false });
-        canvas.addEventListener('touchmove', move, { passive: false });
-        canvas.addEventListener('touchend', end);
+        const end = () => {
+            drawing = false;
+            lastPoint = null;
+        };
+        if (renderSignature._end) {
+            window.removeEventListener('pointerup', renderSignature._end);
+            window.removeEventListener('pointercancel', renderSignature._end);
+        }
+        renderSignature._end = end;
+        canvas.addEventListener('pointerdown', start);
+        canvas.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', end);
+        window.addEventListener('pointercancel', end);
         $('sig-clear').addEventListener('click', () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            hasInk = false;
+            fitCanvas();
             $('sig-hint').textContent = 'Draw your signature above';
         });
 
         const field = $('dock-field');
         const nationalityField = $('dock-nationality');
+        if (input.name_default && field && !field.value) field.value = input.name_default;
         if (nationalityField) {
             // Prefill with the residence country typed earlier; the applicant
             // can change it (nationality is not always the country of residence).
@@ -708,7 +780,7 @@
             if (!name) { dockError('Please type your full legal name.'); return; }
             if (!nationality) { dockError('Please select your nationality.'); return; }
             if (!idNumber) { dockError('Please enter your ID number.'); return; }
-            if (!hasInk) { dockError('Please draw your signature in the panel.'); return; }
+            if (darkInkCount() < 8) { dockError('Please draw your signature in the panel.'); return; }
             const signatureData = canvas.toDataURL('image/png');
             commitAnswer({
                 name,

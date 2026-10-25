@@ -177,6 +177,7 @@ def test_full_chat_application_happy_path():
     consent_reply = _answer(app_id, "agree", resume_code=resume_code)  # consent
     assert consent_reply.get("ready_to_finalize") is not True
     assert consent_reply.get("step", {}).get("id") == "signature"
+    assert consent_reply.get("step", {}).get("input", {}).get("name_default") == "Dana Levi"
     sign_reply = _answer(
         app_id, _signature_payload("Dana Levi"), resume_code=resume_code
     )  # signature panel
@@ -207,10 +208,39 @@ def test_full_chat_application_happy_path():
     assert not card.get("card_number")
     assert not card.get("cvv")
     assert card.get("card_last4") == "4444"
-    assert session["answers"].get("signature_name") == "Dana Levi"
-    assert session["answers"].get("id_number") == "123456782"
-    assert session["answers"].get("signature_image_sha256")
-    assert session["answers"].get("signature_data") is None  # redacted after submit
+    answers = session["answers"]
+    assert answers.get("signature_name") == "Dana Levi"
+    # The number and the PNG leave the session once the application is filed.
+    # Last4 and the keyed hash stay so the seal can still match prior files.
+    assert "id_number" not in answers
+    assert answers.get("national_id_last4") == "6782"
+    assert answers.get("national_id_hash")
+    assert answers.get("signature_image_sha256")
+    assert answers.get("signature_data") is None
+    nested = answers.get("signature") or {}
+    assert "id_number" not in nested
+    assert "signature_data" not in nested
+    assert nested.get("image_sha256") == answers.get("signature_image_sha256")
+    assert nested.get("national_id_hash") == answers.get("national_id_hash")
+    assert "123456782" not in json.dumps(answers)
+
+    import hashlib
+
+    import web_portal.server as portal
+
+    uw = portal.UNDERWRITING_APPLICATIONS[result["underwriting"]["id"]]
+    questionnaire = uw["questionnaire_responses"]
+    if isinstance(questionnaire, str):
+        questionnaire = json.loads(questionnaire)
+    assert questionnaire.get("signature_name") == "Dana Levi"
+    assert questionnaire.get("signature_image_b64")
+    sealed = base64.b64decode(questionnaire["signature_image_b64"])
+    assert hashlib.sha256(sealed).hexdigest() == questionnaire["signature_image_sha256"]
+    assert sealed.startswith(b"\x89PNG")
+    assert "123456782" not in json.dumps(questionnaire)
+    sig_file = portal.UNDERWRITING_FILES[f"UW-SIG-{uw['id']}"]
+    assert sig_file["sha256"] == questionnaire["signature_image_sha256"]
+    assert base64.b64decode(sig_file["data"]) == sealed
     assert session["answers"].get("prior_disclosure")
     assert session["answers"].get("country") == "Israel"
     assert session["answers"].get("city") == "Tel Aviv"
@@ -681,6 +711,106 @@ def test_signature_requires_id_and_drawn_canvas():
     assert cleaned["id_number"] == "123456782"
     assert cleaned["image_sha256"]
     assert cleaned["method"] == "drawn_canvas"
+
+
+def test_blank_signature_canvas_is_rejected():
+    """A real PNG of blank paper is not an electronic signature."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    from services.chat_application_service import _validate_signature, inspect_drawn_signature
+
+    buf = BytesIO()
+    Image.new("RGB", (520, 140), "white").save(buf, format="PNG")
+    blank = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    session = {"contact": {"name": "Dana Levi"}, "answers": {}}
+    ok, err = _validate_signature({
+        "name": "Dana Levi",
+        "nationality": "Israel",
+        "id_number": "123456782",
+        "signature_data": blank,
+    }, session)
+    assert ok is False
+    assert "draw" in str(err).lower()
+    refused = inspect_drawn_signature(blank, "")
+    assert refused["ok"] is False
+    assert refused["data_b64"] == ""
+    mismatch = inspect_drawn_signature(_SIG_PNG, "0" * 64)
+    assert mismatch["ok"] is False
+    assert mismatch["data_b64"] == ""
+    classic = inspect_drawn_signature("", "")
+    assert classic == {
+        "ok": True, "present": False, "sha256": "", "data_b64": "", "error": "",
+    }
+
+
+def test_name_change_withdraws_signature_until_re_signed():
+    """A signature bound to the old legal name cannot be filed."""
+    from services.chat_answer_revisions import verify_revisions
+    from services.chat_application_service import (
+        _validate_signature,
+        get_chat_application_service,
+    )
+
+    svc = get_chat_application_service()
+    app_id = "CHAPP-SIG-NAME-CHANGE"
+    ok, cleaned = _validate_signature(
+        _signature_payload("Dana Levi"),
+        {"contact": {"name": "Dana Levi"}, "answers": {}},
+    )
+    assert ok is True
+    svc._sessions[app_id] = {
+        "id": app_id,
+        "resume_code": "PHINS-CHAT-SIGNAME",
+        "status": "in_progress",
+        "email_verified": True,
+        "phone_verified": False,
+        "contact": {"name": "Dana Levi", "email": "sig.name@example.com", "phone": "+1-555-0100"},
+        "answers": {
+            "name": "Dana Levi",
+            "signature": dict(cleaned),
+            "signature_name": cleaned["name"],
+            "signature_data": cleaned["signature_data"],
+            "signature_image_sha256": cleaned["image_sha256"],
+            "id_number": cleaned["id_number"],
+            "nationality": cleaned["nationality"],
+        },
+        "transcript": [],
+        "journey": [],
+        "revisions": [],
+        "language": "en",
+        "media": [],
+        "quote": {"eligible": True, "monthly": 10, "annual": 120},
+    }
+    try:
+        folded = svc.edit_answer(app_id, "name", "dana levi")
+        assert folded.get("ok") is True, folded
+        assert folded.get("unchanged") is not True
+        assert "signature" in svc._sessions[app_id]["answers"]
+
+        changed = svc.edit_answer(app_id, "name", "Dana Cohen")
+        assert changed.get("ok") is True, changed
+        answers = svc._sessions[app_id]["answers"]
+        assert answers.get("name") == "Dana Cohen"
+        assert "signature" not in answers
+        assert "id_number" not in answers
+        assert "signature_data" not in answers
+        assert "signature_image_sha256" not in answers
+        actions = [rev["action"] for rev in svc._sessions[app_id]["revisions"]
+                   if rev["step_id"] == "signature"]
+        assert actions == ["withdrawn"]
+        intact, reason = verify_revisions(svc._sessions[app_id]["revisions"])
+        assert intact is True, reason
+        texts = " ".join(m.get("text") or "" for m in changed.get("messages") or [])
+        assert "sign again" in texts.lower()
+
+        blocked = svc.prepare_finalize(app_id)
+        assert blocked.get("ok") is False
+        assert blocked.get("status_code") == 409
+        assert "signature" in str(blocked.get("error") or "").lower()
+    finally:
+        svc._sessions.pop(app_id, None)
 
 
 def test_uw_decision_auto_answer_and_notification():
