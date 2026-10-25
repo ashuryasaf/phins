@@ -412,6 +412,23 @@ def _fold_name(value: Any) -> str:
     return " ".join(str(value or "").lower().split())
 
 
+def _png_ihdr_size(blob: bytes) -> Optional[Tuple[int, int]]:
+    """Width and height from the leading PNG IHDR, before any pixel decode.
+
+    The canvas limit is applied on these values so signature checks never
+    write ``Image.MAX_IMAGE_PIXELS``. That cap is process-wide: overlapping
+    filings used to save each other's temporary value and restore it as the
+    default, which stuck later document and media decodes on the wrong limit.
+    """
+    if len(blob) < 24 or blob[8:16] != b"\x00\x00\x00\x0dIHDR":
+        return None
+    return int.from_bytes(blob[16:20], "big"), int.from_bytes(blob[20:24], "big")
+
+
+def _signature_canvas_size_ok(width: int, height: int) -> bool:
+    return 2 <= width <= 4000 and 2 <= height <= 2000
+
+
 def _signature_png_bytes(data_url: Any) -> Tuple[bool, str, bytes]:
     """Decode a drawn-signature data URL. Blank paper is not a signature."""
     raw = str(data_url or "").strip()
@@ -426,25 +443,23 @@ def _signature_png_bytes(data_url: Any) -> Tuple[bool, str, bytes]:
         return False, "Please draw your signature in the signature panel.", b""
     if len(blob) > _SIGNATURE_MAX_BYTES:
         return False, "That signature image is too large.", b""
+    size = _png_ihdr_size(blob)
+    if size is None or not _signature_canvas_size_ok(*size):
+        return False, "Please draw your signature in the signature panel.", b""
     try:
         from io import BytesIO
 
         from PIL import Image
     except ImportError:
         return False, "Please draw your signature in the signature panel.", b""
-    previous_limit = getattr(Image, "MAX_IMAGE_PIXELS", None)
-    Image.MAX_IMAGE_PIXELS = 4_000_000
     try:
         with Image.open(BytesIO(blob)) as image:
             image.load()
-            width, height = image.size
-            if width < 2 or height < 2 or width > 4000 or height > 2000:
+            if not _signature_canvas_size_ok(*image.size):
                 return False, "Please draw your signature in the signature panel.", b""
             pixels = image.convert("RGBA").tobytes()
     except Exception:
         return False, "Please draw your signature in the signature panel.", b""
-    finally:
-        Image.MAX_IMAGE_PIXELS = previous_limit
     ink = 0
     for index in range(0, len(pixels), 4):
         red, green, blue, alpha = pixels[index:index + 4]

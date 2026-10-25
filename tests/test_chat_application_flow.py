@@ -713,6 +713,54 @@ def test_signature_requires_id_and_drawn_canvas():
     assert cleaned["method"] == "drawn_canvas"
 
 
+def test_signature_decode_does_not_lower_pillow_pixel_limit():
+    """Signature decode must not publish a temporary Pillow bomb cap.
+
+    ``Image.MAX_IMAGE_PIXELS`` is process-wide. Saving and restoring it
+    around ``Image.open`` lets overlapping filings stick the process on
+    that temporary cap.
+    """
+    from PIL import Image
+
+    from services.chat_application_service import _signature_png_bytes
+
+    original = Image.MAX_IMAGE_PIXELS
+    seen = []
+    real_open = Image.open
+
+    def _open(*args, **kwargs):
+        seen.append(Image.MAX_IMAGE_PIXELS)
+        return real_open(*args, **kwargs)
+
+    Image.open = _open
+    try:
+        ok, err, blob = _signature_png_bytes(_SIG_PNG)
+        assert ok is True, err
+        assert blob
+        assert seen
+        assert all(value == original for value in seen)
+        assert Image.MAX_IMAGE_PIXELS == original
+
+        raw = (
+            b"\x89PNG\r\n\x1a\n"
+            + (13).to_bytes(4, "big")
+            + b"IHDR"
+            + (100_000).to_bytes(4, "big")
+            + (100_000).to_bytes(4, "big")
+            + bytes((8, 2, 0, 0, 0))
+        )
+        bomb = "data:image/png;base64," + base64.b64encode(raw).decode("ascii")
+        opened = len(seen)
+        ok, _err, blob = _signature_png_bytes(bomb)
+        assert ok is False
+        assert blob == b""
+        assert len(seen) == opened
+        assert Image.MAX_IMAGE_PIXELS == original
+    finally:
+        Image.open = real_open
+        Image.MAX_IMAGE_PIXELS = original
+
+
 def test_blank_signature_canvas_is_rejected():
     """A real PNG of blank paper is not an electronic signature."""
     from io import BytesIO
