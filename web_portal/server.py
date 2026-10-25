@@ -6693,6 +6693,11 @@ def _persist_investor_deck_media_unlocked(slide_no: int, record: Optional[Dict[s
     return False
 
 
+def _persist_investor_deck_media(slide_no: int, record: Optional[Dict[str, Any]]) -> bool:
+    with _INVESTOR_DECK_LOCK:
+        return _persist_investor_deck_media_unlocked(slide_no, record)
+
+
 def investor_deck_presentation_view(*, can_assign: bool) -> Dict[str, Any]:
     """Part II slides, filled from the current plan, plus any intact media video."""
     from services.investor_deck_video import catalog, presentation_of, scene_view
@@ -6726,6 +6731,11 @@ def investor_deck_presentation_view(*, can_assign: bool) -> Dict[str, Any]:
         for item in watermark_record.get('images') or []:
             if isinstance(item, dict):
                 _remember_investor_deck_asset(assets, str(item.get('asset_id') or ''))
+    chrome_store = DESIGN_SETTINGS.get('investor_deck_slide_chrome')
+    if isinstance(chrome_store, dict):
+        for item in chrome_store.values():
+            if isinstance(item, dict):
+                _remember_investor_deck_asset(assets, str(item.get('image_asset_id') or ''))
     body = presentation_of(
         plan,
         assignments,
@@ -6734,6 +6744,12 @@ def investor_deck_presentation_view(*, can_assign: bool) -> Dict[str, Any]:
         photo_url=photo_url,
         charts=charts,
         watermark=watermark_record if isinstance(watermark_record, dict) else None,
+    )
+    from services.investor_deck_slideshow import decorate_presentation
+    body = decorate_presentation(
+        body,
+        chrome_store if isinstance(chrome_store, dict) else {},
+        assets,
     )
     body['success'] = True
     body['plan'] = meta
@@ -6753,7 +6769,7 @@ def save_investor_deck_slide_media(payload: Dict[str, Any], *, actor: str) -> Di
 
     slide_no = parse_slide_no(payload.get('slide_no'))
     if payload.get('clear') is True:
-        if not _persist_investor_deck_media_unlocked(slide_no, None):
+        if not _persist_investor_deck_media(slide_no, None):
             raise InvestorDeckError('The slide video could not be stored durably')
         return investor_deck_presentation_view(can_assign=True)
     asset_id = str(payload.get('asset_id') or '').strip()
@@ -6774,7 +6790,7 @@ def save_investor_deck_slide_media(payload: Dict[str, Any], *, actor: str) -> Di
         raise InvestorDeckError('The library file was not left intact. Nothing was stored.')
     record['updated_at'] = datetime.now().isoformat()
     record['updated_by'] = actor or 'admin'
-    if not _persist_investor_deck_media_unlocked(slide_no, record):
+    if not _persist_investor_deck_media(slide_no, record):
         raise InvestorDeckError('The slide video could not be stored durably')
     return investor_deck_presentation_view(can_assign=True)
 
@@ -6813,6 +6829,11 @@ def _persist_investor_deck_watermark_unlocked(record: Optional[Dict[str, Any]]) 
     return False
 
 
+def _persist_investor_deck_watermark(record: Optional[Dict[str, Any]]) -> bool:
+    with _INVESTOR_DECK_LOCK:
+        return _persist_investor_deck_watermark_unlocked(record)
+
+
 def save_investor_deck_watermark(payload: Dict[str, Any], *, actor: str) -> Dict[str, Any]:
     """Point the deck watermark at library images, or clear that pointer.
 
@@ -6823,7 +6844,7 @@ def save_investor_deck_watermark(payload: Dict[str, Any], *, actor: str) -> Dict
     from services.investor_deck_video import InvestorDeckError, assign_watermark
 
     if payload.get('clear') is True:
-        if not _persist_investor_deck_watermark_unlocked(None):
+        if not _persist_investor_deck_watermark(None):
             raise InvestorDeckError('The watermark could not be stored durably')
         return investor_deck_presentation_view(can_assign=True)
     raw = payload.get('asset_ids')
@@ -6861,8 +6882,116 @@ def save_investor_deck_watermark(payload: Dict[str, Any], *, actor: str) -> Dict
             raise InvestorDeckError('The library file was not left intact. Nothing was stored.')
     record['updated_at'] = datetime.now().isoformat()
     record['updated_by'] = actor or 'admin'
-    if not _persist_investor_deck_watermark_unlocked(record):
+    if not _persist_investor_deck_watermark(record):
         raise InvestorDeckError('The watermark could not be stored durably')
+    return investor_deck_presentation_view(can_assign=True)
+
+
+_INVESTOR_DECK_CHROME_FIELDS = (
+    'slide_no', 'theme', 'gradient', 'wash', 'image_asset_id', 'image_checksum',
+    'checksum', 'updated_at', 'updated_by',
+)
+
+
+def _investor_deck_chrome_store() -> Dict[str, Any]:
+    raw = DESIGN_SETTINGS.get('investor_deck_slide_chrome')
+    return raw if isinstance(raw, dict) else {}
+
+
+def _persist_investor_deck_chrome_unlocked(slide_no: int, record: Optional[Dict[str, Any]]) -> bool:
+    """Store or drop one slide's look. Placements, videos, and files stay put."""
+    key = str(int(slide_no))
+    existing = DESIGN_SETTINGS.get('investor_deck_slide_chrome')
+    if record is None and (not isinstance(existing, dict) or key not in existing):
+        return True
+    try:
+        previous = _snapshot_design_settings()
+    except Exception:
+        return False
+    store = DESIGN_SETTINGS.get('investor_deck_slide_chrome')
+    if not isinstance(store, dict):
+        store = {}
+        DESIGN_SETTINGS['investor_deck_slide_chrome'] = store
+    if record is None:
+        store.pop(key, None)
+        if not store:
+            DESIGN_SETTINGS.pop('investor_deck_slide_chrome', None)
+    else:
+        slim = {field: record.get(field) for field in _INVESTOR_DECK_CHROME_FIELDS if field in record}
+        store[key] = _copy_json_value(slim)
+    DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
+    if seal_design_settings(force=True):
+        return True
+    _restore_design_settings(previous)
+    return False
+
+
+def _persist_investor_deck_chrome(slide_no: int, record: Optional[Dict[str, Any]]) -> bool:
+    with _INVESTOR_DECK_LOCK:
+        return _persist_investor_deck_chrome_unlocked(slide_no, record)
+
+
+def save_investor_deck_slide_chrome(payload: Dict[str, Any], *, actor: str) -> Dict[str, Any]:
+    """Save one slide's theme, gradient, wash, and embedded image.
+
+    The plan, filmed scenes, slide videos, watermarks, public placements, and
+    the library file are not written. A checksum the library does not hold is
+    refused.
+    """
+    from services.investor_deck_slideshow import InvestorDeckError, assign_chrome, verify_chrome
+    from services.investor_deck_video import parse_slide_no
+
+    slide_no = parse_slide_no(payload.get('slide_no'))
+    if payload.get('clear') is True:
+        if not _persist_investor_deck_chrome(slide_no, None):
+            raise InvestorDeckError('The slide look could not be stored durably')
+        return investor_deck_presentation_view(can_assign=True)
+    current = _investor_deck_chrome_store().get(str(slide_no))
+    base = current if isinstance(current, dict) and verify_chrome(current, slide_no) else {}
+    theme = payload['theme'] if 'theme' in payload else base.get('theme', '')
+    gradient = payload['gradient'] if 'gradient' in payload else base.get('gradient', 'letterhead')
+    wash = payload['wash'] if 'wash' in payload else base.get('wash', '')
+    if 'image_asset_id' in payload:
+        asset_id = str(payload.get('image_asset_id') or '').strip()
+        image_checksum = ''
+        if asset_id:
+            asset = MEDIA_ASSETS.get(asset_id)
+            if not isinstance(asset, dict):
+                raise InvestorDeckError('That image is not in the media library')
+            if str(asset.get('type') or '') != 'image':
+                raise InvestorDeckError('Embed an image from the media library')
+            image_checksum = str(asset.get('checksum') or '').strip()
+            if not image_checksum:
+                raise InvestorDeckError('Media image has no checksum')
+            client_checksum = payload.get('image_checksum')
+            if client_checksum not in (None, '') and str(client_checksum).strip() != image_checksum:
+                raise InvestorDeckError('Media checksum does not match the library. Nothing was stored.')
+            before = image_checksum
+            kind = str(asset.get('type') or '')
+        else:
+            before = ''
+            kind = ''
+    else:
+        asset_id = str(base.get('image_asset_id') or '')
+        image_checksum = str(base.get('image_checksum') or '')
+        before = image_checksum
+        kind = 'image' if asset_id else ''
+    record = assign_chrome(
+        slide_no,
+        theme=theme,
+        gradient=gradient,
+        wash=wash,
+        image_asset_id=asset_id,
+        image_checksum=image_checksum,
+    )
+    if asset_id:
+        asset = MEDIA_ASSETS.get(asset_id) or {}
+        if str(asset.get('checksum') or '') != before or str(asset.get('type') or '') != kind:
+            raise InvestorDeckError('The library file was not left intact. Nothing was stored.')
+    record['updated_at'] = datetime.now().isoformat()
+    record['updated_by'] = actor or 'admin'
+    if not _persist_investor_deck_chrome(slide_no, record):
+        raise InvestorDeckError('The slide look could not be stored durably')
     return investor_deck_presentation_view(can_assign=True)
 
 
@@ -24335,6 +24464,10 @@ For claims or questions, please contact:
 
             assets_list = [serialize_media_asset(asset) for asset in MEDIA_ASSETS.values()]
             assets_list.sort(key=lambda x: x.get('uploaded_at', ''), reverse=True)
+            if qs.get('brief', [''])[0] in ('1', 'true'):
+                for item in assets_list:
+                    item.pop('data', None)
+                    item.pop('subtitles', None)
 
             self._set_json_headers(200)
             self.wfile.write(json.dumps({
@@ -42257,7 +42390,15 @@ For claims or questions, please contact:
             from services.investor_deck_video import InvestorDeckError
             actor = (session or {}).get('username', 'admin')
             try:
-                if data.get('watermark') is True:
+                if data.get('chrome') is True:
+                    view = save_investor_deck_slide_chrome(data, actor=actor)
+                    cleared = data.get('clear') is True
+                    message = (
+                        'This slide’s look was cleared. The library file was not changed.'
+                        if cleared else
+                        'This slide’s look was saved. The plan and the library file were not changed.'
+                    )
+                elif data.get('watermark') is True:
                     view = save_investor_deck_watermark(data, actor=actor)
                     cleared = data.get('clear') is True
                     message = (
