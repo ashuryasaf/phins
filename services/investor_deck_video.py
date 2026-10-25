@@ -6,9 +6,11 @@ a client cannot replace a figure. Charts and the founder portrait stay
 outside the generator and are drawn from the plan when a clip is played.
 
 A clip joins the film only when a library video exists, its checksum matches
-the seal, and the sealed line is still the line the plan speaks now. A
-missing scene is omitted. The plan, its factors, and public placements are
-not written here.
+the seal, and the sealed line is still the short script for that paragraph.
+A line that fills a figure is not recited; those figures stay on the slide.
+A missing scene is omitted. The plan, its factors, and public placements are
+not written here. Slide chrome (theme, gradient, transparency, embedded
+image) lives in ``services/investor_deck_slideshow.py``.
 
 The 13-slide presentation (``presentation_of``) is the same Part II, one
 slide at a time. A library video combines with a slide only as a checksummed
@@ -41,33 +43,58 @@ MAX_THEME_CHARS = 240
 WATERMARK_MAX_IMAGES = 6
 _ASSET_ID_RE_SOURCE = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$"
 
-# Elegant on-camera roster. Sex, age, and appearance are varied so a full
-# deck does not collapse to one presenter. The id is what gets stored.
+# Elegant on-camera roster, all 35 or older. Sex, hair colour, and hair
+# style are spread so a full deck does not collapse to one presenter.
+# The id is what gets stored. The generator is not asked to draw figures.
 PRESENTERS: tuple = (
-    {"id": "p01", "sex": "woman", "age": "early 30s", "label": "Woman, early 30s",
-     "appearance": "East Asian features, tailored navy suit, small gold earrings"},
-    {"id": "p02", "sex": "man", "age": "mid 50s", "label": "Man, mid 50s",
-     "appearance": "West African features, charcoal suit, silver tie"},
-    {"id": "p03", "sex": "woman", "age": "early 40s", "label": "Woman, early 40s",
-     "appearance": "Northern European features, ivory blouse and navy blazer"},
-    {"id": "p04", "sex": "man", "age": "early 30s", "label": "Man, early 30s",
-     "appearance": "South Asian features, navy suit, open collar"},
-    {"id": "p05", "sex": "woman", "age": "late 20s", "label": "Woman, late 20s",
-     "appearance": "Latina features, black blazer, soft studio light"},
-    {"id": "p06", "sex": "man", "age": "early 60s", "label": "Man, early 60s",
-     "appearance": "Middle Eastern features, grey suit, pocket square"},
-    {"id": "p07", "sex": "woman", "age": "mid 40s", "label": "Woman, mid 40s",
-     "appearance": "Black features, deep navy dress, small gold pin"},
-    {"id": "p08", "sex": "man", "age": "late 30s", "label": "Man, late 30s",
-     "appearance": "East Asian features, midnight-blue suit"},
-    {"id": "p09", "sex": "woman", "age": "early 50s", "label": "Woman, early 50s",
-     "appearance": "Mediterranean features, cream silk blouse and tailored jacket"},
-    {"id": "p10", "sex": "man", "age": "early 40s", "label": "Man, early 40s",
-     "appearance": "Latino features, navy suit, subtle gold tie bar"},
-    {"id": "p11", "sex": "woman", "age": "late 30s", "label": "Woman, late 30s",
-     "appearance": "mixed Black and East Asian features, charcoal suit"},
-    {"id": "p12", "sex": "man", "age": "late 20s", "label": "Man, late 20s",
-     "appearance": "Northern European features, light grey suit"},
+    {"id": "p01", "sex": "woman", "age": "35", "age_years": 35, "hair": "red",
+     "hair_style": "soft shoulder-length waves",
+     "label": "Woman, 35, red hair in soft waves",
+     "appearance": "woman of 35 with red hair in soft shoulder-length waves, tailored navy suit, small gold earrings"},
+    {"id": "p02", "sex": "man", "age": "52", "age_years": 52, "hair": "black",
+     "hair_style": "short natural crop",
+     "label": "Man, 52, short black hair",
+     "appearance": "man of 52 with short black hair, charcoal suit, silver tie"},
+    {"id": "p03", "sex": "woman", "age": "41", "age_years": 41, "hair": "blonde",
+     "hair_style": "polished bob",
+     "label": "Woman, 41, blonde bob",
+     "appearance": "woman of 41 with a polished blonde bob, ivory blouse and navy blazer"},
+    {"id": "p04", "sex": "man", "age": "37", "age_years": 37, "hair": "brunette",
+     "hair_style": "side-parted waves",
+     "label": "Man, 37, brunette side part",
+     "appearance": "man of 37 with brunette hair in a neat side part, navy suit, open collar"},
+    {"id": "p05", "sex": "woman", "age": "46", "age_years": 46, "hair": "brunette",
+     "hair_style": "low twisted bun",
+     "label": "Woman, 46, brunette low bun",
+     "appearance": "woman of 46 with brunette hair in a low twisted bun, black blazer, soft studio light"},
+    {"id": "p06", "sex": "man", "age": "60", "age_years": 60, "hair": "black",
+     "hair_style": "silver-streaked crop",
+     "label": "Man, 60, silver-streaked black hair",
+     "appearance": "man of 60 with silver-streaked black hair cropped close, grey suit, pocket square"},
+    {"id": "p07", "sex": "woman", "age": "44", "age_years": 44, "hair": "black",
+     "hair_style": "shoulder-length braids",
+     "label": "Woman, 44, black braids",
+     "appearance": "woman of 44 with black hair in shoulder-length braids, deep navy dress, small gold pin"},
+    {"id": "p08", "sex": "man", "age": "39", "age_years": 39, "hair": "blonde",
+     "hair_style": "short textured crop",
+     "label": "Man, 39, short blonde hair",
+     "appearance": "man of 39 with short textured blonde hair, midnight-blue suit"},
+    {"id": "p09", "sex": "woman", "age": "55", "age_years": 55, "hair": "red",
+     "hair_style": "swept chignon",
+     "label": "Woman, 55, red chignon",
+     "appearance": "woman of 55 with red hair swept into a chignon, cream silk blouse and tailored jacket"},
+    {"id": "p10", "sex": "man", "age": "48", "age_years": 48, "hair": "black",
+     "hair_style": "short twists",
+     "label": "Man, 48, short black twists",
+     "appearance": "man of 48 with short black twists, navy suit, subtle gold tie bar"},
+    {"id": "p11", "sex": "woman", "age": "38", "age_years": 38, "hair": "black",
+     "hair_style": "sleek centre-parted bob",
+     "label": "Woman, 38, sleek black bob",
+     "appearance": "woman of 38 with a sleek centre-parted black bob, charcoal suit"},
+    {"id": "p12", "sex": "man", "age": "43", "age_years": 43, "hair": "red",
+     "hair_style": "short brushed-back cut",
+     "label": "Man, 43, short red hair",
+     "appearance": "man of 43 with short brushed-back red hair, light grey suit"},
 )
 
 # Engines whose own duration set includes a 15-second clip. Veo (8) and
@@ -161,8 +188,31 @@ def spec_for(key: str) -> Optional[Dict[str, Any]]:
 
 
 def fill_narration(template: str, plan: Mapping[str, Any]) -> str:
-    """The spoken line. Same filler as the document, so the words match the page."""
+    """The on-screen line. Same filler as the document, so the figures match the page."""
     return _fill(str(template or ""), plan, False).strip()
+
+
+_POINT_WORDS = ("", "first point", "second point", "third point", "fourth point")
+
+
+def short_script(spec: Mapping[str, Any], plan: Mapping[str, Any]) -> str:
+    """Spoken line for one paragraph.
+
+    A template with no placeholder is the purpose, spoken in full. A template
+    that fills a figure is not recited: the voice names the slide, and the
+    filled figures stay on the slide beside the film.
+    """
+    template = str(spec.get("template") or "")
+    filled = fill_narration(template, plan)
+    if "{" not in template:
+        return filled
+    title = str(spec.get("slide_title") or "").strip() or "This slide"
+    try:
+        point = int(spec.get("paragraph_no") or 0)
+    except (TypeError, ValueError):
+        point = 0
+    label = _POINT_WORDS[point] if 0 < point < len(_POINT_WORDS) else "this point"
+    return f"{title}, {label}. The figures stay on this slide."
 
 
 def _clean_theme(value: Any) -> str:
@@ -359,7 +409,7 @@ def seal_for_send(
         theme=theme,
         reference_image_asset_id=reference_image_asset_id,
     )
-    narration = fill_narration(spec["template"], plan)
+    narration = short_script(spec, plan)
     if not narration or _PLACEHOLDER.findall(narration):
         raise InvestorDeckError("This paragraph could not be filled from the plan. Nothing was sent.")
     plan_hash = str(plan.get("content_hash") or "")
@@ -411,7 +461,7 @@ def growth_brief(record: Mapping[str, Any]) -> Dict[str, Any]:
     return {
         "title": f"Investor deck {record.get('scene_key') or ''}",
         "format": "16:9 investor presentation",
-        "voiceover_style": "Elegant business presenter, one spoken pass, picture free of lettering and charts",
+        "voiceover_style": "Elegant business presenter, one short spoken pass; charts and figures stay on the slide and are not drawn",
         "storyboard": storyboard,
         "scene_key": str(record.get("scene_key") or ""),
     }
@@ -432,8 +482,8 @@ def prompt_override(record: Mapping[str, Any]) -> str:
     parts = [
         "Investor presentation, 16:9.",
         f"One elegant presenter ({casting}), medium close-up, calm private office, looking at the camera.",
-        "The frame contains no readable text, charts, tables, or numerals.",
-        "Figures are spoken only. Do not draw a chart and do not render a number on screen.",
+        "Do not draw charts, tables, lettering, or numerals.",
+        "The slide's figures stay beside this film and must not be redrawn.",
         "Do not depict a named real person. A portrait, when this slide has one, is shown beside the film.",
     ]
     if reference:
@@ -442,7 +492,7 @@ def prompt_override(record: Mapping[str, Any]) -> str:
         parts.append(f"Descriptive theme, unspoken: {theme}.")
     if narration:
         parts.append(
-            "The presenter speaks this line once, in a clear calm voice, and finishes on its final period. "
+            "The presenter speaks this short line once, in a clear calm voice, and finishes on its final period. "
             f'Do not stop mid-word or mid-sentence: "{narration}"'
         )
     return " ".join(parts)
@@ -484,11 +534,11 @@ def scene_view(
     elif not verify_scene(record, spec):
         integrity_ok = False
     narration = fill_narration(str(spec["template"]), plan)
+    script = short_script(spec, plan)
     sealed = str(record.get("sealed_narration") or "")
-    # The whole-plan content hash changes when any slide or census figure
-    # changes. A clip stays current while its sealed line is still this
-    # paragraph; narration equality is that check.
-    figures_current = bool(sealed) and sealed == narration
+    # A clip stays current while its sealed line is still this short script.
+    # The on-screen figures are ``narration`` and are not required in the voice.
+    figures_current = bool(sealed) and sealed == script
     presenter = presenter_by_id(str(record.get("presenter_id") or ""))
     asset_info = asset if isinstance(asset, dict) else {}
     asset_type = str(asset_info.get("type") or "")
@@ -512,6 +562,7 @@ def scene_view(
         "slide_title": spec["slide_title"],
         "kicker": spec.get("kicker") or "",
         "narration": narration,
+        "script": script,
         "sealed_narration": sealed,
         "chart_id": spec.get("chart_id") or "",
         "photo": photo,

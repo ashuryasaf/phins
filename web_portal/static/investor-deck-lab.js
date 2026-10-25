@@ -120,7 +120,8 @@
                 '</strong><br>Paragraph ' + esc(scene.paragraph_no) + ' of ' + esc(scene.paragraph_count) +
                 ' · 15 seconds' +
                 (scene.presenter_label ? '<br>Presenter · ' + esc(scene.presenter_label) : '') +
-                '<br>' + esc(scene.narration) + '</div></article>';
+                '<br>Spoken · ' + esc(scene.script || scene.sealed_narration || '') +
+                '<br>On the slide · ' + esc(scene.narration) + '</div></article>';
         }).join('');
         host.querySelectorAll('[data-idl-photo]').forEach(function (img) {
             img.addEventListener('error', function () { img.remove(); });
@@ -236,7 +237,8 @@
                 return '<div class="idl-paragraph" data-scene="' + esc(scene.scene_key) + '">' +
                     '<p><strong>Paragraph ' + esc(scene.paragraph_no) + '</strong> · ' + esc(state) +
                     (scene.presenter_label ? ' · ' + esc(scene.presenter_label) : '') + '</p>' +
-                    '<p>' + esc(scene.narration) + '</p>' +
+                    '<p>Spoken · ' + esc(scene.script || '') + '</p>' +
+                    '<p>On the slide · ' + esc(scene.narration) + '</p>' +
                     '<label>Theme <input data-idl-theme maxlength="240" value="' + esc(scene.theme) + '" placeholder="Optional setting, unspoken"></label>' +
                     '<label>Library photo <select data-idl-photo-select>' + imageOptions(images, scene.reference_image_asset_id) + '</select></label>' +
                     '<div class="idl-row">' +

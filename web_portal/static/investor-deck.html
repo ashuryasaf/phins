@@ -91,8 +91,13 @@
   }
   .deck-watermark::after {
     content: ""; position: absolute; inset: 0;
-    background: rgba(255, 255, 255, 0.58);
+    background: rgba(255, 255, 255, var(--deck-wash, 0.58));
   }
+  .deck-body.gradient-soft { background: linear-gradient(180deg, #fff 0%, #f3f7fd 100%); }
+  .deck-body.gradient-deep { background: linear-gradient(160deg, #f7f4ee 0%, #e7eef8 55%, #f8f1df 100%); }
+  .deck-body.gradient-none { background: #fff; }
+  .deck-theme { margin: 0 0 10px; color: var(--gold); font-size: 13px; font-weight: 600; letter-spacing: 0.02em; }
+  .deck-side img.embed-still { width: 100%; max-height: 220px; object-fit: cover; border-radius: 10px; }
   .deck-body > :not(.deck-watermark) { position: relative; z-index: 1; }
   .deck-body.solo { grid-template-columns: 1fr; }
   .deck-no {
@@ -137,6 +142,13 @@
   .deck-watermark-pick legend { font-size: 12px; font-weight: 700; color: var(--navy); padding: 0 4px; }
   #deck-watermark-images { display: flex; flex-direction: column; gap: 4px; max-height: 148px; overflow: auto; }
   #deck-watermark-images label { font-weight: 500; font-size: 13px; display: flex; gap: 8px; align-items: center; }
+  .deck-upload { position: relative; overflow: hidden; }
+  .deck-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  input.deck-text, input.deck-range {
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px;
+    background: #fff; color: var(--ink); font: 500 13px Inter, sans-serif;
+  }
+  input.deck-text { min-width: 180px; }
   @media (max-width: 860px) {
     .deck-body, .deck-body.solo { grid-template-columns: 1fr; }
     h1 { font-size: 22px; }
@@ -191,6 +203,7 @@
         <p class="deck-no" id="deck-no"></p>
         <h1 id="deck-title">Investor deck</h1>
         <p class="deck-sub" id="deck-kicker"></p>
+        <p class="deck-theme" id="deck-theme" hidden></p>
         <ul id="deck-bullets"></ul>
       </div>
       <div class="deck-side" id="deck-side"></div>
@@ -206,14 +219,37 @@
     </label>
     <button type="button" class="deck-btn" id="deck-combine">Combine with this slide</button>
     <button type="button" class="deck-btn secondary" id="deck-clear">Remove video</button>
+    <label class="deck-btn secondary deck-upload">Upload image or video
+      <input id="deck-upload" type="file" accept="image/*,video/*" aria-label="Upload image or video">
+    </label>
+    <button type="button" class="deck-btn secondary" id="deck-refresh">Refresh library</button>
     <fieldset class="deck-watermark-pick">
       <legend>Watermark background</legend>
       <div id="deck-watermark-images"></div>
     </fieldset>
     <button type="button" class="deck-btn" id="deck-watermark-set">Use as watermark background</button>
     <button type="button" class="deck-btn secondary" id="deck-watermark-clear">Remove watermark</button>
+    <label>Slide theme
+      <input id="deck-theme-input" class="deck-text" maxlength="80" aria-label="Slide theme" placeholder="Words only, no figures">
+    </label>
+    <label>Gradient
+      <select id="deck-gradient" class="deck-select" aria-label="Slide gradient">
+        <option value="letterhead">Letterhead</option>
+        <option value="soft">Soft</option>
+        <option value="deep">Deep</option>
+        <option value="none">None</option>
+      </select>
+    </label>
+    <label>Transparency
+      <input id="deck-wash" class="deck-range" type="range" min="0.35" max="0.85" step="0.01" value="0.58" aria-label="Watermark transparency">
+    </label>
+    <label>Embedded image
+      <select id="deck-embed-image" class="deck-select" aria-label="Embedded library image"></select>
+    </label>
+    <button type="button" class="deck-btn" id="deck-chrome-save">Save this slide's look</button>
+    <button type="button" class="deck-btn secondary" id="deck-chrome-clear">Clear this slide's look</button>
   </div>
-  <p class="deck-note">Figures are filled from the current plan. A library video plays only when its checksum still matches the pointer. A watermark is a faint background of library images, each shown only while its checksum matches. The plan, its factors, and the library files are not rewritten.</p>
+  <p class="deck-note">Figures are filled from the current plan. A library video or image is a checksummed pointer, the same way landing, solutions, and login place a file. A watermark is a faint background of library images. A line with a figure is spoken as a short script; the figure stays on the slide. The plan, its factors, and the library files are not rewritten.</p>
   <p class="deck-status" id="deck-status" role="status"></p>
 </div>
 <script src="/phins-doc-return.js"></script>
@@ -222,7 +258,7 @@
   var params = new URLSearchParams(window.location.search);
   if (params.get('embed') === '1') document.body.classList.add('is-embed');
   var wantEdit = params.get('edit') === '1';
-  var state = { slides: [], index: 0, data: null, mode: 'auto', videos: [], images: [] };
+  var state = { slides: [], index: 0, data: null, mode: 'auto', videos: [], images: [], chromeSlide: null };
 
   function token() {
     try {
@@ -287,6 +323,11 @@
     if (current.photo_url) {
       parts.push('<img class="portrait" alt="Founder portrait" src="' + esc(current.photo_url) + '">');
     }
+    var embedded = current.chrome && current.chrome.image;
+    if (embedded && embedded.intact && safeSrc(embedded.playback_url)) {
+      parts.push('<img class="embed-still" alt="" src="' + esc(safeSrc(embedded.playback_url)) + '">');
+      if (embedded.name) parts.push('<p class="deck-caption">Library · ' + esc(embedded.name) + '</p>');
+    }
     var mode = showMode(current);
     if (mode === 'library') {
       parts.push('<video controls playsinline src="' + esc(current.media.playback_url) + '"></video>');
@@ -299,6 +340,7 @@
     }
     side.innerHTML = parts.join('');
     document.getElementById('deck-body').classList.toggle('solo', side.innerHTML === '');
+    applyChrome(current);
     paintWatermark();
     var video = side.querySelector('video[data-filmed]');
     if (video) {
@@ -341,6 +383,10 @@
     if (mark && mark.withheld) {
       warn = (warn ? warn + ' ' : '') +
         'A watermark image was withheld because its checksum does not match the library. The file was not changed.';
+    }
+    if (current.chrome && current.chrome.withheld) {
+      warn = (warn ? warn + ' ' : '') +
+        'A slide image was withheld because its checksum does not match the library. The file was not changed.';
     }
     var plan = state.data && state.data.plan;
     if (plan && plan.integrity_all_hold === false) {
@@ -385,6 +431,45 @@
       return '<img alt="" src="' + esc(safeSrc(item.playback_url)) + '">';
     }).join('');
   }
+  function applyChrome(current) {
+    var chrome = current && current.chrome ? current.chrome : {};
+    var body = document.getElementById('deck-body');
+    body.classList.remove('gradient-soft', 'gradient-deep', 'gradient-none');
+    var gradient = chrome.gradient || 'letterhead';
+    if (gradient === 'soft' || gradient === 'deep' || gradient === 'none') {
+      body.classList.add('gradient-' + gradient);
+    }
+    var wash = typeof chrome.wash === 'number' ? chrome.wash : 0.58;
+    body.style.setProperty('--deck-wash', String(wash));
+    var theme = document.getElementById('deck-theme');
+    if (theme) {
+      theme.textContent = chrome.theme || '';
+      theme.hidden = !chrome.theme;
+    }
+    if (state.chromeSlide !== current.slide_no) {
+      state.chromeSlide = current.slide_no;
+      syncChromeControls(current);
+    }
+  }
+  function syncChromeControls(current) {
+    var chrome = current && current.chrome ? current.chrome : {};
+    var theme = document.getElementById('deck-theme-input');
+    var gradient = document.getElementById('deck-gradient');
+    var wash = document.getElementById('deck-wash');
+    var image = document.getElementById('deck-embed-image');
+    if (theme) theme.value = chrome.theme || '';
+    if (gradient) gradient.value = chrome.gradient || 'letterhead';
+    if (wash) wash.value = String(typeof chrome.wash === 'number' ? chrome.wash : 0.58);
+    if (image && chrome.image && chrome.image.asset_id) {
+      var matched = false;
+      for (var opt = 0; opt < image.options.length; opt += 1) {
+        if (image.options[opt].value === chrome.image.asset_id) matched = true;
+      }
+      if (matched) image.value = chrome.image.asset_id;
+    } else if (image) {
+      image.value = '';
+    }
+  }
   function syncWatermarkChecks() {
     var ids = {};
     watermarkImages().forEach(function (item) {
@@ -406,7 +491,8 @@
     state.slides = Array.isArray(data.slides) ? data.slides : [];
     if (state.index >= state.slides.length) state.index = 0;
     var assign = document.getElementById('deck-assign');
-    if (assign) assign.hidden = !(wantEdit && data.can_assign);
+    if (assign) assign.hidden = !data.can_assign;
+    state.chromeSlide = null;
     render();
   }
   async function load() {
@@ -418,10 +504,10 @@
     var data = await response.json();
     if (!response.ok) throw new Error(data.error || 'The investor deck could not be loaded');
     applyPayload(data);
-    if (wantEdit && data.can_assign) await loadLibrary();
+    if (data.can_assign) await loadLibrary();
   }
   async function loadLibrary() {
-    var response = await fetch('/api/media', { headers: headers(false) });
+    var response = await fetch('/api/media?brief=1', { headers: headers(false) });
     var data = await response.json();
     if (!response.ok) {
       setStatus(data.error || 'The media library could not be loaded');
@@ -448,6 +534,15 @@
       return '<label><input type="checkbox" value="' + esc(id) + '"' +
         (chosen[id] ? ' checked' : '') + '> ' + esc(asset.name || id) + '</label>';
     }).join('') : '<span>No images in the library yet.</span>';
+    var embed = document.getElementById('deck-embed-image');
+    var embeddedId = '';
+    var currentChrome = slide() && slide().chrome && slide().chrome.image;
+    if (currentChrome) embeddedId = currentChrome.asset_id || '';
+    embed.innerHTML = '<option value="">No embedded image</option>' + state.images.map(function (asset) {
+      var id = String(asset.id || '');
+      return '<option value="' + esc(id) + '"' + (id === embeddedId ? ' selected' : '') + '>' +
+        esc(asset.name || id) + '</option>';
+    }).join('');
   }
   async function postMedia(body) {
     setStatus('Saving the video pointer…');
@@ -462,7 +557,7 @@
     setStatus(data.message || 'Saved.');
   }
   async function postWatermark(body) {
-    setStatus('Saving the watermark pointer…');
+    setStatus(body && body.chrome ? 'Saving this slide’s look…' : 'Saving the watermark pointer…');
     var response = await fetch('/api/admin/media/investor-deck/presentation', {
       method: 'POST',
       headers: headers(true),
@@ -473,6 +568,61 @@
     if (data.presentation) applyPayload(data.presentation);
     syncWatermarkChecks();
     setStatus(data.message || 'Saved.');
+  }
+  function fileToDataUrl(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(String(reader.result || '')); };
+      reader.onerror = function () { reject(new Error('The file could not be read')); };
+      reader.readAsDataURL(file);
+    });
+  }
+  async function uploadAsset(file) {
+    if (!file) return;
+    var mediaType = file.type.indexOf('video/') === 0 ? 'video' : (file.type.indexOf('image/') === 0 ? 'image' : '');
+    if (!mediaType) {
+      setStatus('Upload an image or a video from the media library.');
+      return;
+    }
+    setStatus('Uploading ' + file.name + '…');
+    var response;
+    if (file.size > 5 * 1024 * 1024) {
+      var form = new FormData();
+      form.append('file', file);
+      form.append('name', file.name);
+      form.append('type', mediaType);
+      form.append('source', 'upload');
+      response = await fetch('/api/media/upload', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token() }, body: form });
+    } else {
+      var dataUrl = await fileToDataUrl(file);
+      response = await fetch('/api/media', {
+        method: 'POST',
+        headers: headers(true),
+        body: JSON.stringify({
+          name: file.name,
+          type: mediaType,
+          format: file.type,
+          size: file.size,
+          data: dataUrl,
+          source: 'upload'
+        })
+      });
+    }
+    var data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'The upload could not be stored');
+    await loadLibrary();
+    var asset = data.asset || {};
+    if (asset.type === 'video' && asset.id) {
+      var select = document.getElementById('deck-videos');
+      if (select) select.value = asset.id;
+    }
+    if (asset.type === 'image' && asset.id) {
+      var box = document.querySelector('#deck-watermark-images input[value="' + asset.id + '"]');
+      if (box) box.checked = true;
+      var embed = document.getElementById('deck-embed-image');
+      if (embed) embed.value = asset.id;
+    }
+    setStatus((asset.name || file.name) + ' is in the media library. The plan was not changed.');
   }
   document.getElementById('deck-prev').addEventListener('click', function () { go(state.index - 1); });
   document.getElementById('deck-next').addEventListener('click', function () { go(state.index + 1); });
@@ -527,6 +677,49 @@
     postWatermark({ watermark: true, clear: true }).catch(function (err) {
       setStatus(err.message || 'The watermark could not be removed');
     });
+  });
+  document.getElementById('deck-refresh').addEventListener('click', function () {
+    loadLibrary().catch(function (err) {
+      setStatus(err.message || 'The media library could not be loaded');
+    });
+  });
+  document.getElementById('deck-upload').addEventListener('change', function (event) {
+    var file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    uploadAsset(file).catch(function (err) {
+      setStatus(err.message || 'The upload could not be stored');
+    });
+  });
+  document.getElementById('deck-chrome-save').addEventListener('click', function () {
+    var current = slide();
+    if (!current) return;
+    state.chromeSlide = null;
+    postWatermark({
+      chrome: true,
+      slide_no: current.slide_no,
+      theme: document.getElementById('deck-theme-input').value,
+      gradient: document.getElementById('deck-gradient').value,
+      wash: document.getElementById('deck-wash').value,
+      image_asset_id: document.getElementById('deck-embed-image').value
+    }).catch(function (err) {
+      setStatus(err.message || 'The slide look could not be saved');
+    });
+  });
+  document.getElementById('deck-chrome-clear').addEventListener('click', function () {
+    var current = slide();
+    if (!current) return;
+    state.chromeSlide = null;
+    postWatermark({ chrome: true, slide_no: current.slide_no, clear: true }).catch(function (err) {
+      setStatus(err.message || 'The slide look could not be cleared');
+    });
+  });
+  window.addEventListener('message', function (event) {
+    if (event.origin !== window.location.origin) return;
+    if (!event.data || event.data.type !== 'phins-media-library-updated') return;
+    if (state.data && state.data.can_assign) {
+      loadLibrary().catch(function () {});
+    }
   });
   document.addEventListener('keydown', function (event) {
     var tag = (event.target && event.target.tagName) || '';

@@ -2737,6 +2737,13 @@ Notes:
                     if (currentMainTab === 'investor-deck' && window.InvestorDeckLab && InvestorDeckLab.syncImages) {
                         InvestorDeckLab.syncImages(document.getElementById('investor-deck-lab'), function () { return mediaAssets; });
                     }
+                    const deckFrame = document.getElementById('investor-deck-frame');
+                    if (deckFrame && deckFrame.contentWindow) {
+                        deckFrame.contentWindow.postMessage(
+                            { type: 'phins-media-library-updated' },
+                            window.location.origin
+                        );
+                    }
                     renderMediaGrid();
                     updateStats();
                     populateAssignmentSelects();

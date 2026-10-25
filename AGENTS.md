@@ -776,13 +776,23 @@ Environment variables commonly used:
  in the navy/gold letterhead. A library video combines with a slide only as
  a checksummed pointer in `investor_deck_slide_media`
  (`GET`/`POST /api/admin/media/investor-deck/presentation`); a mismatch is
- omitted and the library file is not rewritten. A watermark background is a
- checksummed list of up to six library images in `investor_deck_watermark`
- on the same route; each image is shown only while its checksum matches, and
- a mismatch omits that image without rewriting the file. The media dashboard
+ omitted and the library file is not rewritten. The spoken line is a short
+ script (`short_script`): a paragraph with no placeholder is spoken in full,
+ and a paragraph that fills a figure is not recited — those figures stay on
+ the slide and the generator is not asked to draw them. Presenters are 35 or
+ older, with red, blonde, brunette, and black hair in varied styles.
+ Slideshow chrome is a separate service (`services/investor_deck_slideshow.py`):
+ per-slide theme, gradient, transparency, and one embedded library image in
+ `investor_deck_slide_chrome`, same pointer rule as landing, solutions, and
+ login placements. A watermark background is a checksummed list of up to six
+ library images in `investor_deck_watermark` on the same route; each image is
+ shown only while its checksum matches, and a mismatch omits that image
+ without rewriting the file. The deck page lists the library with
+ `GET /api/media?brief=1` and can upload an image or video; the media
+ dashboard tells that frame when the library changes. The media dashboard
  Investor Deck Lab embeds that page, and the pitch investor bar links it.
- Read access is staff plus media; only admin or media can attach a video or
- change the watermark.
+ Read access is staff plus media; only admin or media can attach a video,
+ change the watermark, or edit a slide's look.
 - **Admin AI Mic data desk:** `POST /api/admin/ai-bi/query` (admin or manager only) answers from the actuarial tables, `SimulationParams`, the ADL 3 remaining-life rows, the live books, and simulations already stored on the process. A missing rate is withheld. The desk does not draw a new portfolio or write a store. A question that needs a new run returns `planning` and names the existing tool (portfolio simulator, Monte Carlo evaluation, or the assessment center). The report window is `/admin-ai-report.html` (variants, JSON/Markdown/HTML download, English/Hebrew). Optional narration uses the assessment LLM and is dropped when it introduces a number.
 - **BI analytics (B10):** `PHINS_BI_SNAPSHOT_DIR` also holds
  `materialized_views.json` (served by `/api/bi/*` when fingerprint, checksum

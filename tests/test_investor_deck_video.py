@@ -29,6 +29,7 @@ from services.investor_deck_video import (
     prompt_override,
     scene_view,
     seal_for_send,
+    short_script,
     slide_specs,
     spec_for,
     stream_of,
@@ -76,6 +77,8 @@ def test_narration_is_the_document_filler_and_presenters_spread():
     assert seen == {item["id"] for item in PRESENTERS}
     assert sexes == {"woman", "man"}
     assert len(ages) >= 4
+    assert {item["hair"] for item in PRESENTERS} >= {"red", "blonde", "brunette", "black"}
+    assert all(int(item["age_years"]) >= 35 for item in PRESENTERS)
     again = choose_presenter(used, random.Random(1), exclude=used[0])
     assert again["id"] != used[0]
 
@@ -85,11 +88,16 @@ def test_only_a_matching_clip_enters_the_stream():
     spec = spec_for("s06p01")
     sealed = seal_for_send("s06p01", None, plan, used_presenter_ids=[], rng=random.Random(2))
     assert verify_scene(sealed, spec)
-    assert sealed["sealed_narration"] == fill_narration(spec["template"], plan)
+    spoken = short_script(spec, plan)
+    on_slide = fill_narration(spec["template"], plan)
+    assert sealed["sealed_narration"] == spoken
+    assert spoken != on_slide
+    assert on_slide not in spoken
+    assert "figures stay on this slide" in spoken
     assert sealed["presenter_id"]
     direction = prompt_override(sealed)
     assert sealed["sealed_narration"] in direction
-    assert "no readable text" in direction
+    assert "must not be redrawn" in direction
     assert "{specimen_life_monthly}" not in direction
     asset = {
         "type": "video",
@@ -124,7 +132,8 @@ def test_only_a_matching_clip_enters_the_stream():
     shifted["content_hash"] = "a" * 64
     assert sealed["sealed_plan_hash"] != shifted["content_hash"]
     kept = scene_view(spec, sealed, shifted, asset)
-    assert kept["narration"] == sealed["sealed_narration"]
+    assert kept["script"] == sealed["sealed_narration"]
+    assert kept["narration"] == fill_narration(spec["template"], shifted)
     assert kept["figures_current"] is True
     assert kept["in_stream"] is True
     assert kept["playback_url"].startswith("data:video/mp4")
@@ -145,15 +154,18 @@ def test_only_a_matching_clip_enters_the_stream():
     sealed_hash["asset_checksum"] = "abc123"
     spoken_hash = scene_view(hash_line, sealed_hash, shifted, asset)
     assert spoken_hash["narration"] != sealed_hash["sealed_narration"]
-    assert spoken_hash["figures_current"] is False
-    assert spoken_hash["in_stream"] is False
+    assert spoken_hash["script"] == sealed_hash["sealed_narration"]
+    assert spoken_hash["figures_current"] is True
+    assert spoken_hash["in_stream"] is True
+    assert shifted["content_hash"] not in spoken_hash["script"]
+    assert shifted["content_hash"][:12] in spoken_hash["narration"]
     sealed_hash["last_job_id"] = "job-2"
     dropped = seal_for_send("s13p03", sealed_hash, shifted, used_presenter_ids=[], rng=random.Random(4))
-    assert dropped["sealed_narration"] != sealed_hash["sealed_narration"]
+    assert dropped["sealed_narration"] == sealed_hash["sealed_narration"]
     assert dropped["sealed_plan_hash"] == shifted["content_hash"]
-    assert dropped["last_asset_id"] == ""
-    assert dropped["asset_checksum"] == ""
-    assert dropped["last_job_id"] == ""
+    assert dropped["last_asset_id"] == "asset-2"
+    assert dropped["asset_checksum"] == "abc123"
+    assert dropped["last_job_id"] == "job-2"
 
 
 def test_theme_change_drops_the_film_link_and_reset_clears_the_seal():
@@ -321,7 +333,10 @@ def test_send_stores_one_scene_and_leaves_the_plan_and_placements_alone():
         assert "in_force" in listing["charts"]
         assert listing["charts"]["in_force"]["svg"].startswith("<svg")
         assert any(engine["model"] == "bytedance/seedance-2.0" for engine in listing["engines"])
-        spoken = next(row for row in slide_six if row["paragraph_no"] == 1)["narration"]
+        opening = next(row for row in slide_six if row["paragraph_no"] == 1)
+        spoken = opening["script"]
+        assert "313.75" in opening["narration"]
+        assert "313.75" not in spoken
         assert "{" not in spoken
 
         status, refused = _json_request(
@@ -360,6 +375,8 @@ def test_send_stores_one_scene_and_leaves_the_plan_and_placements_alone():
         assert stub.submissions
         assert stub.submissions[0]["duration_seconds"] == 15
         assert spoken in stub.submissions[0]["prompt"]
+        assert "313.75" not in stub.submissions[0]["prompt"]
+        assert "must not be redrawn" in stub.submissions[0]["prompt"]
         assert "Quiet navy office" in stub.submissions[0]["prompt"]
         assert "auto_publish" not in stub.submissions[0] or stub.submissions[0].get("auto_publish_to_hero") in (None, False)
         assert portal.DESIGN_SETTINGS.get("hero_video_id", "") == hero_before
@@ -572,6 +589,10 @@ def test_presentation_page_is_wired_and_does_not_bake_figures():
     assert "Chapter 2 · 13-slide deck" in media
     assert 'id="deck-watermark"' in page
     assert "Use as watermark background" in page
+    assert 'id="deck-upload"' in page
+    assert "/api/media?brief=1" in page
+    assert "Save this slide's look" in page
+    assert "phins-media-library-updated" in media
 
 
 def test_combine_video_stores_a_pointer_and_leaves_the_library_and_plan_alone():
@@ -1006,6 +1027,198 @@ def test_watermark_stores_a_pointer_and_leaves_the_library_and_plan_alone():
             portal.DESIGN_SETTINGS.pop("investor_deck_watermark", None)
         else:
             portal.DESIGN_SETTINGS["investor_deck_watermark"] = watermark_before
+        if media_before is None:
+            portal.DESIGN_SETTINGS.pop("investor_deck_slide_media", None)
+        else:
+            portal.DESIGN_SETTINGS["investor_deck_slide_media"] = media_before
+        portal.DESIGN_SETTINGS["tagline"] = tagline_before
+        portal.DESIGN_SETTINGS["hero_video_id"] = hero_before
+        if updated_before is None:
+            portal.DESIGN_SETTINGS.pop("updated_at", None)
+        else:
+            portal.DESIGN_SETTINGS["updated_at"] = updated_before
+        portal.SESSIONS.pop(admin, None)
+        portal.SESSIONS.pop(actuary, None)
+        srv.stop()
+
+
+def test_slide_chrome_rejects_a_figure_and_a_drifted_image():
+    from services.investor_deck_slideshow import assign_chrome, chrome_view, verify_chrome
+
+    plan = compute_plan()
+    plan_hash = plan["content_hash"]
+    record = assign_chrome(
+        3, theme="Quiet navy office", gradient="deep", wash=0.42,
+        image_asset_id="img-office", image_checksum="ab12",
+    )
+    assert verify_chrome(record, 3)
+    assert record["wash"] == "0.42"
+    asset = {
+        "type": "image", "checksum": "ab12", "playback_url": "/media-files/img-office/a.png",
+        "name": "Office", "data": "keep-office",
+    }
+    view = chrome_view(3, record, {"img-office": asset})
+    assert view["intact"] is True
+    assert view["gradient"] == "deep"
+    assert view["image"]["playback_url"].endswith("a.png")
+    drifted = dict(asset, checksum="zz")
+    withheld = chrome_view(3, record, {"img-office": drifted})
+    assert withheld["theme"] == "Quiet navy office"
+    assert withheld["image"]["withheld"] is True
+    assert withheld["image"]["playback_url"] == ""
+    assert record["image_checksum"] == "ab12"
+    assert drifted["data"] == "keep-office"
+    tampered = dict(record, checksum="0" * 64)
+    broken = chrome_view(3, tampered, {"img-office": asset})
+    assert broken["withheld"] is True
+    assert broken["gradient"] == "letterhead"
+    assert tampered["checksum"] == "0" * 64
+    assert plan["content_hash"] == plan_hash
+    try:
+        assign_chrome(1, theme="Seed 6 million")
+    except InvestorDeckError as exc:
+        assert "figure" in str(exc).lower()
+    else:
+        raise AssertionError("a theme with a figure was sealed")
+
+
+def test_library_upload_is_listed_and_slide_chrome_does_not_touch_the_plan():
+    srv = _Server()
+    srv.start()
+    time.sleep(0.2)
+    portal = srv.portal
+    base = f"http://127.0.0.1:{srv.port}"
+    try:
+        _json_request(base + "/api/health")
+    except Exception:
+        pass
+    admin = "phins_test_deck_chrome_admin"
+    actuary = "phins_test_deck_chrome_actuary"
+    portal.SESSIONS[admin] = {
+        "username": "deck-chrome-admin",
+        "role": "admin",
+        "customer_id": "",
+        "expires": (datetime.now() + timedelta(hours=1)).isoformat(),
+    }
+    portal.SESSIONS[actuary] = {
+        "username": "deck-chrome-actuary",
+        "role": "actuary",
+        "customer_id": "",
+        "expires": (datetime.now() + timedelta(hours=1)).isoformat(),
+    }
+    tiny = (
+        "data:image/png;base64,"
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+    plan_before = compute_plan()["content_hash"]
+    hero_before = portal.DESIGN_SETTINGS.get("hero_video_id", "")
+    tagline_before = portal.DESIGN_SETTINGS.get("tagline")
+    chrome_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_slide_chrome"))
+    media_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_slide_media"))
+    updated_before = portal.DESIGN_SETTINGS.get("updated_at")
+    path = base + "/api/admin/media/investor-deck/presentation"
+    created_id = ""
+    try:
+        status, blocked = _json_request(
+            path, method="POST", token=actuary,
+            payload={"chrome": True, "slide_no": 2, "theme": "Calm office", "gradient": "soft"},
+        )
+        assert status == 403
+        assert portal.DESIGN_SETTINGS.get("investor_deck_slide_chrome") == chrome_before
+
+        status, created = _json_request(
+            base + "/api/media", method="POST", token=admin,
+            payload={"name": "Office wash", "type": "image", "format": "image/png", "data": tiny, "source": "upload"},
+        )
+        assert status == 201, created
+        created_id = created["asset"]["id"]
+        assert created["asset"]["type"] == "image"
+        assert created["asset"]["checksum"]
+        file_bytes = portal.MEDIA_ASSETS[created_id].get("data")
+
+        status, brief = _json_request(base + "/api/media?brief=1", token=admin)
+        assert status == 200, brief
+        listed = [item for item in brief["assets"] if item["id"] == created_id]
+        assert listed and listed[0]["name"] == "Office wash"
+        assert "data" not in listed[0]
+        assert file_bytes == portal.MEDIA_ASSETS[created_id].get("data")
+
+        status, saved = _json_request(
+            path, method="POST", token=admin,
+            payload={
+                "chrome": True,
+                "slide_no": 2,
+                "theme": "Calm office",
+                "gradient": "deep",
+                "wash": 0.4,
+                "image_asset_id": created_id,
+            },
+        )
+        assert status == 200, saved
+        assert "not changed" in saved["message"]
+        chrome = saved["presentation"]["slides"][1]["chrome"]
+        assert chrome["theme"] == "Calm office"
+        assert chrome["gradient"] == "deep"
+        assert chrome["wash"] == 0.4
+        assert chrome["image"]["intact"] is True
+        assert chrome["image"]["name"] == "Office wash"
+        assert saved["presentation"]["slides"][1]["bullets"]
+        assert "{" not in "".join(saved["presentation"]["slides"][1]["bullets"])
+        stored = portal.DESIGN_SETTINGS["investor_deck_slide_chrome"]["2"]
+        assert stored["image_checksum"] == portal.MEDIA_ASSETS[created_id]["checksum"]
+        assert portal.MEDIA_ASSETS[created_id].get("data") == file_bytes
+        assert portal.DESIGN_SETTINGS.get("hero_video_id", "") == hero_before
+        assert portal.DESIGN_SETTINGS.get("investor_deck_slide_media") == media_before
+        assert compute_plan()["content_hash"] == plan_before
+
+        status, watched = _json_request(path, token=actuary)
+        assert watched["can_assign"] is False
+        assert watched["slides"][1]["chrome"]["image"]["intact"] is True
+
+        portal.MEDIA_ASSETS[created_id]["checksum"] = "c" * 64
+        status, drifted = _json_request(path, token=admin)
+        assert drifted["slides"][1]["chrome"]["theme"] == "Calm office"
+        assert drifted["slides"][1]["chrome"]["image"]["withheld"] is True
+        assert drifted["slides"][1]["chrome"]["image"]["playback_url"] == ""
+        assert portal.DESIGN_SETTINGS["investor_deck_slide_chrome"]["2"]["image_checksum"] != "c" * 64
+        portal.MEDIA_ASSETS[created_id]["checksum"] = stored["image_checksum"]
+
+        status, clash = _json_request(
+            path, method="POST", token=admin,
+            payload={"chrome": True, "slide_no": 2, "image_asset_id": created_id, "image_checksum": "f" * 64},
+        )
+        assert status == 409
+        assert portal.DESIGN_SETTINGS["investor_deck_slide_chrome"]["2"]["theme"] == "Calm office"
+        assert portal.MEDIA_ASSETS[created_id].get("data") == file_bytes
+
+        status, public = _json_request(base + "/api/design/settings")
+        assert "investor_deck_slide_chrome" not in public
+        assert tiny not in json.dumps(public)
+
+        status, settings = _json_request(
+            base + "/api/design/settings", method="POST", token=admin,
+            payload={"tagline": tagline_before, "investor_deck_slide_chrome": {"2": {"theme": "tampered"}}},
+        )
+        assert status == 200
+        assert portal.DESIGN_SETTINGS["investor_deck_slide_chrome"]["2"]["theme"] == "Calm office"
+
+        status, cleared = _json_request(
+            path, method="POST", token=admin,
+            payload={"chrome": True, "slide_no": 2, "clear": True},
+        )
+        assert status == 200, cleared
+        assert cleared["presentation"]["slides"][1]["chrome"]["theme"] == ""
+        assert cleared["presentation"]["slides"][1]["chrome"]["gradient"] == "letterhead"
+        assert "2" not in (portal.DESIGN_SETTINGS.get("investor_deck_slide_chrome") or {})
+        assert portal.MEDIA_ASSETS[created_id].get("data") == file_bytes
+        assert compute_plan()["content_hash"] == plan_before
+    finally:
+        if created_id:
+            portal.MEDIA_ASSETS.pop(created_id, None)
+        if chrome_before is None:
+            portal.DESIGN_SETTINGS.pop("investor_deck_slide_chrome", None)
+        else:
+            portal.DESIGN_SETTINGS["investor_deck_slide_chrome"] = chrome_before
         if media_before is None:
             portal.DESIGN_SETTINGS.pop("investor_deck_slide_media", None)
         else:
