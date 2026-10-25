@@ -76,6 +76,7 @@ def test_app_dashboards_are_not_intercepted():
         "/cyber-security.html",
         "/video-agents.html",
         "/nda.html",
+        "/investor-deck.html",
     ):
         assert _classify(path) is None, f"{path} must navigate normally"
 

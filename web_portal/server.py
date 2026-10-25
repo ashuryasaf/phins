@@ -6634,6 +6634,136 @@ def investor_deck_lab_view() -> Dict[str, Any]:
     }
 
 
+_INVESTOR_DECK_READ_ROLES = [
+    'admin', 'media', 'accountant', 'underwriter', 'actuary', 'compliance', 'founder',
+]
+_INVESTOR_DECK_MEDIA_FIELDS = (
+    'slide_no', 'asset_id', 'asset_checksum', 'checksum', 'updated_at', 'updated_by',
+)
+
+
+def _investor_deck_media_store() -> Dict[str, Any]:
+    raw = DESIGN_SETTINGS.get('investor_deck_slide_media')
+    return raw if isinstance(raw, dict) else {}
+
+
+def _persist_investor_deck_media_unlocked(slide_no: int, record: Optional[Dict[str, Any]]) -> bool:
+    """Store or drop one slide's video pointer. Placements and scenes stay put."""
+    key = str(int(slide_no))
+    existing = DESIGN_SETTINGS.get('investor_deck_slide_media')
+    if record is None and (not isinstance(existing, dict) or key not in existing):
+        return True
+    try:
+        previous = _snapshot_design_settings()
+    except Exception:
+        return False
+    store = DESIGN_SETTINGS.get('investor_deck_slide_media')
+    if not isinstance(store, dict):
+        store = {}
+        DESIGN_SETTINGS['investor_deck_slide_media'] = store
+    if record is None:
+        store.pop(key, None)
+        if not store:
+            DESIGN_SETTINGS.pop('investor_deck_slide_media', None)
+    else:
+        slim = {field: record.get(field) for field in _INVESTOR_DECK_MEDIA_FIELDS if field in record}
+        store[key] = _copy_json_value(slim)
+    DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
+    if seal_design_settings(force=True):
+        return True
+    _restore_design_settings(previous)
+    return False
+
+
+def investor_deck_presentation_view(*, can_assign: bool) -> Dict[str, Any]:
+    """Part II slides, filled from the current plan, plus any intact media video."""
+    from services.investor_deck_video import catalog, presentation_of, scene_view
+
+    plan, meta = _investor_deck_plan()
+    photo_url = _investor_deck_photo_url()
+    store = _investor_deck_store()
+    scenes = []
+    for spec in catalog():
+        stored = store.get(spec['scene_key'])
+        record = stored if isinstance(stored, dict) else None
+        asset_id = str((record or {}).get('last_asset_id') or '')
+        asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
+        brief = None
+        if isinstance(asset, dict):
+            brief = {
+                'type': str(asset.get('type') or ''),
+                'checksum': str(asset.get('checksum') or ''),
+                'playback_url': media_asset_url(asset) if str(asset.get('checksum') or '') else '',
+            }
+        scenes.append(scene_view(spec, record, plan, brief, photo_url=photo_url))
+    charts = _investor_deck_charts(plan)
+    assignments = _investor_deck_media_store()
+    assets: Dict[str, Any] = {}
+    for record in assignments.values():
+        if not isinstance(record, dict):
+            continue
+        media_id = str(record.get('asset_id') or '')
+        media = MEDIA_ASSETS.get(media_id) if media_id else None
+        if not isinstance(media, dict) or media_id in assets:
+            continue
+        assets[media_id] = {
+            'type': str(media.get('type') or ''),
+            'checksum': str(media.get('checksum') or ''),
+            'playback_url': media_asset_url(media) if str(media.get('checksum') or '') else '',
+            'name': str(media.get('name') or ''),
+        }
+    body = presentation_of(
+        plan,
+        assignments,
+        assets,
+        scenes,
+        photo_url=photo_url,
+        charts=charts,
+    )
+    body['success'] = True
+    body['plan'] = meta
+    body['can_assign'] = bool(can_assign)
+    body['charts'] = charts
+    body['photo_url'] = photo_url
+    return body
+
+
+def save_investor_deck_slide_media(payload: Dict[str, Any], *, actor: str) -> Dict[str, Any]:
+    """Point one slide at a library video, or clear that pointer.
+
+    The plan, filmed scenes, public placements, and the library file are not
+    written. A checksum the library does not currently hold is refused.
+    """
+    from services.investor_deck_video import InvestorDeckError, assign_slide_media, parse_slide_no
+
+    slide_no = parse_slide_no(payload.get('slide_no'))
+    if payload.get('clear') is True:
+        if not _persist_investor_deck_media_unlocked(slide_no, None):
+            raise InvestorDeckError('The slide video could not be stored durably')
+        return investor_deck_presentation_view(can_assign=True)
+    asset_id = str(payload.get('asset_id') or '').strip()
+    asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
+    if not isinstance(asset, dict):
+        raise InvestorDeckError('That video is not in the media library')
+    if str(asset.get('type') or '') != 'video':
+        raise InvestorDeckError('Combine a video from the media library')
+    checksum = str(asset.get('checksum') or '').strip()
+    if not checksum:
+        raise InvestorDeckError('Media video has no checksum')
+    client_checksum = payload.get('asset_checksum')
+    if client_checksum not in (None, '') and str(client_checksum).strip() != checksum:
+        raise InvestorDeckError('Media checksum does not match the library. Nothing was stored.')
+    before = str(asset.get('checksum') or '')
+    record = assign_slide_media(slide_no, asset_id, checksum)
+    if str(asset.get('checksum') or '') != before or str(asset.get('type') or '') != 'video':
+        raise InvestorDeckError('The library file was not left intact. Nothing was stored.')
+    record['updated_at'] = datetime.now().isoformat()
+    record['updated_by'] = actor or 'admin'
+    if not _persist_investor_deck_media_unlocked(slide_no, record):
+        raise InvestorDeckError('The slide video could not be stored durably')
+    return investor_deck_presentation_view(can_assign=True)
+
+
 def save_investor_deck_scene(scene_key: str, payload: Dict[str, Any], *, actor: str) -> Dict[str, Any]:
     from services.investor_deck_video import InvestorDeckError, apply_scene_edit
 
@@ -23785,6 +23915,23 @@ For claims or questions, please contact:
                 return
             try:
                 payload = investor_deck_lab_view()
+            except Exception as exc:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': f'The investor deck could not be prepared: {exc}'}).encode('utf-8'))
+                return
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/admin/media/investor-deck/presentation':
+            if not require_role(session, _INVESTOR_DECK_READ_ROLES):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Staff access required'}).encode('utf-8'))
+                return
+            try:
+                payload = investor_deck_presentation_view(
+                    can_assign=require_role(session, ['admin', 'media']),
+                )
             except Exception as exc:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': f'The investor deck could not be prepared: {exc}'}).encode('utf-8'))
@@ -41985,6 +42132,50 @@ For claims or questions, please contact:
             return
 
         # ========== INVESTOR DECK LAB ==========
+        if path == '/api/admin/media/investor-deck/presentation':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8') if length else '{}'
+            try:
+                data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            if not isinstance(data, dict):
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'Invalid request body'}).encode('utf-8'))
+                return
+            from services.investor_deck_video import InvestorDeckError
+            actor = (session or {}).get('username', 'admin')
+            try:
+                view = save_investor_deck_slide_media(data, actor=actor)
+                cleared = data.get('clear') is True
+                status_code, payload = 200, {
+                    'success': True,
+                    'message': (
+                        'The video was removed from this slide. The library file was not changed.'
+                        if cleared else
+                        'The video is combined with this slide. The plan and the library file were not changed.'
+                    ),
+                    'presentation': view,
+                }
+            except InvestorDeckError as exc:
+                text = str(exc)
+                status_code = 409 if 'checksum' in text.lower() else 400
+                payload = {'error': text}
+            except Exception as exc:
+                status_code, payload = 500, {'error': str(exc)}
+            self._set_json_headers(status_code)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
         if path in {'/api/admin/media/investor-deck', '/api/admin/media/investor-deck/send'}:
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None

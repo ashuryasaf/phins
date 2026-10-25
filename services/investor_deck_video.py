@@ -9,6 +9,10 @@ A clip joins the film only when a library video exists, its checksum matches
 the seal, and the sealed line is still the line the plan speaks now. A
 missing scene is omitted. The plan, its factors, and public placements are
 not written here.
+
+The 13-slide presentation (``presentation_of``) is the same Part II, one
+slide at a time. A library video combines with a slide only as a checksummed
+pointer. A mismatch is omitted and the library file is not rewritten.
 """
 
 from __future__ import annotations
@@ -535,3 +539,212 @@ def stream_of(scenes: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
         key=lambda scene: (int(scene.get("slide_no") or 0), int(scene.get("paragraph_no") or 0)),
     )
     return ordered
+
+
+def slide_specs() -> List[Dict[str, Any]]:
+    """One row per Part II slide. Bullet templates stay unfilled."""
+    rows: List[Dict[str, Any]] = []
+    for slide_no, slide in enumerate(deck_slides(), 1):
+        title = str(slide.get("title") or "")
+        rows.append({
+            "slide_no": slide_no,
+            "title": title,
+            "kicker": str(slide.get("kicker") or ""),
+            "bullets": [str(item) for item in (slide.get("bullets") or [])],
+            "chart_id": str(SLIDE_CHARTS.get(title) or ""),
+            "photo": "founder" if slide.get("founder") else "",
+        })
+    return rows
+
+
+def slide_spec(slide_no: int) -> Optional[Dict[str, Any]]:
+    try:
+        number = int(slide_no)
+    except (TypeError, ValueError):
+        return None
+    for row in slide_specs():
+        if row["slide_no"] == number:
+            return dict(row)
+    return None
+
+
+def parse_slide_no(value: Any) -> int:
+    """Slide numbers are 1-based positions in Part II."""
+    if isinstance(value, bool) or value is None:
+        raise InvestorDeckError("Unknown investor-deck slide")
+    if isinstance(value, int):
+        number = value
+    elif isinstance(value, str) and value.strip().isdigit():
+        number = int(value.strip())
+    else:
+        raise InvestorDeckError("Unknown investor-deck slide")
+    if slide_spec(number) is None:
+        raise InvestorDeckError(f"Unknown investor-deck slide: {number}")
+    return number
+
+
+def media_assignment_checksum(record: Mapping[str, Any]) -> str:
+    """Checksum of the slide-to-video pointer. Library bytes are not included."""
+    try:
+        slide_no = int(record.get("slide_no") or 0)
+    except (TypeError, ValueError):
+        slide_no = 0
+    material = {
+        "slide_no": slide_no,
+        "asset_id": str(record.get("asset_id") or ""),
+        "asset_checksum": str(record.get("asset_checksum") or ""),
+    }
+    encoded = json.dumps(material, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def verify_media_assignment(record: Mapping[str, Any], slide_no: int) -> bool:
+    if not isinstance(record, dict):
+        return False
+    try:
+        recorded = int(record.get("slide_no"))
+    except (TypeError, ValueError):
+        return False
+    if recorded != int(slide_no) or slide_spec(slide_no) is None:
+        return False
+    digest = media_assignment_checksum(record)
+    stored = str(record.get("checksum") or "")
+    if not stored or len(stored) != len(digest):
+        return False
+    return hmac.compare_digest(stored, digest)
+
+
+def assign_slide_media(slide_no: Any, asset_id: Any, asset_checksum: Any) -> Dict[str, Any]:
+    """Seal a library video to one slide. The file itself is not copied."""
+    number = parse_slide_no(slide_no)
+    cleaned = _clean_asset_id(asset_id)
+    if not cleaned:
+        raise InvestorDeckError("Choose a video from the media library")
+    checksum = str(asset_checksum or "").strip()
+    if not checksum or any(ch.isspace() for ch in checksum) or len(checksum) > 128:
+        raise InvestorDeckError("Media video has no checksum")
+    record = {
+        "slide_no": number,
+        "asset_id": cleaned,
+        "asset_checksum": checksum,
+    }
+    record["checksum"] = media_assignment_checksum(record)
+    return record
+
+
+def _assignment_for(assignments: Optional[Mapping[str, Any]], slide_no: int) -> Optional[Dict[str, Any]]:
+    if not isinstance(assignments, Mapping):
+        return None
+    for key in (str(slide_no), slide_no):
+        record = assignments.get(key)
+        if isinstance(record, dict):
+            return record
+    return None
+
+
+def _chart_svg(charts: Optional[Mapping[str, Any]], chart_id: str) -> str:
+    if not chart_id or not isinstance(charts, Mapping):
+        return ""
+    spec = charts.get(chart_id)
+    svg = ""
+    if isinstance(spec, str):
+        svg = spec
+    elif isinstance(spec, dict):
+        svg = str(spec.get("svg") or "")
+    if "<svg" not in svg[:400] and not svg.lstrip().startswith("<svg"):
+        return ""
+    return svg
+
+
+def _filmed_for_slide(slide_no: int, filmed: Optional[Sequence[Mapping[str, Any]]]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for item in filmed or []:
+        if not isinstance(item, dict) or not item.get("in_stream"):
+            continue
+        try:
+            number = int(item.get("slide_no") or 0)
+            paragraph_no = int(item.get("paragraph_no") or 0)
+        except (TypeError, ValueError):
+            continue
+        playback = str(item.get("playback_url") or "")
+        if number != slide_no or not playback:
+            continue
+        rows.append({
+            "paragraph_no": paragraph_no,
+            "narration": str(item.get("narration") or ""),
+            "playback_url": playback,
+            "presenter_label": str(item.get("presenter_label") or ""),
+        })
+    rows.sort(key=lambda row: row["paragraph_no"])
+    return rows
+
+
+def _combined_media(
+    slide_no: int,
+    assignment: Optional[Mapping[str, Any]],
+    assets: Optional[Mapping[str, Any]],
+) -> Dict[str, Any]:
+    """Play a library video only when the pointer and the file still match."""
+    empty = {
+        "asset_id": "",
+        "playback_url": "",
+        "name": "",
+        "intact": False,
+        "withheld": False,
+    }
+    if not isinstance(assignment, dict):
+        return empty
+    asset_id = str(assignment.get("asset_id") or "")
+    if not asset_id:
+        return empty
+    if not verify_media_assignment(assignment, slide_no):
+        return dict(empty, withheld=True)
+    asset = assets.get(asset_id) if isinstance(assets, Mapping) else None
+    info = asset if isinstance(asset, dict) else {}
+    sealed = str(assignment.get("asset_checksum") or "")
+    actual = str(info.get("checksum") or "").strip()
+    kind = str(info.get("type") or "")
+    playback = str(info.get("playback_url") or info.get("url") or "")
+    if sealed and sealed == actual and kind == "video" and playback:
+        return {
+            "asset_id": asset_id,
+            "playback_url": playback,
+            "name": str(info.get("name") or ""),
+            "intact": True,
+            "withheld": False,
+        }
+    return dict(empty, withheld=True)
+
+
+def presentation_of(
+    plan: Mapping[str, Any],
+    assignments: Optional[Mapping[str, Any]] = None,
+    assets: Optional[Mapping[str, Any]] = None,
+    filmed: Optional[Sequence[Mapping[str, Any]]] = None,
+    *,
+    photo_url: str = "",
+    charts: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Part II as slides. Figures are filled here and nowhere written back."""
+    slides: List[Dict[str, Any]] = []
+    for spec in slide_specs():
+        number = int(spec["slide_no"])
+        photo = str(spec.get("photo") or "")
+        chart_id = str(spec.get("chart_id") or "")
+        slides.append({
+            "slide_no": number,
+            "title": str(spec.get("title") or ""),
+            "kicker": fill_narration(str(spec.get("kicker") or ""), plan),
+            "bullets": [fill_narration(bullet, plan) for bullet in spec.get("bullets") or []],
+            "chart_id": chart_id,
+            "chart_svg": _chart_svg(charts, chart_id),
+            "photo": photo,
+            "photo_url": photo_url if photo == "founder" else "",
+            "media": _combined_media(number, _assignment_for(assignments, number), assets),
+            "filmed": _filmed_for_slide(number, filmed),
+        })
+    return {
+        "part": "II",
+        "slide_count": len(slides),
+        "slides": slides,
+    }

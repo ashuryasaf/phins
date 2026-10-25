@@ -17,16 +17,20 @@ from services.investor_deck_video import (
     SCENE_SECONDS,
     InvestorDeckError,
     apply_scene_edit,
+    assign_slide_media,
     catalog,
     choose_presenter,
     clip_is_scene_length,
     fill_narration,
     fresh_scene,
+    presentation_of,
     prompt_override,
     scene_view,
     seal_for_send,
+    slide_specs,
     spec_for,
     stream_of,
+    verify_media_assignment,
     verify_scene,
 )
 
@@ -467,4 +471,301 @@ def test_send_stores_one_scene_and_leaves_the_plan_and_placements_alone():
             portal.save_ledger_data()
         except Exception:
             pass
+        srv.stop()
+
+
+def test_presentation_is_part_ii_and_a_video_plays_only_when_the_checksum_matches():
+    slides = deck_slides()
+    specs = slide_specs()
+    assert len(specs) == 13
+    assert [row["title"] for row in specs] == [slide["title"] for slide in slides]
+    plan = compute_plan()
+    plan_hash = plan["content_hash"]
+    anchor = plan["anchor_book"]["rows"][0]["eoy_in_force"]
+    record = assign_slide_media(7, "vid-deck-1", "abc123")
+    assert verify_media_assignment(record, 7)
+    asset = {
+        "type": "video",
+        "checksum": "abc123",
+        "playback_url": "/media-files/vid-deck-1/office.mp4",
+        "name": "Office film",
+        "data": "do-not-touch",
+    }
+    filmed = [
+        {"slide_no": 7, "paragraph_no": 2, "in_stream": True, "playback_url": "/clip.mp4",
+         "narration": "second", "presenter_label": "Woman, early 30s"},
+        {"slide_no": 7, "paragraph_no": 1, "in_stream": False, "playback_url": "/skipped.mp4"},
+        {"slide_no": 1, "paragraph_no": 1, "in_stream": True, "playback_url": ""},
+    ]
+    view = presentation_of(
+        plan,
+        {"7": record},
+        {"vid-deck-1": asset},
+        filmed,
+        photo_url="/api/business-plan/founder-portrait",
+        charts={"in_force": {"svg": "<svg id='in_force'></svg>"}},
+    )
+    assert view["part"] == "II"
+    assert view["slide_count"] == 13
+    assert plan["content_hash"] == plan_hash
+    assert plan["anchor_book"]["rows"][0]["eoy_in_force"] == anchor
+    assert asset["data"] == "do-not-touch"
+    assert asset["checksum"] == "abc123"
+    market = view["slides"][6]
+    assert market["title"] == "Market and expansion"
+    assert market["chart_id"] == "in_force"
+    assert market["chart_svg"].startswith("<svg")
+    assert market["media"]["intact"] is True
+    assert market["media"]["playback_url"].endswith("office.mp4")
+    assert [clip["paragraph_no"] for clip in market["filmed"]] == [2]
+    for spec, slide in zip(specs, view["slides"]):
+        assert slide["bullets"] == [_fill(bullet, plan, False).strip() for bullet in spec["bullets"]]
+        assert "{" not in "".join(slide["bullets"])
+    founder = view["slides"][4]
+    assert founder["title"] == "Founder"
+    assert founder["photo_url"].endswith("founder-portrait")
+    assert view["slides"][0]["photo_url"] == ""
+    image = dict(asset, type="image")
+    withheld = presentation_of(plan, {"7": record}, {"vid-deck-1": image})
+    assert withheld["slides"][6]["media"]["intact"] is False
+    assert withheld["slides"][6]["media"]["withheld"] is True
+    assert withheld["slides"][6]["media"]["playback_url"] == ""
+    assert image["checksum"] == "abc123"
+    tampered = dict(record, checksum="0" * 64)
+    broken = presentation_of(plan, {"7": tampered}, {"vid-deck-1": asset})
+    assert broken["slides"][6]["media"]["playback_url"] == ""
+    assert broken["slides"][6]["media"]["withheld"] is True
+    assert tampered["checksum"] == "0" * 64
+    try:
+        assign_slide_media(14, "vid-deck-1", "abc123")
+    except InvestorDeckError as exc:
+        assert "Unknown" in str(exc)
+    else:
+        raise AssertionError("slide 14 was accepted")
+    try:
+        assign_slide_media(1, "vid-deck-1", "")
+    except InvestorDeckError as exc:
+        assert "checksum" in str(exc).lower()
+    else:
+        raise AssertionError("a video without a checksum was sealed")
+
+
+def test_presentation_page_is_wired_and_does_not_bake_figures():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    page = (root / "web_portal" / "static" / "investor-deck.html").read_text(encoding="utf-8")
+    pitch = (root / "web_portal" / "static" / "pitch-dashboard.html").read_text(encoding="utf-8")
+    media = (root / "web_portal" / "static" / "admin-media.html").read_text(encoding="utf-8")
+    assert "/api/admin/media/investor-deck/presentation" in page
+    assert "4518" not in page
+    assert "4,518" not in page
+    assert 'href="/investor-deck.html" class="pitch-nav-link">Investor Deck</a>' in pitch
+    assert "Present the 13 slides" in pitch
+    assert "thirteen-slide investor deck" in pitch
+    assert 'data-src="/investor-deck.html?embed=1&amp;edit=1"' in media
+    assert "Chapter 2 · 13-slide deck" in media
+
+
+def test_combine_video_stores_a_pointer_and_leaves_the_library_and_plan_alone():
+    srv = _Server()
+    srv.start()
+    time.sleep(0.2)
+    portal = srv.portal
+    base = f"http://127.0.0.1:{srv.port}"
+    try:
+        _json_request(base + "/api/health")
+    except Exception:
+        pass
+    admin = "phins_test_deck_present_admin"
+    actuary = "phins_test_deck_present_actuary"
+    customer = "phins_test_deck_present_customer"
+    portal.SESSIONS[admin] = {
+        "username": "deck-present-admin",
+        "role": "admin",
+        "customer_id": "",
+        "expires": (datetime.now() + timedelta(hours=1)).isoformat(),
+    }
+    portal.SESSIONS[actuary] = {
+        "username": "deck-present-actuary",
+        "role": "actuary",
+        "customer_id": "",
+        "expires": (datetime.now() + timedelta(hours=1)).isoformat(),
+    }
+    portal.SESSIONS[customer] = {
+        "username": "deck-present-customer",
+        "role": "customer",
+        "customer_id": "CUST1",
+        "expires": (datetime.now() + timedelta(hours=1)).isoformat(),
+    }
+    asset_id = "vid-deck-present"
+    payload_bytes = "do-not-touch-library-bytes"
+    portal.MEDIA_ASSETS[asset_id] = {
+        "id": asset_id,
+        "type": "video",
+        "name": "Office film",
+        "checksum": "a" * 64,
+        "url": f"/media-files/{asset_id}/office.mp4",
+        "data": payload_bytes,
+    }
+    portal.MEDIA_ASSETS["img-deck-present"] = {
+        "id": "img-deck-present",
+        "type": "image",
+        "name": "Still",
+        "checksum": "b" * 64,
+        "url": "/media-files/img-deck-present/still.jpg",
+    }
+    plan_before = compute_plan()["content_hash"]
+    hero_before = portal.DESIGN_SETTINGS.get("hero_video_id", "")
+    tagline_before = portal.DESIGN_SETTINGS.get("tagline")
+    scenes_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_scenes"))
+    media_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_slide_media"))
+    updated_before = portal.DESIGN_SETTINGS.get("updated_at")
+    try:
+        status, denied = _json_request(base + "/api/admin/media/investor-deck/presentation")
+        assert status == 403
+        status, denied = _json_request(
+            base + "/api/admin/media/investor-deck/presentation", token=customer,
+        )
+        assert status == 403
+        status, listing = _json_request(
+            base + "/api/admin/media/investor-deck/presentation", token=actuary,
+        )
+        assert status == 200, listing
+        assert listing["slide_count"] == 13
+        assert listing["can_assign"] is False
+        assert listing["plan"]["content_hash"] == plan_before
+        assert listing["plan"]["integrity_all_hold"] is True
+        assert "{" not in "".join(listing["slides"][0]["bullets"])
+        status, blocked = _json_request(
+            base + "/api/admin/media/investor-deck/presentation",
+            method="POST",
+            token=actuary,
+            payload={"slide_no": 1, "asset_id": asset_id},
+        )
+        assert status == 403
+        assert "investor_deck_slide_media" not in portal.DESIGN_SETTINGS or (
+            portal.DESIGN_SETTINGS.get("investor_deck_slide_media") == media_before
+        )
+
+        status, image = _json_request(
+            base + "/api/admin/media/investor-deck/presentation",
+            method="POST",
+            token=admin,
+            payload={"slide_no": 1, "asset_id": "img-deck-present"},
+        )
+        assert status == 400
+        assert "video" in image["error"].lower()
+
+        status, clash = _json_request(
+            base + "/api/admin/media/investor-deck/presentation",
+            method="POST",
+            token=admin,
+            payload={"slide_no": 1, "asset_id": asset_id, "asset_checksum": "f" * 64},
+        )
+        assert status == 409
+        assert portal.MEDIA_ASSETS[asset_id]["data"] == payload_bytes
+        assert portal.MEDIA_ASSETS[asset_id]["checksum"] == "a" * 64
+
+        status, saved = _json_request(
+            base + "/api/admin/media/investor-deck/presentation",
+            method="POST",
+            token=admin,
+            payload={"slide_no": 1, "asset_id": asset_id},
+        )
+        assert status == 200, saved
+        assert saved["presentation"]["can_assign"] is True
+        opening = saved["presentation"]["slides"][0]
+        assert opening["media"]["intact"] is True
+        assert opening["media"]["playback_url"].endswith("office.mp4")
+        assert opening["media"]["name"] == "Office film"
+        stored = portal.DESIGN_SETTINGS["investor_deck_slide_media"]["1"]
+        assert stored["asset_id"] == asset_id
+        assert stored["asset_checksum"] == "a" * 64
+        assert verify_media_assignment(stored, 1)
+        assert portal.MEDIA_ASSETS[asset_id]["data"] == payload_bytes
+        assert portal.DESIGN_SETTINGS.get("hero_video_id", "") == hero_before
+        assert compute_plan()["content_hash"] == plan_before
+        assert portal.DESIGN_SETTINGS.get("investor_deck_scenes") == scenes_before
+
+        status, watched = _json_request(
+            base + "/api/admin/media/investor-deck/presentation", token=actuary,
+        )
+        assert status == 200
+        assert watched["slides"][0]["media"]["playback_url"].endswith("office.mp4")
+        assert watched["can_assign"] is False
+
+        stored["checksum"] = "0" * 64
+        status, withheld = _json_request(
+            base + "/api/admin/media/investor-deck/presentation", token=actuary,
+        )
+        assert withheld["slides"][0]["media"]["withheld"] is True
+        assert withheld["slides"][0]["media"]["playback_url"] == ""
+        assert portal.DESIGN_SETTINGS["investor_deck_slide_media"]["1"]["checksum"] == "0" * 64
+        assert portal.MEDIA_ASSETS[asset_id]["checksum"] == "a" * 64
+
+        portal.DESIGN_SETTINGS["investor_deck_slide_media"]["1"] = stored
+        stored["checksum"] = assign_slide_media(1, asset_id, "a" * 64)["checksum"]
+        portal.MEDIA_ASSETS[asset_id]["checksum"] = "c" * 64
+        status, drifted = _json_request(
+            base + "/api/admin/media/investor-deck/presentation", token=admin,
+        )
+        assert drifted["slides"][0]["media"]["intact"] is False
+        assert drifted["slides"][0]["media"]["playback_url"] == ""
+        assert portal.DESIGN_SETTINGS["investor_deck_slide_media"]["1"]["asset_checksum"] == "a" * 64
+        assert portal.MEDIA_ASSETS[asset_id]["checksum"] == "c" * 64
+        assert portal.MEDIA_ASSETS[asset_id]["data"] == payload_bytes
+        portal.MEDIA_ASSETS[asset_id]["checksum"] = "a" * 64
+
+        status, public = _json_request(base + "/api/design/settings")
+        assert status == 200
+        assert "investor_deck_slide_media" not in public
+        assert payload_bytes not in json.dumps(public)
+
+        status, settings = _json_request(
+            base + "/api/design/settings",
+            method="POST",
+            token=admin,
+            payload={
+                "tagline": tagline_before,
+                "investor_deck_slide_media": {"1": {"checksum": "tampered"}},
+            },
+        )
+        assert status == 200
+        assert portal.DESIGN_SETTINGS["investor_deck_slide_media"]["1"]["asset_checksum"] == "a" * 64
+        assert portal.DESIGN_SETTINGS["investor_deck_slide_media"]["1"]["checksum"] != "tampered"
+
+        status, cleared = _json_request(
+            base + "/api/admin/media/investor-deck/presentation",
+            method="POST",
+            token=admin,
+            payload={"slide_no": 1, "clear": True},
+        )
+        assert status == 200, cleared
+        assert cleared["presentation"]["slides"][0]["media"]["playback_url"] == ""
+        assert cleared["presentation"]["slides"][0]["media"]["withheld"] is False
+        assert "1" not in (portal.DESIGN_SETTINGS.get("investor_deck_slide_media") or {})
+        assert portal.MEDIA_ASSETS[asset_id]["data"] == payload_bytes
+        assert portal.DESIGN_SETTINGS.get("hero_video_id", "") == hero_before
+        assert compute_plan()["content_hash"] == plan_before
+    finally:
+        portal.MEDIA_ASSETS.pop(asset_id, None)
+        portal.MEDIA_ASSETS.pop("img-deck-present", None)
+        if media_before is None:
+            portal.DESIGN_SETTINGS.pop("investor_deck_slide_media", None)
+        else:
+            portal.DESIGN_SETTINGS["investor_deck_slide_media"] = media_before
+        if scenes_before is None:
+            portal.DESIGN_SETTINGS.pop("investor_deck_scenes", None)
+        else:
+            portal.DESIGN_SETTINGS["investor_deck_scenes"] = scenes_before
+        portal.DESIGN_SETTINGS["tagline"] = tagline_before
+        portal.DESIGN_SETTINGS["hero_video_id"] = hero_before
+        if updated_before is None:
+            portal.DESIGN_SETTINGS.pop("updated_at", None)
+        else:
+            portal.DESIGN_SETTINGS["updated_at"] = updated_before
+        portal.SESSIONS.pop(admin, None)
+        portal.SESSIONS.pop(actuary, None)
+        portal.SESSIONS.pop(customer, None)
         srv.stop()

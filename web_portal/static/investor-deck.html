@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>PHINS — Investor deck</title>
+<!--
+  Part II of the unified plan, presented one slide at a time.
+  Figures are loaded from the plan. This file does not contain them.
+  Marker: ui-clarity.js — keep this token so the assistant widget is not injected.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0e2f63;
+    --deep: #060d1f;
+    --mid: #123f82;
+    --gold: #c9a04e;
+    --gold-strong: #f7e2a0;
+    --ink: #12284c;
+    --muted: #5b6b82;
+    --ice: #f3f7fd;
+    --line: #d5deea;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: #e8eef6;
+    color: var(--ink);
+    font-family: Inter, "Segoe UI", sans-serif;
+  }
+  body.is-embed { background: var(--deep); }
+  .deck-shell { max-width: 1180px; margin: 0 auto; padding: 16px 16px 28px; }
+  body.is-embed .deck-shell { padding: 8px; }
+  .deck-bar {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    justify-content: space-between; margin-bottom: 12px; color: var(--navy);
+  }
+  body.is-embed .deck-bar { color: #eaf1ff; }
+  .deck-brand { display: flex; gap: 10px; align-items: center; text-decoration: none; color: inherit; }
+  .deck-brand img { width: 36px; height: 36px; }
+  .deck-word {
+    font-family: "Space Grotesk", Inter, sans-serif;
+    font-weight: 700; letter-spacing: 0.08em; font-size: 14px;
+  }
+  .deck-tag { font-size: 11px; opacity: 0.8; }
+  .deck-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button, select {
+    font: 600 13px Inter, "Segoe UI", sans-serif;
+  }
+  .deck-btn {
+    border: 1px solid rgba(201, 160, 78, 0.7);
+    background: linear-gradient(180deg, #f7e2a0, #e3bf6f);
+    color: var(--deep); border-radius: 8px; padding: 8px 12px; cursor: pointer;
+  }
+  .deck-btn.secondary {
+    background: transparent; color: inherit; font-weight: 600;
+  }
+  select.deck-select {
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px;
+    background: #fff; color: var(--ink); max-width: 280px;
+  }
+  .deck-stage {
+    background: #fff; border-radius: 16px; overflow: hidden;
+    box-shadow: 0 16px 40px rgba(6, 13, 31, 0.12);
+    min-height: 520px; display: flex; flex-direction: column;
+  }
+  .deck-banner {
+    background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+    color: #fff; padding: 18px 22px; display: flex; justify-content: space-between;
+    gap: 16px; align-items: center;
+  }
+  .deck-kicker {
+    font-family: "Space Grotesk", Inter, sans-serif; font-weight: 600; font-size: 14px;
+  }
+  .deck-kicker span { display: block; margin-top: 2px; font-weight: 400; font-size: 12px; opacity: 0.82; font-family: Inter, sans-serif; }
+  .deck-gold { height: 4px; background: linear-gradient(90deg, #b8893b 0%, #f7e2a0 42%, #e3bf6f 100%); }
+  .deck-body {
+    display: grid; grid-template-columns: 1.25fr 0.85fr; gap: 18px;
+    padding: 22px 24px 18px; align-items: start; flex: 1;
+  }
+  .deck-body.solo { grid-template-columns: 1fr; }
+  .deck-no {
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--gold); font-weight: 700; margin: 0 0 6px;
+  }
+  h1 {
+    font-family: "Space Grotesk", Inter, sans-serif; color: var(--navy);
+    font-size: 28px; line-height: 1.15; margin: 0 0 8px;
+  }
+  .deck-sub { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+  ul { margin: 0; padding-left: 18px; }
+  li { margin: 0 0 10px; line-height: 1.45; font-size: 15.5px; }
+  .deck-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .deck-side svg { width: 100%; height: auto; background: var(--ice); border-radius: 10px; }
+  .deck-side img.portrait { width: 100%; max-height: 280px; object-fit: cover; border-radius: 10px; background: var(--deep); }
+  video { width: 100%; border-radius: 10px; background: #000; max-height: 320px; }
+  .deck-caption { font-size: 12.5px; color: var(--muted); line-height: 1.4; margin: 0; }
+  .deck-foot {
+    display: flex; justify-content: space-between; gap: 8px; align-items: center;
+    padding: 10px 16px 14px; border-top: 1px solid var(--line);
+  }
+  .deck-dots { display: flex; gap: 6px; flex-wrap: wrap; }
+  .deck-dots button {
+    width: 10px; height: 10px; border-radius: 50%; border: 0; padding: 0;
+    background: #c5d0e0; cursor: pointer;
+  }
+  .deck-dots button.is-on { background: var(--gold); }
+  .deck-status, .deck-note { font-size: 12.5px; color: var(--muted); margin: 8px 2px 0; line-height: 1.45; }
+  body.is-embed .deck-status, body.is-embed .deck-note { color: rgba(234, 241, 255, 0.82); }
+  .deck-warn {
+    margin: 0 0 10px; padding: 8px 10px; border-radius: 8px;
+    background: #fff7e6; color: #7a4b00; font-size: 13px;
+  }
+  .deck-assign {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px;
+  }
+  @media (max-width: 860px) {
+    .deck-body, .deck-body.solo { grid-template-columns: 1fr; }
+    h1 { font-size: 22px; }
+  }
+  @media print {
+    body { background: #fff; }
+    .deck-bar, .deck-foot, .deck-assign, .deck-status, .deck-note, video { display: none !important; }
+    .deck-stage { box-shadow: none; break-after: page; min-height: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="deck-shell">
+  <div class="deck-bar">
+    <a class="deck-brand" href="/pitch-dashboard.html#unified-business-plan-card">
+      <img src="/phins-logo.svg" alt="PHINS emblem">
+      <div>
+        <div class="deck-word">PHINS</div>
+        <div class="deck-tag">Investor deck · Part II</div>
+      </div>
+    </a>
+    <div class="deck-actions">
+      <label>Combine video
+        <select id="deck-mode" class="deck-select" aria-label="Combine video">
+          <option value="auto">With this slide</option>
+          <option value="library">Library video</option>
+          <option value="filmed">Filmed paragraphs</option>
+          <option value="slide">Slides only</option>
+        </select>
+      </label>
+      <button type="button" class="deck-btn secondary" id="deck-prev">Previous</button>
+      <button type="button" class="deck-btn secondary" id="deck-next">Next</button>
+      <button type="button" class="deck-btn" id="deck-full">Present</button>
+    </div>
+  </div>
+  <div id="deck-warn" class="deck-warn" hidden></div>
+  <article class="deck-stage" id="deck-stage" aria-live="polite">
+    <header class="deck-banner">
+      <div class="deck-brand">
+        <img src="/phins-logo.svg" alt="">
+        <div>
+          <div class="deck-word">PHINS</div>
+          <div class="deck-tag">Personal Health Insurance &amp; Savings</div>
+        </div>
+      </div>
+      <div class="deck-kicker" id="deck-banner-kicker">Investor deck<span id="deck-count">Loading the plan…</span></div>
+    </header>
+    <div class="deck-gold"></div>
+    <div class="deck-body solo" id="deck-body">
+      <div>
+        <p class="deck-no" id="deck-no"></p>
+        <h1 id="deck-title">Investor deck</h1>
+        <p class="deck-sub" id="deck-kicker"></p>
+        <ul id="deck-bullets"></ul>
+      </div>
+      <div class="deck-side" id="deck-side"></div>
+    </div>
+    <footer class="deck-foot">
+      <div class="deck-dots" id="deck-dots"></div>
+      <div id="deck-pos"></div>
+    </footer>
+  </article>
+  <div class="deck-assign" id="deck-assign" hidden>
+    <label>Media library
+      <select id="deck-videos" class="deck-select" aria-label="Media library video"></select>
+    </label>
+    <button type="button" class="deck-btn" id="deck-combine">Combine with this slide</button>
+    <button type="button" class="deck-btn secondary" id="deck-clear">Remove video</button>
+  </div>
+  <p class="deck-note">Figures are filled from the current plan. A library video plays only when its checksum still matches the pointer. The plan, its factors, and the library file are not rewritten.</p>
+  <p class="deck-status" id="deck-status" role="status"></p>
+</div>
+<script src="/phins-doc-return.js"></script>
+<script>
+(function () {
+  var params = new URLSearchParams(window.location.search);
+  if (params.get('embed') === '1') document.body.classList.add('is-embed');
+  var wantEdit = params.get('edit') === '1';
+  var state = { slides: [], index: 0, data: null, mode: 'auto', videos: [] };
+
+  function token() {
+    try {
+      return localStorage.getItem('phins_auth_token') ||
+        localStorage.getItem('phins_token') ||
+        sessionStorage.getItem('phins_token') || '';
+    } catch (e) { return ''; }
+  }
+  function esc(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function headers(json) {
+    var h = { 'Authorization': 'Bearer ' + token() };
+    if (json) h['Content-Type'] = 'application/json';
+    return h;
+  }
+  function setStatus(text) {
+    var node = document.getElementById('deck-status');
+    if (node) node.textContent = text || '';
+  }
+  function slide() {
+    return state.slides[state.index] || null;
+  }
+  function showMode(current) {
+    if (!current) return 'slide';
+    if (state.mode === 'slide') return 'slide';
+    if (state.mode === 'library') return current.media && current.media.intact ? 'library' : 'slide';
+    if (state.mode === 'filmed') return current.filmed && current.filmed.length ? 'filmed' : 'slide';
+    if (current.media && current.media.intact) return 'library';
+    if (current.filmed && current.filmed.length) return 'filmed';
+    return 'slide';
+  }
+  function render() {
+    var current = slide();
+    var total = state.slides.length;
+    var count = document.getElementById('deck-count');
+    if (!current) {
+      if (count) count.textContent = 'The deck is empty';
+      return;
+    }
+    if (count) count.textContent = 'Part II · ' + total + (total === 1 ? ' slide' : ' slides');
+    document.getElementById('deck-no').textContent = 'Slide ' + String(current.slide_no).padStart(2, '0');
+    document.getElementById('deck-title').textContent = current.title || '';
+    var kicker = document.getElementById('deck-kicker');
+    kicker.textContent = current.kicker || '';
+    kicker.hidden = !current.kicker;
+    var list = document.getElementById('deck-bullets');
+    list.innerHTML = (current.bullets || []).map(function (bullet) {
+      return '<li>' + esc(bullet) + '</li>';
+    }).join('');
+    var side = document.getElementById('deck-side');
+    var parts = [];
+    if (current.chart_svg) parts.push(current.chart_svg);
+    if (current.photo_url) {
+      parts.push('<img class="portrait" alt="Founder portrait" src="' + esc(current.photo_url) + '">');
+    }
+    var mode = showMode(current);
+    if (mode === 'library') {
+      parts.push('<video controls playsinline src="' + esc(current.media.playback_url) + '"></video>');
+      if (current.media.name) parts.push('<p class="deck-caption">Library · ' + esc(current.media.name) + '</p>');
+    } else if (mode === 'filmed') {
+      var first = current.filmed[0];
+      parts.push('<video controls playsinline data-filmed="0" src="' + esc(first.playback_url) + '"></video>');
+      parts.push('<p class="deck-caption" data-filmed-caption>Paragraph ' + esc(first.paragraph_no) +
+        (first.presenter_label ? ' · ' + esc(first.presenter_label) : '') + '</p>');
+    }
+    side.innerHTML = parts.join('');
+    document.getElementById('deck-body').classList.toggle('solo', side.innerHTML === '');
+    var video = side.querySelector('video[data-filmed]');
+    if (video) {
+      video.addEventListener('ended', function () {
+        var at = parseInt(video.getAttribute('data-filmed') || '0', 10) + 1;
+        var clip = current.filmed[at];
+        if (!clip) return;
+        video.setAttribute('data-filmed', String(at));
+        video.src = clip.playback_url;
+        var caption = side.querySelector('[data-filmed-caption]');
+        if (caption) {
+          caption.textContent = 'Paragraph ' + clip.paragraph_no +
+            (clip.presenter_label ? ' · ' + clip.presenter_label : '');
+        }
+        var played = video.play();
+        if (played && played.catch) played.catch(function () {});
+      });
+    }
+    var portrait = side.querySelector('img.portrait');
+    if (portrait) portrait.addEventListener('error', function () { portrait.remove(); });
+    document.getElementById('deck-pos').textContent = current.slide_no + ' / ' + total;
+    var dots = document.getElementById('deck-dots');
+    dots.innerHTML = state.slides.map(function (item, index) {
+      return '<button type="button" data-dot="' + index + '" class="' + (index === state.index ? 'is-on' : '') +
+        '" aria-label="Slide ' + item.slide_no + '"></button>';
+    }).join('');
+    var select = document.getElementById('deck-videos');
+    if (select && current.media && current.media.asset_id) {
+      var matched = false;
+      for (var opt = 0; opt < select.options.length; opt += 1) {
+        if (select.options[opt].value === current.media.asset_id) matched = true;
+      }
+      if (matched) select.value = current.media.asset_id;
+    }
+    var warn = '';
+    if (current.media && current.media.withheld) {
+      warn = 'A combined video was withheld because its checksum does not match the library. The file was not changed.';
+    }
+    var plan = state.data && state.data.plan;
+    if (plan && plan.integrity_all_hold === false) {
+      warn = (warn ? warn + ' ' : '') + 'Plan identities do not hold. Figures are shown as computed.';
+    }
+    var box = document.getElementById('deck-warn');
+    box.hidden = !warn;
+    box.textContent = warn;
+    var hash = plan && plan.content_hash ? String(plan.content_hash).slice(0, 12) : '';
+    setStatus(
+      (plan && plan.factors_source ? plan.factors_source + ' plan' : 'Plan') +
+      (hash ? ' · ' + hash : '') +
+      (mode === 'library' ? ' · library video' : mode === 'filmed' ? ' · filmed paragraphs' : '')
+    );
+  }
+  function go(index) {
+    if (!state.slides.length) return;
+    var next = index;
+    if (next < 0) next = state.slides.length - 1;
+    if (next >= state.slides.length) next = 0;
+    state.index = next;
+    render();
+  }
+  function applyPayload(data) {
+    state.data = data;
+    state.slides = Array.isArray(data.slides) ? data.slides : [];
+    if (state.index >= state.slides.length) state.index = 0;
+    var assign = document.getElementById('deck-assign');
+    if (assign) assign.hidden = !(wantEdit && data.can_assign);
+    render();
+  }
+  async function load() {
+    if (!token()) {
+      setStatus('Sign in to open the investor deck.');
+      return;
+    }
+    var response = await fetch('/api/admin/media/investor-deck/presentation', { headers: headers(false) });
+    var data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'The investor deck could not be loaded');
+    applyPayload(data);
+    if (wantEdit && data.can_assign) await loadVideos();
+  }
+  async function loadVideos() {
+    var response = await fetch('/api/media', { headers: headers(false) });
+    var data = await response.json();
+    if (!response.ok) {
+      setStatus(data.error || 'The media library could not be loaded');
+      return;
+    }
+    var assets = Array.isArray(data) ? data : (data.assets || []);
+    state.videos = assets.filter(function (asset) { return asset && asset.type === 'video'; });
+    var select = document.getElementById('deck-videos');
+    var current = slide();
+    var selected = current && current.media ? current.media.asset_id : '';
+    select.innerHTML = '<option value="">Choose a video</option>' + state.videos.map(function (asset) {
+      var id = String(asset.id || '');
+      return '<option value="' + esc(id) + '"' + (id === selected ? ' selected' : '') + '>' +
+        esc(asset.name || id) + '</option>';
+    }).join('');
+  }
+  async function postMedia(body) {
+    setStatus('Saving the video pointer…');
+    var response = await fetch('/api/admin/media/investor-deck/presentation', {
+      method: 'POST',
+      headers: headers(true),
+      body: JSON.stringify(body)
+    });
+    var data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'The video could not be combined');
+    if (data.presentation) applyPayload(data.presentation);
+    setStatus(data.message || 'Saved.');
+  }
+  document.getElementById('deck-prev').addEventListener('click', function () { go(state.index - 1); });
+  document.getElementById('deck-next').addEventListener('click', function () { go(state.index + 1); });
+  document.getElementById('deck-mode').addEventListener('change', function (event) {
+    state.mode = event.target.value || 'auto';
+    render();
+  });
+  document.getElementById('deck-dots').addEventListener('click', function (event) {
+    var button = event.target.closest('[data-dot]');
+    if (!button) return;
+    go(parseInt(button.getAttribute('data-dot'), 10));
+  });
+  document.getElementById('deck-full').addEventListener('click', function () {
+    var stage = document.getElementById('deck-stage');
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+      return;
+    }
+    if (stage.requestFullscreen) stage.requestFullscreen();
+  });
+  document.getElementById('deck-combine').addEventListener('click', function () {
+    var current = slide();
+    var assetId = document.getElementById('deck-videos').value;
+    if (!current || !assetId) {
+      setStatus('Choose a library video for this slide.');
+      return;
+    }
+    postMedia({ slide_no: current.slide_no, asset_id: assetId }).catch(function (err) {
+      setStatus(err.message || 'The video could not be combined');
+    });
+  });
+  document.getElementById('deck-clear').addEventListener('click', function () {
+    var current = slide();
+    if (!current) return;
+    postMedia({ slide_no: current.slide_no, clear: true }).catch(function (err) {
+      setStatus(err.message || 'The video could not be removed');
+    });
+  });
+  document.addEventListener('keydown', function (event) {
+    var tag = (event.target && event.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    if (event.key === 'ArrowRight' || event.key === 'PageDown') go(state.index + 1);
+    else if (event.key === 'ArrowLeft' || event.key === 'PageUp') go(state.index - 1);
+    else if (event.key === 'Home') go(0);
+    else if (event.key === 'End') go(state.slides.length - 1);
+  });
+  load().catch(function (err) {
+    setStatus(err.message || 'The investor deck could not be loaded');
+  });
+})();
+</script>
+</body>
+</html>
