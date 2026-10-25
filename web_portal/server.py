@@ -6693,6 +6693,11 @@ def _persist_investor_deck_media_unlocked(slide_no: int, record: Optional[Dict[s
     return False
 
 
+def _persist_investor_deck_media(slide_no: int, record: Optional[Dict[str, Any]]) -> bool:
+    with _INVESTOR_DECK_LOCK:
+        return _persist_investor_deck_media_unlocked(slide_no, record)
+
+
 def investor_deck_presentation_view(*, can_assign: bool) -> Dict[str, Any]:
     """Part II slides, filled from the current plan, plus any intact media video."""
     from services.investor_deck_video import catalog, presentation_of, scene_view
@@ -6753,7 +6758,7 @@ def save_investor_deck_slide_media(payload: Dict[str, Any], *, actor: str) -> Di
 
     slide_no = parse_slide_no(payload.get('slide_no'))
     if payload.get('clear') is True:
-        if not _persist_investor_deck_media_unlocked(slide_no, None):
+        if not _persist_investor_deck_media(slide_no, None):
             raise InvestorDeckError('The slide video could not be stored durably')
         return investor_deck_presentation_view(can_assign=True)
     asset_id = str(payload.get('asset_id') or '').strip()
@@ -6774,7 +6779,7 @@ def save_investor_deck_slide_media(payload: Dict[str, Any], *, actor: str) -> Di
         raise InvestorDeckError('The library file was not left intact. Nothing was stored.')
     record['updated_at'] = datetime.now().isoformat()
     record['updated_by'] = actor or 'admin'
-    if not _persist_investor_deck_media_unlocked(slide_no, record):
+    if not _persist_investor_deck_media(slide_no, record):
         raise InvestorDeckError('The slide video could not be stored durably')
     return investor_deck_presentation_view(can_assign=True)
 
