@@ -200,11 +200,14 @@ def short_script(spec: Mapping[str, Any], plan: Mapping[str, Any]) -> str:
 
     A template with no placeholder is the purpose, spoken in full. A template
     that fills a figure is not recited: the voice names the slide, and the
-    filled figures stay on the slide beside the film.
+    filled figures stay on the slide beside the film. A figure the plan leaves
+    unfilled is returned as written so the seal can refuse the send.
     """
     template = str(spec.get("template") or "")
     filled = fill_narration(template, plan)
-    if "{" not in template:
+    # The spoken line has no braces, so a leftover figure has to stay on this
+    # line. Otherwise the seal cannot see it.
+    if "{" not in template or _PLACEHOLDER.findall(filled):
         return filled
     title = str(spec.get("slide_title") or "").strip() or "This slide"
     try:
@@ -409,8 +412,9 @@ def seal_for_send(
         theme=theme,
         reference_image_asset_id=reference_image_asset_id,
     )
+    on_slide = fill_narration(str(spec.get("template") or ""), plan)
     narration = short_script(spec, plan)
-    if not narration or _PLACEHOLDER.findall(narration):
+    if not narration or _PLACEHOLDER.findall(on_slide) or _PLACEHOLDER.findall(narration):
         raise InvestorDeckError("This paragraph could not be filled from the plan. Nothing was sent.")
     plan_hash = str(plan.get("content_hash") or "")
     if not plan_hash:

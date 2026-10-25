@@ -168,6 +168,35 @@ def test_only_a_matching_clip_enters_the_stream():
     assert dropped["last_job_id"] == "job-2"
 
 
+def test_unfilled_figure_is_not_sealed_or_kept_in_the_stream():
+    plan = compute_plan()
+    spec = spec_for("s01p03")
+    sealed = seal_for_send("s01p03", None, plan, used_presenter_ids=[], rng=random.Random(5))
+    assert "figures stay on this slide" in sealed["sealed_narration"]
+    broken = copy.deepcopy(plan)
+    broken["plan_version"] = "v{seed}"
+    on_slide = fill_narration(spec["template"], broken)
+    assert "{seed}" in on_slide
+    assert short_script(spec, broken) == on_slide
+    try:
+        seal_for_send("s01p03", sealed, broken, used_presenter_ids=[], rng=random.Random(5))
+    except InvestorDeckError as exc:
+        assert "could not be filled" in str(exc)
+    else:
+        raise AssertionError("unfilled figure was sealed")
+    sealed["last_asset_id"] = "asset-1"
+    sealed["asset_checksum"] = "abc123"
+    withheld = scene_view(spec, sealed, broken, {
+        "type": "video",
+        "checksum": "abc123",
+        "playback_url": "data:video/mp4;base64,AAAA",
+    })
+    assert "{seed}" in withheld["narration"]
+    assert withheld["figures_current"] is False
+    assert withheld["in_stream"] is False
+    assert withheld["playback_url"] == ""
+
+
 def test_theme_change_drops_the_film_link_and_reset_clears_the_seal():
     plan = compute_plan()
     sealed = seal_for_send(
