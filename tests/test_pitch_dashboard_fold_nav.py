@@ -109,6 +109,8 @@ def test_pitch_fold_preserves_data_integrity_notices():
     assert "PHINS assumptions adjustable" in html
     # Share-link admin + diary tooling stay present.
     assert 'id="confidential-share-admin"' in html
+    assert 'value="/phins-customer-150k-one-pager.html"' in html
+    assert 'value="/phins-customer-150k-one-pager.he.html"' in html
     assert 'id="diary-table"' in html
 
 

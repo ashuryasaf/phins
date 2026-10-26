@@ -23,6 +23,8 @@ BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36
 def test_known_document_names_and_unknown_paths_stay_generic():
     assert lp.preview_title("/business-plan.html") == "PHINS Unified Business Plan"
     assert lp.preview_title("/business-plan.he.html") == "PHINS Unified Business Plan (Hebrew)"
+    assert lp.preview_title("/phins-customer-150k-one-pager.html") == "PHINS Customer Cover US$150,000"
+    assert lp.preview_title("/phins-customer-150k-one-pager.he.html") == "PHINS Customer Cover US$150,000 (Hebrew)"
     assert lp.preview_title("/legal/nda.html") == "PHINS Non-Disclosure Agreement"
     assert lp.preview_title("/no-such-wire-transfer.html") == "PHINS"
     assert lp.preview_title("/index.html") == "PHINS"

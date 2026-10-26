@@ -100,6 +100,19 @@ BUSINESS_PLAN_DOWNLOADS = (
     "/investor-docs/phins-unified-business-plan.he.md",
 )
 
+# Customer cover (US$150,000, age 42) in both languages. One scope so the
+# language switch stays inside a single open link. The forecast and copy
+# scripts carry the figures and the wording, so they ride the same scope.
+# The published rate table stays public: the Fefferman page uses it too.
+CUSTOMER_COVER_SCOPE_ROOT = "/phins-customer-150k-one-pager.html"
+CUSTOMER_COVER_SCOPE_PATHS = (
+    "/phins-customer-150k-one-pager.html",
+    "/phins-customer-150k-one-pager.he.html",
+    "/customer-cover-forecast.js",
+    "/customer-cover-copy.js",
+    "/customer-cover-page.js",
+)
+
 # Individually confidential files that do not live under a gated prefix.
 DEFAULT_CONFIDENTIAL_FILES = (
     "/pitch-dashboard.html",
@@ -107,7 +120,7 @@ DEFAULT_CONFIDENTIAL_FILES = (
     "/phins_business_plan_executive.md",
     "/business-plan.html",
     "/business-plan.he.html",
-) + BUSINESS_PLAN_DOWNLOADS
+) + BUSINESS_PLAN_DOWNLOADS + CUSTOMER_COVER_SCOPE_PATHS
 
 # API endpoints that expose anchored signatures + signed content snapshots,
 # plus the business-plan APIs (the model is the document).
@@ -262,11 +275,15 @@ def share_scope_root(path: str) -> str:
 
     Most pages are their own scope. The business-plan set collapses onto
     ``/business-plan.html`` so one unlock covers the page, its Hebrew edition
-    and the APIs it calls — never the PDF/Markdown downloads.
+    and the APIs it calls — never the PDF/Markdown downloads. The customer
+    cover collapses onto its English page so one unlock covers Hebrew and
+    the forecast scripts.
     """
     normalized = normalize_request_path(path).rstrip("/") or "/"
     if normalized in BUSINESS_PLAN_SCOPE_PATHS:
         return BUSINESS_PLAN_SCOPE_ROOT
+    if normalized in CUSTOMER_COVER_SCOPE_PATHS:
+        return CUSTOMER_COVER_SCOPE_ROOT
     return normalized
 
 

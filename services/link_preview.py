@@ -60,6 +60,8 @@ _KNOWN_TITLES = {
     "/business-plan.html": "PHINS Unified Business Plan",
     "/business-plan.he.html": "PHINS Unified Business Plan (Hebrew)",
     "/pitch-dashboard.html": "PHINS Pitch Dashboard",
+    "/phins-customer-150k-one-pager.html": "PHINS Customer Cover US$150,000",
+    "/phins-customer-150k-one-pager.he.html": "PHINS Customer Cover US$150,000 (Hebrew)",
     "/legal/nda.html": "PHINS Non-Disclosure Agreement",
     "/legal/cap-table.html": "PHINS Cap Table",
     "/legal/term-sheet.html": "PHINS Term Sheet",
