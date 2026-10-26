@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from services.business_plan_document import (
     SLIDE_CHARTS,
+    T,
     _PLACEHOLDER,
     _fill,
     deck_slides,
@@ -906,7 +907,7 @@ def presentation_of(
         chart_id = str(spec.get("chart_id") or "")
         slides.append({
             "slide_no": number,
-            "title": str(spec.get("title") or ""),
+            "title": T(str(spec.get("title") or "")),
             "kicker": fill_narration(str(spec.get("kicker") or ""), plan),
             "bullets": [fill_narration(bullet, plan) for bullet in spec.get("bullets") or []],
             "chart_id": chart_id,
@@ -922,3 +923,84 @@ def presentation_of(
         "slides": slides,
         "watermark": watermark_of(watermark, assets),
     }
+
+
+def visible_slides_checksum(slides: Sequence[int]) -> str:
+    """Checksum of which slides the show includes. Plan figures are not included."""
+    numbers = [int(number) for number in slides]
+    encoded = json.dumps({"slides": numbers}, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def verify_visible_slides(record: Mapping[str, Any]) -> bool:
+    if not isinstance(record, dict):
+        return False
+    raw = record.get("slides")
+    if not isinstance(raw, list) or not raw:
+        return False
+    numbers: List[int] = []
+    for item in raw:
+        if isinstance(item, bool) or not isinstance(item, int):
+            return False
+        if slide_spec(item) is None or item in numbers:
+            return False
+        numbers.append(item)
+    digest = visible_slides_checksum(numbers)
+    stored = str(record.get("checksum") or "")
+    if not stored or len(stored) != len(digest):
+        return False
+    return hmac.compare_digest(stored, digest)
+
+
+def assign_visible_slides(values: Any) -> Dict[str, Any]:
+    """Seal the slides the show includes. The plan and the library are not copied."""
+    if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
+        raise InvestorDeckError("Choose the slides to show")
+    numbers: List[int] = []
+    seen = set()
+    for item in values:
+        number = parse_slide_no(item)
+        if number in seen:
+            continue
+        seen.add(number)
+        numbers.append(number)
+    if not numbers:
+        raise InvestorDeckError("Choose at least one slide")
+    numbers.sort()
+    record: Dict[str, Any] = {"slides": numbers}
+    record["checksum"] = visible_slides_checksum(numbers)
+    return record
+
+
+def selection_view(record: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
+    """Which slides to paint.
+
+    A missing record shows every Part II slide. A broken seal is not applied:
+    every slide stays visible and ``withheld`` is set, so a bad checksum cannot
+    hide a slide.
+    """
+    all_numbers = [int(row["slide_no"]) for row in slide_specs()]
+    if not isinstance(record, dict) or not record.get("slides"):
+        return {"slides": all_numbers, "stored": False, "intact": True, "withheld": False}
+    if not verify_visible_slides(record):
+        return {"slides": all_numbers, "stored": True, "intact": False, "withheld": True}
+    return {
+        "slides": [int(number) for number in record.get("slides") or []],
+        "stored": True,
+        "intact": True,
+        "withheld": False,
+    }
+
+
+def restrict_slides(view: Mapping[str, Any], slides: Sequence[int]) -> Dict[str, Any]:
+    """Keep the listed slides, in Part II order. Figures already on the rows stay."""
+    allowed = {int(number) for number in slides}
+    kept = [
+        dict(slide)
+        for slide in (view.get("slides") or [])
+        if isinstance(slide, dict) and int(slide.get("slide_no") or 0) in allowed
+    ]
+    out = dict(view)
+    out["slides"] = kept
+    out["slide_count"] = len(kept)
+    return out

@@ -93,6 +93,7 @@
     content: ""; position: absolute; inset: 0;
     background: rgba(255, 255, 255, var(--deck-wash, 0.58));
   }
+  .deck-watermark[hidden] { display: none; }
   .deck-body.gradient-soft { background: linear-gradient(180deg, #fff 0%, #f3f7fd 100%); }
   .deck-body.gradient-deep { background: linear-gradient(160deg, #f7f4ee 0%, #e7eef8 55%, #f8f1df 100%); }
   .deck-body.gradient-none { background: #fff; }
@@ -135,6 +136,7 @@
   .deck-assign {
     display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px;
   }
+  .deck-assign[hidden] { display: none; }
   .deck-watermark-pick {
     flex: 1 1 280px; border: 1px solid var(--line); border-radius: 10px;
     margin: 0; padding: 8px 10px 10px; background: #fff;
@@ -149,6 +151,8 @@
     background: #fff; color: var(--ink); font: 500 13px Inter, sans-serif;
   }
   input.deck-text { min-width: 180px; }
+  html[dir="rtl"] .deck-body, html[dir="rtl"] .deck-bar, html[dir="rtl"] .deck-foot { direction: rtl; }
+  html[dir="rtl"] ul { padding-left: 0; padding-right: 18px; }
   @media (max-width: 860px) {
     .deck-body, .deck-body.solo { grid-template-columns: 1fr; }
     h1 { font-size: 22px; }
@@ -171,6 +175,7 @@
       </div>
     </a>
     <div class="deck-actions">
+      <a class="deck-btn secondary" id="deck-lang" href="/investor-deck.he.html">עברית</a>
       <label>Combine video
         <select id="deck-mode" class="deck-select" aria-label="Combine video">
           <option value="auto">With this slide</option>
@@ -259,6 +264,25 @@
   if (params.get('embed') === '1') document.body.classList.add('is-embed');
   var wantEdit = params.get('edit') === '1';
   var state = { slides: [], index: 0, data: null, mode: 'auto', videos: [], images: [], chromeSlide: null };
+
+  function deckLang() {
+    return /\/investor-deck\.he\.html$/i.test(window.location.pathname) ? 'he' : 'en';
+  }
+  function applyLanguage() {
+    var lang = deckLang();
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === 'he' ? 'rtl' : 'ltr';
+    var link = document.getElementById('deck-lang');
+    if (!link) return;
+    var other = lang === 'he' ? '/investor-deck.html' : '/investor-deck.he.html';
+    var kept = new URLSearchParams(window.location.search);
+    kept.delete('lang');
+    var query = kept.toString();
+    link.href = other + (query ? '?' + query : '');
+    link.textContent = lang === 'he' ? 'English' : 'עברית';
+    link.lang = lang === 'he' ? 'en' : 'he';
+  }
+  applyLanguage();
 
   function token() {
     try {
@@ -392,6 +416,11 @@
     if (plan && plan.integrity_all_hold === false) {
       warn = (warn ? warn + ' ' : '') + 'Plan identities do not hold. Figures are shown as computed.';
     }
+    var selection = state.data && state.data.selection;
+    if (selection && selection.withheld) {
+      warn = (warn ? warn + ' ' : '') +
+        'The slide selection seal does not match. Every slide is shown. Nothing was rewritten.';
+    }
     var box = document.getElementById('deck-warn');
     box.hidden = !warn;
     box.textContent = warn;
@@ -496,15 +525,15 @@
     render();
   }
   async function load() {
-    if (!token()) {
-      setStatus('Sign in to open the investor deck.');
-      return;
-    }
-    var response = await fetch('/api/admin/media/investor-deck/presentation', { headers: headers(false) });
+    var requestHeaders = token() ? headers(false) : {};
+    var response = await fetch('/api/investor-deck/presentation?lang=' + deckLang(), {
+      headers: requestHeaders,
+      credentials: 'same-origin'
+    });
     var data = await response.json();
     if (!response.ok) throw new Error(data.error || 'The investor deck could not be loaded');
     applyPayload(data);
-    if (data.can_assign) await loadLibrary();
+    if (data.can_assign && token()) await loadLibrary();
   }
   async function loadLibrary() {
     var response = await fetch('/api/media?brief=1', { headers: headers(false) });

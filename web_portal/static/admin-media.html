@@ -1107,6 +1107,19 @@
             gap: 8px;
             flex-wrap: wrap;
         }
+        .deck-slide-picks {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px 12px;
+            margin: 8px 0 0;
+            font-size: 0.78rem;
+        }
+        .deck-slide-picks label {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            color: rgba(255,255,255,0.9);
+        }
         .embed-frame {
             flex: 1;
             width: 100%;
@@ -1780,9 +1793,14 @@ Notes:
             <div class="embed-frame-bar">
                 <div class="embed-frame-title">Chapter 2 · 13-slide deck</div>
                 <div class="embed-frame-actions">
+                    <button class="btn btn-primary" type="button" id="deck-slides-save">Show selected slides</button>
+                    <button class="btn btn-secondary" type="button" id="deck-slides-all">Show every slide</button>
                     <a class="btn btn-secondary" href="/investor-deck.html?edit=1" target="_blank" rel="noopener">Present the deck</a>
+                    <a class="btn btn-secondary" href="/investor-deck.he.html?edit=1" target="_blank" rel="noopener">עברית</a>
                 </div>
             </div>
+            <div class="deck-slide-picks" id="deck-slide-picks" aria-label="Slides to show"></div>
+            <p id="deck-slide-pick-status" style="margin:6px 0 10px;font-size:0.78rem;color:rgba(255,255,255,0.75);"></p>
             <iframe id="investor-deck-frame"
                     class="embed-frame"
                     data-src="/investor-deck.html?embed=1&amp;edit=1"
@@ -2568,6 +2586,104 @@ Notes:
         // that the operator never opens.
         const VALID_MAIN_TABS = ['investor-deck', 'media', 'solution-views', 'customer-relations', 'growth-agent', 'video-agents', 'design', 'layout', 'branding'];
 
+        function deckSlideEscape(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function deckSlidePickStatus(text) {
+            const node = document.getElementById('deck-slide-pick-status');
+            if (node) node.textContent = text || '';
+        }
+
+        async function loadDeckSlidePicker() {
+            const host = document.getElementById('deck-slide-picks');
+            if (!host) return;
+            const token = getToken();
+            if (!token) {
+                deckSlidePickStatus('Sign in on the media desk to choose slides.');
+                return;
+            }
+            try {
+                const response = await fetch('/api/admin/media/investor-deck/presentation', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    deckSlidePickStatus(data.error || 'The slide list could not be loaded');
+                    return;
+                }
+                const catalog = Array.isArray(data.catalog) ? data.catalog : [];
+                const chosen = {};
+                const slides = data.selection && Array.isArray(data.selection.slides) ? data.selection.slides : [];
+                slides.forEach(function (number) { chosen[String(number)] = true; });
+                host.innerHTML = catalog.map(function (item) {
+                    const number = String(item.slide_no);
+                    return '<label><input type="checkbox" value="' + number + '"' +
+                        (chosen[number] ? ' checked' : '') + '> ' +
+                        number + '. ' + deckSlideEscape(item.title || '') + '</label>';
+                }).join('');
+                if (data.selection && data.selection.withheld) {
+                    deckSlidePickStatus('The slide selection seal does not match. Every slide is shown until you save a new choice. Nothing was rewritten.');
+                } else if (data.selection && data.selection.stored) {
+                    deckSlidePickStatus(slides.length + ' slides are in the show. The plan was not changed.');
+                } else {
+                    deckSlidePickStatus('Every slide is in the show.');
+                }
+            } catch (err) {
+                deckSlidePickStatus('The slide list could not be loaded');
+            }
+        }
+
+        async function saveDeckSlidePicker(clear) {
+            const token = getToken();
+            if (!token) return;
+            const body = clear ? { selection: true, clear: true } : { visible_slides: [] };
+            if (!clear) {
+                document.querySelectorAll('#deck-slide-picks input:checked').forEach(function (box) {
+                    body.visible_slides.push(parseInt(box.value, 10));
+                });
+                if (!body.visible_slides.length) {
+                    deckSlidePickStatus('Choose at least one slide.');
+                    return;
+                }
+            }
+            deckSlidePickStatus('Saving the slide selection…');
+            try {
+                const response = await fetch('/api/admin/media/investor-deck/presentation', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(body)
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    deckSlidePickStatus(data.error || 'The slide selection could not be saved');
+                    return;
+                }
+                deckSlidePickStatus(data.message || 'Saved.');
+                await loadDeckSlidePicker();
+                reloadEmbeddedTab('investor-deck');
+                if (window.InvestorDeckLab) {
+                    InvestorDeckLab.mount(document.getElementById('investor-deck-lab'), {
+                        mode: 'edit',
+                        images: function () { return mediaAssets; }
+                    });
+                }
+            } catch (err) {
+                deckSlidePickStatus('The slide selection could not be saved');
+            }
+        }
+
+        document.addEventListener('click', function (event) {
+            const target = event.target;
+            if (!target || !target.id) return;
+            if (target.id === 'deck-slides-save') saveDeckSlidePicker(false);
+            if (target.id === 'deck-slides-all') saveDeckSlidePicker(true);
+        });
+
         function switchMainTab(tabName, options = {}) {
             const updateHash = options.updateHash !== false;
             if (!VALID_MAIN_TABS.includes(tabName)) tabName = 'media';
@@ -2594,6 +2710,7 @@ Notes:
                     mode: 'edit',
                     images: function () { return mediaAssets; }
                 });
+                loadDeckSlidePicker();
             }
             if (tabName === 'solution-views') {
                 loadSolutionBlueprints();

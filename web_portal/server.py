@@ -6500,7 +6500,7 @@ def _investor_deck_photo_url() -> str:
         return ''
     if not str(asset.get('checksum') or '').strip():
         return ''
-    return '/api/business-plan/founder-portrait'
+    return '/api/investor-deck/portrait'
 
 
 def _investor_deck_reference_url(asset_id: str) -> str:
@@ -6555,16 +6555,43 @@ def load_investor_deck_scene(scene_key: str) -> Dict[str, Any]:
     return record
 
 
-def investor_deck_lab_view() -> Dict[str, Any]:
+def investor_deck_lab_view(lang: str = 'en', visible: Optional[List[int]] = None) -> Dict[str, Any]:
     """Slides, the current spoken lines, and the film of clips that still match."""
+    from services.business_plan_i18n import language_context, translator
     from services.investor_deck_video import (
         SCENE_ENGINES,
         catalog,
         clip_is_scene_length,
         scene_view,
+        selection_view,
         stream_of,
     )
 
+    lang_code = 'he' if str(lang or '').lower().startswith('he') else 'en'
+    with language_context(translator(lang_code)):
+        return _investor_deck_lab_view_filled(
+            lang_code,
+            visible,
+            catalog=catalog,
+            clip_is_scene_length=clip_is_scene_length,
+            scene_view=scene_view,
+            selection_view=selection_view,
+            stream_of=stream_of,
+            engines=SCENE_ENGINES,
+        )
+
+
+def _investor_deck_lab_view_filled(
+    lang_code: str,
+    visible: Optional[List[int]],
+    *,
+    catalog,
+    clip_is_scene_length,
+    scene_view,
+    selection_view,
+    stream_of,
+    engines,
+) -> Dict[str, Any]:
     plan, meta = _investor_deck_plan()
     photo_url = _investor_deck_photo_url()
     store = _investor_deck_store()
@@ -6576,11 +6603,7 @@ def investor_deck_lab_view() -> Dict[str, Any]:
         asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
         brief = None
         if isinstance(asset, dict):
-            brief = {
-                'type': str(asset.get('type') or ''),
-                'checksum': str(asset.get('checksum') or ''),
-                'playback_url': media_asset_url(asset) if str(asset.get('checksum') or '') else '',
-            }
+            brief = _investor_deck_asset_brief(asset)
         reference_id = str((record or {}).get('reference_image_asset_id') or '')
         scenes.append(scene_view(
             spec,
@@ -6608,8 +6631,8 @@ def investor_deck_lab_view() -> Dict[str, Any]:
     providers = capabilities.get('providers') if isinstance(capabilities, dict) else {}
     if not isinstance(providers, dict):
         providers = {}
-    engines = []
-    for engine in SCENE_ENGINES:
+    ready = []
+    for engine in engines:
         provider_config = providers.get(engine['provider'])
         if not isinstance(provider_config, dict) or not provider_config.get('enabled'):
             continue
@@ -6617,19 +6640,33 @@ def investor_deck_lab_view() -> Dict[str, Any]:
             engine['provider'], engine['model'], evolink=_evolink(engine['model']),
         )
         if seconds == 15:
-            engines.append(dict(engine))
+            ready.append(dict(engine))
     stream = stream_of(scenes)
+    if visible is None:
+        selection = selection_view(DESIGN_SETTINGS.get('investor_deck_visible_slides'))
+    else:
+        selection = {
+            'slides': [int(number) for number in visible],
+            'stored': True,
+            'intact': True,
+            'withheld': False,
+            'frozen': True,
+        }
+    allowed = {int(number) for number in selection.get('slides') or []}
+    stream = [item for item in stream if int(item.get('slide_no') or 0) in allowed]
     return {
         'success': True,
         'duration_seconds': 15,
+        'lang': lang_code,
         'plan': meta,
         'slide_count': len({scene['slide_no'] for scene in scenes}),
         'scene_count': len(scenes),
         'stream_count': len(stream),
         'scenes': scenes,
         'stream': stream,
+        'selection': selection,
         'charts': _investor_deck_charts(plan),
-        'engines': engines,
+        'engines': ready,
         'photo_url': photo_url,
     }
 
@@ -6649,10 +6686,11 @@ def _investor_deck_media_store() -> Dict[str, Any]:
 
 def _investor_deck_asset_brief(media: Dict[str, Any]) -> Dict[str, Any]:
     checksum = str(media.get('checksum') or '')
+    asset_id = str(media.get('id') or '')
     return {
         'type': str(media.get('type') or ''),
         'checksum': checksum,
-        'playback_url': media_asset_url(media) if checksum else '',
+        'playback_url': public_asset_playback_url(asset_id) if checksum and asset_id else '',
         'name': str(media.get('name') or ''),
     }
 
@@ -6698,10 +6736,63 @@ def _persist_investor_deck_media(slide_no: int, record: Optional[Dict[str, Any]]
         return _persist_investor_deck_media_unlocked(slide_no, record)
 
 
-def investor_deck_presentation_view(*, can_assign: bool) -> Dict[str, Any]:
-    """Part II slides, filled from the current plan, plus any intact media video."""
-    from services.investor_deck_video import catalog, presentation_of, scene_view
+def investor_deck_presentation_view(
+    *,
+    can_assign: bool,
+    lang: str = 'en',
+    visible: Optional[List[int]] = None,
+) -> Dict[str, Any]:
+    """Part II slides, filled from the current plan, plus any intact media video.
 
+    ``visible`` is the share link's frozen slide list. ``None`` uses the live
+    seal. A broken live seal shows every slide.
+    """
+    from services.business_plan_i18n import language_context, translator
+    from services.investor_deck_video import (
+        catalog,
+        presentation_of,
+        restrict_slides,
+        scene_view,
+        selection_view,
+    )
+
+    lang_code = 'he' if str(lang or '').lower().startswith('he') else 'en'
+    with language_context(translator(lang_code)):
+        body = _investor_deck_presentation_filled(
+            can_assign=can_assign,
+            catalog=catalog,
+            presentation_of=presentation_of,
+            scene_view=scene_view,
+        )
+    if visible is None:
+        selection = selection_view(DESIGN_SETTINGS.get('investor_deck_visible_slides'))
+    else:
+        selection = {
+            'slides': [int(number) for number in visible],
+            'stored': True,
+            'intact': True,
+            'withheld': False,
+            'frozen': True,
+        }
+    if can_assign:
+        body['catalog'] = [
+            {'slide_no': slide.get('slide_no'), 'title': slide.get('title') or ''}
+            for slide in body.get('slides') or []
+            if isinstance(slide, dict)
+        ]
+    body = restrict_slides(body, selection['slides'])
+    body['selection'] = selection
+    body['lang'] = lang_code
+    return body
+
+
+def _investor_deck_presentation_filled(
+    *,
+    can_assign: bool,
+    catalog,
+    presentation_of,
+    scene_view,
+) -> Dict[str, Any]:
     plan, meta = _investor_deck_plan()
     photo_url = _investor_deck_photo_url()
     store = _investor_deck_store()
@@ -6713,11 +6804,7 @@ def investor_deck_presentation_view(*, can_assign: bool) -> Dict[str, Any]:
         asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
         brief = None
         if isinstance(asset, dict):
-            brief = {
-                'type': str(asset.get('type') or ''),
-                'checksum': str(asset.get('checksum') or ''),
-                'playback_url': media_asset_url(asset) if str(asset.get('checksum') or '') else '',
-            }
+            brief = _investor_deck_asset_brief(asset)
         scenes.append(scene_view(spec, record, plan, brief, photo_url=photo_url))
     charts = _investor_deck_charts(plan)
     assignments = _investor_deck_media_store()
@@ -6757,6 +6844,56 @@ def investor_deck_presentation_view(*, can_assign: bool) -> Dict[str, Any]:
     body['charts'] = charts
     body['photo_url'] = photo_url
     return body
+
+
+_INVESTOR_DECK_SELECTION_FIELDS = (
+    'slides', 'checksum', 'updated_at', 'updated_by',
+)
+
+
+def _persist_investor_deck_selection_unlocked(record: Optional[Dict[str, Any]]) -> bool:
+    """Store or drop which slides the show includes. Files and the plan stay put."""
+    existing = DESIGN_SETTINGS.get('investor_deck_visible_slides')
+    if record is None and not isinstance(existing, dict):
+        return True
+    try:
+        previous = _snapshot_design_settings()
+    except Exception:
+        return False
+    if record is None:
+        DESIGN_SETTINGS.pop('investor_deck_visible_slides', None)
+    else:
+        slim = {field: record.get(field) for field in _INVESTOR_DECK_SELECTION_FIELDS if field in record}
+        DESIGN_SETTINGS['investor_deck_visible_slides'] = _copy_json_value(slim)
+    DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
+    if seal_design_settings(force=True):
+        return True
+    _restore_design_settings(previous)
+    return False
+
+
+def _persist_investor_deck_selection(record: Optional[Dict[str, Any]]) -> bool:
+    with _INVESTOR_DECK_LOCK:
+        return _persist_investor_deck_selection_unlocked(record)
+
+
+def save_investor_deck_visible_slides(payload: Dict[str, Any], *, actor: str) -> Dict[str, Any]:
+    """Choose which Part II slides the show includes, or show every slide.
+
+    The plan, filmed scenes, slide videos, and library files are not written.
+    """
+    from services.investor_deck_video import InvestorDeckError, assign_visible_slides
+
+    if payload.get('clear') is True:
+        if not _persist_investor_deck_selection(None):
+            raise InvestorDeckError('The slide selection could not be stored durably')
+        return investor_deck_presentation_view(can_assign=True)
+    record = assign_visible_slides(payload.get('visible_slides'))
+    record['updated_at'] = datetime.now().isoformat()
+    record['updated_by'] = actor or 'admin'
+    if not _persist_investor_deck_selection(record):
+        raise InvestorDeckError('The slide selection could not be stored durably')
+    return investor_deck_presentation_view(can_assign=True)
 
 
 def save_investor_deck_slide_media(payload: Dict[str, Any], *, actor: str) -> Dict[str, Any]:
@@ -21244,6 +21381,48 @@ class PortalHandler(BaseHTTPRequestHandler):
             raise LookupError("share composition is not a document snapshot")
         return dict(composition)
 
+    def _investor_deck_frozen_slides(self) -> Optional[List[int]]:
+        """Slide list frozen on this share, or ``None`` for the live show.
+
+        A share whose snapshot cannot be checked raises, so the read fails
+        closed instead of painting a different set of slides.
+        """
+        composition = self._share_composition()
+        if not composition or composition.get('legacy'):
+            return None
+        if composition.get('kind') != 'investor_deck':
+            return None
+        from services.investor_deck_video import visible_slides_checksum
+        raw = composition.get('visible_slides')
+        checksum = str(composition.get('selection_checksum') or '')
+        if not isinstance(raw, list) or not raw:
+            raise LookupError('share selection missing')
+        numbers: List[int] = []
+        for item in raw:
+            if isinstance(item, bool) or not isinstance(item, int):
+                raise LookupError('share selection is not a slide list')
+            numbers.append(int(item))
+        digest = visible_slides_checksum(numbers)
+        if not checksum or len(checksum) != len(digest) or not hmac.compare_digest(checksum, digest):
+            raise LookupError('share selection seal does not match')
+        return numbers
+
+    def _investor_deck_link_composition(self) -> Dict[str, Any]:
+        """Snapshot of which slides the next open link shows, taken at send time."""
+        from services.investor_deck_video import selection_view, visible_slides_checksum
+        record = DESIGN_SETTINGS.get('investor_deck_visible_slides')
+        view = selection_view(record if isinstance(record, dict) else None)
+        if view.get('withheld'):
+            raise ValueError(
+                'The slide selection seal does not match. Nothing was shared.'
+            )
+        slides = [int(number) for number in view.get('slides') or []]
+        return {
+            'kind': 'investor_deck',
+            'visible_slides': slides,
+            'selection_checksum': visible_slides_checksum(slides),
+        }
+
     @staticmethod
     def _share_document_unavailable() -> str:
         return (
@@ -22184,6 +22363,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                     if confidential_access.is_business_plan_path(share_path):
                         nda_required = True
                         composition = self._business_plan_link_composition(body_data)
+                    elif confidential_access.is_investor_deck_path(share_path):
+                        composition = self._investor_deck_link_composition()
                     created = get_confidential_share_service().create_share(
                         path=share_path,
                         password=str(body_data.get('password') or ''),
@@ -23404,6 +23585,36 @@ For claims or questions, please contact:
         if not self._enforce_confidential_access(path, qs):
             return
 
+        if path in ('/api/investor-deck/presentation', '/api/investor-deck/film'):
+            lang = str((qs.get('lang') or ['en'])[0] or 'en')
+            role = str((session or {}).get('role') or '').strip().lower()
+            can_assign = role in ('admin', 'media')
+            try:
+                visible = self._investor_deck_frozen_slides()
+            except Exception as exc:
+                print(f"⚠️  [INVESTOR DECK] share selection unavailable: {exc}")
+                self._set_json_headers(409)
+                self.wfile.write(json.dumps({
+                    'error': 'This link could not be prepared. Ask the sender for a new one.',
+                }).encode('utf-8'))
+                return
+            try:
+                if path.endswith('/film'):
+                    payload = investor_deck_lab_view(lang=lang, visible=visible)
+                else:
+                    payload = investor_deck_presentation_view(
+                        can_assign=can_assign, lang=lang, visible=visible,
+                    )
+            except Exception as exc:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({
+                    'error': f'The investor deck could not be prepared: {exc}',
+                }).encode('utf-8'))
+                return
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
         # Legal/corporate document signature registry (read-only, ledger-anchored)
         if path == '/api/legal-docs/registry':
             doc_id = (qs.get('doc_id', [''])[0] or '').strip()
@@ -23539,14 +23750,17 @@ For claims or questions, please contact:
         # Founder portrait for the business plan: the media-library asset in
         # the ``founder_portrait_id`` placement, served as a processed JPEG
         # (EXIF-corrected, square, balanced). The original is never rewritten.
-        if path == '/api/business-plan/founder-portrait':
-            try:
-                composition = self._share_composition()
-            except Exception as exc:
-                print(f"⚠️  [BUSINESS PLAN] portrait composition unavailable: {exc}")
-                self._set_json_headers(404)
-                self.wfile.write(json.dumps({'error': 'founder_portrait_not_in_this_link'}).encode('utf-8'))
-                return
+        if path in ('/api/business-plan/founder-portrait', '/api/investor-deck/portrait'):
+            if path == '/api/investor-deck/portrait':
+                composition = None
+            else:
+                try:
+                    composition = self._share_composition()
+                except Exception as exc:
+                    print(f"⚠️  [BUSINESS PLAN] portrait composition unavailable: {exc}")
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'founder_portrait_not_in_this_link'}).encode('utf-8'))
+                    return
             hidden_photo = (
                 isinstance(composition, dict)
                 and not composition.get('legacy')
@@ -39754,6 +39968,11 @@ For claims or questions, please contact:
         elif path == '/' or path == '/index.html':
             file_path = os.path.join(ROOT, 'index.html')
             allowed_root = ROOT
+        elif path.lower() in ('/investor-deck.he.html', '/investor-deck.he.htm'):
+            # Same shell as the English deck. The page reads the path and asks
+            # for Hebrew figures. A second copy of the document is not stored.
+            file_path = os.path.join(ROOT, 'investor-deck.html')
+            allowed_root = ROOT
         else:
             rel = path.lstrip('/')
             file_path = os.path.join(ROOT, rel)
@@ -42390,7 +42609,15 @@ For claims or questions, please contact:
             from services.investor_deck_video import InvestorDeckError
             actor = (session or {}).get('username', 'admin')
             try:
-                if data.get('chrome') is True:
+                if 'visible_slides' in data or data.get('selection') is True:
+                    view = save_investor_deck_visible_slides(data, actor=actor)
+                    cleared = data.get('clear') is True
+                    message = (
+                        'Every slide is shown again. The plan and the library files were not changed.'
+                        if cleared else
+                        'The show uses the selected slides. The plan and the library files were not changed.'
+                    )
+                elif data.get('chrome') is True:
                     view = save_investor_deck_slide_chrome(data, actor=actor)
                     cleared = data.get('clear') is True
                     message = (
