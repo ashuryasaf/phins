@@ -656,6 +656,13 @@ Environment variables commonly used:
  `PHINS_BUSINESS_PLAN_PORTRAIT` (local file) or
  `PHINS_PDF_PORTRAIT_BASE_URL` (origin that serves the route) is set,
  otherwise it prints "founder portrait omitted" and draws nothing.
+- **Customer cover open links:** `/phins-customer-150k-one-pager.html` and
+ `/phins-customer-150k-one-pager.he.html` are one confidential share scope
+ with `customer-cover-forecast.js`, `customer-cover-copy.js` and
+ `customer-cover-page.js`. Staff mint them from the pitch-dashboard
+ **Staff · Share links** list (English and Hebrew). NDA stays optional.
+ The published rate table stays public. A share of either language opens
+ the other through the page's language switch.
 - **Business-plan open links (NDA, protected view, saved factors):**
  `/business-plan.html`, `/business-plan.he.html` and `/api/business-plan/*`
  are one confidential share scope (`confidential_access.share_scope_root`);

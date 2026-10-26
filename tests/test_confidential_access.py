@@ -65,6 +65,33 @@ def test_public_paths_are_not_gated(path):
     assert ca.is_confidential_path(path, {}) is False
 
 
+def test_customer_cover_is_one_share_scope_for_both_languages():
+    """Staff share either language; the switch and the forecast scripts stay inside it."""
+    en = "/phins-customer-150k-one-pager.html"
+    he = "/phins-customer-150k-one-pager.he.html"
+    root = ca.share_scope_root(en)
+    assert root == ca.CUSTOMER_COVER_SCOPE_ROOT
+    for path in (en, he, "/customer-cover-forecast.js", "/customer-cover-copy.js", "/customer-cover-page.js"):
+        assert ca.is_confidential_path(path, {}) is True
+        assert ca.share_scope_root(path) == root
+    assert ca.is_confidential_path("/risk-reference-rates.js", {}) is False
+    assert ca.is_confidential_path("/customer-cover.css", {}) is False
+    env = {"PHINS_ENVIRONMENT": "production", "SESSION_SECRET_KEY": "s" * 32}
+    denied = ca.evaluate_access(en, environ=env)
+    assert denied.allowed is False
+    assert denied.reason == "not_configured_production"
+    cookie = ca.mint_share_cookie(share_id="shr_cover", path=en, environ=env)
+    header = f"{ca.SHARE_COOKIE_NAME}={cookie}"
+    for path in (en, he, "/customer-cover-forecast.js"):
+        decision = ca.evaluate_access(path, cookie_header=header, environ=env)
+        assert decision.allowed is True, path
+        assert decision.reason == "share_cookie"
+    other = ca.evaluate_access(
+        "/pitch-dashboard.html", cookie_header=header, environ=env
+    )
+    assert other.allowed is False
+
+
 def test_operator_can_extend_the_gated_list():
     env = {"PHINS_CONFIDENTIAL_PATHS": "/board/ /secret-plan.html"}
     assert ca.is_confidential_path("/board/minutes.html", env) is True
@@ -551,6 +578,19 @@ def test_share_service_single_use_integrity(share_store):
     assert public["status"] == "exhausted"
     # Cookie holders may still view after exhaustion; new unlocks must fail.
     assert share_store.share_is_active_for_path(created["id"], "/pitch-dashboard.html")
+    cover = share_store.create_share(
+        path="/phins-customer-150k-one-pager.he.html",
+        password="open-sesame",
+        max_uses=1,
+        label="Aspire",
+        lang="he",
+    )
+    assert cover["path"] == "/phins-customer-150k-one-pager.he.html"
+    assert cover["lang"] == "he"
+    assert cover["scope"] == "/phins-customer-150k-one-pager.html"
+    assert share_store.share_is_active_for_path(cover["id"], "/phins-customer-150k-one-pager.html")
+    assert share_store.share_is_active_for_path(cover["id"], "/customer-cover-copy.js")
+    assert share_store.share_is_active_for_path(cover["id"], "/pitch-dashboard.html") is False
     with pytest.raises(ShareError):
         share_store.unlock(created["id"], "open-sesame")
 
