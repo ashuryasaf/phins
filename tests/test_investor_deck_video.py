@@ -614,6 +614,7 @@ def test_presentation_page_is_wired_and_does_not_bake_figures():
     assert "/api/admin/media/investor-deck/presentation" in page
     assert "/api/investor-deck/presentation?lang=" in page
     assert 'id="deck-lang"' in page
+    assert r"/\/investor-deck\.he\.html?$/i" in page
     assert ".deck-assign[hidden]" in page
     assert ".deck-watermark[hidden]" in page
     assert 'id="deck-slide-picks"' in media
@@ -1424,6 +1425,39 @@ def test_pitch_password_reads_plan_figures_and_checksummed_video(monkeypatch, tm
         )
         assert compute_plan()["content_hash"] == plan_before
 
+        status, narrowed_film = _json_request(
+            base + "/api/investor-deck/film", cookie=access_cookie,
+        )
+        assert status == 200, narrowed_film
+        assert "engines" not in narrowed_film
+        assert {row["slide_no"] for row in narrowed_film["scenes"]} == {1, 7}
+        assert {row["slide_no"] for row in narrowed_film["stream"]} <= {1, 7}
+        assert narrowed_film["slide_count"] == 2
+        status, lab = _json_request(
+            base + "/api/admin/media/investor-deck", token=media,
+        )
+        assert status == 200, lab
+        assert "engines" in lab
+        assert len({row["slide_no"] for row in lab["scenes"]}) == 13
+        hidden_lines = [
+            row["narration"] for row in lab["scenes"] if row["slide_no"] not in (1, 7)
+        ]
+        assert hidden_lines
+        filmed_body = json.dumps(narrowed_film)
+        assert hidden_lines[0] not in filmed_body
+        hidden_charts = {
+            row["chart_id"]
+            for row in lab["scenes"]
+            if row["slide_no"] not in (1, 7) and row.get("chart_id")
+        }
+        shown_charts = {
+            row["chart_id"]
+            for row in lab["scenes"]
+            if row["slide_no"] in (1, 7) and row.get("chart_id")
+        }
+        assert hidden_charts - shown_charts
+        assert set(narrowed_film["charts"]) <= shown_charts
+
         composition = portal.PortalHandler._investor_deck_link_composition(object())
         assert composition["kind"] == "investor_deck"
         assert composition["visible_slides"] == [1, 7]
@@ -1462,6 +1496,12 @@ def test_pitch_password_reads_plan_figures_and_checksummed_video(monkeypatch, tm
         )
         assert status == 200, live
         assert live["slide_count"] == 13
+        status, live_film = _json_request(
+            base + "/api/investor-deck/film", cookie=access_cookie,
+        )
+        assert status == 200, live_film
+        assert live_film["slide_count"] == 13
+        assert "engines" not in live_film
 
         share_cookie = (
             f"{ca.SHARE_COOKIE_NAME}="
@@ -1475,6 +1515,23 @@ def test_pitch_password_reads_plan_figures_and_checksummed_video(monkeypatch, tm
         assert frozen["lang"] == "he"
         assert frozen["selection"]["frozen"] is True
         assert frozen["slides"][0]["media"]["playback_url"].startswith("/media-files/vid-open-deck/")
+        status, frozen_film = _json_request(
+            base + "/api/investor-deck/film?lang=he", cookie=share_cookie,
+        )
+        assert status == 200, frozen_film
+        assert frozen_film["lang"] == "he"
+        assert frozen_film["selection"]["frozen"] is True
+        assert {row["slide_no"] for row in frozen_film["scenes"]} == {1, 7}
+        assert {row["slide_no"] for row in frozen_film["stream"]} <= {1, 7}
+        assert "engines" not in frozen_film
+        hidden_hebrew = next(
+            row["narration"] for row in frozen_film["scenes"] if row["slide_no"] == 1
+        )
+        assert hidden_hebrew
+        withheld_line = next(
+            row["narration"] for row in lab["scenes"] if row["slide_no"] == 3
+        )
+        assert withheld_line not in json.dumps(frozen_film)
 
         stored = json.loads((tmp_path / "shares.json").read_text(encoding="utf-8"))
         stored["shares"][share_id]["composition"]["selection_checksum"] = "0" * 64
@@ -1483,6 +1540,10 @@ def test_pitch_password_reads_plan_figures_and_checksummed_video(monkeypatch, tm
             base + "/api/investor-deck/presentation", cookie=share_cookie,
         )
         assert status == 409, refused
+        status, refused_film = _json_request(
+            base + "/api/investor-deck/film", cookie=share_cookie,
+        )
+        assert status == 409, refused_film
         status, still_live = _json_request(
             base + "/api/investor-deck/presentation", cookie=access_cookie,
         )
@@ -1517,6 +1578,13 @@ def test_pitch_password_reads_plan_figures_and_checksummed_video(monkeypatch, tm
         assert status == 200, shown
         assert shown["slide_count"] == 13
         assert shown["selection"]["withheld"] is True
+        status, shown_film = _json_request(
+            base + "/api/investor-deck/film", cookie=access_cookie,
+        )
+        assert status == 200, shown_film
+        assert shown_film["slide_count"] == 13
+        assert shown_film["selection"]["withheld"] is True
+        assert "engines" not in shown_film
 
         class _Frozen:
             def _share_composition(self):

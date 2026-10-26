@@ -69,11 +69,13 @@ def test_investor_deck_is_one_share_scope_for_both_languages():
     """Staff share either language; the filled slides, film and portrait stay inside it."""
     en = "/investor-deck.html"
     he = "/investor-deck.he.html"
+    he_alias = "/investor-deck.he.htm"
     root = ca.share_scope_root(en)
     assert root == ca.INVESTOR_DECK_SCOPE_ROOT
     for path in (
         en,
         he,
+        he_alias,
         "/api/investor-deck/presentation",
         "/api/investor-deck/film",
         "/api/investor-deck/portrait",
@@ -85,9 +87,11 @@ def test_investor_deck_is_one_share_scope_for_both_languages():
     env = {"PHINS_ENVIRONMENT": "production", "SESSION_SECRET_KEY": "s" * 32}
     denied = ca.evaluate_access(en, environ=env)
     assert denied.allowed is False
+    denied_alias = ca.evaluate_access(he_alias, environ=env)
+    assert denied_alias.allowed is False
     cookie = ca.mint_share_cookie(share_id="shr_deck", path=en, environ=env)
     header = f"{ca.SHARE_COOKIE_NAME}={cookie}"
-    for path in (en, he, "/api/investor-deck/presentation"):
+    for path in (en, he, he_alias, "/api/investor-deck/presentation"):
         decision = ca.evaluate_access(path, cookie_header=header, environ=env)
         assert decision.allowed is True, path
         assert decision.reason == "share_cookie"

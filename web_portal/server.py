@@ -6671,6 +6671,36 @@ def _investor_deck_lab_view_filled(
     }
 
 
+def investor_deck_film_view(lang: str = 'en', visible: Optional[List[int]] = None) -> Dict[str, Any]:
+    """Film a pitch-cookie or share viewer may read.
+
+    The same slide list that trims the stream also trims scenes and charts.
+    Engine names stay on the admin lab read.
+    """
+    payload = investor_deck_lab_view(lang=lang, visible=visible)
+    selection = payload.get('selection') if isinstance(payload.get('selection'), dict) else {}
+    allowed = {int(number) for number in (selection.get('slides') or [])}
+    scenes = [
+        scene for scene in (payload.get('scenes') or [])
+        if isinstance(scene, dict) and int(scene.get('slide_no') or 0) in allowed
+    ]
+    stream = [
+        scene for scene in (payload.get('stream') or [])
+        if isinstance(scene, dict) and int(scene.get('slide_no') or 0) in allowed
+    ]
+    charts = payload.get('charts') if isinstance(payload.get('charts'), dict) else {}
+    used = {str(scene.get('chart_id') or '') for scene in scenes}
+    used.discard('')
+    payload['scenes'] = scenes
+    payload['stream'] = stream
+    payload['charts'] = {chart_id: charts[chart_id] for chart_id in used if chart_id in charts}
+    payload.pop('engines', None)
+    payload['scene_count'] = len(scenes)
+    payload['slide_count'] = len({int(scene.get('slide_no') or 0) for scene in scenes})
+    payload['stream_count'] = len(stream)
+    return payload
+
+
 _INVESTOR_DECK_READ_ROLES = [
     'admin', 'media', 'accountant', 'underwriter', 'actuary', 'compliance', 'founder',
 ]
@@ -23600,7 +23630,7 @@ For claims or questions, please contact:
                 return
             try:
                 if path.endswith('/film'):
-                    payload = investor_deck_lab_view(lang=lang, visible=visible)
+                    payload = investor_deck_film_view(lang=lang, visible=visible)
                 else:
                     payload = investor_deck_presentation_view(
                         can_assign=can_assign, lang=lang, visible=visible,

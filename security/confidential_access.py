@@ -114,13 +114,15 @@ CUSTOMER_COVER_SCOPE_PATHS = (
 )
 
 # Investor deck (Part II) in both languages. One scope so a share of either
-# page also authorises the Hebrew edition, the filled-slide read, the film,
-# and the processed founder portrait. Figures are computed on read. The
-# library files stay on the public playback route.
+# page also authorises the Hebrew edition (``.html`` and the ``.htm`` alias),
+# the filled-slide read, the film, and the processed founder portrait.
+# Figures are computed on read. The library files stay on the public playback
+# route. The gate reads the inbound path, before the alias is rewritten.
 INVESTOR_DECK_SCOPE_ROOT = "/investor-deck.html"
 INVESTOR_DECK_SCOPE_PATHS = (
     "/investor-deck.html",
     "/investor-deck.he.html",
+    "/investor-deck.he.htm",
     "/api/investor-deck/presentation",
     "/api/investor-deck/film",
     "/api/investor-deck/portrait",
@@ -136,6 +138,7 @@ DEFAULT_CONFIDENTIAL_FILES = (
 ) + BUSINESS_PLAN_DOWNLOADS + CUSTOMER_COVER_SCOPE_PATHS + (
     "/investor-deck.html",
     "/investor-deck.he.html",
+    "/investor-deck.he.htm",
 )
 
 # API endpoints that expose anchored signatures + signed content snapshots,

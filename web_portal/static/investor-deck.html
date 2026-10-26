@@ -266,7 +266,7 @@
   var state = { slides: [], index: 0, data: null, mode: 'auto', videos: [], images: [], chromeSlide: null };
 
   function deckLang() {
-    return /\/investor-deck\.he\.html$/i.test(window.location.pathname) ? 'he' : 'en';
+    return /\/investor-deck\.he\.html?$/i.test(window.location.pathname) ? 'he' : 'en';
   }
   function applyLanguage() {
     var lang = deckLang();
