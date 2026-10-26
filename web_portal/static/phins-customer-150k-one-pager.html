@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Customer 1-Pager · US$150,000 cover · Ten-year forecast</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+  <style>
+    :root {
+      --blue-dark:  #0d47a1;
+      --blue-mid:   #1565c0;
+      --blue-light: #1976d2;
+      --accent-1:   #42a5f5;
+      --accent-2:   #64b5f6;
+      --green-1:    #2e7d32;
+      --amber-1:    #f59e0b;
+      --red-1:      #c62828;
+      --gradient-hdr:  linear-gradient(135deg, #0d47a1 0%, #1565c0 50%, #1976d2 100%);
+      --gradient-logo: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%);
+      --gradient-soft: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
+      --text-main: #1a202c;
+      --text-sub:  #4a5568;
+      --text-soft: #64748b;
+      --border:    #dbe4f0;
+      --bg-page:   #e8edf5;
+      --bg-card:   #ffffff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg-page);
+      color: var(--text-main);
+      font-size: 9.2pt;
+      line-height: 1.42;
+    }
+    .download-bar {
+      position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+      display: flex; gap: 10px; align-items: center;
+    }
+    .download-btn {
+      background: var(--gradient-hdr); color: #fff; border: none; border-radius: 30px;
+      padding: 12px 22px; font-size: 9.5pt; font-weight: 700; cursor: pointer;
+      box-shadow: 0 6px 20px rgba(13, 71, 161, 0.4); letter-spacing: .03em;
+    }
+    .download-btn.ghost {
+      background: #fff; color: var(--blue-dark); border: 1px solid var(--border);
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.10);
+    }
+    .download-btn[disabled] { opacity: .55; cursor: progress; }
+    .page {
+      width: 210mm; min-height: 297mm; margin: 20px auto; background: #fff;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15); position: relative; overflow: hidden;
+      page-break-after: always; display: flex; flex-direction: column;
+    }
+    .page-header {
+      background: var(--gradient-hdr); color: #fff; padding: 14px 24px 12px;
+      display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+    }
+    .logo-row { display: flex; align-items: center; gap: 10px; }
+    .logo-icon {
+      width: 36px; height: 36px; border-radius: 9px; background: var(--gradient-logo);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+    }
+    .logo-text { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 18pt; font-weight: 900; letter-spacing: .06em; }
+    .logo-tagline { font-size: 7.2pt; opacity: .82; letter-spacing: .12em; text-transform: uppercase; margin-top: 1px; }
+    .doc-ref { font-size: 7.2pt; opacity: .78; text-align: right; font-family: 'Courier New', monospace; letter-spacing: .04em; }
+    .page-content { padding: 10px 20px 36px; flex: 1; }
+    .page-footer {
+      position: absolute; bottom: 0; left: 0; right: 0; background: var(--gradient-hdr);
+      color: rgba(255, 255, 255, .82); font-size: 6.8pt; padding: 7px 22px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .page-footer strong { color: #fff; letter-spacing: .04em; }
+    .recipient {
+      display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center;
+      background: var(--gradient-soft); border: 1px solid var(--border); border-left: 4px solid var(--blue-dark);
+      border-radius: 10px; padding: 7px 12px; margin-bottom: 6px;
+    }
+    .recipient .to-label { font-size: 6.8pt; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--blue-dark); }
+    .recipient .to-name { font-size: 12pt; font-weight: 800; color: var(--text-main); line-height: 1.2; }
+    .recipient .to-role { font-size: 8.2pt; color: var(--text-sub); margin-top: 2px; }
+    .recipient .doc-meta { text-align: right; font-size: 7.2pt; color: var(--text-sub); line-height: 1.5; }
+    .recipient .doc-class {
+      display: inline-block; background: var(--blue-dark); color: #fff; padding: 2px 9px; border-radius: 999px;
+      font-weight: 800; font-size: 6.8pt; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 4px;
+    }
+    .doc-title { font-size: 14.5pt; font-weight: 900; color: var(--blue-dark); letter-spacing: -0.01em; line-height: 1.15; margin-bottom: 2px; }
+    .doc-subtitle { font-size: 8.2pt; color: var(--text-sub); margin-bottom: 6px; }
+    .doc-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+    .tag {
+      display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px;
+      font-size: 6.6pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+      background: rgba(21, 101, 192, 0.08); border: 1px solid rgba(21, 101, 192, 0.22); color: var(--blue-dark);
+    }
+    .tag.amber { background: rgba(245, 158, 11, 0.10); border-color: rgba(245, 158, 11, 0.32); color: #92400e; }
+    .tag.green { background: rgba(46, 125, 50, 0.10); border-color: rgba(46, 125, 50, 0.32); color: var(--green-1); }
+    .note {
+      background: #fff7e6; border: 1px solid #f5cf8b; border-left: 4px solid var(--amber-1);
+      border-radius: 8px; padding: 6px 10px; margin-bottom: 6px; font-size: 7.2pt; color: #6b3f00; line-height: 1.4;
+    }
+    .note strong { color: #5a2f00; }
+    .body-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 6px; margin-bottom: 6px; }
+    .panel { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 6px 9px; }
+    .panel h3 {
+      font-size: 9pt; font-weight: 800; color: var(--blue-dark); margin-bottom: 5px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .panel h3 .num {
+      width: 16px; height: 16px; border-radius: 50%; background: var(--gradient-hdr); color: #fff;
+      font-size: 7.2pt; display: inline-flex; align-items: center; justify-content: center; font-weight: 900;
+    }
+    .panel ul { padding-left: 14px; font-size: 7.5pt; color: var(--text-sub); }
+    .panel ul li { margin-bottom: 3px; }
+    .panel strong { color: var(--text-main); }
+    .risk-matrix { width: 100%; border-collapse: collapse; font-size: 7.3pt; }
+    .risk-matrix th, .risk-matrix td { padding: 4px 6px; border-bottom: 1px solid var(--border); text-align: left; }
+    .risk-matrix th {
+      background: var(--gradient-hdr); color: #fff; font-weight: 800; letter-spacing: .04em;
+      text-transform: uppercase; font-size: 6.6pt;
+    }
+    .risk-matrix td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .risk-matrix tr.split-row td { background: #f0f6ff; font-weight: 700; color: var(--blue-dark); }
+    .forecast { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 6px 9px; margin-bottom: 4px; }
+    .forecast h3 { font-size: 9pt; font-weight: 800; color: var(--blue-dark); margin-bottom: 4px; }
+    .forecast .lead { font-size: 7.3pt; color: var(--text-sub); margin-bottom: 6px; }
+    .forecast-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin-bottom: 6px; }
+    .fc-cell { background: var(--gradient-soft); border: 1px solid var(--border); border-radius: 8px; padding: 5px 4px; text-align: center; }
+    .fc-cell .yr { font-size: 6.6pt; font-weight: 800; letter-spacing: .08em; color: var(--blue-dark); text-transform: uppercase; }
+    .fc-cell .age { font-size: 6.8pt; color: var(--text-soft); }
+    .fc-cell .prem { font-size: 9pt; font-weight: 900; color: var(--text-main); margin-top: 1px; font-variant-numeric: tabular-nums; }
+    .fc-cell .delta { font-size: 6.2pt; color: var(--green-1); font-weight: 700; }
+    .totals {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; font-size: 7.1pt; color: var(--text-sub);
+    }
+    .totals strong { color: var(--blue-dark); }
+    .watermark {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg);
+      font-size: 64pt; font-weight: 900; color: rgba(13, 71, 161, 0.045); letter-spacing: .14em;
+      pointer-events: none; user-select: none; white-space: nowrap;
+    }
+    .appendix-title { font-size: 13pt; font-weight: 900; color: var(--blue-dark); margin-bottom: 3px; }
+    .appendix-sub { font-size: 8pt; color: var(--text-sub); margin-bottom: 8px; }
+    .premium-table { width: 100%; border-collapse: collapse; font-size: 7pt; }
+    .premium-table th, .premium-table td {
+      padding: 4px 5px; border-bottom: 1px solid var(--border); text-align: right; font-variant-numeric: tabular-nums;
+    }
+    .premium-table th {
+      background: var(--gradient-hdr); color: #fff; font-weight: 800; letter-spacing: .03em;
+      text-transform: uppercase; font-size: 6.2pt; text-align: right;
+    }
+    .premium-table th:first-child, .premium-table td:first-child { text-align: left; }
+    .premium-table tr.combined td:first-child { color: var(--blue-dark); font-weight: 700; }
+    .premium-table tr.kernel td { background: #f8fbff; }
+    .actuarial-note {
+      background: var(--gradient-soft); border: 1px solid var(--border); border-left: 4px solid var(--blue-mid);
+      border-radius: 8px; padding: 7px 10px; margin-top: 8px; font-size: 7.2pt; color: var(--text-sub); line-height: 1.45;
+    }
+    .actuarial-note strong { color: var(--blue-dark); }
+    .integrity-stamp {
+      display: inline-flex; align-items: center; gap: 6px; background: rgba(46, 125, 50, 0.10);
+      border: 1px solid rgba(46, 125, 50, 0.30); color: var(--green-1); padding: 3px 8px;
+      border-radius: 999px; font-size: 6.8pt; font-weight: 700; margin-top: 8px;
+    }
+    @page { size: A4; margin: 0; }
+    @media print {
+      body { background: #fff; margin: 0; }
+      .download-bar { display: none; }
+      .page { margin: 0; box-shadow: none; width: 210mm; height: 297mm; min-height: 297mm; }
+    }
+  </style>
+  <style>
+    /* PHINS unified document branding — shield logo + gold letterhead rule
+       (matches the branded investor PDFs and phins-pdf-brand.js) */
+    .page-header { border-bottom: 3px solid #c9a04e; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .logo-icon img, .cover-logo-icon img, .bc-logo-icon img { margin: auto; }
+  </style>
+</head>
+<body>
+
+  <div class="download-bar" role="toolbar" aria-label="Document actions">
+    <button type="button" class="download-btn primary" id="btn-download-pdf">Download PDF</button>
+    <button type="button" class="download-btn ghost" id="btn-print-pdf" onclick="window.print()">Print / Save as PDF</button>
+  </div>
+
+  <div class="page">
+    <div class="watermark">PHINS · CUSTOMER</div>
+    <div class="page-header">
+      <div class="logo-row">
+        <div class="logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
+        <div>
+          <div class="logo-text">PHINS</div>
+          <div class="logo-tagline">Personal Health Insurance &amp; Savings</div>
+        </div>
+      </div>
+      <div class="doc-ref">
+        DOC · PHINS-CUST-150K · v1.0<br>
+        ISSUE · <span id="doc-issue-date">—</span><br>
+        REF · CUSTOMER-POV-150K-10Y
+      </div>
+    </div>
+    <div class="page-content">
+      <div class="recipient">
+        <div>
+          <div class="to-label">Point of view</div>
+          <div class="to-name">The customer who buys the cover</div>
+          <div class="to-role">Reference policyholder · age 35 at issue · standard class · face US$150,000 · prepared for an investment reader</div>
+        </div>
+        <div class="doc-meta">
+          <span class="doc-class">Customer illustration</span><br>
+          Document ID · <span id="doc-id">—</span><br>
+          Integrity Hash · <span id="doc-hash">—</span>
+        </div>
+      </div>
+
+      <div class="doc-title">What the customer holds on a US$150,000 cover</div>
+      <div class="doc-subtitle">
+        The same locked risk tariff as the Fefferman brief, bought at a US$150,000 face, plus the rights that sit
+        beside the cover: the service of the policy, the savings add-on, the health wallet, and consumption in the
+        health marketplace. Every figure below is computed from one source block.
+      </div>
+      <div class="doc-tags">
+        <span class="tag">Customer point of view</span>
+        <span class="tag green">Face US$150,000</span>
+        <span class="tag amber">Savings add-on · 50% of risk tariff</span>
+        <span class="tag">Ten-year forecast</span>
+      </div>
+      <div class="note">
+        <strong>PLANNING ILLUSTRATION.</strong>
+        This page states the canonical contract for one reference customer. It is a planning illustration for an
+        investment reader. The risk tariff uses the published adjustable-risk identity (life base US$0.25 and
+        disability base US$0.20 per US$1,000 per month, age factor 1.000 at age 25, slope +0.015 a year).
+        The savings add-on is half of that tariff. Wallet and savings balances are the contributions themselves:
+        yield 0 and management fee 0, the kernel default. A missing incidence rate is left blank and is never shown as zero.
+      </div>
+
+      <div class="body-grid">
+        <div class="panel">
+          <h3><span class="num">1</span>Service — the cover</h3>
+          <table class="risk-matrix" aria-label="Cover at a US$150,000 face">
+            <thead>
+              <tr>
+                <th>What the service pays</th>
+                <th style="text-align:right;">Benefit</th>
+                <th style="text-align:right;">Age</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Death, natural or accidental</td>
+                <td class="num"><strong>US$150,000</strong></td>
+                <td class="num">3 – 65</td>
+              </tr>
+              <tr>
+                <td>Permanent disability, 3+ ADL</td>
+                <td class="num"><strong>US$37,500</strong> · life ÷ 4</td>
+                <td class="num">3 – 65</td>
+              </tr>
+              <tr class="split-row"><td colspan="3">From 65 the life sum steps to face ÷ 4 and disability equals that life sum</td></tr>
+              <tr>
+                <td>Death from age 65</td>
+                <td class="num"><strong>US$37,500</strong></td>
+                <td class="num">65 – ∞</td>
+              </tr>
+              <tr>
+                <td>Permanent disability from age 65</td>
+                <td class="num"><strong>US$37,500</strong> · D = life</td>
+                <td class="num">65 – ∞</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel">
+          <h3><span class="num">2</span>Rights</h3>
+          <ul>
+            <li><strong>Service.</strong> Once underwriting is approved and the risk tariff is paid, the life and disability sums above stay in force. Re-pricing follows the published age curve only. The customer can read the decision, the age band and the formula, withdraw within 30 days for a pro-rata refund of unearned tariff, and follow every charge on the ledger.</li>
+            <li><strong>Savings.</strong> The customer elects an add-on equal to half the risk tariff. That amount is the customer's savings. Of it, 65% is credited to the long-term savings sleeve and 5% to the algo sleeve.</li>
+            <li><strong>Health wallet.</strong> 30% of each savings add-on is credited to the health wallet. The balance is the customer's, visible on the ledger.</li>
+            <li><strong>Consumption.</strong> The customer spends the health-wallet balance in the marketplace on ranked care, medicine and equipment. In this illustration consumption is US$0, so the wallet balance is the amount available to consume.</li>
+          </ul>
+        </div>
+
+        <div class="panel">
+          <h3><span class="num">3</span>Liabilities</h3>
+          <ul>
+            <li><strong>Service.</strong> The age-adjusted risk tariff is payable to keep both benefits, including after 65 on the stepped-down sums. Material health, work and lifestyle facts are disclosed at underwriting. A disability event is notified within 60 days and a death within 30 days, with the medical record.</li>
+            <li><strong>Savings.</strong> The add-on is payable with the tariff for as long as it stays elected. It is the customer's contribution. It is outside the carrier risk fund.</li>
+            <li><strong>Health wallet.</strong> Credits follow the 30% rule. A withdrawal or a transfer moves that balance and is recorded.</li>
+            <li><strong>Consumption.</strong> A marketplace purchase is paid from the wallet. The life sum and the disability sum stay at the contracted amounts. A purchase larger than the balance is declined.</li>
+          </ul>
+        </div>
+
+        <div class="panel">
+          <h3><span class="num">4</span>Year-1 money, age 35</h3>
+          <ul>
+            <li><strong>Risk tariff</strong> <span id="y1-risk">—</span> a year (<span id="y1-risk-m">—</span> a month). This is 30% of the US$500,000 Fefferman reference, because the face is 30% of US$500,000.</li>
+            <li><strong>Savings add-on</strong> <span id="y1-sav">—</span>. Half the tariff.</li>
+            <li><strong>Amount paid</strong> <span id="y1-total">—</span>. Tariff plus add-on.</li>
+            <li><strong>Health wallet credit</strong> <span id="y1-wallet">—</span> · <strong>savings kept</strong> <span id="y1-kept">—</span> (65% + 5%).</li>
+            <li><strong>Expected pure loss</strong> on the service <span id="y1-loss">—</span>.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="forecast">
+        <h3>Ten-year forecast — amount the customer pays</h3>
+        <p class="lead">
+          Each cell is the risk tariff plus the savings add-on for that year. Ages 35–39 use the published
+          incidence profile. Ages 40–44 use the kernel bracket. The life sum stays US$150,000 and the disability
+          sum stays US$37,500 across this window, because the customer is still under 65.
+        </p>
+        <div class="forecast-grid" id="forecast-grid"></div>
+        <div class="totals">
+          <div><strong>10-yr risk tariff:</strong> <span id="cum-risk">—</span></div>
+          <div><strong>10-yr savings add-on:</strong> <span id="cum-sav">—</span></div>
+          <div><strong>10-yr amount paid:</strong> <span id="cum-paid">—</span></div>
+          <div><strong>Wallet available to consume:</strong> <span id="cum-wallet">—</span></div>
+        </div>
+      </div>
+      <span class="integrity-stamp" id="integrity-stamp">Data integrity verified · single locked source</span>
+    </div>
+    <div class="page-footer">
+      <span><strong>PHINS</strong> · Customer point of view · US$150,000 cover</span>
+      <span>Page 1 / 2 · Rights, liabilities and the ten-year path</span>
+    </div>
+  </div>
+
+  <div class="page">
+    <div class="watermark">PHINS · FORECAST</div>
+    <div class="page-header">
+      <div class="logo-row">
+        <div class="logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
+        <div>
+          <div class="logo-text">PHINS</div>
+          <div class="logo-tagline">Ten-year customer forecast</div>
+        </div>
+      </div>
+      <div class="doc-ref">
+        DOC · PHINS-CUST-150K · v1.0<br>
+        APPENDIX · A · TEN YEARS<br>
+        REF · CUSTOMER-POV-150K-10Y
+      </div>
+    </div>
+    <div class="page-content">
+      <div class="appendix-title">Appendix A — Ten years for one customer</div>
+      <div class="appendix-sub">
+        Face <strong>US$150,000</strong> · life <strong>US$150,000</strong> · disability <strong>US$37,500</strong> ·
+        savings add-on = 50% of the risk tariff · health wallet = 30% of the add-on ·
+        savings kept = 70% of the add-on (65% investment + 5% algo). Consumption in the illustration is zero,
+        so the wallet column is the balance available to consume.
+      </div>
+      <table class="premium-table" id="forecast-table">
+        <thead>
+          <tr>
+            <th>Year</th>
+            <th>Age</th>
+            <th>Factor</th>
+            <th>Risk tariff</th>
+            <th>Savings</th>
+            <th>Paid</th>
+            <th>Wallet credit</th>
+            <th>Wallet balance</th>
+            <th>Savings balance</th>
+            <th>Expected loss</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div class="actuarial-note">
+        <strong>How the tariff is built.</strong>
+        At this face the annual risk tariff equals the age factor × US$540
+        (US$150 per US$1,000 × US$0.25 × 12, plus US$37.50 per US$1,000 × US$0.20 × 12).
+        Year 1 at factor 1.150 is US$621.00. The savings add-on is half of that line.
+        Expected loss is q(x) × life sum × 1.00 + i(x) × disability sum × 0.55.
+        Ages 35–39 use the locked published profile. Every later age uses the kernel V2.0 bracket
+        (rate per 1,000 ÷ 1,000) with no second age-factor multiply.
+        A missing bracket is left blank, never shown as zero.
+        Ten-year cumulative risk tariff <span id="note-risk">—</span> ·
+        cumulative expected loss <span id="note-loss">—</span> ·
+        average loss ratio <span id="note-lr">—</span> ·
+        expense and capital margin on the tariff <span id="note-margin">—</span> ·
+        savings balance at year 10 <span id="note-savbal">—</span>.
+      </div>
+      <div class="actuarial-note">
+        <strong>Identity.</strong>
+        Wallet credit + savings kept = savings add-on. Savings add-on = 0.50 × risk tariff.
+        Amount paid = risk tariff + savings add-on. Wallet balance + savings balance = cumulative savings add-on.
+        The 30 / 65 / 5 split is the canonical customer allocation. The 65 and the 5 are reported together as savings kept.
+      </div>
+      <span class="integrity-stamp" id="appendix-integrity-stamp">Data integrity verified · single locked source</span>
+    </div>
+    <div class="page-footer">
+      <span><strong>PHINS</strong> · Customer point of view · US$150,000 cover</span>
+      <span>Page 2 / 2 · Ten-year forecast</span>
+    </div>
+  </div>
+
+  <script src="/risk-reference-rates.js"></script>
+  <script>
+    // LOCKED_CUSTOMER_SOURCE_START
+    // Single locked source for the customer illustration.
+    // Risk tariff identity matches phins-risk-1pager-fefferman.html at face 150000.
+    const PHINS_CUSTOMER_MODEL = Object.freeze({
+      version: "v1.0",
+      docDate: "2026-10-26",
+      face: 150000,
+      startAge: 35,
+      projectionYears: 10,
+      savingsRate: 0.5,
+      walletShare: 0.30,
+      lifeBaseRate: 0.25,
+      disabilityBaseRate: 0.20,
+      coreSlope: 0.015,
+      youthAnchorAge: 3,
+      youthAnchorFactor: 0.30,
+      adultAnchorAge: 25,
+      adultAnchorFactor: 1.00,
+      seniorSlope1: 0.05,
+      seniorSlope2: 0.08,
+      bandAge: 65,
+      lifeSharePre: 1.0,
+      lifeSharePost: 0.25,
+      disabilitySharePre: 0.25,
+      disabilitySharePost: 1.0,
+      mortality: Object.freeze({ 35: 0.00133, 36: 0.00141, 37: 0.00150, 38: 0.00160, 39: 0.00171 }),
+      disabilityIncidence: Object.freeze({ 35: 0.00450, 36: 0.00468, 37: 0.00487, 38: 0.00507, 39: 0.00528 }),
+      mortalitySeverity: 1.00,
+      disabilitySeverity: 0.55
+    });
+
+    function round2(v) {
+      return Math.round((v + Number.EPSILON) * 100) / 100;
+    }
+    function ageFactor(age, M) {
+      if (age <= M.adultAnchorAge) {
+        const span = M.adultAnchorAge - M.youthAnchorAge;
+        const rise = M.adultAnchorFactor - M.youthAnchorFactor;
+        const a = Math.max(M.youthAnchorAge, age);
+        return +(M.youthAnchorFactor + (a - M.youthAnchorAge) * (rise / span)).toFixed(4);
+      }
+      if (age <= M.bandAge) {
+        return +(M.adultAnchorFactor + (age - M.adultAnchorAge) * M.coreSlope).toFixed(4);
+      }
+      let f = ageFactor(M.bandAge, M);
+      const a = Math.min(age, 80);
+      if (a <= 75) f = f + (a - M.bandAge) * M.seniorSlope1;
+      else f = f + (75 - M.bandAge) * M.seniorSlope1 + (a - 75) * M.seniorSlope2;
+      return +f.toFixed(4);
+    }
+    function benefitSums(age, M) {
+      const post = age >= M.bandAge;
+      const lifeSum = M.face * (post ? M.lifeSharePost : M.lifeSharePre);
+      const dShare = post ? M.disabilitySharePost : M.disabilitySharePre;
+      return { lifeSum: lifeSum, disabilitySum: lifeSum * dShare, post: post };
+    }
+    function totalMonthly(age, M) {
+      const s = benefitSums(age, M);
+      const f = ageFactor(age, M);
+      return (s.lifeSum / 1000) * M.lifeBaseRate * f + (s.disabilitySum / 1000) * M.disabilityBaseRate * f;
+    }
+    function buildCustomerForecast(M, ratesFn) {
+      const rows = [];
+      let cumRisk = 0, cumSav = 0, cumLoss = 0, lossCount = 0;
+      let walletBal = 0, savBal = 0;
+      for (let yr = 1; yr <= M.projectionYears; yr++) {
+        const age = M.startAge + (yr - 1);
+        const factor = ageFactor(age, M);
+        const sums = benefitSums(age, M);
+        const risk = round2(totalMonthly(age, M) * 12);
+        const savings = round2(risk * M.savingsRate);
+        const paid = round2(risk + savings);
+        const walletCredit = round2(savings * M.walletShare);
+        const savingsKept = round2(savings - walletCredit);
+        walletBal = round2(walletBal + walletCredit);
+        savBal = round2(savBal + savingsKept);
+        const rates = ratesFn ? ratesFn(age, M) : { qx: null, ix: null };
+        const qx = rates.qx;
+        const ix = rates.ix;
+        const eLoss = (qx == null || ix == null) ? null : round2(
+          qx * sums.lifeSum * M.mortalitySeverity + ix * sums.disabilitySum * M.disabilitySeverity
+        );
+        cumRisk = round2(cumRisk + risk);
+        cumSav = round2(cumSav + savings);
+        if (eLoss != null) { cumLoss = round2(cumLoss + eLoss); lossCount += 1; }
+        rows.push({
+          year: yr, age: age, factor: factor,
+          lifeSum: sums.lifeSum, disabilitySum: sums.disabilitySum,
+          risk: risk, savings: savings, paid: paid,
+          walletCredit: walletCredit, savingsKept: savingsKept,
+          walletBalance: walletBal, savingsBalance: savBal,
+          qx: qx, ix: ix, expectedLoss: eLoss,
+          rateSource: rates.source || ""
+        });
+      }
+      const lossComplete = lossCount === rows.length && cumRisk > 0;
+      return {
+        rows: rows,
+        totals: {
+          cumulativeRisk: cumRisk,
+          cumulativeSavings: cumSav,
+          cumulativePaid: round2(cumRisk + cumSav),
+          walletBalance: walletBal,
+          savingsBalance: savBal,
+          cumulativeExpectedLoss: lossComplete ? cumLoss : null,
+          averageLossRatio: lossComplete ? cumLoss / cumRisk : null,
+          margin: lossComplete ? 1 - (cumLoss / cumRisk) : null
+        }
+      };
+    }
+    // LOCKED_CUSTOMER_SOURCE_END
+
+    function fmtUSD(v, d) {
+      d = (typeof d === "number") ? d : 2;
+      return "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+    }
+    function fmtPct(v, d) {
+      d = (typeof d === "number") ? d : 1;
+      return (v * 100).toFixed(d) + "%";
+    }
+
+    (function render() {
+      const M = PHINS_CUSTOMER_MODEL;
+      const ratesFn = window.phinsReferenceRates
+        ? function (age, model) { return window.phinsReferenceRates(age, model); }
+        : null;
+      const forecast = buildCustomerForecast(M, ratesFn);
+      const grid = document.getElementById("forecast-grid");
+      const tbody = document.querySelector("#forecast-table tbody");
+      let prev = null;
+      forecast.rows.forEach(function (row) {
+        const card = document.createElement("div");
+        card.className = "fc-cell";
+        const delta = prev == null ? "year 1" : "+" + fmtUSD(row.paid - prev, 0) + " yoy";
+        card.innerHTML =
+          '<div class="yr">Year ' + row.year + '</div>' +
+          '<div class="age">Age ' + row.age + '</div>' +
+          '<div class="prem">' + fmtUSD(row.paid, 0) + '</div>' +
+          '<div class="delta">' + delta + '</div>';
+        grid.appendChild(card);
+        prev = row.paid;
+        const tr = document.createElement("tr");
+        tr.className = row.age <= 39 ? "combined" : "kernel";
+        tr.innerHTML =
+          "<td>Y" + row.year + "</td>" +
+          "<td>" + row.age + "</td>" +
+          "<td>" + row.factor.toFixed(3) + "</td>" +
+          "<td>" + fmtUSD(row.risk) + "</td>" +
+          "<td>" + fmtUSD(row.savings) + "</td>" +
+          "<td>" + fmtUSD(row.paid) + "</td>" +
+          "<td>" + fmtUSD(row.walletCredit) + "</td>" +
+          "<td>" + fmtUSD(row.walletBalance) + "</td>" +
+          "<td>" + fmtUSD(row.savingsBalance) + "</td>" +
+          "<td>" + (row.expectedLoss == null ? "—" : fmtUSD(row.expectedLoss)) + "</td>";
+        tbody.appendChild(tr);
+      });
+      const y1 = forecast.rows[0];
+      const T = forecast.totals;
+      document.getElementById("y1-risk").textContent = fmtUSD(y1.risk);
+      document.getElementById("y1-risk-m").textContent = fmtUSD(y1.risk / 12);
+      document.getElementById("y1-sav").textContent = fmtUSD(y1.savings);
+      document.getElementById("y1-total").textContent = fmtUSD(y1.paid);
+      document.getElementById("y1-wallet").textContent = fmtUSD(y1.walletCredit);
+      document.getElementById("y1-kept").textContent = fmtUSD(y1.savingsKept);
+      document.getElementById("y1-loss").textContent = y1.expectedLoss == null ? "—" : fmtUSD(y1.expectedLoss);
+      document.getElementById("cum-risk").textContent = fmtUSD(T.cumulativeRisk, 0);
+      document.getElementById("cum-sav").textContent = fmtUSD(T.cumulativeSavings, 0);
+      document.getElementById("cum-paid").textContent = fmtUSD(T.cumulativePaid, 0);
+      document.getElementById("cum-wallet").textContent = fmtUSD(T.walletBalance, 0);
+      document.getElementById("note-risk").textContent = fmtUSD(T.cumulativeRisk);
+      document.getElementById("note-loss").textContent = T.cumulativeExpectedLoss == null ? "—" : fmtUSD(T.cumulativeExpectedLoss);
+      document.getElementById("note-lr").textContent = T.averageLossRatio == null ? "—" : fmtPct(T.averageLossRatio, 1);
+      document.getElementById("note-margin").textContent = T.margin == null ? "—" : fmtPct(T.margin, 1);
+      document.getElementById("note-savbal").textContent = fmtUSD(T.savingsBalance);
+      window.PHINS_CUSTOMER_FORECAST = forecast;
+    })();
+
+    (function stampMeta() {
+      const M = PHINS_CUSTOMER_MODEL;
+      const d = new Date(M.docDate + "T00:00:00Z");
+      const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+      document.getElementById("doc-issue-date").textContent =
+        d.getUTCDate() + " " + months[d.getUTCMonth()] + " " + d.getUTCFullYear();
+      const h = djb2(JSON.stringify(M));
+      const docId = "PHINS-CUST-150K-" + ("00000000" + h.toString(16)).slice(-8).toUpperCase();
+      const intg = ("00000000000000" + h.toString(16)).slice(-14).toUpperCase();
+      document.getElementById("doc-id").textContent = docId;
+      document.getElementById("doc-hash").textContent = "SHA-DJB2:" + intg;
+      const stamp = "Data integrity verified · single locked source · " + docId;
+      document.getElementById("integrity-stamp").textContent = stamp;
+      document.getElementById("appendix-integrity-stamp").textContent = stamp;
+    })();
+
+    function djb2(str) {
+      let h = 5381;
+      for (let i = 0; i < str.length; i++) {
+        h = ((h << 5) + h) + str.charCodeAt(i);
+        h = h & 0xffffffff;
+      }
+      return (h >>> 0);
+    }
+
+    async function downloadPdf() {
+      const btn = document.getElementById("btn-download-pdf");
+      const original = btn ? btn.textContent : "";
+      try {
+        if (!window.jspdf || !window.html2canvas) {
+          window.print();
+          return;
+        }
+        if (btn) { btn.disabled = true; btn.textContent = "Generating PDF…"; }
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+        const A4_W = 210, A4_H = 297;
+        const pages = document.querySelectorAll(".page");
+        for (let i = 0; i < pages.length; i++) {
+          const node = pages[i];
+          const canvas = await window.html2canvas(node, {
+            scale: 2, backgroundColor: "#ffffff", useCORS: true, logging: false,
+            windowWidth: node.scrollWidth,
+            onclone: (clonedDoc) => {
+              clonedDoc.querySelectorAll('img[src="/phins-logo.svg"]').forEach((img) => {
+                img.src = "/phins-logo.png";
+              });
+            }
+          });
+          const img = canvas.toDataURL("image/png");
+          const ratio = canvas.width / canvas.height;
+          let w = A4_W, h = A4_W / ratio;
+          if (h > A4_H) { h = A4_H; w = A4_H * ratio; }
+          if (i > 0) pdf.addPage();
+          pdf.addImage(img, "PNG", (A4_W - w) / 2, (A4_H - h) / 2, w, h, undefined, "FAST");
+        }
+        const docId = (document.getElementById("doc-id").textContent || "").trim();
+        pdf.setProperties({
+          title: "PHINS Customer 1-Pager — US$150,000 cover",
+          subject: "Customer point of view · service, savings, health wallet, consumption · ten-year forecast",
+          author: "PHINS",
+          keywords: "PHINS, customer, 150000, savings, health wallet, " + docId,
+          creator: "PHINS"
+        });
+        pdf.save((docId || "PHINS-CUST-150K") + "_customer_150k_10y.pdf");
+      } catch (err) {
+        console.error(err);
+        window.print();
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = original; }
+      }
+    }
+    document.addEventListener("DOMContentLoaded", function () {
+      const btn = document.getElementById("btn-download-pdf");
+      if (btn) btn.addEventListener("click", downloadPdf);
+    });
+  </script>
+<script src="/phins-doc-return.js"></script>
+</body>
+</html>

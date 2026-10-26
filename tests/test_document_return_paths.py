@@ -33,6 +33,7 @@ STANDALONE_DOCS = [
     "PHINS_Business_Plan_Presentation.html",
     "phins-risk-1pager-goldsobel.html",
     "phins-risk-1pager-fefferman.html",
+    "phins-customer-150k-one-pager.html",
     "terms-of-use.html",
     "privacy-policy.html",
     "document-viewer.html",

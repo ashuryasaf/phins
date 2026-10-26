@@ -71,6 +71,7 @@ AUTH_AND_LANDING = [
     "nda.html",
     "phins-risk-1pager-fefferman.html",
     "phins-risk-1pager-goldsobel.html",
+    "phins-customer-150k-one-pager.html",
 ]
 
 

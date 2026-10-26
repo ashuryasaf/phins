@@ -565,11 +565,99 @@ process.stdout.write(JSON.stringify({
     for fname in (
         'phins-risk-1pager-fefferman.html',
         'phins-risk-1pager-goldsobel.html',
+        'phins-customer-150k-one-pager.html',
     ):
         html = open(os.path.join(root, 'web_portal', 'static', fname), encoding='utf-8').read()
         assert '/risk-reference-rates.js' in html
         assert 'phinsReferenceRates' in html
         assert 'never shown as zero' in html
+
+
+def test_customer_150k_one_pager_matches_risk_reference():
+    """The customer page is the Fefferman tariff at face 150000, plus the canonical savings split.
+
+    Year rows, expected loss and the savings add-on come from build_risk_reference.
+    The health wallet is 30% of that add-on and the rest stays savings (65% + 5%).
+    """
+    import re
+    import subprocess
+    import tempfile
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    html_path = os.path.join(root, 'web_portal', 'static', 'phins-customer-150k-one-pager.html')
+    rates_path = os.path.join(root, 'web_portal', 'static', 'risk-reference-rates.js')
+    html = open(html_path, encoding='utf-8').read()
+    match = re.search(
+        r'// LOCKED_CUSTOMER_SOURCE_START\n(.*?)// LOCKED_CUSTOMER_SOURCE_END',
+        html,
+        re.S,
+    )
+    assert match, 'locked customer source block missing'
+    source = match.group(1)
+    assert 'face: 150000' in source
+    assert 'startAge: 35' in source
+    assert 'projectionYears: 10' in source
+    assert 'savingsRate: 0.5' in source
+    assert 'walletShare: 0.30' in source
+    node = r'''
+const fs = require('fs');
+const vm = require('vm');
+const sandbox = { window: {} };
+vm.createContext(sandbox);
+const program = [
+  fs.readFileSync(process.argv[1], 'utf8'),
+  fs.readFileSync(process.argv[2], 'utf8'),
+  'this.__out = JSON.stringify(buildCustomerForecast(PHINS_CUSTOMER_MODEL, window.phinsReferenceRates));'
+].join('\n');
+vm.runInContext(program, sandbox);
+process.stdout.write(sandbox.__out);
+'''
+    with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False, encoding='utf-8') as handle:
+        handle.write(source)
+        source_path = handle.name
+    try:
+        proc = subprocess.run(
+            ['node', '-e', node, rates_path, source_path],
+            check=True, capture_output=True, text=True,
+        )
+    finally:
+        try:
+            os.remove(source_path)
+        except OSError:
+            pass
+    page = json.loads(proc.stdout)
+    ref = build_risk_reference(
+        start_age=35,
+        projection_years=10,
+        life_sum=150000,
+        savings_rate=0.5,
+        savings_yield_pct=0.0,
+        management_fee_pct_of_aum=0.0,
+    )
+    assert ref['reference']['life_sum'] == 150000
+    assert ref['reference']['disability_sum'] == 37500
+    assert len(page['rows']) == 10
+    assert len(ref['yearly_projection']) == 10
+    for row, risk, sav in zip(page['rows'], ref['yearly_projection'], ref['savings_accumulation']['yearly']):
+        assert row['age'] == risk['age']
+        assert abs(row['risk'] - risk['annual_premium']) < 0.02
+        assert abs(row['savings'] - sav['annual_contribution']) < 0.02
+        assert abs(row['paid'] - (row['risk'] + row['savings'])) < 0.02
+        assert abs((row['walletCredit'] + row['savingsKept']) - row['savings']) < 0.02
+        assert abs(row['walletCredit'] - round(row['savings'] * 0.30, 2)) < 0.02
+        assert row['lifeSum'] == 150000
+        assert row['disabilitySum'] == 37500
+        if risk['expected_loss'] is not None:
+            assert abs(row['expectedLoss'] - risk['expected_loss']) < 0.02
+    totals = page['totals']
+    assert abs(totals['cumulativeRisk'] - ref['totals']['cumulative_premium']) < 0.05
+    assert abs(totals['cumulativeSavings'] - ref['savings_accumulation']['totals']['cumulative_contribution']) < 0.05
+    assert abs(totals['walletBalance'] + totals['savingsBalance'] - totals['cumulativeSavings']) < 0.05
+    assert abs(totals['cumulativeExpectedLoss'] - ref['totals']['cumulative_expected_loss']) < 0.05
+    y1 = page['rows'][0]
+    assert y1['risk'] == 621.0
+    assert y1['savings'] == 310.5
+    assert y1['walletCredit'] == 93.15
+    assert y1['savingsKept'] == 217.35
 
 
 def test_reserve_calculator_waterfall_consistency():
