@@ -8,19 +8,19 @@ override this document.
 
 PHINS is a Python platform built around:
 
-- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~60k lines)
-- optional extension routing in `web_portal/api_extensions.py` (~3980 lines)
+- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~65k lines)
+- optional extension routing in `web_portal/api_extensions.py` (~5150 lines)
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
   `api_assessment_center.py`, `api_chat_application.py` (chat-style policy
   intake / "Phin"), `api_claims_chat.py` (public claims chat), and
   `api_customer_identity.py` (ID + nationality master))
-- service-layer logic in `services/` (139 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
+- service-layer logic in `services/` (158 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (262 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (286 files) and root-level `test_*.py` (11 files)
 - one generalized job queue (`services/agent_job_queue.py`, table
  `document_processing_jobs`, rows keyed by `subject_type`/`subject_id` and
  `submitted_by`; retries, dead-letter, idempotency keys, handler registry —
@@ -416,7 +416,7 @@ Preferred file-by-task:
 |- scripts/                             # operational utilities
 |  |- run_agent_eval.py                 # golden sets + decision replay CLI
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
-|- tests/                               # 262 test files
+|- tests/                               # 286 test files
 |  `- golden/<agent>/*.json             # frozen agent outputs ({name, input, expected})
 |- docs/
 |  |- platform_data_architecture.md
@@ -1020,7 +1020,7 @@ Important test harness facts:
   change re-renders them (the page fetches `?charts=1` and swaps the SVG).
   `RESEARCH_SOURCES` must stay identical to the pitch-dashboard
   `sourceRegistry`; the test parses both
-- 233 test files under `tests/`, 11 root-level `test_*.py` files
+- 286 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -1143,4 +1143,4 @@ If you update this file again:
 
 ---
 
-Last updated: October 19, 2026
+Last updated: October 26, 2026
