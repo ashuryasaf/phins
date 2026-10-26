@@ -565,11 +565,119 @@ process.stdout.write(JSON.stringify({
     for fname in (
         'phins-risk-1pager-fefferman.html',
         'phins-risk-1pager-goldsobel.html',
+        'phins-customer-150k-one-pager.html',
     ):
         html = open(os.path.join(root, 'web_portal', 'static', fname), encoding='utf-8').read()
         assert '/risk-reference-rates.js' in html
         assert 'phinsReferenceRates' in html
         assert 'never shown as zero' in html
+
+
+def test_customer_150k_one_pager_matches_risk_reference():
+    """Age 42 and a five-year-old, face 150000, savings add-on equal to the risk tariff.
+
+    Year rows and expected loss come from build_risk_reference at savings_rate 1.
+    The health wallet is 30% of that add-on. Five-year averages are the mean of
+    the displayed yearly amounts, rounded once per column.
+    """
+    import re
+    import subprocess
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    static = os.path.join(root, 'web_portal', 'static')
+    node = r'''
+const fs = require('fs');
+const vm = require('vm');
+const sandbox = { window: {} };
+vm.createContext(sandbox);
+const program = [
+  fs.readFileSync(process.argv[1], 'utf8'),
+  fs.readFileSync(process.argv[2], 'utf8'),
+  'const M = window.PHINS_CUSTOMER_MODEL;',
+  'const rates = window.phinsReferenceRates;',
+  'this.__out = JSON.stringify({',
+  '  model: { face: M.face, primaryAge: M.primaryAge, childAge: M.childAge, savingsRate: M.savingsRate, walletShare: M.walletShare },',
+  '  age42: window.buildCustomerForecast(M, rates, M.primaryAge),',
+  '  age5: window.buildCustomerForecast(M, rates, M.childAge)',
+  '});'
+].join('\n');
+vm.runInContext(program, sandbox);
+process.stdout.write(sandbox.__out);
+'''
+    proc = subprocess.run(
+        ['node', '-e', node,
+         os.path.join(static, 'risk-reference-rates.js'),
+         os.path.join(static, 'customer-cover-forecast.js')],
+        check=True, capture_output=True, text=True,
+    )
+    page = json.loads(proc.stdout)
+    assert page['model'] == {
+        'face': 150000,
+        'primaryAge': 42,
+        'childAge': 5,
+        'savingsRate': 1.0,
+        'walletShare': 0.30,
+    }
+    copy = open(os.path.join(static, 'customer-cover-copy.js'), encoding='utf-8').read()
+    assert 'ילד בן חמש' in copy
+    en_block, he_block = copy.split('he:', 1)
+    en_keys = set(re.findall(r'\n    ([A-Za-z0-9]+):', en_block))
+    he_keys = set(re.findall(r'\n    ([A-Za-z0-9]+):', he_block))
+    assert en_keys and en_keys == he_keys
+    for fname in ('phins-customer-150k-one-pager.html', 'phins-customer-150k-one-pager.he.html'):
+        html = open(os.path.join(static, fname), encoding='utf-8').read()
+        assert '/customer-cover-forecast.js' in html
+        assert '/phins-logo.svg' in html
+        assert 'PHINS unified document branding' in html
+        assert '#c9a04e' in html
+    hebrew = open(os.path.join(static, 'phins-customer-150k-one-pager.he.html'), encoding='utf-8').read()
+    assert 'lang="he"' in hebrew and 'dir="rtl"' in hebrew
+
+    def _check(label, built, start_age, block_avgs):
+        ref = build_risk_reference(
+            start_age=start_age,
+            projection_years=10,
+            life_sum=150000,
+            savings_rate=1.0,
+            savings_yield_pct=0.0,
+            management_fee_pct_of_aum=0.0,
+        )
+        assert ref['reference']['life_sum'] == 150000
+        assert ref['reference']['disability_sum'] == 37500
+        assert len(built['rows']) == 10
+        for row, risk, sav in zip(built['rows'], ref['yearly_projection'], ref['savings_accumulation']['yearly']):
+            assert row['age'] == risk['age'], label
+            assert abs(row['risk'] - risk['annual_premium']) < 0.02, label
+            assert abs(row['savings'] - sav['annual_contribution']) < 0.02, label
+            assert abs(row['savings'] - row['risk']) < 0.001
+            assert abs(row['paid'] - (row['risk'] + row['savings'])) < 0.001
+            assert abs((row['walletCredit'] + row['savingsKept']) - row['savings']) < 0.001
+            assert row['lifeSum'] == 150000
+            assert row['disabilitySum'] == 37500
+            assert risk['expected_loss'] is not None
+            assert abs(row['expectedLoss'] - risk['expected_loss']) < 0.02
+        totals = built['totals']
+        assert abs(totals['cumulativeRisk'] - ref['totals']['cumulative_premium']) < 0.05
+        assert abs(totals['cumulativeSavings'] - ref['savings_accumulation']['totals']['cumulative_contribution']) < 0.05
+        assert abs(totals['walletBalance'] + totals['savingsBalance'] - totals['cumulativeSavings']) < 0.05
+        assert abs(totals['cumulativeExpectedLoss'] - ref['totals']['cumulative_expected_loss']) < 0.05
+        assert len(built['blocks']) == 2
+        for block, (avg_risk, avg_paid) in zip(built['blocks'], block_avgs):
+            assert abs(block['averageRisk'] - avg_risk) < 0.001, label
+            assert abs(block['averagePaid'] - avg_paid) < 0.001, label
+            # The paid average is the mean of the paid column, not twice the rounded risk average.
+            paid_mean = round(sum(r['paid'] for r in built['rows'] if block['fromYear'] <= r['year'] <= block['toYear']) / 5 + 1e-9, 2)
+            assert abs(block['averagePaid'] - paid_mean) < 0.001
+
+    _check('age42', page['age42'], 42, ((693.90, 1387.80), (734.40, 1468.80)))
+    _check('age5', page['age5'], 5, ((230.73, 461.46), (316.64, 633.27)))
+    assert abs(page['age42']['rows'][0]['risk'] - 677.70) < 0.001
+    assert abs(page['age42']['rows'][0]['factor'] - 1.255) < 1e-9
+    assert abs(page['age42']['totals']['cumulativeRisk'] - 7141.50) < 0.001
+    assert abs(page['age42']['totals']['cumulativeExpectedLoss'] - 6438.75) < 0.001
+    assert abs(page['age5']['totals']['cumulativeRisk'] - 2736.83) < 0.001
+    assert abs(page['age5']['totals']['cumulativeExpectedLoss'] - 1162.50) < 0.001
+    doubled = round(page['age5']['blocks'][1]['averageRisk'] * 2 + 1e-9, 2)
+    assert abs(page['age5']['blocks'][1]['averagePaid'] - doubled) >= 0.009
 
 
 def test_reserve_calculator_waterfall_consistency():

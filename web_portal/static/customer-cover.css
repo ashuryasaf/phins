@@ -1,0 +1,165 @@
+/* PHINS unified document branding — shield logo, Space Grotesk, Inter,
+   navy gradient and gold gradient. Hebrew uses Heebo. */
+:root {
+  --navy: #0e2f63;
+  --navy-deep: #060d1f;
+  --navy-mid: #123f82;
+  --gold: #c9a04e;
+  --gold-strong: #f7e2a0;
+  --ink: #12284c;
+  --muted: #5b6b82;
+  --ice: #f3f7fd;
+  --line: #d5deea;
+  --green: #0f6b45;
+  --hdr: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+  --goldbar: linear-gradient(90deg, #b8893b 0%, #c9a04e 28%, #f7e2a0 52%, #e3bf6f 100%);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: Inter, "Segoe UI", sans-serif;
+  background: #e8eef6;
+  color: var(--ink);
+  font-size: 9pt;
+  line-height: 1.4;
+}
+[dir="rtl"] body { font-family: Heebo, Inter, "Segoe UI", sans-serif; }
+.download-bar {
+  position: fixed; bottom: 18px; inset-inline-end: 18px; z-index: 50;
+  display: flex; gap: 8px;
+}
+.download-btn {
+  background: var(--hdr); color: #fff; border: 0; border-radius: 999px;
+  padding: 10px 16px; font-weight: 700; font-family: inherit; cursor: pointer;
+}
+.download-btn.ghost { background: #fff; color: var(--navy); border: 1px solid var(--line); }
+.page {
+  width: 210mm; min-height: 297mm; margin: 16px auto; background: #fff;
+  box-shadow: 0 12px 32px rgba(6, 13, 31, 0.12); position: relative; overflow: hidden;
+  page-break-after: always; display: flex; flex-direction: column;
+}
+.page-header {
+  background: var(--hdr); color: #fff; padding: 8px 14px 7px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.logo-row { display: flex; align-items: center; gap: 10px; }
+.logo-svg { width: 42px; height: 42px; display: block; }
+.logo-text {
+  font-family: "Space Grotesk", Inter, sans-serif;
+  font-size: 18pt; font-weight: 700; letter-spacing: 0.08em; line-height: 1;
+}
+[dir="rtl"] .logo-text { font-family: Heebo, "Space Grotesk", Inter, sans-serif; }
+.logo-tagline { font-size: 7pt; opacity: 0.84; margin-top: 3px; letter-spacing: 0.04em; }
+.doc-ref { font-size: 7pt; text-align: end; opacity: 0.86; line-height: 1.45; }
+.gold-bar { height: 4px; background: var(--goldbar); }
+.page-content { padding: 7px 13px 28px; flex: 1; }
+.page-footer {
+  position: absolute; bottom: 0; left: 0; right: 0; background: var(--hdr);
+  color: rgba(255,255,255,0.86); font-size: 6.6pt; padding: 6px 16px;
+  display: flex; justify-content: space-between; gap: 8px;
+}
+.page-footer strong { color: #fff; }
+.lang-link { color: var(--gold-strong); font-weight: 700; text-decoration: none; }
+.recipient {
+  display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;
+  background: var(--ice); border: 1px solid var(--line); border-inline-start: 4px solid var(--gold);
+  border-radius: 10px; padding: 7px 10px; margin-bottom: 6px;
+}
+.to-label { font-size: 6.6pt; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--navy); }
+.to-name { font-family: "Space Grotesk", Inter, sans-serif; font-size: 12pt; font-weight: 700; line-height: 1.15; }
+[dir="rtl"] .to-name { font-family: Heebo, "Space Grotesk", Inter, sans-serif; }
+.to-role { font-size: 7.6pt; color: var(--muted); margin-top: 2px; }
+.doc-meta { text-align: end; font-size: 7pt; color: var(--muted); line-height: 1.45; }
+.doc-class {
+  display: inline-block; background: var(--hdr); color: #fff; border-radius: 999px;
+  padding: 2px 8px; font-size: 6.4pt; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+}
+h1.doc-title {
+  font-family: "Space Grotesk", Inter, sans-serif; font-size: 14pt; color: var(--navy);
+  letter-spacing: -0.01em; line-height: 1.15; margin: 4px 0 2px;
+}
+[dir="rtl"] h1.doc-title, [dir="rtl"] .panel h3, [dir="rtl"] .forecast h3, [dir="rtl"] .appendix-title {
+  font-family: Heebo, "Space Grotesk", Inter, sans-serif;
+}
+.doc-subtitle { font-size: 8pt; color: var(--muted); margin-bottom: 6px; }
+.doc-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 6px; }
+.tag {
+  border-radius: 999px; padding: 2px 8px; font-size: 6.4pt; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--navy);
+  background: rgba(14, 47, 99, 0.06); border: 1px solid rgba(14, 47, 99, 0.16);
+}
+.tag.gold { color: #8a5a12; background: rgba(201, 160, 78, 0.15); border-color: rgba(201, 160, 78, 0.45); }
+.note {
+  background: #fffbeb; border: 1px solid #f0e0b8; border-inline-start: 4px solid var(--gold);
+  border-radius: 8px; padding: 6px 8px; margin-bottom: 6px; font-size: 7.1pt; color: #6b4a12;
+}
+.body-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+.panel { border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; }
+.panel h3 { font-size: 8.6pt; color: var(--navy); margin-bottom: 4px; }
+.panel ul { padding-inline-start: 14px; font-size: 7.2pt; color: var(--muted); }
+.panel li { margin-bottom: 2px; }
+.panel strong, .forecast strong { color: var(--ink); }
+.risk-matrix, .premium-table { width: 100%; border-collapse: collapse; }
+.risk-matrix th, .risk-matrix td, .premium-table th, .premium-table td {
+  padding: 3px 5px; border-bottom: 1px solid var(--line); font-size: 7pt;
+}
+.risk-matrix th, .premium-table th {
+  background: var(--hdr); color: #fff; font-weight: 700; letter-spacing: 0.03em;
+  text-transform: uppercase; font-size: 6.2pt; text-align: end;
+}
+.risk-matrix th:first-child, .risk-matrix td:first-child,
+.premium-table th:first-child, .premium-table td:first-child { text-align: start; }
+.risk-matrix td.num, .premium-table td { text-align: end; font-variant-numeric: tabular-nums; }
+.premium-table { font-variant-numeric: tabular-nums; }
+.premium-table tr.band td {
+  background: #fffbeb; color: #8a5a12; font-weight: 800; border-top: 2px solid var(--gold);
+}
+.forecast { border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; }
+.forecast h3 { font-size: 8.6pt; color: var(--navy); margin-bottom: 3px; }
+.forecast .lead { font-size: 7.1pt; color: var(--muted); margin-bottom: 5px; }
+.forecast-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 5px; }
+.fc-cell { background: var(--ice); border: 1px solid var(--line); border-radius: 8px; padding: 4px 3px; text-align: center; }
+.fc-cell .yr { font-size: 6.2pt; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--navy); }
+.fc-cell .age { font-size: 6.4pt; color: var(--muted); }
+.fc-cell .prem { font-family: "Space Grotesk", Inter, sans-serif; font-size: 9pt; font-weight: 700; color: var(--ink); }
+[dir="rtl"] .fc-cell .prem { font-family: Heebo, "Space Grotesk", Inter, sans-serif; }
+.fc-cell .delta { font-size: 6pt; color: var(--green); font-weight: 700; }
+.avg-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.avg {
+  background: linear-gradient(180deg, #fffbeb 0%, #fff 70%);
+  border: 1px solid rgba(201, 160, 78, 0.55); border-radius: 8px; padding: 5px 8px;
+}
+.avg .k { font-size: 6.4pt; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #8a5a12; }
+.avg .v { font-family: "Space Grotesk", Inter, sans-serif; font-size: 11pt; font-weight: 700; color: var(--navy); }
+[dir="rtl"] .avg .v { font-family: Heebo, "Space Grotesk", Inter, sans-serif; }
+.avg .s { font-size: 7pt; color: var(--muted); }
+.totals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 5px; font-size: 7pt; color: var(--muted); }
+.totals strong { color: var(--navy); }
+.appendix-title { font-family: "Space Grotesk", Inter, sans-serif; font-size: 13pt; color: var(--navy); margin-bottom: 2px; }
+.appendix-sub { font-size: 7.6pt; color: var(--muted); margin-bottom: 6px; }
+.actuarial-note {
+  background: var(--ice); border: 1px solid var(--line); border-inline-start: 4px solid var(--navy-mid);
+  border-radius: 8px; padding: 6px 8px; margin-top: 6px; font-size: 7pt; color: var(--muted);
+}
+.actuarial-note strong { color: var(--navy); }
+.nums { direction: ltr; unicode-bidi: isolate; font-variant-numeric: tabular-nums; }
+.year1 { display: grid; grid-template-columns: 1.5fr auto auto; gap: 1px 8px; font-size: 7pt; align-items: baseline; }
+.year1 .k { color: var(--muted); }
+.year1 .v { font-weight: 800; text-align: end; color: var(--navy); }
+[dir="rtl"] .panel li, [dir="rtl"] .note, [dir="rtl"] .forecast .lead, [dir="rtl"] .doc-subtitle, [dir="rtl"] .appendix-sub {
+  font-size: 6.7pt; line-height: 1.28;
+}
+.fail {
+  display: none; margin-top: 6px; background: #fde8e8; color: #9b1c1c;
+  border: 1px solid #f3b4b4; border-radius: 8px; padding: 4px 8px; font-size: 7pt; font-weight: 700;
+}
+.integrity {
+  display: inline-block; margin-top: 6px; background: rgba(15, 107, 69, 0.08);
+  border: 1px solid rgba(15, 107, 69, 0.28); color: var(--green);
+  border-radius: 999px; padding: 2px 8px; font-size: 6.6pt; font-weight: 700;
+}
+@page { size: A4; margin: 0; }
+@media print {
+  body { background: #fff; margin: 0; }
+  .download-bar, .phins-doc-return { display: none !important; }
+  .page { margin: 0; box-shadow: none; width: 210mm; height: 297mm; min-height: 297mm; overflow: hidden; }
+}

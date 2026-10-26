@@ -331,7 +331,9 @@ def test_templated_document_carries_shield_logo_and_gold_rule(doc_path):
 
 
 @pytest.mark.parametrize("fname", ["phins-risk-1pager-goldsobel.html",
-                                   "phins-risk-1pager-fefferman.html"])
+                                   "phins-risk-1pager-fefferman.html",
+                                   "phins-customer-150k-one-pager.html",
+                                   "phins-customer-150k-one-pager.he.html"])
 def test_risk_1pager_uses_raster_logo_for_canvas_pdf(fname):
     doc = _read(STATIC / fname)
     # html2canvas rasterizes the page for the jsPDF download; the PNG logo

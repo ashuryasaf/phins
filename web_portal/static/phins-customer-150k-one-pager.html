@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Customer 1-Pager · US$150,000 · Aspire 26 October 2026</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/customer-cover.css">
+  <!-- PHINS unified document branding. Canvas PDF swaps the shield to /phins-logo.png. Gold rule #c9a04e. Rates: phinsReferenceRates. A missing incidence rate is never shown as zero. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+</head>
+<body>
+  <div class="download-bar">
+    <button type="button" id="btn-print" class="download-btn ghost" data-copy="print">Print / Save as PDF</button>
+    <button type="button" id="btn-download-pdf" class="download-btn" data-copy="download">Download PDF</button>
+  </div>
+
+  <article class="page" id="page-1">
+    <header class="page-header">
+      <div class="logo-row">
+        <img class="logo-svg" src="/phins-logo.svg" alt="PHINS">
+        <div>
+          <div class="logo-text">PHINS</div>
+          <div class="logo-tagline" data-copy="tagline">Personal Health Insurance &amp; Savings</div>
+        </div>
+      </div>
+      <div class="doc-ref">
+        <div>PHINS-CUST-150K</div>
+        <div data-copy="kicker">Aspire Capital · 26 October 2026</div>
+        <a class="lang-switch lang-link" href="/phins-customer-150k-one-pager.he.html" data-copy="other">עברית</a>
+      </div>
+    </header>
+    <div class="gold-bar"></div>
+    <div class="page-content">
+      <div class="recipient">
+        <div>
+          <div class="to-label" data-copy="toLabel">Point of view</div>
+          <div class="to-name" data-copy="toName">The customer who buys the cover</div>
+          <div class="to-role" data-copy="toRole"></div>
+        </div>
+        <div class="doc-meta">
+          <div class="doc-class" data-copy="docClass">Customer illustration</div>
+          <div>26 October 2026</div>
+        </div>
+      </div>
+      <h1 class="doc-title" data-copy="title"></h1>
+      <p class="doc-subtitle" data-copy="subtitle"></p>
+      <div class="doc-tags">
+        <span class="tag" data-copy="tag1"></span>
+        <span class="tag" data-copy="tag2"></span>
+        <span class="tag gold" data-copy="tag3"></span>
+        <span class="tag gold" data-copy="tag4"></span>
+      </div>
+      <p class="note" data-copy="note">Planning illustration for the Aspire meeting. A missing incidence rate is left blank and is never shown as zero.</p>
+      <div class="panel" style="margin-bottom:6px;">
+        <h3 data-copy="hCover"></h3>
+        <table class="risk-matrix">
+          <thead>
+            <tr>
+              <th data-copy="thWhat"></th>
+              <th data-copy="thBenefit"></th>
+              <th data-copy="thAge"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-copy="covDeath"></td>
+              <td class="num" data-copy="ben150"></td>
+              <td class="num" data-copy="agePre"></td>
+            </tr>
+            <tr>
+              <td data-copy="covAdl"></td>
+              <td class="num" data-copy="ben375d"></td>
+              <td class="num" data-copy="agePre"></td>
+            </tr>
+            <tr>
+              <td data-copy="covDeath65"></td>
+              <td class="num" data-copy="ben375"></td>
+              <td class="num" data-copy="agePost"></td>
+            </tr>
+            <tr>
+              <td data-copy="covAdl65"></td>
+              <td class="num" data-copy="ben375eq"></td>
+              <td class="num" data-copy="agePost"></td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="lead" data-copy="covSplit" style="margin-top:4px;"></p>
+      </div>
+      <div class="body-grid">
+        <div class="panel">
+          <h3 data-copy="hRights"></h3>
+          <ul>
+            <li data-copy="rightService"></li>
+            <li data-copy="rightSavings"></li>
+            <li data-copy="rightWallet"></li>
+            <li data-copy="rightConsume"></li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3 data-copy="hLiab"></h3>
+          <ul>
+            <li data-copy="liabService"></li>
+            <li data-copy="liabSavings"></li>
+            <li data-copy="liabWallet"></li>
+            <li data-copy="liabConsume"></li>
+          </ul>
+        </div>
+      </div>
+      <div class="panel" style="margin-bottom:6px;">
+        <h3 data-copy="hYear"></h3>
+        <div class="year1" id="year1-body"></div>
+      </div>
+      <div class="forecast">
+        <h3 data-copy="forecastTitle"></h3>
+        <p class="lead" data-copy="forecastLead"></p>
+        <div class="forecast-grid" id="forecast-42"></div>
+        <div class="avg-row" id="avg-42"></div>
+        <div class="totals" id="totals-42"></div>
+      </div>
+      <div class="fail" id="integrity-fail"></div>
+    </div>
+    <footer class="page-footer">
+      <span data-copy="foot"></span>
+      <strong data-copy="page1"></strong>
+    </footer>
+  </article>
+
+  <article class="page" id="page-2">
+    <header class="page-header">
+      <div class="logo-row">
+        <img class="logo-svg" src="/phins-logo.svg" alt="PHINS">
+        <div>
+          <div class="logo-text">PHINS</div>
+          <div class="logo-tagline" data-copy="tagline"></div>
+        </div>
+      </div>
+      <div class="doc-ref">
+        <div>PHINS-CUST-150K</div>
+        <div data-copy="kicker"></div>
+        <a class="lang-switch lang-link" href="/phins-customer-150k-one-pager.he.html" data-copy="other"></a>
+      </div>
+    </header>
+    <div class="gold-bar"></div>
+    <div class="page-content">
+      <h1 class="appendix-title" data-copy="appTitle"></h1>
+      <p class="appendix-sub" data-copy="appSub"></p>
+      <table class="premium-table">
+        <thead>
+          <tr>
+            <th data-copy="thYear"></th>
+            <th data-copy="thAge"></th>
+            <th data-copy="thFactor"></th>
+            <th data-copy="thRisk"></th>
+            <th data-copy="thSav"></th>
+            <th data-copy="thPaid"></th>
+            <th data-copy="thWallet"></th>
+            <th data-copy="thLoss"></th>
+          </tr>
+        </thead>
+        <tbody id="table-42"></tbody>
+      </table>
+      <div class="actuarial-note">
+        <p data-copy="method"></p>
+        <p id="worked-line" style="margin-top:4px;"></p>
+        <p data-copy="identity" style="margin-top:4px;"></p>
+        <div class="integrity" id="integrity-stamp" data-copy="stamp"></div>
+      </div>
+    </div>
+    <footer class="page-footer">
+      <span data-copy="foot"></span>
+      <strong data-copy="page2"></strong>
+    </footer>
+  </article>
+
+  <article class="page" id="page-3">
+    <header class="page-header">
+      <div class="logo-row">
+        <img class="logo-svg" src="/phins-logo.svg" alt="PHINS">
+        <div>
+          <div class="logo-text">PHINS</div>
+          <div class="logo-tagline" data-copy="tagline"></div>
+        </div>
+      </div>
+      <div class="doc-ref">
+        <div>PHINS-CUST-150K</div>
+        <div data-copy="kicker"></div>
+        <a class="lang-switch lang-link" href="/phins-customer-150k-one-pager.he.html" data-copy="other"></a>
+      </div>
+    </header>
+    <div class="gold-bar"></div>
+    <div class="page-content">
+      <h1 class="appendix-title" data-copy="childTitle"></h1>
+      <p class="appendix-sub" data-copy="childSub"></p>
+      <p class="lead" data-copy="childLead" style="margin-bottom:6px;"></p>
+      <div class="forecast-grid" id="forecast-5"></div>
+      <div class="avg-row" id="avg-5" style="margin-bottom:6px;"></div>
+      <table class="premium-table">
+        <thead>
+          <tr>
+            <th data-copy="thYear"></th>
+            <th data-copy="thAge"></th>
+            <th data-copy="thFactor"></th>
+            <th data-copy="thRisk"></th>
+            <th data-copy="thSav"></th>
+            <th data-copy="thPaid"></th>
+            <th data-copy="thWallet"></th>
+            <th data-copy="thLoss"></th>
+          </tr>
+        </thead>
+        <tbody id="table-5"></tbody>
+      </table>
+      <div class="totals" id="totals-5"></div>
+    </div>
+    <footer class="page-footer">
+      <span data-copy="foot"></span>
+      <strong data-copy="page3"></strong>
+    </footer>
+  </article>
+
+  <script src="/risk-reference-rates.js"></script>
+  <script src="/customer-cover-forecast.js"></script>
+  <script src="/customer-cover-copy.js"></script>
+  <script>window.PHINS_CUSTOMER_LANG = "en";</script>
+  <script src="/customer-cover-page.js"></script>
+  <script src="/phins-doc-return.js"></script>
+</body>
+</html>
