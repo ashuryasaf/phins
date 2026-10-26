@@ -72,6 +72,7 @@ AUTH_AND_LANDING = [
     "phins-risk-1pager-fefferman.html",
     "phins-risk-1pager-goldsobel.html",
     "phins-customer-150k-one-pager.html",
+    "phins-customer-150k-one-pager.he.html",
 ]
 
 

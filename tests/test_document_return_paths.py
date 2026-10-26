@@ -34,6 +34,7 @@ STANDALONE_DOCS = [
     "phins-risk-1pager-goldsobel.html",
     "phins-risk-1pager-fefferman.html",
     "phins-customer-150k-one-pager.html",
+    "phins-customer-150k-one-pager.he.html",
     "terms-of-use.html",
     "privacy-policy.html",
     "document-viewer.html",

@@ -84,6 +84,19 @@ Lead with what a distribution chief can diligence.
 | Earlier bar | [Aspire-Invest September pack](/pitch-dashboard.html#aspire-invest-meeting-sep2026) |
 | Plan identity | `unified-2026.10-v1` |
 
+## Customer point of view — US$150,000
+
+Leave-behind for this meeting, in the unified letterhead. It is the buyer’s view of one contract. It is not a figure of the Israel book.
+
+- Face US$150,000. Issue age 42, standard class. A five-year-old on the same contract is the second illustration.
+- The adjustable risk tariff is the published identity at that face.
+- The savings add-on equals the risk tariff, 100% on top of risk.
+- Each five-year block states the average of that block’s adjustable premium. The second block is the premium restated for the next five years.
+- English: [Customer 1-pager](/phins-customer-150k-one-pager.html)
+- Hebrew: [Customer 1-pager, Hebrew](/phins-customer-150k-one-pager.he.html)
+
+These pages do not replace ILS 4,518 and do not change plan identity `unified-2026.10-v1`.
+
 ## Data integrity
 
-Every figure in this brief is a canonical default of plan identity `unified-2026.10-v1`. Israel anchor, 2027 / 2028 / 2029: annual risk premium ILS 4,518; PHINS take 25% and carrier share 75%; new issues 25,000 / 75,000 / 150,000; end-of-year in-force 24,000 / 94,080 / 230,554; average in-force 12,000 / 59,040 / 162,317; risk GWP ILS 54,216,000 / 266,742,720 / 733,348,206; PHINS net revenue ILS 13,554,000 / 66,685,680 / 183,337,052; insurance take ILS 40,662,000 / 200,057,040 / 550,011,154. Checks: 12,000 × 4,518 = 54,216,000; 59,040 × 4,518 = 266,742,720; 162,317 × 4,518 = 733,348,206. Seed ILS 6,000,000; pre-money ILS 24,000,000; post-money ILS 30,000,000; dilution 20%. Use of seed: ILS 2,400,000 (40%), ILS 1,200,000 (20%), ILS 1,500,000 (25%), ILS 900,000 (15%); sum ILS 6,000,000. These are forward-looking planning assumptions, not commitments. This brief does not write the platform ledger.
+Every figure in this brief is a canonical default of plan identity `unified-2026.10-v1`. Israel anchor, 2027 / 2028 / 2029: annual risk premium ILS 4,518; PHINS take 25% and carrier share 75%; new issues 25,000 / 75,000 / 150,000; end-of-year in-force 24,000 / 94,080 / 230,554; average in-force 12,000 / 59,040 / 162,317; risk GWP ILS 54,216,000 / 266,742,720 / 733,348,206; PHINS net revenue ILS 13,554,000 / 66,685,680 / 183,337,052; insurance take ILS 40,662,000 / 200,057,040 / 550,011,154. Checks: 12,000 × 4,518 = 54,216,000; 59,040 × 4,518 = 266,742,720; 162,317 × 4,518 = 733,348,206. Seed ILS 6,000,000; pre-money ILS 24,000,000; post-money ILS 30,000,000; dilution 20%. Use of seed: ILS 2,400,000 (40%), ILS 1,200,000 (20%), ILS 1,500,000 (25%), ILS 900,000 (15%); sum ILS 6,000,000. These are forward-looking planning assumptions, not commitments. The customer point-of-view pages linked above are a separate USD illustration and are not part of this Israel identity. This brief does not write the platform ledger.
