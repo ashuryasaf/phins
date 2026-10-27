@@ -680,7 +680,13 @@ Environment variables commonly used:
  (`nda_acceptances[].ledger`), `GET /api/legal-docs/registry?doc_id=LGL-NDA-…`
  and `/api/legal-docs/verify`. Each opening is a session (`access_window_seconds`,
  ≤ 3 h for single use, `idle_timeout_seconds`) bound into the share cookie
- (`sk`). The cookie unlocks only the link it was minted for: a different
+ (`sk`). The pitch dashboard header (`#pitch-top`) signs the viewer out
+ with Logout or after 30 minutes without activity
+ (`POST /api/pitch-dashboard/logout`, `POST /api/pitch-dashboard/session`,
+ `web_portal/static/pitch-session.js`). That revokes only the presented
+ session and expires the staff, share, and access cookies. Share records,
+ the ledger, and browser meeting notes are not rewritten. A shorter share
+ idle still applies. The cookie unlocks only the link it was minted for: a different
  `?share=` is `share_password_required` even when an earlier opening's cookie
  is still valid, and an NDA share with no matching `nda_acceptances` row for
  that session key is closed in every use mode (single, multi, unlimited) —
