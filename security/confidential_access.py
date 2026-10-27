@@ -63,6 +63,12 @@ ACCESS_QUERY_PARAM = "access_token"
 SHARE_COOKIE_NAME = "phins_confidential_share"
 SHARE_QUERY_PARAM = "share"
 STAFF_UNLOCK_COOKIE_NAME = "phins_confidential_staff"
+# Pitch-dashboard viewing clock. The value is an HMAC timestamp, not a
+# credential. Idle close expires the viewing cookies; it does not rewrite
+# share records, the ledger, or any business row.
+PITCH_DASHBOARD_PATH = "/pitch-dashboard.html"
+PITCH_ACTIVITY_COOKIE_NAME = "phins_pitch_activity"
+PITCH_IDLE_TIMEOUT_SECONDS = 30 * 60
 
 # Query parameters whose values must never reach an access log.
 SENSITIVE_QUERY_PARAMS = (
@@ -478,6 +484,132 @@ def verify_share_cookie(
     if not str(payload.get("sid") or "").strip():
         return None
     return payload
+
+
+def _subject_token(material: str) -> str:
+    return hashlib.sha256(str(material or "").encode("utf-8")).hexdigest()[:24]
+
+
+def pitch_viewer_subject(
+    *,
+    cookies: Optional[Mapping[str, str]] = None,
+    bearer_token: str = "",
+    session: Optional[Mapping[str, Any]] = None,
+    environ: Optional[Mapping[str, str]] = None,
+) -> str:
+    """Identity of whoever is looking at the pitch dashboard.
+
+    Cookie credentials are preferred over the bearer so a normal document
+    load and a later ``fetch`` from the same browser share one idle clock.
+    The result is a hash, not the credential itself.
+    """
+    jar = dict(cookies or {})
+    env = _env(environ)
+    staff = verify_staff_unlock_cookie(jar.get(STAFF_UNLOCK_COOKIE_NAME), env)
+    if staff:
+        return "staff:" + _subject_token(
+            f"{staff.get('u')}|{staff.get('iat')}|{staff.get('exp')}"
+        )
+    share = verify_share_cookie(jar.get(SHARE_COOKIE_NAME), PITCH_DASHBOARD_PATH, env)
+    if share:
+        return "share:" + _subject_token(f"{share.get('sid')}|{share.get('sk')}")
+    access = str(jar.get(ACCESS_COOKIE_NAME) or "")
+    if access:
+        return "access:" + _subject_token(access)
+    token = str(bearer_token or "")
+    if token:
+        return "sess:" + _subject_token(token)
+    if session_is_staff(session):
+        return "sess:" + _subject_token(
+            f"{session.get('username')}|{session.get('expires')}|{session.get('role')}"
+        )
+    return "open"
+
+
+def read_pitch_activity(
+    cookie_value: Optional[str],
+    environ: Optional[Mapping[str, str]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Return a verified pitch-activity payload, or ``None``."""
+    payload = _verify_signed_payload(cookie_value, signing_secret(environ))
+    if not payload or payload.get("typ") != "pitch_activity":
+        return None
+    return payload
+
+
+def pitch_idle_state(
+    cookie_value: Optional[str],
+    subject: str,
+    *,
+    now: int,
+    environ: Optional[Mapping[str, str]] = None,
+    limit_seconds: int = PITCH_IDLE_TIMEOUT_SECONDS,
+) -> str:
+    """``start``, ``touch``, or ``expire``.
+
+    A clock for a different viewer does not close this one. Exactly
+    ``limit_seconds`` of quiet is still inside the window ("up to 30
+    minutes"); the next second expires it.
+    """
+    payload = read_pitch_activity(cookie_value, environ)
+    if not payload or str(payload.get("sub") or "") != str(subject or ""):
+        return "start"
+    try:
+        seen = int(payload.get("t") or 0)
+    except (TypeError, ValueError):
+        return "start"
+    if seen <= 0:
+        return "start"
+    try:
+        limit = int(limit_seconds)
+    except (TypeError, ValueError):
+        limit = PITCH_IDLE_TIMEOUT_SECONDS
+    if limit < 1:
+        limit = PITCH_IDLE_TIMEOUT_SECONDS
+    if int(now) - seen > limit:
+        return "expire"
+    return "touch"
+
+
+def mint_pitch_activity_cookie(
+    subject: str,
+    seen_at: int,
+    *,
+    environ: Optional[Mapping[str, str]] = None,
+    jti: str = "",
+) -> str:
+    """Sign the last-activity stamp. Empty when no signing secret exists."""
+    secret = signing_secret(environ)
+    if not secret:
+        return ""
+    try:
+        seen = int(seen_at)
+    except (TypeError, ValueError):
+        seen = int(time.time())
+    payload = {
+        "typ": "pitch_activity",
+        "sub": str(subject or "")[:80],
+        "t": seen,
+        # Signature lifetime. The idle decision uses ``t``, not this field.
+        "exp": seen + 24 * 60 * 60,
+        "jti": str(jti or "")[:80],
+    }
+    return _sign_payload(payload, secret)
+
+
+def expired_cookie_header(cookie_name: str, *, secure: bool) -> str:
+    """``Set-Cookie`` that drops a previously issued cookie. No new value."""
+    name = str(cookie_name or "").strip()
+    parts = [
+        f"{name}=",
+        "Path=/",
+        "Max-Age=0",
+        "HttpOnly",
+        "SameSite=Lax",
+    ]
+    if secure:
+        parts.append("Secure")
+    return "; ".join(parts)
 
 
 def extract_share_id(query_params: Optional[Mapping[str, Iterable[str]]] = None) -> str:
@@ -943,6 +1075,7 @@ def denial_html(
     share: Optional[Mapping[str, Any]] = None,
     preview_origin: str = "",
     preview_page_url: str = "",
+    notice: str = "",
 ) -> str:
     """Branded HTML denial page with admin / share unlock forms.
 
@@ -1482,6 +1615,7 @@ def denial_html(
         </a>
         <p class="gate-wordmark">PHINS</p>
         <h1 class="gate-title">Access restricted</h1>
+        {f'<p class="gate-lead">{_html_escape(notice)}</p>' if str(notice or '').strip() else ''}
         <p class="gate-lead">{_html_escape(lead)}</p>
       </header>
       <p class="gate-detail">{_html_escape(detail)}</p>

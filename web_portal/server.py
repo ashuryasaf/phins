@@ -15914,6 +15914,36 @@ def _delete_session_from_db(token: str) -> None:
         pass
 
 
+def _revoke_presented_token(token: Optional[str]) -> bool:
+    """Invalidate one presented bearer. No ledger or business-record write.
+
+    ``True`` only when a v2 ``jti`` was added to the revocation registry.
+    Legacy tokens are dropped from ``SESSIONS`` and the session table.
+    """
+    if not token:
+        return False
+    revoked = False
+    if token.startswith('phins2_'):
+        claims = _auth_tokens.verify_v2_token(token)
+        if claims is not None:
+            _auth_tokens.revoke_token(claims.jti, claims.expires_at)
+            revoked = True
+    with STATE_LOCK:
+        SESSIONS.pop(token, None)
+    _delete_session_from_db(token)
+    return revoked
+
+
+def _presented_bearer_jti(token: Optional[str]) -> str:
+    """``jti`` of a still-valid v2 bearer, else ``''``. Never logs the token."""
+    if not token or not str(token).startswith('phins2_'):
+        return ''
+    claims = _auth_tokens.verify_v2_token(token)
+    if claims is None:
+        return ''
+    return str(claims.jti or '')[:80]
+
+
 def get_customer_id_guaranteed(username: str, role: str) -> str | None:
     """
     GUARANTEE that customer role ALWAYS gets a valid customer_id.
@@ -16151,6 +16181,9 @@ REGULATOR_WRITE_ALLOW = frozenset({
     '/api/logout',
     '/api/regulator/credentials',
     '/api/regulator/inquiries',
+    # Pitch-dashboard sign-out and idle clock. Session and cookies only.
+    '/api/pitch-dashboard/logout',
+    '/api/pitch-dashboard/session',
 })
 # The conversation thread is its own store. Each open or append also files a
 # linked Business Relations row so the admin queue and its notifications see
@@ -21069,7 +21102,289 @@ class PortalHandler(BaseHTTPRequestHandler):
         from security.headers import json_security_headers
         for name, value in json_security_headers():
             self.send_header(name, value)
+        self._emit_pending_cookies()
         self.end_headers()
+
+    def _emit_pending_cookies(self) -> None:
+        """Write ``Set-Cookie`` headers queued by this request, then drop them."""
+        pending = list(getattr(self, '_pending_cookies', None) or [])
+        self._pending_cookies = []
+        for header in pending:
+            if header:
+                self.send_header('Set-Cookie', header)
+
+    def _bearer_token(self) -> Optional[str]:
+        auth_header = self.headers.get('Authorization', '') or ''
+        if not auth_header.startswith('Bearer '):
+            return None
+        token = auth_header[7:].strip()
+        return token or None
+
+    def _pitch_cookie_jar(self) -> Dict[str, str]:
+        return confidential_access.parse_cookies(self.headers.get('Cookie', ''))
+
+    def _pitch_subject(self) -> str:
+        token = self._bearer_token()
+        session = validate_session(token) if token else None
+        return confidential_access.pitch_viewer_subject(
+            cookies=self._pitch_cookie_jar(),
+            bearer_token=token or '',
+            session=session,
+        )
+
+    def _pitch_clear_cookie_headers(self) -> List[str]:
+        secure = self._request_is_secure()
+        names = (
+            confidential_access.PITCH_ACTIVITY_COOKIE_NAME,
+            confidential_access.STAFF_UNLOCK_COOKIE_NAME,
+            confidential_access.SHARE_COOKIE_NAME,
+            confidential_access.ACCESS_COOKIE_NAME,
+        )
+        return [
+            confidential_access.expired_cookie_header(name, secure=secure)
+            for name in names
+        ]
+
+    def _pitch_activity_jti(self, subject: str) -> str:
+        """Keep a v2 ``jti`` on the activity clock so a later idle GET can revoke it.
+
+        A document navigation does not send ``Authorization``. The heartbeat
+        does. A refresh that replaces the clock must not drop a ``jti`` that
+        still belongs to this viewer.
+        """
+        presented = _presented_bearer_jti(self._bearer_token())
+        if presented:
+            return presented
+        existing = confidential_access.read_pitch_activity(
+            self._pitch_cookie_jar().get(confidential_access.PITCH_ACTIVITY_COOKIE_NAME)
+        )
+        if not existing or str(existing.get('sub') or '') != str(subject or ''):
+            return ''
+        return str(existing.get('jti') or '')[:80]
+
+    def _queue_pitch_activity_cookie(self) -> None:
+        subject = self._pitch_subject()
+        value = confidential_access.mint_pitch_activity_cookie(
+            subject,
+            int(time.time()),
+            jti=self._pitch_activity_jti(subject),
+        )
+        if not value:
+            return
+        header = confidential_access.access_cookie_header(
+            value,
+            secure=self._request_is_secure(),
+            max_age=24 * 60 * 60,
+            cookie_name=confidential_access.PITCH_ACTIVITY_COOKIE_NAME,
+        )
+        pending = list(getattr(self, '_pending_cookies', None) or [])
+        pending.append(header)
+        self._pending_cookies = pending
+
+    def _revoke_pitch_activity_jti(self) -> None:
+        """Revoke the v2 id stamped on a stale activity clock. No other write."""
+        existing = confidential_access.read_pitch_activity(
+            self._pitch_cookie_jar().get(confidential_access.PITCH_ACTIVITY_COOKIE_NAME)
+        )
+        jti = str((existing or {}).get('jti') or '')
+        if not jti:
+            return
+        _auth_tokens.revoke_token(jti, time.time() + SESSION_TIMEOUT)
+
+    def _pitch_idle_limit(self) -> int:
+        """Page cap is 30 minutes. A shorter share idle is honoured."""
+        limit = confidential_access.PITCH_IDLE_TIMEOUT_SECONDS
+        cookies = self._pitch_cookie_jar()
+        claims = confidential_access.verify_share_cookie(
+            cookies.get(confidential_access.SHARE_COOKIE_NAME),
+            confidential_access.PITCH_DASHBOARD_PATH,
+        )
+        if not claims:
+            return limit
+        try:
+            from services.confidential_share_service import get_confidential_share_service
+            ctx = get_confidential_share_service().viewer_context(
+                str(claims.get('sid') or ''),
+                str(claims.get('sk') or ''),
+            )
+        except Exception:
+            return limit
+        try:
+            share_idle = int((ctx or {}).get('idle_timeout_seconds') or 0)
+        except (TypeError, ValueError):
+            share_idle = 0
+        if share_idle > 0:
+            return min(limit, share_idle)
+        return limit
+
+    def _pitch_idle_closed(self, path: str) -> bool:
+        """Close a pitch-dashboard view that has been quiet for too long.
+
+        Returns True when the denial is already written. Share records, the
+        ledger, policies, and notes are not modified.
+        """
+        if str(path or '').split('?', 1)[0] != confidential_access.PITCH_DASHBOARD_PATH:
+            return False
+        cookies = self._pitch_cookie_jar()
+        subject = self._pitch_subject()
+        state = confidential_access.pitch_idle_state(
+            cookies.get(confidential_access.PITCH_ACTIVITY_COOKIE_NAME),
+            subject,
+            now=int(time.time()),
+            limit_seconds=self._pitch_idle_limit(),
+        )
+        if state != 'expire':
+            return False
+        self._revoke_pitch_activity_jti()
+        _revoke_presented_token(self._bearer_token())
+        self._pending_cookies = self._pitch_clear_cookie_headers()
+        decision = confidential_access.AccessDecision(
+            allowed=False,
+            reason='token_required',
+            confidential=True,
+            status=401,
+        )
+        body = confidential_access.denial_html(
+            decision,
+            path=confidential_access.PITCH_DASHBOARD_PATH,
+            preview_origin=self._preview_origin(),
+            preview_page_url=self._preview_page_url(confidential_access.PITCH_DASHBOARD_PATH),
+            notice='This view closed after 30 minutes without activity. Sign in again to continue.',
+        ).encode('utf-8')
+        self.send_response(401)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-store')
+        self._emit_pending_cookies()
+        try:
+            from security.headers import html_security_headers
+            for name, value in html_security_headers():
+                self.send_header(name, value)
+        except Exception:
+            pass
+        self.end_headers()
+        self.wfile.write(body)
+        return True
+
+    def _read_small_json_object(self, max_bytes: int = 4096) -> Dict[str, Any]:
+        try:
+            length = int(self.headers.get('Content-Length', 0) or 0)
+        except (TypeError, ValueError):
+            length = 0
+        if length <= 0:
+            return {}
+        raw = self.rfile.read(length)
+        if length > max_bytes:
+            return {}
+        try:
+            data = json.loads(raw.decode('utf-8') or '{}')
+        except Exception:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _touch_live_share_opening(self) -> bool:
+        """Refresh a share opening's activity stamp when the viewer is active.
+
+        Staff and access-cookie viewers do not write the share file. A share
+        opening that is already closed is left unchanged and reported closed.
+        """
+        cookies = self._pitch_cookie_jar()
+        if confidential_access.verify_staff_unlock_cookie(
+            cookies.get(confidential_access.STAFF_UNLOCK_COOKIE_NAME)
+        ):
+            return True
+        token = self._bearer_token()
+        if confidential_access.session_is_staff(validate_session(token) if token else None):
+            return True
+        claims = confidential_access.verify_share_cookie(
+            cookies.get(confidential_access.SHARE_COOKIE_NAME),
+            confidential_access.PITCH_DASHBOARD_PATH,
+        )
+        if not claims:
+            return True
+        return self._confidential_share_active(
+            str(claims.get('sid') or ''),
+            confidential_access.PITCH_DASHBOARD_PATH,
+            str(claims.get('sk') or ''),
+        )
+
+    def _handle_pitch_dashboard_session(self, path: str) -> None:
+        """Logout, or refresh the idle clock while the viewer is active.
+
+        Neither branch writes the ledger, policies, claims, or meeting notes.
+        Logout does not write the share file. An active share viewer refreshes
+        only that opening's existing ``last_seen_at`` stamp.
+        """
+        body = self._read_small_json_object()
+        if not _confidential_access_enabled or confidential_access is None:
+            if path == '/api/pitch-dashboard/logout':
+                revoked = _revoke_presented_token(self._bearer_token())
+                self._set_json_headers(200)
+                self.wfile.write(json.dumps({
+                    'success': True,
+                    'revoked': revoked,
+                }).encode('utf-8'))
+                return
+            self._set_json_headers(503)
+            self.wfile.write(json.dumps({
+                'error': 'Pitch session clock unavailable',
+            }).encode('utf-8'))
+            return
+        if path == '/api/pitch-dashboard/logout':
+            revoked = _revoke_presented_token(self._bearer_token())
+            self._revoke_pitch_activity_jti()
+            self._pending_cookies = self._pitch_clear_cookie_headers()
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'success': True,
+                'revoked': revoked,
+            }).encode('utf-8'))
+            return
+
+        subject = self._pitch_subject()
+        limit = self._pitch_idle_limit()
+        state = confidential_access.pitch_idle_state(
+            self._pitch_cookie_jar().get(confidential_access.PITCH_ACTIVITY_COOKIE_NAME),
+            subject,
+            now=int(time.time()),
+            limit_seconds=limit,
+        )
+        active = body.get('active', True)
+        is_active = active is not False and active != 0 and str(active).lower() != 'false'
+        # A quiet poll must not move last_seen_at. An already-idle clock must
+        # not move it either. Only a live, active share viewer refreshes the
+        # existing stamp.
+        share_closed = False
+        if state != 'expire' and is_active:
+            share_closed = not self._touch_live_share_opening()
+        if state == 'expire' or share_closed:
+            self._revoke_pitch_activity_jti()
+            revoked = _revoke_presented_token(self._bearer_token())
+            self._pending_cookies = self._pitch_clear_cookie_headers()
+            self._set_json_headers(401)
+            self.wfile.write(json.dumps({
+                'error': 'Signed out after 30 minutes without activity',
+                'idle_timeout_seconds': limit,
+                'revoked': revoked,
+            }).encode('utf-8'))
+            return
+
+        if not is_active:
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({
+                'ok': True,
+                'idle_timeout_seconds': limit,
+                'extended': False,
+            }).encode('utf-8'))
+            return
+
+        self._queue_pitch_activity_cookie()
+        self._set_json_headers(200)
+        self.wfile.write(json.dumps({
+            'ok': True,
+            'idle_timeout_seconds': limit,
+            'extended': True,
+        }).encode('utf-8'))
 
     def _get_session(self) -> Optional[Dict[str, Any]]:
         """Extract and validate bearer token session."""
@@ -21634,6 +21949,10 @@ class PortalHandler(BaseHTTPRequestHandler):
                 return False
         except Exception as exc:
             print(f"⚠️  [LINK PREVIEW] crawler card failed for {path}: {exc}")
+        # Idle close runs before the share-active check so an expired viewing
+        # clock does not refresh ``last_seen_at`` or any other share field.
+        if self._pitch_idle_closed(path):
+            return False
         try:
             decision = confidential_access.evaluate_access(
                 path,
@@ -22947,6 +23266,7 @@ For claims or questions, please contact:
                 self.send_header('Cache-Control', 'private, no-store')
             else:
                 self.send_header('Cache-Control', 'no-cache')
+        self._emit_pending_cookies()
         self.end_headers()
 
     def _serve_binary_file(self, file_path: str, content_type: str) -> None:
@@ -39821,6 +40141,14 @@ For claims or questions, please contact:
                 if file_path.lower().endswith(('.mp4', '.webm', '.mov')):
                     self._serve_media_file(file_path)
                     return
+                if (
+                    _confidential_access_enabled
+                    and confidential_access is not None
+                    and path == confidential_access.PITCH_DASHBOARD_PATH
+                ):
+                    # Opening or continuing the page is activity. The idle
+                    # decision above already ran; this only refreshes the clock.
+                    self._queue_pitch_activity_cookie()
                 self._set_file_headers(file_path)
                 if file_path.endswith('.html'):
                     with open(file_path, 'r', encoding='utf-8') as fh:
@@ -39939,6 +40267,13 @@ For claims or questions, please contact:
         qs_post = urlparse.parse_qs(parsed.query)
 
         if reject_regulator_mutation(self, path):
+            return
+
+        # Pitch dashboard sign-out and idle clock. Session revocation and
+        # cookie expiry only — share records, the ledger, and stored notes
+        # are not written.
+        if path in ('/api/pitch-dashboard/logout', '/api/pitch-dashboard/session'):
+            self._handle_pitch_dashboard_session(path)
             return
 
         if path == '/api/regulator/credentials':
@@ -45049,16 +45384,7 @@ For claims or questions, please contact:
                 if auth_header.startswith('Bearer ')
                 else None
             )
-            revoked = False
-            if token and token.startswith('phins2_'):
-                claims = _auth_tokens.verify_v2_token(token)
-                if claims is not None:
-                    _auth_tokens.revoke_token(claims.jti, claims.expires_at)
-                    revoked = True
-            if token:
-                with STATE_LOCK:
-                    SESSIONS.pop(token, None)
-                _delete_session_from_db(token)
+            revoked = _revoke_presented_token(token)
             self._set_json_headers()
             self.wfile.write(json.dumps({
                 'success': True,

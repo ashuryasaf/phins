@@ -812,6 +812,262 @@ def test_cross_worker_single_use_is_atomic(tmp_path):
     assert final["status"] == "exhausted"
 
 
+def test_pitch_idle_clock_is_thirty_minutes_and_ignores_other_viewers():
+    """Up to 30 minutes of quiet stays open. A different viewer does not."""
+    import time
+
+    env = {"SESSION_SECRET_KEY": SECRET}
+    subject = "staff:" + "a" * 24
+    now = int(time.time())
+    fresh = ca.mint_pitch_activity_cookie(subject, now - 1800, environ=env, jti="jti-1")
+    assert ca.pitch_idle_state(fresh, subject, now=now, environ=env) == "touch"
+    stale = ca.mint_pitch_activity_cookie(subject, now - 1801, environ=env, jti="jti-1")
+    assert ca.pitch_idle_state(stale, subject, now=now, environ=env) == "expire"
+    assert ca.pitch_idle_state(stale, "share:other", now=now, environ=env) == "start"
+    assert ca.pitch_idle_state(None, subject, now=now, environ=env) == "start"
+    payload = ca.read_pitch_activity(fresh, env)
+    assert payload["jti"] == "jti-1"
+    assert payload["sub"] == subject
+    cleared = ca.expired_cookie_header(ca.PITCH_ACTIVITY_COOKIE_NAME, secure=False)
+    assert "Max-Age=0" in cleared
+    assert ca.PITCH_IDLE_TIMEOUT_SECONDS == 1800
+
+
+def test_pitch_dashboard_logout_and_idle_leave_records_unchanged(
+    gate_token, share_store, monkeypatch
+):
+    """Logout and a 30-minute idle close the view without rewriting records."""
+    import json
+    import time
+
+    import web_portal.server as portal
+
+    monkeypatch.setenv("PHINS_ENVIRONMENT", "production")
+    monkeypatch.setenv("SESSION_SECRET_KEY", SECRET)
+    monkeypatch.setenv("PHINS_CONFIDENTIAL_ACCESS_TOKEN", TOKEN)
+
+    unlock = requests.post(
+        f"{BASE_URL}/api/confidential/admin-unlock",
+        json={"username": "admin", "password": "admin123", "next": "/pitch-dashboard.html"},
+        timeout=10,
+    )
+    assert unlock.status_code == 200, unlock.text
+    token = unlock.json()["token"]
+
+    admin = requests.Session()
+    admin.headers["Authorization"] = f"Bearer {token}"
+    if unlock.cookies:
+        admin.cookies.update(unlock.cookies)
+
+    created = admin.post(
+        f"{BASE_URL}/api/confidential/shares",
+        json={
+            "path": "/pitch-dashboard.html",
+            "password": "guest-open",
+            "mode": "single",
+            "label": "Idle integrity",
+        },
+        timeout=10,
+    )
+    assert created.status_code == 201, created.text
+    share_id = created.json()["share"]["id"]
+
+    def share_snapshot() -> str:
+        with share_store._exclusive_store():
+            return json.dumps(share_store._shares, sort_keys=True)
+
+    def business_snapshot() -> str:
+        return json.dumps(
+            {
+                "policies": portal.POLICIES,
+                "claims": portal.CLAIMS,
+                "customers": portal.CUSTOMERS,
+            },
+            sort_keys=True,
+            default=str,
+        )
+
+    viewed = admin.get(f"{BASE_URL}/pitch-dashboard.html", timeout=15)
+    assert viewed.status_code == 200, viewed.text[:400]
+    assert 'id="pitch-logout"' in viewed.text
+    assert "/pitch-session.js" in viewed.text
+    assert "PHI Permanent 3+ ADL" in viewed.text
+    assert ca.PITCH_ACTIVITY_COOKIE_NAME in admin.cookies
+
+    books = business_snapshot()
+    shares = share_snapshot()
+
+    quiet = admin.post(
+        f"{BASE_URL}/api/pitch-dashboard/session",
+        json={"active": False},
+        timeout=10,
+    )
+    assert quiet.status_code == 200, quiet.text
+    quiet_body = quiet.json()
+    assert quiet_body["extended"] is False
+    assert quiet_body["idle_timeout_seconds"] == 1800
+    assert ca.PITCH_ACTIVITY_COOKIE_NAME not in quiet.cookies
+    assert share_snapshot() == shares
+    assert business_snapshot() == books
+
+    extended = admin.post(
+        f"{BASE_URL}/api/pitch-dashboard/session",
+        json={"active": True},
+        timeout=10,
+    )
+    assert extended.status_code == 200, extended.text
+    assert extended.json()["extended"] is True
+    assert ca.PITCH_ACTIVITY_COOKIE_NAME in extended.cookies
+
+    logged_out = admin.post(f"{BASE_URL}/api/pitch-dashboard/logout", json={}, timeout=10)
+    assert logged_out.status_code == 200, logged_out.text
+    assert logged_out.json()["success"] is True
+    assert share_snapshot() == shares
+    assert business_snapshot() == books
+    assert token not in portal.SESSIONS
+    assert ca.STAFF_UNLOCK_COOKIE_NAME not in admin.cookies
+
+    still = requests.post(
+        f"{BASE_URL}/api/session/validate",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=10,
+    )
+    assert still.status_code == 401
+
+    # A fresh sign-in, then a stale activity clock, must close the view and
+    # leave the share file byte-for-byte as it was after that sign-in.
+    unlock_again = requests.post(
+        f"{BASE_URL}/api/confidential/admin-unlock",
+        json={"username": "admin", "password": "admin123", "next": "/pitch-dashboard.html"},
+        timeout=10,
+    )
+    assert unlock_again.status_code == 200, unlock_again.text
+    again = requests.Session()
+    again.headers["Authorization"] = f"Bearer {unlock_again.json()['token']}"
+    if unlock_again.cookies:
+        again.cookies.update(unlock_again.cookies)
+    opened = again.get(f"{BASE_URL}/pitch-dashboard.html", timeout=15)
+    assert opened.status_code == 200
+    shares_after_open = share_snapshot()
+    books_after_open = business_snapshot()
+
+    jar = {cookie.name: cookie.value for cookie in again.cookies}
+    subject = ca.pitch_viewer_subject(
+        cookies=jar,
+        bearer_token=unlock_again.json()["token"],
+        environ=os.environ,
+    )
+    stale = ca.mint_pitch_activity_cookie(
+        subject, int(time.time()) - 1801, environ=os.environ
+    )
+    again.cookies.set(ca.PITCH_ACTIVITY_COOKIE_NAME, stale)
+    closed = again.get(f"{BASE_URL}/pitch-dashboard.html", timeout=15)
+    assert closed.status_code == 401
+    assert "30 minutes without activity" in closed.text
+    assert "PHI Permanent 3+ ADL" not in closed.text
+    assert share_snapshot() == shares_after_open
+    assert business_snapshot() == books_after_open
+    assert share_store.get_share(share_id)["used_count"] == 0
+    assert share_store.get_share(share_id)["status"] == "active"
+
+
+def test_pitch_share_viewer_idle_does_not_rewrite_the_share(gate_token, share_store, monkeypatch):
+    """A share opening's password, use count, and NDA stay put on sign-out."""
+    import json
+    import time
+
+    monkeypatch.setenv("PHINS_ENVIRONMENT", "production")
+    monkeypatch.setenv("SESSION_SECRET_KEY", SECRET)
+    monkeypatch.setenv("PHINS_CONFIDENTIAL_ACCESS_TOKEN", TOKEN)
+
+    admin_login = requests.post(
+        f"{BASE_URL}/api/confidential/admin-unlock",
+        json={"username": "admin", "password": "admin123", "next": "/pitch-dashboard.html"},
+        timeout=10,
+    )
+    assert admin_login.status_code == 200, admin_login.text
+    admin = requests.Session()
+    admin.headers["Authorization"] = f"Bearer {admin_login.json()['token']}"
+    if admin_login.cookies:
+        admin.cookies.update(admin_login.cookies)
+    created = admin.post(
+        f"{BASE_URL}/api/confidential/shares",
+        json={
+            "path": "/pitch-dashboard.html",
+            "password": "guest-open",
+            "mode": "multi",
+            "label": "Share idle",
+            "idle_timeout_seconds": 900,
+        },
+        timeout=10,
+    )
+    assert created.status_code == 201, created.text
+    share_id = created.json()["share"]["id"]
+
+    recipient = requests.Session()
+    opened = recipient.post(
+        f"{BASE_URL}/api/confidential/share-unlock",
+        json={
+            "share_id": share_id,
+            "password": "guest-open",
+            "path": "/pitch-dashboard.html",
+        },
+        timeout=10,
+    )
+    assert opened.status_code == 200, opened.text
+
+    def frozen() -> dict:
+        with share_store._exclusive_store():
+            record = dict(share_store._shares[share_id])
+        return {
+            "password_hash": record.get("password_hash"),
+            "password_salt": record.get("password_salt"),
+            "used_count": record.get("used_count"),
+            "status": record.get("status"),
+            "nda_acceptances": record.get("nda_acceptances"),
+            "sessions": json.loads(json.dumps(record.get("sessions"))),
+        }
+
+    before = frozen()
+    assert before["used_count"] == 1
+
+    quiet = recipient.post(
+        f"{BASE_URL}/api/pitch-dashboard/session",
+        json={"active": False},
+        timeout=10,
+    )
+    assert quiet.status_code == 200, quiet.text
+    assert quiet.json()["idle_timeout_seconds"] == 900
+    assert quiet.json()["extended"] is False
+    assert frozen() == before
+
+    jar = {cookie.name: cookie.value for cookie in recipient.cookies}
+    subject = ca.pitch_viewer_subject(cookies=jar, environ=os.environ)
+    stale = ca.mint_pitch_activity_cookie(subject, int(time.time()) - 901, environ=os.environ)
+    recipient.cookies.set(ca.PITCH_ACTIVITY_COOKIE_NAME, stale)
+    closed = recipient.get(f"{BASE_URL}/pitch-dashboard.html", timeout=15)
+    assert closed.status_code == 401
+    assert "30 minutes without activity" in closed.text
+    assert frozen() == before
+
+    # The link is still the same opening: one use, not revoked, not rewritten.
+    again = share_store.get_share(share_id)
+    assert again["status"] == "active"
+    assert again["used_count"] == 1
+
+
+def test_pitch_session_script_does_not_clear_saved_notes():
+    """The browser sign-out drops auth tokens only, not the meeting diary."""
+    from pathlib import Path
+
+    script = Path("web_portal/static/pitch-session.js").read_text(encoding="utf-8")
+    assert "localStorage.clear" not in script
+    assert "phins.il.meeting" not in script
+    assert "phins.investor.cfg" not in script
+    assert "/api/pitch-dashboard/logout" in script
+    assert "30 * 60 * 1000" in script
+
+
 def test_stale_worker_reloads_before_unlock(tmp_path):
     """A worker that never saw the first unlock must still refuse a second use."""
     from services.confidential_share_service import (

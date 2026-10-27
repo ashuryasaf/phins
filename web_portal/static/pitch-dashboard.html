@@ -182,6 +182,43 @@
       color: #071022;
     }
 
+    .back-link--logout {
+      cursor: pointer;
+      font-family: inherit;
+      color: #f7e2a0;
+      border-color: rgba(247, 226, 160, 0.75);
+      background: rgba(247, 226, 160, 0.08);
+    }
+
+    .back-link--logout:hover {
+      background: rgba(247, 226, 160, 0.2);
+      color: #fff8e4;
+    }
+
+    .pitch-idle-note,
+    #pitch-idle-warn {
+      font-size: 8pt;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: rgba(247, 226, 160, 0.92);
+      white-space: nowrap;
+    }
+
+    #pitch-idle-warn {
+      color: #fff;
+      background: rgba(180, 35, 24, 0.9);
+      border-radius: 999px;
+      padding: 4px 10px;
+    }
+
+    @media print {
+      #pitch-logout,
+      #pitch-idle-note,
+      #pitch-idle-warn {
+        display: none !important;
+      }
+    }
+
     .hero {
       background:
         radial-gradient(circle at top left, rgba(79, 216, 255, 0.18), transparent 36%),
@@ -2679,6 +2716,9 @@
       <div class="header-actions">
         <a href="/corporate-legal-dashboard.html" class="back-link">Legal &amp; Funding</a>
         <a href="/nda.html?jurisdiction=dashboard" class="back-link">NDA Documents</a>
+        <span id="pitch-idle-note" class="pitch-idle-note">Idle timeout 30 min</span>
+        <span id="pitch-idle-warn" class="pitch-idle-note" hidden></span>
+        <button type="button" id="pitch-logout" class="back-link back-link--logout">Logout</button>
       </div>
     </div>
     <nav class="pitch-nav" id="pitch-nav" aria-label="Pitch sections">
@@ -13272,5 +13312,6 @@
   </script>
 
 <script src="/phins-doc-open.js"></script>
+<script src="/pitch-session.js"></script>
 </body>
 </html>
