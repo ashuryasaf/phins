@@ -25,6 +25,8 @@ def test_known_document_names_and_unknown_paths_stay_generic():
     assert lp.preview_title("/business-plan.he.html") == "PHINS Unified Business Plan (Hebrew)"
     assert lp.preview_title("/phins-customer-150k-one-pager.html") == "PHINS Customer Cover US$150,000"
     assert lp.preview_title("/phins-customer-150k-one-pager.he.html") == "PHINS Customer Cover US$150,000 (Hebrew)"
+    assert lp.preview_title("/investor-deck.html") == "PHINS Investor Deck"
+    assert lp.preview_title("/investor-deck.he.html") == "PHINS Investor Deck (Hebrew)"
     assert lp.preview_title("/legal/nda.html") == "PHINS Non-Disclosure Agreement"
     assert lp.preview_title("/no-such-wire-transfer.html") == "PHINS"
     assert lp.preview_title("/index.html") == "PHINS"

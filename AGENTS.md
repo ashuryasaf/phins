@@ -806,8 +806,19 @@ Environment variables commonly used:
  `GET /api/media?brief=1` and can upload an image or video; the media
  dashboard tells that frame when the library changes. The media dashboard
  Investor Deck Lab embeds that page, and the pitch investor bar links it.
- Read access is staff plus media; only admin or media can attach a video,
- change the watermark, or edit a slide's look.
+ Read access for the show is the pitch access password, a staff session
+ (including media), or a share cookie. `GET /api/investor-deck/presentation`
+ and `GET /api/investor-deck/film` fill figures from the current plan in
+ English or Hebrew (`lang=he`, `/investor-deck.he.html` is the same shell).
+ Playback uses the library address, or `/media-files/…` when that address is
+ blank. A checksummed `investor_deck_visible_slides` list, chosen on the
+ media-dashboard bar, is which slides the show includes. A broken seal shows
+ every slide and is reported. A share of either language freezes that list
+ (`kind: investor_deck`); a later edit does not change a link already sent,
+ and a broken snapshot is not served. The portrait for the deck is
+ `GET /api/investor-deck/portrait` (same processed JPEG; the original file
+ is not rewritten). Only admin or media can attach a video, change the
+ watermark, edit a slide's look, or save the slide selection.
 - **Admin AI Mic data desk:** `POST /api/admin/ai-bi/query` (admin or manager only) answers from the actuarial tables, `SimulationParams`, the ADL 3 remaining-life rows, the live books, and simulations already stored on the process. A missing rate is withheld. The desk does not draw a new portfolio or write a store. A question that needs a new run returns `planning` and names the existing tool (portfolio simulator, Monte Carlo evaluation, or the assessment center). The report window is `/admin-ai-report.html` (variants, JSON/Markdown/HTML download, English/Hebrew). Optional narration uses the assessment LLM and is dropped when it introduces a number.
 - **BI analytics (B10):** `PHINS_BI_SNAPSHOT_DIR` also holds
  `materialized_views.json` (served by `/api/bi/*` when fingerprint, checksum

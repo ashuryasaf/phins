@@ -283,7 +283,13 @@
     }
 
     async function refresh(root, mode, images, state) {
-        var response = await fetch('/api/admin/media/investor-deck', { headers: authHeaders(false) });
+        var readUrl = mode === 'watch'
+            ? '/api/investor-deck/film'
+            : '/api/admin/media/investor-deck';
+        var response = await fetch(readUrl, {
+            headers: token() ? authHeaders(false) : {},
+            credentials: 'same-origin'
+        });
         var data = await response.json();
         if (!response.ok) throw new Error(data.error || 'The investor deck could not be loaded');
         state.data = data;

@@ -119,6 +119,19 @@ CUSTOMER_COVER_SCOPE_PATHS = (
     "/customer-cover-page.js",
 )
 
+# Investor deck (Part II) in both languages. One scope so a share of either
+# page also authorises the Hebrew edition, the filled-slide read, the film,
+# and the processed founder portrait. Figures are computed on read. The
+# library files stay on the public playback route.
+INVESTOR_DECK_SCOPE_ROOT = "/investor-deck.html"
+INVESTOR_DECK_SCOPE_PATHS = (
+    "/investor-deck.html",
+    "/investor-deck.he.html",
+    "/api/investor-deck/presentation",
+    "/api/investor-deck/film",
+    "/api/investor-deck/portrait",
+)
+
 # Individually confidential files that do not live under a gated prefix.
 DEFAULT_CONFIDENTIAL_FILES = (
     "/pitch-dashboard.html",
@@ -126,10 +139,14 @@ DEFAULT_CONFIDENTIAL_FILES = (
     "/phins_business_plan_executive.md",
     "/business-plan.html",
     "/business-plan.he.html",
-) + BUSINESS_PLAN_DOWNLOADS + CUSTOMER_COVER_SCOPE_PATHS
+) + BUSINESS_PLAN_DOWNLOADS + CUSTOMER_COVER_SCOPE_PATHS + (
+    "/investor-deck.html",
+    "/investor-deck.he.html",
+)
 
 # API endpoints that expose anchored signatures + signed content snapshots,
-# plus the business-plan APIs (the model is the document).
+# plus the business-plan APIs (the model is the document) and the investor
+# deck reads (filled slides, film, processed portrait).
 DEFAULT_CONFIDENTIAL_API_PATHS = (
     "/api/legal-docs/registry",
     "/api/legal-docs/sign",
@@ -138,6 +155,9 @@ DEFAULT_CONFIDENTIAL_API_PATHS = (
     "/api/business-plan/founder-portrait",
     "/api/business-plan/access",
     "/api/business-plan/factors",
+    "/api/investor-deck/presentation",
+    "/api/investor-deck/film",
+    "/api/investor-deck/portrait",
 )
 
 _TRUTHY = ("1", "true", "yes", "y", "on")
@@ -283,14 +303,23 @@ def share_scope_root(path: str) -> str:
     ``/business-plan.html`` so one unlock covers the page, its Hebrew edition
     and the APIs it calls — never the PDF/Markdown downloads. The customer
     cover collapses onto its English page so one unlock covers Hebrew and
-    the forecast scripts.
+    the forecast scripts. The investor deck collapses onto its English page
+    so one unlock covers Hebrew, the filled slides, the film and the portrait.
     """
     normalized = normalize_request_path(path).rstrip("/") or "/"
     if normalized in BUSINESS_PLAN_SCOPE_PATHS:
         return BUSINESS_PLAN_SCOPE_ROOT
     if normalized in CUSTOMER_COVER_SCOPE_PATHS:
         return CUSTOMER_COVER_SCOPE_ROOT
+    if normalized in INVESTOR_DECK_SCOPE_PATHS:
+        return INVESTOR_DECK_SCOPE_ROOT
     return normalized
+
+
+def is_investor_deck_path(path: str) -> bool:
+    """True for the deck pages and the reads those pages make."""
+    normalized = normalize_request_path(path).rstrip("/") or "/"
+    return normalized in INVESTOR_DECK_SCOPE_PATHS
 
 
 def is_business_plan_path(path: str) -> bool:
@@ -739,6 +768,12 @@ def evaluate_access(
     cookies = parse_cookies(cookie_header)
 
     if session_is_staff(session):
+        return AccessDecision(allowed=True, reason="staff_session", confidential=True)
+
+    # The media desk opens the deck from its own session. That role does not
+    # read the rest of the confidential library.
+    media_role = str((session or {}).get("role") or "").strip().lower()
+    if media_role == "media" and is_investor_deck_path(path):
         return AccessDecision(allowed=True, reason="staff_session", confidential=True)
 
     staff_claims = verify_staff_unlock_cookie(

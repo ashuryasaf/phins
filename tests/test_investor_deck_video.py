@@ -2,6 +2,7 @@
 
 import copy
 import json
+import os
 import random
 import threading
 import time
@@ -250,7 +251,7 @@ class _Server(threading.Thread):
         self.httpd.server_close()
 
 
-def _json_request(url, method="GET", payload=None, token=None):
+def _json_request(url, method="GET", payload=None, token=None, cookie=None):
     headers = {}
     data = None
     if payload is not None:
@@ -258,6 +259,8 @@ def _json_request(url, method="GET", payload=None, token=None):
         headers["Content-Type"] = "application/json"
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    if cookie:
+        headers["Cookie"] = cookie
     req = Request(url, data=data, headers=headers, method=method)
     try:
         with urlopen(req) as resp:
@@ -609,6 +612,12 @@ def test_presentation_page_is_wired_and_does_not_bake_figures():
     pitch = (root / "web_portal" / "static" / "pitch-dashboard.html").read_text(encoding="utf-8")
     media = (root / "web_portal" / "static" / "admin-media.html").read_text(encoding="utf-8")
     assert "/api/admin/media/investor-deck/presentation" in page
+    assert "/api/investor-deck/presentation?lang=" in page
+    assert 'id="deck-lang"' in page
+    assert ".deck-assign[hidden]" in page
+    assert ".deck-watermark[hidden]" in page
+    assert 'id="deck-slide-picks"' in media
+    assert "Show selected slides" in media
     assert "4518" not in page
     assert "4,518" not in page
     assert 'href="/investor-deck.html" class="pitch-nav-link">Investor Deck</a>' in pitch
@@ -1260,4 +1269,318 @@ def test_library_upload_is_listed_and_slide_chrome_does_not_touch_the_plan():
             portal.DESIGN_SETTINGS["updated_at"] = updated_before
         portal.SESSIONS.pop(admin, None)
         portal.SESSIONS.pop(actuary, None)
+        srv.stop()
+
+
+def test_hebrew_presentation_uses_the_plan_words_and_a_broken_selection_hides_nothing():
+    from services.business_plan_i18n import language_context, translator
+    from services.investor_deck_video import (
+        assign_visible_slides,
+        presentation_of,
+        restrict_slides,
+        selection_view,
+    )
+
+    plan = compute_plan()
+    with language_context(translator("he")):
+        hebrew = presentation_of(plan)
+    assert hebrew["slides"][1]["title"] == "הבעיה"
+    for slide in hebrew["slides"]:
+        for bullet in slide["bullets"]:
+            assert "{" not in bullet
+    with language_context(translator("en")):
+        english = presentation_of(plan)
+    assert english["slides"][1]["title"] == "The problem"
+    record = assign_visible_slides([7, 1, 7])
+    assert record["slides"] == [1, 7]
+    narrowed = restrict_slides(english, record["slides"])
+    assert [slide["slide_no"] for slide in narrowed["slides"]] == [1, 7]
+    broken = dict(record, checksum="0" * 64)
+    withheld = selection_view(broken)
+    assert withheld["withheld"] is True
+    assert withheld["intact"] is False
+    assert withheld["slides"] == list(range(1, 14))
+    missing = selection_view(None)
+    assert missing["stored"] is False
+    assert missing["withheld"] is False
+    assert missing["slides"] == list(range(1, 14))
+
+
+def test_pitch_password_reads_plan_figures_and_checksummed_video(monkeypatch, tmp_path):
+    """The ilpitch cookie fills the slides. A share freezes that slide list."""
+    import security.confidential_access as ca
+    from services.confidential_share_service import (
+        get_confidential_share_service,
+        reset_confidential_share_service_for_tests,
+    )
+    from services.document_use_ledger import (
+        get_document_use_ledger,
+        reset_document_use_ledger_for_tests,
+    )
+
+    token_secret = "pitch-open-secret"
+    monkeypatch.setenv("PHINS_ENVIRONMENT", "production")
+    monkeypatch.delenv("PHINS_TEST_MODE", raising=False)
+    monkeypatch.setenv("PHINS_CONFIDENTIAL_ACCESS_TOKEN", token_secret)
+    monkeypatch.setenv("SESSION_SECRET_KEY", "s" * 32)
+    reset_confidential_share_service_for_tests()
+    get_confidential_share_service(data_path=str(tmp_path / "shares.json"))
+    reset_document_use_ledger_for_tests()
+    get_document_use_ledger(data_path=str(tmp_path / "document-use.json"))
+
+    srv = _Server()
+    srv.start()
+    time.sleep(0.2)
+    portal = srv.portal
+    base = f"http://127.0.0.1:{srv.port}"
+    admin = "phins_test_deck_open_admin"
+    media = "phins_test_deck_open_media"
+    plan_before = compute_plan()["content_hash"]
+    selection_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_visible_slides"))
+    media_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_slide_media"))
+    tagline_before = portal.DESIGN_SETTINGS.get("tagline")
+    updated_before = portal.DESIGN_SETTINGS.get("updated_at")
+    access_cookie = f"{ca.ACCESS_COOKIE_NAME}={ca.cookie_value_for_token(token_secret)}"
+    share_id = ""
+    ledger_path = portal.LEDGER_PERSISTENCE_FILE
+    ledger_backup = tmp_path / "ledger-backup.json"
+    had_ledger = os.path.isfile(ledger_path)
+    if had_ledger:
+        ledger_backup.write_bytes(open(ledger_path, "rb").read())
+    try:
+        _json_request(base + "/api/health")
+        portal.MEDIA_ASSETS["vid-open-deck"] = {
+            "id": "vid-open-deck",
+            "type": "video",
+            "checksum": "d" * 64,
+            "name": "open-deck.mp4",
+        }
+        portal.SESSIONS[admin] = {
+            "username": "deck-open-admin",
+            "role": "admin",
+            "customer_id": "",
+            "expires": (datetime.now() + timedelta(hours=1)).isoformat(),
+        }
+        portal.SESSIONS[media] = {
+            "username": "deck-open-media",
+            "role": "media",
+            "customer_id": "",
+            "expires": (datetime.now() + timedelta(hours=1)).isoformat(),
+        }
+        status, denied = _json_request(base + "/api/investor-deck/presentation")
+        assert status == 401, denied
+
+        status, english = _json_request(
+            base + "/api/investor-deck/presentation", cookie=access_cookie,
+        )
+        assert status == 200, english
+        assert english["lang"] == "en"
+        assert english["can_assign"] is False
+        assert english["slide_count"] == 13
+        assert english["slides"][1]["title"] == "The problem"
+        assert english["slides"][0]["bullets"]
+        for slide in english["slides"]:
+            for bullet in slide["bullets"]:
+                assert "{" not in bullet
+        assert "catalog" not in english
+
+        status, hebrew = _json_request(
+            base + "/api/investor-deck/presentation?lang=he", cookie=access_cookie,
+        )
+        assert status == 200, hebrew
+        assert hebrew["lang"] == "he"
+        assert hebrew["slides"][1]["title"] == "הבעיה"
+
+        status, assigned = _json_request(
+            base + "/api/investor-deck/presentation", token=media,
+        )
+        assert status == 200, assigned
+        assert assigned["can_assign"] is True
+        assert len(assigned["catalog"]) == 13
+
+        status, combined = _json_request(
+            base + "/api/admin/media/investor-deck/presentation",
+            method="POST",
+            token=media,
+            payload={"slide_no": 1, "asset_id": "vid-open-deck"},
+        )
+        assert status == 200, combined
+        playback = combined["presentation"]["slides"][0]["media"]["playback_url"]
+        assert playback.startswith("/media-files/vid-open-deck/")
+        assert portal.MEDIA_ASSETS["vid-open-deck"]["checksum"] == "d" * 64
+        assert "data" not in portal.MEDIA_ASSETS["vid-open-deck"]
+        assert "url" not in portal.MEDIA_ASSETS["vid-open-deck"]
+
+        status, picked = _json_request(
+            base + "/api/admin/media/investor-deck/presentation",
+            method="POST",
+            token=media,
+            payload={"visible_slides": [7, 1]},
+        )
+        assert status == 200, picked
+        assert [slide["slide_no"] for slide in picked["presentation"]["slides"]] == [1, 7]
+        assert picked["presentation"]["slides"][0]["media"]["playback_url"].startswith(
+            "/media-files/vid-open-deck/"
+        )
+        assert compute_plan()["content_hash"] == plan_before
+
+        composition = portal.PortalHandler._investor_deck_link_composition(object())
+        assert composition["kind"] == "investor_deck"
+        assert composition["visible_slides"] == [1, 7]
+        status, created = _json_request(
+            base + "/api/confidential/shares",
+            method="POST",
+            token=admin,
+            payload={
+                "path": "/investor-deck.he.html",
+                "password": "deck-open-1",
+                "max_uses": 3,
+                "label": "Deck guest",
+                "nda_required": False,
+            },
+        )
+        assert status == 201, created
+        share = created["share"]
+        share_id = share["id"]
+        assert share["nda_required"] is False
+        assert share["lang"] == "he"
+        assert share["scope"] == "/investor-deck.html"
+        assert share["composition"]["visible_slides"] == [1, 7]
+        assert share["composition"]["kind"] == "investor_deck"
+
+        status, cleared = _json_request(
+            base + "/api/admin/media/investor-deck/presentation",
+            method="POST",
+            token=media,
+            payload={"selection": True, "clear": True},
+        )
+        assert status == 200, cleared
+        assert cleared["presentation"]["slide_count"] == 13
+
+        status, live = _json_request(
+            base + "/api/investor-deck/presentation", cookie=access_cookie,
+        )
+        assert status == 200, live
+        assert live["slide_count"] == 13
+
+        share_cookie = (
+            f"{ca.SHARE_COOKIE_NAME}="
+            + ca.mint_share_cookie(share_id=share_id, path="/investor-deck.he.html")
+        )
+        status, frozen = _json_request(
+            base + "/api/investor-deck/presentation?lang=he", cookie=share_cookie,
+        )
+        assert status == 200, frozen
+        assert [slide["slide_no"] for slide in frozen["slides"]] == [1, 7]
+        assert frozen["lang"] == "he"
+        assert frozen["selection"]["frozen"] is True
+        assert frozen["slides"][0]["media"]["playback_url"].startswith("/media-files/vid-open-deck/")
+
+        stored = json.loads((tmp_path / "shares.json").read_text(encoding="utf-8"))
+        stored["shares"][share_id]["composition"]["selection_checksum"] = "0" * 64
+        (tmp_path / "shares.json").write_text(json.dumps(stored), encoding="utf-8")
+        status, refused = _json_request(
+            base + "/api/investor-deck/presentation", cookie=share_cookie,
+        )
+        assert status == 409, refused
+        status, still_live = _json_request(
+            base + "/api/investor-deck/presentation", cookie=access_cookie,
+        )
+        assert status == 200, still_live
+        assert still_live["slide_count"] == 13
+
+        portal.DESIGN_SETTINGS["investor_deck_visible_slides"] = {
+            "slides": [1, 2],
+            "checksum": "0" * 64,
+        }
+        try:
+            portal.PortalHandler._investor_deck_link_composition(object())
+        except ValueError as exc:
+            assert "seal" in str(exc).lower()
+        else:
+            raise AssertionError("a broken slide seal was shared")
+        status, broken_share = _json_request(
+            base + "/api/confidential/shares",
+            method="POST",
+            token=admin,
+            payload={
+                "path": "/investor-deck.html",
+                "password": "deck-open-1",
+                "max_uses": 1,
+                "label": "Deck guest",
+            },
+        )
+        assert status == 400, broken_share
+        status, shown = _json_request(
+            base + "/api/investor-deck/presentation", cookie=access_cookie,
+        )
+        assert status == 200, shown
+        assert shown["slide_count"] == 13
+        assert shown["selection"]["withheld"] is True
+
+        class _Frozen:
+            def _share_composition(self):
+                return {
+                    "kind": "investor_deck",
+                    "visible_slides": [1, 7],
+                    "selection_checksum": "0" * 64,
+                }
+
+        try:
+            portal.PortalHandler._investor_deck_frozen_slides(_Frozen())
+        except LookupError:
+            pass
+        else:
+            raise AssertionError("a broken frozen snapshot was accepted")
+
+        status, public = _json_request(base + "/api/design/settings")
+        assert status == 200, public
+        assert "investor_deck_visible_slides" not in public
+
+        sealed = portal.DESIGN_SETTINGS["investor_deck_visible_slides"]["checksum"]
+        status, settings = _json_request(
+            base + "/api/design/settings",
+            method="POST",
+            token=admin,
+            payload={
+                "tagline": tagline_before,
+                "investor_deck_visible_slides": {"slides": [3], "checksum": "e" * 64},
+            },
+        )
+        assert status == 200, settings
+        assert portal.DESIGN_SETTINGS["investor_deck_visible_slides"]["checksum"] == sealed
+
+        status, restored = _json_request(
+            base + "/api/admin/media/investor-deck/presentation",
+            method="POST",
+            token=admin,
+            payload={"selection": True, "clear": True},
+        )
+        assert status == 200, restored
+        assert restored["presentation"]["slide_count"] == 13
+        assert "investor_deck_visible_slides" not in portal.DESIGN_SETTINGS
+        assert compute_plan()["content_hash"] == plan_before
+    finally:
+        portal.MEDIA_ASSETS.pop("vid-open-deck", None)
+        if selection_before is None:
+            portal.DESIGN_SETTINGS.pop("investor_deck_visible_slides", None)
+        else:
+            portal.DESIGN_SETTINGS["investor_deck_visible_slides"] = selection_before
+        if media_before is None:
+            portal.DESIGN_SETTINGS.pop("investor_deck_slide_media", None)
+        else:
+            portal.DESIGN_SETTINGS["investor_deck_slide_media"] = media_before
+        portal.DESIGN_SETTINGS["tagline"] = tagline_before
+        if updated_before is None:
+            portal.DESIGN_SETTINGS.pop("updated_at", None)
+        else:
+            portal.DESIGN_SETTINGS["updated_at"] = updated_before
+        portal.SESSIONS.pop(admin, None)
+        portal.SESSIONS.pop(media, None)
+        reset_confidential_share_service_for_tests()
+        reset_document_use_ledger_for_tests()
+        if had_ledger:
+            open(ledger_path, "wb").write(ledger_backup.read_bytes())
+        elif os.path.isfile(ledger_path):
+            os.remove(ledger_path)
         srv.stop()
