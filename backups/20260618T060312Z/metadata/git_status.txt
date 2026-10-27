@@ -1,0 +1,6 @@
+On branch cursor/system-backup-configuration-8fe3
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	backups/20260618T060312Z/
+
+nothing added to commit but untracked files present (use "git add" to track)
