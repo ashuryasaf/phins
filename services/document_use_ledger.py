@@ -1,4 +1,4 @@
-"""Append-only ledger of documents sent, signed, opened, and used.
+"""Append-only ledger of documents sent, signed, opened, used, revoked, and deleted.
 
 Each entry carries ``prev_hash`` and ``entry_hash``. A row that does not
 extend the chain is reported and blocks the next append — nothing is
@@ -28,7 +28,7 @@ __all__ = [
     "reset_document_use_ledger_for_tests",
 ]
 
-ACTIONS = ("sent", "signed", "opened", "used")
+ACTIONS = ("sent", "signed", "opened", "used", "revoked", "deleted")
 _GENESIS = "phins-document-use-ledger-v1"
 _ENV_PATH = "PHINS_DOCUMENT_USE_LEDGER_PATH"
 
@@ -97,7 +97,7 @@ class DocumentUseLedger:
         """Append one event, or return the existing row for its idempotency key."""
         action = str(fields.get("action") or "").strip().lower()
         if action not in ACTIONS:
-            raise LedgerError("action must be sent, signed, opened, or used.")
+            raise LedgerError("action must be sent, signed, opened, used, revoked, or deleted.")
         key = str(fields.get("idempotency_key") or "").strip()
         if not key or len(key) > 180:
             raise LedgerError("idempotency_key is required.")

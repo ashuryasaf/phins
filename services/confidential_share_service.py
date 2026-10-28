@@ -10,6 +10,12 @@ Persistence is a JSON file under ``database/``. Mutations take an exclusive
 use counts stay correct across multiple app workers (not just threads in one
 process).
 
+The open password is hashed for verification and sealed in the platform vault
+so the staff address book can show it later. Unlock responses and the public
+gate do not carry it. Revoke and delete close the link and keep the row:
+use counts, the password seal, openings, sealed signatures, and the use
+ledger are not rewritten or removed.
+
 Conditional-NDA links (the PHINS Unified Business Plan set): a share created
 with ``nda_required=True`` is only unlocked once the recipient has signed the
 versioned undertaking in ``services/business_plan_nda.py`` with a full name;
@@ -129,6 +135,43 @@ def verify_share_password(password: str, stored_hash: str, salt: str) -> bool:
         _PBKDF2_ITERATIONS,
     ).hex()
     return hmac.compare_digest(digest, str(stored_hash))
+
+
+def _seal_share_password(password: str) -> str:
+    """Vault the open password so staff can read it later.
+
+    The PBKDF2 hash remains the verifier. The vault blob is not a second
+    verifier and is never copied onto an unlock response.
+    """
+    from security.vault import encrypt_json
+
+    return encrypt_json({"v": 1, "password": str(password)}).to_json()
+
+
+def _open_share_password(blob: Optional[str]) -> str:
+    """Return the vaulted open password, or ``""`` when it cannot be read."""
+    raw = str(blob or "").strip()
+    if not raw:
+        return ""
+    try:
+        from security.vault import decrypt_json
+    except Exception:
+        return ""
+    data = decrypt_json(raw, default=None)
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("password") or "")
+
+
+def _password_fields(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Staff-only password fields. A failed seal is never shown as a password."""
+    blob = str(record.get("password_vault") or "").strip()
+    opened = _open_share_password(blob)
+    if opened:
+        return {"password": opened, "password_retained": True, "password_unreadable": False}
+    if blob:
+        return {"password": None, "password_retained": False, "password_unreadable": True}
+    return {"password": None, "password_retained": False, "password_unreadable": False}
 
 
 def is_downloadable_path(path: str) -> bool:
@@ -404,6 +447,12 @@ class ConfidentialShareService:
         if lang_code not in ("en", "he"):
             lang_code = "en"
         pwd = hash_share_password(password)
+        try:
+            password_vault = _seal_share_password(password)
+        except Exception:
+            # The link still verifies from the hash. Staff will see that the
+            # open password was not retained.
+            password_vault = ""
         share_id = "shr_" + secrets.token_urlsafe(18).replace("-", "").replace("_", "")[:24]
         nda_version = None
         nda_digest = None
@@ -427,6 +476,7 @@ class ConfidentialShareService:
             "label": clean_label,
             "password_hash": pwd["password_hash"],
             "password_salt": pwd["password_salt"],
+            "password_vault": password_vault,
             "max_uses": max_uses_int,
             "used_count": 0,
             "expires_at": expiry.replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -455,7 +505,9 @@ class ConfidentialShareService:
             self._persist()
             return self._public_view(record)
 
-    def list_shares(self, *, include_revoked: bool = True) -> List[Dict[str, Any]]:
+    def list_shares(
+        self, *, include_revoked: bool = True, reveal_password: bool = False
+    ) -> List[Dict[str, Any]]:
         with self._exclusive_store():
             dirty = False
             items = []
@@ -465,7 +517,7 @@ class ConfidentialShareService:
                 if refreshed.get("status") != before:
                     self._shares[str(refreshed.get("id"))] = refreshed
                     dirty = True
-                items.append(self._public_view(refreshed))
+                items.append(self._public_view(refreshed, reveal_password=reveal_password))
             if dirty:
                 self._persist()
         if not include_revoked:
@@ -491,14 +543,40 @@ class ConfidentialShareService:
             return dict(record) if record else None
 
     def revoke_share(self, share_id: str, *, revoked_by: str = "admin") -> Dict[str, Any]:
+        """Close the link. The row, the password seal, and the use history stay.
+
+        A second revoke does not rewrite ``revoked_at``. A deleted link is not
+        moved back to revoked.
+        """
         with self._exclusive_store():
             record = self._shares.get(str(share_id or "").strip())
             if not record:
                 raise ShareError("Share link not found.")
-            record["status"] = "revoked"
-            record["revoked_at"] = _utc_now_iso()
-            record["revoked_by"] = str(revoked_by or "admin")[:80]
-            self._persist()
+            if record.get("status") == "deleted":
+                raise ShareError("Share link has been deleted.")
+            if record.get("status") != "revoked":
+                record["status"] = "revoked"
+                record["revoked_at"] = _utc_now_iso()
+                record["revoked_by"] = str(revoked_by or "admin")[:80]
+                self._persist()
+            return self._public_view(record)
+
+    def delete_share(self, share_id: str, *, deleted_by: str = "admin") -> Dict[str, Any]:
+        """Mark the link deleted and keep every byte the ledger can point at.
+
+        The record is not removed. Password material, use counts, openings,
+        and NDA acceptances are not rewritten. A sealed signature and the
+        use-ledger chain are not touched. A second delete keeps ``deleted_at``.
+        """
+        with self._exclusive_store():
+            record = self._shares.get(str(share_id or "").strip())
+            if not record:
+                raise ShareError("Share link not found.")
+            if record.get("status") != "deleted":
+                record["status"] = "deleted"
+                record["deleted_at"] = _utc_now_iso()
+                record["deleted_by"] = str(deleted_by or "admin")[:80]
+                self._persist()
             return self._public_view(record)
 
     def unlock(
@@ -540,6 +618,8 @@ class ConfidentialShareService:
                 raise ShareError("Invalid share password.")
 
             # Password is correct — only now reveal status / remaining-use issues.
+            if record.get("status") == "deleted":
+                raise ShareError("Share link has been deleted.")
             if record.get("status") == "revoked":
                 raise ShareError("Share link has been revoked.")
             if record.get("status") == "expired":
@@ -719,8 +799,8 @@ class ConfidentialShareService:
                 return False
             record = self._refresh_status(dict(record))
             # Exhausted shares still honour cookies issued at unlock time, but
-            # revoked/expired ones must not.
-            if record.get("status") == "revoked":
+            # revoked, deleted, and expired ones must not.
+            if record.get("status") in ("revoked", "deleted"):
                 return False
             expiry = _parse_iso(record.get("expires_at"))
             if expiry is not None and expiry <= _utc_now():
@@ -806,7 +886,7 @@ class ConfidentialShareService:
     def _refresh_status(self, record: Dict[str, Any]) -> Dict[str, Any]:
         """Derive expired/exhausted status in-place. Caller persists under store lock."""
         status = str(record.get("status") or "active")
-        if status == "revoked":
+        if status in ("revoked", "deleted"):
             return record
         expiry = None
         try:
@@ -828,11 +908,11 @@ class ConfidentialShareService:
         return record
 
     @staticmethod
-    def _public_view(record: Dict[str, Any]) -> Dict[str, Any]:
+    def _public_view(record: Dict[str, Any], reveal_password: bool = False) -> Dict[str, Any]:
         max_uses = record.get("max_uses")
         used = int(record.get("used_count") or 0)
         remaining = None if max_uses is None else max(0, int(max_uses) - used)
-        return {
+        view = {
             "id": record.get("id"),
             "path": record.get("path"),
             "label": record.get("label") or "",
@@ -845,6 +925,9 @@ class ConfidentialShareService:
             "created_by": record.get("created_by"),
             "status": record.get("status"),
             "revoked_at": record.get("revoked_at"),
+            "revoked_by": record.get("revoked_by"),
+            "deleted_at": record.get("deleted_at"),
+            "deleted_by": record.get("deleted_by"),
             "share_url_path": f"{record.get('path')}?share={record.get('id')}",
             "lang": record.get("lang") or "en",
             "nda_required": bool(record.get("nda_required")),
@@ -882,6 +965,9 @@ class ConfidentialShareService:
                 for a in (record.get("nda_acceptances") or [])
             ],
         }
+        if reveal_password:
+            view.update(_password_fields(record))
+        return view
 
 
 _service: Optional[ConfidentialShareService] = None
