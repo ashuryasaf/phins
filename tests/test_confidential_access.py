@@ -65,6 +65,45 @@ def test_public_paths_are_not_gated(path):
     assert ca.is_confidential_path(path, {}) is False
 
 
+def test_investor_deck_is_one_share_scope_for_both_languages():
+    """Staff share either presentation; the switch and the read API stay inside it."""
+    en = "/investor-deck.html"
+    he = "/investor-deck.he.html"
+    root = ca.share_scope_root(en)
+    assert root == ca.INVESTOR_DECK_SCOPE_ROOT
+    for path in (
+        en,
+        he,
+        "/api/admin/media/investor-deck/presentation",
+        "/api/investor-deck/founder-portrait",
+    ):
+        assert ca.is_confidential_path(path, {}) is True
+        assert ca.share_scope_root(path) == root
+    assert ca.is_investor_deck_page(he) is True
+    assert ca.is_confidential_path("/api/admin/media/investor-deck", {}) is False
+    assert ca.share_scope_root("/api/business-plan/model") != root
+    env = {"PHINS_ENVIRONMENT": "production", "SESSION_SECRET_KEY": "s" * 32}
+    denied = ca.evaluate_access(en, environ=env)
+    assert denied.allowed is False
+    cookie = ca.mint_share_cookie(share_id="shr_deck", path=he, environ=env)
+    header = f"{ca.SHARE_COOKIE_NAME}={cookie}"
+    for path in (en, he, "/api/admin/media/investor-deck/presentation"):
+        decision = ca.evaluate_access(path, cookie_header=header, environ=env)
+        assert decision.allowed is True, path
+        assert decision.reason == "share_cookie"
+    plan = ca.evaluate_access("/business-plan.html", cookie_header=header, environ=env)
+    assert plan.allowed is False
+    media = ca.evaluate_access(
+        en, session={"role": "media"}, environ=env,
+    )
+    assert media.allowed is True
+    assert media.reason == "staff_session"
+    wider = ca.evaluate_access(
+        "/pitch-dashboard.html", session={"role": "media"}, environ=env,
+    )
+    assert wider.allowed is False
+
+
 def test_customer_cover_is_one_share_scope_for_both_languages():
     """Staff share either language; the switch and the forecast scripts stay inside it."""
     en = "/phins-customer-150k-one-pager.html"

@@ -119,6 +119,22 @@ CUSTOMER_COVER_SCOPE_PATHS = (
     "/customer-cover-page.js",
 )
 
+# The 13-slide investor deck in both languages. One scope so a share of
+# either page also authorises the other language, the read-only presentation
+# API, and the founder portrait the slide shows. The lab (scene editor) and
+# the write routes stay outside this scope.
+INVESTOR_DECK_SCOPE_ROOT = "/investor-deck.html"
+INVESTOR_DECK_SCOPE_PATHS = (
+    "/investor-deck.html",
+    "/investor-deck.he.html",
+    "/api/admin/media/investor-deck/presentation",
+    "/api/investor-deck/founder-portrait",
+)
+INVESTOR_DECK_PAGES = (
+    "/investor-deck.html",
+    "/investor-deck.he.html",
+)
+
 # Individually confidential files that do not live under a gated prefix.
 DEFAULT_CONFIDENTIAL_FILES = (
     "/pitch-dashboard.html",
@@ -126,7 +142,7 @@ DEFAULT_CONFIDENTIAL_FILES = (
     "/phins_business_plan_executive.md",
     "/business-plan.html",
     "/business-plan.he.html",
-) + BUSINESS_PLAN_DOWNLOADS + CUSTOMER_COVER_SCOPE_PATHS
+) + BUSINESS_PLAN_DOWNLOADS + CUSTOMER_COVER_SCOPE_PATHS + INVESTOR_DECK_PAGES
 
 # API endpoints that expose anchored signatures + signed content snapshots,
 # plus the business-plan APIs (the model is the document).
@@ -138,6 +154,8 @@ DEFAULT_CONFIDENTIAL_API_PATHS = (
     "/api/business-plan/founder-portrait",
     "/api/business-plan/access",
     "/api/business-plan/factors",
+    "/api/admin/media/investor-deck/presentation",
+    "/api/investor-deck/founder-portrait",
 )
 
 _TRUTHY = ("1", "true", "yes", "y", "on")
@@ -290,12 +308,25 @@ def share_scope_root(path: str) -> str:
         return BUSINESS_PLAN_SCOPE_ROOT
     if normalized in CUSTOMER_COVER_SCOPE_PATHS:
         return CUSTOMER_COVER_SCOPE_ROOT
+    if normalized in INVESTOR_DECK_SCOPE_PATHS:
+        return INVESTOR_DECK_SCOPE_ROOT
     return normalized
 
 
 def is_business_plan_path(path: str) -> bool:
     normalized = normalize_request_path(path).rstrip("/")
     return normalized in BUSINESS_PLAN_SCOPE_PATHS or normalized in BUSINESS_PLAN_DOWNLOADS
+
+
+def is_investor_deck_page(path: str) -> bool:
+    """True for the English or Hebrew 13-slide presentation pages."""
+    normalized = normalize_request_path(path).rstrip("/")
+    return normalized in INVESTOR_DECK_PAGES
+
+
+def is_investor_deck_scope_path(path: str) -> bool:
+    normalized = normalize_request_path(path).rstrip("/")
+    return normalized in INVESTOR_DECK_SCOPE_PATHS
 
 
 def signing_secret(environ: Optional[Mapping[str, str]] = None) -> str:
@@ -740,6 +771,13 @@ def evaluate_access(
 
     if session_is_staff(session):
         return AccessDecision(allowed=True, reason="staff_session", confidential=True)
+
+    # The media role reads the deck lab. It does not become staff for the
+    # rest of the confidential library.
+    if is_investor_deck_scope_path(path):
+        role = str((session or {}).get("role") or "").strip().lower()
+        if role == "media":
+            return AccessDecision(allowed=True, reason="staff_session", confidential=True)
 
     staff_claims = verify_staff_unlock_cookie(
         cookies.get(STAFF_UNLOCK_COOKIE_NAME), env

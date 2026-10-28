@@ -1780,7 +1780,9 @@ Notes:
             <div class="embed-frame-bar">
                 <div class="embed-frame-title">Chapter 2 · 13-slide deck</div>
                 <div class="embed-frame-actions">
-                    <a class="btn btn-secondary" href="/investor-deck.html?edit=1" target="_blank" rel="noopener">Present the deck</a>
+                    <button type="button" class="btn btn-secondary" id="investor-deck-lang-en" onclick="setInvestorDeckLanguage('en')">English</button>
+                    <button type="button" class="btn btn-secondary" id="investor-deck-lang-he" onclick="setInvestorDeckLanguage('he')">עברית</button>
+                    <a class="btn btn-secondary" id="investor-deck-present" href="/investor-deck.html?edit=1" target="_blank" rel="noopener">Present the deck</a>
                 </div>
             </div>
             <iframe id="investor-deck-frame"
@@ -2567,6 +2569,27 @@ Notes:
         // keep the dashboard fast and to avoid spawning embedded sub-pages
         // that the operator never opens.
         const VALID_MAIN_TABS = ['investor-deck', 'media', 'solution-views', 'customer-relations', 'growth-agent', 'video-agents', 'design', 'layout', 'branding'];
+        var investorDeckLang = 'en';
+
+        function setInvestorDeckLanguage(lang) {
+            investorDeckLang = lang === 'he' ? 'he' : 'en';
+            var page = investorDeckLang === 'he' ? '/investor-deck.he.html' : '/investor-deck.html';
+            var frame = document.getElementById('investor-deck-frame');
+            if (frame) {
+                frame.setAttribute('data-src', page + '?embed=1&edit=1');
+                frame.setAttribute('src', page + '?embed=1&edit=1');
+            }
+            var present = document.getElementById('investor-deck-present');
+            if (present) present.setAttribute('href', page + '?edit=1');
+            if (window.InvestorDeckLab) {
+                InvestorDeckLab.mount(document.getElementById('investor-deck-lab'), {
+                    mode: 'edit',
+                    lang: investorDeckLang,
+                    images: function () { return mediaAssets; },
+                    onLang: setInvestorDeckLanguage
+                });
+            }
+        }
 
         function switchMainTab(tabName, options = {}) {
             const updateHash = options.updateHash !== false;
@@ -2592,7 +2615,9 @@ Notes:
             if (tabName === 'investor-deck' && window.InvestorDeckLab) {
                 InvestorDeckLab.mount(document.getElementById('investor-deck-lab'), {
                     mode: 'edit',
-                    images: function () { return mediaAssets; }
+                    lang: investorDeckLang,
+                    images: function () { return mediaAssets; },
+                    onLang: setInvestorDeckLanguage
                 });
             }
             if (tabName === 'solution-views') {

@@ -54,6 +54,7 @@
             '.idl-paragraph p { margin: 4px 0; font-size: 13px; line-height: 1.45; }',
             '.idl-paragraph label { display: block; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.75; margin-top: 6px; }',
             '.idl-paragraph input, .idl-paragraph select, .idl select { width: 100%; max-width: 520px; margin-top: 3px; }',
+            '.idl.is-he .idl-paragraph p, .idl.is-he .idl-caption, .idl.is-he h3 { direction: rtl; text-align: right; }',
             '@media (max-width: 720px) { .idl-clip { grid-template-columns: 1fr; } }'
         ].join('\n');
         document.head.appendChild(style);
@@ -282,8 +283,13 @@
         };
     }
 
+    function deckLang(root) {
+        return root && root.dataset && root.dataset.idlLang === 'he' ? 'he' : 'en';
+    }
+
     async function refresh(root, mode, images, state) {
-        var response = await fetch('/api/admin/media/investor-deck', { headers: authHeaders(false) });
+        var lang = deckLang(root);
+        var response = await fetch('/api/admin/media/investor-deck?lang=' + encodeURIComponent(lang), { headers: authHeaders(false) });
         var data = await response.json();
         if (!response.ok) throw new Error(data.error || 'The investor deck could not be loaded');
         state.data = data;
@@ -337,12 +343,20 @@
         }
         var mode = options && options.mode === 'edit' ? 'edit' : 'watch';
         var images = options && options.images;
+        var lang = options && options.lang === 'he' ? 'he' : 'en';
+        target.dataset.idlLang = lang;
         var state = { clips: [], cursor: 0, data: null, root: target, blocked: false };
-        target.innerHTML = '<div class="idl">' +
+        var presentPath = (lang === 'he' ? '/investor-deck.he.html' : '/investor-deck.html') + (mode === 'edit' ? '?edit=1' : '');
+        var note = lang === 'he'
+            ? 'חלק ב׳, סצנה של 15 שניות לכל פסקה. השורה המדוברת היא הפסקה העברית של המצגת. פסקה עם מספר אינה מוקראת; המספרים נשארים על השקף.'
+            : 'Part II, one 15-second scene per paragraph. The film plays the scenes that exist, in order, and skips the rest. Charts and the founder portrait are the plan’s own, shown beside the clip. The spoken line is the paragraph as the plan fills it.';
+        target.innerHTML = '<div class="idl' + (lang === 'he' ? ' is-he' : '') + '">' +
             '<div class="idl-stage">' +
-            '<p class="idl-note">Part II, one 15-second scene per paragraph. The film plays the scenes that exist, in order, and skips the rest. Charts and the founder portrait are the plan’s own, shown beside the clip. The spoken line is the paragraph as the plan fills it.</p>' +
+            '<p class="idl-note">' + note + '</p>' +
             '<div class="idl-row"><button type="button" class="idl-btn" data-idl-play>Play the film</button>' +
-            '<a class="idl-btn secondary" href="' + (mode === 'edit' ? '/investor-deck.html?edit=1' : '/investor-deck.html') + '">Present the 13 slides</a>' +
+            '<button type="button" class="idl-btn secondary" data-idl-lang="en">English</button>' +
+            '<button type="button" class="idl-btn secondary" data-idl-lang="he">עברית</button>' +
+            '<a class="idl-btn secondary" href="' + presentPath + '">Present the 13 slides</a>' +
             (mode === 'watch' ? '<a class="idl-btn secondary" href="/admin-media.html#investor-deck">Open the investor deck lab</a>' : '') +
             '</div><div data-idl-stream></div><p class="idl-status" data-idl-status>Loading the deck…</p></div>' +
             (mode === 'edit' ? '<div data-idl-editor></div>' : '') +
@@ -352,6 +366,14 @@
             var index = state.blocked ? state.cursor : 0;
             armOtherClips(state, index);
             playAt(state, index);
+        });
+        target.querySelectorAll('[data-idl-lang]').forEach(function (button) {
+            button.addEventListener('click', function () {
+                var next = button.getAttribute('data-idl-lang') === 'he' ? 'he' : 'en';
+                if (next === deckLang(target)) return;
+                mount(target, { mode: mode, images: images, lang: next });
+                if (options && typeof options.onLang === 'function') options.onLang(next);
+            });
         });
         if (mode === 'edit') {
             var onEditClick = function (event) {

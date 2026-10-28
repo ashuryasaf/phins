@@ -13,7 +13,10 @@ not written here. Slide chrome (theme, gradient, transparency, embedded
 image) lives in ``services/investor_deck_slideshow.py``.
 
 The 13-slide presentation (``presentation_of``) is the same Part II, one
-slide at a time. A library video combines with a slide only as a checksummed
+slide at a time, in English or Hebrew. Hebrew paragraphs are the business-plan
+Hebrew edition of the same bullets; figures still fill from the plan.
+Hebrew scenes are stored under ``he-sNNpNN`` and never replace an English seal.
+A library video combines with a slide only as a checksummed
 pointer. A mismatch is omitted and the library file is not rewritten.
 
 A watermark background is a separate checksummed list of library images
@@ -36,6 +39,7 @@ from services.business_plan_document import (
     _fill,
     deck_slides,
 )
+from services.business_plan_i18n import translator
 
 SCENE_SECONDS = 15
 CAMPAIGN_PREFIX = "DECK-"
@@ -120,8 +124,31 @@ class InvestorDeckError(ValueError):
     """A scene edit or send was rejected before any provider call."""
 
 
+def normalize_deck_lang(value: Any) -> str:
+    """``en`` or ``he``. Anything else is English, so a bad flag cannot retarget a seal."""
+    text = str(value or "").strip().lower()
+    if text in ("he", "heb", "hebrew", "iw"):
+        return "he"
+    return "en"
+
+
 def scene_key(slide_no: int, paragraph_no: int) -> str:
     return f"s{int(slide_no):02d}p{int(paragraph_no):02d}"
+
+
+def scene_storage_key(slide_no: int, paragraph_no: int, lang: str = "en") -> str:
+    """English keys stay ``sNNpNN``. Hebrew keys are ``he-sNNpNN``."""
+    base = scene_key(slide_no, paragraph_no)
+    if normalize_deck_lang(lang) == "he":
+        return f"he-{base}"
+    return base
+
+
+def lang_of_scene_key(key: str) -> str:
+    text = str(key or "").strip()
+    if text.startswith("he-"):
+        return "he"
+    return "en"
 
 
 def campaign_id_for(key: str) -> str:
@@ -154,34 +181,54 @@ def chart_ids() -> List[str]:
     return seen
 
 
-def catalog() -> List[Dict[str, Any]]:
-    """One row per deck bullet. Templates are unfilled; figures are not baked in."""
+def catalog(lang: str = "en") -> List[Dict[str, Any]]:
+    """One row per deck bullet. Templates are unfilled; figures are not baked in.
+
+    ``lang="he"`` uses the Hebrew edition of the same bullets. Placeholders
+    stay in the sentence so the plan fills the same figures. English keys and
+    templates are unchanged.
+    """
+    language = normalize_deck_lang(lang)
+    speak = translator(language)
     rows: List[Dict[str, Any]] = []
     for slide_no, slide in enumerate(deck_slides(), 1):
+        title_en = str(slide.get("title") or "")
         bullets = list(slide.get("bullets") or [])
-        chart_id = str(SLIDE_CHARTS.get(slide.get("title") or "") or "")
+        chart_id = str(SLIDE_CHARTS.get(title_en) or "")
         photo = "founder" if slide.get("founder") else ""
+        raw_kicker = str(slide.get("kicker") or "")
+        title = speak(title_en)
+        kicker = speak(raw_kicker) if raw_kicker else ""
         for paragraph_no, template in enumerate(bullets, 1):
-            key = scene_key(slide_no, paragraph_no)
+            key = scene_storage_key(slide_no, paragraph_no, language)
             rows.append({
                 "scene_key": key,
+                "lang": language,
                 "slide_no": slide_no,
                 "paragraph_no": paragraph_no,
                 "paragraph_count": len(bullets),
-                "slide_title": str(slide.get("title") or ""),
-                "kicker": str(slide.get("kicker") or ""),
-                "template": str(template),
+                "slide_title": title,
+                "kicker": kicker,
+                "template": speak(str(template)),
                 "chart_id": chart_id,
                 "photo": photo,
                 "campaign_id": campaign_id_for(key),
                 "duration_seconds": SCENE_SECONDS,
             })
+    if language == "he" and speak.misses:
+        # A missing Hebrew sentence must not be filmed as English under a Hebrew key.
+        missing = speak.misses
+        raise InvestorDeckError(
+            "Hebrew deck text is incomplete. Nothing was prepared. "
+            f"Missing {len(missing)} sentence(s)."
+        )
     return rows
 
 
 def spec_for(key: str) -> Optional[Dict[str, Any]]:
     wanted = str(key or "").strip()
-    for row in catalog():
+    language = lang_of_scene_key(wanted)
+    for row in catalog(language):
         if row["scene_key"] == wanted:
             return dict(row)
     return None
@@ -193,6 +240,7 @@ def fill_narration(template: str, plan: Mapping[str, Any]) -> str:
 
 
 _POINT_WORDS = ("", "first point", "second point", "third point", "fourth point")
+_POINT_WORDS_HE = ("", "הנקודה הראשונה", "הנקודה השנייה", "הנקודה השלישית", "הנקודה הרביעית")
 
 
 def short_script(spec: Mapping[str, Any], plan: Mapping[str, Any]) -> str:
@@ -202,19 +250,26 @@ def short_script(spec: Mapping[str, Any], plan: Mapping[str, Any]) -> str:
     that fills a figure is not recited: the voice names the slide, and the
     filled figures stay on the slide beside the film. A figure the plan leaves
     unfilled is returned as written so the seal can refuse the send.
+    Hebrew uses the Hebrew paragraph. The figure rule is the same.
     """
     template = str(spec.get("template") or "")
     filled = fill_narration(template, plan)
+    language = normalize_deck_lang(spec.get("lang") or lang_of_scene_key(str(spec.get("scene_key") or "")))
     # The spoken line has no braces, so a leftover figure has to stay on this
     # line. Otherwise the seal cannot see it.
     if "{" not in template or _PLACEHOLDER.findall(filled):
         return filled
-    title = str(spec.get("slide_title") or "").strip() or "This slide"
+    fallback_title = "שקף זה" if language == "he" else "This slide"
+    title = str(spec.get("slide_title") or "").strip() or fallback_title
     try:
         point = int(spec.get("paragraph_no") or 0)
     except (TypeError, ValueError):
         point = 0
-    label = _POINT_WORDS[point] if 0 < point < len(_POINT_WORDS) else "this point"
+    words = _POINT_WORDS_HE if language == "he" else _POINT_WORDS
+    if language == "he":
+        label = words[point] if 0 < point < len(words) else "נקודה זו"
+        return f"{title}, {label}. המספרים נשארים על השקף."
+    label = words[point] if 0 < point < len(words) else "this point"
     return f"{title}, {label}. The figures stay on this slide."
 
 
@@ -462,10 +517,17 @@ def growth_brief(record: Mapping[str, Any]) -> Dict[str, Any]:
     storyboard = [narration] if narration else []
     if theme:
         storyboard.append(f"Theme: {theme}")
+    hebrew = lang_of_scene_key(str(record.get("scene_key") or "")) == "he"
+    voice = (
+        "Elegant business presenter speaking Hebrew, one short spoken pass; "
+        "charts and figures stay on the slide and are not drawn"
+        if hebrew else
+        "Elegant business presenter, one short spoken pass; charts and figures stay on the slide and are not drawn"
+    )
     return {
         "title": f"Investor deck {record.get('scene_key') or ''}",
         "format": "16:9 investor presentation",
-        "voiceover_style": "Elegant business presenter, one short spoken pass; charts and figures stay on the slide and are not drawn",
+        "voiceover_style": voice,
         "storyboard": storyboard,
         "scene_key": str(record.get("scene_key") or ""),
     }
@@ -495,10 +557,18 @@ def prompt_override(record: Mapping[str, Any]) -> str:
     if theme:
         parts.append(f"Descriptive theme, unspoken: {theme}.")
     if narration:
-        parts.append(
-            "The presenter speaks this short line once, in a clear calm voice, and finishes on its final period. "
-            f'Do not stop mid-word or mid-sentence: "{narration}"'
-        )
+        hebrew = lang_of_scene_key(str(record.get("scene_key") or "")) == "he"
+        if hebrew:
+            parts.append(
+                "The presenter speaks this short line once, in Hebrew, in a clear calm voice, and finishes on its final period. "
+                "Do not translate it and do not stop mid-word or mid-sentence: "
+                f'"{narration}"'
+            )
+        else:
+            parts.append(
+                "The presenter speaks this short line once, in a clear calm voice, and finishes on its final period. "
+                f'Do not stop mid-word or mid-sentence: "{narration}"'
+            )
     return " ".join(parts)
 
 
@@ -601,28 +671,36 @@ def stream_of(scenes: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
     return ordered
 
 
-def slide_specs() -> List[Dict[str, Any]]:
+def slide_specs(lang: str = "en") -> List[Dict[str, Any]]:
     """One row per Part II slide. Bullet templates stay unfilled."""
+    language = normalize_deck_lang(lang)
     rows: List[Dict[str, Any]] = []
-    for slide_no, slide in enumerate(deck_slides(), 1):
-        title = str(slide.get("title") or "")
-        rows.append({
-            "slide_no": slide_no,
-            "title": title,
-            "kicker": str(slide.get("kicker") or ""),
-            "bullets": [str(item) for item in (slide.get("bullets") or [])],
-            "chart_id": str(SLIDE_CHARTS.get(title) or ""),
-            "photo": "founder" if slide.get("founder") else "",
-        })
+    seen: Dict[int, Dict[str, Any]] = {}
+    for scene in catalog(language):
+        number = int(scene["slide_no"])
+        row = seen.get(number)
+        if row is None:
+            row = {
+                "slide_no": number,
+                "title": str(scene.get("slide_title") or ""),
+                "kicker": str(scene.get("kicker") or ""),
+                "bullets": [],
+                "chart_id": str(scene.get("chart_id") or ""),
+                "photo": str(scene.get("photo") or ""),
+                "lang": language,
+            }
+            seen[number] = row
+            rows.append(row)
+        row["bullets"].append(str(scene.get("template") or ""))
     return rows
 
 
-def slide_spec(slide_no: int) -> Optional[Dict[str, Any]]:
+def slide_spec(slide_no: int, lang: str = "en") -> Optional[Dict[str, Any]]:
     try:
         number = int(slide_no)
     except (TypeError, ValueError):
         return None
-    for row in slide_specs():
+    for row in slide_specs(lang):
         if row["slide_no"] == number:
             return dict(row)
     return None
@@ -897,10 +975,12 @@ def presentation_of(
     photo_url: str = "",
     charts: Optional[Mapping[str, Any]] = None,
     watermark: Optional[Mapping[str, Any]] = None,
+    lang: str = "en",
 ) -> Dict[str, Any]:
     """Part II as slides. Figures are filled here and nowhere written back."""
+    language = normalize_deck_lang(lang)
     slides: List[Dict[str, Any]] = []
-    for spec in slide_specs():
+    for spec in slide_specs(language):
         number = int(spec["slide_no"])
         photo = str(spec.get("photo") or "")
         chart_id = str(spec.get("chart_id") or "")
@@ -918,6 +998,7 @@ def presentation_of(
         })
     return {
         "part": "II",
+        "lang": language,
         "slide_count": len(slides),
         "slides": slides,
         "watermark": watermark_of(watermark, assets),
