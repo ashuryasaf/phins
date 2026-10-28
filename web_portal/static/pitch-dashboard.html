@@ -1535,6 +1535,114 @@
       to { opacity: 1; transform: none; }
     }
 
+    .signed-use-card {
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .signed-use-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+      gap: 12px;
+      cursor: pointer;
+    }
+
+    .signed-use-head-copy {
+      min-width: 0;
+    }
+
+    .signed-use-summary {
+      margin: 6px 0 0;
+      font-size: 9pt;
+      color: var(--text-sub);
+    }
+
+    .signed-use-toggle {
+      flex: 0 0 auto;
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      border: 1px solid rgba(13, 42, 92, 0.22);
+      background: #fff;
+      color: #0d2a5c;
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .signed-use-toggle:hover {
+      background: rgba(247, 226, 160, 0.35);
+      border-color: rgba(201, 160, 78, 0.8);
+    }
+
+    .signed-use-card.is-open .signed-use-toggle {
+      background: linear-gradient(135deg, #f7e2a0, #e3bf6f);
+      color: #071022;
+      border-color: transparent;
+    }
+
+    .signed-use-card.is-collapsed #signed-use-body {
+      display: none;
+    }
+
+    .address-book {
+      overflow-x: auto;
+      max-width: 100%;
+      margin: 0 0 14px;
+    }
+
+    .address-book table {
+      width: 100%;
+      min-width: 920px;
+      border-collapse: collapse;
+      font-size: 8.3pt;
+    }
+
+    .address-book th,
+    .address-book td {
+      text-align: left;
+      vertical-align: top;
+      padding: 8px 8px;
+      border-top: 1px solid var(--border);
+    }
+
+    .address-book th {
+      font-size: 7.6pt;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-sub);
+      border-top: none;
+    }
+
+    .address-book a,
+    .address-book code {
+      word-break: break-all;
+    }
+
+    .signed-use-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .signed-use-actions .exec-dl-btn {
+      height: auto;
+      padding: 4px 8px;
+      font-size: 8pt;
+    }
+
+    @media print {
+      .signed-use-card.is-collapsed #signed-use-body { display: block; }
+      .signed-use-toggle { display: none; }
+    }
+
     .pitch-tab-back-row {
       display: flex;
       align-items: center;
@@ -2849,13 +2957,26 @@
         <p style="font-size:8.5pt;color:var(--text-sub);margin:8px 0 0;">A business-plan link freezes the document structure and the adjustable factors saved in <a href="/business-plan.html#bp-factor-panel">Admin tools</a> at the moment it is created. An investor-deck link freezes that same factor set onto the 13 slides (English or Hebrew). A later edit does not change a link already sent, and each link needs its own signature — opening one does not open the next.</p>
       </div>
 
-      <div id="signed-use-section" hidden style="margin-top:16px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--bg-card);box-shadow:var(--shadow);">
-        <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--amber-1);margin-bottom:6px;">Staff · Signed documents</div>
-        <h3 style="margin:0 0 8px 0;font-size:12pt;">Signed documents and use ledger</h3>
-        <p style="font-size:9.5pt;color:var(--text-sub);margin:0 0 12px 0;">Every anchored signature is sealed with its digest. Sent, signed, opened, and used events sit on one hash chain. A broken seal is shown and is not repaired.</p>
-        <div id="document-use-ledger" style="font-size:9.5pt;color:var(--text-sub);margin-bottom:12px;">Loading use ledger…</div>
-        <div id="signed-documents-folder">
-          <div id="signed-documents-list" style="font-size:9.5pt;color:var(--text-sub);">Loading signed documents…</div>
+      <div id="signed-use-section" class="signed-use-card is-collapsed" hidden style="margin-top:16px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--bg-card);box-shadow:var(--shadow);">
+        <div class="signed-use-head" id="signed-use-head">
+          <button type="button" id="signed-use-toggle" class="signed-use-toggle" aria-expanded="false" aria-controls="signed-use-body" aria-label="Maximise signed documents">+</button>
+          <div class="signed-use-head-copy">
+            <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--amber-1);margin-bottom:6px;">Staff · Signed documents</div>
+            <h3 style="margin:0;font-size:12pt;">Signed documents and use ledger</h3>
+            <p id="signed-use-summary" class="signed-use-summary">Addressed links, seals, and the use ledger.</p>
+          </div>
+        </div>
+        <div id="signed-use-body">
+          <p style="font-size:9.5pt;color:var(--text-sub);margin:12px 0;">Each row is one addressed link: recipient, link, open password, status, and uses. Revoke or delete closes that link. The record, the sealed signature, and the hash chain stay, so a later check still resolves. A broken seal is shown and is not repaired.</p>
+          <h4 style="margin:0 0 8px;font-size:10.5pt;">Addressed links</h4>
+          <div id="addressed-links" class="address-book" style="font-size:9.5pt;color:var(--text-sub);">Loading addressed links…</div>
+          <p id="addressed-links-msg" style="font-size:9pt;margin:0 0 12px;min-height:1.2em;color:var(--text-sub);"></p>
+          <h4 style="margin:0 0 8px;font-size:10.5pt;">Use ledger</h4>
+          <div id="document-use-ledger" style="font-size:9.5pt;color:var(--text-sub);margin-bottom:12px;">Loading use ledger…</div>
+          <h4 style="margin:0 0 8px;font-size:10.5pt;">Sealed signatures</h4>
+          <div id="signed-documents-folder">
+            <div id="signed-documents-list" style="font-size:9.5pt;color:var(--text-sub);">Loading signed documents…</div>
+          </div>
         </div>
       </div>
 
@@ -12680,100 +12801,414 @@
       if (!panel || !form) return;
 
       function authToken() {
-        try { return localStorage.getItem("phins_auth_token") || ""; } catch (e) { return ""; }
+        // The confidential unlock stores phins_auth_token. A normal staff
+        // login stores phins_token. The shares API still requires a staff session.
+        try {
+          return localStorage.getItem("phins_auth_token") ||
+                 localStorage.getItem("phins_token") ||
+                 sessionStorage.getItem("phins_token") || "";
+        } catch (e) { return ""; }
+      }
+
+      var deskToken = "";
+
+      function setSignedUseOpen(open) {
+        var section = document.getElementById("signed-use-section");
+        var btn = document.getElementById("signed-use-toggle");
+        if (!section || !btn) return;
+        section.classList.toggle("is-open", !!open);
+        section.classList.toggle("is-collapsed", !open);
+        btn.textContent = open ? "\u2212" : "+";
+        btn.setAttribute("aria-expanded", open ? "true" : "false");
+        btn.setAttribute("aria-label", open ? "Minimise signed documents" : "Maximise signed documents");
+        try { localStorage.setItem("phins-signed-use-open", open ? "1" : "0"); } catch (e) {}
+      }
+      window.phinsSetSignedUseOpen = setSignedUseOpen;
+
+      (function initSignedUseFold() {
+        var open = false;
+        try { open = localStorage.getItem("phins-signed-use-open") === "1"; } catch (e) {}
+        if ((location.hash || "") === "#signed-use-section") open = true;
+        setSignedUseOpen(open);
+        var btn = document.getElementById("signed-use-toggle");
+        var head = document.getElementById("signed-use-head");
+        if (btn) {
+          btn.addEventListener("click", function (ev) {
+            ev.stopPropagation();
+            var section = document.getElementById("signed-use-section");
+            setSignedUseOpen(!(section && section.classList.contains("is-open")));
+          });
+        }
+        if (head) {
+          head.addEventListener("click", function () {
+            var section = document.getElementById("signed-use-section");
+            setSignedUseOpen(!(section && section.classList.contains("is-open")));
+          });
+        }
+      })();
+
+      function staffHeaders(token) {
+        return { "Authorization": "Bearer " + token };
+      }
+
+      function fetchJson(url, token) {
+        return fetch(url, { headers: staffHeaders(token), credentials: "same-origin" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .catch(function () { return null; });
+      }
+
+      function stamp(value) {
+        return String(value || "").replace("T", " ").replace("Z", " UTC");
+      }
+
+      function shareUrl(item) {
+        var path = String((item && item.share_url_path) || "");
+        if (path.charAt(0) !== "/") return "";
+        return location.origin + path;
+      }
+
+      function usesText(item) {
+        var used = Number(item.used_count || 0);
+        var openings = Array.isArray(item.openings) ? item.openings.length : 0;
+        var core = item.max_uses == null
+          ? used + (used === 1 ? " use" : " uses") + " \u00b7 unlimited"
+          : used + " / " + item.max_uses + " \u00b7 " + (item.remaining_uses == null ? 0 : item.remaining_uses) + " left";
+        return core + " \u00b7 " + openings + (openings === 1 ? " opening" : " openings");
+      }
+
+      function windowText(item) {
+        var hours = Math.round(Number(item.access_window_seconds || 0) / 3600);
+        var idle = Math.round(Number(item.idle_timeout_seconds || 0) / 60);
+        var bits = [];
+        if (hours) bits.push(hours + "h window");
+        if (idle) bits.push(idle + "m idle");
+        if (item.expires_at) bits.push("lapses " + String(item.expires_at).slice(0, 10));
+        if (item.mode) bits.push(item.mode);
+        return bits.join(" \u00b7 ");
+      }
+
+      function passwordLabel(item) {
+        if (item.password_retained && item.password) return String(item.password);
+        if (item.password_unreadable) return "Seal unreadable";
+        return "Not retained";
+      }
+
+      function copyText(value, button, doneLabel) {
+        if (!navigator.clipboard || !navigator.clipboard.writeText) {
+          button.textContent = "Copy unavailable";
+          return;
+        }
+        navigator.clipboard.writeText(value).then(function () {
+          button.textContent = doneLabel || "Copied";
+        }).catch(function () { button.textContent = "Copy failed"; });
+      }
+
+      function openSeal(archiveId, button) {
+        fetch("/api/confidential/signed-documents/" + encodeURIComponent(archiveId) + "/html", {
+          headers: staffHeaders(deskToken),
+          credentials: "same-origin"
+        }).then(function (r) { return r.ok ? r.text() : Promise.reject(); }).then(function (html) {
+          var blob = new Blob([html], { type: "text/html" });
+          window.open(URL.createObjectURL(blob), "_blank", "noopener");
+        }).catch(function () { button.textContent = "Could not open"; });
+      }
+
+      function closeLink(item, kind) {
+        var name = item.label || item.id || "this link";
+        var verb = kind === "delete" ? "Delete" : "Revoke";
+        var note = kind === "delete"
+          ? "Delete the link for " + name + "? It stops opening and stays on the book as deleted. The seal and the use ledger are kept."
+          : "Revoke the link for " + name + "? It stops opening. The record, the seal, and the use ledger are kept.";
+        if (!window.confirm(note)) return;
+        var msg = document.getElementById("addressed-links-msg");
+        if (msg) msg.textContent = verb + "\u2026";
+        var url = "/api/confidential/shares/" + encodeURIComponent(item.id);
+        var headers = staffHeaders(deskToken);
+        var opts = { method: "DELETE", headers: headers, credentials: "same-origin" };
+        if (kind === "delete") {
+          url += "/delete";
+          opts.method = "POST";
+          opts.headers = { "Authorization": headers.Authorization, "Content-Type": "application/json" };
+          opts.body = "{}";
+        }
+        fetch(url, opts).then(function (r) {
+          return r.json().then(function (data) { return { ok: r.ok, data: data || {} }; });
+        }).then(function (res) {
+          if (!res.ok) {
+            if (msg) msg.textContent = (res.data && res.data.error) || (verb + " failed");
+            return;
+          }
+          if (msg) {
+            msg.textContent = kind === "delete"
+              ? "Link deleted. The record, the seal, and the chain are kept."
+              : "Link revoked. The record, the seal, and the chain are kept.";
+          }
+          loadSignedDesk(deskToken);
+        }).catch(function () {
+          if (msg) msg.textContent = "Network error \u2014 try again.";
+        });
+      }
+
+      function renderSummary(shares, ledger, docs) {
+        var node = document.getElementById("signed-use-summary");
+        if (!node) return;
+        var linkCount = shares && Array.isArray(shares.items) ? shares.items.length : 0;
+        var sealCount = docs && Array.isArray(docs.items) ? docs.items.length : 0;
+        var eventCount = ledger && typeof ledger.total === "number" ? ledger.total : 0;
+        var chain = !ledger ? "ledger unread" : (ledger.intact ? "chain intact" : "chain does not verify");
+        node.textContent = linkCount + " addressed link" + (linkCount === 1 ? "" : "s")
+          + " \u00b7 " + sealCount + " sealed \u00b7 " + eventCount + " ledger events \u00b7 " + chain;
+      }
+
+      function renderAddressed(data, token) {
+        var box = document.getElementById("addressed-links");
+        if (!box) return;
+        box.innerHTML = "";
+        if (!data) {
+          box.textContent = "Addressed links could not be loaded.";
+          return;
+        }
+        var items = data.items || [];
+        if (!items.length) {
+          box.textContent = "No addressed links yet. Create one in Staff \u00b7 Share links above.";
+          return;
+        }
+        var table = document.createElement("table");
+        var head = document.createElement("thead");
+        var headRow = document.createElement("tr");
+        ["Addressed to", "Link", "Password", "Status", "Uses", "Window", "Signatures", ""].forEach(function (label) {
+          var th = document.createElement("th");
+          th.textContent = label;
+          headRow.appendChild(th);
+        });
+        head.appendChild(headRow);
+        table.appendChild(head);
+        var body = document.createElement("tbody");
+        items.forEach(function (item) {
+          var tr = document.createElement("tr");
+
+          var who = document.createElement("td");
+          var name = document.createElement("strong");
+          name.textContent = item.label || "Untitled recipient";
+          who.appendChild(name);
+          var meta = document.createElement("div");
+          meta.style.color = "#667";
+          var bits = [item.id || "", item.lang || ""];
+          if (item.nda_required) bits.push("NDA");
+          if (item.nda_doc_instance_id) bits.push(item.nda_doc_instance_id);
+          if (item.created_at) bits.push("created " + stamp(item.created_at));
+          if (item.created_by) bits.push("by " + item.created_by);
+          meta.textContent = bits.filter(Boolean).join(" \u00b7 ");
+          who.appendChild(meta);
+          tr.appendChild(who);
+
+          var linkCell = document.createElement("td");
+          var url = shareUrl(item);
+          if (url) {
+            var anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.target = "_blank";
+            anchor.rel = "noopener";
+            anchor.textContent = url;
+            linkCell.appendChild(anchor);
+            var copyLink = document.createElement("button");
+            copyLink.type = "button";
+            copyLink.className = "exec-dl-btn";
+            copyLink.style.marginTop = "6px";
+            copyLink.textContent = "Copy link";
+            copyLink.addEventListener("click", function () { copyText(url, copyLink, "Copied"); });
+            linkCell.appendChild(document.createElement("br"));
+            linkCell.appendChild(copyLink);
+          } else {
+            linkCell.textContent = item.path || "";
+          }
+          tr.appendChild(linkCell);
+
+          var passCell = document.createElement("td");
+          var code = document.createElement("code");
+          code.textContent = passwordLabel(item);
+          passCell.appendChild(code);
+          if (item.password_retained && item.password) {
+            var copyPass = document.createElement("button");
+            copyPass.type = "button";
+            copyPass.className = "exec-dl-btn";
+            copyPass.style.marginTop = "6px";
+            copyPass.textContent = "Copy password";
+            copyPass.addEventListener("click", function () { copyText(String(item.password), copyPass, "Copied"); });
+            passCell.appendChild(document.createElement("br"));
+            passCell.appendChild(copyPass);
+          }
+          tr.appendChild(passCell);
+
+          var statusCell = document.createElement("td");
+          var status = document.createElement("strong");
+          status.textContent = item.status || "";
+          statusCell.appendChild(status);
+          var statusMeta = document.createElement("div");
+          statusMeta.style.color = "#667";
+          var statusBits = [];
+          if (item.revoked_at) statusBits.push("revoked " + stamp(item.revoked_at) + (item.revoked_by ? " by " + item.revoked_by : ""));
+          if (item.deleted_at) statusBits.push("deleted " + stamp(item.deleted_at) + (item.deleted_by ? " by " + item.deleted_by : ""));
+          statusMeta.textContent = statusBits.join(" \u00b7 ");
+          statusCell.appendChild(statusMeta);
+          tr.appendChild(statusCell);
+
+          var usesCell = document.createElement("td");
+          usesCell.textContent = usesText(item);
+          tr.appendChild(usesCell);
+
+          var windowCell = document.createElement("td");
+          windowCell.textContent = windowText(item);
+          tr.appendChild(windowCell);
+
+          var sigCell = document.createElement("td");
+          var acceptances = Array.isArray(item.nda_acceptances) ? item.nda_acceptances : [];
+          if (!acceptances.length) {
+            sigCell.textContent = "None yet";
+          } else {
+            acceptances.forEach(function (acc, index) {
+              if (index) sigCell.appendChild(document.createElement("br"));
+              var line = document.createElement("span");
+              line.textContent = (acc.signer_name || "Signer") + (acc.at ? " \u00b7 " + stamp(acc.at) : "");
+              sigCell.appendChild(line);
+              var archiveId = acc.ledger && acc.ledger.archive_id;
+              if (archiveId) {
+                var open = document.createElement("button");
+                open.type = "button";
+                open.className = "exec-dl-btn";
+                open.style.marginLeft = "6px";
+                open.textContent = "Open seal";
+                open.addEventListener("click", function () { openSeal(archiveId, open); });
+                sigCell.appendChild(open);
+              }
+            });
+          }
+          tr.appendChild(sigCell);
+
+          var actions = document.createElement("td");
+          var wrap = document.createElement("div");
+          wrap.className = "signed-use-actions";
+          var closed = item.status === "revoked" || item.status === "deleted";
+          var revoke = document.createElement("button");
+          revoke.type = "button";
+          revoke.className = "exec-dl-btn";
+          revoke.textContent = "Revoke";
+          revoke.disabled = closed;
+          if (!closed) revoke.addEventListener("click", function () { closeLink(item, "revoke"); });
+          var del = document.createElement("button");
+          del.type = "button";
+          del.className = "exec-dl-btn";
+          del.textContent = "Delete";
+          del.disabled = item.status === "deleted";
+          if (item.status !== "deleted") del.addEventListener("click", function () { closeLink(item, "delete"); });
+          wrap.appendChild(revoke);
+          wrap.appendChild(del);
+          actions.appendChild(wrap);
+          tr.appendChild(actions);
+
+          body.appendChild(tr);
+        });
+        table.appendChild(body);
+        box.appendChild(table);
+        void token;
+      }
+
+      function renderLedger(data) {
+        var box = document.getElementById("document-use-ledger");
+        if (!box) return;
+        if (!data) { box.textContent = "Use ledger could not be loaded."; return; }
+        var items = data.items || [];
+        box.innerHTML = "";
+        var head = document.createElement("div");
+        head.style.marginBottom = "6px";
+        head.textContent = (data.intact ? "Chain intact" : "Chain does not verify") + " \u00b7 " + (data.total || 0) + " events";
+        box.appendChild(head);
+        if (!items.length) {
+          var empty = document.createElement("div");
+          empty.textContent = "No sent, signed, opened, used, revoked, or deleted events yet.";
+          box.appendChild(empty);
+          return;
+        }
+        items.slice(0, 40).forEach(function (item) {
+          var row = document.createElement("div");
+          row.style.cssText = "padding:4px 0;border-top:1px solid var(--border);";
+          var parts = [item.action || "", item.document_name || item.document_path || "document", item.actor || "", stamp(item.at)];
+          if (item.share_id) parts.push(item.share_id);
+          row.textContent = parts.filter(Boolean).join(" \u00b7 ");
+          box.appendChild(row);
+        });
+      }
+
+      function renderSigned(data) {
+        var list = document.getElementById("signed-documents-list");
+        if (!list) return;
+        if (!data) { list.textContent = "Signed documents could not be loaded."; return; }
+        var items = data.items || [];
+        if (!items.length) { list.textContent = "No signed documents yet."; return; }
+        list.innerHTML = "";
+        items.forEach(function (item) {
+          var row = document.createElement("div");
+          row.style.cssText = "padding:8px 0;border-top:1px solid var(--border);";
+          if (!item.intact) {
+            row.textContent = (item.archive_id || "record") + " \u2014 seal failed" + (item.error ? ": " + item.error : "");
+            list.appendChild(row);
+            return;
+          }
+          var who = document.createElement("strong");
+          who.textContent = item.signer_name || "Signer";
+          var when = document.createElement("span");
+          when.textContent = " \u00b7 " + (item.label || "") + " \u00b7 " + stamp(item.signed_at);
+          var meta = document.createElement("div");
+          meta.style.color = "#667";
+          var metaBits = [item.doc_instance_id || "", String(item.nda_sha256 || "").slice(0, 16)];
+          if (item.sequence_no) metaBits.push("ledger #" + item.sequence_no);
+          if (item.share_id) metaBits.push(item.share_id);
+          meta.textContent = metaBits.filter(Boolean).join(" \u00b7 ");
+          row.appendChild(who);
+          row.appendChild(when);
+          row.appendChild(meta);
+          var open = document.createElement("button");
+          open.type = "button";
+          open.className = "exec-dl-btn";
+          open.style.marginTop = "6px";
+          open.textContent = "Open signed document";
+          open.addEventListener("click", function () { openSeal(item.archive_id, open); });
+          row.appendChild(open);
+          list.appendChild(row);
+        });
+      }
+
+      function loadSignedDesk(token) {
+        deskToken = token;
+        return Promise.all([
+          fetchJson("/api/confidential/shares", token),
+          fetchJson("/api/confidential/document-ledger", token),
+          fetchJson("/api/confidential/signed-documents", token)
+        ]).then(function (parts) {
+          renderAddressed(parts[0], token);
+          renderLedger(parts[1]);
+          renderSigned(parts[2]);
+          renderSummary(parts[0], parts[1], parts[2]);
+        });
       }
 
       function revealIfStaff() {
         var token = authToken();
         if (!token) return;
         fetch("/api/confidential/shares", {
-          headers: { "Authorization": "Bearer " + token },
+          headers: staffHeaders(token),
           credentials: "same-origin"
         }).then(function (r) {
           if (r.ok) {
             panel.hidden = false;
             var section = document.getElementById("signed-use-section");
             if (section) section.hidden = false;
-            loadSignedDocuments(token);
-            loadUseLedger(token);
+            return r.json().then(function (shares) {
+              renderAddressed(shares, token);
+              return loadSignedDesk(token);
+            });
           }
         }).catch(function () {});
-      }
-
-      function loadUseLedger(token) {
-        var box = document.getElementById("document-use-ledger");
-        if (!box) return;
-        fetch("/api/confidential/document-ledger", {
-          headers: { "Authorization": "Bearer " + token },
-          credentials: "same-origin"
-        }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
-          if (!data) { box.textContent = "Use ledger could not be loaded."; return; }
-          var items = data.items || [];
-          box.innerHTML = "";
-          var head = document.createElement("div");
-          head.style.marginBottom = "6px";
-          head.textContent = (data.intact ? "Chain intact" : "Chain does not verify") + " · " + (data.total || 0) + " events";
-          box.appendChild(head);
-          if (!items.length) {
-            var empty = document.createElement("div");
-            empty.textContent = "No sent, signed, opened, or used events yet.";
-            box.appendChild(empty);
-            return;
-          }
-          items.slice(0, 40).forEach(function (item) {
-            var row = document.createElement("div");
-            row.style.cssText = "padding:4px 0;border-top:1px solid var(--border);";
-            var when = String(item.at || "").replace("T", " ").replace("Z", " UTC");
-            row.textContent = String(item.action || "") + " · " + (item.document_name || item.document_path || "document") +
-              " · " + (item.actor || "") + " · " + when;
-            box.appendChild(row);
-          });
-        }).catch(function () { box.textContent = "Use ledger could not be loaded."; });
-      }
-
-      function loadSignedDocuments(token) {
-        var list = document.getElementById("signed-documents-list");
-        if (!list) return;
-        fetch("/api/confidential/signed-documents", {
-          headers: { "Authorization": "Bearer " + token },
-          credentials: "same-origin"
-        }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
-          if (!data) { list.textContent = "Signed documents could not be loaded."; return; }
-          var items = data.items || [];
-          if (!items.length) { list.textContent = "No signed documents yet."; return; }
-          list.innerHTML = "";
-          items.forEach(function (item) {
-            var row = document.createElement("div");
-            row.style.cssText = "padding:8px 0;border-top:1px solid var(--border);";
-            if (!item.intact) {
-              row.textContent = (item.archive_id || "record") + " — seal failed" + (item.error ? ": " + item.error : "");
-              list.appendChild(row);
-              return;
-            }
-            var when = String(item.signed_at || "").replace("T", " ").replace("Z", " UTC");
-            row.innerHTML = "<strong></strong> · <span></span><br><span style=\"color:#667;\"></span>";
-            row.querySelector("strong").textContent = item.signer_name || "Signer";
-            row.querySelectorAll("span")[0].textContent = (item.label || "") + " · " + when;
-            row.querySelectorAll("span")[1].textContent = (item.doc_instance_id || "") + " · " + String(item.nda_sha256 || "").slice(0, 16) + "… · ledger #" + (item.sequence_no || "");
-            var open = document.createElement("button");
-            open.type = "button";
-            open.className = "exec-dl-btn";
-            open.style.marginTop = "6px";
-            open.textContent = "Open signed document";
-            open.addEventListener("click", function () {
-              fetch("/api/confidential/signed-documents/" + encodeURIComponent(item.archive_id) + "/html", {
-                headers: { "Authorization": "Bearer " + token },
-                credentials: "same-origin"
-              }).then(function (r) { return r.ok ? r.text() : Promise.reject(); }).then(function (html) {
-                var blob = new Blob([html], { type: "text/html" });
-                window.open(URL.createObjectURL(blob), "_blank", "noopener");
-              }).catch(function () { open.textContent = "Could not open"; });
-            });
-            row.appendChild(document.createElement("br"));
-            row.appendChild(open);
-            list.appendChild(row);
-          });
-        }).catch(function () { list.textContent = "Signed documents could not be loaded."; });
       }
 
       form.addEventListener("submit", function (ev) {
@@ -12851,6 +13286,8 @@
                   : "")
               : "") +
             "<br><span style=\"color:#666\">Copied to clipboard when supported. Downloads stay excluded.</span>";
+          if (window.phinsSetSignedUseOpen) window.phinsSetSignedUseOpen(true);
+          loadSignedDesk(token);
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(url + "\nPassword: " + body.password).catch(function () {});
           }
@@ -12909,6 +13346,7 @@
         "techno-yes-section"
       ];
       var NESTED_PARENTS = {
+        "signed-use-section": "investor-documents-section",
         "il-meeting-diary": "investor-meeting-section",
         "investor-configurator": "investor-meeting-section",
         "investor-deck-config": "investor-meeting-section",
@@ -12972,6 +13410,9 @@
       }
 
       function expandForTarget(id) {
+        if (id === "signed-use-section" && window.phinsSetSignedUseOpen) {
+          window.phinsSetSignedUseOpen(true);
+        }
         var parentId = NESTED_PARENTS[id] || id;
         var section = document.getElementById(parentId);
         if (section && section.classList.contains("pitch-fold")) {

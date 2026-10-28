@@ -17189,6 +17189,20 @@ def _record_document_use(**fields) -> None:
         print(f"⚠️  [DOCUMENT USE] not recorded: {exc}")
 
 
+def _record_share_lifecycle(action: str, share: Dict[str, Any], actor: str) -> None:
+    """Append revoke or delete on the use ledger. The share row is already closed."""
+    _record_document_use(
+        action=action,
+        idempotency_key=f"{action}:{share.get('id')}",
+        document_path=str(share.get("path") or ""),
+        document_name=str(share.get("label") or share.get("path") or "Share link"),
+        share_id=str(share.get("id") or ""),
+        actor=str(actor or "admin"),
+        content_sha256=str(share.get("nda_sha256") or ""),
+        doc_instance_id=str(share.get("nda_doc_instance_id") or ""),
+    )
+
+
 def _inject_capture_guard(handler, path: str, html_content: str) -> str:
     """Block capture on a confidential document opened from a share link.
 
@@ -22514,7 +22528,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                     return True
                 try:
                     from services.confidential_share_service import get_confidential_share_service
-                    items = get_confidential_share_service().list_shares()
+                    items = get_confidential_share_service().list_shares(reveal_password=True)
                 except Exception as exc:
                     self._set_json_headers(500)
                     self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
@@ -22608,9 +22622,45 @@ class PortalHandler(BaseHTTPRequestHandler):
                     ShareError,
                     get_confidential_share_service,
                 )
+                actor = str((session or {}).get('username') or 'admin')
                 revoked = get_confidential_share_service().revoke_share(
                     share_id,
-                    revoked_by=str((session or {}).get('username') or 'admin'),
+                    revoked_by=actor,
+                )
+            except ShareError as exc:
+                message = str(exc)
+                self._set_json_headers(409 if message == 'Share link has been deleted.' else 404)
+                self.wfile.write(json.dumps({'error': message}).encode('utf-8'))
+                return True
+            except Exception as exc:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return True
+            _record_share_lifecycle('revoked', revoked, actor)
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({'success': True, 'share': revoked}).encode('utf-8'))
+            return True
+
+        if (
+            self.command == 'POST'
+            and path.startswith('/api/confidential/shares/')
+            and path.rstrip('/').endswith('/delete')
+        ):
+            if not confidential_access.session_is_staff(session) and not staff_cookie_ok:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Staff authorization required.'}).encode('utf-8'))
+                return True
+            parts = [part for part in path.split('/') if part]
+            share_id = parts[3] if len(parts) >= 5 else ''
+            try:
+                from services.confidential_share_service import (
+                    ShareError,
+                    get_confidential_share_service,
+                )
+                actor = str((session or {}).get('username') or 'admin')
+                deleted = get_confidential_share_service().delete_share(
+                    share_id,
+                    deleted_by=actor,
                 )
             except ShareError as exc:
                 self._set_json_headers(404)
@@ -22620,8 +22670,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
                 return True
+            _record_share_lifecycle('deleted', deleted, actor)
             self._set_json_headers(200)
-            self.wfile.write(json.dumps({'success': True, 'share': revoked}).encode('utf-8'))
+            self.wfile.write(json.dumps({'success': True, 'share': deleted}).encode('utf-8'))
             return True
 
         if path == '/api/confidential/signed-documents' or path.startswith('/api/confidential/signed-documents/'):

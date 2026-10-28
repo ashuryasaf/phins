@@ -718,11 +718,19 @@ Environment variables commonly used:
  to the full text only when the digest matches. With `USE_DATABASE=true`
  the bytes also live in `signed_document_blobs` (SHA-256 checked on read;
  a different checksum is not written over the row). `document_use_ledger`
- appends `sent` / `signed` / `opened` / `used` (`PHINS_DOCUMENT_USE_LEDGER_PATH`
- or `database/document_use_ledger.json`, hash-chained, idempotent). Staff
- read both from the pitch dashboard **Signed documents** tab and
- `GET /api/confidential/document-ledger` (anonymous 401). A broken chain
- is reported and blocks the next append. Share viewers of a confidential
+ appends `sent` / `signed` / `opened` / `used` / `revoked` / `deleted`
+ (`PHINS_DOCUMENT_USE_LEDGER_PATH` or `database/document_use_ledger.json`,
+ hash-chained, idempotent). Staff read both from the pitch dashboard
+ **Signed documents** desk (plus/minus fold). The address book lists each
+ link's recipient, URL, vaulted open password, status, and use count.
+ `GET /api/confidential/shares` (staff) returns that password; the PBKDF2
+ hash stays the verifier, and the password is absent from unlock responses
+ and the public gate. `DELETE /api/confidential/shares/{id}` revokes.
+ `POST /api/confidential/shares/{id}/delete` marks the row deleted. Neither
+ call removes the share record, a sealed signature, or a ledger row, and a
+ revoked or deleted link no longer opens. A broken chain
+ is reported and blocks the next append. `GET /api/confidential/document-ledger`
+ is staff-only (anonymous 401). Share viewers of a confidential
  page other than the business plan (which already has its own protected
  view) and the signed-copy HTML get `phins-capture-guard.js`.
 - **Link previews:** `GET /link-preview/<file>.png` (and
