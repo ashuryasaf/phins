@@ -95,6 +95,15 @@ def test_general_deck_hebrew_locale_for_ils():
     assert "תזרים שנתי" in deck
 
 
+def test_general_deck_hebrew_pnl_header_defined_before_use():
+    deck = _read(DECK)
+    assign = deck.find('I18N_HE["pnl.h.line"]')
+    use = deck.find('tr("Line item", "pnl.h.line")')
+    assert assign != -1 and use != -1
+    assert assign < use
+    assert 'I18N_HE["pnl.h.line"] = "סעיף"' in deck
+
+
 def test_pitch_dashboard_wires_general_deck_configurator():
     pd = _read(PITCH)
     assert "/internal/phins-investment-deck.html" in pd
