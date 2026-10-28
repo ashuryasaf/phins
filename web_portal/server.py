@@ -6452,9 +6452,26 @@ _INVESTOR_DECK_FIELDS = (
 )
 
 
-def _investor_deck_store() -> Dict[str, Any]:
-    raw = DESIGN_SETTINGS.get('investor_deck_scenes')
+def _investor_deck_store_name(lang: str = 'en') -> str:
+    """English scenes stay on ``investor_deck_scenes``. Hebrew has its own map."""
+    from services.investor_deck_video import normalize_deck_lang
+    if normalize_deck_lang(lang) == 'he':
+        return 'investor_deck_scenes_he'
+    return 'investor_deck_scenes'
+
+
+def _investor_deck_store(lang: str = 'en') -> Dict[str, Any]:
+    raw = DESIGN_SETTINGS.get(_investor_deck_store_name(lang))
     return raw if isinstance(raw, dict) else {}
+
+
+def _deck_query_lang(qs: Optional[Dict[str, Any]]) -> str:
+    if not qs:
+        return 'en'
+    raw = qs.get('lang') or []
+    if isinstance(raw, (list, tuple)):
+        return str(raw[0] if raw else '')
+    return str(raw or '')
 
 
 def _investor_deck_plan() -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -6477,19 +6494,26 @@ def _investor_deck_plan() -> Tuple[Dict[str, Any], Dict[str, Any]]:
     return plan, meta
 
 
-def _investor_deck_charts(plan: Dict[str, Any]) -> Dict[str, Any]:
+def _investor_deck_charts(plan: Dict[str, Any], lang: str = 'en') -> Dict[str, Any]:
     from services.business_plan_charts import chart_by_id, render_svg
-    from services.investor_deck_video import chart_ids
+    from services.business_plan_i18n import language_context, translator
+    from services.investor_deck_video import chart_ids, normalize_deck_lang
 
-    charts: Dict[str, Any] = {}
-    for chart_id in chart_ids():
-        spec = chart_by_id(plan, chart_id)
-        charts[chart_id] = {
-            'id': chart_id,
-            'title': str(spec.get('title') or ''),
-            'svg': render_svg(spec),
-        }
-    return charts
+    def _build() -> Dict[str, Any]:
+        charts: Dict[str, Any] = {}
+        for chart_id in chart_ids():
+            spec = chart_by_id(plan, chart_id)
+            charts[chart_id] = {
+                'id': chart_id,
+                'title': str(spec.get('title') or ''),
+                'svg': render_svg(spec),
+            }
+        return charts
+
+    if normalize_deck_lang(lang) == 'he':
+        with language_context(translator('he')):
+            return _build()
+    return _build()
 
 
 def _investor_deck_photo_url() -> str:
@@ -6500,7 +6524,7 @@ def _investor_deck_photo_url() -> str:
         return ''
     if not str(asset.get('checksum') or '').strip():
         return ''
-    return '/api/business-plan/founder-portrait'
+    return '/api/investor-deck/founder-portrait'
 
 
 def _investor_deck_reference_url(asset_id: str) -> str:
@@ -6521,11 +6545,12 @@ def _persist_investor_deck_scene_unlocked(record: Dict[str, Any]) -> bool:
         previous = _snapshot_design_settings()
     except Exception:
         return False
-    store = DESIGN_SETTINGS.get('investor_deck_scenes')
+    field = _investor_deck_store_name('he' if str(key).startswith('he-') else 'en')
+    store = DESIGN_SETTINGS.get(field)
     if not isinstance(store, dict):
         store = {}
-        DESIGN_SETTINGS['investor_deck_scenes'] = store
-    slim = {field: record.get(field) for field in _INVESTOR_DECK_FIELDS if field in record}
+        DESIGN_SETTINGS[field] = store
+    slim = {field_name: record.get(field_name) for field_name in _INVESTOR_DECK_FIELDS if field_name in record}
     store[key] = _copy_json_value(slim)
     DESIGN_SETTINGS['updated_at'] = datetime.now().isoformat()
     if seal_design_settings(force=True):
@@ -6546,7 +6571,7 @@ def load_investor_deck_scene(scene_key: str) -> Dict[str, Any]:
     if spec is None:
         from services.investor_deck_video import InvestorDeckError
         raise InvestorDeckError(f'Unknown investor-deck scene: {scene_key}')
-    stored = _investor_deck_store().get(scene_key)
+    stored = _investor_deck_store('he' if str(scene_key).startswith('he-') else 'en').get(scene_key)
     if not isinstance(stored, dict):
         return fresh_scene(spec)
     record = dict(stored)
@@ -6555,21 +6580,23 @@ def load_investor_deck_scene(scene_key: str) -> Dict[str, Any]:
     return record
 
 
-def investor_deck_lab_view() -> Dict[str, Any]:
+def investor_deck_lab_view(lang: str = 'en') -> Dict[str, Any]:
     """Slides, the current spoken lines, and the film of clips that still match."""
     from services.investor_deck_video import (
         SCENE_ENGINES,
         catalog,
         clip_is_scene_length,
+        normalize_deck_lang,
         scene_view,
         stream_of,
     )
 
+    language = normalize_deck_lang(lang)
     plan, meta = _investor_deck_plan()
     photo_url = _investor_deck_photo_url()
-    store = _investor_deck_store()
+    store = _investor_deck_store(language)
     scenes = []
-    for spec in catalog():
+    for spec in catalog(language):
         stored = store.get(spec['scene_key'])
         record = stored if isinstance(stored, dict) else None
         asset_id = str((record or {}).get('last_asset_id') or '')
@@ -6628,9 +6655,10 @@ def investor_deck_lab_view() -> Dict[str, Any]:
         'stream_count': len(stream),
         'scenes': scenes,
         'stream': stream,
-        'charts': _investor_deck_charts(plan),
+        'charts': _investor_deck_charts(plan, language),
         'engines': engines,
         'photo_url': photo_url,
+        'lang': language,
     }
 
 
@@ -6698,15 +6726,39 @@ def _persist_investor_deck_media(slide_no: int, record: Optional[Dict[str, Any]]
         return _persist_investor_deck_media_unlocked(slide_no, record)
 
 
-def investor_deck_presentation_view(*, can_assign: bool) -> Dict[str, Any]:
-    """Part II slides, filled from the current plan, plus any intact media video."""
-    from services.investor_deck_video import catalog, presentation_of, scene_view
+def _investor_deck_plan_from_share(saved_factors: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Fill the deck from the factors frozen on a share link. Live settings are not read."""
+    from services.business_plan_model import compute_plan
 
-    plan, meta = _investor_deck_plan()
+    factors = saved_factors if saved_factors else None
+    plan = compute_plan(factors)
+    meta = {
+        'content_hash': str(plan.get('content_hash') or ''),
+        'plan_version': str(plan.get('plan_version') or ''),
+        'factors_source': 'share',
+        'integrity_all_hold': (plan.get('integrity') or {}).get('all_hold') is True,
+    }
+    return plan, meta
+
+
+def investor_deck_presentation_view(
+    *,
+    can_assign: bool,
+    lang: str = 'en',
+    plan_pair: Optional[Tuple[Dict[str, Any], Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Part II slides, filled from the current plan, plus any intact media video."""
+    from services.investor_deck_video import catalog, normalize_deck_lang, presentation_of, scene_view
+
+    language = normalize_deck_lang(lang)
+    if plan_pair is None:
+        plan, meta = _investor_deck_plan()
+    else:
+        plan, meta = plan_pair
     photo_url = _investor_deck_photo_url()
-    store = _investor_deck_store()
+    store = _investor_deck_store(language)
     scenes = []
-    for spec in catalog():
+    for spec in catalog(language):
         stored = store.get(spec['scene_key'])
         record = stored if isinstance(stored, dict) else None
         asset_id = str((record or {}).get('last_asset_id') or '')
@@ -6719,7 +6771,7 @@ def investor_deck_presentation_view(*, can_assign: bool) -> Dict[str, Any]:
                 'playback_url': media_asset_url(asset) if str(asset.get('checksum') or '') else '',
             }
         scenes.append(scene_view(spec, record, plan, brief, photo_url=photo_url))
-    charts = _investor_deck_charts(plan)
+    charts = _investor_deck_charts(plan, language)
     assignments = _investor_deck_media_store()
     assets: Dict[str, Any] = {}
     for record in assignments.values():
@@ -6744,6 +6796,7 @@ def investor_deck_presentation_view(*, can_assign: bool) -> Dict[str, Any]:
         photo_url=photo_url,
         charts=charts,
         watermark=watermark_record if isinstance(watermark_record, dict) else None,
+        lang=language,
     )
     from services.investor_deck_slideshow import decorate_presentation
     body = decorate_presentation(
@@ -6756,6 +6809,7 @@ def investor_deck_presentation_view(*, can_assign: bool) -> Dict[str, Any]:
     body['can_assign'] = bool(can_assign)
     body['charts'] = charts
     body['photo_url'] = photo_url
+    body['lang'] = language
     return body
 
 
@@ -6998,7 +7052,8 @@ def save_investor_deck_slide_chrome(payload: Dict[str, Any], *, actor: str) -> D
 def save_investor_deck_scene(scene_key: str, payload: Dict[str, Any], *, actor: str) -> Dict[str, Any]:
     from services.investor_deck_video import InvestorDeckError, apply_scene_edit
 
-    current = _investor_deck_store().get(scene_key)
+    lang = 'he' if str(scene_key).startswith('he-') else 'en'
+    current = _investor_deck_store(lang).get(scene_key)
     try:
         record = apply_scene_edit(
             scene_key,
@@ -7023,7 +7078,7 @@ def save_investor_deck_scene(scene_key: str, payload: Dict[str, Any], *, actor: 
     record['updated_by'] = actor or 'admin'
     if not _persist_investor_deck_scene(record):
         raise InvestorDeckError('Investor deck scene could not be stored durably')
-    view = investor_deck_lab_view()
+    view = investor_deck_lab_view('he' if str(scene_key).startswith('he-') else 'en')
     scene = next((item for item in view['scenes'] if item['scene_key'] == scene_key), None)
     return scene or {}
 
@@ -7061,7 +7116,8 @@ def note_investor_deck_video_asset(job: Dict[str, Any], asset_id: str) -> None:
 
 def _investor_deck_used_presenters(except_key: str = '') -> List[str]:
     used = []
-    for key, record in _investor_deck_store().items():
+    lang = 'he' if str(except_key).startswith('he-') else 'en'
+    for key, record in _investor_deck_store(lang).items():
         if key == except_key or not isinstance(record, dict):
             continue
         presenter_id = str(record.get('presenter_id') or '')
@@ -7268,7 +7324,7 @@ def seal_for_send_investor_deck(
 
 
 def _investor_deck_scene_from_lab(scene_key: str) -> Dict[str, Any]:
-    view = investor_deck_lab_view()
+    view = investor_deck_lab_view('he' if str(scene_key).startswith('he-') else 'en')
     return next((item for item in view['scenes'] if item['scene_key'] == scene_key), {})
 
 
@@ -22500,7 +22556,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                     # Access to the PHINS Unified Business Plan through an open
                     # link is always conditional on the platform NDA.
                     composition = None
-                    if confidential_access.is_business_plan_path(share_path):
+                    if confidential_access.is_business_plan_path(share_path) or confidential_access.is_investor_deck_page(share_path):
                         nda_required = True
                         composition = self._business_plan_link_composition(body_data)
                     created = get_confidential_share_service().create_share(
@@ -23859,20 +23915,27 @@ For claims or questions, please contact:
         # Founder portrait for the business plan: the media-library asset in
         # the ``founder_portrait_id`` placement, served as a processed JPEG
         # (EXIF-corrected, square, balanced). The original is never rewritten.
-        if path == '/api/business-plan/founder-portrait':
-            try:
-                composition = self._share_composition()
-            except Exception as exc:
-                print(f"⚠️  [BUSINESS PLAN] portrait composition unavailable: {exc}")
-                self._set_json_headers(404)
-                self.wfile.write(json.dumps({'error': 'founder_portrait_not_in_this_link'}).encode('utf-8'))
-                return
-            hidden_photo = (
-                isinstance(composition, dict)
-                and not composition.get('legacy')
-                and isinstance(composition.get('visible_parts'), list)
-                and 'founder-photo' not in composition['visible_parts']
-            )
+        if path in ('/api/business-plan/founder-portrait', '/api/investor-deck/founder-portrait'):
+            # The deck route is the same processed JPEG. A deck share does not
+            # apply the plan's chapter filter: the founder slide is part of the
+            # 13 slides. The business-plan route still honours that filter.
+            if path == '/api/investor-deck/founder-portrait':
+                composition = None
+                hidden_photo = False
+            else:
+                try:
+                    composition = self._share_composition()
+                except Exception as exc:
+                    print(f"⚠️  [BUSINESS PLAN] portrait composition unavailable: {exc}")
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'founder_portrait_not_in_this_link'}).encode('utf-8'))
+                    return
+                hidden_photo = (
+                    isinstance(composition, dict)
+                    and not composition.get('legacy')
+                    and isinstance(composition.get('visible_parts'), list)
+                    and 'founder-photo' not in composition['visible_parts']
+                )
             if hidden_photo:
                 self._set_json_headers(404)
                 self.wfile.write(json.dumps({'error': 'founder_portrait_not_in_this_link'}).encode('utf-8'))
@@ -24465,7 +24528,7 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
                 return
             try:
-                payload = investor_deck_lab_view()
+                payload = investor_deck_lab_view(_deck_query_lang(qs))
             except Exception as exc:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': f'The investor deck could not be prepared: {exc}'}).encode('utf-8'))
@@ -24475,18 +24538,51 @@ For claims or questions, please contact:
             return
 
         if path == '/api/admin/media/investor-deck/presentation':
-            if not require_role(session, _INVESTOR_DECK_READ_ROLES):
-                self._set_json_headers(403)
-                self.wfile.write(json.dumps({'error': 'Staff access required'}).encode('utf-8'))
-                return
-            try:
-                payload = investor_deck_presentation_view(
-                    can_assign=require_role(session, ['admin', 'media']),
-                )
-            except Exception as exc:
-                self._set_json_headers(503)
-                self.wfile.write(json.dumps({'error': f'The investor deck could not be prepared: {exc}'}).encode('utf-8'))
-                return
+            decision = getattr(self, '_confidential_decision', None)
+            share_viewer = bool(decision and getattr(decision, 'is_share_viewer', False))
+            deck_lang = _deck_query_lang(qs)
+            if share_viewer:
+                try:
+                    composition = self._share_composition()
+                    if (
+                        not isinstance(composition, dict)
+                        or composition.get('legacy')
+                        or not isinstance(composition.get('saved_factors'), dict)
+                    ):
+                        raise LookupError('share composition unavailable')
+                    plan_pair = _investor_deck_plan_from_share(composition['saved_factors'])
+                    if not plan_pair[1].get('integrity_all_hold'):
+                        self._set_json_headers(409)
+                        self.wfile.write(json.dumps({
+                            'error': 'Plan identities do not hold. Nothing was shown.',
+                        }).encode('utf-8'))
+                        return
+                    payload = investor_deck_presentation_view(
+                        can_assign=False,
+                        lang=deck_lang,
+                        plan_pair=plan_pair,
+                    )
+                except Exception as exc:
+                    print(f'⚠️  [INVESTOR DECK] share presentation unavailable: {exc}')
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({
+                        'error': 'This link could not be prepared.',
+                    }).encode('utf-8'))
+                    return
+            else:
+                if not require_role(session, _INVESTOR_DECK_READ_ROLES):
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Staff access required'}).encode('utf-8'))
+                    return
+                try:
+                    payload = investor_deck_presentation_view(
+                        can_assign=require_role(session, ['admin', 'media']),
+                        lang=deck_lang,
+                    )
+                except Exception as exc:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({'error': f'The investor deck could not be prepared: {exc}'}).encode('utf-8'))
+                    return
             self._set_json_headers(200)
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
@@ -40076,6 +40172,8 @@ For claims or questions, please contact:
             allowed_root = ROOT
         else:
             rel = path.lstrip('/')
+            if path == '/investor-deck.he.html':
+                rel = 'investor-deck.html'
             file_path = os.path.join(ROOT, rel)
             allowed_root = ROOT
         
@@ -42748,6 +42846,11 @@ For claims or questions, please contact:
                         'The video was removed from this slide. The library file was not changed.'
                         if cleared else
                         'The video is combined with this slide. The plan and the library file were not changed.'
+                    )
+                if str(data.get('lang') or '').strip():
+                    view = investor_deck_presentation_view(
+                        can_assign=True,
+                        lang=str(data.get('lang') or ''),
                     )
                 status_code, payload = 200, {
                     'success': True,

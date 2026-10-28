@@ -685,3 +685,121 @@ def test_http_link_freezes_structure_and_hides_unchosen_factors(closed_gate):
     # Staff still see every chapter.
     staff_page = admin.get(f"{BASE_URL}{PLAN}", timeout=10).text
     assert 'id="part-deck"' in staff_page and len(part_ids()) > 3
+
+
+def test_http_investor_deck_share_freezes_factors_and_speaks_hebrew(closed_gate):
+    """A deck link is NDA-conditional, covers both languages, and keeps the
+    factor snapshot it was sent with. The lab and the business-plan model stay
+    outside that opening."""
+    canonical = bpm.compute_plan()["content_hash"]
+    admin = _admin_session()
+
+    for path in ("/investor-deck.html", "/investor-deck.he.html",
+                 "/api/admin/media/investor-deck/presentation"):
+        closed = requests.get(f"{BASE_URL}{path}", timeout=10, allow_redirects=False)
+        assert closed.status_code == 401, path
+
+    refused = admin.post(
+        f"{BASE_URL}/api/confidential/shares",
+        json={"path": "/investor-deck.he.html", "password": "guest-open", "mode": "multi", "max_uses": 5},
+        timeout=10,
+    )
+    assert refused.status_code == 400 and "error" in refused.json()
+
+    create = admin.post(
+        f"{BASE_URL}/api/confidential/shares",
+        json={
+            "path": "/investor-deck.he.html",
+            "password": "guest-open",
+            "mode": "multi",
+            "max_uses": 5,
+            "label": "Dana Levi",
+            "nda_required": False,
+            "access_window_seconds": 3600,
+        },
+        timeout=10,
+    )
+    assert create.status_code == 201, create.text
+    share = create.json()["share"]
+    assert share["nda_required"] is True
+    assert share["lang"] == "he"
+    assert share["path"] == "/investor-deck.he.html"
+    assert share["scope"] == "/investor-deck.html"
+    assert share["composition"]["saved_factors"] == {}
+
+    staff = admin.get(
+        f"{BASE_URL}/api/admin/media/investor-deck/presentation",
+        params={"lang": "he"},
+        timeout=30,
+    )
+    assert staff.status_code == 200, staff.text
+    staff_body = staff.json()
+    assert staff_body["can_assign"] is True
+    assert staff_body["lang"] == "he"
+    assert staff_body["slides"][1]["title"] == "הבעיה"
+    assert staff_body["plan"]["content_hash"] == canonical
+
+    recipient = requests.Session()
+    opened = recipient.post(
+        f"{BASE_URL}/api/confidential/share-unlock",
+        json={
+            "share_id": share["id"],
+            "password": "guest-open",
+            "path": "/investor-deck.html",
+            "nda_accepted": True,
+            "signer_name": "Dana Levi",
+        },
+        timeout=20,
+    )
+    assert opened.status_code == 200, opened.text
+    page = recipient.get(f"{BASE_URL}/investor-deck.he.html", timeout=10)
+    assert page.status_code == 200 and 'id="deck-lang"' in page.text
+    english_page = recipient.get(f"{BASE_URL}/investor-deck.html", timeout=10)
+    assert english_page.status_code == 200
+
+    shown = recipient.get(
+        f"{BASE_URL}/api/admin/media/investor-deck/presentation",
+        params={"lang": "he"},
+        timeout=30,
+    )
+    assert shown.status_code == 200, shown.text
+    body = shown.json()
+    assert body["can_assign"] is False
+    assert body["lang"] == "he"
+    assert body["plan"]["factors_source"] == "share"
+    assert body["plan"]["content_hash"] == canonical
+    assert body["slides"][1]["title"] == "הבעיה"
+
+    assert recipient.get(
+        f"{BASE_URL}/api/admin/media/investor-deck", params={"lang": "he"}, timeout=15,
+    ).status_code == 403
+    assert recipient.get(f"{BASE_URL}/api/business-plan/model", timeout=10).status_code == 401
+    posted = recipient.post(
+        f"{BASE_URL}/api/admin/media/investor-deck/presentation",
+        json={"slide_no": 1, "clear": True, "lang": "he"},
+        timeout=10,
+    )
+    assert posted.status_code == 403
+
+    saved = admin.post(
+        f"{BASE_URL}/api/business-plan/factors",
+        json={"factors": {"phins_take": 0.30}},
+        timeout=10,
+    )
+    assert saved.status_code == 200, saved.text
+    again = recipient.get(
+        f"{BASE_URL}/api/admin/media/investor-deck/presentation",
+        params={"lang": "he"},
+        timeout=30,
+    )
+    assert again.status_code == 200, again.text
+    assert again.json()["plan"]["content_hash"] == canonical
+    assert again.json()["plan"]["factors_source"] == "share"
+    staff_after = admin.get(
+        f"{BASE_URL}/api/admin/media/investor-deck/presentation",
+        params={"lang": "he"},
+        timeout=30,
+    )
+    assert staff_after.status_code == 200, staff_after.text
+    assert staff_after.json()["plan"]["factors_source"] == "saved"
+    assert staff_after.json()["plan"]["content_hash"] != canonical

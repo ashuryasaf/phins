@@ -794,7 +794,19 @@ Environment variables commonly used:
  seal restores the whole design snapshot. The spoken line is a short
  script (`short_script`): a paragraph with no placeholder is spoken in full,
  and a paragraph that fills a figure is not recited — those figures stay on
- the slide and the generator is not asked to draw them. Presenters are 35 or
+ the slide and the generator is not asked to draw them. Hebrew is a second
+ catalog (`?lang=he`, scene keys `he-sNNpNN`, store `investor_deck_scenes_he`).
+ The spoken line is the Hebrew deck paragraph; a paragraph that fills a figure
+ is a short Hebrew line and the figures stay on the slide. The prompt says to
+ speak that line in Hebrew and not to translate it. English seals, campaign
+ ids, and checksums are not rewritten. `/investor-deck.html` and
+ `/investor-deck.he.html` are one confidential share scope with the read-only
+ presentation API and `/api/investor-deck/founder-portrait` (the same processed
+ portrait; the library file is not rewritten). Staff mint them from the pitch
+ dashboard **Staff · Share links**. A deck link is always `nda_required` and
+ freezes the saved factor set the way a plan link does. A share viewer gets
+ `can_assign: false`. The lab and the write routes stay admin or media.
+ Presenters are 35 or
  older, with red, blonde, brunette, and black hair in varied styles.
  Slideshow chrome is a separate service (`services/investor_deck_slideshow.py`):
  per-slide theme, gradient, transparency, and one embedded library image in
@@ -1156,4 +1168,4 @@ If you update this file again:
 
 ---
 
-Last updated: October 26, 2026
+Last updated: October 28, 2026

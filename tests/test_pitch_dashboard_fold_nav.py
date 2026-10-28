@@ -111,6 +111,8 @@ def test_pitch_fold_preserves_data_integrity_notices():
     assert 'id="confidential-share-admin"' in html
     assert 'value="/phins-customer-150k-one-pager.html"' in html
     assert 'value="/phins-customer-150k-one-pager.he.html"' in html
+    assert 'value="/investor-deck.html"' in html
+    assert 'value="/investor-deck.he.html"' in html
     assert 'id="diary-table"' in html
 
 

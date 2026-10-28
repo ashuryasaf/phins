@@ -62,6 +62,8 @@ _KNOWN_TITLES = {
     "/pitch-dashboard.html": "PHINS Pitch Dashboard",
     "/phins-customer-150k-one-pager.html": "PHINS Customer Cover US$150,000",
     "/phins-customer-150k-one-pager.he.html": "PHINS Customer Cover US$150,000 (Hebrew)",
+    "/investor-deck.html": "PHINS Investor Deck",
+    "/investor-deck.he.html": "PHINS Investor Deck (Hebrew)",
     "/legal/nda.html": "PHINS Non-Disclosure Agreement",
     "/legal/cap-table.html": "PHINS Cap Table",
     "/legal/term-sheet.html": "PHINS Term Sheet",

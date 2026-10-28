@@ -32,6 +32,11 @@
     font-family: Inter, "Segoe UI", sans-serif;
   }
   body.is-embed { background: var(--deep); }
+  body.is-he { direction: rtl; }
+  body.is-he ul { padding-left: 0; padding-right: 18px; }
+  body.is-he .deck-actions, body.is-he .deck-bar, body.is-he .deck-foot { direction: rtl; }
+  body.is-he .deck-assign, body.is-he .deck-note, body.is-he .deck-status { direction: ltr; }
+  body.is-he #deck-pos, body.is-he #deck-count { direction: ltr; unicode-bidi: isolate; }
   .deck-shell { max-width: 1180px; margin: 0 auto; padding: 16px 16px 28px; }
   body.is-embed .deck-shell { padding: 8px; }
   .deck-bar {
@@ -179,6 +184,7 @@
           <option value="slide">Slides only</option>
         </select>
       </label>
+      <a class="deck-btn secondary" id="deck-lang" href="/investor-deck.he.html">עברית</a>
       <button type="button" class="deck-btn secondary" id="deck-prev">Previous</button>
       <button type="button" class="deck-btn secondary" id="deck-next">Next</button>
       <button type="button" class="deck-btn" id="deck-full">Present</button>
@@ -256,6 +262,30 @@
 <script>
 (function () {
   var params = new URLSearchParams(window.location.search);
+  var deckLang = /investor-deck\.he\.html$/i.test(location.pathname) ? 'he' : 'en';
+  if (deckLang === 'he') {
+    document.documentElement.lang = 'he';
+    document.documentElement.dir = 'rtl';
+    document.body.classList.add('is-he');
+    document.title = 'PHINS — מצגת משקיעים';
+    var tag = document.querySelector('.deck-tag');
+    if (tag) tag.textContent = 'מצגת משקיעים · חלק ב׳';
+    var prev = document.getElementById('deck-prev');
+    var next = document.getElementById('deck-next');
+    var full = document.getElementById('deck-full');
+    if (prev) prev.textContent = 'הקודם';
+    if (next) next.textContent = 'הבא';
+    if (full) full.textContent = 'הצגה';
+    var title = document.getElementById('deck-title');
+    if (title) title.textContent = 'מצגת משקיעים';
+  }
+  var langLink = document.getElementById('deck-lang');
+  if (langLink) {
+    var other = deckLang === 'he' ? '/investor-deck.html' : '/investor-deck.he.html';
+    langLink.textContent = deckLang === 'he' ? 'English' : 'עברית';
+    langLink.setAttribute('href', other + location.search + location.hash);
+    langLink.setAttribute('lang', deckLang === 'he' ? 'en' : 'he');
+  }
   if (params.get('embed') === '1') document.body.classList.add('is-embed');
   var wantEdit = params.get('edit') === '1';
   var state = { slides: [], index: 0, data: null, mode: 'auto', videos: [], images: [], chromeSlide: null };
@@ -496,11 +526,11 @@
     render();
   }
   async function load() {
-    if (!token()) {
-      setStatus('Sign in to open the investor deck.');
-      return;
-    }
-    var response = await fetch('/api/admin/media/investor-deck/presentation', { headers: headers(false) });
+    var requestHeaders = token() ? headers(false) : {};
+    var response = await fetch('/api/admin/media/investor-deck/presentation?lang=' + encodeURIComponent(deckLang), {
+      headers: requestHeaders,
+      credentials: 'same-origin'
+    });
     var data = await response.json();
     if (!response.ok) throw new Error(data.error || 'The investor deck could not be loaded');
     applyPayload(data);
@@ -650,14 +680,14 @@
       setStatus('Choose a library video for this slide.');
       return;
     }
-    postMedia({ slide_no: current.slide_no, asset_id: assetId }).catch(function (err) {
+    postMedia({ slide_no: current.slide_no, asset_id: assetId, lang: deckLang }).catch(function (err) {
       setStatus(err.message || 'The video could not be combined');
     });
   });
   document.getElementById('deck-clear').addEventListener('click', function () {
     var current = slide();
     if (!current) return;
-    postMedia({ slide_no: current.slide_no, clear: true }).catch(function (err) {
+    postMedia({ slide_no: current.slide_no, clear: true, lang: deckLang }).catch(function (err) {
       setStatus(err.message || 'The video could not be removed');
     });
   });
@@ -669,12 +699,12 @@
       setStatus('Choose library images for the watermark.');
       return;
     }
-    postWatermark({ watermark: true, asset_ids: ids }).catch(function (err) {
+    postWatermark({ watermark: true, asset_ids: ids, lang: deckLang }).catch(function (err) {
       setStatus(err.message || 'The watermark could not be saved');
     });
   });
   document.getElementById('deck-watermark-clear').addEventListener('click', function () {
-    postWatermark({ watermark: true, clear: true }).catch(function (err) {
+    postWatermark({ watermark: true, clear: true, lang: deckLang }).catch(function (err) {
       setStatus(err.message || 'The watermark could not be removed');
     });
   });
@@ -701,7 +731,8 @@
       theme: document.getElementById('deck-theme-input').value,
       gradient: document.getElementById('deck-gradient').value,
       wash: document.getElementById('deck-wash').value,
-      image_asset_id: document.getElementById('deck-embed-image').value
+      image_asset_id: document.getElementById('deck-embed-image').value,
+      lang: deckLang
     }).catch(function (err) {
       setStatus(err.message || 'The slide look could not be saved');
     });
@@ -710,7 +741,7 @@
     var current = slide();
     if (!current) return;
     state.chromeSlide = null;
-    postWatermark({ chrome: true, slide_no: current.slide_no, clear: true }).catch(function (err) {
+    postWatermark({ chrome: true, slide_no: current.slide_no, clear: true, lang: deckLang }).catch(function (err) {
       setStatus(err.message || 'The slide look could not be cleared');
     });
   });
@@ -724,8 +755,10 @@
   document.addEventListener('keydown', function (event) {
     var tag = (event.target && event.target.tagName) || '';
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-    if (event.key === 'ArrowRight' || event.key === 'PageDown') go(state.index + 1);
-    else if (event.key === 'ArrowLeft' || event.key === 'PageUp') go(state.index - 1);
+    var forward = deckLang === 'he' ? 'ArrowLeft' : 'ArrowRight';
+    var back = deckLang === 'he' ? 'ArrowRight' : 'ArrowLeft';
+    if (event.key === forward || event.key === 'PageDown') go(state.index + 1);
+    else if (event.key === back || event.key === 'PageUp') go(state.index - 1);
     else if (event.key === 'Home') go(0);
     else if (event.key === 'End') go(state.slides.length - 1);
   });

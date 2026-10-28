@@ -2806,6 +2806,8 @@
               <option value="/business-plan.he.html">PHINS Unified Business Plan — עברית (NDA, protected view)</option>
               <option value="/phins-customer-150k-one-pager.html">Customer cover · US$150,000 · age 42 — English</option>
               <option value="/phins-customer-150k-one-pager.he.html">Customer cover · US$150,000 · גיל 42 — עברית</option>
+              <option value="/investor-deck.html">Investor deck — 13 slides — English (NDA, protected view)</option>
+              <option value="/investor-deck.he.html">Investor deck — 13 שקפים — עברית (NDA, protected view)</option>
             </select>
           </label>
           <label style="font-size:8.5pt;grid-column:1/-1;">Label <span id="share-label-hint" style="color:var(--text-sub);font-weight:400;">(the party the NDA is addressed to)</span>
@@ -2844,7 +2846,7 @@
         </form>
         <p id="confidential-share-msg" style="font-size:9pt;margin:10px 0 0;min-height:1.2em;color:var(--text-sub);"></p>
         <div id="confidential-share-result" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:#f4f7fb;font-size:9.5pt;word-break:break-all;"></div>
-        <p style="font-size:8.5pt;color:var(--text-sub);margin:8px 0 0;">A business-plan link freezes the document structure and the adjustable factors saved in <a href="/business-plan.html#bp-factor-panel">Admin tools</a> at the moment it is created. A later edit does not change a link already sent, and each link needs its own signature — opening one does not open the next.</p>
+        <p style="font-size:8.5pt;color:var(--text-sub);margin:8px 0 0;">A business-plan link freezes the document structure and the adjustable factors saved in <a href="/business-plan.html#bp-factor-panel">Admin tools</a> at the moment it is created. An investor-deck link freezes that same factor set onto the 13 slides (English or Hebrew). A later edit does not change a link already sent, and each link needs its own signature — opening one does not open the next.</p>
       </div>
 
       <div id="signed-use-section" hidden style="margin-top:16px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--bg-card);box-shadow:var(--shadow);">
@@ -12787,6 +12789,7 @@
         var docSel = document.getElementById("share-document");
         var docPath = docSel ? docSel.value : "/pitch-dashboard.html";
         var isPlan = docPath.indexOf("/business-plan") === 0;
+        var isDeck = docPath.indexOf("/investor-deck") === 0;
         var ndaBox = document.getElementById("share-nda");
         var windowHours = parseInt((document.getElementById("share-window") || {}).value || "3", 10) || 3;
         if (mode === "single" && windowHours > 3) windowHours = 3;
@@ -12796,7 +12799,7 @@
           password: document.getElementById("share-password").value,
           label: document.getElementById("share-label").value || "",
           mode: mode,
-          nda_required: isPlan || !!(ndaBox && ndaBox.checked),
+          nda_required: isPlan || isDeck || !!(ndaBox && ndaBox.checked),
           access_window_seconds: windowHours * 3600,
           idle_timeout_seconds: Math.min(idleMinutes * 60, windowHours * 3600),
           lang: docPath.indexOf(".he.html") >= 0 ? "he" : "en"
@@ -12864,8 +12867,10 @@
         var hint = document.getElementById("share-label-hint");
         if (!docSel || !ndaBox || !modeSel || !winSel) return;
         var isPlan = docSel.value.indexOf("/business-plan") === 0;
-        if (isPlan) { ndaBox.checked = true; ndaBox.disabled = true; } else { ndaBox.disabled = false; }
-        if (hint) hint.style.display = (isPlan || ndaBox.checked) ? "" : "none";
+        var isDeck = docSel.value.indexOf("/investor-deck") === 0;
+        var ndaLocked = isPlan || isDeck;
+        if (ndaLocked) { ndaBox.checked = true; ndaBox.disabled = true; } else { ndaBox.disabled = false; }
+        if (hint) hint.style.display = (ndaLocked || ndaBox.checked) ? "" : "none";
         var single = modeSel.value === "single";
         for (var i = 0; i < winSel.options.length; i++) {
           var hrs = parseInt(winSel.options[i].value, 10);

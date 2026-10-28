@@ -39,6 +39,47 @@ from services.investor_deck_video import (
 )
 
 
+def test_hebrew_scenes_speak_the_deck_and_do_not_verify_as_english():
+    plan = compute_plan()
+    hebrew = catalog("he")
+    english = catalog()
+    assert len(hebrew) == len(english)
+    assert hebrew[0]["scene_key"] == "he-s01p01"
+    assert hebrew[0]["lang"] == "he"
+    assert english[0]["scene_key"] == "s01p01"
+    assert "חיים" in hebrew[0]["template"]
+    assert "{" not in hebrew[0]["template"]
+    opening = spec_for("he-s01p01")
+    spoken_opening = short_script(opening, plan)
+    assert spoken_opening == fill_narration(opening["template"], plan)
+    assert "חיים" in spoken_opening
+    priced = spec_for("he-s06p01")
+    assert "{specimen_life_monthly}" in priced["template"]
+    on_slide = fill_narration(priced["template"], plan)
+    spoken = short_script(priced, plan)
+    assert "313.75" in on_slide
+    assert "313.75" not in spoken
+    assert "המספרים נשארים על השקף" in spoken
+    assert spoken != on_slide
+    sealed = seal_for_send("he-s06p01", None, plan, used_presenter_ids=[], rng=random.Random(4))
+    assert sealed["campaign_id"] == "DECK-he-s06p01"
+    assert verify_scene(sealed, priced)
+    assert verify_scene(sealed, spec_for("s06p01")) is False
+    direction = prompt_override(sealed)
+    assert sealed["sealed_narration"] in direction
+    assert "in Hebrew" in direction
+    assert "Do not translate it" in direction
+    english_sealed = seal_for_send("s06p01", None, plan, used_presenter_ids=[], rng=random.Random(4))
+    english_direction = prompt_override(english_sealed)
+    assert "in Hebrew" not in english_direction
+    assert "The figures stay on this slide" in english_sealed["sealed_narration"]
+    view = presentation_of(plan, lang="he")
+    assert view["lang"] == "he"
+    assert view["slides"][1]["title"] == "הבעיה"
+    assert view["slide_count"] == presentation_of(plan)["slide_count"]
+    assert "313.75" in "".join(view["slides"][5]["bullets"])
+
+
 def test_catalog_follows_part_ii_and_does_not_invent_paragraphs():
     slides = deck_slides()
     rows = catalog()
@@ -345,6 +386,7 @@ def test_send_stores_one_scene_and_leaves_the_plan_and_placements_alone():
     hero_before = portal.DESIGN_SETTINGS.get("hero_video_id", "")
     tagline_before = portal.DESIGN_SETTINGS.get("tagline")
     scenes_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_scenes"))
+    hebrew_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_scenes_he"))
     blueprints_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("solution_video_blueprints"))
     try:
         status, denied = _json_request(base + "/api/admin/media/investor-deck")
@@ -472,9 +514,45 @@ def test_send_stores_one_scene_and_leaves_the_plan_and_placements_alone():
         assert status == 409
         assert "checksum" in blocked["error"].lower()
 
+        english_store = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_scenes"))
+        status, hebrew = _json_request(base + "/api/admin/media/investor-deck?lang=he", token=token)
+        assert status == 200
+        assert hebrew["lang"] == "he"
+        assert hebrew["scenes"][0]["scene_key"] == "he-s01p01"
+        assert hebrew["scenes"][0]["slide_title"]
+        assert "חיים" in hebrew["scenes"][0]["script"]
+        status, saved_he = _json_request(
+            base + "/api/admin/media/investor-deck",
+            method="POST",
+            token=token,
+            payload={"scene_key": "he-s01p01", "theme": "Navy office"},
+        )
+        assert status == 200, saved_he
+        assert saved_he["scene"]["theme"] == "Navy office"
+        assert saved_he["scene"]["script"]
+        assert "he-s01p01" not in (portal.DESIGN_SETTINGS.get("investor_deck_scenes") or {})
+        assert portal.DESIGN_SETTINGS.get("investor_deck_scenes") == english_store
+        he_store = portal.DESIGN_SETTINGS["investor_deck_scenes_he"]
+        planted = apply_scene_edit(
+            "he-s01p01", he_store["he-s01p01"], reference_image_asset_id="MEDHEREF1",
+        )
+        he_store["he-s01p01"] = planted
+        status, blocked_he = _json_request(
+            base + "/api/admin/media/investor-deck",
+            method="POST",
+            token=token,
+            payload={"scene_key": "he-s01p01", "theme": "Gold office"},
+        )
+        assert status == 400
+        assert "image" in blocked_he["error"].lower()
+        assert portal.DESIGN_SETTINGS["investor_deck_scenes_he"]["he-s01p01"]["theme"] == "Navy office"
+        assert portal.DESIGN_SETTINGS["investor_deck_scenes_he"]["he-s01p01"]["reference_image_asset_id"] == "MEDHEREF1"
+        assert portal.DESIGN_SETTINGS.get("investor_deck_scenes") == english_store
+
         status, public = _json_request(base + "/api/design/settings")
         assert status == 200
         assert "investor_deck_scenes" not in public
+        assert "investor_deck_scenes_he" not in public
         assert spoken not in json.dumps(public)
 
         status, saved = _json_request(
@@ -494,6 +572,10 @@ def test_send_stores_one_scene_and_leaves_the_plan_and_placements_alone():
             portal.DESIGN_SETTINGS.pop("investor_deck_scenes", None)
         else:
             portal.DESIGN_SETTINGS["investor_deck_scenes"] = scenes_before
+        if hebrew_before is None:
+            portal.DESIGN_SETTINGS.pop("investor_deck_scenes_he", None)
+        else:
+            portal.DESIGN_SETTINGS["investor_deck_scenes_he"] = hebrew_before
         portal.DESIGN_SETTINGS["tagline"] = tagline_before
         portal.DESIGN_SETTINGS["hero_video_id"] = hero_before
         if blueprints_before is None:
