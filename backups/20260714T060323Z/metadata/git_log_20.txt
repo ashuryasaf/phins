@@ -1,0 +1,20 @@
+33c83bb Merge pull request #439 from ashuryasaf/cursor/il-pitch-partner-meetings-13-jul-3701
+f027eb5 Clear stale sim state when premium/take/churn drivers change
+34e9c35 Set Meeting B (insurer CEO, 13 July) time to 14:15
+74cc592 Pass adjustable premium/take rate into valuation-sim so pre-money reconciles with the live income model
+7c29517 Fix partner-meetings simulation provenance sync and error-as-success handling
+091e2da Fix stale localStorage key assertion in partner-meetings static test
+9adb786 Sync premium/take/churn plan drivers into dashboard KPIs
+2e9ebb0 Share partner dashboard deal inputs with linked business plans
+589c593 Add 13 July co-partner meeting packs to IL pitch dashboard
+a7a96e4 Merge pull request #435 from ashuryasaf/cursor/fix-firewall-blocking-legit-traffic-64c0
+e380449 Fix firewall blocking legitimate traffic on landing/other pages
+56450a6 Merge pull request #433 from ashuryasaf/cursor/unify-dashboard-theme-9977
+6248a32 Unify brand chrome across admin and customer dashboards via shared theme
+69e8da6 Merge branch 'cursor/add-unicorn-executive-summary-d65c': executive summary + PDF fixes
+5a6597a Fix gradient text invisible in PDF on executive summary hero
+3cf443d Merge pull request #430 from ashuryasaf/cursor/update-agents-md-0668
+422dafe docs: refresh AGENTS.md counts and document agent ecosystem / assessment center modules
+66ffe6e Merge pull request #429 from ashuryasaf/cursor/redesign-landing-page-logo-9977
+654d274 Wait for logo image before printing PDF reports
+9ea659c Extend dark futuristic design to legal pages
