@@ -20,7 +20,7 @@ PHINS is a Python platform built around:
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (286 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (287 files) and root-level `test_*.py` (11 files)
 - one generalized job queue (`services/agent_job_queue.py`, table
  `document_processing_jobs`, rows keyed by `subject_type`/`subject_id` and
  `submitted_by`; retries, dead-letter, idempotency keys, handler registry —
@@ -416,7 +416,7 @@ Preferred file-by-task:
 |- scripts/                             # operational utilities
 |  |- run_agent_eval.py                 # golden sets + decision replay CLI
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
-|- tests/                               # 286 test files
+|- tests/                               # 287 test files
 |  `- golden/<agent>/*.json             # frozen agent outputs ({name, input, expected})
 |- docs/
 |  |- platform_data_architecture.md
@@ -1053,7 +1053,7 @@ Important test harness facts:
   change re-renders them (the page fetches `?charts=1` and swaps the SVG).
   `RESEARCH_SOURCES` must stay identical to the pitch-dashboard
   `sourceRegistry`; the test parses both
-- 286 test files under `tests/`, 11 root-level `test_*.py` files
+- 287 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -1176,4 +1176,4 @@ If you update this file again:
 
 ---
 
-Last updated: October 28, 2026
+Last updated: November 2, 2026
