@@ -74,13 +74,19 @@ def document_return_markup() -> str:
 
 
 def render_phins_document(*, title: str, eyebrow: str, subtitle: str,
-                          body_html: str, footer: str = "") -> str:
-    """Return a self-contained HTML document. body_html is trusted markup."""
+                          body_html: str, footer: str = "", lang: str = "en") -> str:
+    """Return a self-contained HTML document. body_html is trusted markup.
+
+    ``lang="he"`` marks the document right-to-left; the letterhead, chrome
+    and figures are unchanged.
+    """
     safe_title = html.escape(title, quote=True)
     safe_eyebrow = html.escape(eyebrow, quote=True)
     safe_subtitle = html.escape(subtitle, quote=True)
+    language = "he" if str(lang or "").strip().lower() == "he" else "en"
+    direction = ' dir="rtl"' if language == "he" else ""
     return f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="{language}"{direction}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

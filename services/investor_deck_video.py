@@ -145,8 +145,9 @@ def scene_storage_key(slide_no: int, paragraph_no: int, lang: str = "en") -> str
 
 
 def lang_of_scene_key(key: str) -> str:
+    """``he`` for Hebrew keys of either deck (``he-sNNpNN``, ``re-he-sNNpNN``)."""
     text = str(key or "").strip()
-    if text.startswith("he-"):
+    if text.startswith("he-") or text.startswith("re-he-"):
         return "he"
     return "en"
 
@@ -227,6 +228,12 @@ def catalog(lang: str = "en") -> List[Dict[str, Any]]:
 
 def spec_for(key: str) -> Optional[Dict[str, Any]]:
     wanted = str(key or "").strip()
+    if wanted.startswith("re-"):
+        # The reinsurer meeting deck shares this scene machinery under its
+        # own key prefix; its catalog lives in services.reinsurer_meeting_deck.
+        from services.reinsurer_meeting_deck import spec_for as reinsurer_spec_for
+
+        return reinsurer_spec_for(wanted)
     language = lang_of_scene_key(wanted)
     for row in catalog(language):
         if row["scene_key"] == wanted:
@@ -236,7 +243,12 @@ def spec_for(key: str) -> Optional[Dict[str, Any]]:
 
 def fill_narration(template: str, plan: Mapping[str, Any]) -> str:
     """The on-screen line. Same filler as the document, so the figures match the page."""
-    return _fill(str(template or ""), plan, False).strip()
+    text = str(template or "")
+    if "{re_" in text:
+        from services.reinsurer_meeting_deck import fill as reinsurer_fill
+
+        return reinsurer_fill(text, plan)
+    return _fill(text, plan, False).strip()
 
 
 _POINT_WORDS = ("", "first point", "second point", "third point", "fourth point")
