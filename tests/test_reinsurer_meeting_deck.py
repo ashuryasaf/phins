@@ -211,9 +211,8 @@ def test_scenes_seal_with_the_investor_deck_method():
     on_slide = fill_narration(spec["template"], plan)
     spoken = short_script(spec, plan)
     assert "₪" in on_slide and "{" not in on_slide
-    assert "₪" not in spoken
-    assert "The figures stay on this slide" in spoken
-    assert spec["slide_title"] in spoken
+    assert spoken == on_slide
+    assert "The figures stay on this slide" not in spoken
     sealed = seal_for_send("re-s05p01", None, plan, used_presenter_ids=[], rng=random.Random(5))
     assert sealed["campaign_id"] == "DECK-re-s05p01"
     assert sealed["sealed_narration"] == spoken
@@ -310,8 +309,8 @@ def test_hebrew_catalog_is_complete_and_keeps_its_own_keys_and_store():
     line = fill_narration(spec["template"], plan)
     assert "₪" in line
     script = short_script(spec, plan)
-    assert "₪" not in script and HEBREW.search(script)
-    assert script.endswith("המספרים נשארים על השקף.")
+    assert script == line and HEBREW.search(script)
+    assert "המספרים נשארים על השקף" not in script
     sealed = seal_for_send("re-he-s05p01", None, plan, used_presenter_ids=[], rng=random.Random(5))
     assert sealed["sealed_narration"] == script
     assert sealed["campaign_id"] == "DECK-re-he-s05p01"
@@ -320,7 +319,9 @@ def test_hebrew_catalog_is_complete_and_keeps_its_own_keys_and_store():
     assert verify_scene(sealed, spec)
     assert verify_scene(sealed, spec_for("re-s05p01")) is False
     prompt = prompt_override(sealed)
-    assert "in Hebrew" in prompt and script in prompt and "₪" not in prompt
+    assert "in Hebrew" in prompt and script in prompt
+    assert "המספרים נשארים על השקף" not in prompt
+    assert "figures stay on this slide" not in prompt.lower()
     # The English twin seals a different line under the same plan hash.
     english_seal = seal_for_send("re-s05p01", None, plan, used_presenter_ids=[], rng=random.Random(5))
     assert english_seal["sealed_narration"] != script
@@ -539,8 +540,9 @@ def test_http_lab_presentation_and_send_keep_the_investor_deck_untouched():
         assert all(row["scene_key"].startswith("re-") for row in lab["scenes"])
         ceded = next(row for row in lab["scenes"] if row["scene_key"] == "re-s05p01")
         assert "₪" in ceded["narration"]
-        assert "₪" not in ceded["script"]
+        assert ceded["script"] == ceded["narration"]
         assert "{" not in ceded["script"]
+        assert "The figures stay on this slide" not in ceded["script"]
 
         status, show = _json_request(base + "/api/admin/media/reinsurer-deck/presentation", token=actuary)
         assert status == 200, show
@@ -581,7 +583,9 @@ def test_http_lab_presentation_and_send_keep_the_investor_deck_untouched():
         assert all(HEBREW.search(slide["title"]) for slide in hebrew["slides"])
         he_fifth = next(slide for slide in hebrew["slides"] if slide["slide_no"] == 5)
         assert [row["scene_key"] for row in he_fifth["script"]] == ["re-he-s05p01", "re-he-s05p02"]
-        assert "₪" not in he_fifth["script"][0]["spoken"] and HEBREW.search(he_fifth["script"][0]["spoken"])
+        assert he_fifth["script"][0]["spoken"] == he_fifth["bullets"][0]
+        assert HEBREW.search(he_fifth["script"][0]["spoken"])
+        assert "המספרים נשארים על השקף" not in he_fifth["script"][0]["spoken"]
         assert he_fifth["reinsurer_view"] if "reinsurer_view" in he_fifth else True
         assert hebrew["reinsurer_view"]["totals"] == show["reinsurer_view"]["totals"]
         status, he_lab = _json_request(base + "/api/admin/media/reinsurer-deck?lang=he", token=token)
@@ -607,6 +611,13 @@ def test_http_lab_presentation_and_send_keep_the_investor_deck_untouched():
         assert cession_row["value"] == 0.3 and cession_row["adjusted"] is True and cession_row["value_text"] == "30%"
         moved_fifth = next(slide for slide in moved["slides"] if slide["slide_no"] == 5)
         assert moved_fifth["chart_svg"].startswith("<svg") and moved_fifth["chart_svg"] != fifth["chart_svg"]
+        assert moved_fifth["bullets"] != fifth["bullets"]
+        assert moved_fifth["script"][0]["spoken"] == moved_fifth["bullets"][0]
+        assert moved_fifth["script"][0]["spoken"] != fifth["script"][0]["spoken"]
+        moved_sixth = next(slide for slide in moved["slides"] if slide["slide_no"] == 6)
+        assert "30%" in moved_sixth["script"][0]["spoken"]
+        assert "18%" in fifth["script"][0]["spoken"] or "18%" in next(
+            slide for slide in show["slides"] if slide["slide_no"] == 6)["script"][0]["spoken"]
         assert moved["reinsurer_view"]["totals"]["ceded_premium"] > show["reinsurer_view"]["totals"]["ceded_premium"]
         assert "{" not in "".join("".join(slide["bullets"]) for slide in moved["slides"])
         # Saved factors and the lab are untouched; the lab seals only against the plan.
@@ -674,7 +685,8 @@ def test_http_lab_presentation_and_send_keep_the_investor_deck_untouched():
         assert sent["job"]["deck_scene_key"] == "re-s05p01"
         assert stub.submissions and stub.submissions[0]["duration_seconds"] == 15
         assert ceded["script"] in stub.submissions[0]["prompt"]
-        assert "₪" not in stub.submissions[0]["prompt"]
+        assert "₪" in stub.submissions[0]["prompt"]
+        assert "The figures stay on this slide" not in stub.submissions[0]["prompt"]
         assert "Quiet navy boardroom" in stub.submissions[0]["prompt"]
         assert portal.DESIGN_SETTINGS.get("hero_video_id", "") == hero_before
         assert compute_plan()["content_hash"] == plan_before
@@ -856,6 +868,8 @@ def test_presentation_page_and_lab_are_wired_for_the_reinsurer_deck():
     assert "dir=\"rtl\"" in page or "dir='rtl'" in page or "direction: rtl" in page or "dir = 'rtl'" in page
     # Adjustable factors: the panel reads the register from the API and syncs the URL.
     assert 'id="deck-factors"' in page
+    assert 'id="deck-factors-fold"' in page and "data-scene-show" in page
+    assert "figures stay on the slide" not in page.lower()
     for fid in ADJUSTABLE_FACTORS:
         assert f"'{fid}'" in page
     assert "history.replaceState" in page

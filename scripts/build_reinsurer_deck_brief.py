@@ -5,7 +5,7 @@ Build the Swiss Re Israel meeting pack (8 December 2026) from the plan model.
 Writes ``web_portal/static/investor-docs/swiss-re-israel-meeting-8dec2026-deck.md``
 and its Hebrew edition ``…-deck.he.md`` from
 ``services/reinsurer_meeting_deck.render_markdown(compute_plan(), lang=…)``: the
-twelve slides with every placeholder filled, the spoken short script of each
+twelve slides with every placeholder filled, the spoken paragraph of each
 15-second scene, the ceded line for 2027–2031, the quota-share scenarios, the
 adjustable reinsurance factors and the data-integrity statement. Both
 editions bind to the same plan dict and the same content hash.

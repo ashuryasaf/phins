@@ -6,8 +6,8 @@ a client cannot replace a figure. Charts and the founder portrait stay
 outside the generator and are drawn from the plan when a clip is played.
 
 A clip joins the film only when a library video exists, its checksum matches
-the seal, and the sealed line is still the short script for that paragraph.
-A line that fills a figure is not recited; those figures stay on the slide.
+the seal, and the sealed line is still this paragraph filled from the plan.
+The spoken line is that paragraph. No cue is added around it.
 A missing scene is omitted. The plan, its factors, and public placements are
 not written here. Slide chrome (theme, gradient, transparency, embedded
 image) lives in ``services/investor_deck_slideshow.py``.
@@ -251,38 +251,15 @@ def fill_narration(template: str, plan: Mapping[str, Any]) -> str:
     return _fill(text, plan, False).strip()
 
 
-_POINT_WORDS = ("", "first point", "second point", "third point", "fourth point")
-_POINT_WORDS_HE = ("", "הנקודה הראשונה", "הנקודה השנייה", "הנקודה השלישית", "הנקודה הרביעית")
-
-
 def short_script(spec: Mapping[str, Any], plan: Mapping[str, Any]) -> str:
-    """Spoken line for one paragraph.
+    """The spoken line is the paragraph filled from this plan.
 
-    A template with no placeholder is the purpose, spoken in full. A template
-    that fills a figure is not recited: the voice names the slide, and the
-    filled figures stay on the slide beside the film. A figure the plan leaves
-    unfilled is returned as written so the seal can refuse the send.
-    Hebrew uses the Hebrew paragraph. The figure rule is the same.
+    A placeholder the plan fills is spoken as written, so the voice and the
+    slide carry the same figures. A placeholder the plan leaves unfilled is
+    returned as written so the seal can refuse the send. Nothing is added
+    around the paragraph.
     """
-    template = str(spec.get("template") or "")
-    filled = fill_narration(template, plan)
-    language = normalize_deck_lang(spec.get("lang") or lang_of_scene_key(str(spec.get("scene_key") or "")))
-    # The spoken line has no braces, so a leftover figure has to stay on this
-    # line. Otherwise the seal cannot see it.
-    if "{" not in template or _PLACEHOLDER.findall(filled):
-        return filled
-    fallback_title = "שקף זה" if language == "he" else "This slide"
-    title = str(spec.get("slide_title") or "").strip() or fallback_title
-    try:
-        point = int(spec.get("paragraph_no") or 0)
-    except (TypeError, ValueError):
-        point = 0
-    words = _POINT_WORDS_HE if language == "he" else _POINT_WORDS
-    if language == "he":
-        label = words[point] if 0 < point < len(words) else "נקודה זו"
-        return f"{title}, {label}. המספרים נשארים על השקף."
-    label = words[point] if 0 < point < len(words) else "this point"
-    return f"{title}, {label}. The figures stay on this slide."
+    return fill_narration(str(spec.get("template") or ""), plan)
 
 
 def _clean_theme(value: Any) -> str:
@@ -531,10 +508,9 @@ def growth_brief(record: Mapping[str, Any]) -> Dict[str, Any]:
         storyboard.append(f"Theme: {theme}")
     hebrew = lang_of_scene_key(str(record.get("scene_key") or "")) == "he"
     voice = (
-        "Elegant business presenter speaking Hebrew, one short spoken pass; "
-        "charts and figures stay on the slide and are not drawn"
+        "Elegant business presenter speaking Hebrew. Speak only the script, once."
         if hebrew else
-        "Elegant business presenter, one short spoken pass; charts and figures stay on the slide and are not drawn"
+        "Elegant business presenter. Speak only the script, once."
     )
     return {
         "title": f"Investor deck {record.get('scene_key') or ''}",
@@ -561,7 +537,6 @@ def prompt_override(record: Mapping[str, Any]) -> str:
         "Investor presentation, 16:9.",
         f"One elegant presenter ({casting}), medium close-up, calm private office, looking at the camera.",
         "Do not draw charts, tables, lettering, or numerals.",
-        "The slide's figures stay beside this film and must not be redrawn.",
         "Do not depict a named real person. A portrait, when this slide has one, is shown beside the film.",
     ]
     if reference:
@@ -572,13 +547,13 @@ def prompt_override(record: Mapping[str, Any]) -> str:
         hebrew = lang_of_scene_key(str(record.get("scene_key") or "")) == "he"
         if hebrew:
             parts.append(
-                "The presenter speaks this short line once, in Hebrew, in a clear calm voice, and finishes on its final period. "
+                "The presenter speaks this script once, in Hebrew, in a clear calm voice, and finishes on its final period. "
                 "Do not translate it and do not stop mid-word or mid-sentence: "
                 f'"{narration}"'
             )
         else:
             parts.append(
-                "The presenter speaks this short line once, in a clear calm voice, and finishes on its final period. "
+                "The presenter speaks this script once, in a clear calm voice, and finishes on its final period. "
                 f'Do not stop mid-word or mid-sentence: "{narration}"'
             )
     return " ".join(parts)
@@ -622,8 +597,9 @@ def scene_view(
     narration = fill_narration(str(spec["template"]), plan)
     script = short_script(spec, plan)
     sealed = str(record.get("sealed_narration") or "")
-    # A clip stays current while its sealed line is still this short script.
-    # The on-screen figures are ``narration`` and are not required in the voice.
+    # A clip stays current only while its sealed line is still this paragraph.
+    # A figure that has moved makes the sealed line stale; the library file
+    # is left as stored and the clip leaves the stream.
     figures_current = bool(sealed) and sealed == script
     presenter = presenter_by_id(str(record.get("presenter_id") or ""))
     asset_info = asset if isinstance(asset, dict) else {}
@@ -820,6 +796,7 @@ def _filmed_for_slide(slide_no: int, filmed: Optional[Sequence[Mapping[str, Any]
         if number != slide_no or not playback:
             continue
         rows.append({
+            "scene_key": str(item.get("scene_key") or ""),
             "paragraph_no": paragraph_no,
             "narration": str(item.get("narration") or ""),
             "playback_url": playback,

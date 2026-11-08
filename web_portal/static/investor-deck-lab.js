@@ -368,11 +368,11 @@
         var presentPath = presentPage + (mode === 'edit' ? '?edit=1' : '');
         var note = deck === 'reinsurer'
             ? (lang === 'he'
-                ? 'Swiss Re ישראל · 8 בדצמבר 2026. סצנה של 15 שניות לכל פסקה של מצגת הפגישה. השורה המדוברת היא הפסקה העברית כפי שהתוכנית ממלאת אותה; פסקה עם מספר נאמרת כשורה קצרה והמספרים נשארים על השקף. חותם עברי לעולם אינו מחליף חותם אנגלי.'
-                : 'Swiss Re Israel · 8 December 2026. One 15-second scene per paragraph of the meeting deck. The film plays the scenes that exist, in order, and skips the rest. Charts are the plan’s own, shown beside the clip. The spoken line is the paragraph as the plan fills it; a paragraph with a figure is spoken as a short line and the figure stays on the slide.')
+                ? 'Swiss Re ישראל · 8 בדצמבר 2026. סצנה של 15 שניות לכל פסקה של מצגת הפגישה. השורה המדוברת היא הפסקה כפי שהתוכנית ממלאת אותה, כולל הנתונים. דבר אינו נוסף סביבה. חותם עברי לעולם אינו מחליף חותם אנגלי.'
+                : 'Swiss Re Israel · 8 December 2026. One 15-second scene per paragraph of the meeting deck. The film plays the scenes that exist, in order, and skips the rest. Charts are the plan’s own, shown beside the clip. The spoken line is the paragraph as the plan fills it, including its figures.')
             : lang === 'he'
-                ? 'חלק ב׳, סצנה של 15 שניות לכל פסקה. השורה המדוברת היא הפסקה העברית של המצגת. פסקה עם מספר אינה מוקראת; המספרים נשארים על השקף.'
-                : 'Part II, one 15-second scene per paragraph. The film plays the scenes that exist, in order, and skips the rest. Charts and the founder portrait are the plan’s own, shown beside the clip. The spoken line is the paragraph as the plan fills it.';
+                ? 'חלק ב׳, סצנה של 15 שניות לכל פסקה. השורה המדוברת היא הפסקה העברית של המצגת, כולל הנתונים. דבר אינו נוסף סביבה.'
+                : 'Part II, one 15-second scene per paragraph. The film plays the scenes that exist, in order, and skips the rest. Charts and the founder portrait are the plan’s own, shown beside the clip. The spoken line is the paragraph as the plan fills it, including its figures.';
         var langButtons =
             '<button type="button" class="idl-btn secondary" data-idl-lang="en">English</button>' +
             '<button type="button" class="idl-btn secondary" data-idl-lang="he">עברית</button>';

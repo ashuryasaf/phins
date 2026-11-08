@@ -84,6 +84,12 @@
   }
   body.is-embed .deck-factors { background: #0b1a3a; color: #eaf1ff; }
   .deck-factors-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; }
+  .deck-fold {
+    width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line);
+    background: #fff; color: var(--navy); font: 700 20px/1 Inter, sans-serif; cursor: pointer;
+  }
+  .deck-factors-head h2 { flex: 1 1 auto; }
+  .script-show { display: inline-flex; gap: 6px; align-items: center; margin-inline-start: 8px; font-weight: 650; color: var(--navy); }
   .deck-factors h2 { margin: 0; font-size: 15px; }
   body.is-embed .deck-factors h2, body.is-embed .deck-factors .factor-note { color: #eaf1ff; }
   .factor-note { font-size: 12px; color: var(--muted); margin: 4px 0 8px; line-height: 1.45; }
@@ -213,7 +219,8 @@
   }
   @media print {
     body { background: #fff; }
-    .deck-bar, .deck-foot, .deck-status, .deck-note, video, #deck-lab, .deck-actions, .factor-controls, .sheet-toolbar, .script-actions { display: none !important; }
+    .deck-bar, .deck-foot, .deck-status, .deck-note, video, #deck-lab, .deck-actions, .factor-controls, .sheet-toolbar, .script-actions, .deck-fold, .script-show { display: none !important; }
+    #deck-factors-body[hidden] { display: block !important; }
     .deck-stage, .deck-script, .sheet-slide, .deck-factors { box-shadow: none; }
     .deck-stage { break-after: page; min-height: 0; }
   }
@@ -275,7 +282,7 @@
   <section class="deck-script" id="deck-script" aria-label="Film script for this slide"></section>
   <section class="deck-sheet" id="deck-sheet" aria-label="Script sheet"></section>
   <div id="deck-lab" hidden></div>
-  <p class="deck-note" id="deck-note">Figures are filled from the current plan; the quota-share options are scenarios of the same model with their own hash, not changes to the plan. Each paragraph is one 15-second scene. A line with a figure is spoken as a short script and the figure stays on the slide. Nothing is bound, priced or committed by this deck. The plan, its factors, and the library files are not rewritten.</p>
+  <p class="deck-note" id="deck-note">Figures are filled from the current plan; the quota-share options are scenarios of the same model with their own hash, not changes to the plan. Each paragraph is one 15-second scene, spoken as written, including its figures. Choose which filmed scenes play. Nothing is bound, priced or committed by this deck. The plan, its factors, and the library files are not rewritten.</p>
   <p class="deck-status" id="deck-status" role="status"></p>
 </div>
 <script src="/phins-doc-return.js"></script>
@@ -299,9 +306,10 @@
       scene: 'scene', seconds: 's',
       figureStays: 'The figure stays on the slide: ', asWritten: 'Spoken as written on the slide.',
       scriptTitle: function (n) { return 'Film script · slide ' + n; },
+      showScene: 'Show',
       scriptMeta: function (count, filmed) {
         return count + (count === 1 ? ' scene' : ' scenes') + ' · ' + (count * 15) + ' seconds · ' + filmed +
-          ' filmed. The presenter speaks each line in 15 seconds; a line with a figure is spoken as a short cue and the figure stays on the slide.';
+          ' filmed. The presenter speaks the paragraph, including its figures. Uncheck Show to leave a filmed scene out of this viewing.';
       },
       sheetTitle: function (slides, scenes, clock) { return 'Script sheet · ' + slides + ' slides · ' + scenes + ' scenes · ' + clock; },
       filmScene: 'Film 15s', filmSheet: 'Film the script sheet', engine: 'Engine', resetScene: 'Reset',
@@ -312,8 +320,9 @@
       sending: function (n, total, key) { return 'Sending ' + n + ' of ' + total + ' · ' + key; },
       sheetDone: function (n) { return n + (n === 1 ? ' scene sent. ' : ' scenes sent. ') + 'The plan was not written.'; },
       sheetEmpty: 'Every scene on this sheet is already in the film.',
+      foldOpen: 'Minimise reinsurance factors', foldClosed: 'Maximise reinsurance factors',
       factorsTitle: 'Reinsurance factors — a viewer scenario of the same model',
-      factorsNote: 'Move a factor and every figure on the slides, the ceded line and the scenarios re-renders from the plan model under its own hash. The plan\u2019s saved factors are not written; the film is sealed to the plan, not to a scenario.',
+      factorsNote: 'Move a factor and every figure on the slides and in the spoken lines re-renders from the business-plan model under this scenario\u2019s own hash. The plan\u2019s saved factors are not written. A clip plays only while its sealed line is still that paragraph.',
       reset: 'Back to the plan', locked: 'Fixed on this link', scenarioTag: 'SCENARIO',
       planLine: function (source, hash) { return 'Plan as shown · ' + source + ' factors · hash ' + hash + '. No factor is moved.'; },
       scenarioLine: function (hash, baseHash, moved) {
@@ -326,7 +335,7 @@
       statusPlan: function (source) { return source + ' plan'; }, statusFilm: ' · filmed scenes', statusSlides: ' · slides',
       statusScenes: function (n, clock) { return ' · ' + n + ' scenes · ' + clock + ' film'; },
       loadError: 'The meeting deck could not be loaded',
-      note: 'Figures are filled from the current plan; the quota-share options are scenarios of the same model with their own hash, not changes to the plan. Each paragraph is one 15-second scene. A line with a figure is spoken as a short script and the figure stays on the slide. Nothing is bound, priced or committed by this deck. The plan, its factors, and the library files are not rewritten.'
+      note: 'Figures are filled from the current plan; the quota-share options are scenarios of the same model with their own hash, not changes to the plan. Each paragraph is one 15-second scene, spoken as written, including its figures. Choose which filmed scenes play. Nothing is bound, priced or committed by this deck. The plan, its factors, and the library files are not rewritten.'
     },
     he: {
       title: 'PHINS — Swiss Re ישראל · 8 בדצמבר 2026',
@@ -342,9 +351,10 @@
       scene: 'סצנה', seconds: 'שנ׳',
       figureStays: 'הנתון נשאר על השקף: ', asWritten: 'נאמר כפי שכתוב על השקף.',
       scriptTitle: function (n) { return 'תסריט הסרט · שקף ' + n; },
+      showScene: 'הצג',
       scriptMeta: function (count, filmed) {
         return count + ' סצנות · ' + (count * 15) + ' שניות · ' + filmed +
-          ' צולמו. המגיש אומר כל שורה ב-15 שניות; שורה עם נתון נאמרת כרמז קצר והנתון נשאר על השקף.';
+          ' צולמו. המגיש אומר את הפסקה, כולל הנתונים. בטלו את "הצג" כדי להשאיר סצנה מצולמת מחוץ לצפייה זו.';
       },
       sheetTitle: function (slides, scenes, clock) { return 'דף תסריט · ' + slides + ' שקפים · ' + scenes + ' סצנות · ' + clock; },
       filmScene: 'צלם 15 שנ׳', filmSheet: 'צלם את דף התסריט', engine: 'מנוע', resetScene: 'איפוס',
@@ -355,8 +365,9 @@
       sending: function (n, total, key) { return 'שולח ' + n + ' מתוך ' + total + ' · ' + key; },
       sheetDone: function (n) { return n + ' סצנות נשלחו. התוכנית לא נכתבה.'; },
       sheetEmpty: 'כל הסצנות בדף הזה כבר בסרט.',
+      foldOpen: 'מזער את גורמי ביטוח המשנה', foldClosed: 'הגדל את גורמי ביטוח המשנה',
       factorsTitle: 'גורמי ביטוח המשנה — תרחיש צופה של אותו מודל',
-      factorsNote: 'הזיזו גורם — וכל נתון בשקפים, בקו המועבר ובתרחישים מופק מחדש ממודל התוכנית תחת גיבוב משלו. הגורמים השמורים של התוכנית אינם נכתבים; הסרט חתום לתוכנית, לא לתרחיש.',
+      factorsNote: 'הזיזו גורם — וכל נתון בשקפים ובשורות המדוברות מופק מחדש ממודל התוכנית העסקית תחת גיבוב התרחיש. הגורמים השמורים אינם נכתבים. קליפ מושמע רק כל עוד השורה החתומה היא עדיין הפסקה הזו.',
       reset: 'חזרה לתוכנית', locked: 'קבוע בקישור זה', scenarioTag: 'תרחיש',
       planLine: function (source, hash) { return 'התוכנית כפי שמוצגת · גורמים: ' + source + ' · גיבוב ' + hash + '. אף גורם לא הוזז.'; },
       scenarioLine: function (hash, baseHash, moved) {
@@ -369,7 +380,7 @@
       statusPlan: function (source) { return 'תוכנית · ' + source; }, statusFilm: ' · סצנות מצולמות', statusSlides: ' · שקפים',
       statusScenes: function (n, clock) { return ' · ' + n + ' סצנות · סרט ' + clock; },
       loadError: 'לא ניתן היה לטעון את מצגת הפגישה',
-      note: 'הנתונים ממולאים מהתוכנית הנוכחית; חלופות ביטוח המשנה היחסי הן תרחישים של אותו מודל עם גיבוב משלהם, לא שינויים בתוכנית. כל פסקה היא סצנה אחת של 15 שניות. שורה עם נתון נאמרת כתסריט קצר והנתון נשאר על השקף. דבר אינו מחייב, מתומחר או מוסכם במצגת זו. התוכנית, הגורמים שלה וקובצי הספרייה אינם נכתבים מחדש.'
+      note: 'הנתונים ממולאים מהתוכנית הנוכחית; חלופות ביטוח המשנה היחסי הן תרחישים של אותו מודל עם גיבוב משלהם, לא שינויים בתוכנית. כל פסקה היא סצנה אחת של 15 שניות, נאמרת ככתוב, כולל הנתונים. בחרו אילו סצנות מצולמות יוצגו. דבר אינו מחייב, מתומחר או מוסכם במצגת זו. התוכנית, הגורמים שלה וקובצי הספרייה אינם נכתבים מחדש.'
     }
   };
   var T = UI[deckLang];
@@ -402,10 +413,21 @@
   }
   if (params.get('embed') === '1') document.body.classList.add('is-embed');
   var wantEdit = params.get('edit') === '1';
+  function readHidden(raw) {
+    var set = {};
+    String(raw || '').split(',').forEach(function (key) {
+      key = key.trim();
+      if (/^(re-)?(he-)?s\d{2}p\d{2}$/.test(key)) set[key] = true;
+    });
+    return set;
+  }
   var state = {
     slides: [], index: 0, data: null, mode: 'auto', labMounted: false, factors: {}, loadSeq: 0,
-    engineId: '', filming: false, sheetMessage: ''
+    engineId: '', filming: false, sheetMessage: '', factorsOpen: true, hidden: readHidden(params.get('hide'))
   };
+  try {
+    if (sessionStorage.getItem('phins.reinsurer.factors.open') === '0') state.factorsOpen = false;
+  } catch (e) { /* storage unavailable */ }
 
   function token() {
     try {
@@ -429,6 +451,11 @@
   }
   function slide() {
     return state.slides[state.index] || null;
+  }
+  function shownClips(list) {
+    return (list || []).filter(function (clip) {
+      return clip && clip.playback_url && !state.hidden[clip.scene_key];
+    });
   }
   function slideLabel(slideNo) {
     // Under a viewer scenario every slide and script row carries the
@@ -471,6 +498,12 @@
     return (current.script || []).map(function (row, paragraphIndex) {
       var at = sceneOffset(slideIndex, paragraphIndex);
       var spokenDiffers = row.spoken && row.on_slide && row.spoken !== row.on_slide;
+      var showBox = '';
+      if (row.in_stream && row.scene_key) {
+        var shown = !state.hidden[row.scene_key];
+        showBox = '<label class="script-show"><input type="checkbox" data-scene-show="' + esc(row.scene_key) + '"' +
+          (shown ? ' checked' : '') + '> ' + esc(T.showScene) + '</label>';
+      }
       var action = '';
       if (withFilm && canFilm() && row.scene_key) {
         if (row.integrity_ok === false) {
@@ -488,6 +521,7 @@
         (row.presenter_label ? esc(row.presenter_label) + ' · ' : '') +
         (spokenDiffers ? esc(T.figureStays) + esc(row.on_slide) : esc(T.asWritten)) +
         (row.integrity_ok === false ? ' ' + esc(T.checksum) : '') +
+        showBox +
         '</p>' + action + '</div></div>';
     }).join('');
   }
@@ -641,6 +675,9 @@
     (state.data && state.data.factors || []).forEach(function (row) { next.delete(row.id); });
     var moved = factorQuery();
     Object.keys(moved).forEach(function (id) { next.set(id, moved[id]); });
+    var hiddenKeys = Object.keys(state.hidden).filter(function (key) { return state.hidden[key]; }).sort();
+    if (hiddenKeys.length) next.set('hide', hiddenKeys.join(','));
+    else next.delete('hide');
     var search = next.toString();
     var url = location.pathname + (search ? '?' + search : '') + location.hash;
     try { history.replaceState(null, '', url); } catch (e) { /* history unavailable */ }
@@ -662,9 +699,13 @@
     var scenario = data.scenario || {};
     var plan = data.plan || {};
     var anyAdjustable = rows.some(function (row) { return row.adjustable; });
-    var head = '<div class="deck-factors-head"><h2>' + esc(T.factorsTitle) + '</h2>' +
+    var open = state.factorsOpen !== false;
+    var head = '<div class="deck-factors-head"><button type="button" class="deck-fold" id="deck-factors-fold" aria-expanded="' +
+      (open ? 'true' : 'false') + '" aria-controls="deck-factors-body" aria-label="' + esc(open ? T.foldOpen : T.foldClosed) + '">' +
+      (open ? '−' : '+') + '</button><h2>' + esc(T.factorsTitle) + '</h2>' +
       (anyAdjustable ? '<button type="button" class="deck-btn secondary" id="deck-factors-reset"' + (scenario.active ? '' : ' disabled') + '>' + esc(T.reset) + '</button>' : '') +
-      '</div><p class="factor-note">' + esc(T.factorsNote) + '</p>';
+      '</div>';
+    var note = '<p class="factor-note">' + esc(T.factorsNote) + '</p>';
     var grid = '<div class="factor-grid">' + rows.map(function (row) {
       var locked = !row.adjustable;
       var control = locked
@@ -690,7 +731,13 @@
     if (scenario.restricted && scenario.restricted.length) {
       line += '<div class="factor-scenario">' + esc(T.restricted(scenario.restricted.join(', '))) + '</div>';
     }
-    box.innerHTML = head + grid + line;
+    box.innerHTML = head + line + '<div id="deck-factors-body"' + (open ? '' : ' hidden') + '>' + note + grid + '</div>';
+    var fold = document.getElementById('deck-factors-fold');
+    if (fold) fold.addEventListener('click', function () {
+      state.factorsOpen = !(state.factorsOpen !== false);
+      try { sessionStorage.setItem('phins.reinsurer.factors.open', state.factorsOpen ? '1' : '0'); } catch (e) { /* storage unavailable */ }
+      renderFactors(state.data || data);
+    });
     box.querySelectorAll('[data-factor]').forEach(function (input) {
       input.addEventListener('input', function () {
         var id = input.getAttribute('data-factor');
@@ -749,7 +796,8 @@
     var side = document.getElementById('deck-side');
     var parts = [];
     if (current.chart_svg) parts.push(current.chart_svg);
-    var filmed = state.mode !== 'slide' && current.filmed && current.filmed.length ? current.filmed : null;
+    var filmed = state.mode !== 'slide' ? shownClips(current.filmed) : [];
+    if (!filmed.length) filmed = null;
     if (filmed) {
       var first = filmed[0];
       parts.push('<video controls playsinline data-filmed="0" src="' + esc(first.playback_url) + '"></video>');
@@ -863,6 +911,14 @@
   });
   document.getElementById('deck-prev').addEventListener('click', function () { go(state.index - 1); });
   document.getElementById('deck-next').addEventListener('click', function () { go(state.index + 1); });
+  document.addEventListener('change', function (event) {
+    var box = event.target && event.target.getAttribute && event.target.getAttribute('data-scene-show');
+    if (!box) return;
+    if (event.target.checked) delete state.hidden[box];
+    else state.hidden[box] = true;
+    syncUrl();
+    render();
+  });
   document.getElementById('deck-mode').addEventListener('change', function (event) {
     state.mode = event.target.value || 'auto';
     render();

@@ -25,6 +25,7 @@ from services.investor_deck_video import (
     clip_is_scene_length,
     fill_narration,
     fresh_scene,
+    growth_brief,
     presentation_of,
     prompt_override,
     scene_view,
@@ -58,9 +59,9 @@ def test_hebrew_scenes_speak_the_deck_and_do_not_verify_as_english():
     on_slide = fill_narration(priced["template"], plan)
     spoken = short_script(priced, plan)
     assert "313.75" in on_slide
-    assert "313.75" not in spoken
-    assert "המספרים נשארים על השקף" in spoken
-    assert spoken != on_slide
+    assert spoken == on_slide
+    assert "313.75" in spoken
+    assert "המספרים נשארים על השקף" not in spoken
     sealed = seal_for_send("he-s06p01", None, plan, used_presenter_ids=[], rng=random.Random(4))
     assert sealed["campaign_id"] == "DECK-he-s06p01"
     assert verify_scene(sealed, priced)
@@ -72,7 +73,8 @@ def test_hebrew_scenes_speak_the_deck_and_do_not_verify_as_english():
     english_sealed = seal_for_send("s06p01", None, plan, used_presenter_ids=[], rng=random.Random(4))
     english_direction = prompt_override(english_sealed)
     assert "in Hebrew" not in english_direction
-    assert "The figures stay on this slide" in english_sealed["sealed_narration"]
+    assert english_sealed["sealed_narration"] == fill_narration(spec_for("s06p01")["template"], plan)
+    assert "The figures stay on this slide" not in english_sealed["sealed_narration"]
     view = presentation_of(plan, lang="he")
     assert view["lang"] == "he"
     assert view["slides"][1]["title"] == "הבעיה"
@@ -132,13 +134,14 @@ def test_only_a_matching_clip_enters_the_stream():
     spoken = short_script(spec, plan)
     on_slide = fill_narration(spec["template"], plan)
     assert sealed["sealed_narration"] == spoken
-    assert spoken != on_slide
-    assert on_slide not in spoken
-    assert "figures stay on this slide" in spoken
+    assert spoken == on_slide
+    assert "figures stay on this slide" not in spoken
+    assert "figures stay" not in growth_brief(sealed)["voiceover_style"]
     assert sealed["presenter_id"]
     direction = prompt_override(sealed)
     assert sealed["sealed_narration"] in direction
-    assert "must not be redrawn" in direction
+    assert "must not be redrawn" not in direction
+    assert "figures stay on this slide" not in direction
     assert "{specimen_life_monthly}" not in direction
     asset = {
         "type": "video",
@@ -194,26 +197,31 @@ def test_only_a_matching_clip_enters_the_stream():
     sealed_hash["last_asset_id"] = "asset-2"
     sealed_hash["asset_checksum"] = "abc123"
     spoken_hash = scene_view(hash_line, sealed_hash, shifted, asset)
+    # This paragraph names the plan hash, so a hash-only change is a new spoken line.
+    # The clip leaves the stream. The library file is not rewritten.
     assert spoken_hash["narration"] != sealed_hash["sealed_narration"]
-    assert spoken_hash["script"] == sealed_hash["sealed_narration"]
-    assert spoken_hash["figures_current"] is True
-    assert spoken_hash["in_stream"] is True
-    assert shifted["content_hash"] not in spoken_hash["script"]
-    assert shifted["content_hash"][:12] in spoken_hash["narration"]
+    assert spoken_hash["script"] == spoken_hash["narration"]
+    assert spoken_hash["figures_current"] is False
+    assert spoken_hash["in_stream"] is False
+    assert spoken_hash["playback_url"] == ""
+    assert shifted["content_hash"][:12] in spoken_hash["script"]
     sealed_hash["last_job_id"] = "job-2"
+    prior_line = sealed_hash["sealed_narration"]
     dropped = seal_for_send("s13p03", sealed_hash, shifted, used_presenter_ids=[], rng=random.Random(4))
-    assert dropped["sealed_narration"] == sealed_hash["sealed_narration"]
+    assert dropped["sealed_narration"] != prior_line
+    assert shifted["content_hash"][:12] in dropped["sealed_narration"]
     assert dropped["sealed_plan_hash"] == shifted["content_hash"]
-    assert dropped["last_asset_id"] == "asset-2"
-    assert dropped["asset_checksum"] == "abc123"
-    assert dropped["last_job_id"] == "job-2"
+    assert dropped["last_asset_id"] == ""
+    assert dropped["asset_checksum"] == ""
+    assert dropped["last_job_id"] == ""
 
 
 def test_unfilled_figure_is_not_sealed_or_kept_in_the_stream():
     plan = compute_plan()
     spec = spec_for("s01p03")
     sealed = seal_for_send("s01p03", None, plan, used_presenter_ids=[], rng=random.Random(5))
-    assert "figures stay on this slide" in sealed["sealed_narration"]
+    assert sealed["sealed_narration"] == fill_narration(spec["template"], plan)
+    assert "figures stay on this slide" not in sealed["sealed_narration"]
     broken = copy.deepcopy(plan)
     broken["plan_version"] = "v{seed}"
     on_slide = fill_narration(spec["template"], broken)
@@ -407,7 +415,8 @@ def test_send_stores_one_scene_and_leaves_the_plan_and_placements_alone():
         opening = next(row for row in slide_six if row["paragraph_no"] == 1)
         spoken = opening["script"]
         assert "313.75" in opening["narration"]
-        assert "313.75" not in spoken
+        assert spoken == opening["narration"]
+        assert "figures stay on this slide" not in spoken
         assert "{" not in spoken
 
         status, refused = _json_request(
@@ -446,8 +455,9 @@ def test_send_stores_one_scene_and_leaves_the_plan_and_placements_alone():
         assert stub.submissions
         assert stub.submissions[0]["duration_seconds"] == 15
         assert spoken in stub.submissions[0]["prompt"]
-        assert "313.75" not in stub.submissions[0]["prompt"]
-        assert "must not be redrawn" in stub.submissions[0]["prompt"]
+        assert "313.75" in stub.submissions[0]["prompt"]
+        assert "figures stay on this slide" not in stub.submissions[0]["prompt"].lower()
+        assert "must not be redrawn" not in stub.submissions[0]["prompt"]
         assert "Quiet navy office" in stub.submissions[0]["prompt"]
         assert "auto_publish" not in stub.submissions[0] or stub.submissions[0].get("auto_publish_to_hero") in (None, False)
         assert portal.DESIGN_SETTINGS.get("hero_video_id", "") == hero_before
@@ -623,8 +633,8 @@ def test_presentation_is_part_ii_and_a_video_plays_only_when_the_checksum_matche
         "data": "do-not-touch",
     }
     filmed = [
-        {"slide_no": 7, "paragraph_no": 2, "in_stream": True, "playback_url": "/clip.mp4",
-         "narration": "second", "presenter_label": "Woman, early 30s"},
+        {"slide_no": 7, "paragraph_no": 2, "scene_key": "s07p02", "in_stream": True,
+         "playback_url": "/clip.mp4", "narration": "second", "presenter_label": "Woman, early 30s"},
         {"slide_no": 7, "paragraph_no": 1, "in_stream": False, "playback_url": "/skipped.mp4"},
         {"slide_no": 1, "paragraph_no": 1, "in_stream": True, "playback_url": ""},
     ]
@@ -649,6 +659,7 @@ def test_presentation_is_part_ii_and_a_video_plays_only_when_the_checksum_matche
     assert market["media"]["intact"] is True
     assert market["media"]["playback_url"].endswith("office.mp4")
     assert [clip["paragraph_no"] for clip in market["filmed"]] == [2]
+    assert market["filmed"][0]["scene_key"] == "s07p02"
     for spec, slide in zip(specs, view["slides"]):
         assert slide["bullets"] == [_fill(bullet, plan, False).strip() for bullet in spec["bullets"]]
         assert "{" not in "".join(slide["bullets"])
@@ -704,6 +715,8 @@ def test_presentation_page_is_wired_and_does_not_bake_figures():
     assert "/api/media?brief=1" in page
     assert "Save this slide's look" in page
     assert "phins-media-library-updated" in media
+    assert 'id="deck-scenes"' in page and "data-scene-show" in page
+    assert "figures stay on the slide" not in page.lower()
 
 
 def test_combine_video_stores_a_pointer_and_leaves_the_library_and_plan_alone():
