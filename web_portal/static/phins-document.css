@@ -190,6 +190,12 @@ body {
   color: #fff;
   border: 0;
 }
+/* Right-to-left editions (html[dir="rtl"]): the letterhead keeps its logo on
+   the leading side, tables and callouts mirror, figures stay as rendered. */
+[dir="rtl"] .phins-doc-kicker { text-align: left; }
+[dir="rtl"] .phins-doc th, [dir="rtl"] .phins-doc td { text-align: right; }
+[dir="rtl"] .phins-doc .note { border-left: 0; border-right: 4px solid var(--phins-gold); }
+[dir="rtl"] .phins-doc code, [dir="rtl"] .phins-doc pre { direction: ltr; unicode-bidi: isolate; }
 @media print {
   body { background: #fff; }
   .phins-doc { box-shadow: none; margin: 0; max-width: none; border-radius: 0; }

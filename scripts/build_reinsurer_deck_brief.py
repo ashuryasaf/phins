@@ -3,11 +3,14 @@
 Build the Swiss Re Israel meeting pack (8 December 2026) from the plan model.
 ============================================================================
 Writes ``web_portal/static/investor-docs/swiss-re-israel-meeting-8dec2026-deck.md``
-from ``services/reinsurer_meeting_deck.render_markdown(compute_plan())``: the
+and its Hebrew edition ``…-deck.he.md`` from
+``services/reinsurer_meeting_deck.render_markdown(compute_plan(), lang=…)``: the
 twelve slides with every placeholder filled, the spoken short script of each
-15-second scene, the ceded line for 2027–2031, the quota-share scenarios and
-the data-integrity statement. ``scripts/generate_investor_pdfs.py`` renders
-that markdown into the branded PDF and the designed HTML edition.
+15-second scene, the ceded line for 2027–2031, the quota-share scenarios, the
+adjustable reinsurance factors and the data-integrity statement. Both
+editions bind to the same plan dict and the same content hash.
+``scripts/generate_investor_pdfs.py`` renders each markdown into the branded
+PDF and the designed HTML edition.
 
 The output is deterministic for a given repository state, so the committed
 copy can be checked against a fresh render (``--check``); the contract test
@@ -31,11 +34,17 @@ sys.path.insert(0, str(ROOT))
 from services.business_plan_model import compute_plan  # noqa: E402
 from services.reinsurer_meeting_deck import render_markdown  # noqa: E402
 
-MD_PATH = ROOT / "web_portal" / "static" / "investor-docs" / "swiss-re-israel-meeting-8dec2026-deck.md"
+DOCS = ROOT / "web_portal" / "static" / "investor-docs"
+MD_PATH = DOCS / "swiss-re-israel-meeting-8dec2026-deck.md"
+MD_PATH_HE = DOCS / "swiss-re-israel-meeting-8dec2026-deck.he.md"
 
 
 def outputs() -> dict[Path, str]:
-    return {MD_PATH: render_markdown(compute_plan())}
+    plan = compute_plan()
+    return {
+        MD_PATH: render_markdown(plan),
+        MD_PATH_HE: render_markdown(plan, lang="he"),
+    }
 
 
 def main(argv: list[str] | None = None) -> int:

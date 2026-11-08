@@ -37,6 +37,17 @@ The plan's cession is the reference. Each alternative is `compute_plan` with the
 | 30% | ₪16.3M | ₪2.1M | ₪1.27B | ₪165.7M | 4.1% | ₪1.48B | `e8ce587db069` · scenario |
 | 50% | ₪27.1M | ₪3.5M | ₪2.12B | ₪276.2M | 1.5% | ₪1.48B | `f266eba844a0` · scenario |
 
+## Adjustable reinsurance factors
+
+On `/reinsurer-deck.html` a viewer may move these factors of the plan's own register. The result is the same model under its own hash, labelled a scenario; a value outside the register's range is refused; the saved factors are not written and the film stays sealed to the plan.
+
+| Factor | Plan value | Range |
+|---|---|---|
+| Quota-share cession (share of risk GWP) (`cession_rate`) | 18% | 0% – 90% |
+| Ceding commission (share of ceded premium) (`ceding_commission`) | 25% | 0% – 50% |
+| Expected claims ratio (share of risk GWP) (`expected_loss_ratio`) | 62% | 20% – 95% |
+| Carrier own expenses (share of risk GWP) (`insurer_own_expense_ratio`) | 5% | 0% – 30% |
+
 ## Slides and film script
 
 One 15-second scene per paragraph. A paragraph with no figure is spoken in full; a paragraph that fills a figure is spoken as a short line and its figures stay on the slide. Presenters come from the shared roster and are assigned when a scene is filmed; charts are the plan's own and are shown beside the clip, never drawn by the generator.

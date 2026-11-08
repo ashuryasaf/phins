@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PHINS × Swiss Re ישראל — מצגת הפגישה ותסריט הסרט (8 בדצמבר 2026) · מר הלל דמלין, מנכ&quot;ל אזורי ישראל</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+/* Shared letterhead for generated PHINS documents (claim notice, processing
+   record, probability report, risk reports). Self-contained: no external
+   assets except the inlined emblem. */
+:root {
+  --phins-navy: #0e2f63;
+  --phins-navy-deep: #060d1f;
+  --phins-navy-mid: #123f82;
+  --phins-gold: #c9a04e;
+  --phins-gold-strong: #f7e2a0;
+  --phins-ink: #12284c;
+  --phins-muted: #5b6b82;
+  --phins-ice: #f3f7fd;
+  --phins-line: #d5deea;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: #e8eef6;
+  color: var(--phins-ink);
+  font-family: Inter, "Segoe UI", sans-serif;
+  line-height: 1.5;
+}
+.phins-doc {
+  max-width: 920px;
+  margin: 24px auto;
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(6, 13, 31, 0.12);
+}
+.phins-doc-banner {
+  background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+  color: #fff;
+  padding: 22px 28px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+.phins-doc-brand { display: flex; gap: 12px; align-items: center; }
+.phins-doc-logo { width: 52px; height: 52px; flex: 0 0 52px; }
+.phins-doc-logo svg { width: 52px; height: 52px; display: block; }
+.phins-doc-wordmark {
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-size: 20px;
+}
+.phins-doc-tagline { font-size: 11px; letter-spacing: 0.03em; opacity: 0.84; }
+.phins-doc-kicker {
+  text-align: right;
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  font-weight: 600;
+  font-size: 15px;
+}
+.phins-doc-kicker span {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400;
+  font-size: 12px;
+  opacity: 0.82;
+  font-family: Inter, "Segoe UI", sans-serif;
+}
+.phins-doc-gold {
+  height: 4px;
+  background: linear-gradient(90deg, #b8893b 0%, #f7e2a0 42%, #e3bf6f 100%);
+}
+.phins-doc-body { padding: 24px 28px 8px; }
+.phins-doc h1, .phins-doc h2, .phins-doc h3 {
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  color: var(--phins-navy);
+  margin: 0 0 8px;
+}
+.phins-doc h1 { font-size: 22px; }
+.phins-doc h2 { font-size: 16px; margin-top: 8px; }
+.phins-doc .gold { color: var(--phins-gold); }
+.phins-doc .sub { color: var(--phins-muted); margin: 0 0 16px; font-size: 13px; }
+.phins-doc table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; }
+.phins-doc th, .phins-doc td {
+  border: 1px solid var(--phins-line);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+  font-size: 14px;
+}
+.phins-doc th {
+  background: var(--phins-ice);
+  color: var(--phins-navy);
+  font-weight: 600;
+}
+.phins-doc td code, .phins-doc code {
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--phins-navy-mid);
+}
+.phins-doc .seal, .phins-doc-foot {
+  font-size: 12px;
+  color: var(--phins-muted);
+}
+.phins-doc-foot {
+  padding: 14px 28px 20px;
+  border-top: 1px solid var(--phins-line);
+}
+.phins-doc .metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 0 0 18px;
+}
+.phins-doc .metric {
+  background: var(--phins-ice);
+  border: 1px solid var(--phins-line);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.phins-doc .metric strong {
+  display: block;
+  font-family: "Space Grotesk", Inter, sans-serif;
+  font-size: 1.45rem;
+  color: var(--phins-navy);
+}
+.phins-doc .metric.ok strong { color: #0f6b45; }
+.phins-doc .metric.warn strong { color: #8a5a12; }
+.phins-doc .metric.alert strong { color: #9b2c2c; }
+.phins-doc .metric span { color: var(--phins-muted); font-size: 12px; }
+.phins-doc .bar { height: 8px; background: #e5e7eb; border-radius: 4px; margin-top: 8px; }
+.phins-doc .bar-fill { height: 100%; border-radius: 4px; background: var(--phins-navy-mid); }
+.phins-doc .note {
+  background: var(--phins-ice);
+  border-left: 4px solid var(--phins-gold);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 0 0 16px;
+}
+.phins-doc .summary-box {
+  background: var(--phins-ice);
+  border: 1px solid var(--phins-line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin: 0 0 16px;
+}
+.phins-doc .metric-value { font-weight: 700; color: var(--phins-navy); font-size: 18px; }
+.phins-doc .metric-label { font-size: 11px; color: var(--phins-muted); }
+.phins-doc iframe.phins-file-frame {
+  width: 100%;
+  min-height: 70vh;
+  border: 1px solid var(--phins-line);
+  border-radius: 8px;
+  background: #fff;
+}
+/* Leave-document bar. Hidden in print so a saved PDF stays a document. */
+.phins-doc-return {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #fff;
+  border-bottom: 4px solid transparent;
+  border-image: linear-gradient(90deg, #b8893b 0%, #f7e2a0 42%, #e3bf6f 100%) 1;
+  font-family: Inter, "Segoe UI", sans-serif;
+  color: var(--phins-ink);
+}
+.phins-doc-return-note {
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  color: var(--phins-navy);
+}
+.phins-doc-return-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.phins-doc-return button {
+  font-family: Inter, "Segoe UI", sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.phins-doc-back {
+  background: #fff;
+  color: var(--phins-navy);
+  border: 1px solid var(--phins-line);
+}
+.phins-doc-close {
+  background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+  color: #fff;
+  border: 0;
+}
+/* Right-to-left editions (html[dir="rtl"]): the letterhead keeps its logo on
+   the leading side, tables and callouts mirror, figures stay as rendered. */
+[dir="rtl"] .phins-doc-kicker { text-align: left; }
+[dir="rtl"] .phins-doc th, [dir="rtl"] .phins-doc td { text-align: right; }
+[dir="rtl"] .phins-doc .note { border-left: 0; border-right: 4px solid var(--phins-gold); }
+[dir="rtl"] .phins-doc code, [dir="rtl"] .phins-doc pre { direction: ltr; unicode-bidi: isolate; }
+@media print {
+  body { background: #fff; }
+  .phins-doc { box-shadow: none; margin: 0; max-width: none; border-radius: 0; }
+  .phins-doc-return { display: none !important; }
+  .phins-doc-body button { display: none !important; }
+}
+
+</style>
+</head>
+<body>
+<nav class="phins-doc-return" aria-label="Leave this document"><span class="phins-doc-return-note">PHINS document</span><span class="phins-doc-return-actions"><button type="button" class="phins-doc-back">Go back</button><button type="button" class="phins-doc-close">Close</button></span></nav>
+<script>
+/* PHINS document return bar.
+   Every report, file, or document a person can open must include this script
+   (or the markup from services/phins_document.py, which inlines it) so the
+   page is never a dead end. Chrome only: it does not read or rewrite document
+   data. Future generated documents call PhinsDocument.printReport /
+   render_phins_document, or load /phins-doc-return.js with a script tag.
+   This file is also inlined inside a script element, so it must never
+   contain a literal script tag: the HTML parser would close the element
+   there and print the rest of this source as page text.
+   Set data-phins-return="off" on <body> when the page already has its own
+   Go back and Close controls that call phinsDocGoBack / phinsDocClose. */
+(function (global) {
+    'use strict';
+
+    if (global.__phinsDocReturnInstalled) return;
+    global.__phinsDocReturnInstalled = true;
+
+    /* Role homes for the cross-pipeline checkout. Keep in sync with
+       PIPELINE_DOCUMENT_HOMES in services/phins_document.py. */
+    var PHINS_DOCUMENT_HOMES = {
+        admin: '/admin.html',
+        manager: '/admin.html',
+        underwriter: '/underwriter-dashboard.html',
+        claims: '/claims-adjuster-dashboard.html',
+        claims_adjuster: '/claims-adjuster-dashboard.html',
+        adjuster: '/claims-adjuster-dashboard.html',
+        accountant: '/accountant-dashboard.html',
+        actuary: '/actuary-dashboard.html',
+        supplier: '/supplier-portal.html',
+        regulator: '/regulator-dashboard.html',
+        customer: '/dashboard.html',
+        foundation: '/foundation-dashboard.html',
+        community: '/foundation-dashboard.html'
+    };
+
+    function framed() {
+        try { return global.top !== global.self; } catch (e) { return true; }
+    }
+
+    function sameOriginPath(value) {
+        if (!value || value.charAt(0) !== '/' || value.charAt(1) === '/' || value.indexOf('\\') !== -1) {
+            return '';
+        }
+        if (value.indexOf('..') !== -1) return '';
+        return value;
+    }
+
+    function phinsDocReturnTarget() {
+        try {
+            var q = new URLSearchParams(global.location.search || '');
+            var explicit = sameOriginPath(q.get('return') || '');
+            if (explicit) return explicit;
+        } catch (e) { /* keep going */ }
+        if (global.document.referrer) {
+            try {
+                var ref = new URL(global.document.referrer);
+                if (ref.origin === global.location.origin && ref.pathname !== global.location.pathname) {
+                    return ref.pathname + ref.search + ref.hash;
+                }
+            } catch (e2) { /* ignore */ }
+        }
+        var role = '';
+        try {
+            var raw = global.localStorage.getItem('session') || global.sessionStorage.getItem('session') || '';
+            if (raw) role = String((JSON.parse(raw) || {}).role || '').toLowerCase();
+        } catch (e3) { /* ignore */ }
+        return PHINS_DOCUMENT_HOMES[role] || '/documents.html';
+    }
+
+    function phinsDocGoBack() {
+        if (framed()) return;
+        try {
+            if (global.history.length > 1) {
+                global.history.back();
+                return;
+            }
+        } catch (e) { /* fall through */ }
+        global.location.href = phinsDocReturnTarget();
+    }
+
+    function phinsDocClose() {
+        if (framed()) return;
+        var target = phinsDocReturnTarget();
+        try { global.close(); } catch (e) { /* blocked */ }
+        global.setTimeout(function () {
+            if (!global.closed) global.location.href = target;
+        }, 180);
+    }
+
+    function ensureStyle() {
+        if (global.document.getElementById('phins-doc-return-style')) return;
+        var style = global.document.createElement('style');
+        style.id = 'phins-doc-return-style';
+        style.textContent = ''
+            + '.phins-doc-return{position:sticky;top:0;z-index:80;display:flex;justify-content:space-between;'
+            + 'align-items:center;gap:12px;padding:10px 16px;background:#fff;color:#12284c;'
+            + 'border-bottom:4px solid #c9a04e;font-family:Inter,"Segoe UI",sans-serif;}'
+            + '.phins-doc-return-note{font-family:"Space Grotesk",Inter,"Segoe UI",sans-serif;font-weight:600;'
+            + 'letter-spacing:.06em;font-size:12px;color:#0e2f63;}'
+            + '.phins-doc-return-actions{display:flex;gap:8px;flex-wrap:wrap;}'
+            + '.phins-doc-return button{font:600 13px Inter,"Segoe UI",sans-serif;border-radius:8px;padding:8px 14px;cursor:pointer;}'
+            + '.phins-doc-back{background:#fff;color:#0e2f63;border:1px solid #d5deea;}'
+            + '.phins-doc-close{background:linear-gradient(135deg,#060d1f 0%,#0e2f63 46%,#123f82 100%);color:#fff;border:0;}'
+            + '@media print{.phins-doc-return{display:none !important;}}';
+        (global.document.head || global.document.documentElement).appendChild(style);
+    }
+
+    function buildBar() {
+        var bar = global.document.createElement('nav');
+        bar.className = 'phins-doc-return';
+        bar.setAttribute('aria-label', 'Leave this document');
+        bar.innerHTML = '<span class="phins-doc-return-note">PHINS document</span>'
+            + '<span class="phins-doc-return-actions">'
+            + '<button type="button" class="phins-doc-back">Go back</button>'
+            + '<button type="button" class="phins-doc-close">Close</button>'
+            + '</span>';
+        return bar;
+    }
+
+    function mount() {
+        ensureStyle();
+        var existing = global.document.querySelector('.phins-doc-return');
+        var off = global.document.body && global.document.body.getAttribute('data-phins-return') === 'off';
+        if (framed()) {
+            if (existing) existing.hidden = true;
+            return;
+        }
+        if (!existing && !off && global.document.body) {
+            global.document.body.insertBefore(buildBar(), global.document.body.firstChild);
+        }
+    }
+
+    global.phinsDocGoBack = phinsDocGoBack;
+    global.phinsDocClose = phinsDocClose;
+    global.PHINS_DOCUMENT_HOMES = PHINS_DOCUMENT_HOMES;
+
+    global.document.addEventListener('click', function (event) {
+        var node = event.target && event.target.closest
+            ? event.target.closest('.phins-doc-back, .phins-doc-close')
+            : null;
+        if (!node || framed()) return;
+        event.preventDefault();
+        if (node.classList.contains('phins-doc-close')) phinsDocClose();
+        else phinsDocGoBack();
+    });
+
+    if (global.document.readyState === 'loading') {
+        global.document.addEventListener('DOMContentLoaded', mount);
+    } else {
+        mount();
+    }
+})(window);
+
+</script>
+<article class="phins-doc">
+  <header class="phins-doc-banner">
+    <div class="phins-doc-brand">
+      <div class="phins-doc-logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="PHINS emblem">
+  <defs>
+    <linearGradient id="phinsShield" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0e2f63"/>
+      <stop offset="55%" stop-color="#123f82"/>
+      <stop offset="100%" stop-color="#081c3f"/>
+    </linearGradient>
+    <linearGradient id="phinsGold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f7e2a0"/>
+      <stop offset="45%" stop-color="#e3bf6f"/>
+      <stop offset="100%" stop-color="#b8893b"/>
+    </linearGradient>
+    <linearGradient id="phinsFin" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4fd8ff"/>
+      <stop offset="55%" stop-color="#6ea8ff"/>
+      <stop offset="100%" stop-color="#b7d9ff"/>
+    </linearGradient>
+    <linearGradient id="phinsWave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4fd8ff" stop-opacity="0.15"/>
+      <stop offset="50%" stop-color="#7fe3ff"/>
+      <stop offset="100%" stop-color="#4fd8ff" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Shield body -->
+  <path d="M60 6 L106 22 V57 C106 88 86 108 60 116 C34 108 14 88 14 57 V22 Z"
+        fill="url(#phinsShield)"/>
+  <!-- Gold rim -->
+  <path d="M60 6 L106 22 V57 C106 88 86 108 60 116 C34 108 14 88 14 57 V22 Z"
+        fill="none" stroke="url(#phinsGold)" stroke-width="4" stroke-linejoin="round"/>
+  <!-- Inner keyline -->
+  <path d="M60 14 L98 27.5 V56.5 C98 83 81 100.5 60 107.5 C39 100.5 22 83 22 56.5 V27.5 Z"
+        fill="none" stroke="#ffffff" stroke-opacity="0.14" stroke-width="1.5"/>
+
+  <!-- Guiding star -->
+  <path d="M60 22 L62.2 28.2 L68.5 28.4 L63.5 32.2 L65.3 38.3 L60 34.7 L54.7 38.3 L56.5 32.2 L51.5 28.4 L57.8 28.2 Z"
+        fill="url(#phinsGold)"/>
+
+  <!-- Dolphin fin -->
+  <path d="M40 76 C44.5 57 57 44 80 38.5 C72.5 50.5 70.5 61 73 73.5 C61.5 66.5 49 69 40 76 Z"
+        fill="url(#phinsFin)"/>
+  <!-- Fin highlight -->
+  <path d="M46 70 C51 58 60 49 72 44.5 C67 53 65.5 61 66.8 69.5 C59.5 65.5 52 66.5 46 70 Z"
+        fill="#ffffff" fill-opacity="0.16"/>
+
+  <!-- Waves -->
+  <path d="M32 84 Q42 77.5 52 84 T72 84 T92 84" fill="none"
+        stroke="url(#phinsWave)" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M40 93 Q49 87.5 58 93 T76 93" fill="none"
+        stroke="url(#phinsWave)" stroke-width="2.4" stroke-linecap="round" opacity="0.7"/>
+</svg></div>
+      <div>
+        <div class="phins-doc-wordmark">PHINS</div>
+        <div class="phins-doc-tagline">Personal Health Insurance &amp; Savings</div>
+      </div>
+    </div>
+    <div class="phins-doc-kicker">מצגת הפגישה ותסריט הסרט · 8 בדצמבר 2026<span>מר הלל דמלין · מנכ&quot;ל אזורי ישראל · Swiss Re · הפיילוט בישראל ותוכנית החומש</span></div>
+  </header>
+  <div class="phins-doc-gold"></div>
+  <div class="phins-doc-body">
+<h1>PHINS × Swiss Re ישראל — מצגת הפגישה ותסריט הסרט (8 בדצמבר 2026)</h1>
+<blockquote><p><strong>פנימי · סודי.</strong> המצגת לפגישה עם מר הלל דמלין, מנכ&quot;ל אזורי, ישראל — Swiss Re, יום שלישי, 8 בדצמבר 2026: הפיילוט בישראל מ-1 בינואר 2027 ותוכנית החומש עד 2031, נקראים ממושב מבטח המשנה. כל נתון הוא ברירת מחדל של זהות התוכנית <code>unified-2026.10-v1</code> (קנוני; גיבוב תוכן <code>9128223e1c222388…</code>) ומופק מחדש מאותו מודל כמו התוכנית העסקית המאוחדת. דבר אינו מחייב במצגת זו; לא נקבעים גבול, כרטיס או מחיר. התוכנית אינה נכתבת על ידי פגישה זו.</p></blockquote>
+<h2>פרטי הפגישה</h2>
+<table><thead><tr><th>פריט</th><th>פירוט</th></tr></thead><tbody><tr><td>תאריך</td><td>יום שלישי, 8 בדצמבר 2026</td></tr><tr><td>הצד שכנגד</td><td>מר הלל דמלין — מנכ&quot;ל אזורי, ישראל — Swiss Re</td></tr><tr><td>PHINS</td><td>עו&quot;ד אסף אשורי — מייסד ומנכ&quot;ל, PHINS Technologies</td></tr><tr><td>נושא</td><td>הפיילוט בישראל ותוכנית החומש — ביטוח משנה יחסי, חלופות, צעדים הבאים</td></tr><tr><td>מתכונת</td><td>12 שקפים · סצנה אחת של 15 שניות לכל פסקה · הסרט הקצר מנגן את הסצנות המצולמות לפי הסדר</td></tr><tr><td>חבילה</td><td><code>/reinsurer-deck.he.html</code> (מצגת + דף תסריט) · לוח הפיץ&#x27; — מקטע Swiss Re ישראל 8.12 · הערכת מנכ&quot;ל הקבוצה (7 בנובמבר) · נספח ב׳ לתוכנית העסקית המאוחדת</td></tr><tr><td>סטטוס</td><td>מתוכננת</td></tr></tbody></table>
+<h2>הקו המועבר שמבטח המשנה רואה — ספר העוגן בישראל, גורמי ברירת מחדל</h2>
+<p>ביטוח משנה יחסי 18% · תביעות צפויות 62% · עמלת העברה 25%. תוצאה טכנית = פרמיה מועברת − תביעות מועברות − עמלת העברה = 13% מהפרמיה המועברת; יחס תביעות לנקודת איזון 75%.</p>
+<table><thead><tr><th>שנה</th><th>פרמיית סיכון ברוטו</th><th>פרמיה מועברת</th><th>תביעות מועברות</th><th>עמלת העברה</th><th>תוצאה טכנית</th><th>תוצאה (דולר, שער תכנון)</th></tr></thead><tbody><tr><td>2027</td><td>₪54.2M</td><td>₪9.8M</td><td>₪6.1M</td><td>₪2.4M</td><td>₪1.3M</td><td>$0.3M</td></tr><tr><td>2028</td><td>₪266.7M</td><td>₪48.0M</td><td>₪29.8M</td><td>₪12.0M</td><td>₪6.2M</td><td>$1.7M</td></tr><tr><td>2029</td><td>₪733.3M</td><td>₪132.0M</td><td>₪81.8M</td><td>₪33.0M</td><td>₪17.2M</td><td>$4.7M</td></tr><tr><td>2030</td><td>₪1.33B</td><td>₪238.5M</td><td>₪147.9M</td><td>₪59.6M</td><td>₪31.0M</td><td>$8.4M</td></tr><tr><td>2031</td><td>₪1.87B</td><td>₪336.6M</td><td>₪208.7M</td><td>₪84.1M</td><td>₪43.8M</td><td>$11.9M</td></tr><tr><td>חמש שנים</td><td>₪4.25B</td><td>₪764.9M</td><td>₪474.2M</td><td>₪191.2M</td><td>₪99.4M</td><td>$27.0M</td></tr></tbody></table>
+<h2>חלופות ביטוח משנה יחסי לפיילוט — תרחישים של אותו מודל</h2>
+<p>שיעור ההעברה של התוכנית הוא הייחוס. כל חלופה היא <code>compute_plan</code> עם הקלטים הנוכחיים ו-<code>cession_rate</code> שונה; היא נושאת גיבוב תוכן משלה ומסומנת כתרחיש. הכנסות PHINS וה-EBITDA אינם זזים עם שיעור ההעברה; תוצאת המבטח כן.</p>
+<table><thead><tr><th>שיעור העברה</th><th>פרמיה מועברת 2027</th><th>תוצאה טכנית 2027</th><th>פרמיה מועברת 5 שנים</th><th>תוצאה טכנית 5 שנים</th><th>מרווח מבטח</th><th>הכנסות PHINS 5 שנים</th><th>זהות התוכנית</th></tr></thead><tbody><tr><td>18% (התוכנית)</td><td>₪9.8M</td><td>₪1.3M</td><td>₪764.9M</td><td>₪99.4M</td><td>5.7%</td><td>₪1.48B</td><td><code>9128223e1c22</code> · קנוני</td></tr><tr><td>30%</td><td>₪16.3M</td><td>₪2.1M</td><td>₪1.27B</td><td>₪165.7M</td><td>4.1%</td><td>₪1.48B</td><td><code>e8ce587db069</code> · תרחיש</td></tr><tr><td>50%</td><td>₪27.1M</td><td>₪3.5M</td><td>₪2.12B</td><td>₪276.2M</td><td>1.5%</td><td>₪1.48B</td><td><code>f266eba844a0</code> · תרחיש</td></tr></tbody></table>
+<h2>גורמי ביטוח משנה מתכווננים</h2>
+<p>ב-<code>/reinsurer-deck.he.html</code> צופה יכול להזיז את הגורמים הללו ממרשם התוכנית עצמו. התוצאה היא אותו מודל תחת גיבוב משלו, מסומן כתרחיש; ערך מחוץ לטווח המרשם נדחה; הגורמים השמורים אינם נכתבים והסרט נשאר חתום לתוכנית.</p>
+<table><thead><tr><th>גורם</th><th>ערך התוכנית</th><th>טווח</th></tr></thead><tbody><tr><td>העברה בביטוח משנה יחסי (מתוך פרמיית הסיכון ברוטו) (<code>cession_rate</code>)</td><td>18%</td><td>0% – 90%</td></tr><tr><td>עמלת העברה (מתוך הפרמיה המועברת) (<code>ceding_commission</code>)</td><td>25%</td><td>0% – 50%</td></tr><tr><td>יחס תביעות צפוי (מתוך פרמיית הסיכון ברוטו) (<code>expected_loss_ratio</code>)</td><td>62%</td><td>20% – 95%</td></tr><tr><td>הוצאות עצמיות של המבטח (מתוך פרמיית הסיכון ברוטו) (<code>insurer_own_expense_ratio</code>)</td><td>5%</td><td>0% – 30%</td></tr></tbody></table>
+<h2>שקפים ותסריט הסרט</h2>
+<p>סצנה אחת של 15 שניות לכל פסקה. פסקה ללא נתון נאמרת במלואה; פסקה שממלאת נתון נאמרת כשורה קצרה והנתונים שלה נשארים על השקף. המגישים מגיעים מהסגל המשותף ומשובצים כשסצנה מצולמת; התרשימים הם של התוכנית עצמה ומוצגים לצד הקליפ, לעולם לא מצוירים על ידי המחולל.</p>
+<h3>שקף 01 — PHINS × Swiss Re ישראל</h3>
+<p>*יום שלישי, 8 בדצמבר 2026 · מר הלל דמלין, מנכ&quot;ל אזורי ישראל · הפיילוט בישראל ותוכנית החומש*</p>
+<p><strong>פסקה 1 · סצנה <code>re-he-s01p01</code> · 15 שניות</strong></p>
+<ul><li>על השקף: משפחת חוזים מפוקחת אחת — ביטוח חיים עם מנגנון נכות ADL-3 לכל החיים, סיעוד וזרם חיסכון — הנישאת על ידי מבטח ישראלי מורשה ומבוטחת בביטוח משנה יחסי (quota share); PHINS היא הטכנולוגיה והמנהלת.</li><li>נאמר: משפחת חוזים מפוקחת אחת — ביטוח חיים עם מנגנון נכות ADL-3 לכל החיים, סיעוד וזרם חיסכון — הנישאת על ידי מבטח ישראלי מורשה ומבוטחת בביטוח משנה יחסי (quota share); PHINS היא הטכנולוגיה והמנהלת.</li></ul>
+<p><strong>פסקה 2 · סצנה <code>re-he-s01p02</code> · 15 שניות</strong></p>
+<ul><li>על השקף: פיילוט בישראל מ-1 בינואר 2027 ותוכנית חומש עד 2031. כל נתון במצגת זו הוא ברירת מחדל של unified-2026.10-v1 · גיבוב 9128223e1c222388…; דבר אינו מוקלד ביד.</li><li>נאמר: PHINS × Swiss Re ישראל, הנקודה השנייה. המספרים נשארים על השקף.</li></ul>
+<h3>שקף 02 — למה מבטח משנה, ולמה עכשיו</h3>
+<p><strong>פסקה 1 · סצנה <code>re-he-s02p01</code> · 15 שניות</strong></p>
+<ul><li>על השקף: מסלול הפרה-רולינג מול רשות שוק ההון, ביטוח וחיסכון נפתח ב-12 באוקטובר 2026; גיליונות תנאים עם המבטח ועם מבטח המשנה הם שער הרבעון הרביעי של 2026, לפני כל מכירה.</li><li>נאמר: מסלול הפרה-רולינג מול רשות שוק ההון, ביטוח וחיסכון נפתח ב-12 באוקטובר 2026; גיליונות תנאים עם המבטח ועם מבטח המשנה הם שער הרבעון הרביעי של 2026, לפני כל מכירה.</li></ul>
+<p><strong>פסקה 2 · סצנה <code>re-he-s02p02</code> · 15 שניות</strong></p>
+<ul><li>על השקף: נכות קשה וסיעוד הם פער ההגנה שהמערכות הציבוריות משאירות פתוח. ביטוח משנה יחסי על ספר חדש, המחותם דיגיטלית, הוא הדרך של מבטח המשנה אל הפער הזה בלי לשאת הפצה על המאזן שלו.</li><li>נאמר: נכות קשה וסיעוד הם פער ההגנה שהמערכות הציבוריות משאירות פתוח. ביטוח משנה יחסי על ספר חדש, המחותם דיגיטלית, הוא הדרך של מבטח המשנה אל הפער הזה בלי לשאת הפצה על המאזן שלו.</li></ul>
+<h3>שקף 03 — הפיילוט בישראל — 2027</h3>
+<p>תרשים לצד הקליפ: <code>in_force</code>.</p>
+<p><strong>פסקה 1 · סצנה <code>re-he-s03p01</code> · 15 שניות</strong></p>
+<ul><li>על השקף: שער 5 — המכירות מתחילות ב-1 בינואר 2027 על הנייר של המבטח המורשה; שער 6 — 1,000 הפוליסות הראשונות בתוקף עם סקירת אקטואר ממונה מול הליבה; שער 7 — 24,000 פוליסות בתוקף בסוף השנה.</li><li>נאמר: הפיילוט בישראל — 2027, הנקודה הראשונה. המספרים נשארים על השקף.</li></ul>
+<p><strong>פסקה 2 · סצנה <code>re-he-s03p02</code> · 15 שניות</strong></p>
+<ul><li>על השקף: פרמיית סיכון ברוטו בשנת הפיילוט ₪54.2M; פרמיה מועברת בשיעור ההעברה של התוכנית 18% — ₪9.8M; תוצאה טכנית למבטח המשנה ₪1.3M ($0.3M בשער תכנון 3.68).</li><li>נאמר: הפיילוט בישראל — 2027, הנקודה השנייה. המספרים נשארים על השקף.</li></ul>
+<h3>שקף 04 — החוזה שמבטח המשנה מחתם</h3>
+<p><strong>פסקה 1 · סצנה <code>re-he-s04p01</code> · 15 שניות</strong></p>
+<ul><li>על השקף: ביטוח חיים ₪1,000,000 עם מנגנון נכות לכל החיים — 1:4 מתחת לגיל 65, 1:1 מגיל 65 — על טריגר ADL-3 אובייקטיבי; טבלאות מפורסמות 0.25 / 0.20 לכל ₪1,000 לחודש; ₪4,518 לשנה בדוגמת גיל 42.</li><li>נאמר: החוזה שמבטח המשנה מחתם, הנקודה הראשונה. המספרים נשארים על השקף.</li></ul>
+<p><strong>פסקה 2 · סצנה <code>re-he-s04p02</code> · 15 שניות</strong></p>
+<ul><li>על השקף: ליבת תמחור אחת היא הכותב היחיד של פירוק הפרמיה. תמחור מחדש עובר דרכה בכל שער, ומבט המבטח מוצג מחדש בכל רענון של התוכנית, כך שמבטח המשנה קורא את אותן שורות שקוראים המבטח והאקטואר הממונה.</li><li>נאמר: ליבת תמחור אחת היא הכותב היחיד של פירוק הפרמיה. תמחור מחדש עובר דרכה בכל שער, ומבט המבטח מוצג מחדש בכל רענון של התוכנית, כך שמבטח המשנה קורא את אותן שורות שקוראים המבטח והאקטואר הממונה.</li></ul>
+<h3>שקף 05 — הקו המועבר — חמש שנים</h3>
+<p>תרשים לצד הקליפ: <code>ceded_line</code>.</p>
+<p><strong>פסקה 1 · סצנה <code>re-he-s05p01</code> · 15 שניות</strong></p>
+<ul><li>על השקף: פרמיה מועברת ₪9.8M → ₪132.0M → ₪336.6M (2027 / 2029 / 2031); פרמיה מועברת לחמש שנים ₪764.9M ($207.9M).</li><li>נאמר: הקו המועבר — חמש שנים, הנקודה הראשונה. המספרים נשארים על השקף.</li></ul>
+<p><strong>פסקה 2 · סצנה <code>re-he-s05p02</code> · 15 שניות</strong></p>
+<ul><li>על השקף: תוצאה טכנית למבטח המשנה ₪1.3M → ₪17.2M → ₪43.8M; חמש שנים ₪99.4M ($27.0M) — 13% מהפרמיה המועברת ביחס תביעות צפוי של 62% ועמלת העברה של 25% לפי התוכנית; יחס תביעות לנקודת איזון 75%.</li><li>נאמר: הקו המועבר — חמש שנים, הנקודה השנייה. המספרים נשארים על השקף.</li></ul>
+<h3>שקף 06 — חלופות ביטוח משנה יחסי לפיילוט</h3>
+<p>תרשים לצד הקליפ: <code>carrier_view</code>.</p>
+<p><strong>פסקה 1 · סצנה <code>re-he-s06p01</code> · 15 שניות</strong></p>
+<ul><li>על השקף: התוכנית: העברה 18%, עמלת העברה 25%, מרווח מבטח 5.7%; התוצאה הטכנית לחמש שנים למבטח המשנה ₪99.4M.</li><li>נאמר: חלופות ביטוח משנה יחסי לפיילוט, הנקודה הראשונה. המספרים נשארים על השקף.</li></ul>
+<p><strong>פסקה 2 · סצנה <code>re-he-s06p02</code> · 15 שניות</strong></p>
+<ul><li>על השקף: תרחישים מאותו מודל — בהעברה של 30% הפרמיה המועברת לחמש שנים היא ₪1.27B, התוצאה הטכנית ₪165.7M ומרווח המבטח 4.1%; בהעברה של 50% — ₪2.12B, ₪276.2M ו-1.5%. הכנסות PHINS וה-EBITDA אינם משתנים באף תרחיש; מה שזז הוא החלוקה בין המבטח למבטח המשנה.</li><li>נאמר: חלופות ביטוח משנה יחסי לפיילוט, הנקודה השנייה. המספרים נשארים על השקף.</li></ul>
+<h3>שקף 07 — תוכנית חומש — ספר העוגן בישראל</h3>
+<p>תרשים לצד הקליפ: <code>gwp_split</code>.</p>
+<p><strong>פסקה 1 · סצנה <code>re-he-s07p01</code> · 15 שניות</strong></p>
+<ul><li>על השקף: פוליסות בתוקף 24,000 → 94,080 → 230,554 → 356,110 → 471,621; פרמיית סיכון ברוטו ₪54.2M → ₪1.87B; פרמיית סיכון ברוטו לחמש שנים ₪4.25B.</li><li>נאמר: תוכנית חומש — ספר העוגן בישראל, הנקודה הראשונה. המספרים נשארים על השקף.</li></ul>
+<p><strong>פסקה 2 · סצנה <code>re-he-s07p02</code> · 15 שניות</strong></p>
+<ul><li>על השקף: זרם החיסכון — ₪660.0M ב-2029, ₪1.68B ב-2031 — הוא זרם מורשה נפרד ולעולם אינו מתחלק עם המבטח או עם מבטח המשנה. התגמול הוא סכום חד-פעמי עם סכום בסיכון קבוע, לא קצבת סיעוד לכל החיים.</li><li>נאמר: תוכנית חומש — ספר העוגן בישראל, הנקודה השנייה. המספרים נשארים על השקף.</li></ul>
+<h3>שקף 08 — תוכנית חומש — הקבוצה</h3>
+<p>תרשים לצד הקליפ: <code>revenue_ebitda</code>.</p>
+<p><strong>פסקה 1 · סצנה <code>re-he-s08p01</code> · 15 שניות</strong></p>
+<ul><li>על השקף: שווקי שותפים ב-OECD תחת מבטחים מקומיים מורשים: 1 ב-2028, 3 ב-2029, 9 עד 2031 — 10 שווקים על פלטפורמה אחת, 1,057,350 מבוטחים בקבוצה ו-₪3.75B פרמיית סיכון ברוטו קבוצתית.</li><li>נאמר: תוכנית חומש — הקבוצה, הנקודה הראשונה. המספרים נשארים על השקף.</li></ul>
+<p><strong>פסקה 2 · סצנה <code>re-he-s08p02</code> · 15 שניות</strong></p>
+<ul><li>על השקף: מבטח משנה שמוביל את ישראל יכול ללוות את אותו נוסח אל כל שוק. פרמיית הסיכון ברוטו של הקבוצה × 18% היא ₪674.5M ב-2031 ($183.3M) — חשבון על שורת פרמיית הקבוצה, לא שורת מודל.</li><li>נאמר: תוכנית חומש — הקבוצה, הנקודה השנייה. המספרים נשארים על השקף.</li></ul>
+<h3>שקף 09 — מה PHINS מבקשת מ-Swiss Re ישראל</h3>
+<p><strong>פסקה 1 · סצנה <code>re-he-s09p01</code> · 15 שניות</strong></p>
+<ul><li>על השקף: מבטח משנה מוביל בביטוח משנה יחסי לפיילוט בישראל: אינדיקציה לא מחייבת על מבנה 18% / 25% של התוכנית עד שער הרבעון הרביעי של 2026, וסקירה טכנית של ליבת התמחור והטבלאות המפורסמות תחת NDA.</li><li>נאמר: מה PHINS מבקשת מ-Swiss Re ישראל, הנקודה הראשונה. המספרים נשארים על השקף.</li></ul>
+<p><strong>פסקה 2 · סצנה <code>re-he-s09p02</code> · 15 שניות</strong></p>
+<ul><li>על השקף: מעבר לקיבולת, כל האפשרויות נשארות על השולחן — מבטח משנה מוביל ושותף טכני לשוק השותף הראשון ב-2028, הסדר גישה לנתונים על צינור הראיות, או שיחת אקוויטי המוחזקת בנפרד מהאמנה. לעולם לא מחיר מקושר.</li><li>נאמר: מעבר לקיבולת, כל האפשרויות נשארות על השולחן — מבטח משנה מוביל ושותף טכני לשוק השותף הראשון ב-2028, הסדר גישה לנתונים על צינור הראיות, או שיחת אקוויטי המוחזקת בנפרד מהאמנה. לעולם לא מחיר מקושר.</li></ul>
+<h3>שקף 10 — מה Swiss Re רואה — ממשל ונתונים</h3>
+<p><strong>פסקה 1 · סצנה <code>re-he-s10p01</code> · 15 שניות</strong></p>
+<ul><li>על השקף: סוכנים ממליצים, בני אדם מחליטים. כל המלצת חיתום ותביעות נרשמת עם מקור הראיה; ספים זזים רק דרך שלב קידום מבוקר; סתירה בין מסמכים נרשמת ולעולם אינה מיושבת על ידי בוט.</li><li>נאמר: סוכנים ממליצים, בני אדם מחליטים. כל המלצת חיתום ותביעות נרשמת עם מקור הראיה; ספים זזים רק דרך שלב קידום מבוקר; סתירה בין מסמכים נרשמת ולעולם אינה מיושבת על ידי בוט.</li></ul>
+<p><strong>פסקה 2 · סצנה <code>re-he-s10p02</code> · 15 שניות</strong></p>
+<ul><li>על השקף: לדג&#x27;ר אחד בשרשרת גיבוב, כותב זהות אחד, מצב סוכנים מאומת בסיכום ביקורת. דוחות הבורדרו של מבטח המשנה נקראים מאותן שורות שקוראים המבטח והאקטואר הממונה.</li><li>נאמר: לדג&#x27;ר אחד בשרשרת גיבוב, כותב זהות אחד, מצב סוכנים מאומת בסיכום ביקורת. דוחות הבורדרו של מבטח המשנה נקראים מאותן שורות שקוראים המבטח והאקטואר הממונה.</li></ul>
+<h3>שקף 11 — הון ולוח זמנים</h3>
+<p>תרשים לצד הקליפ: <code>roadmap</code>.</p>
+<p><strong>פסקה 1 · סצנה <code>re-he-s11p01</code> · 15 שניות</strong></p>
+<ul><li>על השקף: סיד ₪6.0M על שווי ₪24M לפני הכסף (₪30M אחרי); סבב A ₪18.0M אינדיקטיבי ב-2028; EBITDA קבוצתי חיובי ב-2029. הקיבולת של מבטח המשנה נושאת את הספר; היא אינה מממנת את PHINS.</li><li>נאמר: הון ולוח זמנים, הנקודה הראשונה. המספרים נשארים על השקף.</li></ul>
+<p><strong>פסקה 2 · סצנה <code>re-he-s11p02</code> · 15 שניות</strong></p>
+<ul><li>על השקף: 12 באוקטובר 2026 פרה-רולינג · רבעון רביעי 2026 סגירת סיד וגיליונות תנאים · 1 בינואר 2027 תחילת מכירות · רבעון רביעי 2027 שער 7 · 2028 שוק שותף ראשון · 2031 10 שווקים.</li><li>נאמר: הון ולוח זמנים, הנקודה השנייה. המספרים נשארים על השקף.</li></ul>
+<h3>שקף 12 — הצעדים הבאים אחרי 8 בדצמבר</h3>
+<p><strong>פסקה 1 · סצנה <code>re-he-s12p01</code> · 15 שניות</strong></p>
+<ul><li>על השקף: מוצע: בתוך שבועיים — NDA, חדר נתונים וסקירת ליבה עם האקטואר הממונה; בתוך שישה שבועות — אינדיקציה לא מחייבת על ביטוח המשנה היחסי; לפני שער 5 — גיליון תנאים חתום עם שם המבטח הרושם.</li><li>נאמר: מוצע: בתוך שבועיים — NDA, חדר נתונים וסקירת ליבה עם האקטואר הממונה; בתוך שישה שבועות — אינדיקציה לא מחייבת על ביטוח המשנה היחסי; לפני שער 5 — גיליון תנאים חתום עם שם המבטח הרושם.</li></ul>
+<p><strong>פסקה 2 · סצנה <code>re-he-s12p02</code> · 15 שניות</strong></p>
+<ul><li>על השקף: דבר אינו מחייב היום. במצגת זו לא נקבעים גבול, כרטיס או מחיר; כל נתון מופק מחדש מתוך unified-2026.10-v1, והתוכנית אינה נכתבת על ידי פגישה זו.</li><li>נאמר: הצעדים הבאים אחרי 8 בדצמבר, הנקודה השנייה. המספרים נשארים על השקף.</li></ul>
+<h2>שלמות הנתונים</h2>
+<p>כל נתון של PHINS בחבילה זו נקרא מזהות התוכנית <code>unified-2026.10-v1</code> (גיבוב תוכן <code>9128223e1c2223881e0eca64ae6922654b79d52bb2eed151beb726f3c4c1589f</code>). קו מבטח המשנה הוא זהות על שורות המבטח בתוכנית: פרמיה מועברת 2027 ₪54.2M × 18% = ₪9.8M; תביעות מועברות ₪6.1M; עמלת העברה ₪2.4M; תוצאה טכנית ₪1.3M. מרווח טכני 1 − 62% − 25% = 13%; נקודת איזון 1 − 25% = 75%. מעטפת הקבוצה היא פרמיית הסיכון ברוטו של הקבוצה × שיעור ההעברה — חשבון על שורת מודל ולא שורת מודל. תרחישי ביטוח המשנה היחסי הם אותו מודל עם שיעור העברה שונה ומסומנים כתרחישים עם גיבובים משלהם. חבילה זו מופקת מהמודל על ידי <code>scripts/build_reinsurer_deck_brief.py</code> ולעולם אינה נערכת ביד. היא אינה כותבת את לדג&#x27;ר הפלטפורמה.</p>
+  </div>
+  <footer class="phins-doc-foot">PHINS · סודי · מצגת הפגישה עם Swiss Re ישראל · 8 בדצמבר 2026 · ברירות המחדל הקנוניות של unified-2026.10-v1 · התרחישים מסומנים</footer>
+</article>
+</body>
+</html>
