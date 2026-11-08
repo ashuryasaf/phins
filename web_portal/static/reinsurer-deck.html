@@ -196,6 +196,15 @@
   }
   .sheet-slide h3 { margin: 0 0 6px; font-family: "Space Grotesk", Inter, sans-serif; color: var(--navy); font-size: 16px; }
   .sheet-slide .deck-no { margin-bottom: 2px; }
+  .sheet-toolbar {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    margin: 10px 0 14px; padding: 10px 12px; border-radius: 12px; background: #fff;
+    box-shadow: 0 6px 18px rgba(6, 13, 31, 0.06);
+  }
+  .sheet-toolbar label { font-size: 13px; font-weight: 600; color: var(--navy); display: flex; gap: 8px; align-items: center; }
+  .sheet-toolbar select { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
+  .sheet-status { font-size: 12.5px; color: var(--muted); line-height: 1.45; margin: 0; }
+  .script-actions { margin-top: 6px; }
   #deck-lab { margin-top: 16px; }
   @media (max-width: 860px) {
     .deck-body, .deck-body.solo { grid-template-columns: 1fr; }
@@ -204,7 +213,7 @@
   }
   @media print {
     body { background: #fff; }
-    .deck-bar, .deck-foot, .deck-status, .deck-note, video, #deck-lab, .deck-actions, .factor-controls { display: none !important; }
+    .deck-bar, .deck-foot, .deck-status, .deck-note, video, #deck-lab, .deck-actions, .factor-controls, .sheet-toolbar, .script-actions { display: none !important; }
     .deck-stage, .deck-script, .sheet-slide, .deck-factors { box-shadow: none; }
     .deck-stage { break-after: page; min-height: 0; }
   }
@@ -295,6 +304,14 @@
           ' filmed. The presenter speaks each line in 15 seconds; a line with a figure is spoken as a short cue and the figure stays on the slide.';
       },
       sheetTitle: function (slides, scenes, clock) { return 'Script sheet · ' + slides + ' slides · ' + scenes + ' scenes · ' + clock; },
+      filmScene: 'Film 15s', filmSheet: 'Film the script sheet', engine: 'Engine', resetScene: 'Reset',
+      noEngine: 'No connected engine can hold a 15-second scene.',
+      sheetEngineNote: 'Each open scene is sent through the same 15-second engine as the investor deck lab. The spoken line is the plan paragraph. The plan and the library files are not rewritten.',
+      sheetSealed: 'The film is sealed to the plan. Move back to the plan before filming; a scenario is not sent.',
+      checksum: 'Checksum mismatch. Reset this scene before filming.',
+      sending: function (n, total, key) { return 'Sending ' + n + ' of ' + total + ' · ' + key; },
+      sheetDone: function (n) { return n + (n === 1 ? ' scene sent. ' : ' scenes sent. ') + 'The plan was not written.'; },
+      sheetEmpty: 'Every scene on this sheet is already in the film.',
       factorsTitle: 'Reinsurance factors — a viewer scenario of the same model',
       factorsNote: 'Move a factor and every figure on the slides, the ceded line and the scenarios re-renders from the plan model under its own hash. The plan\u2019s saved factors are not written; the film is sealed to the plan, not to a scenario.',
       reset: 'Back to the plan', locked: 'Fixed on this link', scenarioTag: 'SCENARIO',
@@ -330,6 +347,14 @@
           ' צולמו. המגיש אומר כל שורה ב-15 שניות; שורה עם נתון נאמרת כרמז קצר והנתון נשאר על השקף.';
       },
       sheetTitle: function (slides, scenes, clock) { return 'דף תסריט · ' + slides + ' שקפים · ' + scenes + ' סצנות · ' + clock; },
+      filmScene: 'צלם 15 שנ׳', filmSheet: 'צלם את דף התסריט', engine: 'מנוע', resetScene: 'איפוס',
+      noEngine: 'אין מנוע מחובר שמחזיק סצנה של 15 שניות.',
+      sheetEngineNote: 'כל סצנה פתוחה נשלחת באותו מנוע של 15 שניות כמו מעבדת מצגת המשקיעים. השורה המדוברת היא פסקת התוכנית. התוכנית וקובצי הספרייה אינם נכתבים מחדש.',
+      sheetSealed: 'הסרט חתום לתוכנית. חזרו לתוכנית לפני הצילום; תרחיש אינו נשלח.',
+      checksum: 'אי-התאמה בגיבוב. אפסו את הסצנה לפני הצילום.',
+      sending: function (n, total, key) { return 'שולח ' + n + ' מתוך ' + total + ' · ' + key; },
+      sheetDone: function (n) { return n + ' סצנות נשלחו. התוכנית לא נכתבה.'; },
+      sheetEmpty: 'כל הסצנות בדף הזה כבר בסרט.',
       factorsTitle: 'גורמי ביטוח המשנה — תרחיש צופה של אותו מודל',
       factorsNote: 'הזיזו גורם — וכל נתון בשקפים, בקו המועבר ובתרחישים מופק מחדש ממודל התוכנית תחת גיבוב משלו. הגורמים השמורים של התוכנית אינם נכתבים; הסרט חתום לתוכנית, לא לתרחיש.',
       reset: 'חזרה לתוכנית', locked: 'קבוע בקישור זה', scenarioTag: 'תרחיש',
@@ -377,7 +402,10 @@
   }
   if (params.get('embed') === '1') document.body.classList.add('is-embed');
   var wantEdit = params.get('edit') === '1';
-  var state = { slides: [], index: 0, data: null, mode: 'auto', labMounted: false, factors: {}, loadSeq: 0 };
+  var state = {
+    slides: [], index: 0, data: null, mode: 'auto', labMounted: false, factors: {}, loadSeq: 0,
+    engineId: '', filming: false, sheetMessage: ''
+  };
 
   function token() {
     try {
@@ -430,17 +458,37 @@
     if (row.stored) return '<span class="script-badge stored">' + esc(T.stored) + '</span>';
     return '<span class="script-badge open">' + esc(T.notFilmed) + '</span>';
   }
-  function scriptRows(current, slideIndex) {
+  function canFilm() {
+    var data = state.data || {};
+    return !!(data.can_assign && !(data.scenario && data.scenario.active));
+  }
+  function engines() {
+    var list = state.data && state.data.engines;
+    return Array.isArray(list) ? list : [];
+  }
+  function scriptRows(current, slideIndex, withFilm) {
+    var busy = state.filming ? ' disabled' : '';
     return (current.script || []).map(function (row, paragraphIndex) {
       var at = sceneOffset(slideIndex, paragraphIndex);
       var spokenDiffers = row.spoken && row.on_slide && row.spoken !== row.on_slide;
+      var action = '';
+      if (withFilm && canFilm() && row.scene_key) {
+        if (row.integrity_ok === false) {
+          action = '<div class="script-actions"><button type="button" class="deck-btn secondary" data-sheet-reset="' +
+            esc(row.scene_key) + '"' + busy + '>' + esc(T.resetScene) + '</button></div>';
+        } else if (!row.in_stream) {
+          action = '<div class="script-actions"><button type="button" class="deck-btn" data-sheet-send="' +
+            esc(row.scene_key) + '"' + busy + '>' + esc(T.filmScene) + '</button></div>';
+        }
+      }
       return '<div class="script-row">' +
         '<div class="script-time">' + clock(at) + '<small>' + row.duration_seconds + ' ' + esc(T.seconds) + ' · ' + esc(T.scene) + ' ' + esc(row.scene_key) + '</small></div>' +
         '<div><p class="script-spoken">' + esc(row.spoken) + '</p>' +
         '<p class="script-meta">' + badge(row) +
         (row.presenter_label ? esc(row.presenter_label) + ' · ' : '') +
         (spokenDiffers ? esc(T.figureStays) + esc(row.on_slide) : esc(T.asWritten)) +
-        '</p></div></div>';
+        (row.integrity_ok === false ? ' ' + esc(T.checksum) : '') +
+        '</p>' + action + '</div></div>';
     }).join('');
   }
   function renderScript(current) {
@@ -453,17 +501,119 @@
       '<p class="script-meta">' + esc(T.scriptMeta(rows.length, filmed)) + '</p>' +
       scriptRows(current, state.index);
   }
+  function sheetToolbar() {
+    var data = state.data;
+    if (!data || !data.can_assign) return '';
+    if (data.scenario && data.scenario.active) {
+      return '<div class="sheet-toolbar"><p class="sheet-status">' + esc(T.sheetSealed) + '</p></div>';
+    }
+    var list = engines();
+    if (!list.length) {
+      return '<div class="sheet-toolbar"><p class="sheet-status">' + esc(T.noEngine) + '</p></div>';
+    }
+    var chosen = state.engineId || list[0].id;
+    var options = list.map(function (engine) {
+      return '<option value="' + esc(engine.id) + '"' + (engine.id === chosen ? ' selected' : '') + '>' +
+        esc(engine.label || engine.id) + '</option>';
+    }).join('');
+    var busy = state.filming ? ' disabled' : '';
+    return '<div class="sheet-toolbar">' +
+      '<label>' + esc(T.engine) + ' <select id="deck-sheet-engine" aria-label="' + esc(T.engine) + '">' + options + '</select></label>' +
+      '<button type="button" class="deck-btn" id="deck-sheet-film"' + busy + '>' + esc(T.filmSheet) + '</button>' +
+      '<p class="sheet-status" id="deck-sheet-status">' + esc(state.sheetMessage || T.sheetEngineNote) + '</p></div>';
+  }
   function renderSheet() {
     var sheet = document.getElementById('deck-sheet');
     if (!sheet) return;
     var total = state.slides.reduce(function (sum, item) { return sum + (item.script || []).length; }, 0);
     sheet.innerHTML = '<h2>' + esc(T.sheetTitle(state.slides.length, total, clock(total * 15))) + '</h2>' +
+      sheetToolbar() +
       state.slides.map(function (item, index) {
         return '<div class="sheet-slide"><p class="deck-no">' + esc(slideLabel(item.slide_no)) + '</p>' +
           '<h3>' + esc(item.title) + '</h3>' +
           (item.kicker ? '<p class="deck-sub">' + esc(item.kicker) + '</p>' : '') +
-          scriptRows(item, index) + '</div>';
+          scriptRows(item, index, true) + '</div>';
       }).join('');
+  }
+  function selectedEngine() {
+    var list = engines();
+    var select = document.getElementById('deck-sheet-engine');
+    var id = (select && select.value) || state.engineId;
+    for (var i = 0; i < list.length; i += 1) {
+      if (list[i].id === id) return list[i];
+    }
+    return list[0] || null;
+  }
+  function openSceneKeys() {
+    var keys = [];
+    state.slides.forEach(function (item) {
+      (item.script || []).forEach(function (row) {
+        if (row.scene_key && !row.in_stream && row.integrity_ok !== false) keys.push(row.scene_key);
+      });
+    });
+    return keys;
+  }
+  async function postSheet(path, body) {
+    var response = await fetch(path, { method: 'POST', headers: headers(true), body: JSON.stringify(body) });
+    var data = await response.json();
+    if (!response.ok) throw new Error(data.error || T.loadError);
+    return data;
+  }
+  async function filmScenes(keys) {
+    if (state.filming || !canFilm()) return;
+    if (!keys.length) {
+      state.sheetMessage = T.sheetEmpty;
+      renderSheet();
+      return;
+    }
+    var engine = selectedEngine();
+    if (!engine) {
+      state.sheetMessage = T.noEngine;
+      renderSheet();
+      return;
+    }
+    state.filming = true;
+    state.engineId = engine.id;
+    try {
+      for (var i = 0; i < keys.length; i += 1) {
+        state.sheetMessage = T.sending(i + 1, keys.length, keys[i]);
+        renderSheet();
+        // Same body the investor-deck lab posts. Theme and the library photo
+        // stay as sealed; a client prompt is not sent.
+        await postSheet('/api/admin/media/reinsurer-deck/send', {
+          scene_key: keys[i],
+          poll_mode: 'poll',
+          auto_publish_to_hero: false,
+          engine_id: engine.id,
+          provider: engine.provider,
+          provider_model: engine.model
+        });
+      }
+      state.sheetMessage = T.sheetDone(keys.length);
+      await load();
+    } catch (err) {
+      state.sheetMessage = err.message || T.loadError;
+      try { await load(); } catch (loadErr) { renderSheet(); }
+    } finally {
+      state.filming = false;
+      renderSheet();
+    }
+  }
+  async function resetSheetScene(sceneKey) {
+    if (state.filming || !canFilm() || !sceneKey) return;
+    state.filming = true;
+    state.sheetMessage = T.resetScene + ' · ' + sceneKey;
+    renderSheet();
+    try {
+      await postSheet('/api/admin/media/reinsurer-deck', { scene_key: sceneKey, reset: true });
+      state.sheetMessage = '';
+      await load();
+    } catch (err) {
+      state.sheetMessage = err.message || T.loadError;
+    } finally {
+      state.filming = false;
+      renderSheet();
+    }
   }
   function renderMeeting(meeting) {
     var node = document.getElementById('deck-meeting');
@@ -721,6 +871,17 @@
     var on = document.body.classList.toggle('is-sheet');
     this.classList.toggle('is-on', on);
     this.textContent = on ? T.back : T.sheet;
+  });
+  document.getElementById('deck-sheet').addEventListener('change', function (event) {
+    if (event.target && event.target.id === 'deck-sheet-engine') state.engineId = event.target.value;
+  });
+  document.getElementById('deck-sheet').addEventListener('click', function (event) {
+    var send = event.target.closest ? event.target.closest('[data-sheet-send]') : null;
+    var reset = event.target.closest ? event.target.closest('[data-sheet-reset]') : null;
+    var all = event.target.closest ? event.target.closest('#deck-sheet-film') : null;
+    if (send) filmScenes([send.getAttribute('data-sheet-send')]);
+    else if (reset) resetSheetScene(reset.getAttribute('data-sheet-reset'));
+    else if (all) filmScenes(openSceneKeys());
   });
   document.getElementById('deck-dots').addEventListener('click', function (event) {
     var button = event.target.closest('[data-dot]');

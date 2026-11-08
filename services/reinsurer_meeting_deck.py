@@ -828,6 +828,8 @@ def _scripts_for_slide(slide_no: int, scenes: Optional[Sequence[Mapping[str, Any
             "playback_url": str(item.get("playback_url") or "") if item.get("in_stream") else "",
             "figures_current": bool(item.get("figures_current")),
             "stored": bool(item.get("stored")),
+            # A broken seal is refused by the same send path the lab uses.
+            "integrity_ok": item.get("integrity_ok") is not False,
         })
     rows.sort(key=lambda row: row["paragraph_no"])
     return rows

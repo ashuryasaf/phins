@@ -253,6 +253,7 @@ def test_presentation_carries_the_script_and_the_reinsurer_view():
     assert fifth["script"][0]["spoken"] == "spoken"
     assert fifth["script"][0]["duration_seconds"] == SCENE_SECONDS
     assert fifth["script"][0]["playback_url"] == ""
+    assert fifth["script"][0]["integrity_ok"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -560,6 +561,13 @@ def test_http_lab_presentation_and_send_keep_the_investor_deck_untouched():
 
         status, as_admin = _json_request(base + "/api/admin/media/reinsurer-deck/presentation", token=token)
         assert status == 200 and as_admin["can_assign"] is True
+        # The script sheet films with the lab's engines. A reader who cannot
+        # assign gets none, so the sheet stays a script.
+        assert as_admin["engines"] and as_admin["engines"][0]["id"] == "replicate-seedance"
+        assert as_admin["engines"][0]["model"] == "bytedance/seedance-2.0"
+        assert as_admin["engines"] == lab["engines"]
+        assert show["engines"] == []
+        assert all(row["integrity_ok"] is True for row in fifth["script"])
         assert show["scenario"]["active"] is False and show["scenario"]["content_hash"] == plan_before
         assert [row["id"] for row in show["factors"]] == list(ADJUSTABLE_FACTORS)
         assert all(row["adjustable"] is True and row["adjusted"] is False for row in show["factors"])
@@ -696,6 +704,51 @@ def test_http_lab_presentation_and_send_keep_the_investor_deck_untouched():
         assert portal._deck_store_name_for_key("re-s05p01") == STORE_NAME
         assert portal._deck_store_name_for_key("re-he-s05p01") == STORE_NAME_HE
 
+        # The script sheet posts the lab's send body and does not clear a theme
+        # the lab already sealed, and does not send a client prompt.
+        submissions_before = len(stub.submissions)
+        status, sheet_again = _json_request(
+            base + "/api/admin/media/reinsurer-deck/send",
+            method="POST",
+            token=token,
+            payload={
+                "scene_key": "re-s05p01",
+                "engine_id": "replicate-seedance",
+                "provider": "replicate",
+                "provider_model": "bytedance/seedance-2.0",
+                "poll_mode": "poll",
+                "auto_publish_to_hero": False,
+            },
+        )
+        assert status in (200, 202), sheet_again
+        assert portal.DESIGN_SETTINGS[STORE_NAME]["re-s05p01"]["theme"] == "Quiet navy boardroom"
+        if status == 200:
+            assert sheet_again["deduplicated"] is True
+            assert len(stub.submissions) == submissions_before
+        else:
+            assert "Quiet navy boardroom" in stub.submissions[-1]["prompt"]
+        status, sheet_next = _json_request(
+            base + "/api/admin/media/reinsurer-deck/send",
+            method="POST",
+            token=token,
+            payload={
+                "scene_key": "re-s05p02",
+                "engine_id": "replicate-seedance",
+                "provider": "replicate",
+                "provider_model": "bytedance/seedance-2.0",
+                "poll_mode": "poll",
+                "auto_publish_to_hero": False,
+            },
+        )
+        assert status == 202, sheet_next
+        assert sheet_next["duration_seconds"] == 15
+        assert sheet_next["auto_publish_to_hero"] is False
+        next_script = next(row["script"] for row in lab["scenes"] if row["scene_key"] == "re-s05p02")
+        assert next_script and next_script in stub.submissions[-1]["prompt"]
+        assert "prompt_override" not in sheet_next
+        assert portal.DESIGN_SETTINGS[STORE_NAME]["re-s05p02"].get("theme", "") == ""
+        assert compute_plan()["content_hash"] == plan_before
+
         # A Hebrew scene is saved into the Hebrew store and does not touch the English seal.
         status, he_saved = _json_request(
             base + "/api/admin/media/reinsurer-deck",
@@ -752,6 +805,14 @@ def test_http_lab_presentation_and_send_keep_the_investor_deck_untouched():
         )
         assert status == 409
         assert "checksum" in blocked["error"].lower()
+        status, broken_sheet = _json_request(base + "/api/admin/media/reinsurer-deck/presentation", token=token)
+        assert status == 200
+        broken_row = next(
+            row for slide in broken_sheet["slides"] if slide["slide_no"] == 5 for row in slide["script"]
+            if row["scene_key"] == "re-s05p01"
+        )
+        assert broken_row["integrity_ok"] is False
+        assert broken_sheet["engines"] and broken_sheet["engines"][0]["id"] == "replicate-seedance"
 
         status, public = _json_request(base + "/api/design/settings")
         assert status == 200
@@ -782,6 +843,11 @@ def test_presentation_page_and_lab_are_wired_for_the_reinsurer_deck():
     assert "investor-deck-lab.js" in page
     assert "deck: 'reinsurer'" in page
     assert 'id="deck-script"' in page and 'id="deck-sheet"' in page
+    # The script sheet sends through the lab's route. It does not carry a client prompt.
+    assert "/api/admin/media/reinsurer-deck/send" in page
+    assert 'id="deck-sheet-film"' in page and "data-sheet-send" in page
+    assert "auto_publish_to_hero: false" in page
+    assert "prompt_override" not in page
     assert "₪" not in page  # figures come from the plan, never the file
     # Hebrew edition on the same file: language from the path, RTL, a switch.
     assert "reinsurer-deck\\.he\\.html" in page
