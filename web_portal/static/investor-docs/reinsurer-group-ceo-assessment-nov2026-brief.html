@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PHINS — Global Reinsurer Group CEO Assessment (7 November 2026) · Risk appetite, InsurTech openness and venture exposure</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+/* Shared letterhead for generated PHINS documents (claim notice, processing
+   record, probability report, risk reports). Self-contained: no external
+   assets except the inlined emblem. */
+:root {
+  --phins-navy: #0e2f63;
+  --phins-navy-deep: #060d1f;
+  --phins-navy-mid: #123f82;
+  --phins-gold: #c9a04e;
+  --phins-gold-strong: #f7e2a0;
+  --phins-ink: #12284c;
+  --phins-muted: #5b6b82;
+  --phins-ice: #f3f7fd;
+  --phins-line: #d5deea;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: #e8eef6;
+  color: var(--phins-ink);
+  font-family: Inter, "Segoe UI", sans-serif;
+  line-height: 1.5;
+}
+.phins-doc {
+  max-width: 920px;
+  margin: 24px auto;
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(6, 13, 31, 0.12);
+}
+.phins-doc-banner {
+  background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+  color: #fff;
+  padding: 22px 28px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+.phins-doc-brand { display: flex; gap: 12px; align-items: center; }
+.phins-doc-logo { width: 52px; height: 52px; flex: 0 0 52px; }
+.phins-doc-logo svg { width: 52px; height: 52px; display: block; }
+.phins-doc-wordmark {
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-size: 20px;
+}
+.phins-doc-tagline { font-size: 11px; letter-spacing: 0.03em; opacity: 0.84; }
+.phins-doc-kicker {
+  text-align: right;
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  font-weight: 600;
+  font-size: 15px;
+}
+.phins-doc-kicker span {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400;
+  font-size: 12px;
+  opacity: 0.82;
+  font-family: Inter, "Segoe UI", sans-serif;
+}
+.phins-doc-gold {
+  height: 4px;
+  background: linear-gradient(90deg, #b8893b 0%, #f7e2a0 42%, #e3bf6f 100%);
+}
+.phins-doc-body { padding: 24px 28px 8px; }
+.phins-doc h1, .phins-doc h2, .phins-doc h3 {
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  color: var(--phins-navy);
+  margin: 0 0 8px;
+}
+.phins-doc h1 { font-size: 22px; }
+.phins-doc h2 { font-size: 16px; margin-top: 8px; }
+.phins-doc .gold { color: var(--phins-gold); }
+.phins-doc .sub { color: var(--phins-muted); margin: 0 0 16px; font-size: 13px; }
+.phins-doc table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; }
+.phins-doc th, .phins-doc td {
+  border: 1px solid var(--phins-line);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+  font-size: 14px;
+}
+.phins-doc th {
+  background: var(--phins-ice);
+  color: var(--phins-navy);
+  font-weight: 600;
+}
+.phins-doc td code, .phins-doc code {
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--phins-navy-mid);
+}
+.phins-doc .seal, .phins-doc-foot {
+  font-size: 12px;
+  color: var(--phins-muted);
+}
+.phins-doc-foot {
+  padding: 14px 28px 20px;
+  border-top: 1px solid var(--phins-line);
+}
+.phins-doc .metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 0 0 18px;
+}
+.phins-doc .metric {
+  background: var(--phins-ice);
+  border: 1px solid var(--phins-line);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.phins-doc .metric strong {
+  display: block;
+  font-family: "Space Grotesk", Inter, sans-serif;
+  font-size: 1.45rem;
+  color: var(--phins-navy);
+}
+.phins-doc .metric.ok strong { color: #0f6b45; }
+.phins-doc .metric.warn strong { color: #8a5a12; }
+.phins-doc .metric.alert strong { color: #9b2c2c; }
+.phins-doc .metric span { color: var(--phins-muted); font-size: 12px; }
+.phins-doc .bar { height: 8px; background: #e5e7eb; border-radius: 4px; margin-top: 8px; }
+.phins-doc .bar-fill { height: 100%; border-radius: 4px; background: var(--phins-navy-mid); }
+.phins-doc .note {
+  background: var(--phins-ice);
+  border-left: 4px solid var(--phins-gold);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 0 0 16px;
+}
+.phins-doc .summary-box {
+  background: var(--phins-ice);
+  border: 1px solid var(--phins-line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin: 0 0 16px;
+}
+.phins-doc .metric-value { font-weight: 700; color: var(--phins-navy); font-size: 18px; }
+.phins-doc .metric-label { font-size: 11px; color: var(--phins-muted); }
+.phins-doc iframe.phins-file-frame {
+  width: 100%;
+  min-height: 70vh;
+  border: 1px solid var(--phins-line);
+  border-radius: 8px;
+  background: #fff;
+}
+/* Leave-document bar. Hidden in print so a saved PDF stays a document. */
+.phins-doc-return {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #fff;
+  border-bottom: 4px solid transparent;
+  border-image: linear-gradient(90deg, #b8893b 0%, #f7e2a0 42%, #e3bf6f 100%) 1;
+  font-family: Inter, "Segoe UI", sans-serif;
+  color: var(--phins-ink);
+}
+.phins-doc-return-note {
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  color: var(--phins-navy);
+}
+.phins-doc-return-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.phins-doc-return button {
+  font-family: Inter, "Segoe UI", sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.phins-doc-back {
+  background: #fff;
+  color: var(--phins-navy);
+  border: 1px solid var(--phins-line);
+}
+.phins-doc-close {
+  background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+  color: #fff;
+  border: 0;
+}
+@media print {
+  body { background: #fff; }
+  .phins-doc { box-shadow: none; margin: 0; max-width: none; border-radius: 0; }
+  .phins-doc-return { display: none !important; }
+  .phins-doc-body button { display: none !important; }
+}
+
+</style>
+</head>
+<body>
+<nav class="phins-doc-return" aria-label="Leave this document"><span class="phins-doc-return-note">PHINS document</span><span class="phins-doc-return-actions"><button type="button" class="phins-doc-back">Go back</button><button type="button" class="phins-doc-close">Close</button></span></nav>
+<script>
+/* PHINS document return bar.
+   Every report, file, or document a person can open must include this script
+   (or the markup from services/phins_document.py, which inlines it) so the
+   page is never a dead end. Chrome only: it does not read or rewrite document
+   data. Future generated documents call PhinsDocument.printReport /
+   render_phins_document, or load /phins-doc-return.js with a script tag.
+   This file is also inlined inside a script element, so it must never
+   contain a literal script tag: the HTML parser would close the element
+   there and print the rest of this source as page text.
+   Set data-phins-return="off" on <body> when the page already has its own
+   Go back and Close controls that call phinsDocGoBack / phinsDocClose. */
+(function (global) {
+    'use strict';
+
+    if (global.__phinsDocReturnInstalled) return;
+    global.__phinsDocReturnInstalled = true;
+
+    /* Role homes for the cross-pipeline checkout. Keep in sync with
+       PIPELINE_DOCUMENT_HOMES in services/phins_document.py. */
+    var PHINS_DOCUMENT_HOMES = {
+        admin: '/admin.html',
+        manager: '/admin.html',
+        underwriter: '/underwriter-dashboard.html',
+        claims: '/claims-adjuster-dashboard.html',
+        claims_adjuster: '/claims-adjuster-dashboard.html',
+        adjuster: '/claims-adjuster-dashboard.html',
+        accountant: '/accountant-dashboard.html',
+        actuary: '/actuary-dashboard.html',
+        supplier: '/supplier-portal.html',
+        regulator: '/regulator-dashboard.html',
+        customer: '/dashboard.html',
+        foundation: '/foundation-dashboard.html',
+        community: '/foundation-dashboard.html'
+    };
+
+    function framed() {
+        try { return global.top !== global.self; } catch (e) { return true; }
+    }
+
+    function sameOriginPath(value) {
+        if (!value || value.charAt(0) !== '/' || value.charAt(1) === '/' || value.indexOf('\\') !== -1) {
+            return '';
+        }
+        if (value.indexOf('..') !== -1) return '';
+        return value;
+    }
+
+    function phinsDocReturnTarget() {
+        try {
+            var q = new URLSearchParams(global.location.search || '');
+            var explicit = sameOriginPath(q.get('return') || '');
+            if (explicit) return explicit;
+        } catch (e) { /* keep going */ }
+        if (global.document.referrer) {
+            try {
+                var ref = new URL(global.document.referrer);
+                if (ref.origin === global.location.origin && ref.pathname !== global.location.pathname) {
+                    return ref.pathname + ref.search + ref.hash;
+                }
+            } catch (e2) { /* ignore */ }
+        }
+        var role = '';
+        try {
+            var raw = global.localStorage.getItem('session') || global.sessionStorage.getItem('session') || '';
+            if (raw) role = String((JSON.parse(raw) || {}).role || '').toLowerCase();
+        } catch (e3) { /* ignore */ }
+        return PHINS_DOCUMENT_HOMES[role] || '/documents.html';
+    }
+
+    function phinsDocGoBack() {
+        if (framed()) return;
+        try {
+            if (global.history.length > 1) {
+                global.history.back();
+                return;
+            }
+        } catch (e) { /* fall through */ }
+        global.location.href = phinsDocReturnTarget();
+    }
+
+    function phinsDocClose() {
+        if (framed()) return;
+        var target = phinsDocReturnTarget();
+        try { global.close(); } catch (e) { /* blocked */ }
+        global.setTimeout(function () {
+            if (!global.closed) global.location.href = target;
+        }, 180);
+    }
+
+    function ensureStyle() {
+        if (global.document.getElementById('phins-doc-return-style')) return;
+        var style = global.document.createElement('style');
+        style.id = 'phins-doc-return-style';
+        style.textContent = ''
+            + '.phins-doc-return{position:sticky;top:0;z-index:80;display:flex;justify-content:space-between;'
+            + 'align-items:center;gap:12px;padding:10px 16px;background:#fff;color:#12284c;'
+            + 'border-bottom:4px solid #c9a04e;font-family:Inter,"Segoe UI",sans-serif;}'
+            + '.phins-doc-return-note{font-family:"Space Grotesk",Inter,"Segoe UI",sans-serif;font-weight:600;'
+            + 'letter-spacing:.06em;font-size:12px;color:#0e2f63;}'
+            + '.phins-doc-return-actions{display:flex;gap:8px;flex-wrap:wrap;}'
+            + '.phins-doc-return button{font:600 13px Inter,"Segoe UI",sans-serif;border-radius:8px;padding:8px 14px;cursor:pointer;}'
+            + '.phins-doc-back{background:#fff;color:#0e2f63;border:1px solid #d5deea;}'
+            + '.phins-doc-close{background:linear-gradient(135deg,#060d1f 0%,#0e2f63 46%,#123f82 100%);color:#fff;border:0;}'
+            + '@media print{.phins-doc-return{display:none !important;}}';
+        (global.document.head || global.document.documentElement).appendChild(style);
+    }
+
+    function buildBar() {
+        var bar = global.document.createElement('nav');
+        bar.className = 'phins-doc-return';
+        bar.setAttribute('aria-label', 'Leave this document');
+        bar.innerHTML = '<span class="phins-doc-return-note">PHINS document</span>'
+            + '<span class="phins-doc-return-actions">'
+            + '<button type="button" class="phins-doc-back">Go back</button>'
+            + '<button type="button" class="phins-doc-close">Close</button>'
+            + '</span>';
+        return bar;
+    }
+
+    function mount() {
+        ensureStyle();
+        var existing = global.document.querySelector('.phins-doc-return');
+        var off = global.document.body && global.document.body.getAttribute('data-phins-return') === 'off';
+        if (framed()) {
+            if (existing) existing.hidden = true;
+            return;
+        }
+        if (!existing && !off && global.document.body) {
+            global.document.body.insertBefore(buildBar(), global.document.body.firstChild);
+        }
+    }
+
+    global.phinsDocGoBack = phinsDocGoBack;
+    global.phinsDocClose = phinsDocClose;
+    global.PHINS_DOCUMENT_HOMES = PHINS_DOCUMENT_HOMES;
+
+    global.document.addEventListener('click', function (event) {
+        var node = event.target && event.target.closest
+            ? event.target.closest('.phins-doc-back, .phins-doc-close')
+            : null;
+        if (!node || framed()) return;
+        event.preventDefault();
+        if (node.classList.contains('phins-doc-close')) phinsDocClose();
+        else phinsDocGoBack();
+    });
+
+    if (global.document.readyState === 'loading') {
+        global.document.addEventListener('DOMContentLoaded', mount);
+    } else {
+        mount();
+    }
+})(window);
+
+</script>
+<article class="phins-doc">
+  <header class="phins-doc-banner">
+    <div class="phins-doc-brand">
+      <div class="phins-doc-logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="PHINS emblem">
+  <defs>
+    <linearGradient id="phinsShield" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0e2f63"/>
+      <stop offset="55%" stop-color="#123f82"/>
+      <stop offset="100%" stop-color="#081c3f"/>
+    </linearGradient>
+    <linearGradient id="phinsGold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f7e2a0"/>
+      <stop offset="45%" stop-color="#e3bf6f"/>
+      <stop offset="100%" stop-color="#b8893b"/>
+    </linearGradient>
+    <linearGradient id="phinsFin" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4fd8ff"/>
+      <stop offset="55%" stop-color="#6ea8ff"/>
+      <stop offset="100%" stop-color="#b7d9ff"/>
+    </linearGradient>
+    <linearGradient id="phinsWave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4fd8ff" stop-opacity="0.15"/>
+      <stop offset="50%" stop-color="#7fe3ff"/>
+      <stop offset="100%" stop-color="#4fd8ff" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Shield body -->
+  <path d="M60 6 L106 22 V57 C106 88 86 108 60 116 C34 108 14 88 14 57 V22 Z"
+        fill="url(#phinsShield)"/>
+  <!-- Gold rim -->
+  <path d="M60 6 L106 22 V57 C106 88 86 108 60 116 C34 108 14 88 14 57 V22 Z"
+        fill="none" stroke="url(#phinsGold)" stroke-width="4" stroke-linejoin="round"/>
+  <!-- Inner keyline -->
+  <path d="M60 14 L98 27.5 V56.5 C98 83 81 100.5 60 107.5 C39 100.5 22 83 22 56.5 V27.5 Z"
+        fill="none" stroke="#ffffff" stroke-opacity="0.14" stroke-width="1.5"/>
+
+  <!-- Guiding star -->
+  <path d="M60 22 L62.2 28.2 L68.5 28.4 L63.5 32.2 L65.3 38.3 L60 34.7 L54.7 38.3 L56.5 32.2 L51.5 28.4 L57.8 28.2 Z"
+        fill="url(#phinsGold)"/>
+
+  <!-- Dolphin fin -->
+  <path d="M40 76 C44.5 57 57 44 80 38.5 C72.5 50.5 70.5 61 73 73.5 C61.5 66.5 49 69 40 76 Z"
+        fill="url(#phinsFin)"/>
+  <!-- Fin highlight -->
+  <path d="M46 70 C51 58 60 49 72 44.5 C67 53 65.5 61 66.8 69.5 C59.5 65.5 52 66.5 46 70 Z"
+        fill="#ffffff" fill-opacity="0.16"/>
+
+  <!-- Waves -->
+  <path d="M32 84 Q42 77.5 52 84 T72 84 T92 84" fill="none"
+        stroke="url(#phinsWave)" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M40 93 Q49 87.5 58 93 T76 93" fill="none"
+        stroke="url(#phinsWave)" stroke-width="2.4" stroke-linecap="round" opacity="0.7"/>
+</svg></div>
+      <div>
+        <div class="phins-doc-wordmark">PHINS</div>
+        <div class="phins-doc-tagline">Personal Health Insurance &amp; Savings</div>
+      </div>
+    </div>
+    <div class="phins-doc-kicker">Reinsurer assessment · 7 November 2026<span>Group CEO seat · regional CEO escalation · all options on the table</span></div>
+  </header>
+  <div class="phins-doc-gold"></div>
+  <div class="phins-doc-body">
+<h1>PHINS — Global Reinsurer Group CEO Assessment (7 November 2026)</h1>
+<blockquote><p><strong>Internal · Confidential.</strong> A planning exercise written from the seat of the Group CEO of a global reinsurance group, answering a regional CEO who has escalated PHINS as a strategic opportunity. It sets the measures of risk appetite, and of InsurTech openness and venture exposure, that such a group would apply to long-term disability, long-term care and savings solutions, and it assesses PHINS against them with every option kept on the table. No reinsurer has been approached, none is named as a counterparty, and nothing here is a term. The only counterparty on a treaty is the licensed carrier of record; PHINS is the technology and the administrator.</p></blockquote>
+<h2>Memo facts</h2>
+<table><thead><tr><th>Item</th><th>Detail</th></tr></thead><tbody><tr><td>Date</td><td>Saturday 7 November 2026</td></tr><tr><td>Format</td><td>Group CEO memorandum answering a regional CEO&#x27;s escalation (role exercise)</td></tr><tr><td>From</td><td>Group CEO — global reinsurance group (a seat, not a person)</td></tr><tr><td>To</td><td>Regional CEO who raised PHINS</td></tr><tr><td>Subject</td><td>PHINS — strategic opportunity: risk appetite, InsurTech openness and venture exposure for long-term disability, long-term care and savings</td></tr><tr><td>Decision requested</td><td>Whether the region may engage, on which rails, within which measures, and what stays reserved to Group</td></tr><tr><td>PHINS-side counterparties</td><td>Licensed carrier of record (treaty) · PHINS Technologies (venture, administration)</td></tr><tr><td>Lineage</td><td>Techno Yes — the reinsurer loop (<code>#techno-yes-section</code>) · Unified plan Appendix B, carrier and reinsurance view · Partner Meetings 13 July 2026, Meeting B (insurer orientation, <code>#partner-meetings-13jul</code>)</td></tr><tr><td>One standard</td><td>Unified Business Plan · Investor Deck · Appendices (<code>#unified-business-plan-card</code>)</td></tr><tr><td>Status</td><td>Assessment on file · no approach made</td></tr><tr><td>Pack</td><td>Pitch dashboard — Reinsurer CEO assessment section</td></tr></tbody></table>
+<p><strong>Decision in one paragraph.</strong> Keep all options on the table. The region may sign the NDA, open the data room and run technical due diligence on the carrier-of-record structure and the pricing kernel; it may give a non-binding indication on the quota share the plan already assumes (18% cession, 25% ceding commission) with the experience-rating features set out below; it may not bind capacity before the Israeli filing is accepted and the carrier of record is named, and it may not link a venture ticket to a cession. A venture participation, if any, sits inside the ILS 6,000,000 seed on ILS 24,000,000 pre-money — there is no reinsurer round and no side price. Group Risk sets the limits; this memo sets the measures.</p>
+<h2>What the regional CEO has put on the table</h2>
+<ul><li><strong>The contract.</strong> Life insurance with a lifelong severe-disability mechanism: face ILS 1,000,000, disability ILS 250,000 below 65 (1:4), 1:1 on the reduced sum from 65, trigger permanent loss of three or more activities of daily living. Price at the age-42 specimen <strong>ILS 4,518</strong> a year (ILS 376.50 a month: 313.75 life + 62.75 disability, age factor 1.255, published tables 0.25 / 0.20 per ILS 1,000 monthly). Draft 3.1. Not approved for sale. Pre-ruling track opened 12 October 2026; sales from 1 January 2027 only after Gate 5.</li><li><strong>The structure.</strong> Carried by a licensed insurer, reinsured by quota share from day one, distributed with a local partner; PHINS is the technology at a 25% take, the carrier keeps 75%. The savings add-on (30% election × 3.0× at default) is a separately licensed flow, never split with the carrier or the reinsurer.</li><li><strong>The book.</strong> Israel in-force <strong>24,000 / 94,080 / 230,554</strong> (2027 / 2028 / 2029) and 471,621 by 2031; risk GWP ₪54.2M → ₪733.3M → ₪1.87B; PHINS net <strong>ILS 13,554,000 / 66,685,680 / 183,337,052</strong>. Ten markets on one platform by 2031; group risk GWP ₪3.75B ($1.02B at the planning FX of 3.68); group PHINS revenue ₪749.1M ($203.6M) at a 57% EBITDA margin.</li><li><strong>The round.</strong> Seed <strong>ILS 6,000,000 on ILS 24,000,000 pre-money</strong> (ILS 30,000,000 post, 20%). 2027 burn ₪18.8M; peak cumulative need ₪20.2M; Series A indication ₪18.0M (2028). Actuarial appraisal ₪264.6M (35% WACC, 4.0× 2029 net revenue, 15% prudence); the ask is 9% of it. Use of seed: ILS 1,200,000 (20%) for regulatory, actuarial and reinsurance.</li><li><strong>The reinsurer&#x27;s line in their own plan is a placeholder.</strong> Expected claims 62%, cession 18%, ceding commission 25%, carrier own expenses 5% are factor-register defaults &quot;to be replaced by the carrier&#x27;s and the reinsurer&#x27;s term sheets&quot; (Appendix I). That is the right posture for a counterparty to meet.</li></ul>
+<h2>What a reinsurer actually sees — the ceded line (Israel anchor book, default factors)</h2>
+<table><thead><tr><th>Year</th><th>Risk GWP</th><th>Ceded premium (18%)</th><th>Ceded claims (62% × 18%)</th><th>Ceding commission (25%)</th><th>Reinsurer technical result</th><th>Result in USD (planning FX)</th></tr></thead><tbody><tr><td>2027</td><td>₪54.2M</td><td>₪9.8M</td><td>₪6.1M</td><td>₪2.4M</td><td>₪1.3M</td><td>$0.3M</td></tr><tr><td>2028</td><td>₪266.7M</td><td>₪48.0M</td><td>₪29.8M</td><td>₪12.0M</td><td>₪6.2M</td><td>$1.7M</td></tr><tr><td>2029</td><td>₪733.3M</td><td>₪132.0M</td><td>₪81.8M</td><td>₪33.0M</td><td>₪17.2M</td><td>$4.7M</td></tr><tr><td>2030</td><td>₪1.33B</td><td>₪238.5M</td><td>₪147.9M</td><td>₪59.6M</td><td>₪31.0M</td><td>$8.4M</td></tr><tr><td>2031</td><td>₪1.87B</td><td>₪336.6M</td><td>₪208.7M</td><td>₪84.1M</td><td>₪43.8M</td><td>$11.9M</td></tr><tr><td>Five years</td><td>₪4.25B</td><td>₪764.9M</td><td>₪474.2M</td><td>₪191.2M</td><td>₪99.4M</td><td>$27.0M</td></tr></tbody></table>
+<ul><li><strong>Technical margin.</strong> 13 points of ceded premium at the defaults (1 − 62% − 25%), every year. The break-even expected claims ratio at a 25% ceding commission is 75%. At the factor register&#x27;s ceiling of 95% the result is −20 points of ceded premium. The carrier keeps 5.7% of GWP every year on the same defaults.</li><li><strong>Five-year ceded premium</strong> ₪764.9M ($207.9M at the planning FX). It is a growth line, not a volume line: ₪9.8M in the first year.</li><li><strong>Group envelope.</strong> If the same default cession sits behind every carrier, 18% of group risk GWP is ₪9.8M / ₪52.9M / ₪165.8M / ₪367.2M / ₪674.5M for 2027–2031 ($183.3M in 2031). That is arithmetic on the plan&#x27;s group GWP row at the default factor; the plan&#x27;s carrier view covers the Israel anchor book only, and partner-market treaties are not modelled.</li><li><strong>What the reinsurer does not see.</strong> No savings guarantee and no interest-rate guarantee: the savings flow (₪660.0M in Israel in 2029, ₪3.37B across the group in 2031) is outside risk GWP and is never split. The benefit is a lump sum with a fixed sum at risk per life, not a lifetime care annuity.</li></ul>
+<h2>Risk appetite — the measures the group applies</h2>
+<table><thead><tr><th>Measure</th><th>What we measure</th><th>PHINS at the canonical defaults</th><th>Appetite reading</th></tr></thead><tbody><tr><td>Trigger objectivity</td><td>Definition class (own occupation, any occupation, ADL count, cognitive) and permanence</td><td>Permanent loss of 3+ ADL; 1:4 below 65, 1:1 from 65</td><td>Inside appetite. An objective severity trigger is the class the market now quotes; hybrids were 67% of 2024 LTC sales (LIMRA, reported).</td></tr><tr><td>Benefit form and tail</td><td>Lump sum against lifetime annuity; maximum sum at risk per life; indexation</td><td>Lump sum ILS 250,000 below 65; 1:1 on the reduced sum from 65; face ILS 1,000,000; no daily benefit, no indexation in the kernel</td><td>Bounded tail. Sum at risk per life is a fixed number; the appetite measure is aggregate ceded sum at risk per market, and Group Risk sets the cap.</td></tr><tr><td>Pricing basis and repricing</td><td>Source of the rates; who may reprice; evidence review</td><td>Published risk_reference_v1 tables (0.25 / 0.20 per ILS 1,000 monthly, age factor 1.255 at 42); one pricing kernel; Appointed Actuary review at Gate 6</td><td>Acceptable for a new book only with a repricing right at each gate and a sliding-scale ceding commission.</td></tr><tr><td>Expected claims ratio</td><td>Planning ratio, corridor, break-even</td><td>62% at default; factor range 20–95%; break-even 75% at a 25% commission</td><td>Thirteen points of margin. The measure is the corridor, not the point estimate; no experience exists yet.</td></tr><tr><td>Persistency and lapse</td><td>First-year and renewal persistency; lapse-supported or lapse-exposed</td><td>96% first-year, 92% renewal (8% churn); pure risk, annually priced</td><td>Low lapse sensitivity for the treaty. Persistency is measured against the plan at Gate 7 (24,000 in force).</td></tr><tr><td>Interest-rate and savings guarantees</td><td>Guaranteed rates; duration mismatch; who carries the savings</td><td>Savings is a separately licensed flow (30% × 3.0×); never split with carrier or reinsurer</td><td>Zero guarantee exposure on the treaty. Exposure to the savings economics only through equity; keep it that way.</td></tr><tr><td>Concentration</td><td>Share of our long-term disability and care capacity in one market or one carrier</td><td>100% Israel until 2028; 10 markets by 2031; anchor ceded premium ₪9.8M → ₪336.6M</td><td>Measured per carrier and per market; the group envelope above is the upper bound.</td></tr><tr><td>Model and AI risk</td><td>Explainability; human decision; audit trail; regulatory class</td><td>Agents recommend, humans decide; every recommendation in <code>ai_decision_log</code> with rule and model scores; thresholds promoted only through an audited step; golden sets gate CI. The EU AI Act classes life and health pricing as high-risk with obligations by 2 December 2027 (reported)</td><td>Inside appetite with audit rights to the decision log and bordereaux carrying evidence provenance.</td></tr><tr><td>Counterparty and operations</td><td>Who is on the paper; administrator continuity; step-in</td><td>Carrier of record carries the paper; PHINS administers; 2027 burn ₪18.8M; runway on the seed 3.8 months at that burn; Series A ₪18.0M</td><td>Treaty with the carrier. PHINS named administrator with transition and step-in clauses. A PHINS funding gap is an operational risk to the treaty, not a credit risk.</td></tr><tr><td>Regulatory timing</td><td>Filing status; sale date</td><td>Pre-ruling opened 12 October 2026; sales only after Gate 5 on 1 January 2027; not approved for sale</td><td>No capacity bound before the filing is accepted and the carrier is named.</td></tr><tr><td>Data integrity</td><td>One source of figures; reproducibility</td><td>Plan identity <code>unified-2026.10-v1</code>; content hash <code>9128223e1c222388…</code>; all identities hold</td><td>Inside appetite. The live measure is whether the carrier&#x27;s bordereaux reconcile to the same hash-chained ledger.</td></tr></tbody></table>
+<h2>InsurTech openness and venture exposure — the measures</h2>
+<ul><li><strong>Three rails, never linked.</strong> Capacity (treaty), venture (equity) and services (carrier introductions, placement, data) are priced on their own. No cession is priced for an equity ticket and no equity is priced for a cession. A linked price is the measure of a bad deal.</li><li><strong>Venture exposure is bounded by the round.</strong> Seed ILS 6,000,000 on ILS 24,000,000 pre-money; a participation is inside that seed at the same price as every other investor, with no reinsurer round, no side price and no control sought at seed. The Series A indication of ₪18.0M (2028) is the second entry point and is decided at Gate 7 on data, not on the pitch. The measures are the ticket as a share of the venture sleeve (Group), ownership kept below the level that would make PHINS an affiliate for cession purposes (Group), and information rights: data room, decision-log access, quarterly experience against the 62% planning ratio.</li><li><strong>Openness, read from the reported record</strong> (Techno Yes registry on the pitch dashboard, each with its source label): Munich Re / ERGO acquired NEXT Insurance for US$2.6B (1 July 2025) and At-Bay for US$575M through HSB (August 2026); Fortitude Re took Dayforward&#x27;s technology platform (September 2026) with the insurance entities excluded; Hannover Re funds Lemonade&#x27;s growth with a US$250M facility; Munich Re reinsures Ethos (IPO 30 January 2026, 95% of applications instantly underwritten); Swiss Re wound down iptiQ, its own B2B2C digital carrier. The pattern: reinsurers partner, fund and buy the MGA; they do not run the retail brand. PHINS as the technology and MGA layer on a carrier&#x27;s paper fits the pattern; PHINS as a reinsurer subsidiary would not.</li><li><strong>The acquirable unit, if ever, is the administered book with its telemetry.</strong> The hash-chained ledger, evidence provenance on every fact and the one-writer identity master are the analogue of the telemetry a reinsurer paid for at At-Bay. An option on that is bought with the information rights above, not with capacity.</li></ul>
+<h2>Options — all on the table</h2>
+<table><thead><tr><th>Option</th><th>What it is</th><th>What it needs from PHINS</th><th>What it needs from us</th><th>Earliest gate</th><th>Keep open</th></tr></thead><tbody><tr><td>A. Quota-share capacity behind the Israel carrier</td><td>The treaty the plan already assumes — 18% cession, 25% ceding commission — experience-rated: sliding-scale commission, loss corridor, profit commission, repricing right at each gate</td><td>Named carrier of record; accepted filing; kernel repricing right; bordereaux from the ledger</td><td>Non-binding indication now; binding only after the filing</td><td>Term sheet Q4 2026 (the plan&#x27;s own gate); bound at Gate 5</td><td>Yes</td></tr><tr><td>B. Lead reinsurer and technical partner across the 10 markets</td><td>One treaty wording behind each local carrier (Solvency II and equivalents); experience pooled across markets</td><td>A partner carrier per market; the same kernel and ledger everywhere</td><td>Group Risk limits per market; local entities</td><td>First partner market, 2028</td><td>Yes</td></tr><tr><td>C. Strategic minority inside the seed</td><td>A ticket inside ILS 6,000,000 on ILS 24,000,000 pre-money; information rights; no linked cession</td><td>Same seed, same price as every other investor</td><td>Venture-sleeve decision at Group</td><td>Seed close, Q4 2026</td><td>Yes</td></tr><tr><td>D. Series A anchor option</td><td>Participation in the ₪18.0M indication (2028), decided on Gate 7 data</td><td>24,000 in force; Appointed Actuary review; experience against 62%</td><td>Group venture committee</td><td>2028</td><td>Yes</td></tr><tr><td>E. Carrier introductions and fronting bridge</td><td>Introducing client carriers in partner markets; no retail brand of our own</td><td>The regulatory pathway per market (Appendix C)</td><td>Our client relationships; no capital</td><td>2027 onward</td><td>Yes</td></tr><tr><td>F. Data access only</td><td>Bordereaux-level view and decision-log audit; no capital</td><td>NDA; data room</td><td>A technical team</td><td>Now</td><td>Yes</td></tr><tr><td>G. Pass</td><td>Decline capacity and equity; keep the file</td><td>Nothing</td><td>Nothing</td><td>—</td><td>Yes — under the conditions below</td></tr></tbody></table>
+<h2>Delegation to the region — what the regional CEO may do at his discretion</h2>
+<ul><li><strong>Without Group.</strong> Sign the NDA; open the data room; run technical due diligence (kernel, ledger, decision log, golden sets, identity contract); attend the Appointed Actuary review at Gate 6; give a non-binding capacity indication on the plan&#x27;s own 18% / 25% defaults with the experience-rating features named above; introduce client carriers in the region.</li><li><strong>With Group Risk.</strong> Bind any capacity; set the cession, commission, corridor and aggregate sum-at-risk limits; approve any multi-market wording.</li><li><strong>With Group (venture committee).</strong> Any equity ticket, at seed or Series A; any board or observer seat; any exclusivity.</li><li><strong>Never.</strong> A linked price; a reinsurer-run retail brand; capacity before the filing is accepted; any commitment on the savings flow.</li></ul>
+<h2>Conditions under which we would pass</h2>
+<ul><li>The filing is not accepted, or a jurisdiction requires a different carrier structure and it is not cured.</li><li>The carrier of record is not named, or will not grant audit rights to the decision log and to bordereaux reconciled to the ledger.</li><li>The experience at Gate 6 (first 1,000 policies) or Gate 7 (24,000 in force) is not reviewed by an Appointed Actuary against the kernel.</li><li>A linked price is requested.</li></ul>
+<h2>Due diligence asks on PHINS — the regional team&#x27;s checklist</h2>
+<ul><li><strong>Pricing.</strong> <code>services/pricing_kernel.py</code> as the one writer; the published risk_reference_v1 tables; the integrity hash on every quote; the repricing path through the one writer.</li><li><strong>Governance.</strong> <code>ai_decision_log</code> entries for underwriting and claims recommendations with rule score, model score and divergence; audited threshold promotion with before and after snapshots; golden sets gating CI.</li><li><strong>Integrity.</strong> The hash-chained platform ledger; the plan&#x27;s content hash; the Appendix E identities, all holding.</li><li><strong>Identity and privacy.</strong> One writer for the national ID; records carry hash and last-4 only; the number never returned.</li><li><strong>Regulatory.</strong> The pre-ruling record of 12 October 2026; Draft 3.1; the Gate 5 conditions; the regulatory pathway per partner market (Appendix C).</li><li><strong>Capital.</strong> Seed close; 2027 burn ₪18.8M; Series A ₪18.0M; use of seed with ILS 1,200,000 (20%) for regulatory, actuarial and reinsurance.</li></ul>
+<h2>The one standard this assessment addresses</h2>
+<table><thead><tr><th>Piece</th><th>Address</th></tr></thead><tbody><tr><td>Unified business plan</td><td><a href="/business-plan.html">Open the unified plan</a></td></tr><tr><td>Investor deck</td><td><a href="/business-plan.html#part-deck">Open the investor deck</a></td></tr><tr><td>Appendices A–I (B is the carrier and reinsurance view)</td><td><a href="/business-plan.html#part-appendices">Open appendices</a></td></tr><tr><td>Pitch-dashboard bar</td><td><a href="/pitch-dashboard.html#unified-business-plan-card">Unified Business Plan bar</a></td></tr><tr><td>Reinsurer loop and reported comparables</td><td><a href="/pitch-dashboard.html#techno-yes-section">Techno Yes section</a></td></tr><tr><td>Earlier bar</td><td><a href="/pitch-dashboard.html#partner-meetings-13jul">Partner Meetings 13 July, Meeting B</a></td></tr><tr><td>Plan identity</td><td><code>unified-2026.10-v1</code></td></tr></tbody></table>
+<h2>Data integrity</h2>
+<p>Every PHINS figure in this memo is a canonical default of plan identity <code>unified-2026.10-v1</code> (content hash <code>9128223e1c2223881e0eca64ae6922654b79d52bb2eed151beb726f3c4c1589f</code>). Israel anchor, 2027 / 2028 / 2029: annual risk premium ILS 4,518; PHINS take 25% and carrier share 75%; end-of-year in-force 24,000 / 94,080 / 230,554; average in-force 12,000 / 59,040 / 162,317; risk GWP ILS 54,216,000 / 266,742,720 / 733,348,206; PHINS net revenue ILS 13,554,000 / 66,685,680 / 183,337,052. Checks: 12,000 × 4,518 = 54,216,000; 59,040 × 4,518 = 266,742,720; 162,317 × 4,518 = 733,348,206. Ceded line at the default factors (cession 18%, expected claims 62%, ceding commission 25%): 2027 ceded premium 54,216,000 × 0.18 = ILS 9,758,880; ceding commission 9,758,880 × 0.25 = ILS 2,439,720; ceded claims 54,216,000 × 0.62 × 0.18 = ILS 6,050,505.60; reinsurer technical result 9,758,880 − 6,050,505.60 − 2,439,720 = ILS 1,268,654.40, which is 13% of ceded premium (1 − 0.62 − 0.25). 2029 ceded premium 733,348,206 × 0.18 = ILS 132,002,677.08. Break-even expected claims ratio 1 − 0.25 = 75%. Ceded plus retained premium equals risk GWP every year. The group envelope is group risk GWP × 0.18 and is labelled as arithmetic, not a model row. Seed ILS 6,000,000; pre-money ILS 24,000,000; post-money ILS 30,000,000; Series A indication ILS 18,000,000. Market facts about other companies are quoted from the pitch dashboard&#x27;s Techno Yes registry with their source labels and are reported, not verified here. No reinsurer limit, cap, ticket or price is set in this memo; those are Group decisions. These are planning assumptions, not commitments. This memo does not write the platform ledger.</p>
+  </div>
+  <footer class="phins-doc-foot">PHINS · Confidential · Global reinsurer Group CEO assessment · 7 November 2026 · canonical defaults of unified-2026.10-v1</footer>
+</article>
+</body>
+</html>

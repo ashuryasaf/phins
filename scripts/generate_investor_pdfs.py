@@ -169,6 +169,10 @@ DOCUMENTS = [
      'investor-docs/dnr-benzvi-meeting-12nov-brief.pdf',
      'PHINS — D.N.R. Meeting Brief (12 November 2026) · '
      'Mr. Yosi Ben Zvi, CEO, D.N.R. Insurance Agency'),
+    ('investor-docs/reinsurer-group-ceo-assessment-nov2026-brief.md',
+     'investor-docs/reinsurer-group-ceo-assessment-nov2026-brief.pdf',
+     'PHINS — Global Reinsurer Group CEO Assessment (7 November 2026) · '
+     'Risk appetite, InsurTech openness and venture exposure'),
 ]
 
 # Meeting briefs that also ship a self-contained HTML edition on the
@@ -198,6 +202,12 @@ DESIGNED_BRIEFS = {
         'eyebrow': 'Agency meeting · 12 November 2026',
         'subtitle': 'Mr. Yosi Ben Zvi · D.N.R. Insurance Agency',
         'footer': 'PHINS · Confidential · D.N.R. meeting brief · 12 November 2026 · canonical defaults of unified-2026.10-v1',
+    },
+    'investor-docs/reinsurer-group-ceo-assessment-nov2026-brief.md': {
+        'html': 'investor-docs/reinsurer-group-ceo-assessment-nov2026-brief.html',
+        'eyebrow': 'Reinsurer assessment · 7 November 2026',
+        'subtitle': 'Group CEO seat · regional CEO escalation · all options on the table',
+        'footer': 'PHINS · Confidential · Global reinsurer Group CEO assessment · 7 November 2026 · canonical defaults of unified-2026.10-v1',
     },
 }
 
