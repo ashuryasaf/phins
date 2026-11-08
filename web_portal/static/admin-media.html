@@ -1782,6 +1782,7 @@ Notes:
                 <div class="embed-frame-actions">
                     <button type="button" class="btn btn-secondary" id="investor-deck-lang-en" onclick="setInvestorDeckLanguage('en')">English</button>
                     <button type="button" class="btn btn-secondary" id="investor-deck-lang-he" onclick="setInvestorDeckLanguage('he')">עברית</button>
+                    <button type="button" class="btn btn-secondary" id="investor-deck-reinsurer" onclick="setInvestorDeckChoice('reinsurer')">Swiss Re Israel · 8.12</button>
                     <a class="btn btn-secondary" id="investor-deck-present" href="/investor-deck.html?edit=1" target="_blank" rel="noopener">Present the deck</a>
                 </div>
             </div>
@@ -2570,10 +2571,26 @@ Notes:
         // that the operator never opens.
         const VALID_MAIN_TABS = ['investor-deck', 'media', 'solution-views', 'customer-relations', 'growth-agent', 'video-agents', 'design', 'layout', 'branding'];
         var investorDeckLang = 'en';
+        // 'investor' is Part II of the unified plan; 'reinsurer' is the Swiss Re
+        // Israel meeting deck (8 December 2026). Same lab, separate scene store.
+        var investorDeckChoice = 'investor';
 
-        function setInvestorDeckLanguage(lang) {
-            investorDeckLang = lang === 'he' ? 'he' : 'en';
-            var page = investorDeckLang === 'he' ? '/investor-deck.he.html' : '/investor-deck.html';
+        function mountInvestorDeckLab() {
+            if (!window.InvestorDeckLab) return;
+            InvestorDeckLab.mount(document.getElementById('investor-deck-lab'), {
+                mode: 'edit',
+                deck: investorDeckChoice,
+                lang: investorDeckLang,
+                images: function () { return mediaAssets; },
+                onLang: setInvestorDeckLanguage
+            });
+        }
+
+        function setInvestorDeckChoice(choice) {
+            investorDeckChoice = choice === 'reinsurer' ? 'reinsurer' : 'investor';
+            var page = investorDeckChoice === 'reinsurer'
+                ? '/reinsurer-deck.html'
+                : (investorDeckLang === 'he' ? '/investor-deck.he.html' : '/investor-deck.html');
             var frame = document.getElementById('investor-deck-frame');
             if (frame) {
                 frame.setAttribute('data-src', page + '?embed=1&edit=1');
@@ -2581,14 +2598,25 @@ Notes:
             }
             var present = document.getElementById('investor-deck-present');
             if (present) present.setAttribute('href', page + '?edit=1');
-            if (window.InvestorDeckLab) {
-                InvestorDeckLab.mount(document.getElementById('investor-deck-lab'), {
-                    mode: 'edit',
-                    lang: investorDeckLang,
-                    images: function () { return mediaAssets; },
-                    onLang: setInvestorDeckLanguage
-                });
+            var title = document.querySelector('#tab-investor-deck .embed-frame-title');
+            if (title) {
+                title.textContent = investorDeckChoice === 'reinsurer'
+                    ? 'Swiss Re Israel · 8 December 2026 · 12-slide meeting deck'
+                    : 'Chapter 2 · 13-slide deck';
             }
+            var reinsurerButton = document.getElementById('investor-deck-reinsurer');
+            if (reinsurerButton) {
+                reinsurerButton.textContent = investorDeckChoice === 'reinsurer' ? 'Back to Part II' : 'Swiss Re Israel · 8.12';
+                reinsurerButton.setAttribute('onclick', investorDeckChoice === 'reinsurer'
+                    ? "setInvestorDeckChoice('investor')" : "setInvestorDeckChoice('reinsurer')");
+            }
+            mountInvestorDeckLab();
+        }
+
+        function setInvestorDeckLanguage(lang) {
+            investorDeckLang = lang === 'he' ? 'he' : 'en';
+            investorDeckChoice = 'investor';
+            setInvestorDeckChoice('investor');
         }
 
         function switchMainTab(tabName, options = {}) {
@@ -2612,13 +2640,8 @@ Notes:
                 hydrateEmbeddedFrame(panel);
             }
 
-            if (tabName === 'investor-deck' && window.InvestorDeckLab) {
-                InvestorDeckLab.mount(document.getElementById('investor-deck-lab'), {
-                    mode: 'edit',
-                    lang: investorDeckLang,
-                    images: function () { return mediaAssets; },
-                    onLang: setInvestorDeckLanguage
-                });
+            if (tabName === 'investor-deck') {
+                mountInvestorDeckLab();
             }
             if (tabName === 'solution-views') {
                 loadSolutionBlueprints();
@@ -2667,8 +2690,13 @@ Notes:
 
         function resolveInitialTab() {
             const raw = (window.location.hash || '').replace(/^#/, '').trim().toLowerCase();
+            if ((raw === 'reinsurer-deck' || raw === 'swiss-re') && investorDeckChoice !== 'reinsurer') {
+                setInvestorDeckChoice('reinsurer');
+            }
             const candidate = raw === 'deck' ? 'investor-deck'
                             : raw === 'investor' ? 'investor-deck'
+                            : raw === 'reinsurer-deck' ? 'investor-deck'
+                            : raw === 'swiss-re' ? 'investor-deck'
                             : raw === 'growth' ? 'growth-agent'
                             : raw === 'join' ? 'customer-relations'
                             : raw === 'customer' ? 'customer-relations'

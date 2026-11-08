@@ -135,6 +135,16 @@ INVESTOR_DECK_PAGES = (
     "/investor-deck.he.html",
 )
 
+# The Swiss Re Israel meeting deck (8 December 2026) is its own scope: a share
+# of the page also authorises its read-only presentation API, and nothing
+# else. The reinsurer lab and its write routes stay outside this scope.
+REINSURER_DECK_SCOPE_ROOT = "/reinsurer-deck.html"
+REINSURER_DECK_SCOPE_PATHS = (
+    "/reinsurer-deck.html",
+    "/api/admin/media/reinsurer-deck/presentation",
+)
+REINSURER_DECK_PAGES = ("/reinsurer-deck.html",)
+
 # Individually confidential files that do not live under a gated prefix.
 DEFAULT_CONFIDENTIAL_FILES = (
     "/pitch-dashboard.html",
@@ -142,7 +152,7 @@ DEFAULT_CONFIDENTIAL_FILES = (
     "/phins_business_plan_executive.md",
     "/business-plan.html",
     "/business-plan.he.html",
-) + BUSINESS_PLAN_DOWNLOADS + CUSTOMER_COVER_SCOPE_PATHS + INVESTOR_DECK_PAGES
+) + BUSINESS_PLAN_DOWNLOADS + CUSTOMER_COVER_SCOPE_PATHS + INVESTOR_DECK_PAGES + REINSURER_DECK_PAGES
 
 # API endpoints that expose anchored signatures + signed content snapshots,
 # plus the business-plan APIs (the model is the document).
@@ -156,6 +166,7 @@ DEFAULT_CONFIDENTIAL_API_PATHS = (
     "/api/business-plan/factors",
     "/api/admin/media/investor-deck/presentation",
     "/api/investor-deck/founder-portrait",
+    "/api/admin/media/reinsurer-deck/presentation",
 )
 
 _TRUTHY = ("1", "true", "yes", "y", "on")
@@ -310,6 +321,8 @@ def share_scope_root(path: str) -> str:
         return CUSTOMER_COVER_SCOPE_ROOT
     if normalized in INVESTOR_DECK_SCOPE_PATHS:
         return INVESTOR_DECK_SCOPE_ROOT
+    if normalized in REINSURER_DECK_SCOPE_PATHS:
+        return REINSURER_DECK_SCOPE_ROOT
     return normalized
 
 
@@ -324,9 +337,20 @@ def is_investor_deck_page(path: str) -> bool:
     return normalized in INVESTOR_DECK_PAGES
 
 
-def is_investor_deck_scope_path(path: str) -> bool:
+def is_reinsurer_deck_page(path: str) -> bool:
+    """True for the Swiss Re Israel meeting-deck presentation page."""
     normalized = normalize_request_path(path).rstrip("/")
-    return normalized in INVESTOR_DECK_SCOPE_PATHS
+    return normalized in REINSURER_DECK_PAGES
+
+
+def is_investor_deck_scope_path(path: str) -> bool:
+    """True for the investor-deck scope and the reinsurer meeting-deck scope.
+
+    Both are read by the media role, which runs the deck labs without being
+    staff for the rest of the confidential library.
+    """
+    normalized = normalize_request_path(path).rstrip("/")
+    return normalized in INVESTOR_DECK_SCOPE_PATHS or normalized in REINSURER_DECK_SCOPE_PATHS
 
 
 def signing_secret(environ: Optional[Mapping[str, str]] = None) -> str:

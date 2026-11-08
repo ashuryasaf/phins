@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>PHINS — Swiss Re Israel · 8 December 2026</title>
+<!--
+  The meeting deck for Swiss Re Israel (Mr. Hillel Damelin, 8 December 2026),
+  presented one slide at a time, with the film script for each slide.
+  Figures are loaded from the plan. This file does not contain them.
+  Marker: ui-clarity.js — keep this token so the assistant widget is not injected.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0e2f63;
+    --deep: #060d1f;
+    --mid: #123f82;
+    --gold: #c9a04e;
+    --gold-strong: #f7e2a0;
+    --ink: #12284c;
+    --muted: #5b6b82;
+    --ice: #f3f7fd;
+    --line: #d5deea;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: #e8eef6;
+    color: var(--ink);
+    font-family: Inter, "Segoe UI", sans-serif;
+  }
+  body.is-embed { background: var(--deep); }
+  .deck-shell { max-width: 1180px; margin: 0 auto; padding: 16px 16px 28px; }
+  body.is-embed .deck-shell { padding: 8px; }
+  .deck-bar {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    justify-content: space-between; margin-bottom: 12px; color: var(--navy);
+  }
+  body.is-embed .deck-bar { color: #eaf1ff; }
+  .deck-brand { display: flex; gap: 10px; align-items: center; text-decoration: none; color: inherit; }
+  .deck-brand img { width: 36px; height: 36px; }
+  .deck-word {
+    font-family: "Space Grotesk", Inter, sans-serif;
+    font-weight: 700; letter-spacing: 0.08em; font-size: 14px;
+  }
+  .deck-tag { font-size: 11px; opacity: 0.8; }
+  .deck-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button, select { font: 600 13px Inter, "Segoe UI", sans-serif; }
+  .deck-btn {
+    border: 1px solid rgba(201, 160, 78, 0.7);
+    background: linear-gradient(180deg, #f7e2a0, #e3bf6f);
+    color: var(--deep); border-radius: 8px; padding: 8px 12px; cursor: pointer; text-decoration: none;
+  }
+  .deck-btn.secondary { background: transparent; color: inherit; font-weight: 600; }
+  .deck-btn.is-on { box-shadow: inset 0 0 0 2px var(--gold); }
+  select.deck-select {
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px;
+    background: #fff; color: var(--ink); max-width: 280px;
+  }
+  .deck-meeting {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;
+    margin: 0 0 12px; padding: 12px 14px; border-radius: 12px;
+    background: linear-gradient(135deg, #060d1f 0%, #0e2f63 60%, #123f82 100%); color: #fff;
+  }
+  .deck-meeting div { font-size: 12.5px; line-height: 1.4; }
+  .deck-meeting b { display: block; font-family: "Space Grotesk", Inter, sans-serif; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold-strong); margin-bottom: 2px; }
+  .deck-stage {
+    background: #fff; border-radius: 16px; overflow: hidden;
+    box-shadow: 0 16px 40px rgba(6, 13, 31, 0.12);
+    min-height: 520px; display: flex; flex-direction: column;
+  }
+  .deck-banner {
+    background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+    color: #fff; padding: 18px 22px; display: flex; justify-content: space-between;
+    gap: 16px; align-items: center;
+  }
+  .deck-kicker { font-family: "Space Grotesk", Inter, sans-serif; font-weight: 600; font-size: 14px; text-align: right; }
+  .deck-kicker span { display: block; margin-top: 2px; font-weight: 400; font-size: 12px; opacity: 0.82; font-family: Inter, sans-serif; }
+  .deck-gold { height: 4px; background: linear-gradient(90deg, #b8893b 0%, #f7e2a0 42%, #e3bf6f 100%); }
+  .deck-body {
+    display: grid; grid-template-columns: 1.25fr 0.85fr; gap: 18px;
+    padding: 22px 24px 18px; align-items: start; flex: 1;
+  }
+  .deck-body.solo { grid-template-columns: 1fr; }
+  .deck-no {
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--gold); font-weight: 700; margin: 0 0 6px;
+  }
+  h1 {
+    font-family: "Space Grotesk", Inter, sans-serif; color: var(--navy);
+    font-size: 28px; line-height: 1.15; margin: 0 0 8px;
+  }
+  h2 {
+    font-family: "Space Grotesk", Inter, sans-serif; color: var(--navy);
+    font-size: 18px; margin: 18px 0 8px;
+  }
+  .deck-sub { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+  ul { margin: 0; padding-left: 18px; }
+  li { margin: 0 0 10px; line-height: 1.45; font-size: 15.5px; }
+  .deck-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .deck-side svg { width: 100%; height: auto; background: var(--ice); border-radius: 10px; }
+  video { width: 100%; border-radius: 10px; background: #000; max-height: 320px; }
+  .deck-caption { font-size: 12.5px; color: var(--muted); line-height: 1.4; margin: 0; }
+  .deck-foot {
+    display: flex; justify-content: space-between; gap: 8px; align-items: center;
+    padding: 10px 16px 14px; border-top: 1px solid var(--line);
+  }
+  .deck-dots { display: flex; gap: 6px; flex-wrap: wrap; }
+  .deck-dots button {
+    width: 10px; height: 10px; border-radius: 50%; border: 0; padding: 0;
+    background: #c5d0e0; cursor: pointer;
+  }
+  .deck-dots button.is-on { background: var(--gold); }
+  .deck-status, .deck-note { font-size: 12.5px; color: var(--muted); margin: 8px 2px 0; line-height: 1.45; }
+  body.is-embed .deck-status, body.is-embed .deck-note { color: rgba(234, 241, 255, 0.82); }
+  .deck-warn {
+    margin: 0 0 10px; padding: 8px 10px; border-radius: 8px;
+    background: #fff7e6; color: #7a4b00; font-size: 13px;
+  }
+  /* The film script for the slide on stage: one 15-second scene per paragraph. */
+  .deck-script {
+    margin-top: 12px; background: #fff; border-radius: 14px; padding: 14px 18px 16px;
+    box-shadow: 0 10px 30px rgba(6, 13, 31, 0.08);
+  }
+  body.is-embed .deck-script { background: #0b1a3a; color: #eaf1ff; }
+  body.is-embed .deck-script h2, body.is-embed .deck-script .script-meta { color: #eaf1ff; }
+  .deck-script h2 { margin-top: 0; }
+  .script-row {
+    display: grid; grid-template-columns: 72px 1fr; gap: 12px; align-items: start;
+    padding: 10px 0; border-top: 1px solid var(--line);
+  }
+  .script-row:first-of-type { border-top: 0; }
+  .script-time {
+    font-family: "Space Grotesk", Inter, sans-serif; font-weight: 700; color: var(--gold);
+    font-size: 13px; letter-spacing: 0.04em;
+  }
+  .script-time small { display: block; font-weight: 500; font-size: 11px; color: var(--muted); letter-spacing: 0; }
+  .script-spoken { font-size: 15px; line-height: 1.5; margin: 0 0 4px; }
+  .script-meta { font-size: 12px; color: var(--muted); line-height: 1.45; margin: 0; }
+  .script-badge {
+    display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 999px; margin-right: 6px; vertical-align: middle;
+  }
+  .script-badge.filmed { background: #e8f5ec; color: #1f6b3a; }
+  .script-badge.stored { background: #fff7e6; color: #7a4b00; }
+  .script-badge.open { background: var(--ice); color: var(--navy); }
+  body.is-embed .script-badge.open { background: rgba(255,255,255,0.12); color: #eaf1ff; }
+  /* Printable script sheet: every slide, every scene, in order. */
+  .deck-sheet { display: none; margin-top: 16px; }
+  body.is-sheet .deck-sheet { display: block; }
+  body.is-sheet .deck-stage, body.is-sheet .deck-script, body.is-sheet .deck-dots { display: none; }
+  .sheet-slide {
+    background: #fff; border-radius: 12px; padding: 14px 18px; margin-bottom: 10px;
+    box-shadow: 0 6px 18px rgba(6, 13, 31, 0.06); break-inside: avoid;
+  }
+  .sheet-slide h3 { margin: 0 0 6px; font-family: "Space Grotesk", Inter, sans-serif; color: var(--navy); font-size: 16px; }
+  .sheet-slide .deck-no { margin-bottom: 2px; }
+  #deck-lab { margin-top: 16px; }
+  @media (max-width: 860px) {
+    .deck-body, .deck-body.solo { grid-template-columns: 1fr; }
+    h1 { font-size: 22px; }
+    .script-row { grid-template-columns: 1fr; }
+  }
+  @media print {
+    body { background: #fff; }
+    .deck-bar, .deck-foot, .deck-status, .deck-note, video, #deck-lab, .deck-actions { display: none !important; }
+    .deck-stage, .deck-script, .sheet-slide { box-shadow: none; }
+    .deck-stage { break-after: page; min-height: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="deck-shell">
+  <div class="deck-bar">
+    <a class="deck-brand" href="/pitch-dashboard.html#swissre-israel-meeting-8dec2026">
+      <img src="/phins-logo.svg" alt="PHINS emblem">
+      <div>
+        <div class="deck-word">PHINS</div>
+        <div class="deck-tag">Swiss Re Israel · meeting deck · 8 December 2026</div>
+      </div>
+    </a>
+    <div class="deck-actions">
+      <label>Film
+        <select id="deck-mode" class="deck-select" aria-label="Film">
+          <option value="auto">Filmed scenes when they exist</option>
+          <option value="slide">Slides only</option>
+        </select>
+      </label>
+      <button type="button" class="deck-btn secondary" id="deck-sheet-toggle">Script sheet</button>
+      <button type="button" class="deck-btn secondary" id="deck-prev">Previous</button>
+      <button type="button" class="deck-btn secondary" id="deck-next">Next</button>
+      <button type="button" class="deck-btn" id="deck-full">Present</button>
+    </div>
+  </div>
+  <div class="deck-meeting" id="deck-meeting" hidden></div>
+  <div id="deck-warn" class="deck-warn" hidden></div>
+  <article class="deck-stage" id="deck-stage" aria-live="polite">
+    <header class="deck-banner">
+      <div class="deck-brand">
+        <img src="/phins-logo.svg" alt="">
+        <div>
+          <div class="deck-word">PHINS</div>
+          <div class="deck-tag">Personal Health Insurance &amp; Savings</div>
+        </div>
+      </div>
+      <div class="deck-kicker" id="deck-banner-kicker">Swiss Re Israel<span id="deck-count">Loading the plan…</span></div>
+    </header>
+    <div class="deck-gold"></div>
+    <div class="deck-body solo" id="deck-body">
+      <div>
+        <p class="deck-no" id="deck-no"></p>
+        <h1 id="deck-title">Swiss Re Israel · 8 December 2026</h1>
+        <p class="deck-sub" id="deck-kicker"></p>
+        <ul id="deck-bullets"></ul>
+      </div>
+      <div class="deck-side" id="deck-side"></div>
+    </div>
+    <footer class="deck-foot">
+      <div class="deck-dots" id="deck-dots"></div>
+      <div id="deck-pos"></div>
+    </footer>
+  </article>
+  <section class="deck-script" id="deck-script" aria-label="Film script for this slide"></section>
+  <section class="deck-sheet" id="deck-sheet" aria-label="Script sheet"></section>
+  <div id="deck-lab" hidden></div>
+  <p class="deck-note">Figures are filled from the current plan; the quota-share options are scenarios of the same model with their own hash, not changes to the plan. Each paragraph is one 15-second scene. A line with a figure is spoken as a short script and the figure stays on the slide. Nothing is bound, priced or committed by this deck. The plan, its factors, and the library files are not rewritten.</p>
+  <p class="deck-status" id="deck-status" role="status"></p>
+</div>
+<script src="/phins-doc-return.js"></script>
+<script src="/investor-deck-lab.js"></script>
+<script>
+(function () {
+  var params = new URLSearchParams(window.location.search);
+  if (params.get('embed') === '1') document.body.classList.add('is-embed');
+  var wantEdit = params.get('edit') === '1';
+  var state = { slides: [], index: 0, data: null, mode: 'auto', labMounted: false };
+
+  function token() {
+    try {
+      return localStorage.getItem('phins_auth_token') ||
+        localStorage.getItem('phins_token') ||
+        sessionStorage.getItem('phins_token') || '';
+    } catch (e) { return ''; }
+  }
+  function esc(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function headers(json) {
+    var h = { 'Authorization': 'Bearer ' + token() };
+    if (json) h['Content-Type'] = 'application/json';
+    return h;
+  }
+  function setStatus(text) {
+    var node = document.getElementById('deck-status');
+    if (node) node.textContent = text || '';
+  }
+  function slide() {
+    return state.slides[state.index] || null;
+  }
+  function clock(seconds) {
+    var m = Math.floor(seconds / 60);
+    var s = seconds % 60;
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+  function sceneOffset(slideIndex, paragraphIndex) {
+    var seconds = 0;
+    for (var i = 0; i < slideIndex; i += 1) {
+      seconds += (state.slides[i].script || []).length * 15;
+    }
+    return seconds + paragraphIndex * 15;
+  }
+  function badge(row) {
+    if (row.in_stream) return '<span class="script-badge filmed">Filmed</span>';
+    if (row.stored) return '<span class="script-badge stored">Stored · not in stream</span>';
+    return '<span class="script-badge open">Not filmed</span>';
+  }
+  function scriptRows(current, slideIndex) {
+    return (current.script || []).map(function (row, paragraphIndex) {
+      var at = sceneOffset(slideIndex, paragraphIndex);
+      var spokenDiffers = row.spoken && row.on_slide && row.spoken !== row.on_slide;
+      return '<div class="script-row">' +
+        '<div class="script-time">' + clock(at) + '<small>' + row.duration_seconds + ' s · scene ' + esc(row.scene_key) + '</small></div>' +
+        '<div><p class="script-spoken">' + esc(row.spoken) + '</p>' +
+        '<p class="script-meta">' + badge(row) +
+        (row.presenter_label ? esc(row.presenter_label) + ' · ' : '') +
+        (spokenDiffers ? 'The figure stays on the slide: ' + esc(row.on_slide) : 'Spoken as written on the slide.') +
+        '</p></div></div>';
+    }).join('');
+  }
+  function renderScript(current) {
+    var box = document.getElementById('deck-script');
+    if (!box) return;
+    if (!current) { box.innerHTML = ''; return; }
+    var rows = current.script || [];
+    var filmed = rows.filter(function (row) { return row.in_stream; }).length;
+    box.innerHTML = '<h2>Film script · slide ' + String(current.slide_no).padStart(2, '0') + '</h2>' +
+      '<p class="script-meta">' + rows.length + (rows.length === 1 ? ' scene' : ' scenes') + ' · ' + (rows.length * 15) + ' seconds · ' +
+      filmed + ' filmed. The presenter speaks each line in 15 seconds; a line with a figure is spoken as a short cue and the figure stays on the slide.</p>' +
+      scriptRows(current, state.index);
+  }
+  function renderSheet() {
+    var sheet = document.getElementById('deck-sheet');
+    if (!sheet) return;
+    var total = state.slides.reduce(function (sum, item) { return sum + (item.script || []).length; }, 0);
+    sheet.innerHTML = '<h2>Script sheet · ' + state.slides.length + ' slides · ' + total + ' scenes · ' + clock(total * 15) + '</h2>' +
+      state.slides.map(function (item, index) {
+        return '<div class="sheet-slide"><p class="deck-no">Slide ' + String(item.slide_no).padStart(2, '0') + '</p>' +
+          '<h3>' + esc(item.title) + '</h3>' +
+          (item.kicker ? '<p class="deck-sub">' + esc(item.kicker) + '</p>' : '') +
+          scriptRows(item, index) + '</div>';
+      }).join('');
+  }
+  function renderMeeting(meeting) {
+    var node = document.getElementById('deck-meeting');
+    if (!node) return;
+    if (!meeting) { node.hidden = true; return; }
+    node.hidden = false;
+    node.innerHTML =
+      '<div><b>Meeting</b>' + esc(meeting.date_text || meeting.date) + '</div>' +
+      '<div><b>Counterpart</b>' + esc(meeting.counterpart) + '<br>' + esc(meeting.counterpart_role) + '</div>' +
+      '<div><b>PHINS</b>' + esc(meeting.phins_side) + '</div>' +
+      '<div><b>Subject</b>' + esc(meeting.subject) + '</div>' +
+      '<div><b>Status</b>' + esc(meeting.status) + '</div>';
+  }
+  function render() {
+    var current = slide();
+    var total = state.slides.length;
+    var count = document.getElementById('deck-count');
+    if (!current) {
+      if (count) count.textContent = 'The deck is empty';
+      return;
+    }
+    if (count) count.textContent = '8 December 2026 · ' + total + (total === 1 ? ' slide' : ' slides');
+    document.getElementById('deck-no').textContent = 'Slide ' + String(current.slide_no).padStart(2, '0');
+    document.getElementById('deck-title').textContent = current.title || '';
+    var kicker = document.getElementById('deck-kicker');
+    kicker.textContent = current.kicker || '';
+    kicker.hidden = !current.kicker;
+    document.getElementById('deck-bullets').innerHTML = (current.bullets || []).map(function (bullet) {
+      return '<li>' + esc(bullet) + '</li>';
+    }).join('');
+    var side = document.getElementById('deck-side');
+    var parts = [];
+    if (current.chart_svg) parts.push(current.chart_svg);
+    var filmed = state.mode !== 'slide' && current.filmed && current.filmed.length ? current.filmed : null;
+    if (filmed) {
+      var first = filmed[0];
+      parts.push('<video controls playsinline data-filmed="0" src="' + esc(first.playback_url) + '"></video>');
+      parts.push('<p class="deck-caption" data-filmed-caption>Paragraph ' + esc(first.paragraph_no) +
+        (first.presenter_label ? ' · ' + esc(first.presenter_label) : '') + '</p>');
+    }
+    side.innerHTML = parts.join('');
+    document.getElementById('deck-body').classList.toggle('solo', side.innerHTML === '');
+    var video = side.querySelector('video[data-filmed]');
+    if (video) {
+      video.addEventListener('ended', function () {
+        var at = parseInt(video.getAttribute('data-filmed') || '0', 10) + 1;
+        var clip = filmed[at];
+        if (!clip) return;
+        video.setAttribute('data-filmed', String(at));
+        video.src = clip.playback_url;
+        var caption = side.querySelector('[data-filmed-caption]');
+        if (caption) {
+          caption.textContent = 'Paragraph ' + clip.paragraph_no + (clip.presenter_label ? ' · ' + clip.presenter_label : '');
+        }
+        var played = video.play();
+        if (played && played.catch) played.catch(function () {});
+      });
+    }
+    document.getElementById('deck-pos').textContent = current.slide_no + ' / ' + total;
+    document.getElementById('deck-dots').innerHTML = state.slides.map(function (item, index) {
+      return '<button type="button" data-dot="' + index + '" class="' + (index === state.index ? 'is-on' : '') +
+        '" aria-label="Slide ' + item.slide_no + '"></button>';
+    }).join('');
+    renderScript(current);
+    var warn = '';
+    var plan = state.data && state.data.plan;
+    if (plan && plan.integrity_all_hold === false) {
+      warn = 'Plan identities do not hold. Figures are shown as computed.';
+    }
+    var view = state.data && state.data.reinsurer_view;
+    if (view && view.scenarios) {
+      view.scenarios.forEach(function (scenario) {
+        if (scenario && scenario.integrity_all_hold === false) {
+          warn = (warn ? warn + ' ' : '') + 'Scenario ' + scenario.label + ' identities do not hold.';
+        }
+      });
+    }
+    var box = document.getElementById('deck-warn');
+    box.hidden = !warn;
+    box.textContent = warn;
+    var hash = plan && plan.content_hash ? String(plan.content_hash).slice(0, 12) : '';
+    setStatus(
+      (plan && plan.factors_source ? plan.factors_source + ' plan' : 'Plan') +
+      (hash ? ' · ' + hash : '') +
+      (filmed ? ' · filmed scenes' : ' · slides') +
+      (state.data ? ' · ' + state.data.scene_count + ' scenes · ' + clock(state.data.film_seconds_max || 0) + ' film' : '')
+    );
+  }
+  function go(index) {
+    if (!state.slides.length) return;
+    var next = index;
+    if (next < 0) next = state.slides.length - 1;
+    if (next >= state.slides.length) next = 0;
+    state.index = next;
+    render();
+  }
+  function mountLab(data) {
+    var host = document.getElementById('deck-lab');
+    // The media dashboard mounts its own lab under the embedded frame.
+    if (!host || !data.can_assign || !window.InvestorDeckLab || document.body.classList.contains('is-embed')) return;
+    host.hidden = false;
+    if (state.labMounted) return;
+    state.labMounted = true;
+    InvestorDeckLab.mount(host, { mode: wantEdit ? 'edit' : 'watch', deck: 'reinsurer' });
+  }
+  function applyPayload(data) {
+    var firstLoad = !state.data;
+    state.data = data;
+    state.slides = Array.isArray(data.slides) ? data.slides : [];
+    if (firstLoad) {
+      var wanted = parseInt(params.get('slide') || '', 10);
+      if (wanted >= 1 && wanted <= state.slides.length) state.index = wanted - 1;
+    }
+    if (state.index >= state.slides.length) state.index = 0;
+    renderMeeting(data.meeting);
+    render();
+    renderSheet();
+    mountLab(data);
+  }
+  async function load() {
+    var requestHeaders = token() ? headers(false) : {};
+    var response = await fetch('/api/admin/media/reinsurer-deck/presentation', {
+      headers: requestHeaders,
+      credentials: 'same-origin'
+    });
+    var data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'The meeting deck could not be loaded');
+    applyPayload(data);
+  }
+  document.getElementById('deck-prev').addEventListener('click', function () { go(state.index - 1); });
+  document.getElementById('deck-next').addEventListener('click', function () { go(state.index + 1); });
+  document.getElementById('deck-mode').addEventListener('change', function (event) {
+    state.mode = event.target.value || 'auto';
+    render();
+  });
+  document.getElementById('deck-sheet-toggle').addEventListener('click', function () {
+    var on = document.body.classList.toggle('is-sheet');
+    this.classList.toggle('is-on', on);
+    this.textContent = on ? 'Back to the slides' : 'Script sheet';
+  });
+  document.getElementById('deck-dots').addEventListener('click', function (event) {
+    var button = event.target.closest('[data-dot]');
+    if (!button) return;
+    go(parseInt(button.getAttribute('data-dot'), 10));
+  });
+  document.getElementById('deck-full').addEventListener('click', function () {
+    var stage = document.getElementById('deck-stage');
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+      return;
+    }
+    if (stage.requestFullscreen) stage.requestFullscreen();
+  });
+  document.addEventListener('keydown', function (event) {
+    var tag = (event.target && event.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    if (event.key === 'ArrowRight' || event.key === 'PageDown') go(state.index + 1);
+    else if (event.key === 'ArrowLeft' || event.key === 'PageUp') go(state.index - 1);
+    else if (event.key === 'Home') go(0);
+    else if (event.key === 'End') go(state.slides.length - 1);
+  });
+  if (params.get('sheet') === '1') {
+    document.body.classList.add('is-sheet');
+    var toggle = document.getElementById('deck-sheet-toggle');
+    if (toggle) { toggle.classList.add('is-on'); toggle.textContent = 'Back to the slides'; }
+  }
+  load().catch(function (err) {
+    setStatus(err.message || 'The meeting deck could not be loaded');
+  });
+})();
+</script>
+</body>
+</html>

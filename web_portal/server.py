@@ -6465,6 +6465,20 @@ def _investor_deck_store(lang: str = 'en') -> Dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
+def _deck_store_name_for_key(scene_key: str) -> str:
+    """Scene stores by key prefix: ``re-`` reinsurer deck, ``he-`` Hebrew, else English."""
+    key = str(scene_key or '')
+    if key.startswith('re-'):
+        from services.reinsurer_meeting_deck import STORE_NAME
+        return STORE_NAME
+    return _investor_deck_store_name('he' if key.startswith('he-') else 'en')
+
+
+def _deck_store_for_key(scene_key: str) -> Dict[str, Any]:
+    raw = DESIGN_SETTINGS.get(_deck_store_name_for_key(scene_key))
+    return raw if isinstance(raw, dict) else {}
+
+
 def _deck_query_lang(qs: Optional[Dict[str, Any]]) -> str:
     if not qs:
         return 'en'
@@ -6545,7 +6559,7 @@ def _persist_investor_deck_scene_unlocked(record: Dict[str, Any]) -> bool:
         previous = _snapshot_design_settings()
     except Exception:
         return False
-    field = _investor_deck_store_name('he' if str(key).startswith('he-') else 'en')
+    field = _deck_store_name_for_key(key)
     store = DESIGN_SETTINGS.get(field)
     if not isinstance(store, dict):
         store = {}
@@ -6571,7 +6585,7 @@ def load_investor_deck_scene(scene_key: str) -> Dict[str, Any]:
     if spec is None:
         from services.investor_deck_video import InvestorDeckError
         raise InvestorDeckError(f'Unknown investor-deck scene: {scene_key}')
-    stored = _investor_deck_store('he' if str(scene_key).startswith('he-') else 'en').get(scene_key)
+    stored = _deck_store_for_key(scene_key).get(scene_key)
     if not isinstance(stored, dict):
         return fresh_scene(spec)
     record = dict(stored)
@@ -6583,9 +6597,7 @@ def load_investor_deck_scene(scene_key: str) -> Dict[str, Any]:
 def investor_deck_lab_view(lang: str = 'en') -> Dict[str, Any]:
     """Slides, the current spoken lines, and the film of clips that still match."""
     from services.investor_deck_video import (
-        SCENE_ENGINES,
         catalog,
-        clip_is_scene_length,
         normalize_deck_lang,
         scene_view,
         stream_of,
@@ -6617,34 +6629,7 @@ def investor_deck_lab_view(lang: str = 'en') -> Dict[str, Any]:
             photo_url=photo_url,
             reference_url=_investor_deck_reference_url(reference_id),
         ))
-    try:
-        service = get_media_generation_service()
-    except Exception:
-        service = None
-    probe = getattr(service, '_kling_use_evolink_profile', None)
-
-    def _evolink(model: str) -> bool:
-        if not callable(probe):
-            return False
-        try:
-            return bool(probe(model))
-        except Exception:
-            return False
-
-    capabilities = media_video_provider_capabilities() if service is not None else {}
-    providers = capabilities.get('providers') if isinstance(capabilities, dict) else {}
-    if not isinstance(providers, dict):
-        providers = {}
-    engines = []
-    for engine in SCENE_ENGINES:
-        provider_config = providers.get(engine['provider'])
-        if not isinstance(provider_config, dict) or not provider_config.get('enabled'):
-            continue
-        seconds = clip_is_scene_length(
-            engine['provider'], engine['model'], evolink=_evolink(engine['model']),
-        )
-        if seconds == 15:
-            engines.append(dict(engine))
+    engines = _deck_scene_engines()
     stream = stream_of(scenes)
     return {
         'success': True,
@@ -6810,6 +6795,118 @@ def investor_deck_presentation_view(
     body['charts'] = charts
     body['photo_url'] = photo_url
     body['lang'] = language
+    return body
+
+
+def _reinsurer_deck_scenes(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Scene views for the reinsurer deck over its own store."""
+    from services.investor_deck_video import scene_view
+    from services.reinsurer_meeting_deck import STORE_NAME, catalog as reinsurer_catalog
+
+    raw = DESIGN_SETTINGS.get(STORE_NAME)
+    store = raw if isinstance(raw, dict) else {}
+    scenes = []
+    for spec in reinsurer_catalog():
+        stored = store.get(spec['scene_key'])
+        record = stored if isinstance(stored, dict) else None
+        asset_id = str((record or {}).get('last_asset_id') or '')
+        asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
+        brief = None
+        if isinstance(asset, dict):
+            brief = {
+                'type': str(asset.get('type') or ''),
+                'checksum': str(asset.get('checksum') or ''),
+                'playback_url': media_asset_url(asset) if str(asset.get('checksum') or '') else '',
+            }
+        reference_id = str((record or {}).get('reference_image_asset_id') or '')
+        scenes.append(scene_view(
+            spec,
+            record,
+            plan,
+            brief,
+            reference_url=_investor_deck_reference_url(reference_id),
+        ))
+    return scenes
+
+
+def _deck_scene_engines() -> List[Dict[str, Any]]:
+    """Connected engines whose own clip length is the 15-second scene."""
+    from services.investor_deck_video import SCENE_ENGINES, clip_is_scene_length
+
+    try:
+        service = get_media_generation_service()
+    except Exception:
+        service = None
+    probe = getattr(service, '_kling_use_evolink_profile', None)
+
+    def _evolink(model: str) -> bool:
+        if not callable(probe):
+            return False
+        try:
+            return bool(probe(model))
+        except Exception:
+            return False
+
+    capabilities = media_video_provider_capabilities() if service is not None else {}
+    providers = capabilities.get('providers') if isinstance(capabilities, dict) else {}
+    if not isinstance(providers, dict):
+        providers = {}
+    engines = []
+    for engine in SCENE_ENGINES:
+        provider_config = providers.get(engine['provider'])
+        if not isinstance(provider_config, dict) or not provider_config.get('enabled'):
+            continue
+        seconds = clip_is_scene_length(
+            engine['provider'], engine['model'], evolink=_evolink(engine['model']),
+        )
+        if seconds == 15:
+            engines.append(dict(engine))
+    return engines
+
+
+def reinsurer_deck_lab_view() -> Dict[str, Any]:
+    """The Swiss Re Israel deck for the media lab: scenes, scripts, film, engines."""
+    from services.investor_deck_video import stream_of
+    from services.reinsurer_meeting_deck import MEETING, charts as reinsurer_charts
+
+    plan, meta = _investor_deck_plan()
+    scenes = _reinsurer_deck_scenes(plan)
+    stream = stream_of(scenes)
+    return {
+        'success': True,
+        'deck': 'reinsurer',
+        'meeting': dict(MEETING),
+        'duration_seconds': 15,
+        'plan': meta,
+        'slide_count': len({scene['slide_no'] for scene in scenes}),
+        'scene_count': len(scenes),
+        'stream_count': len(stream),
+        'scenes': scenes,
+        'stream': stream,
+        'charts': reinsurer_charts(plan),
+        'engines': _deck_scene_engines(),
+        'photo_url': '',
+        'lang': 'en',
+    }
+
+
+def reinsurer_deck_presentation_view(
+    *,
+    can_assign: bool,
+    plan_pair: Optional[Tuple[Dict[str, Any], Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """The Swiss Re Israel deck as slides, each with its film script."""
+    from services.reinsurer_meeting_deck import charts as reinsurer_charts, presentation_of as reinsurer_presentation
+
+    plan, meta = _investor_deck_plan() if plan_pair is None else plan_pair
+    scenes = _reinsurer_deck_scenes(plan)
+    chart_svgs = reinsurer_charts(plan)
+    body = reinsurer_presentation(plan, scenes, chart_svgs=chart_svgs)
+    body['success'] = True
+    body['plan'] = meta
+    body['can_assign'] = bool(can_assign)
+    body['charts'] = chart_svgs
+    body['photo_url'] = ''
     return body
 
 
@@ -7052,8 +7149,7 @@ def save_investor_deck_slide_chrome(payload: Dict[str, Any], *, actor: str) -> D
 def save_investor_deck_scene(scene_key: str, payload: Dict[str, Any], *, actor: str) -> Dict[str, Any]:
     from services.investor_deck_video import InvestorDeckError, apply_scene_edit
 
-    lang = 'he' if str(scene_key).startswith('he-') else 'en'
-    current = _investor_deck_store(lang).get(scene_key)
+    current = _deck_store_for_key(scene_key).get(scene_key)
     try:
         record = apply_scene_edit(
             scene_key,
@@ -7078,9 +7174,7 @@ def save_investor_deck_scene(scene_key: str, payload: Dict[str, Any], *, actor: 
     record['updated_by'] = actor or 'admin'
     if not _persist_investor_deck_scene(record):
         raise InvestorDeckError('Investor deck scene could not be stored durably')
-    view = investor_deck_lab_view('he' if str(scene_key).startswith('he-') else 'en')
-    scene = next((item for item in view['scenes'] if item['scene_key'] == scene_key), None)
-    return scene or {}
+    return _investor_deck_scene_from_lab(scene_key)
 
 
 def note_investor_deck_video_asset(job: Dict[str, Any], asset_id: str) -> None:
@@ -7116,8 +7210,7 @@ def note_investor_deck_video_asset(job: Dict[str, Any], asset_id: str) -> None:
 
 def _investor_deck_used_presenters(except_key: str = '') -> List[str]:
     used = []
-    lang = 'he' if str(except_key).startswith('he-') else 'en'
-    for key, record in _investor_deck_store(lang).items():
+    for key, record in _deck_store_for_key(except_key).items():
         if key == except_key or not isinstance(record, dict):
             continue
         presenter_id = str(record.get('presenter_id') or '')
@@ -7286,7 +7379,8 @@ def send_investor_deck_scene(
         'success': True,
         'deduplicated': False,
         'message': (
-            f'Investor deck scene sent to {provider}'
+            ('Reinsurer deck scene sent to ' if str(scene_key).startswith('re-') else 'Investor deck scene sent to ')
+            + provider
             + (f' ({requested_model})' if requested_model else '')
             + f' at {SCENE_SECONDS} seconds. The prompt is the deck paragraph. '
             'The plan and the public pages were not changed.'
@@ -7324,7 +7418,10 @@ def seal_for_send_investor_deck(
 
 
 def _investor_deck_scene_from_lab(scene_key: str) -> Dict[str, Any]:
-    view = investor_deck_lab_view('he' if str(scene_key).startswith('he-') else 'en')
+    if str(scene_key).startswith('re-'):
+        view = reinsurer_deck_lab_view()
+    else:
+        view = investor_deck_lab_view('he' if str(scene_key).startswith('he-') else 'en')
     return next((item for item in view['scenes'] if item['scene_key'] == scene_key), {})
 
 
@@ -22570,7 +22667,11 @@ class PortalHandler(BaseHTTPRequestHandler):
                     # Access to the PHINS Unified Business Plan through an open
                     # link is always conditional on the platform NDA.
                     composition = None
-                    if confidential_access.is_business_plan_path(share_path) or confidential_access.is_investor_deck_page(share_path):
+                    if (
+                        confidential_access.is_business_plan_path(share_path)
+                        or confidential_access.is_investor_deck_page(share_path)
+                        or confidential_access.is_reinsurer_deck_page(share_path)
+                    ):
                         nda_required = True
                         composition = self._business_plan_link_composition(body_data)
                     created = get_confidential_share_service().create_share(
@@ -24584,6 +24685,65 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': f'The investor deck could not be prepared: {exc}'}).encode('utf-8'))
                 return
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/admin/media/reinsurer-deck':
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+            try:
+                payload = reinsurer_deck_lab_view()
+            except Exception as exc:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': f'The reinsurer deck could not be prepared: {exc}'}).encode('utf-8'))
+                return
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/admin/media/reinsurer-deck/presentation':
+            decision = getattr(self, '_confidential_decision', None)
+            share_viewer = bool(decision and getattr(decision, 'is_share_viewer', False))
+            if share_viewer:
+                # A share link freezes the factor set the way a plan or deck
+                # link does; live settings are not read for a share viewer.
+                try:
+                    composition = self._share_composition()
+                    if (
+                        not isinstance(composition, dict)
+                        or composition.get('legacy')
+                        or not isinstance(composition.get('saved_factors'), dict)
+                    ):
+                        raise LookupError('share composition unavailable')
+                    plan_pair = _investor_deck_plan_from_share(composition['saved_factors'])
+                    if not plan_pair[1].get('integrity_all_hold'):
+                        self._set_json_headers(409)
+                        self.wfile.write(json.dumps({
+                            'error': 'Plan identities do not hold. Nothing was shown.',
+                        }).encode('utf-8'))
+                        return
+                    payload = reinsurer_deck_presentation_view(can_assign=False, plan_pair=plan_pair)
+                except Exception as exc:
+                    print(f'⚠️  [REINSURER DECK] share presentation unavailable: {exc}')
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({'error': 'This link could not be prepared.'}).encode('utf-8'))
+                    return
+            else:
+                if not require_role(session, _INVESTOR_DECK_READ_ROLES):
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Staff access required'}).encode('utf-8'))
+                    return
+                try:
+                    payload = reinsurer_deck_presentation_view(
+                        can_assign=require_role(session, ['admin', 'media']),
+                    )
+                except Exception as exc:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({'error': f'The reinsurer deck could not be prepared: {exc}'}).encode('utf-8'))
+                    return
             self._set_json_headers(200)
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
@@ -42918,7 +43078,10 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
 
-        if path in {'/api/admin/media/investor-deck', '/api/admin/media/investor-deck/send'}:
+        if path in {
+            '/api/admin/media/investor-deck', '/api/admin/media/investor-deck/send',
+            '/api/admin/media/reinsurer-deck', '/api/admin/media/reinsurer-deck/send',
+        }:
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
             session = validate_session(token) if token else None
@@ -42948,7 +43111,11 @@ For claims or questions, please contact:
                     scene = save_investor_deck_scene(scene_key, data, actor=actor)
                     status_code, payload = 200, {
                         'success': True,
-                        'message': 'Investor deck scene saved. The plan was not changed.',
+                        'message': (
+                            'Reinsurer deck scene saved. The plan was not changed.'
+                            if scene_key.startswith('re-')
+                            else 'Investor deck scene saved. The plan was not changed.'
+                        ),
                         'scene': scene,
                     }
             except InvestorDeckError as exc:
