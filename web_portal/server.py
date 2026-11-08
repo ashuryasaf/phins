@@ -6981,6 +6981,9 @@ def reinsurer_deck_presentation_view(
     body['can_assign'] = bool(can_assign)
     body['charts'] = chart_svgs
     body['photo_url'] = ''
+    # The script sheet films through the same 15-second engines as the lab.
+    # A reader who cannot assign gets an empty list, so the sheet stays a script.
+    body['engines'] = _deck_scene_engines() if can_assign else []
     return body
 
 

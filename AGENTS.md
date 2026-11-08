@@ -814,6 +814,13 @@ Environment variables commonly used:
  dashboard **Staff · Share links**. A deck link is always `nda_required` and
  freezes the saved factor set the way a plan link does. A share viewer gets
  `can_assign: false`. The lab and the write routes stay admin or media.
+ The Swiss Re Israel script sheet (`/reinsurer-deck.html?sheet=1`, Hebrew
+ on `/reinsurer-deck.he.html`) films each open scene, or the whole sheet,
+ through that same 15-second send (`POST /api/admin/media/reinsurer-deck/send`)
+ and the same connected engines. A client prompt is not sent, a stored theme
+ or library photo is left as sealed, and a viewer scenario is not filmed.
+ A reader who cannot assign sees the sheet as a script. A broken seal is
+ reset on `POST /api/admin/media/reinsurer-deck` before the next send.
  Presenters are 35 or
  older, with red, blonde, brunette, and black hair in varied styles.
  Slideshow chrome is a separate service (`services/investor_deck_slideshow.py`):
