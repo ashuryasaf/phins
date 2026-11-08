@@ -145,8 +145,9 @@ def scene_storage_key(slide_no: int, paragraph_no: int, lang: str = "en") -> str
 
 
 def lang_of_scene_key(key: str) -> str:
+    """``he`` for Hebrew keys of either deck (``he-sNNpNN``, ``re-he-sNNpNN``)."""
     text = str(key or "").strip()
-    if text.startswith("he-"):
+    if text.startswith("he-") or text.startswith("re-he-"):
         return "he"
     return "en"
 
@@ -244,9 +245,9 @@ def fill_narration(template: str, plan: Mapping[str, Any]) -> str:
     """The on-screen line. Same filler as the document, so the figures match the page."""
     text = str(template or "")
     if "{re_" in text:
-        from services.reinsurer_meeting_deck import fill_reinsurer_figures
+        from services.reinsurer_meeting_deck import fill as reinsurer_fill
 
-        text = fill_reinsurer_figures(text, plan)
+        return reinsurer_fill(text, plan)
     return _fill(text, plan, False).strip()
 
 

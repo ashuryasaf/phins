@@ -6469,8 +6469,9 @@ def _deck_store_name_for_key(scene_key: str) -> str:
     """Scene stores by key prefix: ``re-`` reinsurer deck, ``he-`` Hebrew, else English."""
     key = str(scene_key or '')
     if key.startswith('re-'):
-        from services.reinsurer_meeting_deck import STORE_NAME
-        return STORE_NAME
+        # ``re-he-`` keys go to the reinsurer deck's own Hebrew store.
+        from services.reinsurer_meeting_deck import store_name_for_key
+        return store_name_for_key(key)
     return _investor_deck_store_name('he' if key.startswith('he-') else 'en')
 
 
@@ -6798,15 +6799,15 @@ def investor_deck_presentation_view(
     return body
 
 
-def _reinsurer_deck_scenes(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Scene views for the reinsurer deck over its own store."""
+def _reinsurer_deck_scenes(plan: Dict[str, Any], lang: str = 'en') -> List[Dict[str, Any]]:
+    """Scene views for the reinsurer deck over its own store (one per language)."""
     from services.investor_deck_video import scene_view
-    from services.reinsurer_meeting_deck import STORE_NAME, catalog as reinsurer_catalog
+    from services.reinsurer_meeting_deck import catalog as reinsurer_catalog, store_name_for_lang
 
-    raw = DESIGN_SETTINGS.get(STORE_NAME)
+    raw = DESIGN_SETTINGS.get(store_name_for_lang(lang))
     store = raw if isinstance(raw, dict) else {}
     scenes = []
-    for spec in reinsurer_catalog():
+    for spec in reinsurer_catalog(lang):
         stored = store.get(spec['scene_key'])
         record = stored if isinstance(stored, dict) else None
         asset_id = str((record or {}).get('last_asset_id') or '')
@@ -6864,18 +6865,28 @@ def _deck_scene_engines() -> List[Dict[str, Any]]:
     return engines
 
 
-def reinsurer_deck_lab_view() -> Dict[str, Any]:
-    """The Swiss Re Israel deck for the media lab: scenes, scripts, film, engines."""
-    from services.investor_deck_video import stream_of
-    from services.reinsurer_meeting_deck import MEETING, charts as reinsurer_charts
+def reinsurer_deck_lab_view(lang: str = 'en') -> Dict[str, Any]:
+    """The Swiss Re Israel deck for the media lab: scenes, scripts, film, engines.
 
+    The lab always reads the baseline plan (saved factors, else canonical);
+    a viewer scenario never reaches a seal.
+    """
+    from services.investor_deck_video import stream_of
+    from services.reinsurer_meeting_deck import (
+        charts as reinsurer_charts,
+        meeting_facts,
+        normalize_lang,
+        page_path_for_lang,
+    )
+
+    language = normalize_lang(lang)
     plan, meta = _investor_deck_plan()
-    scenes = _reinsurer_deck_scenes(plan)
+    scenes = _reinsurer_deck_scenes(plan, language)
     stream = stream_of(scenes)
     return {
         'success': True,
         'deck': 'reinsurer',
-        'meeting': dict(MEETING),
+        'meeting': meeting_facts(language),
         'duration_seconds': 15,
         'plan': meta,
         'slide_count': len({scene['slide_no'] for scene in scenes}),
@@ -6883,25 +6894,88 @@ def reinsurer_deck_lab_view() -> Dict[str, Any]:
         'stream_count': len(stream),
         'scenes': scenes,
         'stream': stream,
-        'charts': reinsurer_charts(plan),
+        'charts': reinsurer_charts(plan, language),
         'engines': _deck_scene_engines(),
         'photo_url': '',
-        'lang': 'en',
+        'lang': language,
+        'page_path': page_path_for_lang(language),
     }
+
+
+class _ReinsurerScenarioRefused(ValueError):
+    """A viewer factor the register refuses, or a scenario whose identities fail."""
+
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
 
 
 def reinsurer_deck_presentation_view(
     *,
     can_assign: bool,
     plan_pair: Optional[Tuple[Dict[str, Any], Dict[str, Any]]] = None,
+    lang: str = 'en',
+    query: Optional[Dict[str, Any]] = None,
+    whitelist: Any = None,
 ) -> Dict[str, Any]:
-    """The Swiss Re Israel deck as slides, each with its film script."""
-    from services.reinsurer_meeting_deck import charts as reinsurer_charts, presentation_of as reinsurer_presentation
+    """The Swiss Re Israel deck as slides, each with its film script.
 
-    plan, meta = _investor_deck_plan() if plan_pair is None else plan_pair
-    scenes = _reinsurer_deck_scenes(plan)
-    chart_svgs = reinsurer_charts(plan)
-    body = reinsurer_presentation(plan, scenes, chart_svgs=chart_svgs)
+    ``query`` may move the reinsurance factors of the plan's own register
+    (``cession_rate`` and the others in ``ADJUSTABLE_FACTORS``) over the
+    viewer's baseline — the saved factors, or the set frozen on a share link
+    (``plan_pair``). The result is ``compute_plan`` under its own content
+    hash, labelled a scenario, and is never written. ``whitelist`` narrows
+    the movable factors for a share viewer. A value the register refuses
+    raises ``_ReinsurerScenarioRefused`` (400); a scenario whose identities
+    do not hold raises it with 409.
+    """
+    from services.business_plan_model import compute_plan
+    from services.reinsurer_meeting_deck import (
+        allowed_factors,
+        charts as reinsurer_charts,
+        factor_panel,
+        normalize_lang,
+        presentation_of as reinsurer_presentation,
+        scenario_overrides,
+    )
+
+    language = normalize_lang(lang)
+    base_plan, base_meta = _investor_deck_plan() if plan_pair is None else plan_pair
+    baseline = dict(base_plan.get('inputs') or {})
+    allowed = allowed_factors(whitelist)
+    resolved = scenario_overrides(query or {}, baseline=baseline, allowed=allowed)
+    if resolved['errors']:
+        raise _ReinsurerScenarioRefused(400, '; '.join(resolved['errors']))
+    scenario = {
+        'adjusted': resolved['adjusted'],
+        'restricted': resolved['restricted'],
+        'baseline_content_hash': str(base_meta.get('content_hash') or ''),
+        'baseline_source': str(base_meta.get('factors_source') or ''),
+    }
+    if resolved['adjusted']:
+        plan = compute_plan(resolved['effective'])
+        meta = {
+            'content_hash': str(plan.get('content_hash') or ''),
+            'plan_version': str(plan.get('plan_version') or ''),
+            'factors_source': 'scenario',
+            'baseline_source': str(base_meta.get('factors_source') or ''),
+            'baseline_content_hash': str(base_meta.get('content_hash') or ''),
+            'integrity_all_hold': (plan.get('integrity') or {}).get('all_hold') is True,
+        }
+        if not meta['integrity_all_hold']:
+            raise _ReinsurerScenarioRefused(409, 'Scenario identities do not hold. Nothing was shown.')
+    else:
+        plan, meta = base_plan, dict(base_meta)
+    scenes = _reinsurer_deck_scenes(plan, language)
+    chart_svgs = reinsurer_charts(plan, language)
+    body = reinsurer_presentation(
+        plan,
+        scenes,
+        chart_svgs=chart_svgs,
+        lang=language,
+        factors=factor_panel(plan, baseline=baseline, allowed=allowed, lang=language),
+        scenario=scenario,
+    )
     body['success'] = True
     body['plan'] = meta
     body['can_assign'] = bool(can_assign)
@@ -7419,7 +7493,8 @@ def seal_for_send_investor_deck(
 
 def _investor_deck_scene_from_lab(scene_key: str) -> Dict[str, Any]:
     if str(scene_key).startswith('re-'):
-        view = reinsurer_deck_lab_view()
+        from services.reinsurer_meeting_deck import lang_of_scene_key as _re_lang
+        view = reinsurer_deck_lab_view(_re_lang(scene_key))
     else:
         view = investor_deck_lab_view('he' if str(scene_key).startswith('he-') else 'en')
     return next((item for item in view['scenes'] if item['scene_key'] == scene_key), {})
@@ -24695,7 +24770,7 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
                 return
             try:
-                payload = reinsurer_deck_lab_view()
+                payload = reinsurer_deck_lab_view(_deck_query_lang(qs))
             except Exception as exc:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': f'The reinsurer deck could not be prepared: {exc}'}).encode('utf-8'))
@@ -24707,9 +24782,14 @@ For claims or questions, please contact:
         if path == '/api/admin/media/reinsurer-deck/presentation':
             decision = getattr(self, '_confidential_decision', None)
             share_viewer = bool(decision and getattr(decision, 'is_share_viewer', False))
+            deck_lang = _deck_query_lang(qs)
+            # The reinsurance factors a viewer may move arrive as query
+            # values of the plan's own register (``cession_rate=0.3`` …).
+            factor_query = _parse_business_plan_query(qs)
             if share_viewer:
                 # A share link freezes the factor set the way a plan or deck
-                # link does; live settings are not read for a share viewer.
+                # link does; live settings are not read for a share viewer,
+                # and only the factors frozen as adjustable on the link move.
                 try:
                     composition = self._share_composition()
                     if (
@@ -24725,7 +24805,18 @@ For claims or questions, please contact:
                             'error': 'Plan identities do not hold. Nothing was shown.',
                         }).encode('utf-8'))
                         return
-                    payload = reinsurer_deck_presentation_view(can_assign=False, plan_pair=plan_pair)
+                    share_adjustable = composition.get('viewer_adjustable')
+                    payload = reinsurer_deck_presentation_view(
+                        can_assign=False,
+                        plan_pair=plan_pair,
+                        lang=deck_lang,
+                        query=factor_query,
+                        whitelist=share_adjustable if isinstance(share_adjustable, list) else None,
+                    )
+                except _ReinsurerScenarioRefused as exc:
+                    self._set_json_headers(exc.status)
+                    self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                    return
                 except Exception as exc:
                     print(f'⚠️  [REINSURER DECK] share presentation unavailable: {exc}')
                     self._set_json_headers(503)
@@ -24739,7 +24830,13 @@ For claims or questions, please contact:
                 try:
                     payload = reinsurer_deck_presentation_view(
                         can_assign=require_role(session, ['admin', 'media']),
+                        lang=deck_lang,
+                        query=factor_query,
                     )
+                except _ReinsurerScenarioRefused as exc:
+                    self._set_json_headers(exc.status)
+                    self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                    return
                 except Exception as exc:
                     self._set_json_headers(503)
                     self.wfile.write(json.dumps({'error': f'The reinsurer deck could not be prepared: {exc}'}).encode('utf-8'))
@@ -40385,6 +40482,8 @@ For claims or questions, please contact:
             rel = path.lstrip('/')
             if path == '/investor-deck.he.html':
                 rel = 'investor-deck.html'
+            elif path == '/reinsurer-deck.he.html':
+                rel = 'reinsurer-deck.html'
             file_path = os.path.join(ROOT, rel)
             allowed_root = ROOT
         

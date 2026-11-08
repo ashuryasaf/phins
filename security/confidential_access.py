@@ -135,15 +135,20 @@ INVESTOR_DECK_PAGES = (
     "/investor-deck.he.html",
 )
 
-# The Swiss Re Israel meeting deck (8 December 2026) is its own scope: a share
-# of the page also authorises its read-only presentation API, and nothing
-# else. The reinsurer lab and its write routes stay outside this scope.
+# The Swiss Re Israel meeting deck (8 December 2026) in both languages is its
+# own scope: a share of either page also authorises the other language and
+# the read-only presentation API, and nothing else. The reinsurer lab and its
+# write routes stay outside this scope.
 REINSURER_DECK_SCOPE_ROOT = "/reinsurer-deck.html"
 REINSURER_DECK_SCOPE_PATHS = (
     "/reinsurer-deck.html",
+    "/reinsurer-deck.he.html",
     "/api/admin/media/reinsurer-deck/presentation",
 )
-REINSURER_DECK_PAGES = ("/reinsurer-deck.html",)
+REINSURER_DECK_PAGES = (
+    "/reinsurer-deck.html",
+    "/reinsurer-deck.he.html",
+)
 
 # Individually confidential files that do not live under a gated prefix.
 DEFAULT_CONFIDENTIAL_FILES = (
