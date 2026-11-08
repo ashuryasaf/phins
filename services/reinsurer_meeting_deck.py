@@ -361,8 +361,8 @@ HE: Dict[str, str] = {
     "Plan value": "ערך התוכנית",
     "Range": "טווח",
     "Slides and film script": "שקפים ותסריט הסרט",
-    "One 15-second scene per paragraph. A paragraph with no figure is spoken in full; a paragraph that fills a figure is spoken as a short line and its figures stay on the slide. Presenters come from the shared roster and are assigned when a scene is filmed; charts are the plan's own and are shown beside the clip, never drawn by the generator.":
-        "סצנה אחת של 15 שניות לכל פסקה. פסקה ללא נתון נאמרת במלואה; פסקה שממלאת נתון נאמרת כשורה קצרה והנתונים שלה נשארים על השקף. המגישים מגיעים מהסגל המשותף ומשובצים כשסצנה מצולמת; התרשימים הם של התוכנית עצמה ומוצגים לצד הקליפ, לעולם לא מצוירים על ידי המחולל.",
+    "One 15-second scene per paragraph. The spoken line is that paragraph filled from the plan, including its figures. Nothing is added around it. A sealed clip plays only while that line is still the current paragraph; a moved figure leaves the clip out of the film and does not rewrite the library file. Presenters come from the shared roster and are assigned when a scene is filmed; charts are the plan's own and are shown beside the clip, never drawn by the generator.":
+        "סצנה אחת של 15 שניות לכל פסקה. השורה המדוברת היא הפסקה כפי שהתוכנית ממלאת אותה, כולל הנתונים שלה. דבר אינו נוסף סביבה. קליפ חתום מושמע רק כל עוד השורה היא עדיין הפסקה הנוכחית; נתון שהוזז מוציא את הקליפ מהסרט ואינו כותב מחדש את קובץ הספרייה. המגישים מגיעים מהסגל המשותף ומשובצים כשסצנה מצולמת; התרשימים הם של התוכנית עצמה ומוצגים לצד הקליפ, לעולם לא מצוירים על ידי המחולל.",
     "Slide {n} — {title}": "שקף {n} — {title}",
     "Chart beside the clip: `{chart}`.": "תרשים לצד הקליפ: `{chart}`.",
     "Paragraph {n} · scene `{key}` · {seconds} s": "פסקה {n} · סצנה `{key}` · {seconds} שניות",
@@ -1046,10 +1046,10 @@ def _render_markdown(plan: Mapping[str, Any], scenes: Optional[Sequence[Mapping[
     out.append("## " + _T("Slides and film script"))
     out.append("")
     out.append(_T(
-        "One 15-second scene per paragraph. A paragraph with no figure is spoken in full; a paragraph that fills a "
-        "figure is spoken as a short line and its figures stay on the slide. Presenters come from the shared roster "
-        "and are assigned when a scene is filmed; charts are the plan's own and are shown beside the clip, never drawn "
-        "by the generator."
+        "One 15-second scene per paragraph. The spoken line is that paragraph filled from the plan, including its figures. "
+        "Nothing is added around it. A sealed clip plays only while that line is still the current paragraph; a moved figure "
+        "leaves the clip out of the film and does not rewrite the library file. Presenters come from the shared roster and "
+        "are assigned when a scene is filmed; charts are the plan's own and are shown beside the clip, never drawn by the generator."
     ))
     out.append("")
     scene_lookup = {str(s.get("scene_key") or ""): s for s in (scenes or []) if isinstance(s, Mapping)}

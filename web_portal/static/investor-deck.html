@@ -154,13 +154,19 @@
     background: #fff; color: var(--ink); font: 500 13px Inter, sans-serif;
   }
   input.deck-text { min-width: 180px; }
+  .deck-scenes {
+    margin-top: 14px; border: 1px solid var(--line); border-radius: 14px; background: #fff; padding: 12px 14px;
+  }
+  .deck-scenes h2 { margin: 0 0 8px; font-size: 15px; color: var(--navy); }
+  .deck-scene-row { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; margin: 6px 0; line-height: 1.4; }
+  .deck-scene-row b { color: var(--navy); white-space: nowrap; }
   @media (max-width: 860px) {
     .deck-body, .deck-body.solo { grid-template-columns: 1fr; }
     h1 { font-size: 22px; }
   }
   @media print {
     body { background: #fff; }
-    .deck-bar, .deck-foot, .deck-assign, .deck-status, .deck-note, video { display: none !important; }
+    .deck-bar, .deck-foot, .deck-assign, .deck-status, .deck-note, .deck-scenes, video { display: none !important; }
     .deck-stage { box-shadow: none; break-after: page; min-height: 0; }
   }
 </style>
@@ -255,7 +261,11 @@
     <button type="button" class="deck-btn" id="deck-chrome-save">Save this slide's look</button>
     <button type="button" class="deck-btn secondary" id="deck-chrome-clear">Clear this slide's look</button>
   </div>
-  <p class="deck-note">Figures are filled from the current plan. A library video or image is a checksummed pointer, the same way landing, solutions, and login place a file. A watermark is a faint background of library images. A line with a figure is spoken as a short script; the figure stays on the slide. The plan, its factors, and the library files are not rewritten.</p>
+  <section class="deck-scenes" id="deck-scenes" hidden>
+    <h2 id="deck-scenes-title">Filmed scenes</h2>
+    <div id="deck-scenes-list"></div>
+  </section>
+  <p class="deck-note">Figures are filled from the current plan. A library video or image is a checksummed pointer, the same way landing, solutions, and login place a file. A watermark is a faint background of library images. The spoken line is the paragraph, including its figures. Choose which filmed scenes play; a hidden scene stays sealed and the library file is not rewritten. The plan, its factors, and the library files are not rewritten.</p>
   <p class="deck-status" id="deck-status" role="status"></p>
 </div>
 <script src="/phins-doc-return.js"></script>
@@ -288,7 +298,20 @@
   }
   if (params.get('embed') === '1') document.body.classList.add('is-embed');
   var wantEdit = params.get('edit') === '1';
-  var state = { slides: [], index: 0, data: null, mode: 'auto', videos: [], images: [], chromeSlide: null };
+  function readHidden(raw) {
+    var set = {};
+    String(raw || '').split(',').forEach(function (key) {
+      key = key.trim();
+      if (/^(re-)?(he-)?s\d{2}p\d{2}$/.test(key)) set[key] = true;
+    });
+    return set;
+  }
+  var state = {
+    slides: [], index: 0, data: null, mode: 'auto', videos: [], images: [], chromeSlide: null,
+    hidden: readHidden(params.get('hide'))
+  };
+  var scenesTitle = document.getElementById('deck-scenes-title');
+  if (scenesTitle && deckLang === 'he') scenesTitle.textContent = 'סצנות מצולמות';
 
   function token() {
     try {
@@ -320,14 +343,54 @@
   function slide() {
     return state.slides[state.index] || null;
   }
+  function shownFilmed(current) {
+    return ((current && current.filmed) || []).filter(function (clip) {
+      return clip && clip.playback_url && !state.hidden[clip.scene_key];
+    });
+  }
   function showMode(current) {
     if (!current) return 'slide';
     if (state.mode === 'slide') return 'slide';
     if (state.mode === 'library') return current.media && current.media.intact ? 'library' : 'slide';
-    if (state.mode === 'filmed') return current.filmed && current.filmed.length ? 'filmed' : 'slide';
+    if (state.mode === 'filmed') return shownFilmed(current).length ? 'filmed' : 'slide';
     if (current.media && current.media.intact) return 'library';
-    if (current.filmed && current.filmed.length) return 'filmed';
+    if (shownFilmed(current).length) return 'filmed';
     return 'slide';
+  }
+  function syncHide() {
+    var next = new URLSearchParams(window.location.search);
+    var keys = Object.keys(state.hidden).filter(function (key) { return state.hidden[key]; }).sort();
+    if (keys.length) next.set('hide', keys.join(','));
+    else next.delete('hide');
+    var search = next.toString();
+    try { history.replaceState(null, '', location.pathname + (search ? '?' + search : '') + location.hash); } catch (e) { /* history unavailable */ }
+    if (langLink) {
+      var otherPage = deckLang === 'he' ? '/investor-deck.html' : '/investor-deck.he.html';
+      langLink.setAttribute('href', otherPage + (search ? '?' + search : '') + location.hash);
+    }
+  }
+  function renderScenePicker() {
+    var box = document.getElementById('deck-scenes');
+    var list = document.getElementById('deck-scenes-list');
+    if (!box || !list) return;
+    var rows = [];
+    state.slides.forEach(function (item) {
+      (item.filmed || []).forEach(function (clip) {
+        if (!clip || !clip.scene_key || !clip.playback_url) return;
+        rows.push({ slide_no: item.slide_no, clip: clip });
+      });
+    });
+    if (!rows.length) { box.hidden = true; list.innerHTML = ''; return; }
+    box.hidden = false;
+    var showLabel = deckLang === 'he' ? 'הצג' : 'Show';
+    var slideWord = deckLang === 'he' ? 'שקף ' : 'Slide ';
+    list.innerHTML = rows.map(function (row) {
+      var on = !state.hidden[row.clip.scene_key];
+      var line = String(row.clip.narration || '').slice(0, 110);
+      return '<label class="deck-scene-row"><input type="checkbox" data-scene-show="' + esc(row.clip.scene_key) + '"' +
+        (on ? ' checked' : '') + '> <span>' + showLabel + '</span> <b>' + esc(row.clip.scene_key) + '</b> <span>' +
+        esc(slideWord + String(row.slide_no).padStart(2, '0') + (line ? ' · ' + line : '')) + '</span></label>';
+    }).join('');
   }
   function render() {
     var current = slide();
@@ -362,8 +425,9 @@
     if (mode === 'library') {
       parts.push('<video controls playsinline src="' + esc(current.media.playback_url) + '"></video>');
       if (current.media.name) parts.push('<p class="deck-caption">Library · ' + esc(current.media.name) + '</p>');
-    } else if (mode === 'filmed') {
-      var first = current.filmed[0];
+    var filmed = mode === 'filmed' ? shownFilmed(current) : [];
+    if (mode === 'filmed' && filmed.length) {
+      var first = filmed[0];
       parts.push('<video controls playsinline data-filmed="0" src="' + esc(first.playback_url) + '"></video>');
       parts.push('<p class="deck-caption" data-filmed-caption>Paragraph ' + esc(first.paragraph_no) +
         (first.presenter_label ? ' · ' + esc(first.presenter_label) : '') + '</p>');
@@ -376,7 +440,7 @@
     if (video) {
       video.addEventListener('ended', function () {
         var at = parseInt(video.getAttribute('data-filmed') || '0', 10) + 1;
-        var clip = current.filmed[at];
+        var clip = filmed[at];
         if (!clip) return;
         video.setAttribute('data-filmed', String(at));
         video.src = clip.playback_url;
@@ -392,6 +456,7 @@
     var portrait = side.querySelector('img.portrait');
     if (portrait) portrait.addEventListener('error', function () { portrait.remove(); });
     document.getElementById('deck-pos').textContent = current.slide_no + ' / ' + total;
+    renderScenePicker();
     var dots = document.getElementById('deck-dots');
     dots.innerHTML = state.slides.map(function (item, index) {
       return '<button type="button" data-dot="' + index + '" class="' + (index === state.index ? 'is-on' : '') +
@@ -656,6 +721,14 @@
   }
   document.getElementById('deck-prev').addEventListener('click', function () { go(state.index - 1); });
   document.getElementById('deck-next').addEventListener('click', function () { go(state.index + 1); });
+  document.addEventListener('change', function (event) {
+    var box = event.target && event.target.getAttribute && event.target.getAttribute('data-scene-show');
+    if (!box) return;
+    if (event.target.checked) delete state.hidden[box];
+    else state.hidden[box] = true;
+    syncHide();
+    render();
+  });
   document.getElementById('deck-mode').addEventListener('change', function (event) {
     state.mode = event.target.value || 'auto';
     render();

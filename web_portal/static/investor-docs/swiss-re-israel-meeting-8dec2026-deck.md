@@ -50,7 +50,7 @@ On `/reinsurer-deck.html` a viewer may move these factors of the plan's own regi
 
 ## Slides and film script
 
-One 15-second scene per paragraph. A paragraph with no figure is spoken in full; a paragraph that fills a figure is spoken as a short line and its figures stay on the slide. Presenters come from the shared roster and are assigned when a scene is filmed; charts are the plan's own and are shown beside the clip, never drawn by the generator.
+One 15-second scene per paragraph. The spoken line is that paragraph filled from the plan, including its figures. Nothing is added around it. A sealed clip plays only while that line is still the current paragraph; a moved figure leaves the clip out of the film and does not rewrite the library file. Presenters come from the shared roster and are assigned when a scene is filmed; charts are the plan's own and are shown beside the clip, never drawn by the generator.
 
 ### Slide 01 — PHINS × Swiss Re Israel
 
@@ -64,7 +64,7 @@ One 15-second scene per paragraph. A paragraph with no figure is spoken in full;
 **Paragraph 2 · scene `re-s01p02` · 15 s**
 
 - On the slide: A pilot in Israel from 1 January 2027 and a five-year plan to 2031. Every figure in this deck is a default of unified-2026.10-v1 · hash 9128223e1c222388…; nothing is typed by hand.
-- Spoken: PHINS × Swiss Re Israel, second point. The figures stay on this slide.
+- Spoken: A pilot in Israel from 1 January 2027 and a five-year plan to 2031. Every figure in this deck is a default of unified-2026.10-v1 · hash 9128223e1c222388…; nothing is typed by hand.
 
 ### Slide 02 — Why a reinsurer, why now
 
@@ -85,19 +85,19 @@ Chart beside the clip: `in_force`.
 **Paragraph 1 · scene `re-s03p01` · 15 s**
 
 - On the slide: Gate 5 — sales begin on 1 January 2027 on the licensed carrier's paper; Gate 6 — the first 1,000 policies in force with an Appointed Actuary review against the kernel; Gate 7 — 24,000 policies in force at year end.
-- Spoken: The pilot in Israel — 2027, first point. The figures stay on this slide.
+- Spoken: Gate 5 — sales begin on 1 January 2027 on the licensed carrier's paper; Gate 6 — the first 1,000 policies in force with an Appointed Actuary review against the kernel; Gate 7 — 24,000 policies in force at year end.
 
 **Paragraph 2 · scene `re-s03p02` · 15 s**
 
 - On the slide: Pilot-year risk GWP ₪54.2M; ceded premium at the plan's 18% quota share ₪9.8M; reinsurer technical result ₪1.3M ($0.3M at planning FX 3.68).
-- Spoken: The pilot in Israel — 2027, second point. The figures stay on this slide.
+- Spoken: Pilot-year risk GWP ₪54.2M; ceded premium at the plan's 18% quota share ₪9.8M; reinsurer technical result ₪1.3M ($0.3M at planning FX 3.68).
 
 ### Slide 04 — The contract the reinsurer underwrites
 
 **Paragraph 1 · scene `re-s04p01` · 15 s**
 
 - On the slide: Life ₪1,000,000 with a lifelong disability mechanism — 1:4 below 65, 1:1 from 65 — on an objective ADL-3 trigger; published tables 0.25 / 0.20 per ₪1,000 monthly; ₪4,518 a year at the age-42 specimen.
-- Spoken: The contract the reinsurer underwrites, first point. The figures stay on this slide.
+- Spoken: Life ₪1,000,000 with a lifelong disability mechanism — 1:4 below 65, 1:1 from 65 — on an objective ADL-3 trigger; published tables 0.25 / 0.20 per ₪1,000 monthly; ₪4,518 a year at the age-42 specimen.
 
 **Paragraph 2 · scene `re-s04p02` · 15 s**
 
@@ -111,12 +111,12 @@ Chart beside the clip: `ceded_line`.
 **Paragraph 1 · scene `re-s05p01` · 15 s**
 
 - On the slide: Ceded premium ₪9.8M → ₪132.0M → ₪336.6M (2027 / 2029 / 2031); five-year ceded premium ₪764.9M ($207.9M).
-- Spoken: The ceded line — five years, first point. The figures stay on this slide.
+- Spoken: Ceded premium ₪9.8M → ₪132.0M → ₪336.6M (2027 / 2029 / 2031); five-year ceded premium ₪764.9M ($207.9M).
 
 **Paragraph 2 · scene `re-s05p02` · 15 s**
 
 - On the slide: Reinsurer technical result ₪1.3M → ₪17.2M → ₪43.8M; five years ₪99.4M ($27.0M) — 13% of ceded premium at the plan's 62% expected claims and 25% ceding commission; break-even claims ratio 75%.
-- Spoken: The ceded line — five years, second point. The figures stay on this slide.
+- Spoken: Reinsurer technical result ₪1.3M → ₪17.2M → ₪43.8M; five years ₪99.4M ($27.0M) — 13% of ceded premium at the plan's 62% expected claims and 25% ceding commission; break-even claims ratio 75%.
 
 ### Slide 06 — Quota-share options for the pilot
 
@@ -125,12 +125,12 @@ Chart beside the clip: `carrier_view`.
 **Paragraph 1 · scene `re-s06p01` · 15 s**
 
 - On the slide: The plan: 18% cession, 25% ceding commission, carrier margin 5.7%; the reinsurer's five-year technical result ₪99.4M.
-- Spoken: Quota-share options for the pilot, first point. The figures stay on this slide.
+- Spoken: The plan: 18% cession, 25% ceding commission, carrier margin 5.7%; the reinsurer's five-year technical result ₪99.4M.
 
 **Paragraph 2 · scene `re-s06p02` · 15 s**
 
 - On the slide: Scenarios from the same model — at 30% cession the five-year ceded premium is ₪1.27B, the technical result ₪165.7M and the carrier margin 4.1%; at 50% cession ₪2.12B, ₪276.2M and 1.5%. PHINS revenue and EBITDA are unchanged in every scenario; the split between carrier and reinsurer is what moves.
-- Spoken: Quota-share options for the pilot, second point. The figures stay on this slide.
+- Spoken: Scenarios from the same model — at 30% cession the five-year ceded premium is ₪1.27B, the technical result ₪165.7M and the carrier margin 4.1%; at 50% cession ₪2.12B, ₪276.2M and 1.5%. PHINS revenue and EBITDA are unchanged in every scenario; the split between carrier and reinsurer is what moves.
 
 ### Slide 07 — Five-year plan — Israel anchor book
 
@@ -139,12 +139,12 @@ Chart beside the clip: `gwp_split`.
 **Paragraph 1 · scene `re-s07p01` · 15 s**
 
 - On the slide: Policies in force 24,000 → 94,080 → 230,554 → 356,110 → 471,621; risk GWP ₪54.2M → ₪1.87B; five-year risk GWP ₪4.25B.
-- Spoken: Five-year plan — Israel anchor book, first point. The figures stay on this slide.
+- Spoken: Policies in force 24,000 → 94,080 → 230,554 → 356,110 → 471,621; risk GWP ₪54.2M → ₪1.87B; five-year risk GWP ₪4.25B.
 
 **Paragraph 2 · scene `re-s07p02` · 15 s**
 
 - On the slide: The savings flow — ₪660.0M in 2029, ₪1.68B in 2031 — is a separate licensed flow and is never split with the carrier or the reinsurer. The benefit is a lump sum with a fixed sum at risk, not a lifetime care annuity.
-- Spoken: Five-year plan — Israel anchor book, second point. The figures stay on this slide.
+- Spoken: The savings flow — ₪660.0M in 2029, ₪1.68B in 2031 — is a separate licensed flow and is never split with the carrier or the reinsurer. The benefit is a lump sum with a fixed sum at risk, not a lifetime care annuity.
 
 ### Slide 08 — Five-year plan — the group
 
@@ -153,19 +153,19 @@ Chart beside the clip: `revenue_ebitda`.
 **Paragraph 1 · scene `re-s08p01` · 15 s**
 
 - On the slide: OECD partner markets under local licensed carriers: 1 in 2028, 3 in 2029, 9 by 2031 — 10 markets on one platform, 1,057,350 group lives and ₪3.75B group risk GWP.
-- Spoken: Five-year plan — the group, first point. The figures stay on this slide.
+- Spoken: OECD partner markets under local licensed carriers: 1 in 2028, 3 in 2029, 9 by 2031 — 10 markets on one platform, 1,057,350 group lives and ₪3.75B group risk GWP.
 
 **Paragraph 2 · scene `re-s08p02` · 15 s**
 
 - On the slide: A reinsurer that leads Israel can follow the same wording into each market. Group risk GWP × 18% is ₪674.5M in 2031 ($183.3M) — arithmetic on the group GWP row, not a model row.
-- Spoken: Five-year plan — the group, second point. The figures stay on this slide.
+- Spoken: A reinsurer that leads Israel can follow the same wording into each market. Group risk GWP × 18% is ₪674.5M in 2031 ($183.3M) — arithmetic on the group GWP row, not a model row.
 
 ### Slide 09 — What PHINS asks of Swiss Re Israel
 
 **Paragraph 1 · scene `re-s09p01` · 15 s**
 
 - On the slide: Lead quota-share reinsurer for the Israel pilot: a non-binding indication on the plan's 18% / 25% structure by the Q4 2026 gate, and a technical review of the pricing kernel and the published tables under NDA.
-- Spoken: What PHINS asks of Swiss Re Israel, first point. The figures stay on this slide.
+- Spoken: Lead quota-share reinsurer for the Israel pilot: a non-binding indication on the plan's 18% / 25% structure by the Q4 2026 gate, and a technical review of the pricing kernel and the published tables under NDA.
 
 **Paragraph 2 · scene `re-s09p02` · 15 s**
 
@@ -191,12 +191,12 @@ Chart beside the clip: `roadmap`.
 **Paragraph 1 · scene `re-s11p01` · 15 s**
 
 - On the slide: Seed ₪6.0M on ₪24M pre-money (₪30M post); Series A ₪18.0M indicative in 2028; group EBITDA positive in 2029. The reinsurer's capacity carries the book; it does not fund PHINS.
-- Spoken: Capital and timeline, first point. The figures stay on this slide.
+- Spoken: Seed ₪6.0M on ₪24M pre-money (₪30M post); Series A ₪18.0M indicative in 2028; group EBITDA positive in 2029. The reinsurer's capacity carries the book; it does not fund PHINS.
 
 **Paragraph 2 · scene `re-s11p02` · 15 s**
 
 - On the slide: 12 October 2026 pre-ruling · Q4 2026 seed close and term sheets · 1 January 2027 sales begin · Q4 2027 Gate 7 · 2028 first partner market · 2031 10 markets.
-- Spoken: Capital and timeline, second point. The figures stay on this slide.
+- Spoken: 12 October 2026 pre-ruling · Q4 2026 seed close and term sheets · 1 January 2027 sales begin · Q4 2027 Gate 7 · 2028 first partner market · 2031 10 markets.
 
 ### Slide 12 — Next steps after 8 December
 
@@ -208,7 +208,7 @@ Chart beside the clip: `roadmap`.
 **Paragraph 2 · scene `re-s12p02` · 15 s**
 
 - On the slide: Nothing is bound today. No limit, ticket or price is set in this deck; every figure regenerates from unified-2026.10-v1, and the plan is not written by this meeting.
-- Spoken: Next steps after 8 December, second point. The figures stay on this slide.
+- Spoken: Nothing is bound today. No limit, ticket or price is set in this deck; every figure regenerates from unified-2026.10-v1, and the plan is not written by this meeting.
 
 ## Data integrity
 

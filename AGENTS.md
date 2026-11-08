@@ -799,13 +799,17 @@ Environment variables commonly used:
  (`GET`/`POST /api/admin/media/investor-deck/presentation`); a mismatch is
  omitted and the library file is not rewritten. Slide video, watermark, and
  chrome seals share `_INVESTOR_DECK_LOCK` with scene seals, because a failed
- seal restores the whole design snapshot. The spoken line is a short
- script (`short_script`): a paragraph with no placeholder is spoken in full,
- and a paragraph that fills a figure is not recited — those figures stay on
- the slide and the generator is not asked to draw them. Hebrew is a second
+ seal restores the whole design snapshot. The spoken line is the paragraph filled from the plan (`short_script`),
+ including its figures. Nothing is added around that paragraph. The
+ generator is not asked to draw charts or numerals. A sealed clip stays in
+ the film only while that spoken line is still the current paragraph; a
+ moved figure leaves the clip out and the library file is not rewritten.
+ Both presentation pages choose which filmed scenes play (`hide` on the
+ page URL, a scene key list). An absent list plays every scene whose seal
+ still matches. The choice is not stored and does not rewrite a seal.
+ Hebrew is a second
  catalog (`?lang=he`, scene keys `he-sNNpNN`, store `investor_deck_scenes_he`).
- The spoken line is the Hebrew deck paragraph; a paragraph that fills a figure
- is a short Hebrew line and the figures stay on the slide. The prompt says to
+ The spoken line is the Hebrew deck paragraph filled the same way. The prompt says to
  speak that line in Hebrew and not to translate it. English seals, campaign
  ids, and checksums are not rewritten. `/investor-deck.html` and
  `/investor-deck.he.html` are one confidential share scope with the read-only
@@ -817,8 +821,14 @@ Environment variables commonly used:
  The Swiss Re Israel script sheet (`/reinsurer-deck.html?sheet=1`, Hebrew
  on `/reinsurer-deck.he.html`) films each open scene, or the whole sheet,
  through that same 15-second send (`POST /api/admin/media/reinsurer-deck/send`)
- and the same connected engines. A client prompt is not sent, a stored theme
+ and the same connected engines. The engine receives the filled paragraph
+ only. A client prompt is not sent, a stored theme
  or library photo is left as sealed, and a viewer scenario is not filmed.
+ Moving a reinsurance factor recomputes the slides and the spoken lines
+ from `compute_plan` under that scenario's own hash; the saved plan factors
+ are not written. The factor panel folds with −/+ and prints open. A filmed
+ scene plays only while its sealed line is still the paragraph on screen, so
+ a scenario whose figures have moved does not play a clip sealed to the plan.
  A reader who cannot assign sees the sheet as a script. A broken seal is
  reset on `POST /api/admin/media/reinsurer-deck` before the next send.
  Presenters are 35 or
