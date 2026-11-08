@@ -103,7 +103,9 @@
         if (!host) return;
         var stream = Array.isArray(data.stream) ? data.stream : [];
         if (!stream.length) {
-            host.innerHTML = '<p class="idl-note">No filmed scenes for this plan yet. A paragraph joins the film only after its 15-second clip is stored and its spoken line still matches the plan. A paragraph without a clip is skipped.</p>';
+            host.innerHTML = deckLang(root) === 'he'
+                ? '<p class="idl-note">עדיין אין סצנות מצולמות לתוכנית זו. פסקה מצטרפת לסרט רק אחרי שהקליפ שלה (15 שניות) נשמר והשורה המדוברת שלה עדיין תואמת את התוכנית. פסקה בלי קליפ מדולגת.</p>'
+                : '<p class="idl-note">No filmed scenes for this plan yet. A paragraph joins the film only after its 15-second clip is stored and its spoken line still matches the plan. A paragraph without a clip is skipped.</p>';
             state.clips = [];
             return;
         }
@@ -304,11 +306,13 @@
         if (!response.ok) throw new Error(data.error || 'The deck could not be loaded');
         state.data = data;
         var hash = data.plan && data.plan.content_hash ? String(data.plan.content_hash).slice(0, 12) : '';
-        setStatus(root,
-            (data.stream_count || 0) + ' scene' + ((data.stream_count === 1) ? '' : 's') +
-            ' in the film · ' + (data.scene_count || 0) + ' paragraphs · plan ' +
-            (data.plan && data.plan.factors_source ? data.plan.factors_source : '') +
-            (hash ? ' · ' + hash : '')
+        var source = data.plan && data.plan.factors_source ? data.plan.factors_source : '';
+        setStatus(root, lang === 'he'
+            ? (data.stream_count || 0) + ' סצנות בסרט · ' + (data.scene_count || 0) + ' פסקאות · תוכנית ' +
+                source + (hash ? ' · ' + hash : '')
+            : (data.stream_count || 0) + ' scene' + ((data.stream_count === 1) ? '' : 's') +
+                ' in the film · ' + (data.scene_count || 0) + ' paragraphs · plan ' +
+                source + (hash ? ' · ' + hash : '')
         );
         renderStream(root, data, state);
         if (mode === 'edit') renderEditor(root, data, images);
@@ -354,22 +358,27 @@
         var mode = options && options.mode === 'edit' ? 'edit' : 'watch';
         var images = options && options.images;
         var deck = options && options.deck === 'reinsurer' ? 'reinsurer' : 'investor';
-        var lang = deck === 'investor' && options && options.lang === 'he' ? 'he' : 'en';
+        var lang = options && options.lang === 'he' ? 'he' : 'en';
         target.dataset.idlLang = lang;
         target.dataset.idlDeck = deck;
         var state = { clips: [], cursor: 0, data: null, root: target, blocked: false };
-        var presentPath = deck === 'reinsurer'
-            ? '/reinsurer-deck.html' + (mode === 'edit' ? '?edit=1' : '')
-            : (lang === 'he' ? '/investor-deck.he.html' : '/investor-deck.html') + (mode === 'edit' ? '?edit=1' : '');
+        var presentPage = deck === 'reinsurer'
+            ? (lang === 'he' ? '/reinsurer-deck.he.html' : '/reinsurer-deck.html')
+            : (lang === 'he' ? '/investor-deck.he.html' : '/investor-deck.html');
+        var presentPath = presentPage + (mode === 'edit' ? '?edit=1' : '');
         var note = deck === 'reinsurer'
-            ? 'Swiss Re Israel · 8 December 2026. One 15-second scene per paragraph of the meeting deck. The film plays the scenes that exist, in order, and skips the rest. Charts are the plan’s own, shown beside the clip. The spoken line is the paragraph as the plan fills it; a paragraph with a figure is spoken as a short line and the figure stays on the slide.'
+            ? (lang === 'he'
+                ? 'Swiss Re ישראל · 8 בדצמבר 2026. סצנה של 15 שניות לכל פסקה של מצגת הפגישה. השורה המדוברת היא הפסקה העברית כפי שהתוכנית ממלאת אותה; פסקה עם מספר נאמרת כשורה קצרה והמספרים נשארים על השקף. חותם עברי לעולם אינו מחליף חותם אנגלי.'
+                : 'Swiss Re Israel · 8 December 2026. One 15-second scene per paragraph of the meeting deck. The film plays the scenes that exist, in order, and skips the rest. Charts are the plan’s own, shown beside the clip. The spoken line is the paragraph as the plan fills it; a paragraph with a figure is spoken as a short line and the figure stays on the slide.')
             : lang === 'he'
                 ? 'חלק ב׳, סצנה של 15 שניות לכל פסקה. השורה המדוברת היא הפסקה העברית של המצגת. פסקה עם מספר אינה מוקראת; המספרים נשארים על השקף.'
                 : 'Part II, one 15-second scene per paragraph. The film plays the scenes that exist, in order, and skips the rest. Charts and the founder portrait are the plan’s own, shown beside the clip. The spoken line is the paragraph as the plan fills it.';
-        var langButtons = deck === 'reinsurer' ? '' :
+        var langButtons =
             '<button type="button" class="idl-btn secondary" data-idl-lang="en">English</button>' +
             '<button type="button" class="idl-btn secondary" data-idl-lang="he">עברית</button>';
-        var presentLabel = deck === 'reinsurer' ? 'Present the Swiss Re deck' : 'Present the 13 slides';
+        var presentLabel = deck === 'reinsurer'
+            ? (lang === 'he' ? 'הצגת מצגת Swiss Re' : 'Present the Swiss Re deck')
+            : 'Present the 13 slides';
         var labLink = deck === 'reinsurer' ? '/admin-media.html#reinsurer-deck' : '/admin-media.html#investor-deck';
         target.innerHTML = '<div class="idl' + (lang === 'he' ? ' is-he' : '') + '">' +
             '<div class="idl-stage">' +

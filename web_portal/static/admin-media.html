@@ -2589,7 +2589,7 @@ Notes:
         function setInvestorDeckChoice(choice) {
             investorDeckChoice = choice === 'reinsurer' ? 'reinsurer' : 'investor';
             var page = investorDeckChoice === 'reinsurer'
-                ? '/reinsurer-deck.html'
+                ? (investorDeckLang === 'he' ? '/reinsurer-deck.he.html' : '/reinsurer-deck.html')
                 : (investorDeckLang === 'he' ? '/investor-deck.he.html' : '/investor-deck.html');
             var frame = document.getElementById('investor-deck-frame');
             if (frame) {
@@ -2614,9 +2614,10 @@ Notes:
         }
 
         function setInvestorDeckLanguage(lang) {
+            // The language applies to whichever deck is open; both decks have
+            // an English and a Hebrew catalog with separate scene stores.
             investorDeckLang = lang === 'he' ? 'he' : 'en';
-            investorDeckChoice = 'investor';
-            setInvestorDeckChoice('investor');
+            setInvestorDeckChoice(investorDeckChoice);
         }
 
         function switchMainTab(tabName, options = {}) {
