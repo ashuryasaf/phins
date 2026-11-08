@@ -296,7 +296,7 @@ def test_oct2026_diary_seed_and_designed_briefs():
     import importlib.util
 
     html = _html()
-    assert 'var STORAGE_ID = "phins.il.meeting.diary.v9"' in html
+    assert 'var STORAGE_ID = "phins.il.meeting.diary.v10"' in html
     for date, person in (
         ("2026-10-25", "Keshet Sirota-Leviner"),
         ("2026-10-26", "Eyal Ohayun"),

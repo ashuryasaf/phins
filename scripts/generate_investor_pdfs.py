@@ -173,6 +173,10 @@ DOCUMENTS = [
      'investor-docs/reinsurer-group-ceo-assessment-nov2026-brief.pdf',
      'PHINS — Global Reinsurer Group CEO Assessment (7 November 2026) · '
      'Risk appetite, InsurTech openness and venture exposure'),
+    ('investor-docs/swiss-re-israel-meeting-8dec2026-deck.md',
+     'investor-docs/swiss-re-israel-meeting-8dec2026-deck.pdf',
+     'PHINS × Swiss Re Israel — Meeting Deck and Film Script (8 December 2026) · '
+     'Mr. Hillel Damelin, Regional CEO Israel'),
 ]
 
 # Meeting briefs that also ship a self-contained HTML edition on the
@@ -208,6 +212,12 @@ DESIGNED_BRIEFS = {
         'eyebrow': 'Reinsurer assessment · 7 November 2026',
         'subtitle': 'Group CEO seat · regional CEO escalation · all options on the table',
         'footer': 'PHINS · Confidential · Global reinsurer Group CEO assessment · 7 November 2026 · canonical defaults of unified-2026.10-v1',
+    },
+    'investor-docs/swiss-re-israel-meeting-8dec2026-deck.md': {
+        'html': 'investor-docs/swiss-re-israel-meeting-8dec2026-deck.html',
+        'eyebrow': 'Meeting deck and film script · 8 December 2026',
+        'subtitle': 'Mr. Hillel Damelin · Regional CEO Israel · Swiss Re · Israel pilot and the five-year plan',
+        'footer': 'PHINS · Confidential · Swiss Re Israel meeting deck · 8 December 2026 · canonical defaults of unified-2026.10-v1 · scenarios labelled',
     },
 }
 
