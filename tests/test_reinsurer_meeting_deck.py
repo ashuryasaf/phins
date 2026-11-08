@@ -31,32 +31,47 @@ from services.investor_deck_video import (
     verify_scene,
 )
 from services.reinsurer_meeting_deck import (
+    ADJUSTABLE_FACTORS,
     DECK_ID,
+    HEBREW_SCENE_KEY_PREFIX,
     MEETING,
+    PAGE_PATH_HE,
     SCENARIO_CESSIONS,
     SLIDE_CHARTS,
     STORE_NAME,
+    STORE_NAME_HE,
+    allowed_factors,
     catalog,
     chart_spec,
     charts,
     deck_slides,
+    factor_panel,
     fill,
     fill_reinsurer_figures,
+    hebrew_misses,
     is_reinsurer_scene_key,
+    lang_of_scene_key,
+    meeting_facts,
+    page_path_for_lang,
     placeholder_keys,
     presentation_of,
     reinsurer_figures,
     reinsurer_view,
     render_markdown,
+    scenario_overrides,
     scene_storage_key,
     slide_specs,
     spec_for,
+    store_name_for_key,
+    store_name_for_lang,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "web_portal" / "static"
 DOCS = STATIC / "investor-docs"
 MD_PATH = DOCS / "swiss-re-israel-meeting-8dec2026-deck.md"
+MD_PATH_HE = DOCS / "swiss-re-israel-meeting-8dec2026-deck.he.md"
+HEBREW = re.compile(r"[\u0590-\u05FF]")
 
 
 def _read(path: Path) -> str:
@@ -254,6 +269,130 @@ def test_reinsurer_deck_is_its_own_confidential_scope():
     assert not confidential_access.is_reinsurer_deck_page("/investor-deck.html")
     assert confidential_access.is_investor_deck_scope_path("/reinsurer-deck.html")
     assert not confidential_access.is_investor_deck_page("/reinsurer-deck.html")
+    # The Hebrew edition is the same scope as the English page.
+    assert confidential_access.is_confidential_path(PAGE_PATH_HE)
+    assert confidential_access.is_reinsurer_deck_page(PAGE_PATH_HE)
+    assert confidential_access.share_scope_root(PAGE_PATH_HE) == "/reinsurer-deck.html"
+    assert not confidential_access.is_investor_deck_page(PAGE_PATH_HE)
+
+
+# ---------------------------------------------------------------------------
+# Hebrew edition — the investor-deck Hebrew method on the reinsurer deck
+# ---------------------------------------------------------------------------
+def test_hebrew_catalog_is_complete_and_keeps_its_own_keys_and_store():
+    plan = compute_plan()
+    english = catalog("en")
+    hebrew = catalog("he")
+    assert hebrew_misses() == []
+    assert len(hebrew) == len(english) == 24
+    assert all(row["scene_key"].startswith(HEBREW_SCENE_KEY_PREFIX) for row in hebrew)
+    assert all(is_reinsurer_scene_key(row["scene_key"]) for row in hebrew)
+    assert [row["scene_key"][len(HEBREW_SCENE_KEY_PREFIX):] for row in hebrew] == \
+        [row["scene_key"][len("re-"):] for row in english]
+    assert scene_storage_key(5, 1, "he") == "re-he-s05p01"
+    assert lang_of_scene_key("re-he-s05p01") == "he" and lang_of_scene_key("re-s05p01") == "en"
+    assert store_name_for_lang("he") == STORE_NAME_HE != STORE_NAME
+    assert store_name_for_key("re-he-s05p01") == STORE_NAME_HE
+    assert store_name_for_key("re-s05p01") == STORE_NAME
+    assert page_path_for_lang("he") == PAGE_PATH_HE == "/reinsurer-deck.he.html"
+    # Every Hebrew row is Hebrew text with the same placeholders as its English twin.
+    for he_row, en_row in zip(hebrew, english):
+        assert HEBREW.search(he_row["slide_title"]), he_row["scene_key"]
+        assert HEBREW.search(he_row["template"]), he_row["scene_key"]
+        assert sorted(_PLACEHOLDER.findall(he_row["template"])) == sorted(_PLACEHOLDER.findall(en_row["template"]))
+        assert he_row["slide_no"] == en_row["slide_no"] and he_row["paragraph_no"] == en_row["paragraph_no"]
+        spoken = fill_narration(he_row["template"], plan)
+        assert "{" not in spoken and HEBREW.search(spoken)
+    # The deck plumbing resolves Hebrew reinsurer keys and speaks Hebrew.
+    spec = deck_spec_for("re-he-s05p01")
+    assert spec is not None and spec["scene_key"] == "re-he-s05p01"
+    line = fill_narration(spec["template"], plan)
+    assert "₪" in line
+    script = short_script(spec, plan)
+    assert "₪" not in script and HEBREW.search(script)
+    assert script.endswith("המספרים נשארים על השקף.")
+    sealed = seal_for_send("re-he-s05p01", None, plan, used_presenter_ids=[], rng=random.Random(5))
+    assert sealed["sealed_narration"] == script
+    assert sealed["campaign_id"] == "DECK-re-he-s05p01"
+    assert parse_campaign_id("DECK-re-he-s05p01") == "re-he-s05p01"
+    assert sealed["sealed_plan_hash"] == plan["content_hash"]
+    assert verify_scene(sealed, spec)
+    assert verify_scene(sealed, spec_for("re-s05p01")) is False
+    prompt = prompt_override(sealed)
+    assert "in Hebrew" in prompt and script in prompt and "₪" not in prompt
+    # The English twin seals a different line under the same plan hash.
+    english_seal = seal_for_send("re-s05p01", None, plan, used_presenter_ids=[], rng=random.Random(5))
+    assert english_seal["sealed_narration"] != script
+    assert english_seal["sealed_plan_hash"] == sealed["sealed_plan_hash"]
+    assert "in Hebrew" not in prompt_override(english_seal)
+    assert hebrew_misses() == []
+    # English rows are unchanged by the Hebrew edition.
+    assert catalog("en") == english
+    meeting = meeting_facts("he")
+    assert meeting["lang"] == "he" and meeting["pack"] == PAGE_PATH_HE
+    assert HEBREW.search(meeting["counterpart"]) and HEBREW.search(meeting["date_text"])
+    assert meeting_facts("en")["counterpart"] == MEETING["counterpart"]
+
+
+def test_hebrew_charts_and_presentation_bind_to_the_same_plan():
+    plan = compute_plan()
+    en_chart = chart_spec(plan, "ceded_line", "en")
+    he_chart = chart_spec(plan, "ceded_line", "he")
+    assert HEBREW.search(he_chart["title"])
+    assert [s["values"] for s in he_chart["series"]] == [s["values"] for s in en_chart["series"]]
+    assert he_chart["categories"] == en_chart["categories"]
+    assert he_chart["source"] == en_chart["source"]
+    show = presentation_of(plan, [], chart_svgs=charts(plan, "he"), lang="he")
+    assert show["lang"] == "he" and show["page_path"] == PAGE_PATH_HE
+    assert len(show["slides"]) == 12
+    for slide in show["slides"]:
+        assert HEBREW.search(slide["title"])
+        assert "{" not in "".join(slide["bullets"])
+        assert all(row["scene_key"].startswith(HEBREW_SCENE_KEY_PREFIX) for row in slide["script"])
+    assert show["reinsurer_view"]["totals"] == reinsurer_view(plan)["totals"]
+    assert hebrew_misses() == []
+
+
+# ---------------------------------------------------------------------------
+# Adjustable reinsurance factors — a labelled scenario, never a write
+# ---------------------------------------------------------------------------
+def test_adjustable_factors_are_the_registers_own_and_resolve_without_clamping():
+    plan = compute_plan()
+    baseline = plan["inputs"]
+    assert ADJUSTABLE_FACTORS == ("cession_rate", "ceding_commission", "expected_loss_ratio", "insurer_own_expense_ratio")
+    assert allowed_factors(None) == list(ADJUSTABLE_FACTORS)
+    assert allowed_factors("all") == list(ADJUSTABLE_FACTORS)
+    assert allowed_factors(["ceding_commission", "seed_ils", "cession_rate"]) == ["cession_rate", "ceding_commission"]
+    assert allowed_factors([]) == []
+    resolved = scenario_overrides(
+        {"cession_rate": ["0.30"], "ceding_commission": "0.9", "seed_ils": "2", "expected_loss_ratio": "0.62"},
+        baseline=baseline, allowed=allowed_factors(None),
+    )
+    assert resolved["adjusted"] == {"cession_rate": 0.3}
+    assert resolved["restricted"] == ["seed_ils"]
+    assert resolved["errors"] == ["ceding_commission must be between 0 and 0.5"]
+    assert resolved["effective"]["expected_loss_ratio"] == baseline["expected_loss_ratio"]
+    # The untouched factors are the baseline's, so the scenario is one move on the plan.
+    assert {k: v for k, v in resolved["effective"].items() if k != "cession_rate"} == \
+        {k: float(v) for k, v in baseline.items() if k != "cession_rate"}
+    scenario = compute_plan(resolved["effective"])
+    assert scenario["content_hash"] != plan["content_hash"]
+    assert scenario["content_hash"] == compute_plan({**baseline, "cession_rate": 0.3})["content_hash"]
+    assert scenario["integrity"]["all_hold"] is True
+    assert compute_plan()["content_hash"] == plan["content_hash"]
+    # A share viewer may only move the frozen factors.
+    narrow = scenario_overrides({"cession_rate": "0.3", "ceding_commission": "0.3"},
+                                baseline=baseline, allowed=allowed_factors(["ceding_commission"]))
+    assert narrow["adjusted"] == {"ceding_commission": 0.3} and narrow["restricted"] == ["cession_rate"]
+    rows = factor_panel(scenario, baseline=baseline, allowed=allowed_factors(["cession_rate"]), lang="en")
+    assert [row["id"] for row in rows] == list(ADJUSTABLE_FACTORS)
+    cession = rows[0]
+    assert cession["value"] == 0.3 and cession["baseline"] == baseline["cession_rate"]
+    assert cession["adjusted"] is True and cession["adjustable"] is True and cession["value_text"] == "30%"
+    assert all(row["adjustable"] is False and row["adjusted"] is False for row in rows[1:])
+    he_rows = factor_panel(scenario, baseline=baseline, allowed=allowed_factors(None), lang="he")
+    assert all(HEBREW.search(row["label"]) for row in he_rows)
+    assert hebrew_misses() == []
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +515,7 @@ def test_http_lab_presentation_and_send_keep_the_investor_deck_untouched():
     investor_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_scenes"))
     hebrew_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_scenes_he"))
     reinsurer_before = copy.deepcopy(portal.DESIGN_SETTINGS.get(STORE_NAME))
+    reinsurer_he_before = copy.deepcopy(portal.DESIGN_SETTINGS.get(STORE_NAME_HE))
     try:
         status, _ = _json_request(base + "/api/admin/media/reinsurer-deck")
         assert status == 403
@@ -420,6 +560,66 @@ def test_http_lab_presentation_and_send_keep_the_investor_deck_untouched():
 
         status, as_admin = _json_request(base + "/api/admin/media/reinsurer-deck/presentation", token=token)
         assert status == 200 and as_admin["can_assign"] is True
+        assert show["scenario"]["active"] is False and show["scenario"]["content_hash"] == plan_before
+        assert [row["id"] for row in show["factors"]] == list(ADJUSTABLE_FACTORS)
+        assert all(row["adjustable"] is True and row["adjusted"] is False for row in show["factors"])
+        assert show["adjustable"] == list(ADJUSTABLE_FACTORS)
+
+        # The Hebrew edition: same plan hash, Hebrew slides, its own scene keys.
+        status, hebrew = _json_request(base + "/api/admin/media/reinsurer-deck/presentation?lang=he", token=actuary)
+        assert status == 200, hebrew
+        assert hebrew["lang"] == "he" and hebrew["page_path"] == "/reinsurer-deck.he.html"
+        assert hebrew["plan"]["content_hash"] == plan_before
+        assert all(HEBREW.search(slide["title"]) for slide in hebrew["slides"])
+        he_fifth = next(slide for slide in hebrew["slides"] if slide["slide_no"] == 5)
+        assert [row["scene_key"] for row in he_fifth["script"]] == ["re-he-s05p01", "re-he-s05p02"]
+        assert "₪" not in he_fifth["script"][0]["spoken"] and HEBREW.search(he_fifth["script"][0]["spoken"])
+        assert he_fifth["reinsurer_view"] if "reinsurer_view" in he_fifth else True
+        assert hebrew["reinsurer_view"]["totals"] == show["reinsurer_view"]["totals"]
+        status, he_lab = _json_request(base + "/api/admin/media/reinsurer-deck?lang=he", token=token)
+        assert status == 200 and he_lab["lang"] == "he"
+        assert all(row["scene_key"].startswith("re-he-") for row in he_lab["scenes"])
+        assert he_lab["plan"]["content_hash"] == plan_before
+
+        # A viewer scenario: the quota share moves, the plan is recomputed under
+        # its own hash, labelled, and nothing is written.
+        expected_hash = compute_plan({**compute_plan()["inputs"], "cession_rate": 0.3})["content_hash"]
+        status, moved = _json_request(
+            base + "/api/admin/media/reinsurer-deck/presentation?cession_rate=0.3", token=actuary)
+        assert status == 200, moved
+        assert moved["plan"]["factors_source"] == "scenario"
+        assert moved["plan"]["content_hash"] == expected_hash != plan_before
+        assert moved["plan"]["baseline_content_hash"] == plan_before
+        assert moved["plan"]["integrity_all_hold"] is True
+        assert moved["scenario"]["active"] is True and moved["scenario"]["canonical"] is False
+        assert moved["scenario"]["adjusted"] == {"cession_rate": 0.3}
+        assert moved["scenario"]["content_hash"] == expected_hash
+        assert moved["scenario"]["baseline_content_hash"] == plan_before
+        cession_row = next(row for row in moved["factors"] if row["id"] == "cession_rate")
+        assert cession_row["value"] == 0.3 and cession_row["adjusted"] is True and cession_row["value_text"] == "30%"
+        moved_fifth = next(slide for slide in moved["slides"] if slide["slide_no"] == 5)
+        assert moved_fifth["chart_svg"].startswith("<svg") and moved_fifth["chart_svg"] != fifth["chart_svg"]
+        assert moved["reinsurer_view"]["totals"]["ceded_premium"] > show["reinsurer_view"]["totals"]["ceded_premium"]
+        assert "{" not in "".join("".join(slide["bullets"]) for slide in moved["slides"])
+        # Saved factors and the lab are untouched; the lab seals only against the plan.
+        status, lab_again = _json_request(base + "/api/admin/media/reinsurer-deck", token=token)
+        assert status == 200 and lab_again["plan"]["content_hash"] == plan_before
+        assert compute_plan()["content_hash"] == plan_before
+        status, unchanged = _json_request(base + "/api/admin/media/reinsurer-deck/presentation", token=actuary)
+        assert status == 200 and unchanged["plan"]["content_hash"] == plan_before
+        assert unchanged["scenario"]["active"] is False
+        # A value the register refuses is a 400, not a clamp; an unknown factor is ignored.
+        status, refused_factor = _json_request(
+            base + "/api/admin/media/reinsurer-deck/presentation?ceding_commission=0.9", token=actuary)
+        assert status == 400 and "ceding_commission" in refused_factor["error"]
+        status, refused_factor = _json_request(
+            base + "/api/admin/media/reinsurer-deck/presentation?cession_rate=abc", token=actuary)
+        assert status == 400
+        status, other_factor = _json_request(
+            base + "/api/admin/media/reinsurer-deck/presentation?seed_ils=2&cession_rate=0.18", token=actuary)
+        assert status == 200 and other_factor["plan"]["content_hash"] == plan_before
+        assert other_factor["scenario"]["active"] is False
+        assert other_factor["scenario"]["restricted"] == ["seed_ils"]
 
         status, refused = _json_request(
             base + "/api/admin/media/reinsurer-deck/send",
@@ -492,6 +692,28 @@ def test_http_lab_presentation_and_send_keep_the_investor_deck_untouched():
         assert "re-s05p01" in (portal.DESIGN_SETTINGS.get(STORE_NAME) or {})
         assert portal.DESIGN_SETTINGS.get("investor_deck_scenes") == investor_before
         assert portal.DESIGN_SETTINGS.get("investor_deck_scenes_he") == hebrew_before
+        assert portal.DESIGN_SETTINGS.get(STORE_NAME_HE) == reinsurer_he_before
+        assert portal._deck_store_name_for_key("re-s05p01") == STORE_NAME
+        assert portal._deck_store_name_for_key("re-he-s05p01") == STORE_NAME_HE
+
+        # A Hebrew scene is saved into the Hebrew store and does not touch the English seal.
+        status, he_saved = _json_request(
+            base + "/api/admin/media/reinsurer-deck",
+            method="POST",
+            token=token,
+            payload={"scene_key": "re-he-s05p01", "theme": "חדר ישיבות כחול"},
+        )
+        assert status == 200, he_saved
+        assert he_saved["scene"]["scene_key"] == "re-he-s05p01"
+        assert "re-he-s05p01" in portal.DESIGN_SETTINGS[STORE_NAME_HE]
+        assert "re-he-s05p01" not in portal.DESIGN_SETTINGS[STORE_NAME]
+        assert portal.DESIGN_SETTINGS[STORE_NAME]["re-s05p01"]["checksum"] == asset["metadata"].get(
+            "scene_checksum", portal.DESIGN_SETTINGS[STORE_NAME]["re-s05p01"]["checksum"])
+        status, he_lab = _json_request(base + "/api/admin/media/reinsurer-deck?lang=he", token=token)
+        assert status == 200
+        he_scene = next(row for row in he_lab["scenes"] if row["scene_key"] == "re-he-s05p01")
+        assert he_scene["theme"] == "חדר ישיבות כחול" and he_scene["in_stream"] is False
+        assert he_lab["stream_count"] == 0
 
         status, show_again = _json_request(base + "/api/admin/media/reinsurer-deck/presentation", token=actuary)
         assert status == 200
@@ -537,7 +759,8 @@ def test_http_lab_presentation_and_send_keep_the_investor_deck_untouched():
         assert ceded["script"] not in json.dumps(public)
     finally:
         portal.get_media_generation_service = original
-        for name, before in ((STORE_NAME, reinsurer_before), ("investor_deck_scenes", investor_before),
+        for name, before in ((STORE_NAME, reinsurer_before), (STORE_NAME_HE, reinsurer_he_before),
+                             ("investor_deck_scenes", investor_before),
                              ("investor_deck_scenes_he", hebrew_before)):
             if before is None:
                 portal.DESIGN_SETTINGS.pop(name, None)
@@ -560,13 +783,34 @@ def test_presentation_page_and_lab_are_wired_for_the_reinsurer_deck():
     assert "deck: 'reinsurer'" in page
     assert 'id="deck-script"' in page and 'id="deck-sheet"' in page
     assert "₪" not in page  # figures come from the plan, never the file
+    # Hebrew edition on the same file: language from the path, RTL, a switch.
+    assert "reinsurer-deck\\.he\\.html" in page
+    assert 'id="deck-lang"' in page and "is-he" in page
+    assert "Swiss Re ישראל · מצגת הפגישה · 8 בדצמבר 2026" in page
+    assert "dir=\"rtl\"" in page or "dir='rtl'" in page or "direction: rtl" in page or "dir = 'rtl'" in page
+    # Adjustable factors: the panel reads the register from the API and syncs the URL.
+    assert 'id="deck-factors"' in page
+    for fid in ADJUSTABLE_FACTORS:
+        assert f"'{fid}'" in page
+    assert "history.replaceState" in page
+    assert "scenario" in page
+    # No typed plan figure (thousands-grouped amounts) lives in the file.
+    plan = compute_plan()
+    view = reinsurer_view(plan)
+    for row in view["rows"]:
+        assert f"{row['ceded_premium']:,.2f}" not in page
+    assert f"{view['totals']['ceded_premium']:,.2f}" not in page
+    assert plan["content_hash"][:12] not in page
     lab = _read(STATIC / "investor-deck-lab.js")
     assert "/api/admin/media/reinsurer-deck" in lab
-    assert "'/reinsurer-deck.html'" in lab
+    assert "'/reinsurer-deck.html'" in lab and "'/reinsurer-deck.he.html'" in lab
     assert "idlDeck" in lab
     media = _read(STATIC / "admin-media.html")
     assert "setInvestorDeckChoice('reinsurer')" in media
     assert "reinsurer-deck" in media
+    assert "/reinsurer-deck.he.html" in media
+    assert "setInvestorDeckChoice(investorDeckChoice)" in media
+    assert "investorDeckChoice = 'investor';\n            setInvestorDeckChoice('investor');" not in media
 
 
 def test_pitch_bar_addresses_the_unified_plan_and_matches_the_model():
@@ -581,8 +825,14 @@ def test_pitch_bar_addresses_the_unified_plan_and_matches_the_model():
     assert 'href="#unified-business-plan-card"' in section
     assert 'href="#reinsurer-ceo-assessment-nov2026"' in section
     assert 'href="/reinsurer-deck.html"' in section
+    assert 'href="/reinsurer-deck.he.html"' in section
+    assert 'href="/reinsurer-deck.html?cession_rate=0.3"' in section
     assert "swiss-re-israel-meeting-8dec2026-deck.pdf" in section
     assert "swiss-re-israel-meeting-8dec2026-deck.html" in section
+    assert "swiss-re-israel-meeting-8dec2026-deck.he.pdf" in section
+    assert "swiss-re-israel-meeting-8dec2026-deck.he.html" in section
+    assert "reinsurer_deck_scenes_he" in section
+    assert "labelled a scenario" in section
     assert "exec-integrity-note" in section
     assert "does not write the platform ledger" in section
     # The one-standard card links the meeting.
@@ -652,3 +902,48 @@ def test_meeting_pack_markdown_is_a_fresh_render_and_is_registered():
     designed = _read(DOCS / "swiss-re-israel-meeting-8dec2026-deck.html")
     assert "Hillel Damelin" in designed
     assert fmt(view["totals"]["ceded_premium"], "ilsm", fx) in designed
+    assert '<html lang="en">' in designed
+    # The factor register is in the pack, read from the model.
+    assert "## Adjustable reinsurance factors" in fresh
+    for fid in ADJUSTABLE_FACTORS:
+        assert f"`{fid}`" in fresh
+    assert "| 18% | 0% – 90% |" in fresh
+
+
+def test_hebrew_meeting_pack_is_a_fresh_render_bound_to_the_same_hash():
+    plan = compute_plan()
+    fresh_he = render_markdown(plan, lang="he")
+    assert hebrew_misses() == []
+    assert MD_PATH_HE.is_file()
+    assert _read(MD_PATH_HE) == fresh_he
+    assert fresh_he != render_markdown(plan)
+    assert HEBREW.search(fresh_he)
+    assert "מר הלל דמלין" in fresh_he
+    assert "re-he-s05p01" in fresh_he and "re-s05p01" not in fresh_he.replace("re-he-s05p01", "")
+    assert plan["content_hash"][:16] in fresh_he
+    view = reinsurer_view(plan)
+    fx = view["fx_usd_ils"]
+    with_hebrew_fmt = fresh_he
+    assert fmt(view["totals"]["technical_result"], "ilsm", fx) in with_hebrew_fmt or \
+        f"{view['totals']['technical_result']:,.2f}" in with_hebrew_fmt
+    for scenario in view["scenarios"]:
+        assert scenario["content_hash"][:12] in fresh_he
+    for fid in ADJUSTABLE_FACTORS:
+        assert f"`{fid}`" in fresh_he
+    # No English slide title survives in the Hebrew edition.
+    for slide in deck_slides():
+        assert slide["title"] not in fresh_he, slide["title"]
+    gen = importlib.util.spec_from_file_location("generate_investor_pdfs_he", ROOT / "scripts" / "generate_investor_pdfs.py")
+    gen_module = importlib.util.module_from_spec(gen)
+    sys.modules[gen.name] = gen_module
+    gen.loader.exec_module(gen_module)
+    sources = {src for src, _, _ in gen_module.DOCUMENTS}
+    assert "investor-docs/swiss-re-israel-meeting-8dec2026-deck.he.md" in sources
+    assert "investor-docs/swiss-re-israel-meeting-8dec2026-deck.he.md" in gen_module.RTL_DOCUMENTS
+    brief = gen_module.DESIGNED_BRIEFS["investor-docs/swiss-re-israel-meeting-8dec2026-deck.he.md"]
+    assert brief["lang"] == "he"
+    assert (DOCS / "swiss-re-israel-meeting-8dec2026-deck.he.pdf").is_file()
+    designed = _read(DOCS / "swiss-re-israel-meeting-8dec2026-deck.he.html")
+    assert '<html lang="he" dir="rtl">' in designed
+    assert "מר הלל דמלין" in designed
+    assert "phins-doc-gold" in designed  # the same letterhead
