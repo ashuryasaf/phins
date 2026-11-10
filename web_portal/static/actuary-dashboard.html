@@ -1547,7 +1547,7 @@
   </style>
   <link rel="stylesheet" href="/phins-theme.css">
 </head>
-<body>
+<body class="phins-unified">
   <div id="app">
     <!-- Header -->
     <header class="header">
@@ -14343,7 +14343,8 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
           .integrity-ok { color: #2f855a; font-weight: 700; }
           .integrity-bad { color: #c53030; font-weight: 700; }
           @media (max-width: 720px) { .exec-tiles { grid-template-columns: repeat(2, 1fr); } }
-        </style></head><body>${brandMasthead}${bodyHtml}</body></html>`;
+        </style>  <link rel="stylesheet" href="/phins-surface.css">
+</head><body>${brandMasthead}${bodyHtml}</body></html>`;
       const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

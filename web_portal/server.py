@@ -23912,10 +23912,18 @@ For claims or questions, please contact:
         path = parsed.path
         qs = urlparse.parse_qs(parsed.query)
 
-        # Redirect deprecated client-portal.html to main dashboard
-        if path == '/client-portal.html':
+        # Alias desks. The query string is kept so a bookmarked deep link
+        # still opens the same tab. The fragment stays in the browser.
+        if path in ('/client-portal.html', '/admin-portal.html', '/supplier-dashboard.html'):
+            destination = {
+                '/client-portal.html': '/dashboard.html',
+                '/admin-portal.html': '/admin.html',
+                '/supplier-dashboard.html': '/supplier-portal.html',
+            }[path]
+            if parsed.query:
+                destination = destination + '?' + parsed.query
             self.send_response(301)
-            self.send_header('Location', '/dashboard.html')
+            self.send_header('Location', destination)
             self.end_headers()
             return
 

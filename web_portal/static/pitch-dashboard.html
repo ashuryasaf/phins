@@ -1147,7 +1147,7 @@
 
     .data-badge.private {
       background: #e3f2fd;
-      color: #0d47a1;
+      color: var(--phins-navy);
     }
 
     .data-badge.proxy {
@@ -1918,7 +1918,7 @@
       font-family: "Space Grotesk", "Heebo", sans-serif;
       font-size: 12pt;
       font-weight: 800;
-      color: #0d47a1;
+      color: var(--phins-navy);
       line-height: 1.1;
     }
 
@@ -2014,7 +2014,7 @@
     }
 
     .pm-op-table th {
-      background: #0d47a1;
+      background: var(--phins-navy);
       color: #fff;
       font-weight: 700;
     }
@@ -2535,7 +2535,7 @@
       transition: width 0.5s ease;
     }
 
-    .exec-bar-item .ebi-fill.ai { background: linear-gradient(135deg, #1565c0, #42a5f5); }
+    .exec-bar-item .ebi-fill.ai { background: linear-gradient(135deg, var(--phins-gold), var(--phins-gold)); }
     .exec-bar-item .ebi-fill.data { background: linear-gradient(135deg, #2e7d32, #66bb6a); }
     .exec-bar-item .ebi-fill.cloud { background: linear-gradient(135deg, #6a1b9a, #ab47bc); }
     .exec-bar-item .ebi-fill.block { background: linear-gradient(135deg, #e65100, #ff9800); }
@@ -2889,7 +2889,7 @@
 
     <!-- Investor Due Diligence & Documentation hub -->
     <section id="investor-documents-section" style="margin-bottom:28px;">
-      <div class="exec-summary-banner" style="background: linear-gradient(135deg,#0d47a1 0%,#1565c0 50%,#1976d2 100%); box-shadow: 0 12px 32px rgba(13,71,161,0.22);">
+      <div class="exec-summary-banner" style="background: linear-gradient(135deg,var(--phins-navy) 0%,var(--phins-gold) 50%,var(--phins-gold) 100%); box-shadow: 0 12px 32px rgba(13,71,161,0.22);">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
           <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;"> Investor &amp; Investment Documents</span>
           <span style="font-size:8.5pt;opacity:0.85;">Due-diligence library · architecture, AI/BI optimization, data integrity</span>
@@ -3431,7 +3431,7 @@
           </div>
           <div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;" id="inv-deck-version-picker">
             <button type="button" class="inv-deck-ver-btn" data-deck-doc="detailed" id="inv-deck-ver-detailed" style="text-align:left;border:2px solid #0f766e;background:#ecfdf5;border-radius:12px;padding:12px 14px;cursor:pointer;font-family:inherit;">
-              <div style="font-size:7.4pt;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#0d47a1;">Extended version</div>
+              <div style="font-size:7.4pt;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:var(--phins-navy);">Extended version</div>
               <div style="font-size:10pt;font-weight:800;color:var(--blue-dark);margin-top:2px;">Platform plan before these changes</div>
               <div style="font-size:8pt;color:var(--text-sub);margin-top:4px;">Section 10, the ask, pre/post-money, investor stake, quarterly forecast, and deal structures.</div>
             </button>
@@ -3535,7 +3535,7 @@
           <div style="overflow-x:auto;">
             <table style="width:100%;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
               <thead>
-                <tr style="background:#0d47a1;color:#fff;">
+                <tr style="background:var(--phins-navy);color:#fff;">
                   <th style="padding:6px 8px;text-align:left;font-weight:700;">Cost category</th>
                   <th style="padding:6px 8px;text-align:right;font-weight:700;">Budget (<span class="inv-cur-sym">₪</span>)</th>
                   <th style="padding:6px 8px;text-align:right;font-weight:700;">Share</th>
@@ -3552,7 +3552,7 @@
                 <tr><td style="padding:5px 8px;">Contingency (≈11.7%)</td><td style="padding:5px 8px;text-align:right;" class="inv-money inv-scale" data-ils="700000"></td><td style="padding:5px 8px;text-align:right;">11.7%</td></tr>
               </tbody>
               <tfoot>
-                <tr style="background:#e6eefa;font-weight:800;color:#0d47a1;">
+                <tr style="background:#e6eefa;font-weight:800;color:var(--phins-navy);">
                   <td style="padding:6px 8px;">Total build budget</td>
                   <td style="padding:6px 8px;text-align:right;" class="inv-money inv-scale" data-ils="6000000"></td>
                   <td style="padding:6px 8px;text-align:right;">100%</td>
@@ -3563,18 +3563,18 @@
           <div class="exec-donut-wrap">
             <svg class="exec-donut-svg" width="170" height="170" viewBox="0 0 170 170" role="img" aria-label="Build budget composition by cost category">
               <circle cx="85" cy="85" r="60" fill="none" stroke="#e6eef9" stroke-width="22"/>
-              <circle cx="85" cy="85" r="60" fill="none" stroke="#1565c0" stroke-width="22" stroke-dasharray="152.06 224.93" stroke-dashoffset="0" transform="rotate(-90 85 85)"/>
+              <circle cx="85" cy="85" r="60" fill="none" stroke="var(--phins-gold)" stroke-width="22" stroke-dasharray="152.06 224.93" stroke-dashoffset="0" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#6a1b9a" stroke-width="22" stroke-dasharray="55.29 321.70" stroke-dashoffset="-152.06" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#00838f" stroke-width="22" stroke-dasharray="32.67 344.32" stroke-dashoffset="-207.35" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#e65100" stroke-width="22" stroke-dasharray="27.01 349.98" stroke-dashoffset="-240.02" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#2e7d32" stroke-width="22" stroke-dasharray="40.84 336.15" stroke-dashoffset="-267.03" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#f59e0b" stroke-width="22" stroke-dasharray="25.13 351.86" stroke-dashoffset="-307.87" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#78909c" stroke-width="22" stroke-dasharray="43.98 333.01" stroke-dashoffset="-333.00" transform="rotate(-90 85 85)"/>
-              <text x="85" y="82" text-anchor="middle" font-size="11" font-weight="800" fill="#0d47a1" id="inv-build-total">₪6.0M</text>
+              <text x="85" y="82" text-anchor="middle" font-size="11" font-weight="800" fill="var(--phins-navy)" id="inv-build-total">₪6.0M</text>
               <text x="85" y="96" text-anchor="middle" font-size="7.5" fill="#64748b">Build budget</text>
             </svg>
             <div class="exec-donut-legend">
-              <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#1565c0;"></span> Technology (platform + cloud/AI) — 40.3%</div>
+              <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:var(--phins-gold);"></span> Technology (platform + cloud/AI) — 40.3%</div>
               <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#6a1b9a;"></span> Legal, regulatory &amp; licensing — 14.7%</div>
               <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#00838f;"></span> Actuarial &amp; pricing — 8.7%</div>
               <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#e65100;"></span> QA &amp; security — 7.2%</div>
@@ -3634,7 +3634,7 @@
           <div style="overflow-x:auto;">
             <table style="width:100%;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
               <thead>
-                <tr style="background:#0d47a1;color:#fff;">
+                <tr style="background:var(--phins-navy);color:#fff;">
                   <th style="padding:6px 8px;text-align:left;font-weight:700;">Line item (<span class="inv-cur-sym">₪</span>)</th>
                   <th style="padding:6px 8px;text-align:right;font-weight:700;">2027</th>
                   <th style="padding:6px 8px;text-align:right;font-weight:700;">2028</th>
@@ -3705,7 +3705,7 @@
         <div style="overflow-x:auto;">
           <table style="width:100%;min-width:980px;font-size:7.8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
             <thead>
-              <tr style="background:linear-gradient(135deg,#0d47a1,#1565c0);color:#fff;">
+              <tr style="background:linear-gradient(135deg,var(--phins-navy),var(--phins-gold));color:#fff;">
                 <th style="padding:8px;text-align:left;font-weight:700;">Structure</th>
                 <th style="padding:8px;text-align:center;font-weight:700;">Capital (<span class="inv-cur-sym">₪</span>)</th>
                 <th style="padding:8px;text-align:center;font-weight:700;">Valuation basis</th>
@@ -3724,7 +3724,7 @@
             <div id="inv-callout-primary">—</div>
           </div>
           <div style="background:#f0f7ff;border-radius:8px;padding:10px;border:1px solid #bbdefb;">
-            <div style="font-weight:800;color:#1565c0;margin-bottom:4px;">Fallback — investor only</div>
+            <div style="font-weight:800;color:var(--phins-gold);margin-bottom:4px;">Fallback — investor only</div>
             <div id="inv-callout-fallback">—</div>
           </div>
         </div>
@@ -3797,7 +3797,7 @@
         <div style="overflow-x:auto;margin-top:12px;">
           <table style="width:100%;min-width:820px;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;" id="diary-table">
             <thead>
-              <tr style="background:#0d47a1;color:#fff;">
+              <tr style="background:var(--phins-navy);color:#fff;">
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Date</th>
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Time</th>
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Counterparty</th>
@@ -4026,7 +4026,7 @@
                 OECD expansion is configuration, not a second core.
               </div>
               <div class="pm-op-ask-box fallback">
-                <strong class="label" style="color:#1565c0;">Fallback &amp; next</strong>
+                <strong class="label" style="color:var(--phins-gold);">Fallback &amp; next</strong>
                 Priced equity or convertible if a pure-investor role is preferred.
                 Next: mutual NDA, term sheet, confirmatory diligence on the live platform
                 (policy → UW → billing → claim → reinsurance, with audit log).
@@ -4141,7 +4141,7 @@
                 הרחבה ל-OECD היא תצורה, לא ליבה שנייה.
               </div>
               <div class="pm-op-ask-box fallback">
-                <strong class="label" style="color:#1565c0;">חלופה והמשך</strong>
+                <strong class="label" style="color:var(--phins-gold);">חלופה והמשך</strong>
                 הון מתומחר או המרה אם מועדף תפקיד משקיע בלבד.
                 הבא: הסכם סודיות הדדי, מזכר תנאים, ובדיקת נאותות על הפלטפורמה החיה
                 (פוליסה → חיתום → חיוב → תביעה → ביטוח משנה, עם יומן ביקורת).
@@ -4279,7 +4279,7 @@
 
     <!-- Regulatory Meeting — 27 July 2026 (Herzog Fox Neeman & Co. Advocates) -->
     <section id="regulatory-meeting-27jul" style="margin-bottom:28px;">
-      <div class="exec-summary-banner" style="background: linear-gradient(135deg,#312e81 0%,#6a1b9a 52%,#0d47a1 100%); box-shadow: 0 12px 32px rgba(106,27,154,0.22);">
+      <div class="exec-summary-banner" style="background: linear-gradient(135deg,#312e81 0%,#6a1b9a 52%,var(--phins-navy) 100%); box-shadow: 0 12px 32px rgba(106,27,154,0.22);">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
           <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;"> Internal · Confidential</span>
           <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,0.16);font-size:8.5pt;font-weight:700;"> Regulatory counsel</span>
@@ -4364,8 +4364,8 @@
         </div>
 
         <!-- Scope, prep and decision outputs -->
-        <div class="exec-chart-panel" id="reg-scope-panel" style="border:2px solid #0d47a1;background:linear-gradient(180deg,#f0f6ff 0%,#ffffff 55%);">
-          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0d47a1;margin-bottom:6px;"> Scope · prep · decision outputs</div>
+        <div class="exec-chart-panel" id="reg-scope-panel" style="border:2px solid var(--phins-navy);background:linear-gradient(180deg,#f0f6ff 0%,#ffffff 55%);">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--phins-navy);margin-bottom:6px;"> Scope · prep · decision outputs</div>
           <h3 style="margin:0 0 6px 0;"> What we bring · what we ask · what we leave with</h3>
 
           <div style="border:1px solid #c7d2fe;background:#eef2ff;border-radius:10px;padding:10px 12px;margin-top:10px;" id="reg-elevator">
@@ -6529,7 +6529,7 @@
           <div class="exec-donut-wrap">
             <svg class="exec-donut-svg" width="170" height="170" viewBox="0 0 170 170">
               <circle cx="85" cy="85" r="60" fill="none" stroke="#e6eef9" stroke-width="22"/>
-              <circle cx="85" cy="85" r="60" fill="none" stroke="#1565c0" stroke-width="22"
+              <circle cx="85" cy="85" r="60" fill="none" stroke="var(--phins-gold)" stroke-width="22"
                 stroke-dasharray="113.1 263.89" stroke-dashoffset="0" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#2e7d32" stroke-width="22"
                 stroke-dasharray="75.4 301.59" stroke-dashoffset="-113.1" transform="rotate(-90 85 85)"/>
@@ -6539,11 +6539,11 @@
                 stroke-dasharray="45.24 331.75" stroke-dashoffset="-245.04" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#78909c" stroke-width="22"
                 stroke-dasharray="86.71 290.28" stroke-dashoffset="-290.28" transform="rotate(-90 85 85)"/>
-              <text x="85" y="82" text-anchor="middle" font-size="11" font-weight="800" fill="#0d47a1">PHINS</text>
+              <text x="85" y="82" text-anchor="middle" font-size="11" font-weight="800" fill="var(--phins-navy)">PHINS</text>
               <text x="85" y="96" text-anchor="middle" font-size="7.5" fill="#64748b">Tech Stack</text>
             </svg>
             <div class="exec-donut-legend">
-              <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#1565c0;"></span> AI / ML Infrastructure — 30%</div>
+              <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:var(--phins-gold);"></span> AI / ML Infrastructure — 30%</div>
               <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#2e7d32;"></span> Data & Analytics — 20%</div>
               <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#6a1b9a;"></span> Cloud & DevOps — 15%</div>
               <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#e65100;"></span> Blockchain / Ledger — 12%</div>
@@ -6661,7 +6661,7 @@
           <h4 style="font-size:9pt;font-weight:800;color:var(--text-main);margin-bottom:8px;"> Core Assumptions</h4>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:7.8pt;color:var(--text-main);">
             <div style="background:#e3f2fd;border-radius:8px;padding:8px;">
-              <div style="font-weight:800;color:#1565c0;margin-bottom:4px;">Customer Base</div>
+              <div style="font-weight:800;color:var(--phins-gold);margin-bottom:4px;">Customer Base</div>
               <div>• 100,000 underwritten customers</div>
               <div>• Each customer uses platform <strong>1×/month</strong></div>
               <div>• 100K monthly agent interactions</div>
@@ -6686,7 +6686,7 @@
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px;">
           <div style="border-radius:12px;background:#f0f7ff;padding:16px;border:1px solid #bbd6f7;">
-            <h4 style="font-size:9.5pt;font-weight:800;color:#1565c0;margin-bottom:8px;">Cloud AI Engine Services</h4>
+            <h4 style="font-size:9.5pt;font-weight:800;color:var(--phins-gold);margin-bottom:8px;">Cloud AI Engine Services</h4>
             <table style="width:100%;font-size:7.8pt;border-collapse:collapse;">
               <thead>
                 <tr style="border-bottom:1px solid #bbd6f7;">
@@ -6711,7 +6711,7 @@
                 <tr><td style="padding:2px 4px;">AI Model Registry (hosted inference)</td><td style="text-align:center;padding:2px 4px;">12,000</td><td style="text-align:right;padding:2px 4px;">$19,200</td></tr>
                 <tr><td style="padding:2px 4px;">Assessment Center NLP</td><td style="text-align:center;padding:2px 4px;">2,800</td><td style="text-align:right;padding:2px 4px;">$14,400</td></tr>
                 <tr><td style="padding:2px 4px;">Voice AI Assistant (STT/TTS)</td><td style="text-align:center;padding:2px 4px;">25,000</td><td style="text-align:right;padding:2px 4px;">$26,400</td></tr>
-                <tr style="border-top:2px solid #1565c0;font-weight:800;background:#dbeafe;">
+                <tr style="border-top:2px solid var(--phins-gold);font-weight:800;background:#dbeafe;">
                   <td style="padding:4px;">Total Annual Cloud AI</td>
                   <td style="text-align:center;padding:4px;">~312K/mo</td>
                   <td style="text-align:right;padding:4px;">$603,900</td>
@@ -6839,14 +6839,14 @@
             </div>
           </div>
           <div style="display:flex;gap:14px;margin-top:8px;font-size:7pt;">
-            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:linear-gradient(135deg,#1565c0,#42a5f5);opacity:0.4;vertical-align:middle;"></span> Cloud AI baseline (100%)</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:linear-gradient(135deg,var(--phins-gold),var(--phins-gold));opacity:0.4;vertical-align:middle;"></span> Cloud AI baseline (100%)</span>
             <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:linear-gradient(135deg,#2e7d32,#66bb6a);vertical-align:middle;"></span> Local LLM cost (% of cloud, Year 2+)</span>
           </div>
         </div>
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
           <div>
-            <h4 style="font-size:9pt;font-weight:800;color:#1565c0;margin-bottom:6px;">Cloud AI — Strategic Advantages</h4>
+            <h4 style="font-size:9pt;font-weight:800;color:var(--phins-gold);margin-bottom:6px;">Cloud AI — Strategic Advantages</h4>
             <ul style="font-size:7.8pt;color:var(--text-main);margin:0;padding-left:14px;line-height:1.7;">
               <li>Zero upfront capex; pay-per-use elasticity</li>
               <li>Instant access to frontier models (GPT-4o, Claude 4, Gemini)</li>
@@ -6894,7 +6894,7 @@
         </div>
 
         <div style="margin-top:14px;border-radius:10px;background:linear-gradient(135deg,#e3f2fd,#f3e5f5);padding:14px;border:1px solid #bbdefb;">
-          <h4 style="font-size:9pt;font-weight:800;color:#0d47a1;margin-bottom:6px;"> Recommended Strategy: Hybrid Approach</h4>
+          <h4 style="font-size:9pt;font-weight:800;color:var(--phins-navy);margin-bottom:6px;"> Recommended Strategy: Hybrid Approach</h4>
           <p style="font-size:8pt;color:var(--text-main);margin:0;line-height:1.6;">
             <strong>Phase 1 (Year 1):</strong> Cloud-first for all 15 agents — $604K opex, zero capex. Fastest time-to-market at 100K customers.<br>
             <strong>Phase 2 (Year 2):</strong> Deploy local inference for high-volume agents (Underwriting, Claims, Investment, Trading, Customer Comms) — saves $248K/yr vs cloud at equivalent scale. Israeli data residency achieved.<br>
@@ -6959,7 +6959,7 @@
                 <div><strong>Performance:</strong> 32 PFLOPS FP8 training + inference</div>
                 <div><strong>Ideal for:</strong> Enterprise deployment with Dell ProSupport + Israeli resellers</div>
                 <div style="margin-top:6px;padding:6px;background:#e3f2fd;border-radius:6px;">
-                  <div style="font-weight:800;color:#1565c0;">Cost Range</div>
+                  <div style="font-weight:800;color:var(--phins-gold);">Cost Range</div>
                   <div><strong>Purchase:</strong> $280,000 – $380,000</div>
                   <div><strong>Lease (36mo):</strong> $10,500 – $14,000/month</div>
                   <div><strong>Dell APEX (pay-per-use):</strong> $28,000 – $35,000/month</div>
@@ -6994,7 +6994,7 @@
           <div style="margin-top:14px;overflow-x:auto;">
             <table style="width:100%;font-size:7.8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
               <thead>
-                <tr style="background:#0d47a1;color:#fff;">
+                <tr style="background:var(--phins-navy);color:#fff;">
                   <th style="padding:6px 8px;text-align:left;font-weight:700;">Option</th>
                   <th style="padding:6px 8px;text-align:center;font-weight:700;">Purchase Range</th>
                   <th style="padding:6px 8px;text-align:center;font-weight:700;">Monthly Lease</th>
@@ -7046,7 +7046,7 @@
               <div>Start with <strong>Option 4</strong> (L40S Cluster, $85–140K) for Phase 2 inference, then add <strong>Option 2</strong> (Lambda Hyperplane, $250–350K) for Phase 3 full training. Total capex: <strong>$335K – $490K</strong> over 18 months.</div>
             </div>
             <div style="background:#f0f7ff;border-radius:8px;padding:10px;border:1px solid #bbdefb;">
-              <div style="font-weight:800;color:#1565c0;margin-bottom:4px;">Recommended Path (Enterprise-Grade)</div>
+              <div style="font-weight:800;color:var(--phins-gold);margin-bottom:4px;">Recommended Path (Enterprise-Grade)</div>
               <div>Deploy <strong>Option 1</strong> (NVIDIA DGX H100, $320–420K) as single turnkey solution for Phase 2+3 combined. Premium pricing offset by NVIDIA enterprise support, certified stack, and single-vendor warranty. Total capex: <strong>$320K – $420K</strong> at once.</div>
             </div>
           </div>
@@ -7813,13 +7813,13 @@
         One adjustable template replaces 26 near-duplicate files.
       </p>
       <div class="jurisdiction-picker" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:1.25rem;display:grid;gap:12px;max-width:720px;">
-        <label style="font-weight:600;color:#0d47a1;">Country / Jurisdiction
+        <label style="font-weight:600;color:var(--phins-navy);">Country / Jurisdiction
           <select id="pitch-jurisdiction" style="display:block;width:100%;margin-top:6px;padding:10px 12px;border-radius:8px;border:1px solid #cbd5e1;font-size:1rem;"></select>
         </label>
         <div id="pitch-authority-preview" style="color:#334155;font-size:0.95rem;"></div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <button type="button" id="pitch-open-btn" class="btn" style="background:linear-gradient(135deg,#0d47a1,#1565c0);color:#fff;border:none;padding:10px 18px;border-radius:10px;font-weight:700;cursor:pointer;">Open Pitch →</button>
-          <button type="button" id="pitch-print-btn" class="btn" style="background:#fff;color:#0d47a1;border:1.5px solid #0d47a1;padding:10px 18px;border-radius:10px;font-weight:700;cursor:pointer;">Print / Download PDF</button>
+          <button type="button" id="pitch-open-btn" class="btn" style="background:linear-gradient(135deg,var(--phins-navy),var(--phins-gold));color:#fff;border:none;padding:10px 18px;border-radius:10px;font-weight:700;cursor:pointer;">Open Pitch →</button>
+          <button type="button" id="pitch-print-btn" class="btn" style="background:#fff;color:var(--phins-navy);border:1.5px solid var(--phins-navy);padding:10px 18px;border-radius:10px;font-weight:700;cursor:pointer;">Print / Download PDF</button>
         </div>
       </div>
       <script>
@@ -7910,7 +7910,7 @@
       </p>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 8px;">
-        <button type="button" class="export-btn" id="toggle-bp-panel" style="background:linear-gradient(135deg,#0d47a1,#1565c0);color:#fff;border:none;font-weight:700;">Open Business Plan Dashboard</button>
+        <button type="button" class="export-btn" id="toggle-bp-panel" style="background:linear-gradient(135deg,var(--phins-navy),var(--phins-gold));color:#fff;border:none;font-weight:700;">Open Business Plan Dashboard</button>
         <button type="button" class="export-btn" id="bp-download-pdf-btn" style="background:var(--green-1);color:#fff;border:none;">Download Tech Investor PDF</button>
         <span class="helper-note" id="bp-status"></span>
       </div>
@@ -8023,19 +8023,19 @@
         <div style="overflow-x:auto;margin-bottom:16px;border:1px solid var(--border);border-radius:14px;background:#fff;">
           <table style="min-width:1200px;margin:0;font-size:7.5pt;border-collapse:separate;border-spacing:0;" id="bp-market-table">
             <thead>
-              <tr style="background:linear-gradient(135deg,#0d47a1,#1565c0);">
-                <th style="padding:10px 10px;color:#fff;font-weight:700;text-align:left;border-bottom:2px solid #0d47a1;border-radius:14px 0 0 0;">Market</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:center;border-bottom:2px solid #0d47a1;">PHINS Eq%</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Addressable</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Written Lives</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">GWP (local)</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">GWP (USD)</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Net (USD)</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Royalty</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Rev Share</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">SaaS Fee</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Total Rev</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;border-radius:0 14px 0 0;">JV Equity Val</th>
+              <tr style="background:linear-gradient(135deg,var(--phins-navy),var(--phins-gold));">
+                <th style="padding:10px 10px;color:#fff;font-weight:700;text-align:left;border-bottom:2px solid var(--phins-navy);border-radius:14px 0 0 0;">Market</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:center;border-bottom:2px solid var(--phins-navy);">PHINS Eq%</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">Addressable</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">Written Lives</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">GWP (local)</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">GWP (USD)</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">Net (USD)</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">Royalty</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">Rev Share</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">SaaS Fee</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">Total Rev</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);border-radius:0 14px 0 0;">JV Equity Val</th>
               </tr>
             </thead>
             <tbody id="bp-market-body"></tbody>
@@ -8220,7 +8220,7 @@
         <div class="table-wrap">
           <table style="width:100%;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
             <thead>
-              <tr style="background:#0d47a1;color:#fff;">
+              <tr style="background:var(--phins-navy);color:#fff;">
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Company</th>
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Model</th>
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">2025–2026 public fact</th>
@@ -8241,7 +8241,7 @@
         <div class="table-wrap">
           <table style="width:100%;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
             <thead>
-              <tr style="background:#0d47a1;color:#fff;">
+              <tr style="background:var(--phins-navy);color:#fff;">
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Horizon</th>
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Plan years</th>
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Architecture deliverables</th>
@@ -8292,7 +8292,7 @@
         <div class="table-wrap" style="margin-top:18px;">
           <table style="width:100%;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
             <thead>
-              <tr style="background:#0d47a1;color:#fff;">
+              <tr style="background:var(--phins-navy);color:#fff;">
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Cost line</th>
                 <th style="padding:6px 8px;text-align:right;font-weight:700;">Y1</th>
                 <th style="padding:6px 8px;text-align:right;font-weight:700;">Y2</th>
@@ -8333,9 +8333,9 @@
       {
         "risk_premium_ils": 4518,
         "cost_lines": [
-          {"key": "personnel", "label": "Personnel (loaded)", "color": "#0d47a1"},
-          {"key": "ai_dev", "label": "AI development tokens", "color": "#1976d2"},
-          {"key": "ai_runtime", "label": "AI runtime (agents, OCR, STT)", "color": "#42a5f5"},
+          {"key": "personnel", "label": "Personnel (loaded)", "color": "var(--phins-navy)"},
+          {"key": "ai_dev", "label": "AI development tokens", "color": "var(--phins-gold)"},
+          {"key": "ai_runtime", "label": "AI runtime (agents, OCR, STT)", "color": "var(--phins-gold)"},
           {"key": "cloud", "label": "Cloud & electricity", "color": "#26a69a"},
           {"key": "security", "label": "Security & compliance", "color": "#c9a227"},
           {"key": "actuarial_reg", "label": "Actuarial & regulatory tooling", "color": "#7e57c2"}
@@ -8446,7 +8446,7 @@
             var vals = years.map(function (y) { return y[key]; });
             var total = vals.reduce(function (a, v) { return a + (typeof v === 'number' ? v : 0); }, 0);
             var render = opts.render || fmt;
-            var bg = opts.bg ? ' style="background:' + opts.bg + (opts.bold ? ';font-weight:800;color:#0d47a1' : '') + ';"' : '';
+            var bg = opts.bg ? ' style="background:' + opts.bg + (opts.bold ? ';font-weight:800;color:var(--phins-navy)' : '') + ';"' : '';
             return '<tr' + bg + '><td style="padding:5px 8px;' + (opts.bold ? 'font-weight:700;' : '') + '">' + esc(label) + '</td>' +
               vals.map(function (v) { return cell(render(v), opts.bold); }).join('') +
               cell(opts.total === false ? '—' : render(total), true) + '</tr>';
@@ -10901,7 +10901,7 @@
           return '<div style="display:grid;grid-template-columns:85px 1fr 100px;align-items:center;gap:10px;padding:4px 0;">' +
             '<div style="font-size:8pt;font-weight:700;color:var(--text-main);">Year ' + (i+1) + ' (' + (ramp*100).toFixed(0) + '%)</div>' +
             '<div style="background:#e8eef7;border-radius:9px;height:22px;overflow:hidden;">' +
-            '<div style="width:' + pct + '%;height:100%;background:linear-gradient(90deg,#0d47a1,#1976d2,#42a5f5);border-radius:9px;transition:width 0.4s ease;"></div></div>' +
+            '<div style="width:' + pct + '%;height:100%;background:linear-gradient(90deg,var(--phins-navy),var(--phins-gold),var(--phins-gold));border-radius:9px;transition:width 0.4s ease;"></div></div>' +
             '<div style="font-size:8.5pt;font-weight:700;color:var(--blue-dark);text-align:right;">' + fmtUsd(rev) + '</div>' +
             '</div>';
         }).join("");
@@ -11372,7 +11372,7 @@
         var v = (value || "").toLowerCase();
         if (v.indexOf("held") >= 0 || v.indexOf("done") >= 0) return "background:#dcfce7;color:#15803d;";
         if (v.indexOf("cancel") >= 0) return "background:#fee2e2;color:#b91c1c;";
-        return "background:#dbeafe;color:#1565c0;";
+        return "background:#dbeafe;color:var(--phins-gold);";
       }
 
       function render() {
@@ -11597,7 +11597,7 @@
           badges.appendChild(status);
           (note.tags || []).forEach(function (tag) {
             var chip = document.createElement("span");
-            chip.style.cssText = "font-size:7.6pt;font-weight:700;border-radius:20px;padding:2px 8px;background:#dbeafe;color:#1565c0;text-transform:uppercase;";
+            chip.style.cssText = "font-size:7.6pt;font-weight:700;border-radius:20px;padding:2px 8px;background:#dbeafe;color:var(--phins-gold);text-transform:uppercase;";
             chip.textContent = tag;
             badges.appendChild(chip);
           });
@@ -13952,5 +13952,6 @@
 
 <script src="/phins-doc-open.js"></script>
 <script src="/pitch-session.js"></script>
+  <script src="/ui-clarity.js"></script>
 </body>
 </html>

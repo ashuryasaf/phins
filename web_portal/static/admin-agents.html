@@ -28,89 +28,6 @@
       margin: 0;
       color: #2d3748;
     }
-
-    .phins-header {
-      background: linear-gradient(135deg, #1a1f36 0%, #2d3561 50%, #1a1f36 100%);
-      border-bottom: 1px solid rgba(255,255,255,0.1);
-      padding: 0;
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-    }
-    .phins-header-inner {
-      max-width: 1600px;
-      margin: 0 auto;
-      padding: 0.75rem 2rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .phins-logo {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      text-decoration: none;
-    }
-    .phins-logo-icon {
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .phins-logo-text {
-      font-size: 1.75rem;
-      font-weight: 700;
-      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 50%, #43e97b 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .phins-nav {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    .phins-nav a {
-      padding: 0.5rem 1rem;
-      color: rgba(255,255,255,0.8);
-      text-decoration: none;
-      border-radius: 8px;
-      font-size: 0.9rem;
-      font-weight: 500;
-      transition: all 0.2s ease;
-    }
-    .phins-nav a:hover {
-      background: rgba(255,255,255,0.1);
-      color: white;
-    }
-    .phins-nav a.active {
-      background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%);
-      color: white;
-    }
-    .phins-nav .btn-logout {
-      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
-      color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 8px;
-      font-weight: 600;
-      border: none;
-      cursor: pointer;
-      font-family: inherit;
-    }
-    .mobile-menu-btn {
-      display: none;
-      background: rgba(255,255,255,0.15);
-      border: 1px solid rgba(255,255,255,0.3);
-      color: white;
-      padding: 10px 14px;
-      border-radius: 8px;
-      font-size: 1.5rem;
-      cursor: pointer;
-      z-index: 1001;
-    }
     @media screen and (max-width: 1024px) {
       .mobile-menu-btn { display: block; }
       .phins-nav {
@@ -486,8 +403,9 @@
     }
   </style>
   <link rel="stylesheet" href="/phins-theme.css">
+  <link rel="stylesheet" href="/phins-surface.css">
 </head>
-<body>
+<body class="phins-unified">
   <header class="phins-header">
     <div class="phins-header-inner">
       <a href="/admin.html" class="phins-logo">
@@ -937,5 +855,6 @@
     if(TOKEN) boot(); else showApp(false);
   })();
   </script>
+  <script src="/ui-clarity.js"></script>
 </body>
 </html>

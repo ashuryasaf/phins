@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/phins-theme.css">
   <style>
     :root {
       --blue-dark:#0d47a1; --blue-mid:#1565c0; --violet:#6a1b9a; --green:#15803d;
@@ -58,7 +59,7 @@
   </style>
 </head>
 <body>
-  <header>
+  <header class="phins-header">
     <div style="display:flex;align-items:center;gap:12px">
       <img src="/phins-logo.svg" alt="PHINS emblem" width="36" height="36" style="filter:drop-shadow(0 4px 14px rgba(79,216,255,0.3))">
       <div>
@@ -375,5 +376,6 @@
     if(TOKEN) boot(); else showApp(false);
   })();
   </script>
+  <script src="/ui-clarity.js"></script>
 </body>
 </html>
