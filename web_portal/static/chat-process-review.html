@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-phins-eyebrow="Process review">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,30 +9,31 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     <style>
-        :root { color-scheme: dark; }
-        body { margin: 0; font-family: Inter, sans-serif; background: #060d1f; color: #e8eef8; }
-        header { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 18px 24px; border-bottom: 1px solid rgba(201,162,75,0.35); }
-        h1 { font-family: "Space Grotesk", sans-serif; font-size: 1.35rem; margin: 0; }
-        a { color: #e3bf6f; }
-        main { max-width: 1080px; margin: 0 auto; padding: 24px; }
-        .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-        input, button { font: inherit; }
-        input { background: #0d1830; color: #fff; border: 1px solid rgba(201,162,75,0.45); border-radius: 10px; padding: 10px 12px; min-width: 280px; }
-        button, .tab { background: transparent; color: #e3bf6f; border: 1px solid rgba(201,162,75,0.55); border-radius: 999px; padding: 8px 14px; cursor: pointer; }
-        button.active, .tab.active { background: #e3bf6f; color: #06101f; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 18px; }
-        .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(201,162,75,0.28); border-radius: 16px; padding: 16px; }
-        .card h2 { margin: 0 0 10px; font-size: 0.95rem; letter-spacing: 0.06em; text-transform: uppercase; color: #e3bf6f; }
-        .muted { color: #9aabc4; font-size: 0.88rem; }
-        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-        th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); vertical-align: top; }
-        .ok { color: #8ddea8; } .bad { color: #ff8d8d; }
-        .error { color: #ffb4b4; }
-        code { font-family: "Space Grotesk", monospace; font-size: 0.82rem; }
+        :root { color-scheme: light; }
+        body { margin: 0; font-family: Inter, sans-serif; background: #e8eef6; color: #12284c; }
+        .process-review .review-head { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 0 0 14px; margin-bottom: 8px; border-bottom: 1px solid #d5deea; }
+        .process-review h1 { font-family: "Space Grotesk", sans-serif; font-size: 1.35rem; margin: 0; color: #0e2f63; }
+        .process-review a { color: #0e2f63; }
+        .process-review main { max-width: 1080px; margin: 0 auto; padding: 8px 0 24px; }
+        .process-review .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .process-review input, .process-review button { font: inherit; }
+        .process-review input { background: #fff; color: #12284c; border: 1px solid #d5deea; border-radius: 10px; padding: 10px 12px; min-width: 280px; }
+        .process-review button, .process-review .tab { background: #fff; color: #0e2f63; border: 1px solid #c9a04e; border-radius: 999px; padding: 8px 14px; cursor: pointer; }
+        .process-review button.active, .process-review .tab.active { background: #0e2f63; color: #f7e2a0; }
+        .process-review .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 18px; }
+        .process-review .card { background: #f3f7fd; border: 1px solid #d5deea; border-radius: 16px; padding: 16px; color: #12284c; }
+        .process-review .card h2 { margin: 0 0 10px; font-size: 0.95rem; letter-spacing: 0.06em; text-transform: uppercase; color: #0e2f63; }
+        .process-review .muted { color: #5b6b82; font-size: 0.88rem; }
+        .process-review table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        .process-review th, .process-review td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #d5deea; vertical-align: top; color: #12284c; }
+        .process-review .ok { color: #0f6b45; } .process-review .bad { color: #9b2c2c; }
+        .process-review .error { color: #9b2c2c; }
+        .process-review code { font-family: "Space Grotesk", monospace; font-size: 0.82rem; color: #123f82; }
     </style>
 </head>
 <body>
-    <header>
+    <div class="process-review">
+    <header class="review-head">
         <h1>Chat process review</h1>
         <a href="/underwriter-dashboard.html">Underwriting</a>
     </header>
@@ -47,6 +48,7 @@
         <div id="quick"></div>
         <div id="full" hidden></div>
     </main>
+    </div>
     <script>
         const $ = (id) => document.getElementById(id);
         const token = localStorage.getItem('phins_token') || '';
@@ -182,5 +184,6 @@
             load(initial);
         }
     </script>
+    <script src="/phins-doc-return.js"></script>
 </body>
 </html>

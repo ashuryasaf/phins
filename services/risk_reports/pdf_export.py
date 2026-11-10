@@ -2534,3 +2534,288 @@ def build_report_pdf_bytes(summary: Dict[str, Any]) -> bytes:
     except Exception:
         fallback_text = json.dumps(summary, ensure_ascii=False, indent=2)
         return fallback_text.encode('utf-8')
+
+
+def _html_text(value: Any) -> str:
+    return html.escape('' if value is None else str(value), quote=True)
+
+
+def _html_paragraph(value: Any) -> str:
+    text = str(value or '').strip()
+    if not text:
+        return ''
+    return '<p>' + '<br>'.join(_html_text(line) for line in text.splitlines()) + '</p>'
+
+
+def _html_table(headers: List[Any], rows: List[List[Any]]) -> str:
+    if not rows:
+        return ''
+    parts = ['<table>']
+    if headers:
+        parts.append('<thead><tr>')
+        parts.extend('<th>' + _html_text(col) + '</th>' for col in headers)
+        parts.append('</tr></thead>')
+    parts.append('<tbody>')
+    for row in rows:
+        parts.append('<tr>')
+        parts.extend('<td>' + _html_text(cell) + '</td>' for cell in row)
+        parts.append('</tr>')
+    parts.append('</tbody></table>')
+    return ''.join(parts)
+
+
+def _html_kv(pairs: List[Any], *, drop_blank: bool = False) -> str:
+    body: List[str] = []
+    for pair in pairs:
+        if not isinstance(pair, (list, tuple)) or len(pair) < 2:
+            continue
+        if drop_blank and not _uploaded(pair[1]):
+            continue
+        body.append(
+            '<tr><th>' + _html_text(pair[0]) + '</th><td>' + _html_text(pair[1]) + '</td></tr>'
+        )
+    if not body:
+        return ''
+    return '<table><tbody>' + ''.join(body) + '</tbody></table>'
+
+
+def _letterhead_block(heading: str, inner: str) -> str:
+    if not inner:
+        return ''
+    return '<h2>' + _html_text(heading) + '</h2>' + inner
+
+
+def _letterhead_pension_html(summary: Dict[str, Any], is_hebrew: bool) -> str:
+    """Identity, savings, accounts, and covers — the same blocks as the PDF."""
+    pension = summary.get('pension_assessment') or {}
+    if not isinstance(pension, dict):
+        pension = {}
+    client = pension.get('client') or {}
+    if not isinstance(client, dict):
+        client = {}
+    totals = pension.get('totals') or {}
+    if not isinstance(totals, dict):
+        totals = {}
+    sci = summary.get('savings_cover_id_summary') or {}
+    if not isinstance(sci, dict):
+        sci = {}
+    parts: List[str] = []
+
+    identity = _html_kv([
+        ['תעודת זהות' if is_hebrew else 'National ID', _as_str(client.get('id_number') or sci.get('customer_id') or '')],
+        ['שם מלא' if is_hebrew else 'Full Name', _as_str(client.get('full_name') or client.get('client_name') or '')],
+        ['תאריך לידה' if is_hebrew else 'Birth Date', _as_str(client.get('birth_date') or sci.get('birth_date') or '')],
+        ['נוצר' if is_hebrew else 'Prepared On', _as_when(summary.get('generated_at'))],
+    ], drop_blank=True)
+    parts.append(_letterhead_block('הפרטים שלך' if is_hebrew else 'Your Details', identity))
+
+    display_totals = dict(totals)
+    if not display_totals.get('total_balance'):
+        display_totals['total_balance'] = sci.get('total_savings', 0)
+    if not display_totals.get('total_severance'):
+        display_totals['total_severance'] = sci.get('total_severance', 0)
+    accounts = pension.get('accounts') or []
+    if not isinstance(accounts, list):
+        accounts = []
+    if not display_totals.get('account_count'):
+        display_totals['account_count'] = len(accounts)
+    parts.append(_letterhead_block(
+        'החיסכון והפיצויים שלך' if is_hebrew else 'Your Savings & Severance',
+        _html_kv(_accumulation_total_pairs(display_totals, is_hebrew)),
+    ))
+
+    by_provider = display_totals.get('by_provider') or {}
+    if isinstance(by_provider, dict):
+        provider_rows = [
+            [_as_str(name), _as_money(amount)]
+            for name, amount in by_provider.items()
+            if _uploaded(amount)
+        ]
+        parts.append(_letterhead_block(
+            'צבירות לפי יצרן' if is_hebrew else 'Accumulation by Provider',
+            _html_table(
+                ['יצרן' if is_hebrew else 'Provider', 'סה״כ חיסכון' if is_hebrew else 'Accumulation'],
+                provider_rows,
+            ),
+        ))
+    product_rows = _product_accumulation_rows(display_totals, is_hebrew=is_hebrew)
+    parts.append(_letterhead_block(
+        'ריכוז סכומי הצבירה לפי סוגי המוצרים' if is_hebrew else 'Accumulation by Product Type',
+        _html_table(
+            ['סוג מוצר' if is_hebrew else 'Product Type', 'סכום צבירה' if is_hebrew else 'Accumulation'],
+            product_rows,
+        ),
+    ))
+    death_lump = _death_lump_from_payload(display_totals, summary)
+    if death_lump > 0:
+        parts.append(_letterhead_block(
+            'ביטוח למקרה מוות' if is_hebrew else 'Death Cover',
+            _html_kv([['סכום חד פעמי' if is_hebrew else 'Lump sum', _as_money(death_lump)]]),
+        ))
+
+    shown = [account for account in accounts[:80] if isinstance(account, dict)]
+    if shown:
+        money_headers, money_rows = _active_holdings_table(_holdings_money_specs(is_hebrew), shown)
+        parts.append(_letterhead_block(
+            'הפוליסות שלך' if is_hebrew else 'Your Policies',
+            _html_table(money_headers, money_rows),
+        ))
+        detail_titles = (
+            'הפוליסה והמסלול' if is_hebrew else 'Policy and Track',
+            'הפקדות ודמי ניהול' if is_hebrew else 'Deposits and Fees',
+        )
+        for detail_heading, detail_specs in zip(detail_titles, _holdings_detail_specs(is_hebrew)):
+            detail_headers, detail_rows = _active_holdings_table(detail_specs, shown)
+            if not detail_headers or not any(any(cell for cell in row[1:]) for row in detail_rows):
+                continue
+            parts.append(_letterhead_block(detail_heading, _html_table(detail_headers, detail_rows)))
+    return ''.join(parts)
+
+
+def _letterhead_overview_html(summary: Dict[str, Any], is_hebrew: bool) -> str:
+    sci = summary.get('savings_cover_id_summary') or {}
+    if not isinstance(sci, dict):
+        return ''
+    has_customer_totals = any(
+        sci.get(key) not in (None, '', 0, 0.0)
+        for key in ('customer_id', 'birth_date', 'total_savings', 'total_severance', 'total_cover')
+    )
+    if not has_customer_totals:
+        return ''
+    return _letterhead_block(
+        'הסיכום שלך' if is_hebrew else 'Your Summary',
+        _html_kv([
+            ['תעודת זהות' if is_hebrew else 'National ID', _as_str(sci.get('customer_id', ''))],
+            ['תאריך לידה' if is_hebrew else 'Birth Date', _as_str(sci.get('birth_date', ''))],
+            ['סה״כ חיסכון' if is_hebrew else 'Total Savings', _as_money(sci.get('total_savings', 0))],
+            ['סה״כ פיצויים' if is_hebrew else 'Total Severance', _as_money(sci.get('total_severance', 0))],
+            ['סה״כ כיסוי' if is_hebrew else 'Total Cover', _as_money(sci.get('total_cover', 0))],
+            ['נוצר' if is_hebrew else 'Prepared On', _as_when(summary.get('generated_at'))],
+        ]),
+    )
+
+
+def _letterhead_sections_html(summary: Dict[str, Any]) -> str:
+    pension = bool(summary.get('is_pension_data') or summary.get('pension_assessment'))
+    accounts_already_shown = pension and bool((summary.get('pension_assessment') or {}).get('accounts'))
+    parts: List[str] = []
+    for section in prepare_customer_download_sections(summary.get('assessment_sections') or []):
+        title_text = str(section.get('title') or '')
+        if pension and is_undesigned_narrative_section(title_text):
+            continue
+        if accounts_already_shown and is_policy_table_section(title_text):
+            continue
+        content = str(section.get('content') or '').strip()
+        rows = section.get('rows') or []
+        columns = [str(col) for col in (section.get('columns') or [])]
+        table_rows = [
+            [row.get(col, '') for col in columns]
+            for row in rows[:60]
+            if isinstance(row, dict)
+        ] if columns else []
+        if not content and not table_rows:
+            continue
+        parts.append('<h2>' + _html_text(title_text or 'Section') + '</h2>')
+        parts.append(_html_paragraph(content))
+        parts.append(_html_table(columns, table_rows))
+    return ''.join(parts)
+
+
+def _letterhead_covers_html(summary: Dict[str, Any], is_hebrew: bool) -> str:
+    covers = summary.get('risk_covers') or []
+    if not covers:
+        pension = summary.get('pension_assessment') or {}
+        if isinstance(pension, dict):
+            covers = collect_uploaded_risk_covers(
+                pension.get('accounts') or [],
+                severance_records=pension.get('severance'),
+            )
+    if not isinstance(covers, list) or not covers:
+        return ''
+    headers = [
+        'סוג כיסוי' if is_hebrew else 'Cover',
+        'סכום' if is_hebrew else 'Amount',
+        'עלות' if is_hebrew else 'Cost',
+        'פוליסה' if is_hebrew else 'Policy',
+        'יצרן' if is_hebrew else 'Provider',
+    ]
+    rows: List[List[str]] = []
+    total_amount = 0.0
+    total_cost = 0.0
+    for cover in covers[:40]:
+        if not isinstance(cover, dict):
+            continue
+        amount = _as_cover_number(cover.get('amount'))
+        cost = _as_cover_number(cover.get('cost'))
+        total_amount += amount
+        total_cost += cost
+        title = cover.get('title_he') if is_hebrew else cover.get('title_en')
+        rows.append([
+            _as_str(title or cover.get('title_he') or cover.get('title_en')),
+            _as_money(amount) if amount else '—',
+            _as_money(cost) if cost else '—',
+            _as_str(cover.get('policy_number')),
+            _as_str(cover.get('provider')),
+        ])
+    if len(rows) > 1:
+        rows.append([
+            'סה״כ' if is_hebrew else 'Total',
+            _as_money(total_amount) if total_amount else '—',
+            _as_money(total_cost) if total_cost else '—',
+            '',
+            '',
+        ])
+    return _letterhead_block(
+        'הכיסויים והעלויות שלך' if is_hebrew else 'Your Covers & Costs',
+        _html_table(headers, rows),
+    )
+
+
+def _letterhead_recommendations_html(summary: Dict[str, Any], is_hebrew: bool) -> str:
+    parts: List[str] = []
+    for rec in prepare_customer_download_recommendations(summary.get('recommendations') or []):
+        title = str(rec.get('title') or '').strip()
+        description = strip_completeness_copy(str(rec.get('description') or ''))
+        if not title and not description:
+            continue
+        if title:
+            parts.append('<h3>' + _html_text(title) + '</h3>')
+        parts.append(_html_paragraph(description))
+    if not parts:
+        return ''
+    heading = 'המלצות היועץ' if is_hebrew else 'Agent recommendations'
+    return '<h2>' + _html_text(heading) + '</h2>' + ''.join(parts)
+
+
+def build_report_letterhead_html(summary: Dict[str, Any]) -> str:
+    """Letterhead view of the customer download.
+
+    Pension identity, savings, accounts, and covers come from the same
+    fields the PDF uses. Sections and recommendations pass through the
+    customer-download filters, so completeness and staff columns stay out.
+    This does not draw or replace the PDF bytes.
+    """
+    from services.phins_document import render_phins_document
+
+    if not isinstance(summary, dict):
+        summary = {}
+    is_hebrew = is_rtl_language(summary.get('language'))
+    title = customer_report_title(summary)
+    pension = bool(summary.get('is_pension_data') or summary.get('pension_assessment'))
+    parts: List[str] = []
+    if pension:
+        parts.append(_letterhead_pension_html(summary, is_hebrew))
+    else:
+        parts.append(_letterhead_overview_html(summary, is_hebrew))
+    parts.append(_letterhead_sections_html(summary))
+    parts.append(_letterhead_covers_html(summary, is_hebrew))
+    parts.append(_letterhead_recommendations_html(summary, is_hebrew))
+    language = str(summary.get('language') or '')
+    return render_phins_document(
+        title=title,
+        eyebrow='Risk assessment',
+        subtitle=title,
+        body_html=''.join(parts) or '<p>Report</p>',
+        footer='The stored report is unchanged. This letterhead is the view.',
+        lang='he' if language.lower().startswith('he') else 'en',
+    )

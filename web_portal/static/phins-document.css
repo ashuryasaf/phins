@@ -39,7 +39,8 @@ body {
 }
 .phins-doc-brand { display: flex; gap: 12px; align-items: center; }
 .phins-doc-logo { width: 52px; height: 52px; flex: 0 0 52px; }
-.phins-doc-logo svg { width: 52px; height: 52px; display: block; }
+.phins-doc-logo svg, .phins-doc-logo img { width: 52px; height: 52px; display: block; }
+.phins-doc-body iframe.phins-file-frame { width: 100%; min-height: 72vh; border: 0; background: #fff; }
 .phins-doc-wordmark {
   font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
   font-weight: 700;
