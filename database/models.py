@@ -3413,3 +3413,24 @@ class SignedDocumentBlob(Base):
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
                           nullable=False, index=True)
+
+
+class AddressedLink(Base):
+    """One confidential share link from the pitch-dashboard address book.
+
+    The JSON file under ``database/`` is a cache. This table is what survives
+    a restart when that file is not on a volume. ``share_id`` is the link id.
+    ``sha256`` is the digest of the canonical ``payload_json``. A mismatch is
+    not served and is not overwritten. A change replaces the row only when
+    the caller presents the digest it read. Rows are not deleted.
+
+    This is a NEW table - it does not modify any existing data.
+    """
+    __tablename__ = 'addressed_links'
+
+    share_id = Column(String(80), primary_key=True)
+    sha256 = Column(String(64), nullable=False)
+    payload_json = Column(Text, nullable=False)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+                          nullable=False, index=True)

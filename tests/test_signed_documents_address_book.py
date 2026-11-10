@@ -288,3 +288,183 @@ def test_http_address_book_revoke_and_delete_keep_the_chain(http_book):
     assert actions.count("revoked") == 1
     assert actions.count("deleted") == 1
     assert get_document_use_ledger().list_events()["total"] == report["total"]
+
+
+def _memory_book():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from database.models import AddressedLink
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    AddressedLink.__table__.create(engine)
+    return sessionmaker(bind=engine)
+
+
+def test_durable_write_keeps_other_links_and_refuses_a_bad_checksum():
+    """A change to one link does not rewrite another, and a bad checksum is not applied."""
+    from database.models import AddressedLink
+    from services.confidential_share_service import (
+        AddressedLinkConflict,
+        AddressedLinkIntegrityError,
+        canonical_addressed_link,
+        load_addressed_links_in_session,
+        save_addressed_links_in_session,
+    )
+
+    Session = _memory_book()
+    session = Session()
+    first = {"id": "shr_one", "label": "Dana", "used_count": 0, "path": "/pitch-dashboard.html"}
+    second = {"id": "shr_two", "label": "Avi", "used_count": 1, "path": "/pitch-dashboard.html"}
+    save_addressed_links_in_session(session, {"shr_one": first, "shr_two": second}, {})
+    loaded = load_addressed_links_in_session(session)
+    one_text = canonical_addressed_link(loaded["shares"]["shr_one"])
+    two_text = canonical_addressed_link(loaded["shares"]["shr_two"])
+    two_digest = loaded["digests"]["shr_two"]
+
+    changed_one = dict(loaded["shares"]["shr_one"])
+    changed_one["used_count"] = 4
+    changed_two = dict(loaded["shares"]["shr_two"])
+    changed_two["used_count"] = 9
+    with pytest.raises(AddressedLinkConflict):
+        save_addressed_links_in_session(
+            session,
+            {"shr_one": changed_one, "shr_two": changed_two},
+            {
+                "shr_one": loaded["digests"]["shr_one"],
+                "shr_two": "0" * 64,
+            },
+        )
+    after_conflict = load_addressed_links_in_session(session)
+    assert canonical_addressed_link(after_conflict["shares"]["shr_one"]) == one_text
+    assert canonical_addressed_link(after_conflict["shares"]["shr_two"]) == two_text
+
+    save_addressed_links_in_session(
+        session,
+        {"shr_one": changed_one},
+        {"shr_one": loaded["digests"]["shr_one"]},
+    )
+    after_one = load_addressed_links_in_session(session)
+    assert after_one["shares"]["shr_one"]["used_count"] == 4
+    assert canonical_addressed_link(after_one["shares"]["shr_two"]) == two_text
+    assert after_one["digests"]["shr_two"] == two_digest
+
+    row = session.query(AddressedLink).filter_by(share_id="shr_two").one()
+    original_sha = row.sha256
+    row.payload_json = row.payload_json.replace("Avi", "Noa")
+    session.commit()
+    corrupted = load_addressed_links_in_session(session)
+    assert "shr_two" not in corrupted["shares"]
+    assert "shr_two" in corrupted["corrupt_ids"]
+    with pytest.raises(AddressedLinkIntegrityError):
+        save_addressed_links_in_session(
+            session,
+            {"shr_two": {"id": "shr_two", "label": "Noa", "used_count": 1, "path": "/pitch-dashboard.html"}},
+            {},
+            corrupt_ids=["shr_two"],
+        )
+    kept = session.query(AddressedLink).filter_by(share_id="shr_two").one()
+    assert "Noa" in kept.payload_json
+    assert kept.sha256 == original_sha
+    assert session.query(AddressedLink).count() == 2
+    session.close()
+
+
+def test_addressed_links_survive_an_empty_disk_and_a_stale_file(tmp_path, monkeypatch):
+    """A new file does not drop the book, and a stale file does not replace a stored link."""
+    from database.models import AddressedLink
+    from services import confidential_share_service as css
+
+    Session = _memory_book()
+    monkeypatch.setattr(css, "_database_enabled", lambda: True)
+    monkeypatch.setattr("database.get_db_session", Session)
+    css.reset_confidential_share_service_for_tests()
+    try:
+        first = css.ConfidentialShareService(data_path=str(tmp_path / "a.json"))
+        dana = first.create_share(
+            path="/pitch-dashboard.html",
+            password="desk-open-1",
+            max_uses=3,
+            label="Dana Levi",
+        )
+        avi = first.create_share(
+            path="/pitch-dashboard.html",
+            password="desk-open-2",
+            max_uses=1,
+            label="Avi Cohen",
+        )
+        session = Session()
+        stored = css.load_addressed_links_in_session(session)
+        avi_text = css.canonical_addressed_link(stored["shares"][avi["id"]])
+        dana_text = css.canonical_addressed_link(stored["shares"][dana["id"]])
+        session.close()
+
+        restarted = css.ConfidentialShareService(data_path=str(tmp_path / "empty" / "shares.json"))
+        listed = {item["id"]: item for item in restarted.list_shares(reveal_password=True)}
+        assert listed[dana["id"]]["password"] == "desk-open-1"
+        assert listed[dana["id"]]["label"] == "Dana Levi"
+        assert listed[avi["id"]]["password"] == "desk-open-2"
+        session = Session()
+        assert css.canonical_addressed_link(
+            css.load_addressed_links_in_session(session)["shares"][avi["id"]]
+        ) == avi_text
+        session.close()
+
+        book = json.loads((tmp_path / "a.json").read_text(encoding="utf-8"))
+        book["shares"][dana["id"]]["label"] = "Replaced"
+        book["shares"]["shr_fileonly00000000000001"] = {
+            "id": "shr_fileonly00000000000001",
+            "label": "File Only",
+            "path": "/pitch-dashboard.html",
+            "status": "active",
+            "used_count": 0,
+            "max_uses": 1,
+            "created_at": "2026-01-01T00:00:00Z",
+        }
+        stale_path = tmp_path / "stale.json"
+        stale_path.write_text(json.dumps(book), encoding="utf-8")
+        stale = css.ConfidentialShareService(data_path=str(stale_path))
+        stale_rows = {item["id"]: item for item in stale.list_shares(reveal_password=True)}
+        assert stale_rows[dana["id"]]["label"] == "Dana Levi"
+        assert stale_rows["shr_fileonly00000000000001"]["label"] == "File Only"
+        session = Session()
+        reloaded = css.load_addressed_links_in_session(session)
+        assert css.canonical_addressed_link(reloaded["shares"][dana["id"]]) == dana_text
+        assert css.canonical_addressed_link(reloaded["shares"][avi["id"]]) == avi_text
+        session.close()
+
+        stale.revoke_share(dana["id"], revoked_by="admin")
+        session = Session()
+        after_revoke = css.load_addressed_links_in_session(session)
+        assert css.canonical_addressed_link(after_revoke["shares"][avi["id"]]) == avi_text
+        assert after_revoke["shares"][dana["id"]]["status"] == "revoked"
+        assert after_revoke["shares"][dana["id"]]["password_hash"] == stored["shares"][dana["id"]]["password_hash"]
+        row = session.query(AddressedLink).filter_by(share_id=avi["id"]).one()
+        original_sha = row.sha256
+        row.payload_json = row.payload_json.replace("Avi Cohen", "Noa Levi")
+        session.commit()
+        session.close()
+
+        repaired = css.ConfidentialShareService(data_path=str(tmp_path / "after.json"))
+        visible = {item["id"] for item in repaired.list_shares(reveal_password=True)}
+        assert avi["id"] not in visible
+        assert dana["id"] in visible
+        repaired.create_share(
+            path="/pitch-dashboard.html",
+            password="desk-open-3",
+            max_uses=1,
+            label="New Link",
+        )
+        session = Session()
+        kept = session.query(AddressedLink).filter_by(share_id=avi["id"]).one()
+        assert "Noa Levi" in kept.payload_json
+        assert kept.sha256 == original_sha
+        assert session.query(AddressedLink).filter_by(share_id=avi["id"]).count() == 1
+        session.close()
+    finally:
+        css.reset_confidential_share_service_for_tests()

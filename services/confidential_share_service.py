@@ -5,10 +5,13 @@ confidential pages (pitch dashboard, /internal/, /legal/) after the recipient
 enters a simple open password. Downloadable artefacts (PDF/MD/DOCX/…) are
 intentionally excluded: share cookies never authorise those paths.
 
-Persistence is a JSON file under ``database/``. Mutations take an exclusive
-``fcntl.flock`` on a sibling ``.lock`` file and reload from disk first so
-use counts stay correct across multiple app workers (not just threads in one
-process).
+Persistence is a JSON file under ``database/``. With ``USE_DATABASE`` on,
+that file is a cache and each link is a row in ``addressed_links``. The
+row's SHA-256 is checked on read. A mismatch is not served and is not
+overwritten. A change replaces that row only when the caller presents the
+digest it read, and a row is never deleted. Mutations take an exclusive
+``fcntl.flock`` on a sibling ``.lock`` file and reload first so use counts
+stay correct across multiple app workers (not just threads in one process).
 
 The open password is hashed for verification and sealed in the platform vault
 so the staff address book can show it later. Unlock responses and the public
@@ -32,6 +35,7 @@ import fcntl
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import threading
@@ -67,6 +71,8 @@ _DOWNLOAD_SUFFIXES = (
 _DEFAULT_DATA_FILE = "confidential_shares.json"
 _PBKDF2_ITERATIONS = 120_000
 
+logger = logging.getLogger(__name__)
+
 # Per-opening access window: default and single-use ceiling are three hours
 # from the moment the link is opened; multi-use links may run up to a day.
 DEFAULT_ACCESS_WINDOW_SECONDS = 3 * 60 * 60
@@ -86,6 +92,218 @@ _MAX_SESSIONS = 50
 
 class ShareError(ValueError):
     """Raised for invalid share operations (safe to surface as API errors)."""
+
+
+class AddressedLinkIntegrityError(Exception):
+    """The stored link does not match its checksum. Nothing was written."""
+
+
+class AddressedLinkConflict(Exception):
+    """The link changed after it was read. The stored row was left as it was."""
+
+
+class AddressedLinkStoreError(Exception):
+    """The durable address book could not be read or written."""
+
+
+def _database_enabled() -> bool:
+    return os.environ.get("USE_DATABASE", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def canonical_addressed_link(record: Dict[str, Any]) -> str:
+    """Stable JSON for the checksum. Key order cannot change the digest."""
+    if not isinstance(record, dict):
+        raise AddressedLinkIntegrityError("addressed link must be an object")
+    try:
+        return json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    except (TypeError, ValueError) as exc:
+        raise AddressedLinkIntegrityError("addressed link record is not valid JSON") from exc
+
+
+def _addressed_digest(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _pending_addressed_writes(
+    shares: Dict[str, Dict[str, Any]],
+    expected_digests: Dict[str, str],
+    corrupt_ids: Optional[List[str]] = None,
+) -> List[Tuple[str, str, str, Optional[str]]]:
+    """Return ``(share_id, canonical_text, digest, expected_or_none)`` for real changes.
+
+    An id with no expected digest is a new link. An unchanged digest is skipped
+    so a write never touches the other rows.
+    """
+    corrupt = {str(item) for item in (corrupt_ids or [])}
+    pending: List[Tuple[str, str, str, Optional[str]]] = []
+    for share_id, record in shares.items():
+        sid = str(share_id)
+        if sid in corrupt:
+            raise AddressedLinkIntegrityError(
+                "refusing to write an addressed link whose checksum does not match"
+            )
+        if not isinstance(record, dict) or str(record.get("id") or "") != sid:
+            raise AddressedLinkIntegrityError("addressed link id does not match its record")
+        text = canonical_addressed_link(record)
+        digest = _addressed_digest(text)
+        expected = expected_digests.get(sid)
+        if expected is not None and str(expected).strip().lower() == digest:
+            continue
+        pending.append((
+            sid,
+            text,
+            digest,
+            None if expected in (None, "") else str(expected).strip().lower(),
+        ))
+    return pending
+
+
+def load_addressed_links_in_session(session: Any) -> Dict[str, Any]:
+    """Return valid links, the digest each was read at, and ids whose checksum failed.
+
+    A checksum mismatch is omitted. The row is not modified.
+    """
+    from database.models import AddressedLink
+
+    shares: Dict[str, Dict[str, Any]] = {}
+    digests: Dict[str, str] = {}
+    corrupt: List[str] = []
+    for row in session.query(AddressedLink).all():
+        sid = str(row.share_id or "")
+        body = row.payload_json if isinstance(row.payload_json, str) else ""
+        recorded = str(row.sha256 or "").strip().lower()
+        actual = _addressed_digest(body)
+        if not sid or not recorded or actual != recorded:
+            if sid:
+                corrupt.append(sid)
+            logger.error("addressed_links checksum mismatch for %s", sid or "(missing id)")
+            continue
+        try:
+            record = json.loads(body)
+        except json.JSONDecodeError:
+            corrupt.append(sid)
+            logger.error("addressed_links payload is not JSON for %s", sid)
+            continue
+        if not isinstance(record, dict) or str(record.get("id") or "") != sid:
+            corrupt.append(sid)
+            logger.error("addressed_links id does not match the row for %s", sid)
+            continue
+        if canonical_addressed_link(record) != body:
+            corrupt.append(sid)
+            logger.error("addressed_links payload is not canonical for %s", sid)
+            continue
+        shares[sid] = record
+        digests[sid] = recorded
+    return {"shares": shares, "digests": digests, "corrupt_ids": corrupt}
+
+
+def save_addressed_links_in_session(
+    session: Any,
+    shares: Dict[str, Dict[str, Any]],
+    expected_digests: Dict[str, str],
+    corrupt_ids: Optional[List[str]] = None,
+) -> List[str]:
+    """Insert new links and replace changed ones when ``expected_digests`` still matches.
+
+    Rows absent from ``shares`` are left in place. A different checksum is not
+    written over a row. The commit is one transaction: a conflict writes nothing.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    from database.models import AddressedLink
+
+    pending = _pending_addressed_writes(shares, expected_digests, corrupt_ids)
+    if not pending:
+        return []
+    now = datetime.utcnow()
+    try:
+        for sid, text, digest, expected in pending:
+            row = session.query(AddressedLink).filter_by(share_id=sid).one_or_none()
+            if row is None:
+                if expected is not None:
+                    raise AddressedLinkConflict("addressed link changed before it could be saved")
+                session.add(AddressedLink(
+                    share_id=sid,
+                    sha256=digest,
+                    payload_json=text,
+                    created_date=now,
+                    updated_date=now,
+                ))
+                continue
+            stored_body = row.payload_json if isinstance(row.payload_json, str) else ""
+            stored_digest = str(row.sha256 or "").strip().lower()
+            if _addressed_digest(stored_body) != stored_digest:
+                raise AddressedLinkIntegrityError(
+                    "refusing to write an addressed link whose checksum does not match"
+                )
+            if expected is None or expected != stored_digest:
+                raise AddressedLinkConflict("addressed link changed before it could be saved")
+            changed = session.query(AddressedLink).filter(
+                AddressedLink.share_id == sid,
+                AddressedLink.sha256 == expected,
+            ).update(
+                {"sha256": digest, "payload_json": text, "updated_date": now},
+                synchronize_session=False,
+            )
+            if changed != 1:
+                raise AddressedLinkConflict("addressed link changed before it could be saved")
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise AddressedLinkConflict("addressed link changed before it could be saved") from exc
+    except (AddressedLinkConflict, AddressedLinkIntegrityError):
+        session.rollback()
+        raise
+    session.expire_all()
+    written: List[str] = []
+    for sid, text, digest, _expected in pending:
+        check = session.query(AddressedLink).filter_by(share_id=sid).one_or_none()
+        if check is None:
+            raise AddressedLinkStoreError("addressed link missing after write")
+        body = check.payload_json if isinstance(check.payload_json, str) else ""
+        if str(check.sha256 or "").strip().lower() != digest or body != text:
+            raise AddressedLinkIntegrityError("addressed link checksum mismatch after write")
+        if _addressed_digest(body) != digest:
+            raise AddressedLinkIntegrityError("addressed link checksum mismatch after write")
+        written.append(sid)
+    return written
+
+
+def _addressed_session_call(fn: Callable[..., Any], *, action: str) -> Any:
+    from database import get_db_session
+
+    session = get_db_session()
+    try:
+        return fn(session)
+    except (AddressedLinkIntegrityError, AddressedLinkConflict):
+        session.rollback()
+        raise
+    except Exception as exc:
+        session.rollback()
+        logger.error("addressed links store failed: %s", type(exc).__name__)
+        raise AddressedLinkStoreError(f"addressed links could not be {action}") from exc
+    finally:
+        session.close()
+
+
+def load_addressed_links() -> Dict[str, Any]:
+    return _addressed_session_call(load_addressed_links_in_session, action="read")
+
+
+def save_addressed_links(
+    shares: Dict[str, Dict[str, Any]],
+    expected_digests: Dict[str, str],
+    corrupt_ids: Optional[List[str]] = None,
+) -> List[str]:
+    pending = _pending_addressed_writes(shares, expected_digests, corrupt_ids)
+    if not pending:
+        return []
+    return _addressed_session_call(
+        lambda session: save_addressed_links_in_session(
+            session, shares, expected_digests, corrupt_ids
+        ),
+        action="saved",
+    )
 
 
 def _utc_now() -> datetime:
@@ -293,7 +511,11 @@ def _cap_records(
 
 
 class ConfidentialShareService:
-    """Thread- and multi-worker-safe file-backed store for confidential shares."""
+    """Thread- and multi-worker-safe store for confidential shares.
+
+    With the database off, the JSON file is the store. With the database on,
+    ``addressed_links`` is the store and the file is a cache.
+    """
 
     def __init__(self, data_path: Optional[str] = None):
         root = Path(__file__).resolve().parent.parent / "database"
@@ -301,6 +523,9 @@ class ConfidentialShareService:
         self._lock_path = self._path.with_suffix(self._path.suffix + ".lock")
         self._lock = threading.RLock()
         self._shares: Dict[str, Dict[str, Any]] = {}
+        self._expected_digests: Dict[str, str] = {}
+        self._corrupt_ids: List[str] = []
+        self._file_holdbacks: Dict[str, Dict[str, Any]] = {}
         with self._exclusive_store():
             pass  # initial load under the store lock
 
@@ -313,8 +538,9 @@ class ConfidentialShareService:
         """Exclusive cross-process lock + reload. Caller may then mutate + persist.
 
         Order: in-process ``RLock`` first, then ``fcntl.flock`` on the sibling
-        lock file, then reload from disk so every worker sees the latest
-        ``used_count`` before deciding whether a single-use link is exhausted.
+        lock file, then reload so every worker sees the latest ``used_count``
+        before deciding whether a single-use link is exhausted. With the
+        database on, the reload reads ``addressed_links``.
         """
         with self._lock:
             self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -328,36 +554,86 @@ class ConfidentialShareService:
                 finally:
                     fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
-    def _load_from_disk(self) -> None:
+    def _read_file_shares(self) -> Dict[str, Dict[str, Any]]:
         if not self._path.exists():
-            self._shares = {}
-            return
+            return {}
         try:
             payload = json.loads(self._path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            self._shares = {}
-            return
+            logger.error("addressed links file cache is unreadable")
+            return {}
         shares = payload.get("shares") if isinstance(payload, dict) else None
         if not isinstance(shares, dict):
-            self._shares = {}
-            return
-        self._shares = {
+            return {}
+        return {
             str(share_id): dict(record)
             for share_id, record in shares.items()
             if isinstance(record, dict)
         }
 
-    def _persist(self) -> None:
-        """Write the in-memory map. Must be called while holding ``_exclusive_store``."""
+    def _load_from_disk(self) -> None:
+        file_shares = self._read_file_shares()
+        self._expected_digests = {}
+        self._corrupt_ids = []
+        self._file_holdbacks = {}
+        if not _database_enabled():
+            self._shares = file_shares
+            return
+        loaded = load_addressed_links()
+        self._shares = {
+            str(share_id): dict(record)
+            for share_id, record in loaded["shares"].items()
+            if isinstance(record, dict)
+        }
+        self._expected_digests = {
+            str(share_id): str(digest)
+            for share_id, digest in loaded["digests"].items()
+        }
+        self._corrupt_ids = [str(share_id) for share_id in loaded["corrupt_ids"]]
+        corrupt = set(self._corrupt_ids)
+        adopted = False
+        for share_id, record in file_shares.items():
+            if share_id in corrupt:
+                self._file_holdbacks[share_id] = dict(record)
+                continue
+            if share_id in self._shares:
+                continue
+            row = dict(record)
+            if str(row.get("id") or "") != share_id:
+                continue
+            self._shares[share_id] = row
+            adopted = True
+        if adopted:
+            written = save_addressed_links(
+                self._shares, self._expected_digests, self._corrupt_ids
+            )
+            self._note_written(written)
+        self._refresh_file_cache(file_shares)
+
+    def _note_written(self, written: List[str]) -> None:
+        for share_id in written:
+            record = self._shares.get(share_id)
+            if not isinstance(record, dict):
+                continue
+            self._expected_digests[share_id] = _addressed_digest(canonical_addressed_link(record))
+
+    def _file_payload_shares(self) -> Dict[str, Dict[str, Any]]:
+        if not _database_enabled():
+            return self._shares
+        combined = dict(self._file_holdbacks)
+        combined.update(self._shares)
+        return combined
+
+    def _write_file(self) -> None:
+        """Write the file cache. Must be called while holding ``_exclusive_store``."""
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(self._path.suffix + ".tmp")
         payload = {
             "version": 1,
             "saved_at": _utc_now_iso(),
-            "shares": self._shares,
+            "shares": self._file_payload_shares(),
         }
         data = json.dumps(payload, indent=2, sort_keys=True) + "\n"
-        # Exclusive create+replace for integrity under concurrent writers.
         fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -371,6 +647,29 @@ class ConfidentialShareService:
                     tmp.unlink()
                 except OSError:
                     pass
+
+    def _refresh_file_cache(self, file_shares: Dict[str, Dict[str, Any]]) -> None:
+        if file_shares == self._file_payload_shares():
+            return
+        try:
+            self._write_file()
+        except OSError:
+            logger.error("addressed links file cache could not be refreshed")
+
+    def _persist(self) -> None:
+        """Write the book. Must be called while holding ``_exclusive_store``.
+
+        The durable rows commit first. The file is refreshed from that result.
+        A failed durable write leaves the previous file in place.
+        """
+        if _database_enabled():
+            written = save_addressed_links(
+                self._shares, self._expected_digests, self._corrupt_ids
+            )
+            self._note_written(written)
+            self._refresh_file_cache(self._read_file_shares())
+            return
+        self._write_file()
 
     # ------------------------------------------------------------------
     # Public API

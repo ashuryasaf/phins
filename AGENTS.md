@@ -725,7 +725,12 @@ Environment variables commonly used:
  link's recipient, URL, vaulted open password, status, and use count.
  `GET /api/confidential/shares` (staff) returns that password; the PBKDF2
  hash stays the verifier, and the password is absent from unlock responses
- and the public gate. `DELETE /api/confidential/shares/{id}` revokes.
+ and the public gate. With `USE_DATABASE=true` each link is a row in
+ `addressed_links` (the JSON file is a cache). `sha256` is the canonical
+ record; a mismatch is not served and is not overwritten. A use, revoke, or
+ delete replaces that row only when the caller presents the digest it read.
+ A link that exists only in the file is inserted once; a durable row is never
+ replaced from the file, and rows are not deleted. `DELETE /api/confidential/shares/{id}` revokes.
  `POST /api/confidential/shares/{id}/delete` marks the row deleted. Neither
  call removes the share record, a sealed signature, or a ledger row, and a
  revoked or deleted link no longer opens. A broken chain
