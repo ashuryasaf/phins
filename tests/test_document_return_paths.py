@@ -120,6 +120,12 @@ def test_pages_with_their_own_controls_still_call_the_shared_functions():
         assert 'data-phins-return="off"' in text
         assert "phinsDocGoBack" in text
         assert "phinsDocClose" in text
+    helper = _read(STATIC / "phins-document.js")
+    script = _read(STATIC / "phins-doc-return.js")
+    assert "data-phins-return" in helper
+    assert "data-phins-return" in script
+    mislaka = _read(STATIC / "mislaka-report.html")
+    assert 'data-phins-letterhead="off"' in mislaka
 
 
 def test_pages_without_a_banner_adopt_the_shared_letterhead():
@@ -130,11 +136,18 @@ def test_pages_without_a_banner_adopt_the_shared_letterhead():
     assert "adoptPage" in helper
     assert "wrapElement" in helper
     assert "openStoredFile" in helper
+    assert "save.download" in helper
+    life = _read(STATIC / "ltc-life-research.js")
+    residential = _read(STATIC / "ltc-residential-research.js")
+    assert "if (!opened)" in life
+    assert "if (!opened)" in residential
+    review = _read(STATIC / "chat-process-review.html")
+    assert "phins-doc-return.js" in review
+    assert "process-review" in review
+    assert "rgba(255,255,255,0.03)" not in review
     documents = _read(STATIC / "documents.html")
     assert "PhinsDocument.wrapElement" in documents
     assert "/phins-document.css" in documents
-    review = _read(STATIC / "chat-process-review.html")
-    assert "phins-doc-return.js" in review
 
 
 def test_risk_summary_letterhead_is_a_view_of_the_same_summary():
@@ -148,12 +161,64 @@ def test_risk_summary_letterhead_is_a_view_of_the_same_summary():
             "content": "Existing narrative",
             "columns": ["Item", "Amount"],
             "rows": [{"Item": "Premium", "Amount": "100"}],
+        }, {
+            "title": "Data completeness",
+            "content": "Data completeness: 82%",
         }],
+        "recommendations": [
+            {"title": "Keep this", "description": "Walk the cover"},
+            {"title": "Missing values", "description": "columns have missing data"},
+        ],
     })
     assert "phins-doc-banner" in html
     assert "Existing narrative" in html
     assert "Premium" in html
+    assert "Keep this" in html
+    assert "Data completeness" not in html
+    assert "missing data" not in html.lower()
     assert "The stored report is unchanged" in html
+    pension = build_report_letterhead_html({
+        "title": "Data Analysis Report",
+        "language": "en",
+        "is_pension_data": True,
+        "pension_assessment": {
+            "client": {
+                "full_name": "Dana Levi",
+                "id_number": "123456782",
+                "birth_date": "1980-01-02",
+            },
+            "totals": {
+                "total_balance": 50000,
+                "total_savings": 50000,
+                "total_severance": 18000,
+                "account_count": 1,
+            },
+            "accounts": [{
+                "policy_number": "POL-1",
+                "provider": "Migdal",
+                "total_balance": 50000,
+                "severance_balance": 18000,
+            }],
+        },
+        "risk_covers": [{
+            "title_en": "Death Cover",
+            "amount": 400000,
+            "cost": 85,
+            "policy_number": "POL-1",
+            "provider": "Migdal",
+        }],
+        "recommendations": [
+            {"title": "Review cover", "description": "Walk through the death cover"},
+        ],
+    })
+    assert "Your Assessment" in pension
+    assert "Data Analysis Report" not in pension
+    assert "Dana Levi" in pension
+    assert "123456782" in pension
+    assert "POL-1" in pension
+    assert "50,000.00" in pension
+    assert "Death Cover" in pension
+    assert "Review cover" in pension
     server = _read(ROOT / "web_portal" / "server.py")
     assert "build_report_letterhead_html" in server
 

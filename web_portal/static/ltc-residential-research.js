@@ -943,11 +943,16 @@
           document.head.appendChild(script);
         });
       }
-      await PhinsDocument.openStoredFile({
+      const opened = await PhinsDocument.openStoredFile({
         blob,
         title: 'PHINS long-term care residential market study',
         eyebrow: 'Research study',
+        filename: 'phins-ltc-residential-market-strategy.pdf',
       });
+      if (!opened) {
+        setStatus('The browser blocked the letterhead window. The PDF was saved instead.');
+        return;
+      }
       setStatus('Opened the study in the PHINS letterhead. The PDF bytes are unchanged.');
     } catch (err) {
       setStatus(`PDF download failed: ${err.message}`, true);

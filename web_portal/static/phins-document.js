@@ -150,6 +150,7 @@
         if (!doc || !doc.body) return;
         if (doc.querySelector('.phins-doc-banner')) return;
         if (doc.documentElement.getAttribute('data-phins-letterhead') === 'off') return;
+        if (doc.body.getAttribute('data-phins-return') === 'off') return;
         try { if (global.top !== global.self) return; } catch (e) { return; }
         if (doc.body.getAttribute('data-phins-letterhead-mounted') === '1') return;
         doc.body.setAttribute('data-phins-letterhead-mounted', '1');
@@ -177,7 +178,15 @@
             body: '<iframe class="phins-file-frame" title="' + esc(title) + '" src="' + url + '"></iframe>',
             footer: 'The file inside this letterhead is the stored record. Its bytes are unchanged.'
         });
-        return openWindow(html);
+        const opened = openWindow(html);
+        if (opened) return opened;
+        const save = global.document.createElement('a');
+        save.href = url;
+        save.download = (opts && opts.filename) || 'phins-document.pdf';
+        global.document.body.appendChild(save);
+        save.click();
+        save.remove();
+        return null;
     }
 
     global.PhinsDocument = {

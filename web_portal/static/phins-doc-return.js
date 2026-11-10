@@ -8,7 +8,10 @@
    contain a literal script tag: the HTML parser would close the element
    there and print the rest of this source as page text.
    Set data-phins-return="off" on <body> when the page already has its own
-   Go back and Close controls that call phinsDocGoBack / phinsDocClose. */
+   Go back and Close controls that call phinsDocGoBack / phinsDocClose.
+   That page keeps its own layout: the return bar and the letterhead wrap
+   are both skipped. Set data-phins-letterhead="off" on <html> to keep the
+   return bar and skip only the wrap, for a live page that is not a document. */
 (function (global) {
     'use strict';
 
@@ -142,6 +145,7 @@
     function mountLetterhead() {
         if (global.document.querySelector('.phins-doc-banner')) return;
         if (global.document.documentElement.getAttribute('data-phins-letterhead') === 'off') return;
+        if (global.document.body && global.document.body.getAttribute('data-phins-return') === 'off') return;
         loadScript('/phins-doc-open.js', 'data-phins-doc-open');
         function run() {
             if (global.PhinsDocument && global.PhinsDocument.adoptPage) {

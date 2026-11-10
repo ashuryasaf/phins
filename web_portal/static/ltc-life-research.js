@@ -477,11 +477,18 @@
           document.head.appendChild(script);
         });
       }
-      await PhinsDocument.openStoredFile({
+      const opened = await PhinsDocument.openStoredFile({
         blob,
         title: `PHINS long-term care life research (${language})`,
         eyebrow: 'Research study',
+        filename: `phins-ltc-life-research-${language}.pdf`,
       });
+      if (!opened) {
+        setStatus(language === 'he'
+          ? 'הדפדפן חסם את החלון. קובץ ה-PDF נשמר במקום.'
+          : 'The browser blocked the letterhead window. The PDF was saved instead.');
+        return;
+      }
       setStatus(language === 'he'
         ? 'Opened the Hebrew study in the PHINS letterhead. The PDF bytes are unchanged.'
         : 'Opened the study in the PHINS letterhead. The PDF bytes are unchanged.');
