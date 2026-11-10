@@ -10,7 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     <style>
         :root { color-scheme: light; }
-        body.process-review { margin: 0; font-family: Inter, sans-serif; background: #e8eef6; color: #12284c; }
+        body { margin: 0; font-family: Inter, sans-serif; background: #e8eef6; color: #12284c; }
         .process-review .review-head { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 0 0 14px; margin-bottom: 8px; border-bottom: 1px solid #d5deea; }
         .process-review h1 { font-family: "Space Grotesk", sans-serif; font-size: 1.35rem; margin: 0; color: #0e2f63; }
         .process-review a { color: #0e2f63; }
@@ -31,7 +31,8 @@
         .process-review code { font-family: "Space Grotesk", monospace; font-size: 0.82rem; color: #123f82; }
     </style>
 </head>
-<body class="process-review">
+<body>
+    <div class="process-review">
     <header class="review-head">
         <h1>Chat process review</h1>
         <a href="/underwriter-dashboard.html">Underwriting</a>
@@ -47,6 +48,7 @@
         <div id="quick"></div>
         <div id="full" hidden></div>
     </main>
+    </div>
     <script>
         const $ = (id) => document.getElementById(id);
         const token = localStorage.getItem('phins_token') || '';

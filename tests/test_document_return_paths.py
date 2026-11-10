@@ -145,6 +145,11 @@ def test_pages_without_a_banner_adopt_the_shared_letterhead():
     assert "phins-doc-return.js" in review
     assert "process-review" in review
     assert "rgba(255,255,255,0.03)" not in review
+    # adoptPage leaves the return bar on body. The hook must stay on the
+    # review content, or .process-review button restyles Go back and Close.
+    body_tag = review.split("</head>", 1)[1].split(">", 1)[0]
+    assert "process-review" not in body_tag
+    assert 'class="process-review"' in review
     documents = _read(STATIC / "documents.html")
     assert "PhinsDocument.wrapElement" in documents
     assert "/phins-document.css" in documents
