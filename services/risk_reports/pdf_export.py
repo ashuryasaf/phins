@@ -2534,3 +2534,57 @@ def build_report_pdf_bytes(summary: Dict[str, Any]) -> bytes:
     except Exception:
         fallback_text = json.dumps(summary, ensure_ascii=False, indent=2)
         return fallback_text.encode('utf-8')
+
+
+def build_report_letterhead_html(summary: Dict[str, Any]) -> str:
+    """Letterhead view of a report summary.
+
+    The body is the same summary the PDF download already uses. This does
+    not draw or replace the PDF bytes.
+    """
+    from services.phins_document import render_phins_document
+
+    title = str(summary.get('title') or 'Risk report')
+    parts: List[str] = []
+
+    def paragraph(value: Any) -> None:
+        text = str(value or '').strip()
+        if text:
+            parts.append('<p>' + html.escape(text) + '</p>')
+
+    for section in summary.get('assessment_sections') or []:
+        if not isinstance(section, dict):
+            continue
+        parts.append('<h2>' + html.escape(str(section.get('title') or 'Section')) + '</h2>')
+        paragraph(section.get('content'))
+        columns = [str(col) for col in (section.get('columns') or [])]
+        rows = section.get('rows') or []
+        if columns and isinstance(rows, list) and rows:
+            parts.append('<table><thead><tr>')
+            for col in columns:
+                parts.append('<th>' + html.escape(col) + '</th>')
+            parts.append('</tr></thead><tbody>')
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                parts.append('<tr>')
+                for col in columns:
+                    parts.append('<td>' + html.escape(str(row.get(col, ''))) + '</td>')
+                parts.append('</tr>')
+            parts.append('</tbody></table>')
+
+    for rec in summary.get('recommendations') or []:
+        if not isinstance(rec, dict):
+            continue
+        parts.append('<h3>' + html.escape(str(rec.get('title') or 'Recommendation')) + '</h3>')
+        paragraph(rec.get('description'))
+
+    language = str(summary.get('language') or '')
+    return render_phins_document(
+        title=title,
+        eyebrow='Risk assessment',
+        subtitle=title,
+        body_html=''.join(parts) or '<p>Report</p>',
+        footer='The stored report is unchanged. This letterhead is the view.',
+        lang='he' if language.lower().startswith('he') else 'en',
+    )

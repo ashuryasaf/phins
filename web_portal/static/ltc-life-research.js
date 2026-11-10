@@ -468,17 +468,23 @@
         throw new Error(message);
       }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `phins-ltc-life-research-${language}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      if (!window.PhinsDocument) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = '/phins-document.js';
+          script.onload = resolve;
+          script.onerror = () => reject(new Error('Letterhead unavailable'));
+          document.head.appendChild(script);
+        });
+      }
+      await PhinsDocument.openStoredFile({
+        blob,
+        title: `PHINS long-term care life research (${language})`,
+        eyebrow: 'Research study',
+      });
       setStatus(language === 'he'
-        ? 'Downloaded the full study PDF in Hebrew.'
-        : 'Downloaded the full study PDF.');
+        ? 'Opened the Hebrew study in the PHINS letterhead. The PDF bytes are unchanged.'
+        : 'Opened the study in the PHINS letterhead. The PDF bytes are unchanged.');
     } catch (err) {
       setStatus(`PDF download failed: ${err.message}`, true);
     }

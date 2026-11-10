@@ -128,6 +128,40 @@
         if (!existing && !off && global.document.body) {
             global.document.body.insertBefore(buildBar(), global.document.body.firstChild);
         }
+        mountLetterhead();
+    }
+
+    function loadScript(src, marker) {
+        if (global.document.querySelector('script[src="' + src + '"]')) return;
+        var script = global.document.createElement('script');
+        script.src = src;
+        script.setAttribute(marker, '1');
+        (global.document.head || global.document.documentElement).appendChild(script);
+    }
+
+    function mountLetterhead() {
+        if (global.document.querySelector('.phins-doc-banner')) return;
+        if (global.document.documentElement.getAttribute('data-phins-letterhead') === 'off') return;
+        loadScript('/phins-doc-open.js', 'data-phins-doc-open');
+        function run() {
+            if (global.PhinsDocument && global.PhinsDocument.adoptPage) {
+                global.PhinsDocument.adoptPage();
+            }
+        }
+        if (global.PhinsDocument && global.PhinsDocument.adoptPage) {
+            run();
+            return;
+        }
+        var existingDoc = global.document.querySelector('script[src="/phins-document.js"]');
+        if (existingDoc) {
+            existingDoc.addEventListener('load', run);
+            return;
+        }
+        var script = global.document.createElement('script');
+        script.src = '/phins-document.js';
+        script.setAttribute('data-phins-document-js', '1');
+        script.onload = run;
+        (global.document.head || global.document.documentElement).appendChild(script);
     }
 
     global.phinsDocGoBack = phinsDocGoBack;

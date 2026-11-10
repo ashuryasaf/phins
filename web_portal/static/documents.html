@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PHINS — Document Center</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/phins-document.css">
   <style>
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f4f8; }
 
@@ -570,6 +571,7 @@
   </div>
 </div>
 
+<script src="/phins-document.js"></script>
 <script>
   const API = (path, opts) => fetch(path, {
     headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('phins_token') || ''), 'Content-Type': 'application/json', ...((opts||{}).headers||{}) },
@@ -1090,6 +1092,7 @@
     document.getElementById('modal-title').textContent = name;
     const body = document.getElementById('modal-body');
     body.innerHTML = '';
+    const slot = document.createElement('div');
 
     let payload = String(rawData || '');
     let mime = mimeType || 'application/octet-stream';
@@ -1112,25 +1115,31 @@
       const img = document.createElement('img');
       img.src = dataUrl;
       img.alt = name;
-      body.appendChild(img);
+      slot.appendChild(img);
     } else if (pdfExt) {
       const iframe = document.createElement('iframe');
+      iframe.className = 'phins-file-frame';
       iframe.src = dataUrl;
       iframe.title = name;
-      body.appendChild(iframe);
+      slot.appendChild(iframe);
     } else if (textExts.includes(ext) || mime.startsWith('text/')) {
       try {
         const text = atob(payload);
         const pre = document.createElement('pre');
         pre.textContent = text;
-        body.appendChild(pre);
+        slot.appendChild(pre);
       } catch {
-        body.innerHTML = '<div style="color:#546e7a;text-align:center;padding:2rem;">Preview not available for this file type.<br>Use the Download button below.</div>';
+        slot.textContent = 'Preview not available for this file type. Use the Download button below.';
       }
     } else if (!payload) {
-      body.innerHTML = '<div style="color:#546e7a;text-align:center;padding:2rem;">This record has no file bytes to preview.</div>';
+      slot.textContent = 'This record has no file bytes to preview.';
     } else {
-      body.innerHTML = '<div style="color:#546e7a;text-align:center;padding:2rem;">Preview not available for this file type.<br>Use the Download button below.</div>';
+      slot.textContent = 'Preview not available for this file type. Use the Download button below.';
+    }
+    if (window.PhinsDocument && PhinsDocument.wrapElement) {
+      body.appendChild(PhinsDocument.wrapElement(slot, name, 'Document'));
+    } else {
+      body.appendChild(slot);
     }
 
     document.getElementById('modal-download-btn').onclick = () => {

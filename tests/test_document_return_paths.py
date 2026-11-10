@@ -40,6 +40,7 @@ STANDALONE_DOCS = [
     "document-viewer.html",
     "customer-ai-report.html",
     "risk-assessment-viewer.html",
+    "chat-process-review.html",
 ]
 
 
@@ -119,6 +120,42 @@ def test_pages_with_their_own_controls_still_call_the_shared_functions():
         assert 'data-phins-return="off"' in text
         assert "phinsDocGoBack" in text
         assert "phinsDocClose" in text
+
+
+def test_pages_without_a_banner_adopt_the_shared_letterhead():
+    script = _read(STATIC / "phins-doc-return.js")
+    helper = _read(STATIC / "phins-document.js")
+    assert "mountLetterhead" in script
+    assert ".phins-doc-banner" in script
+    assert "adoptPage" in helper
+    assert "wrapElement" in helper
+    assert "openStoredFile" in helper
+    documents = _read(STATIC / "documents.html")
+    assert "PhinsDocument.wrapElement" in documents
+    assert "/phins-document.css" in documents
+    review = _read(STATIC / "chat-process-review.html")
+    assert "phins-doc-return.js" in review
+
+
+def test_risk_summary_letterhead_is_a_view_of_the_same_summary():
+    from services.risk_reports.pdf_export import build_report_letterhead_html
+
+    html = build_report_letterhead_html({
+        "title": "Insurance report",
+        "language": "en",
+        "assessment_sections": [{
+            "title": "Cover",
+            "content": "Existing narrative",
+            "columns": ["Item", "Amount"],
+            "rows": [{"Item": "Premium", "Amount": "100"}],
+        }],
+    })
+    assert "phins-doc-banner" in html
+    assert "Existing narrative" in html
+    assert "Premium" in html
+    assert "The stored report is unchanged" in html
+    server = _read(ROOT / "web_portal" / "server.py")
+    assert "build_report_letterhead_html" in server
 
 
 def test_vault_open_stays_in_the_documents_modal():

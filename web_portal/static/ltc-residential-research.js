@@ -922,12 +922,36 @@
     );
   }
 
-  function downloadPdf() {
-    return downloadBlob(
-      `/api/actuarial/ltc-residential-research/download?${queryString({ format: 'pdf' })}`,
-      'phins-ltc-residential-market-strategy.pdf',
-      'Downloaded the full study PDF.',
-    );
+  async function downloadPdf() {
+    try {
+      const res = await fetch(
+        `/api/actuarial/ltc-residential-research/download?${queryString({ format: 'pdf' })}`,
+        { headers: authHeaders() },
+      );
+      if (!res.ok) {
+        let message = `HTTP ${res.status}`;
+        try { const body = await res.json(); message = body.error || message; } catch (err) { /* ignore */ }
+        throw new Error(message);
+      }
+      const blob = await res.blob();
+      if (!window.PhinsDocument) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = '/phins-document.js';
+          script.onload = resolve;
+          script.onerror = () => reject(new Error('Letterhead unavailable'));
+          document.head.appendChild(script);
+        });
+      }
+      await PhinsDocument.openStoredFile({
+        blob,
+        title: 'PHINS long-term care residential market study',
+        eyebrow: 'Research study',
+      });
+      setStatus('Opened the study in the PHINS letterhead. The PDF bytes are unchanged.');
+    } catch (err) {
+      setStatus(`PDF download failed: ${err.message}`, true);
+    }
   }
 
   root.PhinsLtcResidentialResearch = {
