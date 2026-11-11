@@ -21360,6 +21360,35 @@ class PortalHandler(BaseHTTPRequestHandler):
             if header:
                 self.send_header('Set-Cookie', header)
 
+    def _inquiry_browser_cookie(self) -> str:
+        """Short professional-inquiry session. The email token is not this cookie."""
+        try:
+            jar = confidential_access.parse_cookies(self.headers.get('Cookie'))
+        except Exception:
+            return ''
+        from services.referral_reward_service import INQUIRY_SESSION_COOKIE
+        return str((jar or {}).get(INQUIRY_SESSION_COOKIE) or '')
+
+    def _finish_referral(self, result) -> None:
+        """Write a referral JSON response, moving a new inquiry session onto a cookie."""
+        status_code, response_data = result
+        if isinstance(response_data, dict):
+            secret = response_data.pop('_inquiry_session', None)
+            if secret:
+                from services.referral_reward_service import (
+                    INQUIRY_SESSION_COOKIE,
+                    INQUIRY_SESSION_SECONDS,
+                )
+                self._pending_cookies = list(getattr(self, '_pending_cookies', None) or [])
+                self._pending_cookies.append(confidential_access.access_cookie_header(
+                    str(secret),
+                    secure=self._request_is_secure(),
+                    max_age=INQUIRY_SESSION_SECONDS,
+                    cookie_name=INQUIRY_SESSION_COOKIE,
+                ))
+        self._set_json_headers(status_code)
+        self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+
     def _bearer_token(self) -> Optional[str]:
         auth_header = self.headers.get('Authorization', '') or ''
         if not auth_header.startswith('Bearer '):
@@ -24597,11 +24626,11 @@ For claims or questions, please contact:
         # =====================================================================
         if referral_rewards_enabled and api_referral_get and path.startswith(REFERRAL_API_PREFIXES):
             try:
-                referral_result = api_referral_get(path, session, qs)
+                referral_result = api_referral_get(
+                    path, session, qs, self._inquiry_browser_cookie(),
+                )
                 if referral_result is not None:
-                    status_code, response_data = referral_result
-                    self._set_json_headers(status_code)
-                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    self._finish_referral(referral_result)
                     return
             except Exception as e:
                 print(f"Referral Rewards error (GET {path}): {e}")
@@ -45084,11 +45113,14 @@ For claims or questions, please contact:
                     referral_body = {}
                 if not isinstance(referral_body, dict):
                     referral_body = {}
-                referral_result = api_referral_post(path, session, referral_body)
+                referral_result = api_referral_post(
+                    path, session, referral_body,
+                    self._inquiry_browser_cookie(),
+                    client_ip,
+                    self.headers.get('User-Agent', '') or '',
+                )
                 if referral_result is not None:
-                    status_code, response_data = referral_result
-                    self._set_json_headers(status_code)
-                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    self._finish_referral(referral_result)
                     return
             except Exception as e:
                 print(f"Referral Rewards error (POST {path}): {e}")

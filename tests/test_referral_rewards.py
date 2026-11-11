@@ -36,16 +36,40 @@ def _post(path, payload, token=None):
         return json.loads(exc.read().decode("utf-8")), exc.code
 
 
-def _get(path, token=None):
+def _open(path, payload=None, token=None, cookie=None, method=None):
     headers = {}
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    req = Request(BASE + path, headers=headers)
+    if cookie:
+        headers["Cookie"] = cookie
+    req = Request(BASE + path, data=data, headers=headers, method=method)
     try:
         with urlopen(req) as resp:
-            return json.loads(resp.read().decode("utf-8")), resp.status
+            raw = resp.read().decode("utf-8")
+            cookies = list(resp.headers.get_all("Set-Cookie") or [])
+            return json.loads(raw) if raw else {}, resp.status, cookies
     except HTTPError as exc:
-        return json.loads(exc.read().decode("utf-8")), exc.code
+        raw = exc.read().decode("utf-8")
+        cookies = list(exc.headers.get_all("Set-Cookie") or [])
+        return json.loads(raw) if raw else {}, exc.code, cookies
+
+
+def _get(path, token=None, cookie=None):
+    body, status, _cookies = _open(path, token=token, cookie=cookie, method="GET")
+    return body, status
+
+
+def _cookie_value(headers, name):
+    prefix = name + "="
+    for header in headers:
+        part = header.split(";", 1)[0].strip()
+        if part.startswith(prefix):
+            return part[len(prefix):]
+    return ""
 
 
 def _login(username, password):
@@ -1047,6 +1071,22 @@ def test_professional_chat_discloses_every_step_and_keeps_the_id_in_the_vault():
     })
     assert moved["chat"]["cursor"] == "identity"
     national_id = "123456782"
+    blocked, status = _post("/api/professional-inquiry/chat", {
+        "token": link, "step": "identity",
+        "value": {"nationality": "IL", "national_id": national_id},
+    })
+    assert status == 403, blocked
+    assert blocked["code"] == "otp_required"
+    otp, status = _post("/api/professional-inquiry/otp/request", {"token": link})
+    assert status == 200, otp
+    assert otp.get("demo_otp_code")
+    assert national_id not in json.dumps(otp)
+    checked, status = _post("/api/professional-inquiry/otp/verify", {
+        "token": link,
+        "verification_id": otp["verification_id"],
+        "otp_code": otp["demo_otp_code"],
+    })
+    assert status == 200, checked
     recorded = _chat(link, "identity", {"nationality": "IL", "national_id": national_id})
     dumped = json.dumps(recorded)
     assert national_id not in dumped
@@ -1104,8 +1144,198 @@ def test_professional_chat_discloses_every_step_and_keeps_the_id_in_the_vault():
 
     page = (Path(__file__).resolve().parents[1] / "web_portal" / "static" / "professional-inquiry-chat.html").read_text(encoding="utf-8")
     script = (Path(__file__).resolve().parents[1] / "web_portal" / "static" / "professional-inquiry-chat.js").read_text(encoding="utf-8")
+    classic = (Path(__file__).resolve().parents[1] / "web_portal" / "static" / "professional-inquiry.html").read_text(encoding="utf-8")
     assert "Phin" in page
     assert "disclosed" in page
+    assert 'name="referrer" content="same-origin"' in page
+    assert 'name="referrer" content="same-origin"' in classic
     assert "/api/professional-inquiry/chat" in script
     assert "/api/professional-inquiry/media" in script
+    assert "/api/professional-inquiry/session" in script
+    assert "/api/professional-inquiry/otp/request" in script
+    assert "/api/professional-inquiry/session" in classic
     assert "getUserMedia" in script
+
+
+@pytest.mark.parametrize("closed_status", ["rejected", "suspended"])
+def test_approval_does_not_reopen_a_closed_supplier(closed_status):
+    email = f"closed-{closed_status}@example.com"
+    _register("Closed Desk", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {
+        "role": "supplier",
+        "supplier_type": "clinic",
+        "company_name": "Closed Clinic",
+    }, token=token)
+    assert status == 200, filed
+    saved = _finish_inquiry(filed, name="Closed Desk", company={
+        "company_name": "Closed Clinic",
+        "supplier_type": "clinic",
+        "city": "Haifa",
+        "country": "IL",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/professional-requests/review", {
+        "id": saved["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, opened
+    supplier = portal.supply_chain_service.suppliers[opened["supplier_id"]]
+    supplier["status"] = closed_status
+    supplier["portal_active"] = False
+
+    agent_filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, agent_filed
+    agent_saved = _finish_inquiry(agent_filed, name="Closed Desk")
+    refused, status = _post("/api/admin/professional-requests/review", {
+        "id": agent_saved["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 409, refused
+    assert refused["code"] == "supplier_closed"
+    assert rewards.REQUESTS[agent_saved["id"]]["status"] == "pending"
+    assert supplier["status"] == closed_status
+    assert supplier["portal_active"] is False
+
+
+def test_classic_form_requires_identity_when_the_platform_does():
+    email = "classic-identity@example.com"
+    customer_id = _register("Classic Identity", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    assert status == 200, filed
+    link = filed["inquiry_path"].split("t=", 1)[1]
+    os.environ["PHINS_IDENTITY_REQUIRED"] = "true"
+    try:
+        refused, status = _post("/api/professional-inquiry", {
+            "token": link,
+            "personal": {
+                "name": "Classic Identity",
+                "phone": "555-0142",
+                "address": "4 Herzl",
+                "city": "Haifa",
+                "country": "IL",
+            },
+            "has_company": False,
+        })
+        assert status == 400, refused
+        assert refused["code"] == "identity_required"
+        assert rewards.REQUESTS[filed["id"]]["status"] == "inquiry"
+        from services.customer_identity_service import set_identity
+        set_identity(
+            portal.CUSTOMERS, customer_id, "123456782", "IL",
+            source="chat", actor="professional_inquiry",
+        )
+        saved, status = _post("/api/professional-inquiry", {
+            "token": link,
+            "personal": {
+                "name": "Classic Identity",
+                "phone": "555-0142",
+                "address": "4 Herzl",
+                "city": "Haifa",
+                "country": "IL",
+            },
+            "has_company": False,
+        })
+    finally:
+        os.environ.pop("PHINS_IDENTITY_REQUIRED", None)
+    assert status == 200, saved
+    assert saved["status"] == "pending"
+    assert "123456782" not in json.dumps(saved)
+
+
+def test_declined_company_is_not_the_supplier_name():
+    email = "declined-company@example.com"
+    _register("Declined Person", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {
+        "role": "supplier",
+        "supplier_type": "clinic",
+        "company_name": "North Clinic",
+    }, token=token)
+    assert status == 200, filed
+    saved = _finish_inquiry(filed, name="Declined Person")
+    stored = rewards.REQUESTS[saved["id"]]
+    assert stored["inquiry"]["has_company"] is False
+    assert stored["company_name"] is None
+    assert stored["supplier_type"] is None
+    stored["company_name"] = "North Clinic"
+    stored["supplier_type"] = "clinic"
+    stored["inquiry"]["company"] = {
+        "company_name": "North Clinic",
+        "supplier_type": "clinic",
+    }
+    admin, _ = _login("admin", "admin123")
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": saved["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, reviewed
+    supplier = portal.supply_chain_service.suppliers[reviewed["supplier_id"]]
+    assert supplier["company_name"] == "Declined Person"
+    assert supplier["company_name_source"] == "placeholder"
+    assert supplier["supplier_type"] == "other"
+    assert "North Clinic" not in json.dumps(supplier["company_name"])
+
+
+def test_filed_inquiry_link_returns_status_only_and_expires_in_every_status():
+    email = "filed-link@example.com"
+    _register("Filed Link", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    assert status == 200, filed
+    link = filed["inquiry_path"].split("t=", 1)[1]
+    saved = _finish_inquiry(filed, name="Filed Link")
+    view, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, view
+    assert view == {
+        "request_id": saved["id"],
+        "role": "supplier",
+        "status": "pending",
+        "editable": False,
+    }
+    dumped = json.dumps(view)
+    assert email not in dumped
+    assert "555-0100" not in dumped
+    assert "1 Herzl" not in dumped
+    assert "national_id_masked" not in dumped
+    admin, _ = _login("admin", "admin123")
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": saved["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, reviewed
+    approved, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, approved
+    assert approved["status"] == "approved"
+    assert email not in json.dumps(approved)
+    rewards.REQUESTS[saved["id"]]["inquiry"]["expires_at"] = "2000-01-01T00:00:00Z"
+    expired, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 410, expired
+    assert expired["code"] == "inquiry_expired"
+
+
+def test_inquiry_link_exchanges_for_a_cookie_and_leaves_the_token_off_the_body():
+    email = "inquiry-session@example.com"
+    _register("Session Person", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    assert status == 200, filed
+    link = filed["inquiry_path"].split("t=", 1)[1]
+    opened, status, cookies = _open("/api/professional-inquiry/session", {"token": link})
+    assert status == 200, opened
+    secret = _cookie_value(cookies, "phins_inquiry")
+    assert secret.startswith("inqs_")
+    assert secret not in json.dumps(opened)
+    assert "token_sha256" not in json.dumps(opened)
+    cookie = "phins_inquiry=" + secret
+    via_cookie, status = _get("/api/professional-inquiry", cookie=cookie)
+    assert status == 200, via_cookie
+    assert via_cookie["known"]["email"] == email
+    missing, status = _get("/api/professional-inquiry")
+    assert status == 400, missing
+    via_link, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, via_link
+    assert via_link["known"]["email"] == email
+    rewards.REQUESTS[filed["id"]]["inquiry"]["browser_session"]["expires_at"] = "2000-01-01T00:00:00Z"
+    stale, status = _get("/api/professional-inquiry", cookie=cookie)
+    assert status == 410, stale
+    assert stale["code"] == "inquiry_session_expired"
+    still, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, still

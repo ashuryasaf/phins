@@ -8,7 +8,10 @@ Routes (dispatched from ``web_portal/server.py``):
   GET  /api/customer/professional-requests         own agent/supplier requests
   POST /api/customer/professional-requests         {role, supplier_type?, company_name?, note?}
   POST /api/customer/role-switch                   {role: customer|agent|supplier}
-  GET  /api/professional-inquiry                   prefilled form for the email link token
+  POST /api/professional-inquiry/session           exchange the email token for a short cookie
+  GET  /api/professional-inquiry                   prefilled form (cookie or email token)
+  POST /api/professional-inquiry/otp/request       email a code before a new identity is recorded
+  POST /api/professional-inquiry/otp/verify        confirm that code
   POST /api/professional-inquiry                   submit that form onto the same request
   GET  /api/admin/supplier-agent-pipeline          fee and reward report (admin, accountant, actuary)
   POST /api/admin/supplier-agent-pipeline/seal     ledger the current report (admin)
@@ -158,6 +161,111 @@ def _switch(session: Dict[str, Any], body: Dict[str, Any]) -> Dict[str, Any]:
     return _mint(session, "supplier", supplier_id, supplier_id=supplier_id)
 
 
+def _inquiry_credential(explicit: Any, cookie: str = "") -> str:
+    """The browser session wins once it exists. The email token opens that session."""
+    return str(cookie or explicit or "").strip()
+
+
+def _inquiry_otp_request(token: str, client_ip: str, user_agent: str) -> Tuple[int, Dict[str, Any]]:
+    """Send a code to the email already on the customer record. The body cannot redirect it."""
+    try:
+        context = rewards.inquiry_otp_context(token)
+    except rewards.RewardError as exc:
+        return exc.status, exc.to_dict()
+    email = str(context.get("email") or "").strip()
+    if not email:
+        return 409, {"error": "This customer has no email on file for a verification code."}
+    try:
+        from web_portal.api_chat_application import _otp_delivery_ready
+    except ImportError:
+        from api_chat_application import _otp_delivery_ready  # type: ignore
+    ready, provider = _otp_delivery_ready("email")
+    if not ready:
+        return 503, {
+            "error": "A verification code cannot be sent right now.",
+            "error_code": "OTP_DELIVERY_UNAVAILABLE",
+            "retryable": True,
+        }
+    from services.otp_security_service import OTPPurpose, get_otp_security_service
+    otp_service = get_otp_security_service()
+    result = otp_service.create_otp_verification(
+        user_type="applicant",
+        user_id=str(context.get("request_id") or ""),
+        email=email,
+        purpose=OTPPurpose.EMAIL_VERIFICATION,
+        ip_address=client_ip or None,
+        user_agent=user_agent or None,
+        delivery_channel="email",
+    )
+    if not result.success:
+        status = 429 if result.error_code == "RATE_LIMITED" else 400
+        return status, {"error": result.message or "Could not create verification code", "error_code": result.error_code}
+    data = result.data or {}
+    verification_id = str(data.get("verification_id") or "")
+    rewards.remember_identity_otp(token, verification_id)
+    try:
+        from web_portal.api_extensions import _demo_otp_exposure_allowed, _send_otp_via_channel
+    except ImportError:
+        from api_extensions import _demo_otp_exposure_allowed, _send_otp_via_channel  # type: ignore
+    delivered, _delivery_error = _send_otp_via_channel(
+        "email",
+        data.get("otp_code"),
+        int(data.get("expires_in_seconds") or 300),
+        OTPPurpose.EMAIL_VERIFICATION.value,
+        email=email,
+        ip_address=client_ip or None,
+        verification_id=verification_id,
+    )
+    response: Dict[str, Any] = {
+        "success": True,
+        "verification_id": verification_id,
+        "delivery_channel": "email",
+        "masked_email": data.get("masked_email"),
+        "expires_in_seconds": data.get("expires_in_seconds"),
+        "notification_sent": bool(delivered),
+    }
+    if _demo_otp_exposure_allowed() and not otp_service.has_external_pin(verification_id):
+        response["demo_otp_code"] = data.get("otp_code")
+    elif not delivered:
+        return 503, {
+            "error": "A verification code cannot be sent right now.",
+            "error_code": "OTP_DELIVERY_FAILED",
+            "retryable": True,
+        }
+    return 200, response
+
+
+def _inquiry_otp_verify(token: str, body: Dict[str, Any], client_ip: str) -> Tuple[int, Dict[str, Any]]:
+    otp_code = str(body.get("otp_code") or "").strip()
+    verification_id = str(body.get("verification_id") or "").strip()
+    if not otp_code or not verification_id:
+        return 400, {"error": "verification_id and otp_code are required"}
+    try:
+        context = rewards.inquiry_otp_context(token)
+    except rewards.RewardError as exc:
+        return exc.status, exc.to_dict()
+    from services.otp_security_service import OTPPurpose, get_otp_security_service
+    otp_service = get_otp_security_service()
+    result = otp_service.verify_otp(verification_id, otp_code, ip_address=client_ip or None)
+    if not result.success:
+        status = 429 if result.error_code == "MAX_ATTEMPTS" else 400
+        return status, {"error": result.message or "Verification failed", "error_code": result.error_code}
+    consume = otp_service.consume_verification(
+        verification_id,
+        expected_email=str(context.get("email") or ""),
+        expected_purpose=OTPPurpose.EMAIL_VERIFICATION,
+        ip_address=client_ip or None,
+        expected_user_type="applicant",
+    )
+    if not consume.success:
+        return 400, {"error": consume.message or "Verification could not be consumed", "error_code": consume.error_code}
+    try:
+        confirmed = rewards.confirm_identity_otp(token, verification_id)
+    except rewards.RewardError as exc:
+        return exc.status, exc.to_dict()
+    return 200, {"success": True, **confirmed}
+
+
 def _query_value(query: Dict[str, Any], key: str) -> str:
     value = (query or {}).get(key)
     if isinstance(value, list):
@@ -165,9 +273,13 @@ def _query_value(query: Dict[str, Any], key: str) -> str:
     return str(value or "").strip()
 
 
-def dispatch_get(path: str, session: Optional[Dict[str, Any]], query: Dict[str, Any]) -> Result:
+def dispatch_get(path: str, session: Optional[Dict[str, Any]], query: Dict[str, Any],
+                 inquiry_cookie: str = "") -> Result:
     if path == "/api/professional-inquiry":
-        token = _query_value(query, "t") or _query_value(query, "token")
+        token = _inquiry_credential(
+            _query_value(query, "t") or _query_value(query, "token"),
+            inquiry_cookie,
+        )
         if not token:
             return 400, {"error": "token is required"}
         return _call(rewards.inquiry_prefill, token)
@@ -201,7 +313,8 @@ def dispatch_get(path: str, session: Optional[Dict[str, Any]], query: Dict[str, 
     return None
 
 
-def dispatch_post(path: str, session: Optional[Dict[str, Any]], body: Dict[str, Any]) -> Result:
+def dispatch_post(path: str, session: Optional[Dict[str, Any]], body: Dict[str, Any],
+                  inquiry_cookie: str = "", client_ip: str = "", user_agent: str = "") -> Result:
     body = body if isinstance(body, dict) else {}
     if path == "/api/customer/referral-rewards/accept":
         denied = _own(session)
@@ -254,13 +367,28 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]], body: Dict[str, 
         if denied:
             return denied
         return _call(rewards.recompute)
-    if path == "/api/professional-inquiry/chat":
+    if path == "/api/professional-inquiry/session":
         token = str(body.get("token") or body.get("t") or "").strip()
+        if not token:
+            return 400, {"error": "token is required"}
+        return _call(rewards.open_inquiry_session, token)
+    if path == "/api/professional-inquiry/otp/request":
+        token = _inquiry_credential(body.get("token") or body.get("t"), inquiry_cookie)
+        if not token:
+            return 400, {"error": "token is required"}
+        return _inquiry_otp_request(token, client_ip, user_agent)
+    if path == "/api/professional-inquiry/otp/verify":
+        token = _inquiry_credential(body.get("token") or body.get("t"), inquiry_cookie)
+        if not token:
+            return 400, {"error": "token is required"}
+        return _inquiry_otp_verify(token, body, client_ip)
+    if path == "/api/professional-inquiry/chat":
+        token = _inquiry_credential(body.get("token") or body.get("t"), inquiry_cookie)
         if not token:
             return 400, {"error": "token is required"}
         return _call(rewards.advance_inquiry_chat, token, body.get("step"), body.get("value"))
     if path == "/api/professional-inquiry/media":
-        token = str(body.get("token") or body.get("t") or "").strip()
+        token = _inquiry_credential(body.get("token") or body.get("t"), inquiry_cookie)
         if not token:
             return 400, {"error": "token is required"}
         return _call(
@@ -272,7 +400,7 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]], body: Dict[str, 
             str(body.get("data_b64") or ""),
         )
     if path == "/api/professional-inquiry":
-        token = str(body.get("token") or body.get("t") or "").strip()
+        token = _inquiry_credential(body.get("token") or body.get("t"), inquiry_cookie)
         if not token:
             return 400, {"error": "token is required"}
         return _call(rewards.submit_inquiry, token, body)

@@ -1834,7 +1834,12 @@ def accept_all(customer_id: str, allocation: Optional[Dict[str, Any]] = None) ->
 # The inquiry form writes onto this same request. It does not open a second book.
 # ---------------------------------------------------------------------------
 INQUIRY_DAYS = 14
+INQUIRY_SESSION_COOKIE = "phins_inquiry"
+INQUIRY_SESSION_SECONDS = 2 * 60 * 60
+INQUIRY_OTP_WINDOW_SECONDS = 15 * 60
 _INQUIRY_TOKEN_RE = re.compile(r"^inq_[0-9a-f]{32}$")
+_INQUIRY_SESSION_RE = re.compile(r"^inqs_[0-9a-f]{32}$")
+_CLOSED_SUPPLIER_STATUSES = ("rejected", "suspended", "terminated")
 _PIPELINE_AUDIENCES = ("supplier", "agent", "customer", "tax", "regulator")
 _INQUIRY_FORBIDDEN = {
     "national_id", "id_number", "national_id_number", "password", "tax_id", "ssn",
@@ -2085,10 +2090,38 @@ def request_professional(customer_id: str, role: str, login_username: str = "",
     return view
 
 
-def _request_for_inquiry_token(token: str) -> Optional[Dict[str, Any]]:
-    if not _INQUIRY_TOKEN_RE.fullmatch(str(token or "")):
+def _digest(token: str) -> str:
+    return hashlib.sha256(str(token).encode("utf-8")).hexdigest()
+
+
+def _request_for_browser_session(token: str) -> Optional[Dict[str, Any]]:
+    """The short cookie minted from the email link. The raw value is not stored."""
+    if not _INQUIRY_SESSION_RE.fullmatch(str(token or "")):
         return None
-    digest = hashlib.sha256(str(token).encode("utf-8")).hexdigest()
+    digest = _digest(token)
+    found = None
+    for req in REQUESTS.values():
+        inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+        browser = inquiry.get("browser_session") if isinstance(inquiry.get("browser_session"), dict) else {}
+        stored = str(browser.get("token_sha256") or "")
+        if len(stored) == len(digest) and hmac.compare_digest(stored, digest):
+            found = req
+            if _inquiry_expired(browser):
+                raise RewardError(
+                    "This application session has expired. Open the email link again.",
+                    status=410,
+                    code="inquiry_session_expired",
+                )
+    return found
+
+
+def _request_for_inquiry_token(token: str) -> Optional[Dict[str, Any]]:
+    raw = str(token or "")
+    if _INQUIRY_SESSION_RE.fullmatch(raw):
+        return _request_for_browser_session(raw)
+    if not _INQUIRY_TOKEN_RE.fullmatch(raw):
+        return None
+    digest = _digest(raw)
     found = None
     for req in REQUESTS.values():
         inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
@@ -2098,16 +2131,134 @@ def _request_for_inquiry_token(token: str) -> Optional[Dict[str, Any]]:
     return found
 
 
+def open_inquiry_session(token: str) -> Dict[str, Any]:
+    """Exchange the email-link token for a short HttpOnly browser session.
+
+    The email token stays the 14-day capability. Only its SHA-256 is stored,
+    and the same is true of the session secret. The response carries the
+    session secret under ``_inquiry_session`` so the HTTP layer can set the
+    cookie and then drop that field.
+    """
+    raw = str(token or "")
+    if not _INQUIRY_TOKEN_RE.fullmatch(raw):
+        raise RewardError("This inquiry link is not valid", status=404, code="inquiry_not_found")
+    session_secret = "inqs_" + secrets.token_hex(16)
+    with _LOCK:
+        _ensure_loaded()
+        req = _request_for_inquiry_token(raw)
+        if req is None:
+            raise RewardError("This inquiry link is not valid", status=404, code="inquiry_not_found")
+        inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+        if _inquiry_expired(inquiry):
+            raise RewardError("This inquiry link has expired", status=410, code="inquiry_expired")
+        link_expiry = str(inquiry.get("expires_at") or "")
+        session_expiry = _add_seconds(_now(), INQUIRY_SESSION_SECONDS)
+        if link_expiry and session_expiry > link_expiry:
+            session_expiry = link_expiry
+        inquiry["browser_session"] = {
+            "token_sha256": _digest(session_secret),
+            "expires_at": session_expiry,
+        }
+        req["inquiry"] = inquiry
+        req["updated_at"] = _now()
+        _persist_request(req)
+    view = inquiry_prefill(raw)
+    view["_inquiry_session"] = session_secret
+    return view
+
+
+def _identity_otp_fresh(req: Dict[str, Any]) -> bool:
+    inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+    otp = inquiry.get("identity_otp") if isinstance(inquiry.get("identity_otp"), dict) else {}
+    stamp = str(otp.get("verified_at") or "")
+    if not stamp:
+        return False
+    try:
+        moment = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        now = datetime.fromisoformat(_now().replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return (now - moment).total_seconds() <= INQUIRY_OTP_WINDOW_SECONDS
+
+
+def inquiry_otp_context(token: str) -> Dict[str, Any]:
+    """The address a code may be sent to. It is the customer record, not the form."""
+    with _LOCK:
+        req = _open_chat_request(token)
+        rec = _customer_record(req.get("customer_id")) or {}
+        email = str(rec.get("email") or "").strip()
+        return {
+            "request_id": req.get("id"),
+            "email": email,
+            "otp_verified": _identity_otp_fresh(req),
+        }
+
+
+def remember_identity_otp(token: str, verification_id: str) -> None:
+    with _LOCK:
+        req = _open_chat_request(token)
+        inquiry = req.setdefault("inquiry", {})
+        inquiry["identity_otp"] = {
+            "verification_id": str(verification_id or ""),
+            "verified_at": None,
+        }
+        req["updated_at"] = _now()
+        _persist_request(req)
+
+
+def confirm_identity_otp(token: str, verification_id: str) -> Dict[str, Any]:
+    given = str(verification_id or "")
+    with _LOCK:
+        req = _open_chat_request(token)
+        inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+        otp = inquiry.get("identity_otp") if isinstance(inquiry.get("identity_otp"), dict) else {}
+        stored = str(otp.get("verification_id") or "")
+        if not stored or not given or len(stored) != len(given) or not hmac.compare_digest(stored, given):
+            raise RewardError(
+                "That code does not belong to this application",
+                code="otp_mismatch",
+            )
+        otp["verified_at"] = _now()
+        inquiry["identity_otp"] = otp
+        req["inquiry"] = inquiry
+        req["updated_at"] = otp["verified_at"]
+        _persist_request(req)
+        return {"otp_verified": True}
+
+
+def _add_seconds(stamp: str, seconds: int) -> str:
+    moment = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    shifted = moment + timedelta(seconds=int(seconds))
+    return shifted.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _inquiry_status_only(req: Dict[str, Any]) -> Dict[str, Any]:
+    """A filed link may say where the request stands. It does not repeat contact details."""
+    return {
+        "request_id": req.get("id"),
+        "role": req.get("requested_role"),
+        "status": req.get("status"),
+        "editable": False,
+    }
+
+
 def inquiry_prefill(token: str) -> Dict[str, Any]:
-    """Form payload for the person who holds the email link. No national ID number."""
+    """Form payload for the person who holds the email link. No national ID number.
+
+    Once the request leaves ``inquiry``, the link returns status only. The
+    14-day expiry applies in every status, so a filed link also stops answering
+    after ``INQUIRY_DAYS``.
+    """
     with _LOCK:
         _ensure_loaded()
         req = _request_for_inquiry_token(token)
         if req is None:
             raise RewardError("This inquiry link is not valid", status=404, code="inquiry_not_found")
         inquiry = req.get("inquiry") or {}
-        if _inquiry_expired(inquiry) and req.get("status") == "inquiry":
+        if _inquiry_expired(inquiry):
             raise RewardError("This inquiry link has expired", status=410, code="inquiry_expired")
+        if req.get("status") != "inquiry":
+            return _inquiry_status_only(req)
         known = inquiry.get("known") if isinstance(inquiry.get("known"), dict) else _known_customer(req["customer_id"])
         personal = inquiry.get("personal") if isinstance(inquiry.get("personal"), dict) else {}
         company = inquiry.get("company") if isinstance(inquiry.get("company"), dict) else {}
@@ -2207,6 +2358,7 @@ def submit_inquiry(token: str, body: Dict[str, Any]) -> Dict[str, Any]:
             raise RewardError("This inquiry link has expired", status=410, code="inquiry_expired")
         personal = _clean_personal(personal_in)
         company = _clean_company(company_in) if has_company else None
+        _assert_identity_ready(req)
         inquiry["personal"] = personal
         inquiry["has_company"] = has_company
         inquiry["company"] = company
@@ -2217,6 +2369,9 @@ def submit_inquiry(token: str, body: Dict[str, Any]) -> Dict[str, Any]:
         if has_company and company:
             req["company_name"] = company["company_name"]
             req["supplier_type"] = company["supplier_type"]
+        else:
+            req["company_name"] = None
+            req["supplier_type"] = None
         _persist_request(req)
         return public_request(req)
 
@@ -2321,10 +2476,12 @@ def _step_prompt(step_id: str, req: Dict[str, Any], identity: Dict[str, Any]) ->
         if identity.get("required"):
             return (
                 "This application needs your nationality and personal ID before it can continue. "
+                "First enter the code sent to the email on your customer record. "
                 "The number goes to the identity vault only. This application keeps the last four digits."
             )
         return (
             "Add your nationality and personal ID, or skip this step. "
+            "Recording a new ID needs the code sent to the email on your customer record. "
             "When the platform requires an identity and none is on file, this step cannot be skipped. "
             "The number goes to the identity vault only."
         )
@@ -2363,6 +2520,7 @@ def _step_input(step_id: str, req: Dict[str, Any], identity: Dict[str, Any]) -> 
             "can_confirm": bool(identity.get("complete")),
             "nationality": identity.get("nationality"),
             "national_id_masked": identity.get("national_id_masked"),
+            "otp_verified": _identity_otp_fresh(req),
         }
     if step_id == "company":
         company = inquiry.get("company") if isinstance(inquiry.get("company"), dict) else {}
@@ -2568,6 +2726,16 @@ def _advance_identity(token: str, value: Any) -> Dict[str, Any]:
                     "This application does not collect a tax number or a password",
                     code="field_not_accepted",
                 )
+        with _LOCK:
+            gate = _open_chat_request(token)
+            if _ensure_chat(gate).get("cursor") != "identity":
+                raise RewardError("Finish the step that is open", status=409, code="step_mismatch")
+            if not _identity_otp_fresh(gate):
+                raise RewardError(
+                    "Verify the code sent to your email before recording an identity",
+                    status=403,
+                    code="otp_required",
+                )
         try:
             from services.customer_identity_service import IdentityError, set_identity
             portal = _portal()
@@ -2596,6 +2764,10 @@ def _advance_identity(token: str, value: Any) -> Dict[str, Any]:
         req["inquiry"]["known"] = _known_customer(customer_id)
         chat["identity_confirmed"] = not deferred
         chat["identity_deferred"] = deferred
+        if not deferred:
+            otp = req["inquiry"].get("identity_otp") if isinstance(req["inquiry"].get("identity_otp"), dict) else {}
+            otp["verified_at"] = None
+            req["inquiry"]["identity_otp"] = otp
         if not chat.get("transcript"):
             _say(chat, "bot", _INQUIRY_OPENING)
         return _advance_saved(req, chat, "identity", "Identity step completed", note)
@@ -2643,6 +2815,8 @@ def advance_inquiry_chat(token: str, step: str, value: Any) -> Dict[str, Any]:
             else:
                 req["inquiry"]["has_company"] = False
                 req["inquiry"]["company"] = None
+                req["company_name"] = None
+                req["supplier_type"] = None
                 user_text = "No company"
             saved = _advance_saved(req, chat, step, user_text, "")
         elif step == "evidence":
@@ -2820,7 +2994,8 @@ def _company_from_request(req: Dict[str, Any]) -> Tuple[str, str, bool]:
     company = inquiry.get("company") if isinstance(inquiry.get("company"), dict) else {}
     personal = inquiry.get("personal") if isinstance(inquiry.get("personal"), dict) else {}
     rec = _customer_record(req["customer_id"]) or {}
-    if inquiry.get("has_company") or (req.get("company_name") and req.get("supplier_type")):
+    declined = inquiry.get("has_company") is False
+    if not declined and (inquiry.get("has_company") or (req.get("company_name") and req.get("supplier_type"))):
         name = _clip_text(company.get("company_name") or req.get("company_name"), 160)
         stype = _clip_text(company.get("supplier_type") or req.get("supplier_type"), 40).lower()
         if name and stype in supplier_type_values():
@@ -2895,10 +3070,24 @@ def _ensure_supplier(req: Dict[str, Any], admin: str) -> Dict[str, Any]:
     existing = _find_supplier(req["customer_id"])
     service = _supply()
     if existing:
+        supplier_status = str(existing.get("status") or "").strip().lower()
+        if supplier_status in _CLOSED_SUPPLIER_STATUSES or (
+            supplier_status == "approved" and existing.get("portal_active") is False
+        ):
+            raise RewardError(
+                "This supplier is closed and is not reopened from the application",
+                status=409,
+                code="supplier_closed",
+            )
+        if supplier_status not in ("approved", "pending", "under_review"):
+            raise RewardError(
+                "This supplier is closed and is not reopened from the application",
+                status=409,
+                code="supplier_closed",
+            )
         _stamp_supplier_details(existing, req, name, stype, from_company)
-        if existing.get("status") in ("pending", "under_review"):
+        if supplier_status in ("pending", "under_review"):
             service.approve_supplier(existing["id"], admin or "admin", notes=f"Approved with {req['id']}")
-        existing["portal_active"] = True
         existing["customer_id"] = req["customer_id"]
         rec = _customer_record(req["customer_id"])
         if isinstance(rec, dict):

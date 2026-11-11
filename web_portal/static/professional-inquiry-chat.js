@@ -1,6 +1,6 @@
 (function () {
   const params = new URLSearchParams(window.location.search);
-  const token = params.get("t") || "";
+  let token = params.get("t") || "";
   const welcome = document.getElementById("welcome-screen");
   const screen = document.getElementById("chat-screen");
   const scroll = document.getElementById("chat-scroll");
@@ -93,9 +93,12 @@
         wrap.appendChild(note);
         wrap.appendChild(button("This identity is mine", function () { send("confirm"); }));
       } else {
-        note.textContent = "The number is sent once to the identity vault and is not kept on this application.";
+        note.textContent = "A code goes to the email on your customer record before a new ID is recorded. The number is not kept on this application.";
         wrap.appendChild(note);
-        wrap.innerHTML += field("id-nation", "Nationality", "") + field("id-number", "Personal ID", "", "password");
+        wrap.appendChild(button("Email me a code", function () { requestCode(); }, true));
+        wrap.insertAdjacentHTML("beforeend", field("otp-code", "Email code", ""));
+        wrap.appendChild(button("Verify code", function () { verifyCode(); }, true));
+        wrap.insertAdjacentHTML("beforeend", field("id-nation", "Nationality", "") + field("id-number", "Personal ID", "", "password"));
         wrap.appendChild(button("Record my identity", function () {
           send({ nationality: valueOf("id-nation"), national_id: valueOf("id-number") });
           const box = document.getElementById("id-number");
@@ -190,13 +193,80 @@
     renderDock(chat);
   }
 
-  async function load() {
-    if (!token) {
-      showError("This page needs the link from your email.");
+  function dropTokenFromAddress() {
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete("t");
+    clean.searchParams.delete("token");
+    const next = clean.pathname + (clean.search ? clean.search : "") + clean.hash;
+    history.replaceState({}, "", next);
+    token = "";
+    if (classic) classic.href = "/professional-inquiry.html";
+  }
+
+  async function openSession() {
+    if (!token) return true;
+    const response = await fetch("/api/professional-inquiry/session", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: token }),
+    });
+    const body = await response.json().catch(function () { return {}; });
+    if (!response.ok) {
+      showError(body.error || "This link cannot be opened.");
       document.getElementById("start-btn").disabled = true;
-      return;
+      return false;
     }
-    const response = await fetch("/api/professional-inquiry?t=" + encodeURIComponent(token));
+    dropTokenFromAddress();
+    return true;
+  }
+
+  async function requestCode() {
+    const response = await fetch("/api/professional-inquiry/otp/request", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const body = await response.json().catch(function () { return {}; });
+    const messages = (state.chat.messages || []).slice();
+    messages.push({
+      role: "bot",
+      text: response.ok
+        ? "A code is on its way to the email on your customer record."
+        : (body.error || "The code could not be sent."),
+    });
+    renderMessages(messages);
+    if (response.ok && body.verification_id) {
+      state.verification_id = body.verification_id;
+    }
+  }
+
+  async function verifyCode() {
+    const response = await fetch("/api/professional-inquiry/otp/verify", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        verification_id: state.verification_id || "",
+        otp_code: valueOf("otp-code"),
+      }),
+    });
+    const body = await response.json().catch(function () { return {}; });
+    const messages = (state.chat.messages || []).slice();
+    messages.push({
+      role: "bot",
+      text: response.ok ? "Code verified. You can record your identity." : (body.error || "That code was not accepted."),
+    });
+    renderMessages(messages);
+    const box = document.getElementById("otp-code");
+    if (box) box.value = "";
+  }
+
+  async function load() {
+    const opened = await openSession();
+    if (!opened) return;
+    const response = await fetch("/api/professional-inquiry", { credentials: "same-origin" });
     const body = await response.json().catch(function () { return {}; });
     if (!response.ok) {
       showError(body.error || "This link cannot be opened.");
@@ -210,8 +280,9 @@
     const cursor = state && state.chat && state.chat.cursor;
     const response = await fetch("/api/professional-inquiry/chat", {
       method: "POST",
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: token, step: cursor, value: value }),
+      body: JSON.stringify({ step: cursor, value: value }),
     });
     const body = await response.json().catch(function () { return {}; });
     if (!response.ok) {
@@ -240,9 +311,9 @@
     const data = await blobToB64(file);
     const response = await fetch("/api/professional-inquiry/media", {
       method: "POST",
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        token: token,
         kind: kind,
         name: file.name,
         mime_type: file.type || "",
