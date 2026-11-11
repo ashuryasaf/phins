@@ -24,10 +24,12 @@
         storedRequestId: fromUrl
       };
     }
-    var requestId = fromUrl || storedRequestId || "";
+    // A bare visit does not adopt an earlier request from this tab. The
+    // cookie, or `r` on the address, names the inquiry. The prefill id is
+    // what the cross-link uses after that.
     return {
       token: "",
-      requestId: requestId,
+      requestId: fromUrl,
       replaceStored: false,
       storedRequestId: storedRequestId || ""
     };
@@ -36,6 +38,12 @@
   function crossHref(page, requestId) {
     if (!requestId) return "";
     return page + "?r=" + encodeURIComponent(requestId);
+  }
+
+  function adoptedRequestId(urlRequestId, prefillRequestId) {
+    var fromPrefill = String(prefillRequestId || "");
+    if (fromPrefill) return fromPrefill;
+    return String(urlRequestId || "");
   }
 
   function applyStored(storage, resolved) {
@@ -50,6 +58,7 @@
     STORAGE_KEY: STORAGE_KEY,
     resolveInquiryTarget: resolveInquiryTarget,
     crossHref: crossHref,
+    adoptedRequestId: adoptedRequestId,
     applyStored: applyStored
   };
 });

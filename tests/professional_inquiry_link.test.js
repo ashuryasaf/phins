@@ -51,4 +51,16 @@ assert.strictEqual(legacy.requestId, "");
 assert.strictEqual(cleared.getItem(link.STORAGE_KEY), null);
 assert.strictEqual(link.crossHref("/professional-inquiry.html", legacy.requestId), "");
 
+const cookieOnly = link.resolveInquiryTarget("", previous);
+assert.strictEqual(cookieOnly.requestId, "");
+assert.notStrictEqual(cookieOnly.requestId, previous);
+const remembered = link.adoptedRequestId(cookieOnly.requestId, opened);
+assert.strictEqual(remembered, opened);
+assert.notStrictEqual(remembered, previous);
+const cookieHref = link.crossHref("/professional-inquiry.html", remembered);
+assert.strictEqual(cookieHref, "/professional-inquiry.html?r=" + encodeURIComponent(opened));
+assert.ok(!cookieHref.includes(token));
+assert.ok(!cookieHref.includes("t="));
+assert.strictEqual(link.adoptedRequestId(previous, opened), opened);
+
 console.log("two inquiries in one tab stay on the link that just opened");

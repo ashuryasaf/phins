@@ -303,6 +303,7 @@
       document.getElementById("start-btn").disabled = true;
       return;
     }
+    rememberRequest(link.adoptedRequestId(requestId, body.request_id));
     applyState(body);
   }
 
