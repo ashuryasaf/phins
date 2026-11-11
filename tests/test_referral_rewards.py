@@ -72,6 +72,16 @@ def _cookie_value(headers, name):
     return ""
 
 
+def _inquiry_set_cookie(headers):
+    """Return name, secret, and the full Set-Cookie header for one inquiry."""
+    for header in headers:
+        part = header.split(";", 1)[0].strip()
+        name, _, value = part.partition("=")
+        if name.startswith("phins_inquiry_"):
+            return name, value, header
+    return "", "", ""
+
+
 def _login(username, password):
     body, status = _post("/api/login", {"username": username, "password": password})
     assert status == 200, body
@@ -1077,17 +1087,36 @@ def test_professional_chat_discloses_every_step_and_keeps_the_id_in_the_vault():
     })
     assert status == 403, blocked
     assert blocked["code"] == "otp_required"
+    opened, status, set_cookies = _open("/api/professional-inquiry/session", {"token": link})
+    assert status == 200, opened
+    cookie_name, secret, cookie_header = _inquiry_set_cookie(set_cookies)
+    assert secret.startswith("inqs_")
+    assert "HttpOnly" in cookie_header
+    assert secret not in json.dumps(opened)
+    cookie = cookie_name + "=" + secret
     otp, status = _post("/api/professional-inquiry/otp/request", {"token": link})
     assert status == 200, otp
     assert otp.get("demo_otp_code")
     assert national_id not in json.dumps(otp)
-    checked, status = _post("/api/professional-inquiry/otp/verify", {
-        "token": link,
+    checked, status, _cookies = _open("/api/professional-inquiry/otp/verify", {
+        "request_id": opened["request_id"],
         "verification_id": otp["verification_id"],
         "otp_code": otp["demo_otp_code"],
-    })
+    }, cookie=cookie)
     assert status == 200, checked
-    recorded = _chat(link, "identity", {"nationality": "IL", "national_id": national_id})
+    stolen, status = _post("/api/professional-inquiry/chat", {
+        "token": link, "step": "identity",
+        "value": {"nationality": "IL", "national_id": national_id},
+    })
+    assert status == 403, stolen
+    assert stolen["code"] == "otp_required"
+    assert portal.CUSTOMERS[customer_id].get("national_id_last4") in (None, "")
+    recorded, status, _cookies = _open("/api/professional-inquiry/chat", {
+        "request_id": opened["request_id"],
+        "step": "identity",
+        "value": {"nationality": "IL", "national_id": national_id},
+    }, cookie=cookie)
+    assert status == 200, recorded
     dumped = json.dumps(recorded)
     assert national_id not in dumped
     assert recorded["chat"]["identity"]["complete"] is True
@@ -1320,11 +1349,12 @@ def test_inquiry_link_exchanges_for_a_cookie_and_leaves_the_token_off_the_body()
     link = filed["inquiry_path"].split("t=", 1)[1]
     opened, status, cookies = _open("/api/professional-inquiry/session", {"token": link})
     assert status == 200, opened
-    secret = _cookie_value(cookies, "phins_inquiry")
+    cookie_name, secret, cookie_header = _inquiry_set_cookie(cookies)
     assert secret.startswith("inqs_")
+    assert "HttpOnly" in cookie_header
     assert secret not in json.dumps(opened)
     assert "token_sha256" not in json.dumps(opened)
-    cookie = "phins_inquiry=" + secret
+    cookie = cookie_name + "=" + secret
     via_cookie, status = _get("/api/professional-inquiry", cookie=cookie)
     assert status == 200, via_cookie
     assert via_cookie["known"]["email"] == email
@@ -1339,3 +1369,148 @@ def test_inquiry_link_exchanges_for_a_cookie_and_leaves_the_token_off_the_body()
     assert stale["code"] == "inquiry_session_expired"
     still, status = _get("/api/professional-inquiry?t=" + link)
     assert status == 200, still
+
+
+def test_two_open_inquiries_keep_separate_cookies():
+    email = "two-inquiries@example.com"
+    _register("Two Inquiries", email)
+    token, _role = _login(email, "secure123456")
+    supplier, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    assert status == 200, supplier
+    agent, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, agent
+    supplier_link = supplier["inquiry_path"].split("t=", 1)[1]
+    agent_link = agent["inquiry_path"].split("t=", 1)[1]
+    supplier_open, status, supplier_cookies = _open(
+        "/api/professional-inquiry/session", {"token": supplier_link},
+    )
+    assert status == 200, supplier_open
+    agent_open, status, agent_cookies = _open(
+        "/api/professional-inquiry/session", {"token": agent_link},
+    )
+    assert status == 200, agent_open
+    supplier_name, supplier_secret, supplier_header = _inquiry_set_cookie(supplier_cookies)
+    agent_name, agent_secret, agent_header = _inquiry_set_cookie(agent_cookies)
+    assert supplier_name != agent_name
+    assert "HttpOnly" in supplier_header
+    assert "HttpOnly" in agent_header
+    assert supplier_secret not in json.dumps(supplier_open)
+    assert agent_secret not in json.dumps(agent_open)
+    both = f"{supplier_name}={supplier_secret}; {agent_name}={agent_secret}"
+    supplier_view, status = _get(
+        "/api/professional-inquiry?r=" + supplier_open["request_id"], cookie=both,
+    )
+    assert status == 200, supplier_view
+    assert supplier_view["request_id"] == supplier_open["request_id"]
+    assert supplier_view["role"] == "supplier"
+    agent_view, status = _get(
+        "/api/professional-inquiry?r=" + agent_open["request_id"], cookie=both,
+    )
+    assert status == 200, agent_view
+    assert agent_view["request_id"] == agent_open["request_id"]
+    assert agent_view["role"] == "agent"
+    explicit, status = _get(
+        "/api/professional-inquiry?t=" + supplier_link,
+        cookie=f"{agent_name}={agent_secret}",
+    )
+    assert status == 200, explicit
+    assert explicit["request_id"] == supplier_open["request_id"]
+    assert explicit["role"] == "supplier"
+    moved, status, _cookies = _open("/api/professional-inquiry/chat", {
+        "request_id": supplier_open["request_id"],
+        "step": "confirm_person",
+        "value": {"name": "Two Inquiries"},
+    }, cookie=both)
+    assert status == 200, moved
+    assert moved["request_id"] == supplier_open["request_id"]
+    assert moved["role"] == "supplier"
+    assert moved["chat"]["cursor"] == "identity"
+    untouched, status = _get(
+        "/api/professional-inquiry?r=" + agent_open["request_id"], cookie=both,
+    )
+    assert status == 200, untouched
+    assert untouched["chat"]["cursor"] == "confirm_person"
+
+
+def test_access_log_redacts_the_inquiry_token_on_both_pages():
+    secret = "inq_" + "cd" * 16
+    for path in ("/professional-inquiry-chat.html", "/professional-inquiry.html"):
+        line = f"GET {path}?t={secret}&token=tok-live&resume_code=PHINS-CHAT-LIVE&x=1 HTTP/1.1"
+        redacted = portal._redact_access_log_line(line)
+        assert secret not in redacted
+        assert "tok-live" not in redacted
+        assert "PHINS-CHAT-LIVE" not in redacted
+        assert "t=REDACTED" in redacted
+        assert "token=REDACTED" in redacted
+        assert "resume_code=REDACTED" in redacted
+        assert "x=1" in redacted
+    api = portal._redact_access_log_line(
+        f"GET /api/professional-inquiry?t={secret} HTTP/1.1"
+    )
+    assert secret not in api
+    assert "t=REDACTED" in api
+    other = portal._redact_access_log_line(f"GET /dashboard.html?t={secret} HTTP/1.1")
+    assert secret in other
+
+
+def test_identity_code_does_not_open_the_vault_for_the_email_link():
+    email = "otp-session@example.com"
+    customer_id = _register("OTP Session", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    assert status == 200, filed
+    link = filed["inquiry_path"].split("t=", 1)[1]
+    _chat(link, "confirm_person", {"name": "OTP Session"})
+    opened, status, set_cookies = _open("/api/professional-inquiry/session", {"token": link})
+    assert status == 200, opened
+    cookie_name, secret, cookie_header = _inquiry_set_cookie(set_cookies)
+    assert "HttpOnly" in cookie_header
+    cookie = cookie_name + "=" + secret
+    otp, status = _post("/api/professional-inquiry/otp/request", {
+        "request_id": opened["request_id"],
+    })
+    assert status == 400, otp
+    otp, status, _cookies = _open("/api/professional-inquiry/otp/request", {
+        "request_id": opened["request_id"],
+    }, cookie=cookie)
+    assert status == 200, otp
+    burned, status = _post("/api/professional-inquiry/otp/verify", {
+        "token": link,
+        "verification_id": otp["verification_id"],
+        "otp_code": otp["demo_otp_code"],
+    })
+    assert status == 403, burned
+    assert burned["code"] == "otp_session_required"
+    national_id = "123456782"
+    refused, status = _post("/api/professional-inquiry/chat", {
+        "token": link, "step": "identity",
+        "value": {"nationality": "IL", "national_id": national_id},
+    })
+    assert status == 403, refused
+    assert refused["code"] == "otp_required"
+    assert portal.CUSTOMERS[customer_id].get("national_id_last4") in (None, "")
+    fresh, status, _cookies = _open("/api/professional-inquiry/otp/request", {
+        "request_id": opened["request_id"],
+    }, cookie=cookie)
+    assert status == 200, fresh
+    checked, status, _cookies = _open("/api/professional-inquiry/otp/verify", {
+        "request_id": opened["request_id"],
+        "verification_id": fresh["verification_id"],
+        "otp_code": fresh["demo_otp_code"],
+    }, cookie=cookie)
+    assert status == 200, checked
+    still_refused, status = _post("/api/professional-inquiry/chat", {
+        "token": link, "step": "identity",
+        "value": {"nationality": "IL", "national_id": national_id},
+    })
+    assert status == 403, still_refused
+    assert still_refused["code"] == "otp_required"
+    assert portal.CUSTOMERS[customer_id].get("national_id_last4") in (None, "")
+    recorded, status, _cookies = _open("/api/professional-inquiry/chat", {
+        "request_id": opened["request_id"],
+        "step": "identity",
+        "value": {"nationality": "IL", "national_id": national_id},
+    }, cookie=cookie)
+    assert status == 200, recorded
+    assert national_id not in json.dumps(recorded)
+    assert portal.CUSTOMERS[customer_id]["national_id_last4"] == "6782"

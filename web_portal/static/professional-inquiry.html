@@ -138,6 +138,10 @@
   <script>
     const params = new URLSearchParams(window.location.search);
     let token = params.get('t') || '';
+    let requestId = token ? '' : (params.get('r') || '');
+    if (!token && !requestId) {
+      try { requestId = sessionStorage.getItem('phinsInquiryRequest') || ''; } catch (err) { requestId = ''; }
+    }
     const form = document.getElementById('inquiry-form');
     const message = document.getElementById('message');
     const companyBox = document.getElementById('company-box');
@@ -163,12 +167,35 @@
       if (el && value) el.value = value;
     }
 
+    function chatHref() {
+      const chatLink = document.getElementById('chat-link');
+      if (!chatLink) return;
+      chatLink.href = requestId
+        ? '/professional-inquiry-chat.html?r=' + encodeURIComponent(requestId)
+        : '/professional-inquiry-chat.html';
+    }
+
+    function rememberRequest(id) {
+      if (!id) return;
+      requestId = String(id);
+      try { sessionStorage.setItem('phinsInquiryRequest', requestId); } catch (err) {}
+      chatHref();
+    }
+
     function dropTokenFromAddress() {
       const clean = new URL(window.location.href);
       clean.searchParams.delete('t');
       clean.searchParams.delete('token');
+      if (requestId) clean.searchParams.set('r', requestId);
       history.replaceState({}, '', clean.pathname + (clean.search || '') + clean.hash);
       token = '';
+      chatHref();
+    }
+
+    function inquiryBody(extra) {
+      const body = extra || {};
+      if (requestId) body.request_id = requestId;
+      return body;
     }
 
     async function openSession() {
@@ -186,6 +213,7 @@
         form.querySelector('button').disabled = true;
         return false;
       }
+      rememberRequest(body.request_id);
       dropTokenFromAddress();
       return true;
     }
@@ -193,7 +221,8 @@
     async function loadForm() {
       const opened = await openSession();
       if (!opened) return;
-      const response = await fetch('/api/professional-inquiry', { credentials: 'same-origin' });
+      const query = requestId ? '?r=' + encodeURIComponent(requestId) : '';
+      const response = await fetch('/api/professional-inquiry' + query, { credentials: 'same-origin' });
       const body = await response.json().catch(function() { return {}; });
       if (!response.ok) {
         message.textContent = body.error || 'This link cannot be opened.';
@@ -204,8 +233,8 @@
       const known = body.known || {};
       const personal = body.personal || {};
       const company = body.company || {};
-      const chatLink = document.getElementById('chat-link');
-      if (chatLink) chatLink.href = '/professional-inquiry-chat.html';
+      rememberRequest(body.request_id);
+      chatHref();
       const process = document.getElementById('process');
       if (process) {
         process.innerHTML = '';
@@ -259,7 +288,7 @@
       message.textContent = '';
       message.className = 'message';
       const hasCompany = companyToggle.checked;
-      const payload = {
+      const payload = inquiryBody({
         personal: {
           name: document.getElementById('name').value,
           phone: document.getElementById('phone').value,
@@ -268,7 +297,7 @@
           country: document.getElementById('country').value
         },
         has_company: hasCompany
-      };
+      });
       if (hasCompany) {
         payload.company = {
           company_name: document.getElementById('company-name').value,

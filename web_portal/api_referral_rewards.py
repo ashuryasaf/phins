@@ -161,9 +161,34 @@ def _switch(session: Dict[str, Any], body: Dict[str, Any]) -> Dict[str, Any]:
     return _mint(session, "supplier", supplier_id, supplier_id=supplier_id)
 
 
-def _inquiry_credential(explicit: Any, cookie: str = "") -> str:
-    """The browser session wins once it exists. The email token opens that session."""
-    return str(cookie or explicit or "").strip()
+def _inquiry_cookie_jar(cookies: Any) -> Dict[str, str]:
+    if isinstance(cookies, dict):
+        return {str(key): str(value) for key, value in cookies.items() if value}
+    text = str(cookies or "").strip()
+    if not text:
+        return {}
+    return {rewards.INQUIRY_SESSION_COOKIE: text}
+
+
+def _inquiry_credential(explicit: Any, cookies: Any = None, request_id: Any = "") -> str:
+    """The token this call names wins. A cookie is only the fallback for its own inquiry.
+
+    Supplier and agent inquiries can both be open. Each one has its own
+    HttpOnly cookie. An explicit email token or session secret is that
+    call's inquiry, and another inquiry's cookie must not replace it.
+    """
+    named = str(explicit or "").strip()
+    if named:
+        return named
+    jar = _inquiry_cookie_jar(cookies)
+    request_key = str(request_id or "").strip()
+    if request_key:
+        return str(jar.get(rewards.inquiry_cookie_name(request_key)) or "").strip()
+    prefix = rewards.INQUIRY_SESSION_COOKIE + "_"
+    found = [value for key, value in jar.items() if key.startswith(prefix) and value]
+    if len(found) == 1:
+        return found[0]
+    return ""
 
 
 def _inquiry_otp_request(token: str, client_ip: str, user_agent: str) -> Tuple[int, Dict[str, Any]]:
@@ -274,11 +299,12 @@ def _query_value(query: Dict[str, Any], key: str) -> str:
 
 
 def dispatch_get(path: str, session: Optional[Dict[str, Any]], query: Dict[str, Any],
-                 inquiry_cookie: str = "") -> Result:
+                 inquiry_cookie: Any = None) -> Result:
     if path == "/api/professional-inquiry":
         token = _inquiry_credential(
             _query_value(query, "t") or _query_value(query, "token"),
             inquiry_cookie,
+            _query_value(query, "r") or _query_value(query, "request_id"),
         )
         if not token:
             return 400, {"error": "token is required"}
@@ -314,7 +340,7 @@ def dispatch_get(path: str, session: Optional[Dict[str, Any]], query: Dict[str, 
 
 
 def dispatch_post(path: str, session: Optional[Dict[str, Any]], body: Dict[str, Any],
-                  inquiry_cookie: str = "", client_ip: str = "", user_agent: str = "") -> Result:
+                  inquiry_cookie: Any = None, client_ip: str = "", user_agent: str = "") -> Result:
     body = body if isinstance(body, dict) else {}
     if path == "/api/customer/referral-rewards/accept":
         denied = _own(session)
@@ -373,22 +399,30 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]], body: Dict[str, 
             return 400, {"error": "token is required"}
         return _call(rewards.open_inquiry_session, token)
     if path == "/api/professional-inquiry/otp/request":
-        token = _inquiry_credential(body.get("token") or body.get("t"), inquiry_cookie)
+        token = _inquiry_credential(
+            body.get("token") or body.get("t"), inquiry_cookie, body.get("request_id") or body.get("r"),
+        )
         if not token:
             return 400, {"error": "token is required"}
         return _inquiry_otp_request(token, client_ip, user_agent)
     if path == "/api/professional-inquiry/otp/verify":
-        token = _inquiry_credential(body.get("token") or body.get("t"), inquiry_cookie)
+        token = _inquiry_credential(
+            body.get("token") or body.get("t"), inquiry_cookie, body.get("request_id") or body.get("r"),
+        )
         if not token:
             return 400, {"error": "token is required"}
         return _inquiry_otp_verify(token, body, client_ip)
     if path == "/api/professional-inquiry/chat":
-        token = _inquiry_credential(body.get("token") or body.get("t"), inquiry_cookie)
+        token = _inquiry_credential(
+            body.get("token") or body.get("t"), inquiry_cookie, body.get("request_id") or body.get("r"),
+        )
         if not token:
             return 400, {"error": "token is required"}
         return _call(rewards.advance_inquiry_chat, token, body.get("step"), body.get("value"))
     if path == "/api/professional-inquiry/media":
-        token = _inquiry_credential(body.get("token") or body.get("t"), inquiry_cookie)
+        token = _inquiry_credential(
+            body.get("token") or body.get("t"), inquiry_cookie, body.get("request_id") or body.get("r"),
+        )
         if not token:
             return 400, {"error": "token is required"}
         return _call(
@@ -400,7 +434,9 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]], body: Dict[str, 
             str(body.get("data_b64") or ""),
         )
     if path == "/api/professional-inquiry":
-        token = _inquiry_credential(body.get("token") or body.get("t"), inquiry_cookie)
+        token = _inquiry_credential(
+            body.get("token") or body.get("t"), inquiry_cookie, body.get("request_id") or body.get("r"),
+        )
         if not token:
             return 400, {"error": "token is required"}
         return _call(rewards.submit_inquiry, token, body)

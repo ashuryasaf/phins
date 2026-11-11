@@ -228,8 +228,11 @@ PHINS is a Python platform built around:
  confirm details, identity through `set_identity` (a new ID needs the email
  code first; nationality and last four only on the request), optional company,
  optional document/voice/video sealed by SHA-256, then review. The page
- exchanges the email token for a short `phins_inquiry` cookie and drops it
- from the URL. A filed link returns status only, and the 14-day expiry
+ exchanges the email token for a short HttpOnly cookie named per request
+ and drops it from the URL. A tab names its own request, so a second open
+ inquiry does not take the first. The access log redacts `t` on both inquiry
+ pages. A new identity code is fresh only for the browser session that
+ verified it. A filed link returns status only, and the 14-day expiry
  applies in every status. A rejected or suspended supplier is not reopened.
  Declining a company clears that name before approval. Approval opens that profile and a role-switch
  token without rewriting `USERS.role`. An agent is a role on that one supplier. An approved agent invitation cap is

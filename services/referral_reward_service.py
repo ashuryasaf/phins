@@ -2094,6 +2094,12 @@ def _digest(token: str) -> str:
     return hashlib.sha256(str(token).encode("utf-8")).hexdigest()
 
 
+def inquiry_cookie_name(request_id: str) -> str:
+    """One HttpOnly cookie per open inquiry. The name is not the secret."""
+    suffix = hashlib.sha256(str(request_id or "").encode("utf-8")).hexdigest()[:16]
+    return f"{INQUIRY_SESSION_COOKIE}_{suffix}"
+
+
 def _request_for_browser_session(token: str) -> Optional[Dict[str, Any]]:
     """The short cookie minted from the email link. The raw value is not stored."""
     if not _INQUIRY_SESSION_RE.fullmatch(str(token or "")):
@@ -2135,9 +2141,10 @@ def open_inquiry_session(token: str) -> Dict[str, Any]:
     """Exchange the email-link token for a short HttpOnly browser session.
 
     The email token stays the 14-day capability. Only its SHA-256 is stored,
-    and the same is true of the session secret. The response carries the
-    session secret under ``_inquiry_session`` so the HTTP layer can set the
-    cookie and then drop that field.
+    and the same is true of the session secret. Each request gets its own
+    cookie name, so a second open inquiry does not replace the first. The
+    response carries the session secret under ``_inquiry_session`` so the
+    HTTP layer can set that cookie and then drop the field.
     """
     raw = str(token or "")
     if not _INQUIRY_TOKEN_RE.fullmatch(raw):
@@ -2167,11 +2174,21 @@ def open_inquiry_session(token: str) -> Dict[str, Any]:
     return view
 
 
-def _identity_otp_fresh(req: Dict[str, Any]) -> bool:
+def _identity_otp_fresh(req: Dict[str, Any], token: str = "") -> bool:
+    """The code is fresh only for the browser session that verified it.
+
+    The email link stays valid after the cookie is minted. A holder of that
+    link does not inherit the 15-minute window.
+    """
     inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
     otp = inquiry.get("identity_otp") if isinstance(inquiry.get("identity_otp"), dict) else {}
     stamp = str(otp.get("verified_at") or "")
-    if not stamp:
+    bound = str(otp.get("session_sha256") or "")
+    raw = str(token or "")
+    if not stamp or not bound or not _INQUIRY_SESSION_RE.fullmatch(raw):
+        return False
+    presented = _digest(raw)
+    if len(bound) != len(presented) or not hmac.compare_digest(bound, presented):
         return False
     try:
         moment = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
@@ -2190,7 +2207,7 @@ def inquiry_otp_context(token: str) -> Dict[str, Any]:
         return {
             "request_id": req.get("id"),
             "email": email,
-            "otp_verified": _identity_otp_fresh(req),
+            "otp_verified": _identity_otp_fresh(req, token),
         }
 
 
@@ -2218,7 +2235,24 @@ def confirm_identity_otp(token: str, verification_id: str) -> Dict[str, Any]:
                 "That code does not belong to this application",
                 code="otp_mismatch",
             )
+        raw = str(token or "")
+        if not _INQUIRY_SESSION_RE.fullmatch(raw):
+            raise RewardError(
+                "Verify the code in the browser that opened this application",
+                status=403,
+                code="otp_session_required",
+            )
+        presented = _digest(raw)
+        browser = inquiry.get("browser_session") if isinstance(inquiry.get("browser_session"), dict) else {}
+        session_digest = str(browser.get("token_sha256") or "")
+        if not session_digest or len(session_digest) != len(presented) or not hmac.compare_digest(session_digest, presented):
+            raise RewardError(
+                "Verify the code in the browser that opened this application",
+                status=403,
+                code="otp_session_required",
+            )
         otp["verified_at"] = _now()
+        otp["session_sha256"] = presented
         inquiry["identity_otp"] = otp
         req["inquiry"] = inquiry
         req["updated_at"] = otp["verified_at"]
@@ -2298,7 +2332,7 @@ def inquiry_prefill(token: str) -> Dict[str, Any]:
             },
             "supplier_types": supplier_type_values(),
             "process": [dict(item) for item in INQUIRY_PROCESS],
-            "chat": _public_chat(req),
+            "chat": _public_chat(req, token),
             "agent": "Phin",
         }
 
@@ -2508,7 +2542,7 @@ def _step_prompt(step_id: str, req: Dict[str, Any], identity: Dict[str, Any]) ->
     )
 
 
-def _step_input(step_id: str, req: Dict[str, Any], identity: Dict[str, Any]) -> Dict[str, Any]:
+def _step_input(step_id: str, req: Dict[str, Any], identity: Dict[str, Any], presented: str = "") -> Dict[str, Any]:
     inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
     if step_id == "confirm_person":
         personal = inquiry.get("personal") if isinstance(inquiry.get("personal"), dict) else {}
@@ -2520,7 +2554,7 @@ def _step_input(step_id: str, req: Dict[str, Any], identity: Dict[str, Any]) -> 
             "can_confirm": bool(identity.get("complete")),
             "nationality": identity.get("nationality"),
             "national_id_masked": identity.get("national_id_masked"),
-            "otp_verified": _identity_otp_fresh(req),
+            "otp_verified": _identity_otp_fresh(req, presented),
         }
     if step_id == "company":
         company = inquiry.get("company") if isinstance(inquiry.get("company"), dict) else {}
@@ -2578,7 +2612,7 @@ def _public_media(chat: Dict[str, Any]) -> List[Dict[str, Any]]:
     return shown
 
 
-def _public_chat(req: Dict[str, Any]) -> Dict[str, Any]:
+def _public_chat(req: Dict[str, Any], presented: str = "") -> Dict[str, Any]:
     inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
     chat = inquiry.get("chat") if isinstance(inquiry.get("chat"), dict) else _blank_chat()
     cursor = "filed" if req.get("status") != "inquiry" else str(chat.get("cursor") or "confirm_person")
@@ -2588,7 +2622,7 @@ def _public_chat(req: Dict[str, Any]) -> Dict[str, Any]:
         step = {
             "id": cursor,
             "prompt": _step_prompt(cursor, req, identity),
-            "input": _step_input(cursor, req, identity),
+            "input": _step_input(cursor, req, identity, presented),
         }
     messages = [dict(item) for item in (chat.get("transcript") or []) if isinstance(item, dict)]
     if not messages and step:
@@ -2609,14 +2643,14 @@ def _public_chat(req: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _chat_payload(req: Dict[str, Any]) -> Dict[str, Any]:
+def _chat_payload(req: Dict[str, Any], presented: str = "") -> Dict[str, Any]:
     return {
         "request_id": req.get("id"),
         "role": req.get("requested_role"),
         "status": req.get("status"),
         "agent_is_supplier": True,
         "agent": "Phin",
-        "chat": _public_chat(req),
+        "chat": _public_chat(req, presented),
     }
 
 
@@ -2670,7 +2704,8 @@ def _assert_identity_ready(req: Dict[str, Any]) -> None:
         )
 
 
-def _advance_saved(req: Dict[str, Any], chat: Dict[str, Any], step_id: str, user_text: str, bot_text: str) -> Dict[str, Any]:
+def _advance_saved(req: Dict[str, Any], chat: Dict[str, Any], step_id: str, user_text: str, bot_text: str,
+                   presented: str = "") -> Dict[str, Any]:
     _say(chat, "user", user_text)
     if bot_text:
         _say(chat, "bot", bot_text)
@@ -2680,7 +2715,7 @@ def _advance_saved(req: Dict[str, Any], chat: Dict[str, Any], step_id: str, user
         _say(chat, "bot", _step_prompt(chat["cursor"], req, identity))
     req["updated_at"] = _now()
     _persist_request(req)
-    return _chat_payload(req)
+    return _chat_payload(req, presented)
 
 
 def _advance_identity(token: str, value: Any) -> Dict[str, Any]:
@@ -2730,7 +2765,7 @@ def _advance_identity(token: str, value: Any) -> Dict[str, Any]:
             gate = _open_chat_request(token)
             if _ensure_chat(gate).get("cursor") != "identity":
                 raise RewardError("Finish the step that is open", status=409, code="step_mismatch")
-            if not _identity_otp_fresh(gate):
+            if not _identity_otp_fresh(gate, token):
                 raise RewardError(
                     "Verify the code sent to your email before recording an identity",
                     status=403,
@@ -2767,10 +2802,11 @@ def _advance_identity(token: str, value: Any) -> Dict[str, Any]:
         if not deferred:
             otp = req["inquiry"].get("identity_otp") if isinstance(req["inquiry"].get("identity_otp"), dict) else {}
             otp["verified_at"] = None
+            otp["session_sha256"] = None
             req["inquiry"]["identity_otp"] = otp
         if not chat.get("transcript"):
             _say(chat, "bot", _INQUIRY_OPENING)
-        return _advance_saved(req, chat, "identity", "Identity step completed", note)
+        return _advance_saved(req, chat, "identity", "Identity step completed", note, token)
 
 
 def advance_inquiry_chat(token: str, step: str, value: Any) -> Dict[str, Any]:
@@ -2794,7 +2830,7 @@ def advance_inquiry_chat(token: str, step: str, value: Any) -> Dict[str, Any]:
             personal_in = incoming.get("personal") if isinstance(incoming.get("personal"), dict) else incoming
             personal = _clean_personal(personal_in)
             req["inquiry"]["personal"] = personal
-            saved = _advance_saved(req, chat, step, personal["name"], "")
+            saved = _advance_saved(req, chat, step, personal["name"], "", token)
         elif step == "company":
             has_company = True
             if isinstance(value, str) and value.strip().lower() in ("no", "skip"):
@@ -2818,7 +2854,7 @@ def advance_inquiry_chat(token: str, step: str, value: Any) -> Dict[str, Any]:
                 req["company_name"] = None
                 req["supplier_type"] = None
                 user_text = "No company"
-            saved = _advance_saved(req, chat, step, user_text, "")
+            saved = _advance_saved(req, chat, step, user_text, "", token)
         elif step == "evidence":
             choice = str(value or "").strip().lower()
             if isinstance(value, dict):
@@ -2827,7 +2863,7 @@ def advance_inquiry_chat(token: str, step: str, value: Any) -> Dict[str, Any]:
                 raise RewardError("Choose skip or done")
             count = len(chat.get("media") or [])
             user_text = "Skip evidence" if choice == "skip" else f"Continue with {count} file(s)"
-            saved = _advance_saved(req, chat, step, user_text, "")
+            saved = _advance_saved(req, chat, step, user_text, "", token)
         else:
             if str(value or "").strip().lower() not in ("submit",):
                 if not (isinstance(value, dict) and str(value.get("action") or "").lower() == "submit"):
@@ -2848,7 +2884,7 @@ def advance_inquiry_chat(token: str, step: str, value: Any) -> Dict[str, Any]:
         _say(chat, "bot", "Filed. This one request is waiting for review on Supplier Management.")
         req["updated_at"] = _now()
         _persist_request(req)
-        payload = _chat_payload(req)
+        payload = _chat_payload(req, token)
     payload["request"] = filed
     return payload
 
@@ -2957,7 +2993,7 @@ def attach_inquiry_media(token: str, kind: str, name: str, mime_type: str,
         _say(chat, "bot", f"Sealed that {label}. Fingerprint {digest[:12]}. You can add another or continue.")
         req["updated_at"] = _now()
         _persist_request(req)
-        payload = _chat_payload(req)
+        payload = _chat_payload(req, token)
     payload["media"] = {key: item[key] for key in ("id", "kind", "name", "sha256", "size", "document_id")}
     return payload
 

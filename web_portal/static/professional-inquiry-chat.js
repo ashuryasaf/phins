@@ -1,6 +1,10 @@
 (function () {
   const params = new URLSearchParams(window.location.search);
   let token = params.get("t") || "";
+  let requestId = token ? "" : (params.get("r") || "");
+  if (!token && !requestId) {
+    try { requestId = sessionStorage.getItem("phinsInquiryRequest") || ""; } catch (err) { requestId = ""; }
+  }
   const welcome = document.getElementById("welcome-screen");
   const screen = document.getElementById("chat-screen");
   const scroll = document.getElementById("chat-scroll");
@@ -11,9 +15,13 @@
   const classic = document.getElementById("classic-link");
   let state = null;
 
-  if (token && classic) {
-    classic.href = "/professional-inquiry.html?t=" + encodeURIComponent(token);
+  function classicHref() {
+    if (!classic) return;
+    classic.href = requestId
+      ? "/professional-inquiry.html?r=" + encodeURIComponent(requestId)
+      : "/professional-inquiry.html";
   }
+  classicHref();
 
   function esc(value) {
     return String(value == null ? "" : value)
@@ -193,14 +201,28 @@
     renderDock(chat);
   }
 
+  function rememberRequest(id) {
+    if (!id) return;
+    requestId = String(id);
+    try { sessionStorage.setItem("phinsInquiryRequest", requestId); } catch (err) {}
+    classicHref();
+  }
+
   function dropTokenFromAddress() {
     const clean = new URL(window.location.href);
     clean.searchParams.delete("t");
     clean.searchParams.delete("token");
+    if (requestId) clean.searchParams.set("r", requestId);
     const next = clean.pathname + (clean.search ? clean.search : "") + clean.hash;
     history.replaceState({}, "", next);
     token = "";
-    if (classic) classic.href = "/professional-inquiry.html";
+    classicHref();
+  }
+
+  function inquiryBody(extra) {
+    const body = extra || {};
+    if (requestId) body.request_id = requestId;
+    return body;
   }
 
   async function openSession() {
@@ -217,6 +239,7 @@
       document.getElementById("start-btn").disabled = true;
       return false;
     }
+    rememberRequest(body.request_id);
     dropTokenFromAddress();
     return true;
   }
@@ -226,7 +249,7 @@
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify(inquiryBody({})),
     });
     const body = await response.json().catch(function () { return {}; });
     const messages = (state.chat.messages || []).slice();
@@ -247,10 +270,10 @@
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+      body: JSON.stringify(inquiryBody({
         verification_id: state.verification_id || "",
         otp_code: valueOf("otp-code"),
-      }),
+      })),
     });
     const body = await response.json().catch(function () { return {}; });
     const messages = (state.chat.messages || []).slice();
@@ -266,7 +289,8 @@
   async function load() {
     const opened = await openSession();
     if (!opened) return;
-    const response = await fetch("/api/professional-inquiry", { credentials: "same-origin" });
+    const query = requestId ? "?r=" + encodeURIComponent(requestId) : "";
+    const response = await fetch("/api/professional-inquiry" + query, { credentials: "same-origin" });
     const body = await response.json().catch(function () { return {}; });
     if (!response.ok) {
       showError(body.error || "This link cannot be opened.");
@@ -282,7 +306,7 @@
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ step: cursor, value: value }),
+      body: JSON.stringify(inquiryBody({ step: cursor, value: value })),
     });
     const body = await response.json().catch(function () { return {}; });
     if (!response.ok) {
@@ -313,12 +337,12 @@
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+      body: JSON.stringify(inquiryBody({
         kind: kind,
         name: file.name,
         mime_type: file.type || "",
         data_b64: data,
-      }),
+      })),
     });
     const body = await response.json().catch(function () { return {}; });
     if (!response.ok) {

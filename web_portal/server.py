@@ -21018,6 +21018,13 @@ _ACCESS_LOG_PII_QUERY_KEYS = frozenset({
     'ssn',
     'id_num',
 })
+# The inquiry email token travels as ``t`` on these pages and on the API.
+# ``token`` and ``resume_code`` are already masked. ``t`` is not a global key.
+_INQUIRY_TOKEN_LOG_PATHS = (
+    '/professional-inquiry.html',
+    '/professional-inquiry-chat.html',
+    '/api/professional-inquiry',
+)
 
 
 def _redact_pii_query(raw: str) -> str:
@@ -21032,13 +21039,16 @@ def _redact_pii_query(raw: str) -> str:
     base, sep, rest = text.partition('?')
     if not sep:
         return text
+    path = base.strip().split(' ')[-1]
+    inquiry_token = path in _INQUIRY_TOKEN_LOG_PATHS or path.startswith('/api/professional-inquiry/')
     query, space, proto = rest.partition(' ')
     parts = []
     for part in query.split('&'):
         if not part:
             continue
         name, eq, _value = part.partition('=')
-        if eq and name.strip().lower() in _ACCESS_LOG_PII_QUERY_KEYS:
+        key = name.strip().lower()
+        if eq and (key in _ACCESS_LOG_PII_QUERY_KEYS or (inquiry_token and key == 't')):
             parts.append(f'{name}=REDACTED')
         else:
             parts.append(part)
@@ -21360,31 +21370,37 @@ class PortalHandler(BaseHTTPRequestHandler):
             if header:
                 self.send_header('Set-Cookie', header)
 
-    def _inquiry_browser_cookie(self) -> str:
-        """Short professional-inquiry session. The email token is not this cookie."""
+    def _inquiry_browser_cookie(self) -> Dict[str, str]:
+        """Every open inquiry cookie. Each request has its own name."""
         try:
-            jar = confidential_access.parse_cookies(self.headers.get('Cookie'))
+            jar = confidential_access.parse_cookies(self.headers.get('Cookie')) or {}
         except Exception:
-            return ''
+            return {}
         from services.referral_reward_service import INQUIRY_SESSION_COOKIE
-        return str((jar or {}).get(INQUIRY_SESSION_COOKIE) or '')
+        prefix = INQUIRY_SESSION_COOKIE + '_'
+        return {
+            str(key): str(value)
+            for key, value in jar.items()
+            if str(key).startswith(prefix) and value
+        }
 
     def _finish_referral(self, result) -> None:
         """Write a referral JSON response, moving a new inquiry session onto a cookie."""
         status_code, response_data = result
         if isinstance(response_data, dict):
             secret = response_data.pop('_inquiry_session', None)
-            if secret:
+            request_id = response_data.get('request_id')
+            if secret and request_id:
                 from services.referral_reward_service import (
-                    INQUIRY_SESSION_COOKIE,
                     INQUIRY_SESSION_SECONDS,
+                    inquiry_cookie_name,
                 )
                 self._pending_cookies = list(getattr(self, '_pending_cookies', None) or [])
                 self._pending_cookies.append(confidential_access.access_cookie_header(
                     str(secret),
                     secure=self._request_is_secure(),
                     max_age=INQUIRY_SESSION_SECONDS,
-                    cookie_name=INQUIRY_SESSION_COOKIE,
+                    cookie_name=inquiry_cookie_name(str(request_id)),
                 ))
         self._set_json_headers(status_code)
         self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
