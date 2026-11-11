@@ -49,6 +49,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from urllib.parse import urlencode
 
 DESTINATIONS: Tuple[str, ...] = ("premium", "health_wallet", "savings", "cash")
 LAYERS = (1, 2, 3)
@@ -1891,8 +1892,14 @@ def _known_customer(customer_id: str) -> Dict[str, Any]:
     return known
 
 
-def _inquiry_path(token: str) -> str:
-    path = "/professional-inquiry-chat.html?t=" + token
+def _inquiry_path(token: str, request_id: str) -> str:
+    """The email link names the request and carries the token.
+
+    ``r`` is the request id, not a secret. The page can point the other form
+    at that inquiry before the session exchange returns. ``t`` stays last so
+    a reader that splits on it still sees only the token.
+    """
+    path = "/professional-inquiry-chat.html?" + urlencode((("r", str(request_id or "")), ("t", token)))
     portal = _portal()
     getter = getattr(portal, "public_portal_base_url", None) if portal else None
     origin = ""
@@ -2077,7 +2084,7 @@ def request_professional(customer_id: str, role: str, login_username: str = "",
         token = _arm_inquiry(req, supplier_type, company_name)
         REQUESTS[key] = req
         _persist_request(req)
-        path = _inquiry_path(token)
+        path = _inquiry_path(token, key)
     sent = _send_inquiry_email(customer_id, role, path)
     with _LOCK:
         current = REQUESTS.get(key) or req

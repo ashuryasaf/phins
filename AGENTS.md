@@ -229,7 +229,10 @@ PHINS is a Python platform built around:
  code first; nationality and last four only on the request), optional company,
  optional document/voice/video sealed by SHA-256, then review. The page
  exchanges the email token for a short HttpOnly cookie named per request
- and drops it from the URL. A tab names its own request, so a second open
+ and drops it from the URL. The email also carries `r`, the request id,
+ which is not the secret. A new link writes that id over the previous one
+ before the exchange returns, and the chat/form cross-link uses only `r`.
+ A tab names its own request, so a second open
  inquiry does not take the first. The access log redacts `t` on both inquiry
  pages. A new identity code is fresh only for the browser session that
  verified it. A filed link returns status only, and the 14-day expiry

@@ -135,13 +135,15 @@
       <div class="message" id="message"></div>
     </form>
   </main>
+  <script src="/professional-inquiry-link.js"></script>
   <script>
-    const params = new URLSearchParams(window.location.search);
-    let token = params.get('t') || '';
-    let requestId = token ? '' : (params.get('r') || '');
-    if (!token && !requestId) {
-      try { requestId = sessionStorage.getItem('phinsInquiryRequest') || ''; } catch (err) { requestId = ''; }
-    }
+    const link = window.PhinsInquiryLink;
+    let stored = '';
+    try { stored = sessionStorage.getItem(link.STORAGE_KEY) || ''; } catch (err) { stored = ''; }
+    const opened = link.resolveInquiryTarget(window.location.search, stored);
+    link.applyStored(window.sessionStorage, opened);
+    let token = opened.token;
+    let requestId = opened.requestId;
     const form = document.getElementById('inquiry-form');
     const message = document.getElementById('message');
     const companyBox = document.getElementById('company-box');
@@ -170,15 +172,21 @@
     function chatHref() {
       const chatLink = document.getElementById('chat-link');
       if (!chatLink) return;
-      chatLink.href = requestId
-        ? '/professional-inquiry-chat.html?r=' + encodeURIComponent(requestId)
-        : '/professional-inquiry-chat.html';
+      const href = link.crossHref('/professional-inquiry-chat.html', requestId);
+      if (href) {
+        chatLink.href = href;
+        chatLink.removeAttribute('aria-disabled');
+      } else {
+        chatLink.removeAttribute('href');
+        chatLink.setAttribute('aria-disabled', 'true');
+      }
     }
+    chatHref();
 
     function rememberRequest(id) {
       if (!id) return;
       requestId = String(id);
-      try { sessionStorage.setItem('phinsInquiryRequest', requestId); } catch (err) {}
+      try { sessionStorage.setItem(link.STORAGE_KEY, requestId); } catch (err) {}
       chatHref();
     }
 

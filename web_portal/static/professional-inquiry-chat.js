@@ -1,10 +1,11 @@
 (function () {
-  const params = new URLSearchParams(window.location.search);
-  let token = params.get("t") || "";
-  let requestId = token ? "" : (params.get("r") || "");
-  if (!token && !requestId) {
-    try { requestId = sessionStorage.getItem("phinsInquiryRequest") || ""; } catch (err) { requestId = ""; }
-  }
+  const link = window.PhinsInquiryLink;
+  let stored = "";
+  try { stored = sessionStorage.getItem(link.STORAGE_KEY) || ""; } catch (err) { stored = ""; }
+  const opened = link.resolveInquiryTarget(window.location.search, stored);
+  link.applyStored(window.sessionStorage, opened);
+  let token = opened.token;
+  let requestId = opened.requestId;
   const welcome = document.getElementById("welcome-screen");
   const screen = document.getElementById("chat-screen");
   const scroll = document.getElementById("chat-scroll");
@@ -17,9 +18,14 @@
 
   function classicHref() {
     if (!classic) return;
-    classic.href = requestId
-      ? "/professional-inquiry.html?r=" + encodeURIComponent(requestId)
-      : "/professional-inquiry.html";
+    const href = link.crossHref("/professional-inquiry.html", requestId);
+    if (href) {
+      classic.href = href;
+      classic.removeAttribute("aria-disabled");
+    } else {
+      classic.removeAttribute("href");
+      classic.setAttribute("aria-disabled", "true");
+    }
   }
   classicHref();
 
@@ -204,7 +210,7 @@
   function rememberRequest(id) {
     if (!id) return;
     requestId = String(id);
-    try { sessionStorage.setItem("phinsInquiryRequest", requestId); } catch (err) {}
+    try { sessionStorage.setItem(link.STORAGE_KEY, requestId); } catch (err) {}
     classicHref();
   }
 

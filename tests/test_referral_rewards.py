@@ -8,6 +8,8 @@ import base64
 import hashlib
 import json
 import os
+import shutil
+import subprocess
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -1053,8 +1055,13 @@ def test_professional_chat_discloses_every_step_and_keeps_the_id_in_the_vault():
     session, _role = _login(email, "secure123456")
     filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=session)
     assert status == 200, filed
-    assert "professional-inquiry-chat.html?t=" in filed["inquiry_path"]
-    link = filed["inquiry_path"].split("t=", 1)[1]
+    parts = urlparse(filed["inquiry_path"])
+    query = parse_qs(parts.query)
+    assert parts.path.endswith("/professional-inquiry-chat.html")
+    assert query["r"] == [filed["id"]]
+    assert query["t"][0].startswith("inq_")
+    assert filed["id"] not in query["t"][0]
+    link = query["t"][0]
     prefill, status = _get("/api/professional-inquiry?t=" + link)
     assert status == 200, prefill
     assert prefill["agent"] == "Phin"
@@ -1514,3 +1521,11 @@ def test_identity_code_does_not_open_the_vault_for_the_email_link():
     assert status == 200, recorded
     assert national_id not in json.dumps(recorded)
     assert portal.CUSTOMERS[customer_id]["national_id_last4"] == "6782"
+
+
+def test_two_inquiries_in_one_tab_follow_the_new_email_link():
+    node = shutil.which("node")
+    assert node, "node is required to check the inquiry cross-link"
+    script = Path(__file__).resolve().parent / "professional_inquiry_link.test.js"
+    completed = subprocess.run([node, str(script)], check=False, capture_output=True, text=True)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
