@@ -391,17 +391,18 @@
 <body class="phins-unified">
   <header class="phins-header">
     <div class="phins-header-inner">
-      <a href="/admin.html" class="phins-logo">
+      <a href="/dashboard.html" class="phins-logo" data-phins-role-home="logo">
         <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem" style="width:78%;height:78%;object-fit:contain;display:block;"></div>
         <span class="phins-logo-text">PHINS</span>
       </a>
       <button class="mobile-menu-btn" onclick="toggleMobileMenu()">Menu</button>
       <nav class="phins-nav" id="mobile-nav">
-        <a href="/admin.html">Admin</a>
-        <a href="/underwriter-dashboard.html">Underwriting</a>
+        <a href="/admin.html" data-phins-role-home="staff-only" hidden>Admin</a>
+        <a href="/underwriter-dashboard.html" data-phins-role-home="staff-only" hidden>Underwriting</a>
+        <a href="/dashboard.html" data-phins-role-home="customer-only">Dashboard</a>
         <a href="/billing.html" class="active">Billing</a>
-        <a href="/documents.html#archive">Documents</a>
-        <a href="/accountant-dashboard.html">Accounting</a>
+        <a href="/documents.html#durable-objects" data-phins-documents-role="1">Documents</a>
+        <a href="/accountant-dashboard.html" data-phins-role-home="staff-only" hidden>Accounting</a>
         <a href="/savings-portfolio.html">Investments</a>
         <a href="/login.html" class="btn-logout">Logout</a>
       </nav>

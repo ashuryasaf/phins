@@ -59,7 +59,8 @@
     .frame img { width: 100%; height: 90px; object-fit: cover; border-radius: 8px; background: rgba(255,255,255,0.06); }
     .frame .pending { height: 90px; display: flex; align-items: center; justify-content: center; opacity: 0.7; font-size: 0.75rem; text-align: center; }
     .integrity { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.75rem; }
-    html[data-embed] .topbar { display: none; }
+    html[data-embed] .topbar,
+    html[data-embed] .phins-header { display: none; }
     html[data-embed] .wrap { padding: 8px; }
     @media (max-width: 900px) {
       .layout, .grid { grid-template-columns: 1fr; }
@@ -78,16 +79,26 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="topbar">
-      <a class="brand" href="/admin-media.html">
-        <strong>PHINS Storyboard Editor</strong>
-        <span>Photo to photo, sealed, on the engine you choose.</span>
-      </a>
-      <div class="actions">
-        <a class="btn btn-secondary" href="/admin-media.html">Media dashboard</a>
-        <a class="btn btn-secondary" href="/video-agents.html">Video agents</a>
+    <header class="phins-header">
+      <div class="phins-header-inner">
+        <a href="/admin-media.html" class="phins-logo">
+          <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
+          <span class="phins-logo-text">PHINS</span>
+        </a>
+        <button class="mobile-menu-btn" type="button" onclick="toggleMobileMenu()">Menu</button>
+        <nav class="phins-nav" id="mobile-nav">
+          <a href="/admin-media.html">Media</a>
+          <a href="/video-agents.html">Video agents</a>
+          <a href="/login.html" class="btn-logout">Logout</a>
+        </nav>
       </div>
-    </div>
+    </header>
+    <script>
+      function toggleMobileMenu() {
+        var nav = document.getElementById('mobile-nav');
+        if (nav) nav.classList.toggle('open');
+      }
+    </script>
     <section class="hero">
       <h1>Build a storyboard from a script and reference photos</h1>
       <p>
@@ -948,5 +959,6 @@
     }
     boot();
   </script>
+  <script src="/ui-clarity.js"></script>
 </body>
 </html>

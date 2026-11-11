@@ -7,14 +7,20 @@ and billing stay available to both, with row scope still enforced.
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
+import re
+from pathlib import Path
 from urllib.error import HTTPError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 import web_portal.server as portal
 from security.access_hierarchy import (
     ACCESS_DENIED,
+    ROLE_HOME,
+    STAFF_PAGES,
     api_denial,
     home_for_role,
     surface_decision,
@@ -88,7 +94,7 @@ def test_shared_operational_surfaces_stay_open():
     assert surface_decision("underwriter", "/admin.html")["allowed"] is False
     assert surface_decision("admin", "/underwriter-dashboard.html")["allowed"] is True
     assert surface_decision("admin", "/supplier-portal.html")["allowed"] is False
-    assert surface_decision("supplier", "/dashboard.html")["redirect"] == "/supplier-dashboard.html"
+    assert surface_decision("supplier", "/dashboard.html")["redirect"] == "/supplier-portal.html"
 
 
 def test_development_desk_reaches_its_api_and_not_the_rest_of_admin():
@@ -280,7 +286,7 @@ def test_http_admin_keeps_operations_and_loses_customer_private_actions():
         status, surface = _get("/api/access/surface?path=/dashboard.html", token)
         assert status == 200
         assert surface["allowed"] is False
-        assert surface["redirect"] == "/admin-portal.html"
+        assert surface["redirect"] == "/admin.html"
 
         status, billing = _get("/api/access/surface?path=/assessment-center.html", token)
         assert billing["allowed"] is True
@@ -302,7 +308,7 @@ def test_http_supplier_cannot_read_the_customer_book():
         assert status == 403
         assert body.get("error") == "Access denied"
         status, surface = _get("/api/access/surface?path=/dashboard.html", token)
-        assert surface["redirect"] == "/supplier-dashboard.html"
+        assert surface["redirect"] == "/supplier-portal.html"
     finally:
         _cleanup(token, "supplier")
         portal.POLICIES.pop("POL-HIER-SUP", None)
@@ -320,3 +326,81 @@ def test_ui_clarity_enforces_the_surface_and_drops_customer_portfolio_for_staff(
     assert 'return "admin";' in content
     assert "hasAdminAssistant || isStaffPath" not in content
     assert "open savings portfolio dashboard" not in content
+    assert "function isDocumentsStaff(role)" in content
+    assert "function isEmbeddedFrame()" in content
+
+
+def test_one_home_per_role_is_shared_by_login_and_the_surface_gate():
+    root = Path(__file__).resolve().parents[1]
+    login = (root / "web_portal/static/login.js").read_text(encoding="utf-8")
+    fn = re.search(r"function getDashboardUrl\(role\) \{(.*?)\n  \}", login, re.S)
+    assert fn, "getDashboardUrl missing"
+    body = fn.group(1)
+    assert "customerDestination(customerNextUrl())" in body
+    assert "default: return '/login.html'" in body
+    mapping = {}
+    pending = []
+    for line in body.splitlines():
+        for role in re.findall(r"case '([^']+)'", line):
+            pending.append(role)
+        returned = re.search(r"return '([^']+)'", line)
+        if returned and pending:
+            for role in pending:
+                mapping[role] = returned.group(1)
+            pending = []
+    for role, path in ROLE_HOME.items():
+        if role == "customer":
+            continue
+        assert mapping.get(role) == path, (role, mapping.get(role), path)
+    assert home_for_role("manager") == "/admin-ai-report.html"
+    assert home_for_role("development") == "/admin-desk.html"
+    assert home_for_role("claims_agent") == "/chat-process-review.html"
+    assert home_for_role("claims_manager") == "/chat-process-review.html"
+    assert home_for_role("adjuster") == "/claims-adjuster-dashboard.html"
+    assert home_for_role("unknown-role") == "/login.html"
+
+
+def test_registered_operational_urls_stay_on_their_side():
+    assert surface_decision("admin", "/cyber-security.html")["allowed"] is True
+    assert surface_decision("media", "/cyber-security.html")["allowed"] is False
+    assert surface_decision("customer", "/cyber-security.html")["redirect"] == "/dashboard.html"
+    assert surface_decision("admin", "/storyboard-editor.html")["allowed"] is True
+    assert surface_decision("media", "/storyboard-editor.html")["allowed"] is True
+    assert surface_decision("customer", "/storyboard-editor.html")["allowed"] is False
+    assert surface_decision("customer", "/trading-terminal.html")["surface"] == "customer"
+    assert surface_decision("admin", "/trading-terminal.html")["redirect"] == "/admin.html"
+    assert surface_decision("customer", "/foundation-dashboard.html")["allowed"] is True
+    assert surface_decision("admin", "/foundation-dashboard.html")["redirect"] == "/admin.html"
+    assert surface_decision("claims_agent", "/chat-process-review.html")["allowed"] is True
+    assert surface_decision("manager", "/admin-ai-report.html")["allowed"] is True
+    assert surface_decision("development", "/dashboard.html")["redirect"] == "/admin-desk.html"
+    assert surface_decision("", "/trading-terminal.html")["surface"] == "anonymous"
+
+
+def test_staff_path_fallback_lists_every_staff_page():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web_portal/static/ui-clarity.js").read_text(encoding="utf-8")
+    block = re.search(r"var STAFF_PATHS = \[(.*?)\];", script, re.S)
+    assert block, "STAFF_PATHS missing"
+    listed = set(re.findall(r'"([^"]+)"', block.group(1)))
+    assert listed == set(STAFF_PAGES)
+
+
+def test_alias_redirects_keep_the_query_string():
+    parsed = urlparse(BASE_URL)
+    for path, destination in (
+        ("/admin-portal.html?section=underwriting", "/admin.html?section=underwriting"),
+        ("/supplier-dashboard.html?tab=offers", "/supplier-portal.html?tab=offers"),
+        ("/client-portal.html?next=billing", "/dashboard.html?next=billing"),
+    ):
+        conn = http.client.HTTPConnection(parsed.hostname, parsed.port or 80, timeout=20)
+        try:
+            conn.request("GET", path)
+            resp = conn.getresponse()
+            location = resp.getheader("Location")
+            status = resp.status
+            resp.read()
+        finally:
+            conn.close()
+        assert status == 301, (path, status, location)
+        assert location == destination, (path, location)

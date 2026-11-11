@@ -58,6 +58,10 @@ STAFF_PAGES: Dict[str, FrozenSet[str]] = {
     "/admin.html": frozenset(),
     "/admin-portal.html": frozenset(),
     "/admin-agents.html": frozenset(),
+    # SOC is an admin desk. The shell follows the same gate as /admin.html.
+    "/cyber-security.html": frozenset(),
+    # Same audience as /video-agents.html. The embed stays available to media.
+    "/storyboard-editor.html": frozenset({"media"}),
     "/admin-desk.html": frozenset({
         "actuary", "underwriter", "claims", "claims_adjuster", "adjuster",
         "accountant", "compliance", "founder", "development",
@@ -92,6 +96,10 @@ CUSTOMER_PRIVATE_PAGES: FrozenSet[str] = frozenset({
     "/dashboard.html",
     "/savings-portfolio.html",
     "/algo-trading.html",
+    # The trading screen is the customer's own money surface.
+    "/trading-terminal.html",
+    # Member community. Staff community admin stays /admin-foundations.html.
+    "/foundation-dashboard.html",
     # Each customer's own Mislaka tool. Staff stay on the admin assessment
     # surfaces and are not given this personal view.
     "/mislaka-report.html",
@@ -111,18 +119,22 @@ SHARED_OPERATIONAL_PAGES: FrozenSet[str] = frozenset({
 })
 
 ROLE_HOME: Dict[str, str] = {
-    "admin": "/admin-portal.html",
+    "admin": "/admin.html",
     "media": "/admin-media.html",
+    "manager": "/admin-ai-report.html",
+    "development": "/admin-desk.html",
     "underwriter": "/underwriter-dashboard.html",
     "claims": "/claims-adjuster-dashboard.html",
     "claims_adjuster": "/claims-adjuster-dashboard.html",
+    "claims_agent": "/chat-process-review.html",
+    "claims_manager": "/chat-process-review.html",
     "adjuster": "/claims-adjuster-dashboard.html",
     "accountant": "/accountant-dashboard.html",
     "actuary": "/actuary-dashboard.html",
-    "compliance": "/admin-portal.html",
-    "founder": "/admin-portal.html",
+    "compliance": "/admin.html",
+    "founder": "/admin.html",
     "regulator": "/regulator-dashboard.html",
-    "supplier": "/supplier-dashboard.html",
+    "supplier": "/supplier-portal.html",
     "agent": "/agent-portal.html",
     "customer": "/dashboard.html",
 }

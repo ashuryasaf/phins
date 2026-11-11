@@ -61,76 +61,6 @@
             z-index: 1000;
             box-shadow: 0 8px 30px rgba(2, 8, 23, 0.35);
         }
-        .phins-header-inner {
-            max-width: 1600px;
-            margin: 0 auto;
-            padding: 0.85rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .phins-logo {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            text-decoration: none;
-        }
-        .phins-logo-icon {
-            width: 44px;
-            height: 44px;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .phins-logo-text {
-            font-family: 'Space Grotesk', 'Inter', sans-serif;
-            font-size: 1.5rem;
-            font-weight: 600;
-            letter-spacing: 0.22em;
-            background: linear-gradient(180deg, #ffffff 0%, #b7d3ff 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        .phins-nav {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        .phins-nav a {
-            padding: 0.5rem 1rem;
-            color: rgba(255,255,255,0.85);
-            text-decoration: none;
-            border-radius: 8px;
-            font-size: 0.9rem;
-            font-weight: 500;
-            transition: all 0.2s ease;
-        }
-        .phins-nav a:hover {
-            background: rgba(255,255,255,0.12);
-            color: white;
-        }
-        .phins-nav a.active {
-            background: linear-gradient(135deg, var(--phins-gold-strong) 0%, var(--phins-gold) 100%);
-            color: #071022;
-            font-weight: 600;
-        }
-        .phins-nav .btn-logout {
-            border: 1px solid rgba(227, 191, 111, 0.65);
-            color: var(--phins-gold);
-            border-radius: 999px;
-        }
-        .mobile-menu-btn {
-            display: none;
-            background: rgba(127, 178, 255, 0.12);
-            border: 1px solid var(--phins-line);
-            color: white;
-            padding: 10px 14px;
-            border-radius: 10px;
-            font-size: 1.5rem;
-            cursor: pointer;
-        }
         .page-brand-banner {
             position: relative;
             overflow: hidden;
@@ -970,8 +900,9 @@
     <!-- Unified Payment Modal -->
     <script src="/unified-payment.js"></script>
   <link rel="stylesheet" href="/phins-theme.css">
+  <link rel="stylesheet" href="/phins-surface.css">
 </head>
-<body>
+<body class="phins-unified">
     <header class="phins-header">
         <div class="phins-header-inner">
             <a href="/dashboard.html" class="phins-logo">
@@ -3168,5 +3099,6 @@
         window.hideResetModal = hideResetModal;
         window.executePortfolioReset = executePortfolioReset;
     </script>
+  <script src="/ui-clarity.js"></script>
 </body>
 </html>

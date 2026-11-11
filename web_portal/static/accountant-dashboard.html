@@ -40,70 +40,6 @@
                 linear-gradient(180deg, #eef2f8 0%, #e4ebf4 100%);
         }
         h1, h2, h3, .page-title h1 { font-family: 'Space Grotesk', Inter, sans-serif; }
-        .phins-header {
-            background:
-                radial-gradient(700px 180px at 85% -60%, rgba(21, 68, 155, 0.5), transparent 70%),
-                rgba(6, 13, 31, 0.96);
-            border-bottom: 1px solid var(--acct-line);
-            padding: 0;
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-        }
-        .phins-header-inner {
-            max-width: 1600px;
-            margin: 0 auto;
-            padding: 0.75rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .phins-logo { display: flex; align-items: center; gap: 0.75rem; text-decoration: none; }
-        .phins-logo-icon {
-            width: 44px; height: 44px;
-            background: transparent;
-            border-radius: 12px;
-            display: flex; align-items: center; justify-content: center;
-        }
-        .phins-logo-text {
-            font-size: 1.75rem;
-            font-weight: 600;
-            letter-spacing: 0.22em;
-            background: linear-gradient(180deg, #ffffff 0%, #b7d3ff 100%);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        .phins-nav { display: flex; align-items: center; gap: 0.5rem; }
-        .phins-nav a {
-            padding: 0.5rem 1rem;
-            color: rgba(234, 241, 255, 0.85);
-            text-decoration: none;
-            border-radius: 8px;
-            font-size: 0.9rem;
-            font-weight: 500;
-        }
-        .phins-nav a.active {
-            background: linear-gradient(180deg, var(--acct-gold-strong) 0%, var(--acct-gold) 100%);
-            color: #071022;
-            font-weight: 600;
-        }
-        .phins-nav .btn-logout {
-            border: 1px solid rgba(227, 191, 111, 0.65);
-            color: var(--acct-gold);
-            border-radius: 999px;
-            font-weight: 600;
-        }
-        .mobile-menu-btn {
-            display: none;
-            background: rgba(127, 178, 255, 0.12);
-            border: 1px solid var(--acct-line);
-            color: white;
-            padding: 10px 14px;
-            border-radius: 10px;
-            font-size: 1rem;
-            cursor: pointer;
-        }
         @media screen and (max-width: 1024px) {
             .mobile-menu-btn { display: block; }
             .phins-nav {
@@ -339,8 +275,9 @@
         .hidden-legacy { display: none !important; }
     </style>
     <link rel="stylesheet" href="/phins-theme.css">
+  <link rel="stylesheet" href="/phins-surface.css">
 </head>
-<body>
+<body class="phins-unified">
     <header class="phins-header">
         <div class="phins-header-inner">
             <a href="/admin.html" class="phins-logo">
@@ -417,7 +354,7 @@
             <div class="section">
                 <h2>Engagement control tower</h2>
                 <p>Three-way tie-out used in insurance practice: kernel-priced premium, ledger cash, and the posted accounting book. Discrepancies are reported, never silently rewritten.</p>
-                <div id="ctl-books-status" class="integrity-status integrity-warnings">Books status will load from the reconcile pipeline.</div>
+                <div id="ctl-books-status" class="integrity-status integrity-warnings phins-books-note">Books status will load from the reconcile pipeline.</div>
                 <div class="books-grid" style="margin-top:16px;">
                     <div class="stat-card">
                         <div class="stat-value" id="ctl-ledger-premium">$0</div>
@@ -2520,7 +2457,7 @@
                 if (data.error) {
                     const statusEl = document.getElementById('ctl-books-status');
                     if (statusEl) {
-                        statusEl.className = 'integrity-status integrity-issues';
+                        statusEl.className = 'integrity-status integrity-issues phins-books-note';
                         statusEl.textContent = data.error;
                     }
                     if (resultsDiv && !silent) resultsDiv.innerHTML = `<div class="error">${data.error}</div>`;
@@ -2556,7 +2493,7 @@
                 }
                 const statusEl = document.getElementById('ctl-books-status');
                 if (statusEl) {
-                    statusEl.className = 'integrity-status ' + (ok ? 'integrity-healthy' : 'integrity-issues');
+                    statusEl.className = 'integrity-status phins-books-note ' + (ok ? 'integrity-healthy' : 'integrity-issues');
                     statusEl.textContent = ok
                         ? 'Financial books are in balance. Cash identity is the customer ledger; premium identity is the actuarial kernel pin.'
                         : 'Financial books have discrepancies. Review the Integrity tab — amounts are not silently rewritten.';
@@ -2586,7 +2523,7 @@
             } catch (err) {
                 const statusEl = document.getElementById('ctl-books-status');
                 if (statusEl) {
-                    statusEl.className = 'integrity-status integrity-issues';
+                    statusEl.className = 'integrity-status integrity-issues phins-books-note';
                     statusEl.textContent = 'Reconcile pipeline error: ' + err.message;
                 }
                 if (resultsDiv && !silent) resultsDiv.innerHTML = `<div class="error">Error: ${err.message}</div>`;

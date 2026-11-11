@@ -697,19 +697,28 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function getDashboardUrl(role) {
+    // Keep every case aligned with ROLE_HOME in security/access_hierarchy.py.
+    // Customer stays special: an allowlisted ?next= still wins.
     switch (role) {
-      case 'admin': return '/admin-portal.html';
+      case 'admin': return '/admin.html';
       case 'media': return '/admin-media.html';
+      case 'manager': return '/admin-ai-report.html';
+      case 'development': return '/admin-desk.html';
       case 'agent': return '/agent-portal.html';
       case 'actuary': return '/actuary-dashboard.html';
-      case 'supplier': return '/supplier-dashboard.html';
+      case 'supplier': return '/supplier-portal.html';
       case 'underwriter': return '/underwriter-dashboard.html';
       case 'claims':
-      case 'claims_adjuster': return '/claims-adjuster-dashboard.html';
+      case 'claims_adjuster':
+      case 'adjuster': return '/claims-adjuster-dashboard.html';
+      case 'claims_agent':
+      case 'claims_manager': return '/chat-process-review.html';
       case 'accountant': return '/accountant-dashboard.html';
+      case 'compliance':
+      case 'founder': return '/admin.html';
       case 'regulator': return '/regulator-dashboard.html';
       case 'customer': return customerDestination(customerNextUrl()) || '/dashboard.html';
-      default: return '/dashboard.html';
+      default: return '/login.html';
     }
   }
 

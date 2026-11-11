@@ -23,7 +23,12 @@
     var PHINS_DOCUMENT_HOMES = {
         admin: '/admin.html',
         manager: '/admin.html',
+        compliance: '/admin.html',
+        founder: '/admin.html',
+        development: '/admin-desk.html',
         underwriter: '/underwriter-dashboard.html',
+        claims_agent: '/chat-process-review.html',
+        claims_manager: '/chat-process-review.html',
         claims: '/claims-adjuster-dashboard.html',
         claims_adjuster: '/claims-adjuster-dashboard.html',
         adjuster: '/claims-adjuster-dashboard.html',

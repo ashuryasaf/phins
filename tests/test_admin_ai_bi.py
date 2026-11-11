@@ -279,6 +279,20 @@ def test_dashboard_catalog_links_staff_pages_and_the_report_window():
         assert rows[path]["admin_open"] is True
     assert rows["/regulator-dashboard.html"]["admin_open"] is False
     assert rows["/dashboard.html"]["admin_open"] is False
+    assert rows["/foundation-dashboard.html"]["group"] == "customer"
+    assert rows["/trading-terminal.html"]["group"] == "customer"
+    assert rows["/trading-terminal.html"]["admin_open"] is False
+    for path in (
+        "/supplier-login.html",
+        "/supplier-register.html",
+        "/apply.html",
+        "/apply-chat.html",
+        "/file-a-claim.html",
+        "/claims-chat.html",
+    ):
+        assert rows[path]["group"] == "intake", path
+    assert rows["/admin.html"]["group"] == "staff"
+    assert rows["/storyboard-editor.html"]["admin_open"] is True
 
 
 def test_role_gate_is_admin_and_manager_only():

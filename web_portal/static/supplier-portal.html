@@ -8,7 +8,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PHINS - Supplier Portal</title>
   <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/phins-theme.css">
   <style>
     .portal-header {
       display: flex;
@@ -393,18 +392,26 @@
   <link rel="stylesheet" href="/phins-theme.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="container">
-      <div>
-        <h1 class="brand">PHINS - Supplier Portal</h1>
-        <div class="muted-text" id="whoami">Loading session...</div>
-      </div>
-      <nav class="nav">
-        <a href="/index.html">Home</a>
-        <a href="#" onclick="logout()" class="btn-login">Logout</a>
+  <header class="phins-header">
+    <div class="phins-header-inner">
+      <a href="/supplier-portal.html" class="phins-logo">
+        <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
+        <span class="phins-logo-text">PHINS</span>
+      </a>
+      <button class="mobile-menu-btn" type="button" onclick="toggleMobileMenu()">Menu</button>
+      <nav class="phins-nav" id="mobile-nav">
+        <a href="/supplier-portal.html">Portal</a>
+        <span class="muted-text" id="whoami">Loading session...</span>
+        <a href="#" onclick="logout(); return false;" class="btn-logout">Logout</a>
       </nav>
     </div>
   </header>
+  <script>
+    function toggleMobileMenu() {
+      var nav = document.getElementById('mobile-nav');
+      if (nav) nav.classList.toggle('open');
+    }
+  </script>
 
   <main class="container" style="padding-top:24px">
     <!-- Portal Header -->
