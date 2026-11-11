@@ -32001,9 +32001,9 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'report_id is required'}).encode('utf-8'))
                 return
 
-            if export_format not in ['pdf', 'excel', 'csv']:
+            if export_format not in ['pdf', 'excel', 'csv', 'html']:
                 self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'Unsupported format. Use pdf or excel.'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Unsupported format. Use pdf, excel, or html.'}).encode('utf-8'))
                 return
 
             try:
@@ -32024,6 +32024,17 @@ For claims or questions, please contact:
 
                 title_stem = self._safe_download_filename(summary_payload.get('title', ''), fallback='report_summary')
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+                if export_format == 'html':
+                    from services.risk_reports.pdf_export import build_report_letterhead_html
+                    html_doc = build_report_letterhead_html(summary_payload)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/html; charset=utf-8')
+                    self.send_header('X-Content-Type-Options', 'nosniff')
+                    self.send_header('Cache-Control', 'no-store')
+                    self.end_headers()
+                    self.wfile.write(html_doc.encode('utf-8'))
+                    return
 
                 if export_format == 'pdf':
                     file_bytes = self._build_report_summary_pdf_bytes(summary_payload)

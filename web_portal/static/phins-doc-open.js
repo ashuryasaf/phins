@@ -21,7 +21,7 @@
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         var node = event.target && event.target.closest ? event.target.closest('a[href]') : null;
         if (!node || node.hasAttribute('download')) return;
-        if ((node.getAttribute('target') || '').toLowerCase() !== '_blank') return;
+        var blank = (node.getAttribute('target') || '').toLowerCase() === '_blank';
         var href = sameOriginPath(node.getAttribute('href') || '');
         if (!href) return;
         var path = href.split('#')[0].split('?')[0].toLowerCase();
@@ -32,6 +32,10 @@
             .replace(/\s+/g, ' ').trim().slice(0, 140) || 'PHINS document';
         var url = '/document-viewer.html?src=' + encodeURIComponent(href)
             + '&title=' + encodeURIComponent(title);
+        if (!blank) {
+            global.location.href = url;
+            return;
+        }
         var opened = global.open(url, '_blank', 'noopener');
         if (!opened) global.location.href = url;
     }, true);
