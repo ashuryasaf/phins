@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#060d1f">
+    <title>Professional application — Phin</title>
+    <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/apply-chat.css">
+    <style>
+        .process-strip {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            padding: 8px 16px 0;
+            position: relative;
+            z-index: 2;
+        }
+        .process-chip {
+            flex: 0 0 auto;
+            border: 1px solid rgba(127, 178, 255, 0.2);
+            border-radius: 999px;
+            padding: 6px 10px;
+            font-size: 0.78rem;
+            color: rgba(234, 241, 255, 0.78);
+            background: rgba(16, 31, 63, 0.55);
+        }
+        .process-chip.now { color: #071022; background: linear-gradient(135deg, #f7e2a0, #e3bf6f); border-color: transparent; }
+        .process-chip.done { color: #4cd6a5; }
+        .inquiry-fields, .inquiry-actions { display: grid; gap: 8px; }
+        .inquiry-fields label { display: grid; gap: 4px; font-size: 0.82rem; color: rgba(234, 241, 255, 0.72); }
+        .inquiry-fields input, .inquiry-fields select, .inquiry-fields textarea {
+            width: 100%;
+            border-radius: 10px;
+            border: 1px solid rgba(127, 178, 255, 0.24);
+            background: rgba(6, 13, 31, 0.55);
+            color: #eaf1ff;
+            padding: 10px 12px;
+            font: inherit;
+        }
+        .inquiry-note { font-size: 0.82rem; color: rgba(234, 241, 255, 0.66); margin: 0; }
+        .media-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .media-list span {
+            font-size: 0.75rem;
+            border-radius: 999px;
+            padding: 4px 8px;
+            background: rgba(76, 214, 165, 0.12);
+            color: #4cd6a5;
+        }
+    </style>
+</head>
+<body class="chat-apply-page">
+    <div class="chat-backdrop" aria-hidden="true"></div>
+    <header class="chat-header">
+        <a href="/" class="chat-brand">
+            <img src="/phins-logo.svg" alt="PHINS emblem">
+            <span>PHINS</span>
+        </a>
+        <div class="chat-header-actions">
+            <a class="btn-ghost" id="classic-link" href="/professional-inquiry.html">Classic form</a>
+        </div>
+    </header>
+    <div class="process-strip" id="process-strip" hidden></div>
+    <main class="chat-shell">
+        <section class="chat-welcome" id="welcome-screen">
+            <div class="welcome-card">
+                <div class="welcome-avatar">
+                    <img src="/phins-logo.svg" alt="Phin">
+                </div>
+                <h1>Meet <span class="gold">Phin</span></h1>
+                <p class="welcome-sub">The professional application is one disclosed conversation.
+                   An agent is opened as a role on one supplier record. Every step is listed before you start.</p>
+                <ol id="welcome-process" class="welcome-points" style="display:block; text-align:left;"></ol>
+                <button type="button" class="btn-gold btn-lg" id="start-btn">Start my application</button>
+                <p class="inquiry-note" id="welcome-error" hidden></p>
+            </div>
+        </section>
+        <section class="chat-screen" id="chat-screen" hidden>
+            <div class="chat-scroll" id="chat-scroll" aria-live="polite"></div>
+            <div class="chat-dock" id="chat-dock"></div>
+        </section>
+    </main>
+    <script src="/professional-inquiry-chat.js"></script>
+</body>
+</html>

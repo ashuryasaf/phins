@@ -1521,6 +1521,7 @@
           <button type="button" onclick="recomputeReferralRewards()" style="background:rgba(255,255,255,0.16); color:white; border:1px solid rgba(255,255,255,0.3); padding:8px 12px; border-radius:6px; cursor:pointer;">Recompute</button>
           <a href="/billing.html" style="color:#f7e2a0; align-self:center;">Billing</a>
           <a href="/actuary-dashboard.html#cac-hold-card" style="color:#f7e2a0; align-self:center;">Acquisition plan</a>
+          <a href="/admin-supplier-dashboard.html" style="color:#f7e2a0; align-self:center;">Supplier pipeline</a>
         </div>
         <div id="referral-request-list" style="margin-top: 12px; font-size: 13px;"></div>
       </div>
@@ -6342,6 +6343,7 @@
           ' paying ' + (plan.paying || 0) +
           ' · hold ' + (plan.hold_months != null ? plan.hold_months : ((data.config || {}).hold_months || 0)) + ' months' +
           ' · integrity ' + (integrity.ok ? 'ok' : 'needs review') +
+          ' · inquiry forms ' + (requests.inquiry || 0) +
           ' · pending professional requests ' + (requests.pending || 0);
         const config = data.config || {};
         const fee = document.getElementById('cac-fee');

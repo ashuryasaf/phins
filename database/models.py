@@ -3349,7 +3349,7 @@ class ProfessionalRequest(Base):
     customer_id = Column(String(50), index=True, nullable=False)
     login_username = Column(String(254), nullable=True)
     requested_role = Column(String(20), nullable=False)
-    status = Column(String(20), nullable=False, index=True)  # pending|approved|rejected
+    status = Column(String(20), nullable=False, index=True)  # inquiry|pending|approved|rejected
     supplier_type = Column(String(40), nullable=True)
     company_name = Column(String(160), nullable=True)
     note = Column(Text, nullable=True)
@@ -3361,6 +3361,8 @@ class ProfessionalRequest(Base):
     review_note = Column(Text, nullable=True)
     created_at = Column(String(40), nullable=False)
     updated_at = Column(String(40), nullable=True)
+    # Deeper inquiry (personal and optional company). The token itself is not stored.
+    inquiry_json = Column(Text, nullable=True)
 
 
 class ReferralSettlement(Base):

@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#060d1f">
+  <title>PHINS — Professional inquiry</title>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/phins-theme.css">
+  <link rel="stylesheet" href="/phins-surface.css">
+  <style>
+    .inquiry {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+    .inquiry h1 {
+      margin: 0 0 8px;
+      color: var(--heading-navy, #0e2f63);
+      font-family: "Space Grotesk", Inter, sans-serif;
+    }
+    .inquiry .lead {
+      margin: 0 0 20px;
+      color: var(--text-muted, #4b5563);
+    }
+    .panel {
+      background: var(--bg-card, #fff);
+      border: 1px solid var(--border, #d7e0ec);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .panel h2 {
+      margin: 0 0 12px;
+      font-size: 1.05rem;
+      color: var(--heading-navy, #0e2f63);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    label { display: block; font-size: 0.85rem; color: #445; }
+    input, select, textarea {
+      width: 100%;
+      margin-top: 4px;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border, #d7e0ec);
+      background: var(--bg, #fff);
+      color: var(--text, #12203f);
+      font: inherit;
+    }
+    .wide { grid-column: 1 / -1; }
+    .known {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      font-size: 0.92rem;
+    }
+    .check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+    }
+    .check input { width: auto; margin: 0; }
+    #process { margin: 0 0 18px; padding-left: 18px; color: var(--ink, #24324a); }
+    #process li { margin: 4px 0; }
+    #company-box { display: none; margin-top: 12px; }
+    #company-box.open { display: block; }
+    button.primary {
+      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+      color: #071022;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 18px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .message { margin-top: 12px; }
+    .message.error { color: #b91c1c; }
+    @media (max-width: 720px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body class="phins-unified">
+  <header class="phins-header">
+    <div class="phins-header-inner">
+      <a href="/" class="phins-logo">
+        <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
+        <span class="phins-logo-text">PHINS</span>
+      </a>
+    </div>
+  </header>
+  <main class="inquiry">
+    <h1>Professional inquiry</h1>
+    <p class="lead" id="lead">One application for a supplier or an agent. An agent is registered as a supplier.</p>
+    <p class="lead"><a id="chat-link" href="/professional-inquiry-chat.html">Continue with Phin in chat</a>. The chat shows every step, including identity and optional documents, voice, or video. This page writes the same request.</p>
+    <ol id="process"></ol>
+    <form id="inquiry-form">
+      <section class="panel">
+        <h2>Already on file</h2>
+        <div class="known" id="known">Loading…</div>
+      </section>
+      <section class="panel">
+        <h2>Personal details</h2>
+        <div class="grid">
+          <label>Name<input id="name" name="name" required autocomplete="name"></label>
+          <label>Phone<input id="phone" name="phone" autocomplete="tel"></label>
+          <label class="wide">Address<input id="address" name="address" autocomplete="street-address"></label>
+          <label>City<input id="city" name="city" autocomplete="address-level2"></label>
+          <label>Country<input id="country" name="country" autocomplete="country"></label>
+        </div>
+      </section>
+      <section class="panel">
+        <label class="check"><input type="checkbox" id="has-company"> Add a company or practice</label>
+        <div id="company-box">
+          <div class="grid">
+            <label class="wide">Company or practice name<input id="company-name" autocomplete="organization"></label>
+            <label>Supplier type<select id="supplier-type"></select></label>
+            <label>Registration number<input id="registration" autocomplete="off"></label>
+            <label>Company phone<input id="company-phone" autocomplete="tel"></label>
+            <label>Company city<input id="company-city"></label>
+            <label>Company country<input id="company-country"></label>
+            <label class="wide">Company address<input id="company-address"></label>
+            <label class="wide">What you offer<textarea id="description" rows="3"></textarea></label>
+          </div>
+        </div>
+      </section>
+      <button class="primary" id="submit" type="submit">Submit this application</button>
+      <div class="message" id="message"></div>
+    </form>
+  </main>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('t') || '';
+    const form = document.getElementById('inquiry-form');
+    const message = document.getElementById('message');
+    const companyBox = document.getElementById('company-box');
+    const companyToggle = document.getElementById('has-company');
+
+    function esc(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function setCompanyOpen(open) {
+      companyBox.classList.toggle('open', open);
+      document.getElementById('company-name').required = open;
+      document.getElementById('supplier-type').required = open;
+    }
+
+    companyToggle.addEventListener('change', function() {
+      setCompanyOpen(companyToggle.checked);
+    });
+
+    function fill(id, value) {
+      const el = document.getElementById(id);
+      if (el && value) el.value = value;
+    }
+
+    async function loadForm() {
+      if (!token) {
+        message.textContent = 'This page needs the link from your email.';
+        message.className = 'message error';
+        form.querySelector('button').disabled = true;
+        return;
+      }
+      const response = await fetch('/api/professional-inquiry?t=' + encodeURIComponent(token));
+      const body = await response.json().catch(function() { return {}; });
+      if (!response.ok) {
+        message.textContent = body.error || 'This link cannot be opened.';
+        message.className = 'message error';
+        form.querySelector('button').disabled = true;
+        return;
+      }
+      const known = body.known || {};
+      const personal = body.personal || {};
+      const company = body.company || {};
+      const chatLink = document.getElementById('chat-link');
+      if (chatLink) chatLink.href = '/professional-inquiry-chat.html?t=' + encodeURIComponent(token);
+      const process = document.getElementById('process');
+      if (process) {
+        process.innerHTML = '';
+        (body.process || []).forEach(function(step) {
+          const item = document.createElement('li');
+          item.textContent = step.title + (step.optional ? ' (optional)' : '') + ' — ' + step.detail;
+          process.appendChild(item);
+        });
+      }
+      document.getElementById('lead').textContent = body.role === 'agent'
+        ? 'You asked to be an agent. That role is opened on one supplier record.'
+        : 'You asked to be a supplier. The same record is used if you later add the agent role.';
+      const bits = [
+        known.email ? 'Email ' + known.email : '',
+        known.nationality ? 'Nationality ' + known.nationality : '',
+        known.national_id_masked ? 'ID ' + known.national_id_masked : ''
+      ].filter(Boolean);
+      document.getElementById('known').innerHTML = bits.length
+        ? bits.map(function(bit) { return '<span>' + esc(bit) + '</span>'; }).join('')
+        : 'We will keep the email already on your customer record.';
+      fill('name', personal.name);
+      fill('phone', personal.phone);
+      fill('address', personal.address);
+      fill('city', personal.city);
+      fill('country', personal.country);
+      const types = document.getElementById('supplier-type');
+      (body.supplier_types || []).forEach(function(value) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = value;
+        if (value === company.supplier_type) option.selected = true;
+        types.appendChild(option);
+      });
+      fill('company-name', company.company_name);
+      fill('registration', company.registration_number);
+      fill('company-phone', company.phone);
+      fill('company-city', company.city);
+      fill('company-country', company.country);
+      fill('company-address', company.address);
+      fill('description', company.description);
+      companyToggle.checked = !!body.has_company;
+      setCompanyOpen(!!body.has_company);
+      if (!body.editable) {
+        form.querySelectorAll('input, select, textarea, button').forEach(function(el) { el.disabled = true; });
+        message.textContent = 'This application is already ' + (body.status || 'filed') + '.';
+      }
+    }
+
+    form.addEventListener('submit', async function(event) {
+      event.preventDefault();
+      message.textContent = '';
+      message.className = 'message';
+      const hasCompany = companyToggle.checked;
+      const payload = {
+        token: token,
+        personal: {
+          name: document.getElementById('name').value,
+          phone: document.getElementById('phone').value,
+          address: document.getElementById('address').value,
+          city: document.getElementById('city').value,
+          country: document.getElementById('country').value
+        },
+        has_company: hasCompany
+      };
+      if (hasCompany) {
+        payload.company = {
+          company_name: document.getElementById('company-name').value,
+          supplier_type: document.getElementById('supplier-type').value,
+          registration_number: document.getElementById('registration').value,
+          phone: document.getElementById('company-phone').value,
+          city: document.getElementById('company-city').value,
+          country: document.getElementById('company-country').value,
+          address: document.getElementById('company-address').value,
+          description: document.getElementById('description').value
+        };
+      }
+      const response = await fetch('/api/professional-inquiry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const body = await response.json().catch(function() { return {}; });
+      if (!response.ok) {
+        message.textContent = body.error || 'The form was not saved.';
+        message.className = 'message error';
+        return;
+      }
+      message.textContent = 'Saved. PHINS will review this same application.';
+      form.querySelectorAll('input, select, textarea, button').forEach(function(el) { el.disabled = true; });
+    });
+
+    loadForm();
+  </script>
+</body>
+</html>

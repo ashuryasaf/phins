@@ -580,7 +580,7 @@ class CustomerCommunicationAgent:
     # Customer-relations outreach (email / WhatsApp)
     # ------------------------------------------------------------------
 
-    OUTREACH_TEMPLATES = ("message", "offer", "bill", "reminder", "welcome", "reward")
+    OUTREACH_TEMPLATES = ("message", "offer", "bill", "reminder", "welcome", "reward", "inquiry")
     OUTREACH_CHANNELS = ("email", "whatsapp", "both")
     _MAX_SUBJECT = 140
     _MAX_MESSAGE = 4000
@@ -845,6 +845,20 @@ class CustomerCommunicationAgent:
                 "",
                 f"Open your dashboard: {safe_login}",
             ]
+        elif template == "inquiry":
+            intro = f"Hi {name}, your PHINS professional application is ready to finish."
+            body_lines = [
+                intro,
+                "",
+                "Phin walks the application in one disclosed chat.",
+                "The steps are your details, identity, a company only if you add one,",
+                "then optional documents, a voice note, or a short video, and a review.",
+                "An agent is registered as a supplier, so this is the one application.",
+                "It starts from the details already on your customer record.",
+                "Your personal ID, if you provide one, stays in the identity vault.",
+                "",
+                f"Open the chat: {safe_login}",
+            ]
         else:
             intro = f"Hi {name}, a note from PHINS customer relations."
             body_lines = [
@@ -912,6 +926,7 @@ class CustomerCommunicationAgent:
             "reminder": "REMINDER",
             "welcome": "WELCOME",
             "message": "CUSTOMER RELATIONS",
+            "inquiry": "APPLICATION",
         }.get(template, "CUSTOMER RELATIONS")
         return f"""
 <html>

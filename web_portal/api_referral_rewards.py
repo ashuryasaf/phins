@@ -8,6 +8,10 @@ Routes (dispatched from ``web_portal/server.py``):
   GET  /api/customer/professional-requests         own agent/supplier requests
   POST /api/customer/professional-requests         {role, supplier_type?, company_name?, note?}
   POST /api/customer/role-switch                   {role: customer|agent|supplier}
+  GET  /api/professional-inquiry                   prefilled form for the email link token
+  POST /api/professional-inquiry                   submit that form onto the same request
+  GET  /api/admin/supplier-agent-pipeline          fee and reward report (admin, accountant, actuary)
+  POST /api/admin/supplier-agent-pipeline/seal     ledger the current report (admin)
   GET  /api/admin/referral-rewards                 book, plan, integrity (admin, accountant, actuary)
   POST /api/admin/referral-rewards/config          admin program patch
   POST /api/admin/referral-rewards/plan            fee basis and layer amounts (admin or actuary)
@@ -147,15 +151,32 @@ def _switch(session: Dict[str, Any], body: Dict[str, Any]) -> Dict[str, Any]:
             raise RewardError("The agent role is not open for this customer", status=403, code="role_closed")
         username = str(grant.get("login_username") or email or customer_id)
         return _mint(session, "agent", username)
-    grant = rewards.grant_for(customer_id, "supplier")
+    grant = rewards.supplier_access(customer_id)
     supplier_id = str((grant or {}).get("supplier_id") or "")
     if not supplier_id:
         raise RewardError("The supplier role is not open for this customer", status=403, code="role_closed")
     return _mint(session, "supplier", supplier_id, supplier_id=supplier_id)
 
 
+def _query_value(query: Dict[str, Any], key: str) -> str:
+    value = (query or {}).get(key)
+    if isinstance(value, list):
+        value = value[0] if value else ""
+    return str(value or "").strip()
+
+
 def dispatch_get(path: str, session: Optional[Dict[str, Any]], query: Dict[str, Any]) -> Result:
-    del query
+    if path == "/api/professional-inquiry":
+        token = _query_value(query, "t") or _query_value(query, "token")
+        if not token:
+            return 400, {"error": "token is required"}
+        return _call(rewards.inquiry_prefill, token)
+    if path == "/api/admin/supplier-agent-pipeline":
+        denied = _book(session)
+        if denied:
+            return denied
+        audience = _query_value(query, "audience") or "supplier"
+        return _call(rewards.pipeline_report, audience)
     if path == "/api/customer/referral-rewards":
         denied = _own(session)
         if denied:
@@ -233,6 +254,33 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]], body: Dict[str, 
         if denied:
             return denied
         return _call(rewards.recompute)
+    if path == "/api/professional-inquiry/chat":
+        token = str(body.get("token") or body.get("t") or "").strip()
+        if not token:
+            return 400, {"error": "token is required"}
+        return _call(rewards.advance_inquiry_chat, token, body.get("step"), body.get("value"))
+    if path == "/api/professional-inquiry/media":
+        token = str(body.get("token") or body.get("t") or "").strip()
+        if not token:
+            return 400, {"error": "token is required"}
+        return _call(
+            rewards.attach_inquiry_media,
+            token,
+            str(body.get("kind") or ""),
+            str(body.get("name") or ""),
+            str(body.get("mime_type") or ""),
+            str(body.get("data_b64") or ""),
+        )
+    if path == "/api/professional-inquiry":
+        token = str(body.get("token") or body.get("t") or "").strip()
+        if not token:
+            return 400, {"error": "token is required"}
+        return _call(rewards.submit_inquiry, token, body)
+    if path == "/api/admin/supplier-agent-pipeline/seal":
+        denied = _admin(session)
+        if denied:
+            return denied
+        return _call(rewards.seal_pipeline_statements, str(body.get("supplier_id") or ""))
     if path == "/api/admin/professional-requests/review":
         denied = _admin(session)
         if denied:

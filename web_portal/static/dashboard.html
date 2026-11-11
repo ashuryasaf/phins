@@ -2085,25 +2085,15 @@
 
       <div id="professional-panel" style="background: rgba(255,255,255,0.95); color: #333; border-radius: 12px; padding: 20px; margin-top: 20px;">
         <h3 style="margin: 0 0 8px 0; color: #0d47a1;">Open a professional role</h3>
-        <p style="margin: 0 0 12px 0; color: #555;">Stay a customer and ask to open the agent view, or a supplier practice. Approval keeps both sides on this same person.</p>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
-          <div>
-            <label style="display:block; font-size: 0.85rem; color: #666;">Role</label>
-            <select id="pro-role" style="width:100%; padding: 8px; border-radius: 6px; border: 1px solid #ddd;">
-              <option value="agent">Agent</option>
-              <option value="supplier">Supplier</option>
-            </select>
-          </div>
-          <div>
-            <label style="display:block; font-size: 0.85rem; color: #666;">Supplier type</label>
-            <select id="pro-supplier-type" style="width:100%; padding: 8px; border-radius: 6px; border: 1px solid #ddd;"></select>
-          </div>
-          <div>
-            <label style="display:block; font-size: 0.85rem; color: #666;">Practice or company</label>
-            <input id="pro-company" type="text" style="width:100%; padding: 8px; border-radius: 6px; border: 1px solid #ddd;">
-          </div>
+        <p style="margin: 0 0 12px 0; color: #555;">Stay a customer and ask to open an agent or supplier desk. An agent is a supplier, so both use the same application. We email a chat with Phin. Every step is shown first, including identity and optional documents, voice, or video.</p>
+        <div style="max-width: 280px;">
+          <label style="display:block; font-size: 0.85rem; color: #666;">Role</label>
+          <select id="pro-role" style="width:100%; padding: 8px; border-radius: 6px; border: 1px solid #ddd;">
+            <option value="agent">Agent</option>
+            <option value="supplier">Supplier</option>
+          </select>
         </div>
-        <button type="button" onclick="submitProfessionalRequest()" style="margin-top: 12px; background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%); color: #071022; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Request this role</button>
+        <button type="button" onclick="submitProfessionalRequest()" style="margin-top: 12px; background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%); color: #071022; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Email me the application chat</button>
         <div id="pro-status" style="margin-top: 12px; color: #333;"></div>
         <div id="referral-tools" style="margin-top: 12px;"></div>
       </div>
@@ -10518,15 +10508,6 @@
               '</div>';
           }).join('');
         }
-        const types = document.getElementById('pro-supplier-type');
-        if (types && !types.options.length) {
-          (data.supplier_types || []).forEach(function(value) {
-            const option = document.createElement('option');
-            option.value = value;
-            option.textContent = value;
-            types.appendChild(option);
-          });
-        }
         const professional = data.professional || {};
         const status = document.getElementById('pro-status');
         if (status) {
@@ -10535,7 +10516,11 @@
             const open = item.status === 'approved'
               ? ' <button type="button" onclick="switchPortalRole(\'' + role + '\')" style="margin-left:8px;background:#0d47a1;color:white;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;">Open ' + role + ' view</button>'
               : '';
-            return '<div style="margin-top:6px;">' + escReferral(role) + ': <strong>' + escReferral(item.status || 'none') + '</strong>' + open + '</div>';
+            const again = item.status === 'inquiry'
+              ? ' <button type="button" onclick="submitProfessionalRequest(\'' + role + '\')" style="margin-left:8px;background:#fff;color:#0d47a1;border:1px solid #0d47a1;padding:4px 10px;border-radius:6px;cursor:pointer;">Send the form again</button>'
+              : '';
+            const label = item.via === 'agent' ? 'approved with the agent role' : (item.status || 'none');
+            return '<div style="margin-top:6px;">' + escReferral(role) + ': <strong>' + escReferral(label) + '</strong>' + open + again + '</div>';
           }).join('') +
             '<div style="margin-top:6px;"><button type="button" onclick="switchPortalRole(\'customer\')" style="background:#fff;color:#0d47a1;border:1px solid #0d47a1;padding:4px 10px;border-radius:6px;cursor:pointer;">Stay on the customer view</button></div>';
         }
@@ -10587,24 +10572,31 @@
       loadReferralData();
     }
 
-    async function submitProfessionalRequest() {
-      const role = document.getElementById('pro-role').value;
+    async function submitProfessionalRequest(role) {
+      const chosen = role || document.getElementById('pro-role').value;
       const response = await fetch('/api/customer/professional-requests', {
         method: 'POST',
         headers: referralAuthHeaders(),
-        body: JSON.stringify({
-          role: role,
-          supplier_type: document.getElementById('pro-supplier-type').value,
-          company_name: document.getElementById('pro-company').value
-        })
+        body: JSON.stringify({ role: chosen })
       });
       const body = await response.json().catch(function() { return {}; });
       if (!response.ok) {
         showNotification(body.error || 'Request was not filed', 'error');
         return;
       }
-      showNotification('Request filed for review', 'success');
-      loadRewardProgram();
+      showNotification(body.email_sent ? 'Application chat sent to your email' : 'Application chat is ready', 'success');
+      await loadRewardProgram();
+      const status = document.getElementById('pro-status');
+      if (status && body.inquiry_path) {
+        const link = document.createElement('div');
+        link.style.marginTop = '8px';
+        const anchor = document.createElement('a');
+        anchor.href = body.inquiry_path;
+        anchor.textContent = 'Open the application chat';
+        anchor.style.color = '#0d47a1';
+        link.appendChild(anchor);
+        status.appendChild(link);
+      }
     }
 
     async function switchPortalRole(role) {

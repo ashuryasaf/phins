@@ -4,6 +4,8 @@ The fee is snapshotted in cents. Upper layers take their dollars from that fee
 and the rest stays with the direct affiliate. Agent commission stays on the
 AGI rail and is not paid from this book.
 """
+import base64
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -84,6 +86,33 @@ def _pay(customer_id, bill_id):
         "amount": 120.0,
         "amount_paid": 120.0,
     }
+
+
+def _finish_inquiry(filed, *, name="Applicant", company=None):
+    token = filed["inquiry_path"].split("t=", 1)[1]
+    prefill, status = _get("/api/professional-inquiry?t=" + token)
+    assert status == 200, prefill
+    assert "national_id_hash" not in json.dumps(prefill)
+    assert "id_number" not in json.dumps(prefill)
+    assert prefill["known"]["email"]
+    body = {
+        "token": token,
+        "personal": {
+            "name": name,
+            "phone": "555-0100",
+            "address": "1 Herzl",
+            "city": "Tel Aviv",
+            "country": "IL",
+        },
+        "has_company": bool(company),
+    }
+    if company:
+        body["company"] = company
+    saved, status = _post("/api/professional-inquiry", body)
+    assert status == 200, saved
+    assert saved["status"] == "pending"
+    assert "token_sha256" not in json.dumps(saved)
+    return saved
 
 
 @pytest.fixture(autouse=True)
@@ -303,19 +332,35 @@ def test_professional_agent_opens_a_switchable_portal_and_raises_the_cap():
     token, _role = _login(email, "secure123456")
     filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
     assert status == 200, filed
-    assert filed["status"] == "pending"
+    assert filed["status"] == "inquiry"
+    assert filed["inquiry_path"].startswith("/") or filed["inquiry_path"].startswith("http")
+    assert filed["email_sent"] is True
     admin, _ = _login("admin", "admin123")
-    reviewed, status = _post("/api/admin/professional-requests/review", {
+    early, status = _post("/api/admin/professional-requests/review", {
         "id": filed["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 409, early
+    assert early.get("code") == "inquiry_open"
+    saved = _finish_inquiry(filed, name="Pro Agent")
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": saved["id"], "decision": "approve",
     }, token=admin)
     assert status == 200, reviewed
     assert reviewed["agent_id"]
+    assert reviewed["supplier_id"]
+    supplier = portal.supply_chain_service.suppliers[reviewed["supplier_id"]]
+    assert supplier["customer_id"] == customer_id
+    assert "agent" in supplier["roles"] and "supplier" in supplier["roles"]
+    assert supplier["agent_id"] == reviewed["agent_id"]
     assert rewards.invitation_cap_for(customer_id) == 100
     switched, status = _post("/api/customer/role-switch", {"role": "agent"}, token=token)
     assert status == 200, switched
     me, status = _get("/api/agent/me", token=switched["token"])
     assert status == 200, me
     assert me["agent"]["id"] == reviewed["agent_id"]
+    desk, status = _post("/api/customer/role-switch", {"role": "supplier"}, token=token)
+    assert status == 200, desk
+    assert desk["supplier_id"] == reviewed["supplier_id"]
 
 
 def test_supplier_approval_stamps_the_customer_and_hides_the_password(monkeypatch):
@@ -329,9 +374,17 @@ def test_supplier_approval_stamps_the_customer_and_hides_the_password(monkeypatc
         "company_name": "North Clinic",
     }, token=token)
     assert status == 200, filed
+    assert filed["status"] == "inquiry"
+    saved = _finish_inquiry(filed, name="Pro Clinic", company={
+        "company_name": "North Clinic",
+        "supplier_type": "clinic",
+        "registration_number": "REG-1",
+        "city": "Haifa",
+        "country": "IL",
+    })
     admin, _ = _login("admin", "admin123")
     reviewed, status = _post("/api/admin/professional-requests/review", {
-        "id": filed["id"], "decision": "approve",
+        "id": saved["id"], "decision": "approve",
     }, token=admin)
     assert status == 200, reviewed
     assert "known-secret-password-value" not in json.dumps(reviewed)
@@ -341,6 +394,105 @@ def test_supplier_approval_stamps_the_customer_and_hides_the_password(monkeypatc
     assert supplier["customer_id"] == customer_id
     assert "known-secret-password-value" not in json.dumps(supplier)
     assert portal.CUSTOMERS[customer_id]["supplier_id"] == reviewed["supplier_id"]
+
+
+def test_agent_and_supplier_share_one_record_and_keep_a_conflicting_name():
+    email = "one-supplier-rewards@example.com"
+    customer_id = _register("One Person", email)
+    token, _role = _login(email, "secure123456")
+    supplier_filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    assert status == 200, supplier_filed
+    _finish_inquiry(supplier_filed, name="One Person", company={
+        "company_name": "North Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_filed["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, opened
+    agent_filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, agent_filed
+    _finish_inquiry(agent_filed, name="One Person", company={
+        "company_name": "Other Clinic",
+        "supplier_type": "pharmacy",
+    })
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": agent_filed["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, reviewed
+    assert reviewed["supplier_id"] == opened["supplier_id"]
+    assert len([s for s in portal.supply_chain_service.suppliers.values()
+                if s.get("customer_id") == customer_id]) == 1
+    supplier = portal.supply_chain_service.suppliers[opened["supplier_id"]]
+    assert supplier["company_name"] == "North Clinic"
+    assert supplier["pipeline_detail_conflict"] is True
+    assert supplier["agent_id"] == reviewed["agent_id"]
+    again, status = _post("/api/professional-inquiry", {"token": "inq_" + "ab" * 16})
+    assert status == 404, again
+
+
+def test_pipeline_report_reads_existing_fees_and_seals_without_a_second_posting():
+    email = "pipeline-rewards@example.com"
+    customer_id = _register("Pipeline", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    _finish_inquiry(filed, name="Pipeline", company={
+        "company_name": "Pipeline Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": filed["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, reviewed
+    portal.SUPPLIER_ORDERS["ORD-PIPE"] = {
+        "id": "ORD-PIPE",
+        "supplier_id": reviewed["supplier_id"],
+        "customer_id": "CUST-BUYER",
+        "platform_fee": 11.0,
+        "commission": 11.0,
+        "supplier_payout": 89.0,
+        "total_amount": 100.0,
+        "status": "completed",
+        "payment_method": "health_wallet",
+    }
+    _customer("BUYER", customer_id, "Buyer")
+    _pay("BUYER", "BILL-PIPE")
+    rewards.on_customer_paying("BUYER")
+    before = float(portal.PHINS_BALANCE_SHEET["expense_breakdown"].get("customer_acquisition") or 0)
+    report, status = _get("/api/admin/supplier-agent-pipeline?audience=supplier", token=admin)
+    assert status == 200, report
+    row = next(item for item in report["rows"] if item["supplier_id"] == reviewed["supplier_id"])
+    assert row["sales_fees"] == pytest.approx(11.0)
+    assert row["acquisition_rewards"] == pytest.approx(650.0)
+    assert row["agent_commissions"] == pytest.approx(0.0)
+    tax, status = _get("/api/admin/supplier-agent-pipeline?audience=tax", token=admin)
+    assert status == 200, tax
+    dumped = json.dumps(tax)
+    assert email not in dumped
+    assert "555-0100" not in dumped
+    regulator, status = _get("/api/admin/supplier-agent-pipeline?audience=regulator", token=admin)
+    assert status == 200, regulator
+    assert regulator["personal_data"] is False
+    assert email not in json.dumps(regulator)
+    sealed, status = _post("/api/admin/supplier-agent-pipeline/seal", {}, token=admin)
+    assert status == 200, sealed
+    assert float(portal.PHINS_BALANCE_SHEET["expense_breakdown"].get("customer_acquisition") or 0) == pytest.approx(before)
+    again, status = _post("/api/admin/supplier-agent-pipeline/seal", {
+        "supplier_id": reviewed["supplier_id"],
+    }, token=admin)
+    assert status == 200, again
+    assert again["sealed"][0]["reused"] is True
+    assert again["cash_event"] is False
+    statements = [
+        entry for entry in portal.supply_chain_service.ledger.values()
+        if entry.get("entry_type") == "pipeline_statement"
+        and entry.get("supplier_id") == reviewed["supplier_id"]
+    ]
+    assert len(statements) == 1
+    assert statements[0]["amount"] == 0
+    portal.SUPPLIER_ORDERS.pop("ORD-PIPE", None)
 
 
 def test_customer_cannot_read_the_book_or_accept_someone_elses_reward():
@@ -377,9 +529,10 @@ def test_invitation_cap_stays_at_ten_until_the_agent_role_is_approved():
     assert status == 400, blocked
     filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
     assert status == 200, filed
+    saved = _finish_inquiry(filed, name="Cap Customer")
     admin, _ = _login("admin", "admin123")
     reviewed, status = _post("/api/admin/professional-requests/review", {
-        "id": filed["id"], "decision": "approve",
+        "id": saved["id"], "decision": "approve",
     }, token=admin)
     assert status == 200, reviewed
     opened, status = _post("/api/customer/invitations/generate", {}, token=token)
@@ -462,12 +615,23 @@ def test_repository_round_trip():
             "checksum": "settlement-checksum",
         })
         settlements = {row["referee_customer_id"]: row for row in db.referral_rewards.list_settlements()}
+        db.referral_rewards.upsert_request({
+            "id": "PRO-CUST-DB-supplier",
+            "customer_id": "CUST-DB",
+            "requested_role": "supplier",
+            "status": "inquiry",
+            "created_at": "2026-10-19T00:00:00Z",
+            "inquiry": {"has_company": True, "token_sha256": "abc", "personal": {"name": "Dee"}},
+        })
+        stored_request = {row["id"]: row for row in db.referral_rewards.list_requests()}
     assert links["CUST-DB-REF"]["notified_join"] is True
     assert stored["RWRD-DB1-L1"]["amount_cents"] == 39000
     assert stored["RWRD-DB1-L1"]["program_shares"] == [6000, 2500, 1500]
     assert settlements["CUST-DB-REF"]["allocated_cents"] == 39000
     assert settlements["CUST-DB-REF"]["hold_months"] == 3
     assert settlements["CUST-DB-REF"]["release_at"] == "2027-01-19T00:00:00Z"
+    assert stored_request["PRO-CUST-DB-supplier"]["inquiry"]["personal"]["name"] == "Dee"
+    assert stored_request["PRO-CUST-DB-supplier"]["inquiry"]["token_sha256"] == "abc"
 
 
 def test_hold_months_clamps_to_the_end_of_the_month():
@@ -839,3 +1003,109 @@ def test_actuary_adjusts_the_layer_schedule_and_other_roles_cannot():
     assert 'id="affiliation-book-table"' in supplier
     assert "/savings-portfolio.html" in dashboard
     assert "/billing.html" in dashboard
+
+
+def _chat(token, step, value):
+    body, status = _post("/api/professional-inquiry/chat", {
+        "token": token, "step": step, "value": value,
+    })
+    assert status == 200, body
+    return body
+
+
+def test_professional_chat_discloses_every_step_and_keeps_the_id_in_the_vault():
+    email = "chat-supplier@example.com"
+    customer_id = _register("Chat Supplier", email)
+    session, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=session)
+    assert status == 200, filed
+    assert "professional-inquiry-chat.html?t=" in filed["inquiry_path"]
+    link = filed["inquiry_path"].split("t=", 1)[1]
+    prefill, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, prefill
+    assert prefill["agent"] == "Phin"
+    assert prefill["chat"]["disclosed"] is True
+    assert [step["id"] for step in prefill["process"]] == [
+        "confirm_person", "identity", "company", "evidence", "review",
+    ]
+    assert prefill["process"][2]["optional"] is True
+    assert prefill["process"][3]["optional"] is True
+    assert prefill["chat"]["cursor"] == "confirm_person"
+    early, status = _post("/api/professional-inquiry/chat", {
+        "token": link, "step": "identity", "value": "skip",
+    })
+    assert status == 409, early
+    assert early["code"] == "step_mismatch"
+    moved = _chat(link, "confirm_person", {
+        "personal": {
+            "name": "Chat Supplier",
+            "phone": "555-0199",
+            "address": "2 Herzl",
+            "city": "Haifa",
+            "country": "IL",
+        },
+    })
+    assert moved["chat"]["cursor"] == "identity"
+    national_id = "123456782"
+    recorded = _chat(link, "identity", {"nationality": "IL", "national_id": national_id})
+    dumped = json.dumps(recorded)
+    assert national_id not in dumped
+    assert recorded["chat"]["identity"]["complete"] is True
+    assert recorded["chat"]["identity"]["national_id_masked"].endswith("6782")
+    again, status = _get("/api/professional-inquiry?t=" + link)
+    assert national_id not in json.dumps(again)
+    assert portal.CUSTOMERS[customer_id]["national_id_last4"] == "6782"
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    _chat(link, "company", "no")
+    payload = base64.b64encode(b"professional-evidence").decode("ascii")
+    media, status = _post("/api/professional-inquiry/media", {
+        "token": link,
+        "kind": "document",
+        "name": "licence.txt",
+        "mime_type": "text/plain",
+        "data_b64": payload,
+    })
+    assert status == 200, media
+    assert media["media"]["sha256"] == hashlib.sha256(b"professional-evidence").hexdigest()
+    assert "data_b64" not in json.dumps(media)
+    assert national_id not in json.dumps(media)
+    _chat(link, "evidence", "done")
+    submitted = _chat(link, "review", "submit")
+    assert submitted["status"] == "pending"
+    assert submitted["chat"]["cursor"] == "filed"
+    assert submitted["request"]["status"] == "pending"
+    stored = rewards.REQUESTS[filed["id"]]
+    assert national_id not in json.dumps(stored)
+    assert stored["inquiry"]["chat"]["media"][0]["document_id"]
+
+    fresh_email = "chat-skip@example.com"
+    _register("Chat Skip", fresh_email)
+    skip_session, _role = _login(fresh_email, "secure123456")
+    opened, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=skip_session)
+    assert status == 200, opened
+    skip_link = opened["inquiry_path"].split("t=", 1)[1]
+    _chat(skip_link, "confirm_person", {"name": "Chat Skip"})
+    os.environ["PHINS_IDENTITY_REQUIRED"] = "true"
+    try:
+        refused, status = _post("/api/professional-inquiry/chat", {
+            "token": skip_link, "step": "identity", "value": "skip",
+        })
+    finally:
+        os.environ.pop("PHINS_IDENTITY_REQUIRED", None)
+    assert status == 400, refused
+    assert refused["code"] == "identity_required"
+    os.environ.pop("PHINS_IDENTITY_REQUIRED", None)
+    _chat(skip_link, "identity", "skip")
+    _chat(skip_link, "company", "no")
+    _chat(skip_link, "evidence", "skip")
+    filed_skip = _chat(skip_link, "review", "submit")
+    assert filed_skip["status"] == "pending"
+    assert filed_skip["chat"]["media"] == []
+
+    page = (Path(__file__).resolve().parents[1] / "web_portal" / "static" / "professional-inquiry-chat.html").read_text(encoding="utf-8")
+    script = (Path(__file__).resolve().parents[1] / "web_portal" / "static" / "professional-inquiry-chat.js").read_text(encoding="utf-8")
+    assert "Phin" in page
+    assert "disclosed" in page
+    assert "/api/professional-inquiry/chat" in script
+    assert "/api/professional-inquiry/media" in script
+    assert "getUserMedia" in script

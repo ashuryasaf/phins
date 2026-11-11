@@ -2183,8 +2183,10 @@ REFERRAL_API_PREFIXES = (
     '/api/customer/referral-rewards',
     '/api/customer/professional-requests',
     '/api/customer/role-switch',
+    '/api/professional-inquiry',
     '/api/admin/referral-rewards',
     '/api/admin/professional-requests',
+    '/api/admin/supplier-agent-pipeline',
 )
 
 # Import API extensions for the chat-style New Policy Application ("Phin")
@@ -40748,7 +40750,10 @@ For claims or questions, please contact:
         # crawler hits (seen repeatedly as 404 in production after PR #603).
         # Redirect to GET so a JS-disabled resume submit is not a dead end
         # and does not look like a missing application API.
-        if path in ('/apply-chat.html', '/apply.html', '/claims-chat.html', '/file-a-claim.html'):
+        if path in (
+            '/apply-chat.html', '/apply.html', '/claims-chat.html', '/file-a-claim.html',
+            '/professional-inquiry-chat.html', '/professional-inquiry.html',
+        ):
             if content_length > 0:
                 try:
                     remaining = content_length
