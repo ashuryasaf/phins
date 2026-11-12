@@ -2141,6 +2141,124 @@ def test_declining_supplier_request_keeps_an_approved_agent_role():
     assert get_agent(supplier["agent_id"])["default_commission_rate"] == pytest.approx(0.1)
 
 
+def _supplier_ledger(service, supplier_id):
+    rows = []
+    for entry in (getattr(service, "ledger", {}) or {}).values():
+        if isinstance(entry, dict) and entry.get("supplier_id") == supplier_id:
+            rows.append((entry.get("entry_type"), entry.get("amount"), entry.get("commission")))
+    return sorted(rows, key=lambda item: (str(item[0]), str(item[1]), str(item[2])))
+
+
+def test_decline_with_an_approved_role_does_not_rerun_approval(monkeypatch):
+    """Keeping the other role restores approved and unlinks. It does not approve again."""
+    service = portal.supply_chain_service
+    real_approve = service.approve_supplier
+    real_reject = service.reject_supplier
+    calls = {"approve": 0, "reject": 0}
+
+    def count_approve(*args, **kwargs):
+        calls["approve"] += 1
+        return real_approve(*args, **kwargs)
+
+    def count_reject(*args, **kwargs):
+        calls["reject"] += 1
+        return real_reject(*args, **kwargs)
+
+    monkeypatch.setattr(service, "approve_supplier", count_approve)
+    monkeypatch.setattr(service, "reject_supplier", count_reject)
+    admin, _ = _login("admin", "admin123")
+    from services.agent_ecosystem_service import AGENTS
+
+    email = "no-rerun@example.com"
+    customer_id = _register("No Rerun", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="No Rerun", company={
+        "company_name": "No Rerun Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="No Rerun", company={
+        "company_name": "No Rerun Clinic",
+        "supplier_type": "clinic",
+    })
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    supplier_id = opened["request"]["supplier_id"]
+    agent_id = opened["request"]["agent_id"]
+    supplier = service.suppliers[supplier_id]
+    assert supplier["status"] == "pending"
+    assert supplier["portal_active"] is False
+    assert calls == {"approve": 0, "reject": 0}
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    before_ledger = _supplier_ledger(service, supplier_id)
+    before_agents = set(AGENTS)
+    before_expenses = portal.PHINS_BALANCE_SHEET.get("total_expenses")
+    statements = [
+        entry for entry in service.ledger.values()
+        if isinstance(entry, dict) and entry.get("entry_type") == "pipeline_statement"
+    ]
+
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    supplier = service.suppliers[supplier_id]
+    assert calls == {"approve": 0, "reject": 0}
+    assert supplier["status"] == "approved"
+    assert supplier["portal_active"] is False
+    assert supplier_request not in (supplier.get("professional_request_ids") or [])
+    assert supplier.get("professional_request_id") != supplier_request
+    assert supplier["agent_id"] == agent_id
+    assert set(AGENTS) == before_agents
+    assert _supplier_ledger(service, supplier_id) == before_ledger
+    assert [
+        entry for entry in service.ledger.values()
+        if isinstance(entry, dict) and entry.get("entry_type") == "pipeline_statement"
+    ] == statements
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+    assert portal.PHINS_BALANCE_SHEET.get("total_expenses") == before_expenses
+    assert rewards.REQUESTS[agent_request]["status"] == "approved"
+    assert not rewards._supplier_is_closed(supplier)
+
+    other_email = "no-rerun-agent@example.com"
+    other_customer = _register("No Rerun Agent", other_email)
+    other_session, _role = _login(other_email, "secure123456")
+    other_supplier = _file_professional_chat(other_session, "supplier", name="No Rerun Agent", company={
+        "company_name": "Open Clinic",
+        "supplier_type": "clinic",
+    })
+    other_agent = _file_professional_chat(other_session, "agent", name="No Rerun Agent", company={
+        "company_name": "Open Clinic",
+        "supplier_type": "clinic",
+    })
+    calls["approve"] = 0
+    approved, status = _post("/api/admin/professional-requests/review", {
+        "id": other_supplier, "decision": "approve",
+    }, token=admin)
+    assert status == 200, approved
+    other_id = approved["supplier_id"]
+    assert calls["approve"] == 1
+    assert service.suppliers[other_id]["portal_active"] is True
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[other_customer]))
+    before_ledger = _supplier_ledger(service, other_id)
+    before_agents = set(AGENTS)
+    calls["approve"] = 0
+    declined_agent, status = _post("/api/admin/professional-requests/review", {
+        "id": other_agent, "decision": "reject", "note": "Agent application declined",
+    }, token=admin)
+    assert status == 200, declined_agent
+    kept = service.suppliers[other_id]
+    assert calls == {"approve": 0, "reject": 0}
+    assert kept["status"] == "approved"
+    assert kept["portal_active"] is True
+    assert other_agent not in (kept.get("professional_request_ids") or [])
+    assert set(AGENTS) == before_agents
+    assert _supplier_ledger(service, other_id) == before_ledger
+    assert portal.CUSTOMERS[other_customer] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[other_customer]
+
+
 def test_staging_failure_leaves_the_inquiry_resubmittable(monkeypatch):
     email = "stage-fail@example.com"
     _register("Stage Fail", email)
