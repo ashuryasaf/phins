@@ -2355,6 +2355,68 @@ def test_discard_agent_keeps_memory_when_the_database_delete_fails(monkeypatch):
     assert agents.AGENT_BY_USER.get("db-fail-agent@example.com") == aid
 
 
+def test_failed_agent_delete_leaves_both_requests_unchanged(monkeypatch):
+    """A failed agent delete stores neither the sibling nor the declined request."""
+    from services import agent_ecosystem_service as agents
+    email = "delete-fails@example.com"
+    customer_id = _register("Delete Fails", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="Delete Fails", company={
+        "company_name": "Delete Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="Delete Fails", company={
+        "company_name": "Delete Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    agent_id = opened["request"]["agent_id"]
+    supplier_id = opened["request"]["supplier_id"]
+    rewards.REQUESTS[agent_request]["agent_id"] = "AGT-UNRESOLVED"
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    before_agent = {
+        "status": rewards.REQUESTS[agent_request]["status"],
+        "supplier_id": rewards.REQUESTS[agent_request].get("supplier_id"),
+        "agent_id": rewards.REQUESTS[agent_request].get("agent_id"),
+    }
+    before_supplier_request = {
+        "status": rewards.REQUESTS[supplier_request]["status"],
+        "supplier_id": rewards.REQUESTS[supplier_request].get("supplier_id"),
+    }
+    stored = []
+    real_persist = rewards._persist_request
+
+    def capture(req):
+        stored.append(req.get("id"))
+        return real_persist(req)
+
+    def refuse(_agent_id):
+        raise RuntimeError("db delete failed")
+
+    monkeypatch.setattr(rewards, "_persist_request", capture)
+    monkeypatch.setattr(agents, "discard_agent", refuse)
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status >= 500, declined
+    assert stored == []
+    assert rewards.REQUESTS[agent_request]["status"] == before_agent["status"]
+    assert rewards.REQUESTS[agent_request].get("supplier_id") == before_agent["supplier_id"]
+    assert rewards.REQUESTS[agent_request].get("agent_id") == before_agent["agent_id"]
+    assert rewards.REQUESTS[supplier_request]["status"] == before_supplier_request["status"]
+    assert rewards.REQUESTS[supplier_request].get("supplier_id") == before_supplier_request["supplier_id"]
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "pending"
+    assert supplier["portal_active"] is False
+    assert supplier.get("agent_id") == agent_id
+    assert agents.get_agent(agent_id)["id"] == agent_id
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+
+
 def test_detached_sibling_request_is_stored(monkeypatch):
     """The sibling row is written, not only edited in memory."""
     stored = []

@@ -3581,31 +3581,34 @@ def _usable_agent_id(req: Dict[str, Any]) -> str:
     return agent_id if isinstance(agent, dict) else ""
 
 
-def _agent_still_referenced(customer_id: str, agent_id: str) -> bool:
+def _agent_still_referenced(customer_id: str, agent_id: str, ignore_request_id: str = "") -> bool:
     """A real grant or the customer pointer still names this agent.
 
-    The customer master is only read. Decline does not clear ``agent_id``.
+    The request being reset is not a grant. The customer master is only
+    read. Decline does not clear ``agent_id``.
     """
-    if any(
-        isinstance(item, dict)
-        and item.get("status") == "approved"
-        and str(item.get("agent_id") or "") == agent_id
-        for item in REQUESTS.values()
-    ):
-        return True
+    skipped = str(ignore_request_id or "")
+    for item in REQUESTS.values():
+        if not isinstance(item, dict):
+            continue
+        if skipped and str(item.get("id") or "") == skipped:
+            continue
+        if item.get("status") == "approved" and str(item.get("agent_id") or "") == agent_id:
+            return True
     rec = _customer_record(customer_id) or {}
     return str(rec.get("agent_id") or "") == agent_id
 
 
-def _drop_unreachable_agent(customer_id: str, dangling: str) -> None:
+def _drop_unreachable_agent(customer_id: str, dangling: str, ignore_request_id: str = "") -> None:
     """Remove the agent id this request just detached, when nothing live names it.
 
     The id is the only candidate. Login, email, and customer id are not
     searched. An agent the customer record still points at stays, so the
-    next approval reuses it.
+    next approval reuses it. A failed delete raises before any request is
+    stored.
     """
     aid = str(dangling or "").strip()
-    if not aid or _agent_still_referenced(customer_id, aid):
+    if not aid or _agent_still_referenced(customer_id, aid, ignore_request_id):
         return
     from services.agent_ecosystem_service import discard_agent
     discard_agent(aid)
@@ -3617,13 +3620,15 @@ def _detach_withdrawn_supplier(supplier: Dict[str, Any]) -> None:
     A granted agent keeps ``agent_id`` so role-switch still works, and stops
     pointing ``supplier_id`` at this row. An approved stamp with no usable
     agent goes back to inquiry. Only that detached agent id is removed, and
-    only when no grant and no customer pointer still name it. Each request this changes
-    is stored the same way as the declined request. The direct review route
-    and both desks reach this through ``review_professional``.
+    only when no grant and no customer pointer still name it. The delete
+    runs before either request is stored. A failed delete leaves those
+    requests unchanged. When there is nothing to delete, both requests are
+    stored together. The direct review route and both desks reach this
+    through ``review_professional``.
     """
     sid = str(supplier.get("id") or "")
-    supplier.pop("agent_id", None)
     customer_id = str(supplier.get("customer_id") or "")
+    planned: List[Tuple[Dict[str, Any], str]] = []
     for role in ("supplier", "agent"):
         other = REQUESTS.get(_request_id(customer_id, role))
         if not isinstance(other, dict) or other.get("status") != "approved":
@@ -3632,24 +3637,58 @@ def _detach_withdrawn_supplier(supplier: Dict[str, Any]) -> None:
             continue
         kept = _usable_agent_id(other)
         if kept:
-            other.pop("supplier_id", None)
-            other["agent_id"] = kept
-            _persist_request(other)
+            planned.append((other, kept))
             continue
         dangling = str(other.get("agent_id") or "")
-        other.pop("supplier_id", None)
-        other.pop("agent_id", None)
-        other["status"] = "inquiry"
+        _drop_unreachable_agent(
+            str(other.get("customer_id") or customer_id),
+            dangling,
+            str(other.get("id") or ""),
+        )
+        planned.append((other, ""))
+    supplier.pop("agent_id", None)
+    for other, kept in planned:
+        if kept:
+            other.pop("supplier_id", None)
+            other["agent_id"] = kept
+        else:
+            other.pop("supplier_id", None)
+            other.pop("agent_id", None)
+            other["status"] = "inquiry"
         _persist_request(other)
-        _drop_unreachable_agent(str(other.get("customer_id") or customer_id), dangling)
+
+
+def _restore_supplier_snapshot(supplier: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
+    supplier["status"] = snapshot.get("status")
+    supplier["portal_active"] = snapshot.get("portal_active")
+    supplier["rejection_reason"] = snapshot.get("rejection_reason")
+    supplier["professional_request_ids"] = list(snapshot.get("professional_request_ids") or [])
+    supplier["professional_request_id"] = snapshot.get("professional_request_id")
+    if snapshot.get("had_agent_id"):
+        supplier["agent_id"] = snapshot.get("agent_id")
+    else:
+        supplier.pop("agent_id", None)
 
 
 def _withdraw_staged_supplier(supplier: Dict[str, Any], request_id: str) -> None:
-    _unlink_professional_request(supplier, request_id)
-    supplier["status"] = "withdrawn"
-    supplier["portal_active"] = False
-    supplier["rejection_reason"] = None
-    _detach_withdrawn_supplier(supplier)
+    snapshot = {
+        "status": supplier.get("status"),
+        "portal_active": supplier.get("portal_active"),
+        "rejection_reason": supplier.get("rejection_reason"),
+        "had_agent_id": "agent_id" in supplier,
+        "agent_id": supplier.get("agent_id"),
+        "professional_request_ids": list(supplier.get("professional_request_ids") or []),
+        "professional_request_id": supplier.get("professional_request_id"),
+    }
+    try:
+        _unlink_professional_request(supplier, request_id)
+        supplier["status"] = "withdrawn"
+        supplier["portal_active"] = False
+        supplier["rejection_reason"] = None
+        _detach_withdrawn_supplier(supplier)
+    except Exception:
+        _restore_supplier_snapshot(supplier, snapshot)
+        raise
 
 
 def _release_staged_supplier(req: Dict[str, Any], _admin: str, _note: str) -> None:
@@ -3786,8 +3825,8 @@ def review_professional(request_id: str, decision: str, admin: str, note: str = 
                 raise RewardError(str(exc), status=400, code="professional_open_failed") from exc
             req["status"] = "approved"
         else:
-            req["status"] = "rejected"
             _release_staged_supplier(req, admin, str(note or ""))
+            req["status"] = "rejected"
         req["reviewed_by"] = str(admin or "admin")[:80]
         req["reviewed_at"] = _now()
         req["review_note"] = str(note or "")[:500]
