@@ -2152,6 +2152,127 @@ def test_declining_supplier_request_keeps_an_approved_agent_role():
     assert get_agent(opened["request"]["agent_id"])["default_commission_rate"] == pytest.approx(0.1)
 
 
+def test_detached_sibling_request_is_stored(monkeypatch):
+    """The sibling row is written, not only edited in memory."""
+    stored = []
+    real_persist = rewards._persist_request
+
+    def capture(req):
+        stored.append({
+            "id": req.get("id"),
+            "status": req.get("status"),
+            "supplier_id": req.get("supplier_id"),
+            "agent_id": req.get("agent_id"),
+        })
+        return real_persist(req)
+
+    monkeypatch.setattr(rewards, "_persist_request", capture)
+    service = portal.supply_chain_service
+    real_approve = service.approve_supplier
+    real_reject = service.reject_supplier
+    calls = {"approve": 0, "reject": 0}
+
+    def count_approve(*args, **kwargs):
+        calls["approve"] += 1
+        return real_approve(*args, **kwargs)
+
+    def count_reject(*args, **kwargs):
+        calls["reject"] += 1
+        return real_reject(*args, **kwargs)
+
+    monkeypatch.setattr(service, "approve_supplier", count_approve)
+    monkeypatch.setattr(service, "reject_supplier", count_reject)
+    admin, _ = _login("admin", "admin123")
+
+    def file_pair(email, name, company):
+        customer_id = _register(name, email)
+        session, _role = _login(email, "secure123456")
+        supplier_request = _file_professional_chat(session, "supplier", name=name, company=company)
+        agent_request = _file_professional_chat(session, "agent", name=name, company=company)
+        return customer_id, supplier_request, agent_request
+
+    def sibling_rows(agent_request):
+        return [row for row in stored if row["id"] == agent_request]
+
+    customer_id, supplier_request, agent_request = file_pair(
+        "store-sibling@example.com", "Store Sibling",
+        {"company_name": "Store Clinic", "supplier_type": "clinic"},
+    )
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    supplier_id = opened["request"]["supplier_id"]
+    assert service.suppliers[supplier_id]["portal_active"] is False
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    before_ledger = _supplier_ledger(service, supplier_id)
+    stored.clear()
+    calls["approve"] = 0
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    written = sibling_rows(agent_request)
+    assert written, stored
+    assert written[-1]["status"] == "approved"
+    assert written[-1]["supplier_id"] is None
+    assert written[-1]["agent_id"] is None
+    assert any(row["id"] == supplier_request and row["status"] == "rejected" for row in stored)
+    assert calls == {"approve": 0, "reject": 0}
+    assert service.suppliers[supplier_id]["status"] == "withdrawn"
+    assert service.suppliers[supplier_id]["portal_active"] is False
+    assert "agent_id" not in service.suppliers[supplier_id]
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert _supplier_ledger(service, supplier_id) == before_ledger
+
+    desk_customer, desk_supplier, desk_agent = file_pair(
+        "store-desk@example.com", "Store Desk",
+        {"company_name": "Desk Clinic", "supplier_type": "clinic"},
+    )
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": desk_agent}, token=admin)
+    assert status == 200, opened
+    desk_supplier_id = opened["request"]["supplier_id"]
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[desk_customer]))
+    stored.clear()
+    calls["approve"] = 0
+    rejected, status = _post(f"/api/admin/suppliers/{desk_supplier_id}/reject", {
+        "reason": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, rejected
+    written = sibling_rows(desk_agent)
+    assert written, stored
+    assert written[-1]["status"] == "approved"
+    assert written[-1]["supplier_id"] is None
+    assert written[-1]["agent_id"] is None
+    assert calls == {"approve": 0, "reject": 0}
+    assert service.suppliers[desk_supplier_id]["status"] == "withdrawn"
+    assert portal.CUSTOMERS[desk_customer] == before_customer
+    assert "national_id" not in service.suppliers[desk_supplier_id]
+
+    live_customer, live_supplier, live_agent = file_pair(
+        "store-live@example.com", "Store Live",
+        {"company_name": "Live Clinic", "supplier_type": "clinic"},
+    )
+    approved, status = _post("/api/admin/professional-requests/review", {
+        "id": live_supplier, "decision": "approve",
+    }, token=admin)
+    assert status == 200, approved
+    live_id = approved["supplier_id"]
+    assert service.suppliers[live_id]["portal_active"] is True
+    stored.clear()
+    calls["approve"] = 0
+    declined_agent, status = _post("/api/admin/agent-invitations/reject", {
+        "code": live_agent, "note": "Agent application declined",
+    }, token=admin)
+    assert status == 200, declined_agent
+    assert sibling_rows(live_supplier) == []
+    assert rewards.REQUESTS[live_supplier]["status"] == "approved"
+    assert rewards.REQUESTS[live_supplier]["supplier_id"] == live_id
+    assert service.suppliers[live_id]["status"] == "approved"
+    assert service.suppliers[live_id]["portal_active"] is True
+    assert calls == {"approve": 0, "reject": 0}
+    assert "national_id" not in portal.CUSTOMERS[live_customer]
+
+
 def _supplier_ledger(service, supplier_id):
     rows = []
     for entry in (getattr(service, "ledger", {}) or {}).values():

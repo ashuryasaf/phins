@@ -3573,7 +3573,10 @@ def _detach_withdrawn_supplier(supplier: Dict[str, Any]) -> None:
     """A withdrawn row is not a live supplier or a live agent.
 
     The request may still say approved. That stamp is not an activation, so
-    it must not keep ``supplier_id`` or ``agent_id`` on this row.
+    it must not keep ``supplier_id`` or ``agent_id`` on this row. Each
+    request this clears is stored the same way as the declined request.
+    The direct review route and both desks reach this through
+    ``review_professional``.
     """
     sid = str(supplier.get("id") or "")
     supplier.pop("agent_id", None)
@@ -3585,6 +3588,7 @@ def _detach_withdrawn_supplier(supplier: Dict[str, Any]) -> None:
         if sid and str(other.get("supplier_id") or "") == sid:
             other.pop("supplier_id", None)
             other.pop("agent_id", None)
+            _persist_request(other)
 
 
 def _withdraw_staged_supplier(supplier: Dict[str, Any], request_id: str) -> None:
