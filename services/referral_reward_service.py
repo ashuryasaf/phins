@@ -50,7 +50,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 logger = logging.getLogger("phins.referral_rewards")
 
@@ -850,6 +850,24 @@ def _first_name(customer_id: str) -> str:
 
 def _customer_record(customer_id: str) -> Optional[Dict[str, Any]]:
     rec = _customers().get(customer_id)
+    return rec if isinstance(rec, dict) else None
+
+
+def _mapped_customer(customer_id: str) -> Optional[Dict[str, Any]]:
+    """One customer row, including the database-backed store.
+
+    ``CUSTOMERS`` is a ``DatabaseDict`` when the database is on. That store
+    has ``get`` and is not a ``dict``. The reward book keeps the dict-only
+    port above; identity and the inquiry address read this one.
+    """
+    portal = _portal()
+    customers = getattr(portal, "CUSTOMERS", None) if portal else None
+    if customers is None or not hasattr(customers, "get"):
+        return None
+    try:
+        rec = customers.get(str(customer_id or ""))
+    except Exception:
+        return None
     return rec if isinstance(rec, dict) else None
 
 
@@ -1875,7 +1893,7 @@ def _reject_inquiry_secrets(payload: Any) -> None:
 
 def _known_customer(customer_id: str) -> Dict[str, Any]:
     """Details the customer record already holds. The national ID stays in the vault."""
-    rec = _customer_record(customer_id) or {}
+    rec = _mapped_customer(customer_id) or {}
     known = {
         "name": _clip_text(rec.get("name"), 120),
         "email": _clip_text(rec.get("email"), 254),
@@ -1895,23 +1913,54 @@ def _known_customer(customer_id: str) -> Dict[str, Any]:
     return known
 
 
-def _inquiry_path(token: str, request_id: str) -> str:
-    """The email link names the request and carries the token.
+def _safe_origin(value: str) -> str:
+    """Scheme and host only. A path on the configured origin is not kept.
 
-    ``r`` is the request id, not a secret. The page can point the other form
-    at that inquiry before the session exchange returns. ``t`` stays last so
-    a reader that splits on it still sees only the token.
+    ``BASE_URL`` is an origin. Keeping a page path produced a link such as
+    ``professional-inquiry-chat.html/?r=`` that a mail client cannot open.
+    The query is attached later as ``.html?`` with nothing between them.
     """
-    path = "/professional-inquiry-chat.html?" + urlencode((("r", str(request_id or "")), ("t", token)))
+    text = str(value or "").strip()
+    if not text or any(ch in text for ch in ("\r", "\n", " ")):
+        return ""
+    if "://" not in text:
+        text = "https://" + text
+    parts = urlsplit(text)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return ""
+    if parts.username or parts.password:
+        return ""
+    host = parts.hostname
+    if ":" in host:
+        host = f"[{host}]"
+    port = f":{parts.port}" if parts.port else ""
+    return f"{parts.scheme}://{host}{port}"
+
+
+def _configured_origin() -> str:
     portal = _portal()
     getter = getattr(portal, "public_portal_base_url", None) if portal else None
-    origin = ""
-    if callable(getter):
-        try:
-            origin = str(getter() or "").strip().rstrip("/")
-        except Exception:
-            origin = ""
-    return f"{origin}{path}" if origin else path
+    if not callable(getter):
+        return ""
+    try:
+        return _safe_origin(str(getter() or ""))
+    except Exception:
+        return ""
+
+
+def _inquiry_path(token: str, request_id: str, public_origin: str = "") -> str:
+    """Absolute chat link. The token is the query value, never a log line.
+
+    ``r`` is the request id, not a secret. ``t`` stays last. The origin is
+    ``BASE_URL``, then ``WEBHOOK_BASE_URL`` (``TEST_BASE_URL`` under test),
+    then the public host of the request that asked for the email.
+    """
+    query = urlencode((("r", str(request_id or "")), ("t", token)))
+    page = "/professional-inquiry-chat.html"
+    origin = _safe_origin(public_origin) or _configured_origin()
+    if origin:
+        return f"{origin}{page}?{query}"
+    return f"{page}?{query}"
 
 
 def _arm_inquiry(req: Dict[str, Any], supplier_type: str, company_name: str) -> str:
@@ -2024,7 +2073,7 @@ def _inquiry_recipient(customer_id: str, login_username: str = "") -> Tuple[str,
     request body. Without this, a record that omitted email returned before
     NotificationService.send and the customer received nothing.
     """
-    rec = _customer_record(customer_id) or {}
+    rec = _mapped_customer(customer_id) or {}
     email = str(rec.get("email") or "").strip()
     if not email:
         login = str(login_username or "").strip()
@@ -2100,7 +2149,7 @@ def _send_inquiry_email(customer_id: str, role: str, path: str,
 
 def request_professional(customer_id: str, role: str, login_username: str = "",
                          supplier_type: str = "", company_name: str = "",
-                         note: str = "") -> Dict[str, Any]:
+                         note: str = "", public_origin: str = "") -> Dict[str, Any]:
     """Open or resend the inquiry. Review waits until the form is submitted."""
     role = str(role or "").strip().lower()
     if role not in ("agent", "supplier"):
@@ -2145,7 +2194,7 @@ def request_professional(customer_id: str, role: str, login_username: str = "",
         token = _arm_inquiry(req, supplier_type, company_name)
         REQUESTS[key] = req
         _persist_request(req)
-        path = _inquiry_path(token, key)
+        path = _inquiry_path(token, key, public_origin)
     sent, notification_id = _send_inquiry_email(
         customer_id, role, path, login_username,
     )
@@ -2557,7 +2606,7 @@ _INQUIRY_OPENING = (
 
 
 def _identity_public(req: Dict[str, Any]) -> Dict[str, Any]:
-    rec = _customer_record(req.get("customer_id")) or {}
+    rec = _mapped_customer(req.get("customer_id")) or {}
     try:
         from services.customer_identity_service import identity_reference, is_complete, strict_mode
         ref = identity_reference(rec) or {}
@@ -2868,6 +2917,29 @@ def _advance_saved(req: Dict[str, Any], chat: Dict[str, Any], step_id: str, user
     return _chat_payload(req, presented)
 
 
+def _identity_write_stores():
+    """The same customer store the other Phin chats write identity through.
+
+    In database mode ``CUSTOMERS`` is a ``DatabaseDict``, not a ``dict``.
+    Treating that as a missing vault stopped "Record my identity" after the
+    code had already been verified. A form body is not a store.
+    """
+    portal = _portal()
+    customers = getattr(portal, "CUSTOMERS", None) if portal else None
+    if customers is None or not hasattr(customers, "__getitem__") or not hasattr(customers, "__setitem__"):
+        raise RewardError("Identity vault is unavailable", status=503, code="identity_vault_unavailable")
+    mirrors = []
+    registered = getattr(portal, "REGISTERED_CUSTOMERS", None) if portal else None
+    if isinstance(registered, dict) and registered is not customers:
+        mirrors.append(registered)
+    return (
+        customers,
+        tuple(mirrors),
+        getattr(portal, "audit", None) if portal else None,
+        getattr(portal, "platform_event_ledger", None) if portal else None,
+    )
+
+
 def _advance_identity(token: str, value: Any) -> Dict[str, Any]:
     action = ""
     provided: Dict[str, Any] = {}
@@ -2922,14 +2994,12 @@ def _advance_identity(token: str, value: Any) -> Dict[str, Any]:
                     code="otp_required",
                 )
         try:
-            from services.customer_identity_service import IdentityError, set_identity
-            portal = _portal()
-            customers = getattr(portal, "CUSTOMERS", None) if portal else None
-            if not isinstance(customers, dict):
-                raise RewardError("Identity vault is unavailable", status=503, code="identity_vault_unavailable")
+            from services.customer_identity_service import set_identity
+            customers, mirrors, audit, ledger = _identity_write_stores()
             set_identity(
                 customers, customer_id, national_id, nationality,
                 source="chat", actor="professional_inquiry",
+                mirrors=mirrors, audit=audit, ledger=ledger,
             )
         except RewardError:
             raise
