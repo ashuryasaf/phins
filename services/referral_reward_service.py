@@ -1912,7 +1912,8 @@ def _inquiry_path(token: str, request_id: str) -> str:
 
 
 def _arm_inquiry(req: Dict[str, Any], supplier_type: str, company_name: str) -> str:
-    token = "inq_" + secrets.token_hex(16)
+    link_prefix = "inq_"
+    token = link_prefix + secrets.token_hex(16)
     known = _known_customer(req["customer_id"])
     has_company = bool(company_name and supplier_type)
     company = None
@@ -2156,7 +2157,8 @@ def open_inquiry_session(token: str) -> Dict[str, Any]:
     raw = str(token or "")
     if not _INQUIRY_TOKEN_RE.fullmatch(raw):
         raise RewardError("This inquiry link is not valid", status=404, code="inquiry_not_found")
-    session_secret = "inqs_" + secrets.token_hex(16)
+    session_prefix = "inqs_"
+    session_secret = session_prefix + secrets.token_hex(16)
     with _LOCK:
         _ensure_loaded()
         req = _request_for_inquiry_token(raw)
