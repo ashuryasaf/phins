@@ -756,6 +756,7 @@ html[dir="rtl"] .confidential { letter-spacing: 0; }
   I18N_HE["ser.phins"] = "הכנסות נטו פיינס";
   I18N_HE["ser.ebitda"] = "EBITDA";
   I18N_HE["tbl.total"] = "סה״כ";
+  I18N_HE["pnl.h.line"] = "סעיף";
   I18N_HE["pnl.policies"] = "פוליסות פעילות (סוף שנה)";
   I18N_HE["pnl.gwp"] = "GWP (מורווח)";
   I18N_HE["pnl.net"] = "הכנסות נטו לפיינס (25%)";
@@ -889,10 +890,10 @@ html[dir="rtl"] .confidential { letter-spacing: 0; }
   function renderPnl() {
     var years = shownYears();
     var n = years.length;
+    I18N_HE["pnl.h.line"] = "סעיף";
     var thead = "<tr><th>" + tr("Line item", "pnl.h.line") + "</th>" +
       years.map(function (y) { return '<th class="num">' + y + "</th>"; }).join("") + "</tr>";
     $("deck-pnl-table").querySelector("thead").innerHTML = thead;
-    I18N_HE["pnl.h.line"] = "סעיף";
 
     function cells(vals, strong, money) {
       return vals.map(function (v) {
