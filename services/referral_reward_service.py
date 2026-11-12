@@ -3581,29 +3581,34 @@ def _usable_agent_id(req: Dict[str, Any]) -> str:
     return agent_id if isinstance(agent, dict) else ""
 
 
-def _drop_unreachable_agent(req: Dict[str, Any], dangling: str) -> None:
-    """Remove an agent row this request can no longer name."""
-    from services.agent_ecosystem_service import discard_agent, get_agent_by_username
-    kept = {
-        str(item.get("agent_id") or "")
+def _agent_still_referenced(customer_id: str, agent_id: str) -> bool:
+    """A real grant or the customer pointer still names this agent.
+
+    The customer master is only read. Decline does not clear ``agent_id``.
+    """
+    if any(
+        isinstance(item, dict)
+        and item.get("status") == "approved"
+        and str(item.get("agent_id") or "") == agent_id
         for item in REQUESTS.values()
-        if isinstance(item, dict) and item.get("agent_id")
-    }
-    candidates = []
-    if dangling and dangling not in kept:
-        candidates.append(dangling)
-    rec = _customer_record(str(req.get("customer_id") or "")) or {}
-    username = str(
-        req.get("login_username") or rec.get("email") or req.get("customer_id") or ""
-    )
-    mapped = get_agent_by_username(username) if username else None
-    mapped_id = str((mapped or {}).get("id") or "")
-    if mapped_id and mapped_id not in kept:
-        candidates.append(mapped_id)
-    for aid in dict.fromkeys(candidates):
-        if aid in kept:
-            continue
-        discard_agent(aid)
+    ):
+        return True
+    rec = _customer_record(customer_id) or {}
+    return str(rec.get("agent_id") or "") == agent_id
+
+
+def _drop_unreachable_agent(customer_id: str, dangling: str) -> None:
+    """Remove the agent id this request just detached, when nothing live names it.
+
+    The id is the only candidate. Login, email, and customer id are not
+    searched. An agent the customer record still points at stays, so the
+    next approval reuses it.
+    """
+    aid = str(dangling or "").strip()
+    if not aid or _agent_still_referenced(customer_id, aid):
+        return
+    from services.agent_ecosystem_service import discard_agent
+    discard_agent(aid)
 
 
 def _detach_withdrawn_supplier(supplier: Dict[str, Any]) -> None:
@@ -3611,10 +3616,10 @@ def _detach_withdrawn_supplier(supplier: Dict[str, Any]) -> None:
 
     A granted agent keeps ``agent_id`` so role-switch still works, and stops
     pointing ``supplier_id`` at this row. An approved stamp with no usable
-    agent goes back to inquiry, and an agent row that stamp can no longer
-    reach is removed. Each request this changes is stored the same way as
-    the declined request. The direct review route and both desks reach this
-    through ``review_professional``.
+    agent goes back to inquiry. Only that detached agent id is removed, and
+    only when no grant and no customer pointer still name it. Each request this changes
+    is stored the same way as the declined request. The direct review route
+    and both desks reach this through ``review_professional``.
     """
     sid = str(supplier.get("id") or "")
     supplier.pop("agent_id", None)
@@ -3636,7 +3641,7 @@ def _detach_withdrawn_supplier(supplier: Dict[str, Any]) -> None:
         other.pop("agent_id", None)
         other["status"] = "inquiry"
         _persist_request(other)
-        _drop_unreachable_agent(other, dangling)
+        _drop_unreachable_agent(str(other.get("customer_id") or customer_id), dangling)
 
 
 def _withdraw_staged_supplier(supplier: Dict[str, Any], request_id: str) -> None:

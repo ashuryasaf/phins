@@ -2208,8 +2208,8 @@ def test_approved_agent_without_a_grant_can_be_filed_again(monkeypatch):
     assert written[-1]["agent_id"] is None
     assert written[-1]["supplier_id"] is None
     from services.agent_ecosystem_service import AGENTS, get_agent
-    assert get_agent(agent_id) is None
-    assert agent_id not in AGENTS
+    assert get_agent(agent_id)["id"] == agent_id
+    assert agent_id in AGENTS
     assert portal.CUSTOMERS[customer_id] == before_customer
     assert "national_id" not in portal.CUSTOMERS[customer_id]
     assert "national_id" not in supplier
@@ -2217,6 +2217,142 @@ def test_approved_agent_without_a_grant_can_be_filed_again(monkeypatch):
     assert status == 200, filed
     assert filed["status"] == "inquiry"
     assert filed.get("code") != "already_approved"
+
+
+def test_outside_agent_with_the_same_login_survives_decline():
+    """A decline deletes only the detached id, not every agent on that login."""
+    from services.agent_ecosystem_service import AGENTS, create_agent, get_agent
+    email = "outside-agent@example.com"
+    customer_id = _register("Outside Agent", email)
+    session, _role = _login(email, "secure123456")
+    outside = create_agent(
+        username=email, display_name="Outside Agent", email=email, created_by="desk",
+    )
+    outside_id = outside["id"]
+    supplier_request = _file_professional_chat(session, "supplier", name="Outside Agent", company={
+        "company_name": "Outside Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="Outside Agent", company={
+        "company_name": "Outside Clinic",
+        "supplier_type": "clinic",
+    })
+    supplier_id = rewards.REQUESTS[supplier_request]["supplier_id"]
+    rewards.REQUESTS[agent_request]["status"] = "approved"
+    rewards.REQUESTS[agent_request]["supplier_id"] = supplier_id
+    rewards.REQUESTS[agent_request].pop("agent_id", None)
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    admin, _ = _login("admin", "admin123")
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    assert get_agent(outside_id)["user_username"] == email
+    assert outside_id in AGENTS
+    request = rewards.REQUESTS[agent_request]
+    assert request["status"] == "inquiry"
+    assert request.get("agent_id") != outside_id
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+    assert "supplier_approval" not in {
+        entry.get("entry_type")
+        for entry in portal.supply_chain_service.ledger.values()
+        if isinstance(entry, dict) and entry.get("supplier_id") == supplier_id
+    }
+
+
+def test_later_approval_reuses_the_agent_the_customer_still_names(monkeypatch):
+    """Decline must not drop an agent the customer record still names."""
+    from services import agent_ecosystem_service as agents
+    email = "reuse-agent@example.com"
+    customer_id = _register("Reuse Agent", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="Reuse Agent", company={
+        "company_name": "Reuse Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="Reuse Agent", company={
+        "company_name": "Reuse Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    agent_id = opened["request"]["agent_id"]
+    supplier_id = opened["request"]["supplier_id"]
+    assert portal.CUSTOMERS[customer_id]["agent_id"] == agent_id
+    username = agents.get_agent(agent_id)["user_username"]
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    real_get = agents.get_agent
+    monkeypatch.setattr(agents, "get_agent", lambda _agent_id: None)
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    monkeypatch.setattr(agents, "get_agent", real_get)
+    assert status == 200, declined
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    assert rewards.REQUESTS[agent_request]["status"] == "inquiry"
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert agents.get_agent(agent_id)["id"] == agent_id
+    assert agents.AGENT_BY_USER.get(username) == agent_id
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+    assert "supplier_approval" not in {
+        entry.get("entry_type")
+        for entry in portal.supply_chain_service.ledger.values()
+        if isinstance(entry, dict) and entry.get("supplier_id") == supplier_id
+    }
+    again_supplier = _file_professional_chat(session, "supplier", name="Reuse Agent", company={
+        "company_name": "Reuse Clinic",
+        "supplier_type": "clinic",
+    })
+    again_agent = _file_professional_chat(session, "agent", name="Reuse Agent", company={
+        "company_name": "Reuse Clinic",
+        "supplier_type": "clinic",
+    })
+    assert again_supplier == supplier_request
+    assert again_agent == agent_request
+    reviewed, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, reviewed
+    assert reviewed["request"]["agent_id"] == agent_id
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier.get("pipeline_detail_conflict") is not True
+    assert supplier.get("agent_id") == agent_id
+    assert portal.CUSTOMERS[customer_id]["agent_id"] == agent_id
+    assert agents.AGENT_BY_USER.get(username) == agent_id
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+
+
+def test_discard_agent_keeps_memory_when_the_database_delete_fails(monkeypatch):
+    from services import agent_ecosystem_service as agents
+    created = agents.create_agent(
+        username="db-fail-agent@example.com",
+        display_name="DB Fail",
+        email="db-fail-agent@example.com",
+        created_by="desk",
+    )
+    aid = created["id"]
+
+    class Broken:
+        def __enter__(self):
+            raise RuntimeError("db delete failed")
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(agents, "_db_enabled", lambda: True)
+    monkeypatch.setattr(agents, "_db", lambda: Broken())
+    with pytest.raises(RuntimeError, match="db delete failed"):
+        agents.discard_agent(aid)
+    assert agents.get_agent(aid)["id"] == aid
+    assert agents.AGENT_BY_USER.get("db-fail-agent@example.com") == aid
 
 
 def test_detached_sibling_request_is_stored(monkeypatch):

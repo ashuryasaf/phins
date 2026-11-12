@@ -601,32 +601,48 @@ def get_agent(agent_id: str) -> Optional[Dict[str, Any]]:
         return AGENTS.get(agent_id)
 
 
-def discard_agent(agent_id: str) -> bool:
-    """Remove an agent row no request can still reach.
+def _delete_durable_agent(aid: str) -> None:
+    """Delete one ``agents`` row. A missing row is fine. A failed delete raises.
 
-    The in-memory maps are cleared first. A durable row is deleted when the
-    database is on, so a later hydrate does not restore an orphan.
+    The repository helper swallows database errors and reports them as
+    "not found". This path does not, so the caller can leave memory unchanged.
+    """
+    with _db() as db:
+        repo = db.agents
+        model = repo.model_class
+        row = repo.session.query(model).filter(model.id == aid).one_or_none()
+        if row is None:
+            return
+        repo.session.delete(row)
+
+
+def _forget_agent_memory(aid: str) -> None:
+    agent = AGENTS.pop(aid, None)
+    if isinstance(agent, dict):
+        user = str(agent.get("user_username") or "")
+        if AGENT_BY_USER.get(user) == aid:
+            AGENT_BY_USER.pop(user, None)
+        return
+    for user, mapped in list(AGENT_BY_USER.items()):
+        if mapped == aid:
+            AGENT_BY_USER.pop(user, None)
+
+
+def discard_agent(agent_id: str) -> bool:
+    """Remove one agent id.
+
+    The durable row is deleted first. Memory is cleared only after that
+    delete succeeds. A failed delete leaves the in-memory row in place and
+    raises, so the two sides are not left disagreeing.
     """
     aid = str(agent_id or "").strip()
     if not aid:
         return False
     with _LOCK:
         _hydrate_from_db(force=True)
-        agent = AGENTS.pop(aid, None)
-        if isinstance(agent, dict):
-            user = str(agent.get("user_username") or "")
-            if AGENT_BY_USER.get(user) == aid:
-                AGENT_BY_USER.pop(user, None)
-        else:
-            for user, mapped in list(AGENT_BY_USER.items()):
-                if mapped == aid:
-                    AGENT_BY_USER.pop(user, None)
         if _db_enabled():
-            try:
-                with _db() as db:
-                    db.agents.delete(aid)
-            except Exception:
-                return isinstance(agent, dict)
+            _delete_durable_agent(aid)
+        _forget_agent_memory(aid)
         return True
 
 
