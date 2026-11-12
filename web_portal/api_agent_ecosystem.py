@@ -153,7 +153,7 @@ def handle_get(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             items = svc.list_invitations(status=status)
             if not status or status == "pending_approval":
                 from services.referral_reward_service import pending_agent_desk_rows
-                known = {item.get("code") for item in items}
+                known = {item.get("code") for item in svc.list_invitations()}
                 items.extend(row for row in pending_agent_desk_rows() if row.get("code") not in known)
             return 200, {"items": items}
         if path == "/api/admin/agents/commissions":
@@ -164,9 +164,11 @@ def handle_get(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             _recompute(data_sources)
             overview = svc.community_overview()
             from services.referral_reward_service import pending_agent_desk_rows
+            known = {item.get("code") for item in svc.list_invitations()}
+            extra = sum(1 for row in pending_agent_desk_rows() if row.get("code") not in known)
             overview["invitations_pending_approval"] = int(
                 overview.get("invitations_pending_approval") or 0
-            ) + len(pending_agent_desk_rows())
+            ) + extra
             return 200, overview
         if path == "/api/admin/agents/affiliations":
             agent_id = _first(qs, "agent_id")
@@ -354,7 +356,7 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             from services.referral_reward_service import RewardError, continue_agent_application
             try:
                 reviewed = continue_agent_application(
-                    code, "approve", admin, body.get("commission_rate"), body.get("note") or "",
+                    code, "approve", admin, body.get("note") or "",
                 )
             except RewardError as exc:
                 return exc.status, exc.to_dict()
@@ -377,7 +379,7 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             from services.referral_reward_service import RewardError, continue_agent_application
             try:
                 reviewed = continue_agent_application(
-                    code, "reject", admin, None, body.get("reason") or "",
+                    code, "reject", admin, body.get("reason") or "",
                 )
             except RewardError as exc:
                 return exc.status, exc.to_dict()

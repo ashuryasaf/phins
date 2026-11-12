@@ -3700,11 +3700,13 @@ def pending_supplier_desk_rows(visible_supplier_ids: Iterable[str] = ()) -> List
 
 
 def continue_agent_application(code: str, decision: str, admin: str,
-                               commission_rate: Any = None, note: str = "") -> Optional[Dict[str, Any]]:
+                               note: str = "") -> Optional[Dict[str, Any]]:
     """Approve or reject the agent request whose id is the desk code.
 
     A normal agent-invitation code is not a professional request and returns
-    None so that invitation stays on its own path.
+    None so that invitation stays on its own path. The agent's default rate
+    stays the program default. The invitation body's commission rate is not
+    copied onto the agent.
     """
     key = str(code or "").strip()
     with _LOCK:
@@ -3713,23 +3715,56 @@ def continue_agent_application(code: str, decision: str, admin: str,
         if req is None or req.get("requested_role") != "agent":
             return None
         request_id = req.get("id")
-    return review_professional(request_id, decision, admin, note, default_rate=commission_rate)
+    return review_professional(request_id, decision, admin, note)
+
+
+def _pending_request_on_supplier(supplier: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Pending professional request staged on this supplier.
+
+    Sharing a customer id is not enough. The request must name this supplier,
+    or this supplier must name that request. The supplier role wins when both
+    roles were staged here, so the agents desk still reviews the agent request.
+    """
+    sid = str(supplier.get("id") or "")
+    if not sid:
+        return None
+    linked = {str(item) for item in (supplier.get("professional_request_ids") or []) if item}
+    primary = str(supplier.get("professional_request_id") or "")
+    if primary:
+        linked.add(primary)
+    customer_id = str(supplier.get("customer_id") or "")
+    chosen = None
+    for role in ("supplier", "agent"):
+        req = _pending_role_request(customer_id, role)
+        if not req:
+            continue
+        request_id = str(req.get("id") or "")
+        staged_here = request_id in linked or str(req.get("supplier_id") or "") == sid
+        if not staged_here:
+            continue
+        if role == "supplier":
+            return req
+        chosen = chosen or req
+    return chosen
 
 
 def continue_supplier_application(supplier_or_request_id: str, decision: str, admin: str,
                                   note: str = "") -> Optional[Dict[str, Any]]:
-    """Continue the professional request behind a supplier-desk action.
+    """Continue the professional request staged on this supplier.
 
-    The supplier role wins when both roles are waiting, so the agents desk
-    still reviews the agent request. Returns None when this supplier was not
-    opened from a professional application.
+    A request id continues that request (the closed-supplier row uses the
+    request id). Any other supplier stays on approve_supplier / reject_supplier.
     """
     key = str(supplier_or_request_id or "").strip()
     with _LOCK:
         _ensure_loaded()
         target_id = ""
         direct = REQUESTS.get(key)
-        if direct and direct.get("status") == "pending":
+        if (
+            direct
+            and direct.get("status") == "pending"
+            and direct.get("requested_role") in ("supplier", "agent")
+        ):
             target_id = str(direct.get("id") or "")
         else:
             supplier = None
@@ -3739,8 +3774,7 @@ def continue_supplier_application(supplier_or_request_id: str, decision: str, ad
                 supplier = None
             if not isinstance(supplier, dict):
                 return None
-            customer_id = str(supplier.get("customer_id") or "")
-            target = _pending_role_request(customer_id, "supplier") or _pending_role_request(customer_id, "agent")
+            target = _pending_request_on_supplier(supplier)
             if target is None:
                 return None
             target_id = str(target.get("id") or "")

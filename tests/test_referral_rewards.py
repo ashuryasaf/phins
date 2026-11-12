@@ -1879,9 +1879,13 @@ def test_filed_chat_is_pending_on_the_supplier_and_agent_desks():
     assert agent_row["status"] == "pending_approval"
     assert agent_row["professional_request_id"] == agent_request
     assert "123456782" not in json.dumps(invitations)
+    pending_codes = [
+        item.get("code") for item in invitations["items"] if item.get("status") == "pending_approval"
+    ]
+    assert len(pending_codes) == len(set(pending_codes))
     overview, status = _get("/api/admin/agents/overview", token=admin)
     assert status == 200, overview
-    assert overview["invitations_pending_approval"] >= 1
+    assert overview["invitations_pending_approval"] == len(pending_codes)
 
     approved, status = _post(
         f"/api/admin/suppliers/{supplier_row['id']}/approve",
@@ -1903,7 +1907,7 @@ def test_filed_chat_is_pending_on_the_supplier_and_agent_desks():
     assert any(item.get("code") == agent_request for item in still["items"])
     agent_approved, status = _post("/api/admin/agent-invitations/approve", {
         "code": agent_request,
-        "commission_rate": 10,
+        "commission_rate": 25,
     }, token=admin)
     assert status == 200, agent_approved
     assert agent_approved["request"]["id"] == agent_request
@@ -1951,6 +1955,104 @@ def test_filed_chat_is_pending_on_the_supplier_and_agent_desks():
     assert len(statements) == 1
     assert statements[0]["amount"] == 0
     portal.SUPPLIER_ORDERS.pop("ORD-DESK-FEE", None)
+
+
+def test_unrelated_supplier_desk_action_leaves_the_filed_request_pending():
+    """A supplier that only shares the customer is not the staged application."""
+    email = "unrelated-desk@example.com"
+    customer_id = _register("Unrelated Desk", email)
+    session, _role = _login(email, "secure123456")
+    request_id = _file_professional_chat(session, "supplier", name="Unrelated Desk", company={
+        "company_name": "Unrelated Clinic",
+        "supplier_type": "clinic",
+    })
+    staged = next(
+        item for item in portal.supply_chain_service.suppliers.values()
+        if request_id in (item.get("professional_request_ids") or [])
+    )
+    service = portal.supply_chain_service
+    service.suppliers["SUP-UNRELATED-APPROVE"] = {
+        "id": "SUP-UNRELATED-APPROVE",
+        "company_name": "Separate Approve",
+        "contact_email": "separate-approve@example.com",
+        "contact_name": "Separate",
+        "supplier_type": "clinic",
+        "status": "pending",
+        "customer_id": customer_id,
+        "portal_active": False,
+        "application_date": "2026-01-01T00:00:00",
+    }
+    service.suppliers["SUP-UNRELATED-REJECT"] = {
+        "id": "SUP-UNRELATED-REJECT",
+        "company_name": "Separate Reject",
+        "contact_email": "separate-reject@example.com",
+        "contact_name": "Separate",
+        "supplier_type": "clinic",
+        "status": "pending",
+        "customer_id": customer_id,
+        "portal_active": False,
+        "application_date": "2026-01-02T00:00:00",
+    }
+    admin, _ = _login("admin", "admin123")
+    approved, status = _post("/api/admin/suppliers/SUP-UNRELATED-APPROVE/approve", {
+        "notes": "Classic supplier",
+    }, token=admin)
+    assert status == 200, approved
+    assert "request" not in approved
+    assert service.suppliers["SUP-UNRELATED-APPROVE"]["status"] == "approved"
+    assert rewards.REQUESTS[request_id]["status"] == "pending"
+    assert staged["status"] == "pending"
+    assert "supplier_id" not in portal.CUSTOMERS[customer_id]
+    rejected, status = _post("/api/admin/suppliers/SUP-UNRELATED-REJECT/reject", {
+        "reason": "Not this application",
+    }, token=admin)
+    assert status == 200, rejected
+    assert "request" not in rejected
+    assert service.suppliers["SUP-UNRELATED-REJECT"]["status"] == "rejected"
+    assert rewards.REQUESTS[request_id]["status"] == "pending"
+    assert staged["status"] == "pending"
+
+
+def test_agent_overview_counts_a_professional_request_once():
+    email = "overview-once@example.com"
+    _register("Overview Once", email)
+    session, _role = _login(email, "secure123456")
+    request_id = _file_professional_chat(session, "agent", name="Overview Once")
+    admin, _ = _login("admin", "admin123")
+    before_items, status = _get("/api/admin/agent-invitations", token=admin)
+    assert status == 200, before_items
+    before_codes = [item.get("code") for item in before_items["items"]]
+    assert before_codes.count(request_id) == 1
+    before, status = _get("/api/admin/agents/overview", token=admin)
+    assert status == 200, before
+    pending_before = [
+        item.get("code") for item in before_items["items"] if item.get("status") == "pending_approval"
+    ]
+    assert before["invitations_pending_approval"] == len(pending_before)
+
+    from services.agent_ecosystem_service import INVITATIONS
+    INVITATIONS[request_id] = {
+        "code": request_id,
+        "agent_id": "AGT-OVERVIEW",
+        "invitee_type": "agent",
+        "status": "pending_approval",
+        "proposed_rate": 0.1,
+        "commission_rate": None,
+        "created_at": "2026-01-01T00:00:00",
+    }
+    try:
+        after_items, status = _get("/api/admin/agent-invitations", token=admin)
+        assert status == 200, after_items
+        assert [item.get("code") for item in after_items["items"]].count(request_id) == 1
+        after, status = _get("/api/admin/agents/overview", token=admin)
+        assert status == 200, after
+        pending_after = [
+            item.get("code") for item in after_items["items"] if item.get("status") == "pending_approval"
+        ]
+        assert after["invitations_pending_approval"] == len(set(pending_after))
+        assert after["invitations_pending_approval"] == before["invitations_pending_approval"]
+    finally:
+        INVITATIONS.pop(request_id, None)
 
 
 def test_filed_inquiry_link_returns_status_only_and_expires_in_every_status():
