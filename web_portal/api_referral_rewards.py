@@ -46,6 +46,23 @@ def _portal():
     return sys.modules.get("web_portal.server") or sys.modules.get("server")
 
 
+def _persist_linked_supplier(supplier_id: Any) -> None:
+    """Write the supplier this review just changed, the same way the desks do."""
+    sid = str(supplier_id or "")
+    if not sid:
+        return
+    portal = _portal()
+    if portal is None:
+        return
+    persist = getattr(portal, "_persist_supplier", None)
+    suppliers = getattr(portal, "SUPPLIERS", None)
+    if not callable(persist) or not hasattr(suppliers, "get"):
+        return
+    row = suppliers.get(sid)
+    if isinstance(row, dict):
+        persist(sid, row)
+
+
 def _role(session: Optional[Dict[str, Any]]) -> str:
     return str((session or {}).get("role") or "").lower()
 
@@ -467,11 +484,14 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]], body: Dict[str, 
         request_id = str(body.get("id") or body.get("request_id") or "").strip()
         if not request_id:
             return 400, {"error": "id is required"}
-        return _call(
+        status, payload = _call(
             rewards.review_professional,
             request_id,
             str(body.get("decision") or ""),
             str(session.get("username") or "admin"),
             str(body.get("note") or ""),
         )
+        if status == 200:
+            _persist_linked_supplier(payload.get("supplier_id"))
+        return status, payload
     return None

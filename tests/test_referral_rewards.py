@@ -2185,6 +2185,68 @@ def test_staging_failure_leaves_the_inquiry_resubmittable(monkeypatch):
     ]["status"] == "pending"
 
 
+def test_professional_review_route_persists_approve_and_decline(monkeypatch):
+    """The review route writes the supplier the desks already write."""
+    saved = []
+
+    def remember(sid, data):
+        saved.append((sid, data.get("status")))
+
+    monkeypatch.setattr(portal, "_persist_supplier", remember)
+    admin, _ = _login("admin", "admin123")
+
+    decline_email = "review-decline@example.com"
+    decline_customer = _register("Review Decline", decline_email)
+    decline_session, _role = _login(decline_email, "secure123456")
+    decline_request = _file_professional_chat(
+        decline_session, "supplier", name="Review Decline",
+        company={"company_name": "Review Clinic", "supplier_type": "clinic"},
+    )
+    decline_supplier = rewards.REQUESTS[decline_request]["supplier_id"]
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": decline_request, "decision": "reject", "note": "Not now",
+    }, token=admin)
+    assert status == 200, declined
+    assert saved == [(decline_supplier, "withdrawn")]
+    assert portal.supply_chain_service.suppliers[decline_supplier]["status"] == "withdrawn"
+    assert "supplier_id" not in portal.CUSTOMERS[decline_customer]
+    assert "national_id" not in portal.CUSTOMERS[decline_customer]
+
+    saved.clear()
+    approve_email = "review-approve@example.com"
+    approve_customer = _register("Review Approve", approve_email)
+    approve_session, _role = _login(approve_email, "secure123456")
+    approve_request = _file_professional_chat(
+        approve_session, "supplier", name="Review Approve",
+        company={"company_name": "Approve Clinic", "supplier_type": "clinic"},
+    )
+    approve_supplier = rewards.REQUESTS[approve_request]["supplier_id"]
+    approved, status = _post("/api/admin/professional-requests/review", {
+        "id": approve_request, "decision": "approve",
+    }, token=admin)
+    assert status == 200, approved
+    assert saved == [(approve_supplier, "approved")]
+    assert portal.CUSTOMERS[approve_customer]["supplier_id"] == approve_supplier
+    assert portal.CUSTOMERS[approve_customer]["name"] == "Review Approve"
+    assert "national_id" not in portal.CUSTOMERS[approve_customer]
+
+    saved.clear()
+    closed = portal.supply_chain_service.suppliers[approve_supplier]
+    closed["status"] = "suspended"
+    closed["portal_active"] = False
+    agent_email = approve_email
+    agent_request_filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=approve_session)
+    assert status == 200, agent_request_filed
+    _finish_inquiry(agent_request_filed, name="Review Approve")
+    refused, status = _post("/api/admin/professional-requests/review", {
+        "id": agent_request_filed["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 409, refused
+    assert refused["code"] == "supplier_closed"
+    assert saved == []
+    assert portal.supply_chain_service.suppliers[approve_supplier]["status"] == "suspended"
+
+
 def test_agent_desk_persists_the_staged_supplier(monkeypatch):
     email = "persist-agent@example.com"
     _register("Persist Agent", email)
