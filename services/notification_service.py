@@ -3414,6 +3414,8 @@ If you did not request this code, please ignore this email.
                 'body': 'Your PHINS verification code is {{ code }}. It expires in {{ expiry_minutes }} min. Never share this code.'
             },
             # Same sender as otp_email. The body is the disclosed application chat.
+            # html_body is required: a text-only message is what mail clients drop,
+            # and send() keeps a template's html only when this field is present.
             'professional_inquiry_chat': {
                 'subject': 'Finish your PHINS {{ role }} application',
                 'body': '''Hello {{ name }},
@@ -3424,6 +3426,12 @@ Open this chat to confirm your details, identity, a company only if you add one,
 {{ chat_url }}
 
 - PHINS''',
+                'html_body': '''<p>Hello {{ name }},</p>
+<p>Phin has your professional application in one disclosed chat.
+Open this chat to confirm your details, identity, a company only if you add one, then optional documents, and a review. An agent is a role on one supplier record.</p>
+<p><a href="{{ chat_url }}">Open the application chat</a></p>
+<p>{{ chat_url }}</p>
+<p>- PHINS</p>''',
             },
             'password_reset': {
                 'subject': 'PHINS Password Reset Request',
@@ -4234,6 +4242,111 @@ def get_notification_service(use_mock: Optional[bool] = None) -> NotificationSer
             use_mock=resolved_use_mock
         )
     return _notification_service_instances[resolved_use_mock]
+
+
+def _fallback_email_provider_types(selected: str) -> List[str]:
+    """Configured email providers other than the one the first attempt already used.
+
+    Same order as the identity-code sender: API providers that have credentials,
+    then SMTP when it was not the first attempt.
+    """
+    found: List[str] = []
+
+    def add(name: str) -> None:
+        if name and name != selected and name not in found:
+            found.append(name)
+
+    if _env_or_default('SENDGRID_API_KEY', NotificationConfig.SENDGRID_API_KEY):
+        add('sendgrid')
+    if (
+        _env_or_default('MAILGUN_API_KEY', NotificationConfig.MAILGUN_API_KEY)
+        and _env_or_default('MAILGUN_DOMAIN', NotificationConfig.MAILGUN_DOMAIN)
+    ):
+        add('mailgun')
+    if _env_or_default('RESEND_API_KEY', NotificationConfig.RESEND_API_KEY):
+        add('resend')
+    active_key = (
+        _env_or_default('ACTIVE_NOTIFICATIONS_API_KEY', NotificationConfig.ACTIVE_NOTIFICATIONS_API_KEY)
+        or _env_or_default('PINGRAM_API_KEY')
+        or _env_or_default('NOTIFICATIONAPI_API_KEY')
+    )
+    if active_key:
+        add('active_notifications')
+    if (
+        _env_or_default('INFOBIP_API_KEY', NotificationConfig.INFOBIP_API_KEY)
+        and _env_or_default('INFOBIP_BASE_URL', NotificationConfig.INFOBIP_BASE_URL)
+    ):
+        add('infobip')
+    if _aws_identity_configured():
+        add('ses')
+    if selected != 'smtp':
+        add('smtp')
+    return found
+
+
+def deliver_notification(request: NotificationRequest) -> NotificationResult:
+    """Hand one notification to NotificationService, then to a configured fallback.
+
+    The identity-code email already does this in ``_send_otp_email``. The
+    professional-inquiry email was stopping after a single call to the cached
+    service. That call returns failure when the cached provider is a no-op or
+    the first provider rejects the message, and the caller was dropping the
+    error, so the customer received nothing.
+
+    Test mode uses the cached service so the shared mock inbox still records
+    the message. A live send builds a fresh service, because a service cached
+    before credentials were visible keeps the provider it was built with.
+    """
+    use_mock = should_use_mock_notifications()
+    attempts: List[Optional[str]] = [None]
+    if not use_mock and request.channel == NotificationChannel.EMAIL:
+        attempts.extend(_fallback_email_provider_types(_select_email_provider_type()))
+
+    first_failure: Optional[NotificationResult] = None
+    seen = set()
+    for provider_type in attempts:
+        key = provider_type or 'auto'
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if use_mock or provider_type is None:
+                service = (
+                    get_notification_service()
+                    if use_mock
+                    else create_notification_service(use_mock=False)
+                )
+            else:
+                service = create_notification_service(
+                    use_mock=False,
+                    email_provider=_build_email_provider(provider_type),
+                )
+            result = service.send(request)
+        except Exception as exc:
+            result = NotificationResult(
+                success=False,
+                notification_id='',
+                status=NotificationStatus.FAILED,
+                error_code='SEND_EXCEPTION',
+                error_message=str(exc)[:300],
+            )
+        if result.success:
+            if provider_type:
+                logger.info(
+                    "Notification delivered via fallback provider %s", provider_type
+                )
+            return result
+        if first_failure is None:
+            first_failure = result
+    if first_failure is not None:
+        return first_failure
+    return NotificationResult(
+        success=False,
+        notification_id='',
+        status=NotificationStatus.FAILED,
+        error_code='SEND_FAILED',
+        error_message='Notification service did not accept the message',
+    )
 
 
 def reset_notification_service():

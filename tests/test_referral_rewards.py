@@ -1206,6 +1206,7 @@ def test_inquiry_email_and_identity_code_use_the_chat_notification_service(monke
         "services.customer_agent.communication.CustomerCommunicationAgent.send_customer_outreach",
         _outreach,
     )
+    monkeypatch.setenv("BASE_URL", "https://portal.example.test")
     email = "inquiry-notify@example.com"
     _register("Inquiry Notify", email)
     token, _role = _login(email, "secure123456")
@@ -1218,7 +1219,10 @@ def test_inquiry_email_and_identity_code_use_the_chat_notification_service(monke
     sent = [item for item in getattr(provider, "sent_emails", []) if item.get("to") == email]
     assert sent, "inquiry email was not sent by NotificationService"
     body = sent[-1]["body"]
-    assert "/professional-inquiry-chat.html" in body
+    absolute = "https://portal.example.test/professional-inquiry-chat.html"
+    assert absolute in body
+    assert absolute in (sent[-1].get("html_body") or "")
+    assert filed["inquiry_path"].startswith(absolute)
     assert "one disclosed chat" in body
     assert "Open your PHINS portal" not in (sent[-1].get("body") or "")
     assert "Open your PHINS portal" not in (sent[-1].get("html_body") or "")
@@ -1249,6 +1253,99 @@ def test_inquiry_email_and_identity_code_use_the_chat_notification_service(monke
     stored = json.dumps(again["chat"]["messages"])
     assert "6-digit code" in stored
     assert otp["demo_otp_code"] not in stored
+
+
+def test_inquiry_email_is_absolute_when_only_webhook_base_url_is_set(monkeypatch):
+    """WEBHOOK_BASE_URL is the second origin. A mail client can open that link."""
+    monkeypatch.delenv("BASE_URL", raising=False)
+    monkeypatch.setenv("WEBHOOK_BASE_URL", "https://hooks.example.test")
+    email = "inquiry-webhook-origin@example.com"
+    _register("Webhook Origin", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    assert status == 200, filed
+    assert filed["email_sent"] is True
+    from services.notification_service import get_notification_service
+    provider = get_notification_service()._email_provider
+    sent = [item for item in getattr(provider, "sent_emails", []) if item.get("to") == email]
+    assert sent
+    absolute = "https://hooks.example.test/professional-inquiry-chat.html"
+    assert absolute in sent[-1]["body"]
+    assert filed["inquiry_path"].startswith(absolute)
+    link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
+    prefill, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, prefill
+    assert "email on your customer record" in json.dumps(prefill["chat"]["messages"])
+    assert link not in json.dumps(prefill["chat"]["messages"])
+
+
+def test_inquiry_email_retries_when_the_first_provider_fails(monkeypatch):
+    """A failed first NotificationService send must not be the end of the delivery.
+
+    The identity code already builds a fresh service and tries the next
+    configured provider. The inquiry email uses that same retry.
+    """
+    monkeypatch.setenv("BASE_URL", "https://portal.example.test")
+    monkeypatch.setenv("SENDGRID_API_KEY", "sg-test-not-a-real-key")
+    email = "inquiry-fallback@example.com"
+    _register("Fallback", email)
+    token, _role = _login(email, "secure123456")
+    monkeypatch.setattr(
+        "services.notification_service.should_use_mock_notifications",
+        lambda: False,
+    )
+    sent = []
+
+    class _Fail:
+        def send(self, to, subject, body, html_body=None, **_kwargs):
+            return False, None, "first provider rejected the message"
+
+    class _Record:
+        def send(self, to, subject, body, html_body=None, **_kwargs):
+            sent.append({"to": to, "body": body, "html_body": html_body})
+            return True, "fallback-msg", None
+
+    def _fresh(use_mock=False, email_provider=None, sms_provider=None):
+        from services.notification_service import MockSMSProvider, NotificationService
+        provider = _Fail() if email_provider is None else _Record()
+        return NotificationService(
+            email_provider=provider,
+            sms_provider=sms_provider or MockSMSProvider(),
+        )
+
+    monkeypatch.setattr("services.notification_service.create_notification_service", _fresh)
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, filed
+    assert filed["email_sent"] is True
+    assert sent, "the fallback provider was not asked to send"
+    absolute = "https://portal.example.test/professional-inquiry-chat.html"
+    assert absolute in sent[-1]["body"]
+    link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
+    assert link in sent[-1]["body"]
+    prefill, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, prefill
+    assert "email on your customer record" in json.dumps(prefill["chat"]["messages"])
+    assert link not in json.dumps(prefill["chat"]["messages"])
+
+
+def test_inquiry_email_uses_the_login_when_the_record_has_no_email(monkeypatch):
+    """A customer record without email used to return before NotificationService.send."""
+    email = "inquiry-login-mail@example.com"
+    customer_id = _register("Login Mail", email)
+    portal.CUSTOMERS[customer_id]["email"] = ""
+    token, _role = _login(email, "secure123456")
+    portal.CUSTOMERS[customer_id]["email"] = ""
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, filed
+    assert filed["email_sent"] is True
+    from services.notification_service import get_notification_service
+    provider = get_notification_service()._email_provider
+    sent = [item for item in getattr(provider, "sent_emails", []) if item.get("to") == email]
+    assert sent, "login email was not handed to NotificationService"
+    link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
+    prefill, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, prefill
+    assert "email on your customer record" in json.dumps(prefill["chat"]["messages"])
 
 
 def test_a_failed_chat_note_still_returns_the_emailed_code(monkeypatch):

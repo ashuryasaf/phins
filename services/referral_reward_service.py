@@ -41,6 +41,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
@@ -50,6 +51,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import urlencode
+
+logger = logging.getLogger("phins.referral_rewards")
 
 DESTINATIONS: Tuple[str, ...] = ("premium", "health_wallet", "savings", "cash")
 LAYERS = (1, 2, 3)
@@ -2002,16 +2005,44 @@ def public_request(req: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _send_inquiry_email(customer_id: str, role: str, path: str) -> Tuple[bool, str]:
+def _looks_like_email(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text or " " in text or text.count("@") != 1:
+        return False
+    local, _, domain = text.partition("@")
+    return bool(local and "." in domain)
+
+
+def _inquiry_recipient(customer_id: str, login_username: str = "") -> Tuple[str, str]:
+    """Address and display name for the inquiry email.
+
+    The customer record wins. The login username is used only when that record
+    has no email: it is the authenticated account, not an address from the
+    request body. Without this, a record that omitted email returned before
+    NotificationService.send and the customer received nothing.
+    """
+    rec = _customer_record(customer_id) or {}
+    email = str(rec.get("email") or "").strip()
+    if not email:
+        login = str(login_username or "").strip()
+        if _looks_like_email(login):
+            email = login
+    name = _clip_text(rec.get("name") or "PHINS Customer", 80)
+    return email, name
+
+
+def _send_inquiry_email(customer_id: str, role: str, path: str,
+                        login_username: str = "") -> Tuple[bool, str]:
     """Send the chat link through the same NotificationService the chats use for codes.
 
     ``otp_email`` and ``professional_inquiry_chat`` are templates on that one
-    service. This does not open a second mailer. The raw link stays in the
-    email only; the chat transcript does not repeat it.
+    service. Delivery uses ``deliver_notification``, the same fresh-service
+    plus configured-provider retry the identity code uses. This does not open
+    a second mailer. The raw link stays in the email only; the chat transcript
+    does not repeat it.
     """
-    rec = _customer_record(customer_id)
-    email = str((rec or {}).get("email") or "").strip()
-    if not rec or not email:
+    email, name = _inquiry_recipient(customer_id, login_username)
+    if not email:
         return False, ""
     role_label = "supplier" if str(role or "").strip().lower() == "supplier" else "agent"
     try:
@@ -2019,14 +2050,14 @@ def _send_inquiry_email(customer_id: str, role: str, path: str) -> Tuple[bool, s
             NotificationChannel,
             NotificationPriority,
             NotificationRequest,
-            get_notification_service,
+            deliver_notification,
         )
-        result = get_notification_service().send(NotificationRequest(
+        result = deliver_notification(NotificationRequest(
             channel=NotificationChannel.EMAIL,
             recipient=email,
             template_id="professional_inquiry_chat",
             template_vars={
-                "name": _clip_text(rec.get("name") or "PHINS Customer", 80),
+                "name": name,
                 "role": role_label,
                 "chat_url": path,
             },
@@ -2039,8 +2070,15 @@ def _send_inquiry_email(customer_id: str, role: str, path: str) -> Tuple[bool, s
             },
         ))
     except Exception:
+        logger.warning("professional inquiry email was not handed to the notification service")
         return False, ""
-    return bool(getattr(result, "success", False)), str(getattr(result, "notification_id", "") or "")
+    sent = bool(getattr(result, "success", False))
+    if not sent:
+        logger.warning(
+            "professional inquiry email was not delivered (%s)",
+            getattr(result, "error_code", None) or "SEND_FAILED",
+        )
+    return sent, str(getattr(result, "notification_id", "") or "")
 
 
 def request_professional(customer_id: str, role: str, login_username: str = "",
@@ -2091,7 +2129,9 @@ def request_professional(customer_id: str, role: str, login_username: str = "",
         REQUESTS[key] = req
         _persist_request(req)
         path = _inquiry_path(token, key)
-    sent, notification_id = _send_inquiry_email(customer_id, role, path)
+    sent, notification_id = _send_inquiry_email(
+        customer_id, role, path, login_username,
+    )
     with _LOCK:
         current = REQUESTS.get(key) or req
         inquiry = current.setdefault("inquiry", {})
@@ -2615,22 +2655,34 @@ def _say(chat: Dict[str, Any], role: str, text: str) -> None:
     chat["transcript"] = chat["transcript"][-40:]
 
 
+_INQUIRY_EMAIL_SENT = (
+    "I sent this chat to the email on your customer record. "
+    "Open that message to come back to this application. "
+    "A code for a new identity goes to that same email."
+)
+_INQUIRY_EMAIL_UNSENT = (
+    "This chat is open. The email could not be sent, so continue here."
+)
+
+
 def _seed_chat_notice(req: Dict[str, Any], email_sent: bool) -> None:
-    """Open the disclosed chat with the email result. The link token stays out."""
+    """Open the disclosed chat with the email result. The link token stays out.
+
+    A later successful send still records itself when an earlier attempt left
+    only the failure line. The token is not written into either line.
+    """
     chat = _ensure_chat(req)
-    if chat.get("transcript"):
+    texts = [
+        str(item.get("text") or "")
+        for item in (chat.get("transcript") or [])
+        if isinstance(item, dict)
+    ]
+    if texts:
+        if email_sent and _INQUIRY_EMAIL_SENT not in texts:
+            _say(chat, "bot", _INQUIRY_EMAIL_SENT)
         return
     _say(chat, "bot", _INQUIRY_OPENING)
-    if email_sent:
-        _say(chat, "bot", (
-            "I sent this chat to the email on your customer record. "
-            "Open that message to come back to this application. "
-            "A code for a new identity goes to that same email."
-        ))
-    else:
-        _say(chat, "bot", (
-            "This chat is open. The email could not be sent, so continue here."
-        ))
+    _say(chat, "bot", _INQUIRY_EMAIL_SENT if email_sent else _INQUIRY_EMAIL_UNSENT)
     _say(chat, "bot", _step_prompt("confirm_person", req, _identity_public(req)))
 
 
