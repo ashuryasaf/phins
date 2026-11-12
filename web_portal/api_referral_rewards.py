@@ -192,7 +192,7 @@ def _inquiry_credential(explicit: Any, cookies: Any = None, request_id: Any = ""
 
 
 def _inquiry_otp_request(token: str, client_ip: str, user_agent: str) -> Tuple[int, Dict[str, Any]]:
-    """Send a code to the email already on the customer record. The body cannot redirect it."""
+    """Send a code to the same address as the inquiry email. The body cannot redirect it."""
     try:
         context = rewards.inquiry_otp_context(token)
     except rewards.RewardError as exc:

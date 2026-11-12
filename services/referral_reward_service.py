@@ -2256,11 +2256,18 @@ def _identity_otp_fresh(req: Dict[str, Any], token: str = "") -> bool:
 
 
 def inquiry_otp_context(token: str) -> Dict[str, Any]:
-    """The address a code may be sent to. It is the customer record, not the form."""
+    """The address a code may be sent to.
+
+    Same recipient as the inquiry email: the customer record, or the login
+    stored when this request was opened, when that login looks like an email.
+    The OTP request body cannot supply a different address.
+    """
     with _LOCK:
         req = _open_chat_request(token)
-        rec = _customer_record(req.get("customer_id")) or {}
-        email = str(rec.get("email") or "").strip()
+        email, _name = _inquiry_recipient(
+            str(req.get("customer_id") or ""),
+            str(req.get("login_username") or ""),
+        )
         return {
             "request_id": req.get("id"),
             "email": email,

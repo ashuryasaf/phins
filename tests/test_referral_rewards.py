@@ -1329,23 +1329,44 @@ def test_inquiry_email_retries_when_the_first_provider_fails(monkeypatch):
 
 
 def test_inquiry_email_uses_the_login_when_the_record_has_no_email(monkeypatch):
-    """A customer record without email used to return before NotificationService.send."""
+    """A record with no email uses the login for the inquiry mail and the identity code."""
+    from services.notification_service import MockEmailProvider
+
     email = "inquiry-login-mail@example.com"
+    other = "other-inbox@example.com"
     customer_id = _register("Login Mail", email)
     portal.CUSTOMERS[customer_id]["email"] = ""
     token, _role = _login(email, "secure123456")
     portal.CUSTOMERS[customer_id]["email"] = ""
+    recorded = []
+    original = MockEmailProvider.send
+
+    def _record(self, to, subject, body, html_body=None, *args, **kwargs):
+        recorded.append({"to": to, "subject": subject, "body": body})
+        return original(self, to, subject, body, html_body, *args, **kwargs)
+
+    monkeypatch.setattr(MockEmailProvider, "send", _record)
     filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
     assert status == 200, filed
     assert filed["email_sent"] is True
-    from services.notification_service import get_notification_service
-    provider = get_notification_service()._email_provider
-    sent = [item for item in getattr(provider, "sent_emails", []) if item.get("to") == email]
-    assert sent, "login email was not handed to NotificationService"
     link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
-    prefill, status = _get("/api/professional-inquiry?t=" + link)
-    assert status == 200, prefill
-    assert "email on your customer record" in json.dumps(prefill["chat"]["messages"])
+    inquiry_mail = [item for item in recorded if "/professional-inquiry-chat.html" in item["body"]]
+    assert inquiry_mail, "inquiry email was not handed to NotificationService"
+    assert inquiry_mail[-1]["to"] == email
+    otp, status = _post("/api/professional-inquiry/otp/request", {"token": link, "email": other})
+    assert status == 200, otp
+    assert otp.get("notification_sent") is True
+    assert otp.get("verification_id")
+    assert otp.get("demo_otp_code")
+    code_mail = [item for item in recorded if "Verification Code" in item["subject"]]
+    assert code_mail, "identity code was not handed to NotificationService"
+    assert code_mail[-1]["to"] == email
+    assert other not in {item["to"] for item in recorded}
+    assert otp["demo_otp_code"] in code_mail[-1]["body"]
+    messages = json.dumps((otp.get("chat") or {}).get("messages") or [])
+    assert "6-digit code" in messages
+    assert otp["demo_otp_code"] not in messages
+    assert link not in messages
 
 
 def test_a_failed_chat_note_still_returns_the_emailed_code(monkeypatch):
