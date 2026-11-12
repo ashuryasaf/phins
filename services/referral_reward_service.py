@@ -3569,23 +3569,43 @@ def _supplier_was_approved(supplier: Dict[str, Any]) -> bool:
     return False
 
 
+def _detach_withdrawn_supplier(supplier: Dict[str, Any]) -> None:
+    """A withdrawn row is not a live supplier or a live agent.
+
+    The request may still say approved. That stamp is not an activation, so
+    it must not keep ``supplier_id`` or ``agent_id`` on this row.
+    """
+    sid = str(supplier.get("id") or "")
+    supplier.pop("agent_id", None)
+    customer_id = str(supplier.get("customer_id") or "")
+    for role in ("supplier", "agent"):
+        other = REQUESTS.get(_request_id(customer_id, role))
+        if not isinstance(other, dict) or other.get("status") != "approved":
+            continue
+        if sid and str(other.get("supplier_id") or "") == sid:
+            other.pop("supplier_id", None)
+            other.pop("agent_id", None)
+
+
 def _withdraw_staged_supplier(supplier: Dict[str, Any], request_id: str) -> None:
     _unlink_professional_request(supplier, request_id)
     supplier["status"] = "withdrawn"
     supplier["portal_active"] = False
     supplier["rejection_reason"] = None
+    _detach_withdrawn_supplier(supplier)
 
 
 def _release_staged_supplier(req: Dict[str, Any], _admin: str, _note: str) -> None:
     """Take a declined application off the desk without closing the person.
 
-    A staged row that was never activated becomes ``withdrawn``, including
-    when another professional request is approved. ``approved`` is kept only
-    when this supplier was already approved: the portal is on, or a
-    ``supplier_approval`` ledger row already exists. This does not call
-    ``approve_supplier`` or ``reject_supplier``, and it does not turn the
-    portal on or write a ledger row. A supplier that was already rejected,
-    suspended, or terminated is not touched here.
+    A staged row that was never activated becomes ``withdrawn``. A request
+    that says approved is not an activation, so it is detached from that
+    row. ``approved`` is kept only when this supplier was already approved:
+    the portal is on, or a ``supplier_approval`` ledger row already exists.
+    This does not call ``approve_supplier`` or ``reject_supplier``, and it
+    does not turn the portal on, write a ledger row, or write the customer.
+    A supplier that was already rejected, suspended, or terminated is not
+    touched here.
     """
     try:
         supplier = _find_supplier(req["customer_id"])
@@ -3910,23 +3930,46 @@ def _audit(action: str, entity: str, entity_id: str, details: Dict[str, Any]) ->
 
 
 def professional_status(customer_id: str) -> Dict[str, Any]:
+    """Desks follow the supplier record.
+
+    A professional request marked approved is not a supplier approval. The
+    supplier desk is approved only when that supplier was activated. Until
+    then neither desk is reported as approved, and a withdrawn row is not
+    presented as a live ``supplier_id`` or ``agent_id``.
+    """
     with _LOCK:
         _ensure_loaded()
-        out = {}
+        try:
+            supplier = _find_supplier(customer_id)
+        except RewardError:
+            supplier = None
+        live = isinstance(supplier, dict) and _supplier_was_approved(supplier)
+        record_status = str((supplier or {}).get("status") or "").strip().lower()
+        out: Dict[str, Any] = {}
         for role in ("agent", "supplier"):
             req = REQUESTS.get(_request_id(customer_id, role))
-            out[role] = public_request(req) if req else {"status": "none", "requested_role": role}
-        agent = out.get("agent") or {}
-        supplier = out.get("supplier") or {}
-        if supplier.get("status") != "approved" and agent.get("status") == "approved" and agent.get("supplier_id"):
-            out["supplier"] = {
-                "status": "approved",
-                "requested_role": "supplier",
-                "supplier_id": agent.get("supplier_id"),
-                "customer_id": customer_id,
-                "via": "agent",
-                "agent_id": agent.get("agent_id"),
-            }
+            view = public_request(req) if req else {"status": "none", "requested_role": role}
+            if not live and view.get("status") == "approved":
+                view = dict(view)
+                view["status"] = record_status or "none"
+                if record_status == "withdrawn":
+                    view["supplier_id"] = None
+                    view["agent_id"] = None
+            out[role] = view
+        if isinstance(supplier, dict):
+            desk = dict(out.get("supplier") or {})
+            desk["requested_role"] = "supplier"
+            desk["customer_id"] = customer_id
+            if live:
+                desk["status"] = "approved"
+                desk["supplier_id"] = supplier.get("id")
+            else:
+                desk["status"] = record_status or desk.get("status") or "none"
+                if record_status == "withdrawn":
+                    desk["supplier_id"] = None
+                    desk["agent_id"] = None
+            desk.pop("via", None)
+            out["supplier"] = desk
         return out
 
 

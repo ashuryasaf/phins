@@ -2133,13 +2133,23 @@ def test_declining_supplier_request_keeps_an_approved_agent_role():
     assert supplier["status"] == "withdrawn"
     assert supplier["portal_active"] is False
     assert supplier["status"] not in ("approved", "rejected", "suspended", "terminated")
-    assert supplier["agent_id"] == opened["request"]["agent_id"]
+    assert "agent_id" not in supplier
+    assert rewards.REQUESTS[agent_request].get("supplier_id") != supplier_id
+    assert rewards.REQUESTS[agent_request].get("agent_id") != opened["request"]["agent_id"]
+    desks = rewards.professional_status(customer_id)
+    assert desks["supplier"]["status"] == "withdrawn"
+    assert desks["agent"]["status"] == "withdrawn"
+    assert desks["supplier"].get("status") != "approved"
+    assert desks["agent"].get("status") != "approved"
+    assert desks["supplier"].get("supplier_id") in (None, "")
+    assert desks["agent"].get("agent_id") in (None, "")
+    assert "via" not in desks["supplier"]
     assert len([
         item for item in portal.supply_chain_service.suppliers.values()
         if item.get("customer_id") == customer_id
     ]) == 1
     from services.agent_ecosystem_service import get_agent
-    assert get_agent(supplier["agent_id"])["default_commission_rate"] == pytest.approx(0.1)
+    assert get_agent(opened["request"]["agent_id"])["default_commission_rate"] == pytest.approx(0.1)
 
 
 def _supplier_ledger(service, supplier_id):
@@ -2209,7 +2219,14 @@ def test_decline_with_an_approved_role_does_not_rerun_approval(monkeypatch):
     assert "supplier_approval" not in {row[0] for row in _supplier_ledger(service, supplier_id)}
     assert supplier_request not in (supplier.get("professional_request_ids") or [])
     assert supplier.get("professional_request_id") != supplier_request
-    assert supplier["agent_id"] == agent_id
+    assert "agent_id" not in supplier
+    assert rewards.REQUESTS[agent_request].get("supplier_id") != supplier_id
+    assert rewards.REQUESTS[agent_request].get("agent_id") != agent_id
+    desks = rewards.professional_status(customer_id)
+    assert desks["supplier"]["status"] != "approved"
+    assert desks["agent"]["status"] != "approved"
+    assert desks["supplier"].get("supplier_id") in (None, "")
+    assert "via" not in desks["supplier"]
     assert set(AGENTS) == before_agents
     assert _supplier_ledger(service, supplier_id) == before_ledger
     assert [
@@ -2270,6 +2287,11 @@ def test_decline_with_an_approved_role_does_not_rerun_approval(monkeypatch):
     assert kept["status"] == "approved"
     assert kept["portal_active"] is True
     assert other_agent not in (kept.get("professional_request_ids") or [])
+    live_desks = rewards.professional_status(other_customer)
+    assert live_desks["supplier"]["status"] == "approved"
+    assert live_desks["supplier"]["supplier_id"] == other_id
+    assert live_desks["agent"]["status"] != "approved"
+    assert "via" not in live_desks["supplier"]
     assert set(AGENTS) == before_agents
     assert _supplier_ledger(service, other_id) == before_ledger
     assert portal.CUSTOMERS[other_customer] == before_customer
