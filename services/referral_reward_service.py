@@ -3614,6 +3614,28 @@ def _drop_unreachable_agent(customer_id: str, dangling: str, ignore_request_id: 
     discard_agent(aid)
 
 
+def _sibling_fields(req: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "status": req.get("status"),
+        "had_supplier_id": "supplier_id" in req,
+        "supplier_id": req.get("supplier_id"),
+        "had_agent_id": "agent_id" in req,
+        "agent_id": req.get("agent_id"),
+    }
+
+
+def _restore_sibling_fields(req: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
+    req["status"] = snapshot.get("status")
+    if snapshot.get("had_supplier_id"):
+        req["supplier_id"] = snapshot.get("supplier_id")
+    else:
+        req.pop("supplier_id", None)
+    if snapshot.get("had_agent_id"):
+        req["agent_id"] = snapshot.get("agent_id")
+    else:
+        req.pop("agent_id", None)
+
+
 def _detach_withdrawn_supplier(supplier: Dict[str, Any]) -> None:
     """A withdrawn row is not a live supplier.
 
@@ -3623,8 +3645,10 @@ def _detach_withdrawn_supplier(supplier: Dict[str, Any]) -> None:
     only when no grant and no customer pointer still name it. The delete
     runs before either request is stored. A failed delete leaves those
     requests unchanged. When there is nothing to delete, both requests are
-    stored together. The direct review route and both desks reach this
-    through ``review_professional``.
+    stored together. If storing a sibling fails, that sibling is put back
+    before the error returns, and the withdrawn supplier snapshot is restored
+    with it. The direct review route and both desks reach this through
+    ``review_professional``.
     """
     sid = str(supplier.get("id") or "")
     customer_id = str(supplier.get("customer_id") or "")
@@ -3646,16 +3670,27 @@ def _detach_withdrawn_supplier(supplier: Dict[str, Any]) -> None:
             str(other.get("id") or ""),
         )
         planned.append((other, ""))
-    supplier.pop("agent_id", None)
-    for other, kept in planned:
-        if kept:
-            other.pop("supplier_id", None)
-            other["agent_id"] = kept
-        else:
-            other.pop("supplier_id", None)
-            other.pop("agent_id", None)
-            other["status"] = "inquiry"
-        _persist_request(other)
+    snapshots = [(other, _sibling_fields(other)) for other, _kept in planned]
+    try:
+        supplier.pop("agent_id", None)
+        for other, kept in planned:
+            if kept:
+                other.pop("supplier_id", None)
+                other["agent_id"] = kept
+            else:
+                other.pop("supplier_id", None)
+                other.pop("agent_id", None)
+                other["status"] = "inquiry"
+            _persist_request(other)
+    except Exception:
+        for other, snapshot in snapshots:
+            _restore_sibling_fields(other, snapshot)
+        for other, _snapshot in snapshots:
+            try:
+                _persist_request(other)
+            except Exception:
+                continue
+        raise
 
 
 def _restore_supplier_snapshot(supplier: Dict[str, Any], snapshot: Dict[str, Any]) -> None:

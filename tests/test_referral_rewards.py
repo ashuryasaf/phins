@@ -2417,6 +2417,92 @@ def test_failed_agent_delete_leaves_both_requests_unchanged(monkeypatch):
     assert "national_id" not in supplier
 
 
+def _stored_professional_request(request_id):
+    blob = json.loads(rewards._state_path().read_text(encoding="utf-8"))
+    for item in blob["state"]["requests"]:
+        if item.get("id") == request_id:
+            return item
+    raise AssertionError(request_id)
+
+
+def test_failed_persist_restores_the_sibling_and_the_supplier(monkeypatch):
+    """A failed sibling persist puts that request and the supplier back."""
+    email = "persist-fails@example.com"
+    customer_id = _register("Persist Fails", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="Persist Fails", company={
+        "company_name": "Persist Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="Persist Fails", company={
+        "company_name": "Persist Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    agent_id = opened["request"]["agent_id"]
+    supplier_id = opened["request"]["supplier_id"]
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    real_persist = rewards._persist_request
+    armed = {"on": True}
+    written = []
+
+    def fail_detached(req):
+        if armed["on"] and req.get("id") == agent_request and req.get("supplier_id") != supplier_id:
+            raise RuntimeError("persist failed")
+        written.append({
+            "id": req.get("id"),
+            "status": req.get("status"),
+            "supplier_id": req.get("supplier_id"),
+            "agent_id": req.get("agent_id"),
+        })
+        return real_persist(req)
+
+    monkeypatch.setattr(rewards, "_persist_request", fail_detached)
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status >= 500, declined
+    assert rewards.REQUESTS[agent_request]["status"] == "approved"
+    assert rewards.REQUESTS[agent_request].get("supplier_id") == supplier_id
+    assert rewards.REQUESTS[agent_request].get("agent_id") == agent_id
+    assert rewards.REQUESTS[supplier_request]["status"] == "pending"
+    assert rewards.REQUESTS[supplier_request].get("supplier_id") == supplier_id
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "pending"
+    assert supplier["portal_active"] is False
+    assert supplier.get("agent_id") == agent_id
+    stored_agent = _stored_professional_request(agent_request)
+    assert stored_agent["status"] == "approved"
+    assert stored_agent.get("supplier_id") == supplier_id
+    assert stored_agent.get("agent_id") == agent_id
+    stored_supplier = _stored_professional_request(supplier_request)
+    assert stored_supplier["status"] == "pending"
+    assert stored_supplier.get("supplier_id") == supplier_id
+    assert all(item.get("supplier_id") == supplier_id for item in written if item["id"] == agent_request)
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+    armed["on"] = False
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    assert rewards.REQUESTS[supplier_request]["status"] == "rejected"
+    assert rewards.REQUESTS[agent_request]["status"] == "approved"
+    assert rewards.REQUESTS[agent_request].get("agent_id") == agent_id
+    assert rewards.REQUESTS[agent_request].get("supplier_id") in (None, "")
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    stored_agent = _stored_professional_request(agent_request)
+    assert stored_agent["status"] == "approved"
+    assert stored_agent.get("supplier_id") in (None, "")
+    assert stored_agent.get("agent_id") == agent_id
+    assert portal.CUSTOMERS[customer_id] == before_customer
+
+
 def test_detached_sibling_request_is_stored(monkeypatch):
     """The sibling row is written, not only edited in memory."""
     stored = []
