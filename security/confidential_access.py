@@ -71,6 +71,9 @@ PITCH_ACTIVITY_COOKIE_NAME = "phins_pitch_activity"
 PITCH_IDLE_TIMEOUT_SECONDS = 30 * 60
 
 # Query parameters whose values must never reach an access log.
+# ``t`` is the professional-inquiry email token. It is redacted in the access
+# log only for those pages (see the portal log helper), not stripped from
+# every other ``t`` on the site.
 SENSITIVE_QUERY_PARAMS = (
     ACCESS_QUERY_PARAM,
     "token",

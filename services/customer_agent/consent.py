@@ -60,6 +60,8 @@ TEMPLATE_PURPOSE = {
     'bill': TRANSACTIONAL,
     'reminder': TRANSACTIONAL,
     'reward': TRANSACTIONAL,
+    # Professional application: the customer asked for the form.
+    'inquiry': TRANSACTIONAL,
     'message': RELATIONAL,
     'offer': RELATIONAL,
 }

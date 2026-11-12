@@ -223,8 +223,22 @@ PHINS is a Python platform built around:
  investments. Customer `REF-` codes use this
  rail; agent `AGI-` codes stay on the commission rail and are not paid
  twice. A customer can request an agent or supplier role
- (`PRO-{customer}-{role}`); approval opens that profile and a role-switch
- token without rewriting `USERS.role`. An approved agent invitation cap is
+ (`PRO-{customer}-{role}`). The email opens one disclosed Phin chat
+ (`/professional-inquiry-chat.html`, same request as the classic form):
+ confirm details, identity through `set_identity` (a new ID needs the email
+ code first; nationality and last four only on the request), optional company,
+ optional document/voice/video sealed by SHA-256, then review. The page
+ exchanges the email token for a short HttpOnly cookie named per request
+ and drops it from the URL. The email also carries `r`, the request id,
+ which is not the secret. A new link writes that id over the previous one
+ before the exchange returns, and the chat/form cross-link uses only `r`.
+ A tab names its own request, so a second open
+ inquiry does not take the first. The access log redacts `t` on both inquiry
+ pages. A new identity code is fresh only for the browser session that
+ verified it. A filed link returns status only, and the 14-day expiry
+ applies in every status. A rejected or suspended supplier is not reopened.
+ Declining a company clears that name before approval. Approval opens that profile and a role-switch
+ token without rewriting `USERS.role`. An agent is a role on that one supplier. An approved agent invitation cap is
  100 (customer cap stays 10). `affiliated_cac_plan()` is the planning view
  (allocated, blocked, releasable, settled, reversed, projected release,
  layer schedule, and one row per reward).

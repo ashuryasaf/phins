@@ -337,6 +337,7 @@
       <nav class="phins-nav" id="mobile-nav">
         <a href="/admin.html">Admin</a>
         <a href="/admin-supplier-dashboard.html" class="active">Suppliers</a>
+        <a href="/admin-agents.html">Agents</a>
         <a href="/actuary-dashboard.html">Actuary</a>
         <a href="/billing.html">Billing</a>
         <a href="/customer-management.html">Client</a>
@@ -397,6 +398,7 @@
       </div>
       <div class="tab" data-tab="transactions">Transactions</div>
       <div class="tab" data-tab="analytics">AI/BI Analytics</div>
+      <div class="tab" data-tab="pipeline">Pipeline</div>
     </div>
 
     <!-- Tab: Pending Applications -->
@@ -759,7 +761,35 @@
     </div>
   </main>
 
-  <!-- Supplier Detail Modal -->
+    <!-- Tab: one supplier/agent pipeline -->
+    <div class="tab-content" id="tab-pipeline">
+      <div class="card">
+        <p class="muted-text">Applications from the referral book land here. An agent is a role on the supplier record. Sales fees, acquisition rewards, and agent commissions stay on their own rails and are not added together.</p>
+        <p><a href="/admin-agents.html">Open the agent desk</a> for the commission ledger. This page remains the supplier center.</p>
+        <div class="filter-row">
+          <label>Audience
+            <select id="pipeline-audience">
+              <option value="supplier">Suppliers</option>
+              <option value="agent">Agents</option>
+              <option value="customer">Customers</option>
+              <option value="tax">Tax</option>
+              <option value="regulator">Regulator</option>
+            </select>
+          </label>
+          <button class="btn btn-outline" type="button" onclick="loadPipeline()">Refresh</button>
+          <button class="btn btn-outline" type="button" onclick="sealPipeline()">Record on the supplier ledger</button>
+        </div>
+        <div id="pipeline-note" class="muted-text" style="margin-bottom:12px;"></div>
+        <div class="table-card" style="overflow-x:auto;">
+          <table class="data-table" id="pipeline-table">
+            <thead id="pipeline-head"></thead>
+            <tbody id="pipeline-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Supplier Detail Modal -->
   <div class="modal" id="supplier-modal">
     <div class="modal-content">
       <div class="modal-header">
@@ -887,6 +917,7 @@
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         tab.classList.add('active');
         document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+        if (tab.dataset.tab === 'pipeline') loadPipeline();
       });
     });
 
@@ -1741,6 +1772,70 @@
         });
         alert(result.message || 'Settlement dispute updated');
         refreshSettlements();
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+
+    function pipelineCells(row, keys) {
+      return '<tr>' + keys.map(function(key) {
+        const value = row[key];
+        const text = typeof value === 'number' ? formatCurrency(value) : (value == null ? '' : value);
+        return '<td>' + esc(text) + '</td>';
+      }).join('') + '</tr>';
+    }
+
+    async function loadPipeline() {
+      const audience = document.getElementById('pipeline-audience').value || 'supplier';
+      const head = document.getElementById('pipeline-head');
+      const body = document.getElementById('pipeline-body');
+      const note = document.getElementById('pipeline-note');
+      try {
+        const data = await apiGet('/api/admin/supplier-agent-pipeline?audience=' + encodeURIComponent(audience));
+        const report = data.report || data;
+        note.textContent = report.rails_are_separate
+          ? 'Sales fees, acquisition rewards, and agent commissions are shown separately.'
+          : '';
+        let columns = [];
+        let rows = report.rows || report.businesses || [];
+        if (audience === 'supplier' || audience === 'agent') {
+          columns = ['company_name', 'supplier_id', 'sales_fees', 'supplier_payouts', 'acquisition_rewards', 'agent_commissions'];
+        } else if (audience === 'customer') {
+          columns = ['name', 'customer_id', 'acquisition_rewards', 'sales_fees_on_orders'];
+        } else if (audience === 'tax') {
+          columns = ['company_name', 'supplier_id', 'sales_fees', 'supplier_payouts', 'acquisition_rewards', 'agent_commissions'];
+          note.textContent = 'Booked acquisition expense ' + formatCurrency(report.acquisition_expense_booked || 0) +
+            '. That expense is the existing referral settlement, not a second fee.';
+        } else {
+          columns = [];
+          rows = [];
+          note.textContent = 'Suppliers ' + (report.suppliers || 0) +
+            ' · agents on suppliers ' + (report.agents_on_suppliers || 0) +
+            ' · open inquiries ' + (report.inquiries_open || 0) +
+            ' · sales fees ' + formatCurrency(report.sales_fees || 0) +
+            ' · acquisition expense booked ' + formatCurrency(report.acquisition_expense_booked || 0) +
+            ' · agent commissions ' + formatCurrency(report.agent_commissions || 0) +
+            ' · ledger ' + (report.ledger_integrity_ok ? 'intact' : 'needs review');
+        }
+        head.innerHTML = columns.length
+          ? '<tr>' + columns.map(function(key) { return '<th>' + esc(key.replace(/_/g, ' ')) + '</th>'; }).join('') + '</tr>'
+          : '';
+        body.innerHTML = rows.length
+          ? rows.map(function(row) { return pipelineCells(row, columns); }).join('')
+          : '<tr><td class="muted-text">Nothing in this view yet.</td></tr>';
+      } catch (e) {
+        note.textContent = e.message;
+        head.innerHTML = '';
+        body.innerHTML = '';
+      }
+    }
+
+    async function sealPipeline() {
+      try {
+        const result = await apiPost('/api/admin/supplier-agent-pipeline/seal', {});
+        const rows = result.sealed || [];
+        const fresh = rows.filter(function(row) { return !row.reused; }).length;
+        alert('Ledger statements: ' + rows.length + ' (' + fresh + ' new). No new cash was posted.');
       } catch (e) {
         alert('Error: ' + e.message);
       }

@@ -2183,8 +2183,10 @@ REFERRAL_API_PREFIXES = (
     '/api/customer/referral-rewards',
     '/api/customer/professional-requests',
     '/api/customer/role-switch',
+    '/api/professional-inquiry',
     '/api/admin/referral-rewards',
     '/api/admin/professional-requests',
+    '/api/admin/supplier-agent-pipeline',
 )
 
 # Import API extensions for the chat-style New Policy Application ("Phin")
@@ -21016,6 +21018,13 @@ _ACCESS_LOG_PII_QUERY_KEYS = frozenset({
     'ssn',
     'id_num',
 })
+# The inquiry email token travels as ``t`` on these pages and on the API.
+# ``token`` and ``resume_code`` are already masked. ``t`` is not a global key.
+_INQUIRY_TOKEN_LOG_PATHS = (
+    '/professional-inquiry.html',
+    '/professional-inquiry-chat.html',
+    '/api/professional-inquiry',
+)
 
 
 def _redact_pii_query(raw: str) -> str:
@@ -21030,13 +21039,16 @@ def _redact_pii_query(raw: str) -> str:
     base, sep, rest = text.partition('?')
     if not sep:
         return text
+    path = base.strip().split(' ')[-1]
+    inquiry_token = path in _INQUIRY_TOKEN_LOG_PATHS or path.startswith('/api/professional-inquiry/')
     query, space, proto = rest.partition(' ')
     parts = []
     for part in query.split('&'):
         if not part:
             continue
         name, eq, _value = part.partition('=')
-        if eq and name.strip().lower() in _ACCESS_LOG_PII_QUERY_KEYS:
+        key = name.strip().lower()
+        if eq and (key in _ACCESS_LOG_PII_QUERY_KEYS or (inquiry_token and key == 't')):
             parts.append(f'{name}=REDACTED')
         else:
             parts.append(part)
@@ -21357,6 +21369,41 @@ class PortalHandler(BaseHTTPRequestHandler):
         for header in pending:
             if header:
                 self.send_header('Set-Cookie', header)
+
+    def _inquiry_browser_cookie(self) -> Dict[str, str]:
+        """Every open inquiry cookie. Each request has its own name."""
+        try:
+            jar = confidential_access.parse_cookies(self.headers.get('Cookie')) or {}
+        except Exception:
+            return {}
+        from services.referral_reward_service import INQUIRY_SESSION_COOKIE
+        prefix = INQUIRY_SESSION_COOKIE + '_'
+        return {
+            str(key): str(value)
+            for key, value in jar.items()
+            if str(key).startswith(prefix) and value
+        }
+
+    def _finish_referral(self, result) -> None:
+        """Write a referral JSON response, moving a new inquiry session onto a cookie."""
+        status_code, response_data = result
+        if isinstance(response_data, dict):
+            secret = response_data.pop('_inquiry_session', None)
+            request_id = response_data.get('request_id')
+            if secret and request_id:
+                from services.referral_reward_service import (
+                    INQUIRY_SESSION_SECONDS,
+                    inquiry_cookie_name,
+                )
+                self._pending_cookies = list(getattr(self, '_pending_cookies', None) or [])
+                self._pending_cookies.append(confidential_access.access_cookie_header(
+                    str(secret),
+                    secure=self._request_is_secure(),
+                    max_age=INQUIRY_SESSION_SECONDS,
+                    cookie_name=inquiry_cookie_name(str(request_id)),
+                ))
+        self._set_json_headers(status_code)
+        self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
 
     def _bearer_token(self) -> Optional[str]:
         auth_header = self.headers.get('Authorization', '') or ''
@@ -24595,11 +24642,11 @@ For claims or questions, please contact:
         # =====================================================================
         if referral_rewards_enabled and api_referral_get and path.startswith(REFERRAL_API_PREFIXES):
             try:
-                referral_result = api_referral_get(path, session, qs)
+                referral_result = api_referral_get(
+                    path, session, qs, self._inquiry_browser_cookie(),
+                )
                 if referral_result is not None:
-                    status_code, response_data = referral_result
-                    self._set_json_headers(status_code)
-                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    self._finish_referral(referral_result)
                     return
             except Exception as e:
                 print(f"Referral Rewards error (GET {path}): {e}")
@@ -40748,7 +40795,10 @@ For claims or questions, please contact:
         # crawler hits (seen repeatedly as 404 in production after PR #603).
         # Redirect to GET so a JS-disabled resume submit is not a dead end
         # and does not look like a missing application API.
-        if path in ('/apply-chat.html', '/apply.html', '/claims-chat.html', '/file-a-claim.html'):
+        if path in (
+            '/apply-chat.html', '/apply.html', '/claims-chat.html', '/file-a-claim.html',
+            '/professional-inquiry-chat.html', '/professional-inquiry.html',
+        ):
             if content_length > 0:
                 try:
                     remaining = content_length
@@ -45079,11 +45129,14 @@ For claims or questions, please contact:
                     referral_body = {}
                 if not isinstance(referral_body, dict):
                     referral_body = {}
-                referral_result = api_referral_post(path, session, referral_body)
+                referral_result = api_referral_post(
+                    path, session, referral_body,
+                    self._inquiry_browser_cookie(),
+                    client_ip,
+                    self.headers.get('User-Agent', '') or '',
+                )
                 if referral_result is not None:
-                    status_code, response_data = referral_result
-                    self._set_json_headers(status_code)
-                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    self._finish_referral(referral_result)
                     return
             except Exception as e:
                 print(f"Referral Rewards error (POST {path}): {e}")

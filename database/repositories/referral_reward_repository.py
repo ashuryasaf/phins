@@ -229,6 +229,8 @@ class ReferralRewardRepository:
                       'reviewed_at', 'review_note', 'created_at', 'updated_at'):
             if field in data:
                 setattr(row, field, data.get(field))
+        if 'inquiry' in data:
+            row.inquiry_json = _dumps(data.get('inquiry') or {})
         self._commit()
 
     def _request_dict(self, row: ProfessionalRequest) -> Dict[str, Any]:
@@ -249,4 +251,5 @@ class ReferralRewardRepository:
             'review_note': row.review_note,
             'created_at': row.created_at,
             'updated_at': row.updated_at,
+            'inquiry': _loads(getattr(row, 'inquiry_json', None)) or {},
         }

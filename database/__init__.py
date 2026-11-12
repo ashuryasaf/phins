@@ -279,6 +279,8 @@ _UPGRADE_NEW_COLUMNS = [
     ('referral_rewards', 'settlement_id', 'VARCHAR(80)', None),
     ('referral_rewards', 'hold_months', 'INTEGER', '0'),
     ('referral_rewards', 'release_at', 'VARCHAR(40)', None),
+    # Professional inquiry lives on the same request row. The raw link token is not stored.
+    ('professional_requests', 'inquiry_json', 'TEXT', None),
 ]
 # Columns whose declared type must be widened on existing databases
 # (table_name, column_name, new_type).
