@@ -1251,6 +1251,53 @@ def test_inquiry_email_and_identity_code_use_the_chat_notification_service(monke
     assert otp["demo_otp_code"] not in stored
 
 
+def test_a_failed_chat_note_still_returns_the_emailed_code(monkeypatch):
+    """The transcript write is after the email. Its failure must not hide the code."""
+    def _boom(*_args, **_kwargs):
+        raise rewards.RewardError(
+            "This application was already submitted",
+            status=409,
+            code="inquiry_submitted",
+        )
+
+    monkeypatch.setattr(rewards, "note_inquiry_delivery", _boom)
+    email = "inquiry-note-fail@example.com"
+    _register("Note Fail", email)
+    session, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=session)
+    assert status == 200, filed
+    link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
+    opened, status, set_cookies = _open("/api/professional-inquiry/session", {"token": link})
+    assert status == 200, opened
+    cookie_name, secret, _header = _inquiry_set_cookie(set_cookies)
+    cookie = cookie_name + "=" + secret
+    otp, status = _post("/api/professional-inquiry/otp/request", {"token": link})
+    assert status == 200, otp
+    assert otp.get("success") is True
+    assert otp.get("verification_id")
+    assert otp.get("demo_otp_code")
+    assert otp.get("notification_sent") is True
+    assert "chat" not in otp
+    again, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, again
+    assert otp["demo_otp_code"] not in json.dumps(again["chat"]["messages"])
+    checked, status, _cookies = _open("/api/professional-inquiry/otp/verify", {
+        "request_id": opened["request_id"],
+        "verification_id": otp["verification_id"],
+        "otp_code": otp["demo_otp_code"],
+    }, cookie=cookie)
+    assert status == 200, checked
+    assert checked.get("otp_verified") is True
+
+
+def test_demo_code_stays_visible_after_a_failed_verify():
+    node = shutil.which("node")
+    assert node, "node is required to check the inquiry code bubble"
+    script = Path(__file__).resolve().parent / "professional_inquiry_otp.test.js"
+    completed = subprocess.run([node, str(script)], check=False, capture_output=True, text=True)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
 @pytest.mark.parametrize("closed_status", ["rejected", "suspended"])
 def test_approval_does_not_reopen_a_closed_supplier(closed_status):
     email = f"closed-{closed_status}@example.com"

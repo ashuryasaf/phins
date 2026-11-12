@@ -1,3 +1,36 @@
+function inquiryOtpMessages(chat, demoCode) {
+  const next = Object.assign({}, chat || {});
+  const messages = ((chat && chat.messages) || []).slice();
+  const code = String(demoCode || "");
+  if (code) {
+    messages.push({
+      role: "bot",
+      text: "Demo environment: your verification code is " + code + ".",
+    });
+  }
+  next.messages = messages;
+  return next;
+}
+
+function inquiryOtpAfterFailedVerify(chat, errorText) {
+  const next = Object.assign({}, chat || {});
+  const messages = ((chat && chat.messages) || []).slice();
+  messages.push({
+    role: "bot",
+    text: String(errorText || "That code was not accepted."),
+  });
+  next.messages = messages;
+  return next;
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    inquiryOtpMessages: inquiryOtpMessages,
+    inquiryOtpAfterFailedVerify: inquiryOtpAfterFailedVerify,
+  };
+}
+
+if (typeof document !== "undefined") {
 (function () {
   const link = window.PhinsInquiryLink;
   let stored = "";
@@ -264,15 +297,10 @@
       renderMessages(failed);
       return;
     }
-    if (body.chat) state.chat = Object.assign({}, state.chat || {}, body.chat);
-    const messages = ((body.chat && body.chat.messages) || state.chat.messages || []).slice();
-    if (body.demo_otp_code) {
-      messages.push({
-        role: "bot",
-        text: "Demo environment: your verification code is " + body.demo_otp_code + ".",
-      });
-    }
-    renderMessages(messages);
+    const base = body.chat ? Object.assign({}, state.chat || {}, body.chat) : (state.chat || {});
+    if (body.chat && body.chat.messages) base.messages = body.chat.messages.slice();
+    state.chat = inquiryOtpMessages(base, body.demo_otp_code);
+    renderMessages(state.chat.messages);
     if (body.verification_id) state.verification_id = body.verification_id;
   }
 
@@ -289,13 +317,15 @@
     const body = await response.json().catch(function () { return {}; });
     if (response.ok && body.chat) {
       state.chat = Object.assign({}, state.chat || {}, body.chat);
-      renderMessages(body.chat.messages || []);
+      state.chat.messages = (body.chat.messages || []).slice();
+      renderMessages(state.chat.messages);
+    } else if (!response.ok) {
+      state.chat = inquiryOtpAfterFailedVerify(state.chat, body.error || "That code was not accepted.");
+      renderMessages(state.chat.messages);
     } else {
       const messages = (state.chat.messages || []).slice();
-      messages.push({
-        role: "bot",
-        text: response.ok ? "Code verified. You can record your identity." : (body.error || "That code was not accepted."),
-      });
+      messages.push({ role: "bot", text: "Code verified. You can record your identity." });
+      state.chat.messages = messages;
       renderMessages(messages);
     }
     const box = document.getElementById("otp-code");
@@ -402,3 +432,4 @@
 
   load();
 })();
+}
