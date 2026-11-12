@@ -258,7 +258,10 @@ PHINS is a Python platform built around:
  customer, so Supplier Management lists the same `PRO-{customer}-{role}`
  request. An agent application is that same supplier plus a pending row on
  the agents dashboard whose code is the request id. Approving either desk
- continues that request. A rejected or suspended supplier is not reopened.
+ continues that request. Declining that application withdraws the staged
+ row so the same person can file again. A supplier that was already
+ rejected or suspended is not reopened. Filing stays an open inquiry
+ until that desk row exists.
  Declining a company clears that name before approval. Approval opens that profile and a role-switch
  token without rewriting `USERS.role`. An agent is a role on that one supplier. An approved agent invitation cap is
  100 (customer cap stays 10). `affiliated_cac_plan()` is the planning view

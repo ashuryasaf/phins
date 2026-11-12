@@ -2548,7 +2548,6 @@ def submit_inquiry(token: str, body: Dict[str, Any]) -> Dict[str, Any]:
         inquiry["company"] = company
         inquiry["submitted_at"] = _now()
         req["inquiry"] = inquiry
-        req["status"] = "pending"
         req["updated_at"] = inquiry["submitted_at"]
         if has_company and company:
             req["company_name"] = company["company_name"]
@@ -2557,7 +2556,23 @@ def submit_inquiry(token: str, body: Dict[str, Any]) -> Dict[str, Any]:
             req["company_name"] = None
             req["supplier_type"] = None
             inquiry["company"] = None
-        _stage_staff_application(req)
+        # Stay on inquiry until the desk row exists. A staging error must
+        # leave the form resubmittable instead of a pending request with no row.
+        try:
+            _stage_staff_application(req)
+        except RewardError:
+            req["status"] = "inquiry"
+            raise
+        except Exception as exc:
+            req["status"] = "inquiry"
+            raise RewardError(
+                "The application could not be filed for staff review",
+                status=503,
+                code="application_not_staged",
+            ) from exc
+        req["status"] = "pending"
+        req["updated_at"] = inquiry["submitted_at"]
+        _link_staged_request(req)
         _persist_request(req)
         return public_request(req)
 
@@ -3345,7 +3360,15 @@ def _stamp_supplier_details(supplier: Dict[str, Any], req: Dict[str, Any],
 
 
 def _supplier_is_closed(supplier: Dict[str, Any]) -> bool:
+    """A supplier staff already closed. A withdrawn application is not one.
+
+    ``withdrawn`` is this application's own pending row after a decline. The
+    same person can file again on that record. ``rejected``, ``suspended``,
+    and ``terminated`` were closed before this application and stay closed.
+    """
     supplier_status = str(supplier.get("status") or "").strip().lower()
+    if supplier_status == "withdrawn":
+        return False
     if supplier_status in _CLOSED_SUPPLIER_STATUSES:
         return True
     if supplier_status == "approved" and supplier.get("portal_active") is False:
@@ -3393,6 +3416,10 @@ def _ensure_supplier(req: Dict[str, Any], admin: str, *, approve: bool = True,
             )
         _stamp_supplier_details(existing, req, name, stype, from_company)
         supplier_status = str(existing.get("status") or "").strip().lower()
+        if supplier_status == "withdrawn":
+            existing["status"] = "pending"
+            existing["portal_active"] = False
+            supplier_status = "pending"
         if approve and supplier_status in ("pending", "under_review"):
             service.approve_supplier(existing["id"], admin or "admin", notes=f"Approved with {req['id']}")
         existing["customer_id"] = req["customer_id"]
@@ -3479,26 +3506,82 @@ def _supplier_application_still_open(req: Dict[str, Any]) -> bool:
     )
 
 
+def _approved_role_on_supplier(supplier: Dict[str, Any], req: Dict[str, Any]) -> bool:
+    """Another professional role is already approved on this same supplier."""
+    customer_id = str(supplier.get("customer_id") or req.get("customer_id") or "")
+    sid = str(supplier.get("id") or "")
+    for role in ("supplier", "agent"):
+        other = REQUESTS.get(_request_id(customer_id, role))
+        if not other or other.get("id") == req.get("id"):
+            continue
+        if other.get("status") == "approved" and str(other.get("supplier_id") or "") == sid:
+            return True
+    return False
+
+
+def _unlink_professional_request(supplier: Dict[str, Any], request_id: str) -> None:
+    declined = str(request_id or "")
+    ids = [str(item) for item in (supplier.get("professional_request_ids") or []) if item and str(item) != declined]
+    supplier["professional_request_ids"] = ids
+    if str(supplier.get("professional_request_id") or "") == declined:
+        supplier["professional_request_id"] = ids[-1] if ids else None
+
+
+def _link_staged_request(req: Dict[str, Any]) -> None:
+    """Point the staged supplier at this request once it is actually pending.
+
+    A supplier that was already closed is not rewritten. The request only
+    remembers that id.
+    """
+    if req.get("staff_hold") == "supplier_closed":
+        return
+    sid = str(req.get("supplier_id") or "")
+    if not sid:
+        return
+    try:
+        supplier = _supply().suppliers.get(sid)
+    except RewardError:
+        return
+    if isinstance(supplier, dict):
+        _link_professional_request(supplier, req)
+
+
 def _release_staged_supplier(req: Dict[str, Any], admin: str, note: str) -> None:
-    """Drop a pending supplier only when no other application is still waiting."""
+    """Take a declined application off the desk without closing the person.
+
+    A pending row that exists only for this application becomes ``withdrawn``,
+    which a later filing reuses. It is not ``rejected``. A role already
+    approved on the same supplier keeps that supplier open. A supplier that
+    was already rejected, suspended, or terminated is not touched here.
+    """
     try:
         supplier = _find_supplier(req["customer_id"])
     except RewardError:
         return
     if not isinstance(supplier, dict):
         return
-    if str(supplier.get("status") or "").strip().lower() not in ("pending", "under_review"):
+    status = str(supplier.get("status") or "").strip().lower()
+    if status not in ("pending", "under_review"):
         return
     for role in ("supplier", "agent"):
         other = _pending_role_request(req.get("customer_id"), role)
         if other and other.get("id") != req.get("id"):
+            _unlink_professional_request(supplier, str(req.get("id") or ""))
             return
-    try:
-        _supply().reject_supplier(
-            supplier["id"], admin or "admin", note or "Application declined",
-        )
-    except Exception:
+    if _approved_role_on_supplier(supplier, req):
+        try:
+            _supply().approve_supplier(
+                supplier["id"], admin or "admin",
+                notes=note or "Approved role remains on this supplier",
+            )
+        except Exception:
+            return
+        _unlink_professional_request(supplier, str(req.get("id") or ""))
         return
+    _unlink_professional_request(supplier, str(req.get("id") or ""))
+    supplier["status"] = "withdrawn"
+    supplier["portal_active"] = False
+    supplier["rejection_reason"] = None
 
 
 def _ledger_agent_link(service: Any, supplier_id: str, agent_id: str) -> None:

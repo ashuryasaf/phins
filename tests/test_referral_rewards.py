@@ -2055,6 +2055,157 @@ def test_agent_overview_counts_a_professional_request_once():
         INVITATIONS.pop(request_id, None)
 
 
+def test_declined_application_can_be_filed_again_on_the_same_supplier():
+    """A decline withdraws the staged row. It does not close the person."""
+    email = "decline-again@example.com"
+    customer_id = _register("Decline Again", email)
+    session, _role = _login(email, "secure123456")
+    request_id = _file_professional_chat(session, "supplier", name="Decline Again", company={
+        "company_name": "Decline Clinic",
+        "supplier_type": "clinic",
+    })
+    staged_id = rewards.REQUESTS[request_id]["supplier_id"]
+    admin, _ = _login("admin", "admin123")
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": request_id, "decision": "reject", "note": "Not this time",
+    }, token=admin)
+    assert status == 200, declined
+    supplier = portal.supply_chain_service.suppliers[staged_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["status"] not in ("rejected", "suspended", "terminated")
+    assert supplier["portal_active"] is False
+    assert "supplier_id" not in portal.CUSTOMERS[customer_id]
+    pending, status = _get("/api/admin/suppliers/pending", token=admin)
+    assert status == 200, pending
+    assert all(item.get("id") != staged_id for item in pending["items"])
+
+    again = _file_professional_chat(session, "supplier", name="Decline Again", company={
+        "company_name": "Decline Clinic",
+        "supplier_type": "clinic",
+    })
+    assert again == request_id
+    assert rewards.REQUESTS[request_id]["status"] == "pending"
+    assert rewards.REQUESTS[request_id]["supplier_id"] == staged_id
+    assert portal.supply_chain_service.suppliers[staged_id]["status"] == "pending"
+    assert len([
+        item for item in portal.supply_chain_service.suppliers.values()
+        if item.get("customer_id") == customer_id
+    ]) == 1
+    approved, status = _post("/api/admin/professional-requests/review", {
+        "id": request_id, "decision": "approve",
+    }, token=admin)
+    assert status == 200, approved
+    assert portal.supply_chain_service.suppliers[staged_id]["status"] == "approved"
+    assert portal.CUSTOMERS[customer_id]["supplier_id"] == staged_id
+    assert portal.CUSTOMERS[customer_id]["name"] == "Decline Again"
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+
+
+def test_declining_supplier_request_keeps_an_approved_agent_role():
+    email = "keep-agent@example.com"
+    customer_id = _register("Keep Agent", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="Keep Agent", company={
+        "company_name": "Keep Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="Keep Agent", company={
+        "company_name": "Keep Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/agent-invitations/approve", {
+        "code": agent_request,
+        "commission_rate": 40,
+    }, token=admin)
+    assert status == 200, opened
+    supplier_id = opened["request"]["supplier_id"]
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "pending"
+    assert "agent" in supplier["roles"]
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    assert rewards.REQUESTS[supplier_request]["status"] == "rejected"
+    assert rewards.REQUESTS[agent_request]["status"] == "approved"
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "approved"
+    assert supplier["status"] not in ("rejected", "suspended", "terminated")
+    assert supplier["agent_id"] == opened["request"]["agent_id"]
+    assert len([
+        item for item in portal.supply_chain_service.suppliers.values()
+        if item.get("customer_id") == customer_id
+    ]) == 1
+    from services.agent_ecosystem_service import get_agent
+    assert get_agent(supplier["agent_id"])["default_commission_rate"] == pytest.approx(0.1)
+
+
+def test_staging_failure_leaves_the_inquiry_resubmittable(monkeypatch):
+    email = "stage-fail@example.com"
+    _register("Stage Fail", email)
+    session, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=session)
+    assert status == 200, filed
+    link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
+    _chat(link, "confirm_person", {
+        "personal": {
+            "name": "Stage Fail",
+            "phone": "555-0177",
+            "address": "8 Herzl",
+            "city": "Haifa",
+            "country": "IL",
+        },
+    })
+    _chat(link, "identity", "skip")
+    _chat(link, "company", {"company_name": "Stage Clinic", "supplier_type": "clinic"})
+    _chat(link, "evidence", "skip")
+    real = rewards._stage_staff_application
+    calls = {"n": 0}
+
+    def fail_once(req):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("supplier service unavailable")
+        return real(req)
+
+    monkeypatch.setattr(rewards, "_stage_staff_application", fail_once)
+    failed, status = _post("/api/professional-inquiry/chat", {
+        "token": link, "step": "review", "value": "submit",
+    })
+    assert status == 503, failed
+    assert failed["code"] == "application_not_staged"
+    assert rewards.REQUESTS[filed["id"]]["status"] == "inquiry"
+    assert not rewards.REQUESTS[filed["id"]].get("supplier_id")
+    submitted = _chat(link, "review", "submit")
+    assert submitted.get("status") == "pending"
+    assert rewards.REQUESTS[filed["id"]]["supplier_id"]
+    assert portal.supply_chain_service.suppliers[
+        rewards.REQUESTS[filed["id"]]["supplier_id"]
+    ]["status"] == "pending"
+
+
+def test_agent_desk_persists_the_staged_supplier(monkeypatch):
+    email = "persist-agent@example.com"
+    _register("Persist Agent", email)
+    session, _role = _login(email, "secure123456")
+    request_id = _file_professional_chat(session, "agent", name="Persist Agent")
+    supplier_id = rewards.REQUESTS[request_id]["supplier_id"]
+    saved = []
+
+    def remember(sid, data):
+        saved.append((sid, data.get("status")))
+
+    monkeypatch.setattr(portal, "_persist_supplier", remember)
+    admin, _ = _login("admin", "admin123")
+    approved, status = _post("/api/admin/agent-invitations/approve", {
+        "code": request_id,
+    }, token=admin)
+    assert status == 200, approved
+    assert saved == [(supplier_id, "approved")]
+    assert portal.supply_chain_service.suppliers[supplier_id]["status"] == "approved"
+
+
 def test_filed_inquiry_link_returns_status_only_and_expires_in_every_status():
     email = "filed-link@example.com"
     _register("Filed Link", email)

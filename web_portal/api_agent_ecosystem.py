@@ -218,6 +218,24 @@ def handle_get(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
 # ---------------------------------------------------------------------------
 # POST
 # ---------------------------------------------------------------------------
+def _persist_linked_supplier(supplier_id: Any) -> None:
+    """Write the supplier the agent desk just continued, the same way Supplier Management does."""
+    sid = str(supplier_id or "")
+    if not sid:
+        return
+    try:
+        from web_portal import server as portal
+    except Exception:
+        import server as portal
+    persist = getattr(portal, "_persist_supplier", None)
+    suppliers = getattr(portal, "SUPPLIERS", None)
+    if not callable(persist) or not hasattr(suppliers, "get"):
+        return
+    row = suppliers.get(sid)
+    if isinstance(row, dict):
+        persist(sid, row)
+
+
 def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
                 body: Dict[str, Any], data_sources: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
     role = (ctx.get("role") or "").lower()
@@ -361,6 +379,7 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             except RewardError as exc:
                 return exc.status, exc.to_dict()
             if reviewed is not None:
+                _persist_linked_supplier(reviewed.get("supplier_id"))
                 return 200, {
                     "invitation": {
                         "code": code,
@@ -384,6 +403,7 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             except RewardError as exc:
                 return exc.status, exc.to_dict()
             if reviewed is not None:
+                _persist_linked_supplier(reviewed.get("supplier_id"))
                 return 200, {
                     "invitation": {
                         "code": code,
