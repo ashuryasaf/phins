@@ -2548,7 +2548,6 @@ def submit_inquiry(token: str, body: Dict[str, Any]) -> Dict[str, Any]:
         inquiry["company"] = company
         inquiry["submitted_at"] = _now()
         req["inquiry"] = inquiry
-        req["status"] = "pending"
         req["updated_at"] = inquiry["submitted_at"]
         if has_company and company:
             req["company_name"] = company["company_name"]
@@ -2556,6 +2555,24 @@ def submit_inquiry(token: str, body: Dict[str, Any]) -> Dict[str, Any]:
         else:
             req["company_name"] = None
             req["supplier_type"] = None
+            inquiry["company"] = None
+        # Stay on inquiry until the desk row exists. A staging error must
+        # leave the form resubmittable instead of a pending request with no row.
+        try:
+            _stage_staff_application(req)
+        except RewardError:
+            req["status"] = "inquiry"
+            raise
+        except Exception as exc:
+            req["status"] = "inquiry"
+            raise RewardError(
+                "The application could not be filed for staff review",
+                status=503,
+                code="application_not_staged",
+            ) from exc
+        req["status"] = "pending"
+        req["updated_at"] = inquiry["submitted_at"]
+        _link_staged_request(req)
         _persist_request(req)
         return public_request(req)
 
@@ -3342,37 +3359,78 @@ def _stamp_supplier_details(supplier: Dict[str, Any], req: Dict[str, Any],
         supplier["pipeline_detail_conflict"] = True
 
 
-def _ensure_supplier(req: Dict[str, Any], admin: str) -> Dict[str, Any]:
-    """One supplier for this customer. A second approval reuses it."""
+def _supplier_is_closed(supplier: Dict[str, Any]) -> bool:
+    """A supplier staff already closed. A withdrawn application is not one.
+
+    ``withdrawn`` is this application's own pending row after a decline. The
+    same person can file again on that record. ``rejected``, ``suspended``,
+    and ``terminated`` were closed before this application and stay closed.
+    """
+    supplier_status = str(supplier.get("status") or "").strip().lower()
+    if supplier_status == "withdrawn":
+        return False
+    if supplier_status in _CLOSED_SUPPLIER_STATUSES:
+        return True
+    if supplier_status == "approved" and supplier.get("portal_active") is False:
+        return True
+    return supplier_status not in ("approved", "pending", "under_review")
+
+
+def _link_professional_request(supplier: Dict[str, Any], req: Dict[str, Any]) -> None:
+    """Remember this request on the one supplier. The inquiry token is not stored."""
+    ids = [str(item) for item in (supplier.get("professional_request_ids") or []) if item]
+    request_id = str(req.get("id") or "")
+    if request_id and request_id not in ids:
+        ids.append(request_id)
+    supplier["professional_request_ids"] = ids
+    supplier_req = REQUESTS.get(_request_id(req.get("customer_id"), "supplier"))
+    if supplier_req and supplier_req.get("status") == "pending":
+        supplier["professional_request_id"] = supplier_req.get("id")
+    elif request_id:
+        supplier["professional_request_id"] = request_id
+
+
+def _pending_role_request(customer_id: str, role: str) -> Optional[Dict[str, Any]]:
+    req = REQUESTS.get(_request_id(customer_id, role))
+    if req and req.get("status") == "pending":
+        return req
+    return None
+
+
+def _ensure_supplier(req: Dict[str, Any], admin: str, *, approve: bool = True,
+                     write_customer: bool = True) -> Dict[str, Any]:
+    """One supplier for this customer. A second approval reuses it.
+
+    ``approve`` is false while the application is only waiting on the staff
+    desk. That leaves the record pending and does not write the customer master.
+    """
     name, stype, from_company = _company_from_request(req)
     existing = _find_supplier(req["customer_id"])
     service = _supply()
     if existing:
-        supplier_status = str(existing.get("status") or "").strip().lower()
-        if supplier_status in _CLOSED_SUPPLIER_STATUSES or (
-            supplier_status == "approved" and existing.get("portal_active") is False
-        ):
-            raise RewardError(
-                "This supplier is closed and is not reopened from the application",
-                status=409,
-                code="supplier_closed",
-            )
-        if supplier_status not in ("approved", "pending", "under_review"):
+        if _supplier_is_closed(existing):
             raise RewardError(
                 "This supplier is closed and is not reopened from the application",
                 status=409,
                 code="supplier_closed",
             )
         _stamp_supplier_details(existing, req, name, stype, from_company)
-        if supplier_status in ("pending", "under_review"):
+        supplier_status = str(existing.get("status") or "").strip().lower()
+        if supplier_status == "withdrawn":
+            existing["status"] = "pending"
+            existing["portal_active"] = False
+            supplier_status = "pending"
+        if approve and supplier_status in ("pending", "under_review"):
             service.approve_supplier(existing["id"], admin or "admin", notes=f"Approved with {req['id']}")
         existing["customer_id"] = req["customer_id"]
-        rec = _customer_record(req["customer_id"])
-        if isinstance(rec, dict):
-            rec["supplier_id"] = existing["id"]
+        if write_customer:
+            rec = _customer_record(req["customer_id"])
+            if isinstance(rec, dict):
+                rec["supplier_id"] = existing["id"]
         req["supplier_id"] = existing["id"]
         if not req.get("invitation_code"):
             req["invitation_code"] = existing.get("invitation_code")
+        _link_professional_request(existing, req)
         return existing
     rec = _customer_record(req["customer_id"]) or {}
     issued = service.generate_invitation_code(
@@ -3406,20 +3464,307 @@ def _ensure_supplier(req: Dict[str, Any], admin: str) -> Dict[str, Any]:
     supplier_id = (registered or {}).get("supplier_id")
     if not supplier_id:
         raise RewardError("Supplier registration did not return an id", code="supplier_failed")
-    service.approve_supplier(supplier_id, admin or "admin", notes=f"Approved with {req['id']}")
+    if approve:
+        service.approve_supplier(supplier_id, admin or "admin", notes=f"Approved with {req['id']}")
     supplier = service.suppliers.get(supplier_id)
     if not isinstance(supplier, dict):
         raise RewardError("Supplier registration did not return a record", code="supplier_failed")
     supplier["customer_id"] = req["customer_id"]
-    supplier["portal_active"] = True
+    if approve:
+        supplier["portal_active"] = True
     supplier["company_name_source"] = "inquiry" if from_company else "placeholder"
     supplier["roles"] = ["supplier"]
     _stamp_supplier_details(supplier, req, name, stype, from_company)
-    if isinstance(rec, dict):
+    if write_customer and isinstance(rec, dict):
         rec["supplier_id"] = supplier_id
     req["invitation_code"] = code
     req["supplier_id"] = supplier_id
+    _link_professional_request(supplier, req)
     return supplier
+
+
+def _stage_staff_application(req: Dict[str, Any]) -> None:
+    """Show this filed request on the staff desks. Do not approve it.
+
+    A closed supplier is left closed. The request stays pending and is not
+    copied onto a second supplier. The customer master is not written.
+    """
+    existing = _find_supplier(req["customer_id"])
+    if existing and _supplier_is_closed(existing):
+        req["supplier_id"] = existing.get("id")
+        req["staff_hold"] = "supplier_closed"
+        return
+    _ensure_supplier(req, "professional_inquiry", approve=False, write_customer=False)
+
+
+def _supplier_application_still_open(req: Dict[str, Any]) -> bool:
+    other = REQUESTS.get(_request_id(req.get("customer_id"), "supplier"))
+    return bool(
+        other
+        and other.get("status") == "pending"
+        and other.get("id") != req.get("id")
+    )
+
+
+def _approved_role_on_supplier(supplier: Dict[str, Any], req: Dict[str, Any]) -> bool:
+    """Another professional role is already approved on this same supplier."""
+    customer_id = str(supplier.get("customer_id") or req.get("customer_id") or "")
+    sid = str(supplier.get("id") or "")
+    for role in ("supplier", "agent"):
+        other = REQUESTS.get(_request_id(customer_id, role))
+        if not other or other.get("id") == req.get("id"):
+            continue
+        if other.get("status") == "approved" and str(other.get("supplier_id") or "") == sid:
+            return True
+    return False
+
+
+def _unlink_professional_request(supplier: Dict[str, Any], request_id: str) -> None:
+    declined = str(request_id or "")
+    ids = [str(item) for item in (supplier.get("professional_request_ids") or []) if item and str(item) != declined]
+    supplier["professional_request_ids"] = ids
+    if str(supplier.get("professional_request_id") or "") == declined:
+        supplier["professional_request_id"] = ids[-1] if ids else None
+
+
+def _link_staged_request(req: Dict[str, Any]) -> None:
+    """Point the staged supplier at this request once it is actually pending.
+
+    A supplier that was already closed is not rewritten. The request only
+    remembers that id.
+    """
+    if req.get("staff_hold") == "supplier_closed":
+        return
+    sid = str(req.get("supplier_id") or "")
+    if not sid:
+        return
+    try:
+        supplier = _supply().suppliers.get(sid)
+    except RewardError:
+        return
+    if isinstance(supplier, dict):
+        _link_professional_request(supplier, req)
+
+
+def _supplier_was_approved(supplier: Dict[str, Any]) -> bool:
+    """The supplier itself was approved, not only a professional request.
+
+    The portal is on, or a ``supplier_approval`` ledger row already exists.
+    A request marked approved while the row is still staged is not enough.
+    """
+    if supplier.get("portal_active") is True:
+        return True
+    sid = str(supplier.get("id") or "")
+    if not sid:
+        return False
+    try:
+        ledger = getattr(_supply(), "ledger", {}) or {}
+    except RewardError:
+        return False
+    for entry in ledger.values():
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("supplier_id") == sid and entry.get("entry_type") == "supplier_approval":
+            return True
+    return False
+
+
+def _usable_agent_id(req: Dict[str, Any]) -> str:
+    """An agent grant role-switch can still open."""
+    if str(req.get("requested_role") or "") != "agent":
+        return ""
+    agent_id = str(req.get("agent_id") or "")
+    if not agent_id:
+        return ""
+    from services.agent_ecosystem_service import get_agent
+    agent = get_agent(agent_id)
+    return agent_id if isinstance(agent, dict) else ""
+
+
+def _agent_still_referenced(customer_id: str, agent_id: str, ignore_request_id: str = "") -> bool:
+    """A real grant or the customer pointer still names this agent.
+
+    The request being reset is not a grant. The customer master is only
+    read. Decline does not clear ``agent_id``.
+    """
+    skipped = str(ignore_request_id or "")
+    for item in REQUESTS.values():
+        if not isinstance(item, dict):
+            continue
+        if skipped and str(item.get("id") or "") == skipped:
+            continue
+        if item.get("status") == "approved" and str(item.get("agent_id") or "") == agent_id:
+            return True
+    rec = _customer_record(customer_id) or {}
+    return str(rec.get("agent_id") or "") == agent_id
+
+
+def _drop_unreachable_agent(customer_id: str, dangling: str, ignore_request_id: str = "") -> None:
+    """Remove the agent id this request just detached, when nothing live names it.
+
+    The id is the only candidate. Login, email, and customer id are not
+    searched. An agent the customer record still points at stays, so the
+    next approval reuses it. A failed delete raises before any request is
+    stored.
+    """
+    aid = str(dangling or "").strip()
+    if not aid or _agent_still_referenced(customer_id, aid, ignore_request_id):
+        return
+    from services.agent_ecosystem_service import discard_agent
+    discard_agent(aid)
+
+
+def _sibling_fields(req: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "status": req.get("status"),
+        "had_supplier_id": "supplier_id" in req,
+        "supplier_id": req.get("supplier_id"),
+        "had_agent_id": "agent_id" in req,
+        "agent_id": req.get("agent_id"),
+    }
+
+
+def _restore_sibling_fields(req: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
+    req["status"] = snapshot.get("status")
+    if snapshot.get("had_supplier_id"):
+        req["supplier_id"] = snapshot.get("supplier_id")
+    else:
+        req.pop("supplier_id", None)
+    if snapshot.get("had_agent_id"):
+        req["agent_id"] = snapshot.get("agent_id")
+    else:
+        req.pop("agent_id", None)
+
+
+def _detach_withdrawn_supplier(supplier: Dict[str, Any]) -> None:
+    """A withdrawn row is not a live supplier.
+
+    A granted agent keeps ``agent_id`` so role-switch still works, and stops
+    pointing ``supplier_id`` at this row. An approved stamp with no usable
+    agent goes back to inquiry. Only that detached agent id is removed, and
+    only when no grant and no customer pointer still name it. The delete
+    runs before either request is stored. A failed delete leaves those
+    requests unchanged. When there is nothing to delete, both requests are
+    stored together. If storing a sibling fails, that sibling is put back
+    before the error returns, and the withdrawn supplier snapshot is restored
+    with it. The direct review route and both desks reach this through
+    ``review_professional``.
+    """
+    sid = str(supplier.get("id") or "")
+    customer_id = str(supplier.get("customer_id") or "")
+    planned: List[Tuple[Dict[str, Any], str]] = []
+    for role in ("supplier", "agent"):
+        other = REQUESTS.get(_request_id(customer_id, role))
+        if not isinstance(other, dict) or other.get("status") != "approved":
+            continue
+        if not (sid and str(other.get("supplier_id") or "") == sid):
+            continue
+        kept = _usable_agent_id(other)
+        if kept:
+            planned.append((other, kept))
+            continue
+        dangling = str(other.get("agent_id") or "")
+        _drop_unreachable_agent(
+            str(other.get("customer_id") or customer_id),
+            dangling,
+            str(other.get("id") or ""),
+        )
+        planned.append((other, ""))
+    snapshots = [(other, _sibling_fields(other)) for other, _kept in planned]
+    try:
+        supplier.pop("agent_id", None)
+        for other, kept in planned:
+            if kept:
+                other.pop("supplier_id", None)
+                other["agent_id"] = kept
+            else:
+                other.pop("supplier_id", None)
+                other.pop("agent_id", None)
+                other["status"] = "inquiry"
+            _persist_request(other)
+    except Exception:
+        for other, snapshot in snapshots:
+            _restore_sibling_fields(other, snapshot)
+        for other, _snapshot in snapshots:
+            try:
+                _persist_request(other)
+            except Exception:
+                continue
+        raise
+
+
+def _restore_supplier_snapshot(supplier: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
+    supplier["status"] = snapshot.get("status")
+    supplier["portal_active"] = snapshot.get("portal_active")
+    supplier["rejection_reason"] = snapshot.get("rejection_reason")
+    supplier["professional_request_ids"] = list(snapshot.get("professional_request_ids") or [])
+    supplier["professional_request_id"] = snapshot.get("professional_request_id")
+    if snapshot.get("had_agent_id"):
+        supplier["agent_id"] = snapshot.get("agent_id")
+    else:
+        supplier.pop("agent_id", None)
+
+
+def _withdraw_staged_supplier(supplier: Dict[str, Any], request_id: str) -> None:
+    snapshot = {
+        "status": supplier.get("status"),
+        "portal_active": supplier.get("portal_active"),
+        "rejection_reason": supplier.get("rejection_reason"),
+        "had_agent_id": "agent_id" in supplier,
+        "agent_id": supplier.get("agent_id"),
+        "professional_request_ids": list(supplier.get("professional_request_ids") or []),
+        "professional_request_id": supplier.get("professional_request_id"),
+    }
+    try:
+        _unlink_professional_request(supplier, request_id)
+        supplier["status"] = "withdrawn"
+        supplier["portal_active"] = False
+        supplier["rejection_reason"] = None
+        _detach_withdrawn_supplier(supplier)
+    except Exception:
+        _restore_supplier_snapshot(supplier, snapshot)
+        raise
+
+
+def _release_staged_supplier(req: Dict[str, Any], _admin: str, _note: str) -> None:
+    """Take a declined application off the desk without closing the person.
+
+    A staged row that was never activated becomes ``withdrawn``. A request
+    that says approved is not an activation, so it is detached from that
+    row. ``approved`` is kept only when this supplier was already approved:
+    the portal is on, or a ``supplier_approval`` ledger row already exists.
+    This does not call ``approve_supplier`` or ``reject_supplier``, and it
+    does not turn the portal on, write a ledger row, or write the customer.
+    A supplier that was already rejected, suspended, or terminated is not
+    touched here.
+    """
+    try:
+        supplier = _find_supplier(req["customer_id"])
+    except RewardError:
+        return
+    if not isinstance(supplier, dict):
+        return
+    request_id = str(req.get("id") or "")
+    status = str(supplier.get("status") or "").strip().lower()
+    if status in _CLOSED_SUPPLIER_STATUSES:
+        return
+    if status == "approved" and supplier.get("portal_active") is False:
+        if _supplier_was_approved(supplier):
+            _unlink_professional_request(supplier, request_id)
+        return
+    for role in ("supplier", "agent"):
+        other = _pending_role_request(req.get("customer_id"), role)
+        if other and other.get("id") != req.get("id"):
+            _unlink_professional_request(supplier, request_id)
+            return
+    if _supplier_was_approved(supplier):
+        if status in ("pending", "under_review"):
+            supplier["status"] = "approved"
+        _unlink_professional_request(supplier, request_id)
+        return
+    if status not in ("pending", "under_review"):
+        return
+    _withdraw_staged_supplier(supplier, request_id)
 
 
 def _ledger_agent_link(service: Any, supplier_id: str, agent_id: str) -> None:
@@ -3466,23 +3811,29 @@ def _attach_agent_role(supplier: Dict[str, Any], agent: Dict[str, Any], req: Dic
     req["supplier_id"] = supplier.get("id")
 
 
-def _open_agent(req: Dict[str, Any], admin: str) -> Dict[str, Any]:
+def _open_agent(req: Dict[str, Any], admin: str, default_rate: Any = None) -> Dict[str, Any]:
     from services.agent_ecosystem_service import create_agent
-    supplier = _ensure_supplier(req, admin)
+    supplier = _ensure_supplier(
+        req, admin, approve=not _supplier_application_still_open(req),
+    )
     rec = _customer_record(req["customer_id"]) or {}
     username = req.get("login_username") or rec.get("email") or req["customer_id"]
+    rate = default_rate
+    if rate is None:
+        rate = int(CONFIG.get("agent_default_rate_percent") or 0)
     agent = create_agent(
         username=str(username),
         display_name=str((req.get("inquiry") or {}).get("personal", {}).get("name") or rec.get("name") or username),
         email=str(rec.get("email") or ""),
-        default_rate=int(CONFIG.get("agent_default_rate_percent") or 0),
+        default_rate=rate,
         created_by="referral_rewards",
     )
     _attach_agent_role(supplier, agent, req)
     return agent
 
 
-def review_professional(request_id: str, decision: str, admin: str, note: str = "") -> Dict[str, Any]:
+def review_professional(request_id: str, decision: str, admin: str, note: str = "",
+                        default_rate: Any = None) -> Dict[str, Any]:
     decision = str(decision or "").strip().lower()
     if decision not in ("approve", "reject"):
         raise RewardError("Decision must be approve or reject")
@@ -3498,7 +3849,7 @@ def review_professional(request_id: str, decision: str, admin: str, note: str = 
         if decision == "approve":
             try:
                 if req["requested_role"] == "agent":
-                    agent = _open_agent(req, admin)
+                    agent = _open_agent(req, admin, default_rate)
                     req["agent_id"] = agent.get("id")
                 else:
                     supplier = _ensure_supplier(req, admin)
@@ -3509,6 +3860,7 @@ def review_professional(request_id: str, decision: str, admin: str, note: str = 
                 raise RewardError(str(exc), status=400, code="professional_open_failed") from exc
             req["status"] = "approved"
         else:
+            _release_staged_supplier(req, admin, str(note or ""))
             req["status"] = "rejected"
         req["reviewed_by"] = str(admin or "admin")[:80]
         req["reviewed_at"] = _now()
@@ -3520,6 +3872,181 @@ def review_professional(request_id: str, decision: str, admin: str, note: str = 
             "agent_id": req.get("agent_id"), "supplier_id": req.get("supplier_id"),
         })
         return public_request(req)
+
+
+def pending_agent_desk_rows() -> List[Dict[str, Any]]:
+    """Agent applications waiting on the agents dashboard.
+
+    The code is the request id ``PRO-{customer}-agent``. That is the same
+    request the desk approves. The inquiry token is not included.
+    """
+    with _LOCK:
+        _ensure_loaded()
+        rate_percent = int((CONFIG or default_config()).get("agent_default_rate_percent") or 0)
+        proposed = round(rate_percent / 100.0, 6)
+        rows = []
+        for req in REQUESTS.values():
+            if req.get("requested_role") != "agent" or req.get("status") != "pending":
+                continue
+            rows.append({
+                "code": req.get("id"),
+                "agent_id": req.get("supplier_id") or req.get("customer_id"),
+                "invitee_type": "agent",
+                "proposed_rate": proposed,
+                "commission_rate": None,
+                "status": "pending_approval",
+                "professional_request_id": req.get("id"),
+                "notes": "Professional application",
+                "created_at": ((req.get("inquiry") or {}).get("submitted_at") if isinstance(req.get("inquiry"), dict) else None)
+                or req.get("updated_at"),
+            })
+        rows.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+        return rows
+
+
+def _desk_supplier_row(req: Dict[str, Any]) -> Dict[str, Any]:
+    name, stype, from_company = _company_from_request(req)
+    inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+    personal = inquiry.get("personal") if isinstance(inquiry.get("personal"), dict) else {}
+    return {
+        "id": req.get("id"),
+        "professional_request_id": req.get("id"),
+        "professional_request_ids": [req.get("id")],
+        "customer_id": req.get("customer_id"),
+        "company_name": name if from_company else (personal.get("name") or name),
+        "supplier_type": stype if from_company else "other",
+        "contact_name": personal.get("name") or "",
+        "contact_email": _inquiry_email_for(req),
+        "application_date": inquiry.get("submitted_at") or req.get("updated_at"),
+        "status": "pending",
+        "ai_trust_score": 0,
+        "ai_recommendation": "review",
+        "staff_hold": req.get("staff_hold"),
+    }
+
+
+def pending_supplier_desk_rows(visible_supplier_ids: Iterable[str] = ()) -> List[Dict[str, Any]]:
+    """Filed requests that are not already a pending supplier row.
+
+    A live pending supplier is the application. This adds a request the desk
+    would otherwise miss, including one held because the supplier is closed.
+    """
+    visible = {str(item) for item in visible_supplier_ids if item}
+    with _LOCK:
+        _ensure_loaded()
+        rows = []
+        seen = set()
+        for req in list(REQUESTS.values()):
+            if req.get("status") != "pending":
+                continue
+            if req.get("requested_role") not in ("supplier", "agent"):
+                continue
+            customer_id = str(req.get("customer_id") or "")
+            if customer_id in seen:
+                continue
+            sid = str(req.get("supplier_id") or "")
+            if sid and sid in visible:
+                continue
+            supplier = None
+            if sid:
+                try:
+                    supplier = _supply().suppliers.get(sid)
+                except RewardError:
+                    supplier = None
+            if isinstance(supplier, dict) and str(supplier.get("status") or "").lower() in ("pending", "under_review"):
+                continue
+            chosen = req
+            if req.get("requested_role") != "supplier":
+                supplier_req = _pending_role_request(customer_id, "supplier")
+                if supplier_req:
+                    chosen = supplier_req
+            seen.add(customer_id)
+            rows.append(_desk_supplier_row(chosen))
+        return rows
+
+
+def continue_agent_application(code: str, decision: str, admin: str,
+                               note: str = "") -> Optional[Dict[str, Any]]:
+    """Approve or reject the agent request whose id is the desk code.
+
+    A normal agent-invitation code is not a professional request and returns
+    None so that invitation stays on its own path. The agent's default rate
+    stays the program default. The invitation body's commission rate is not
+    copied onto the agent.
+    """
+    key = str(code or "").strip()
+    with _LOCK:
+        _ensure_loaded()
+        req = REQUESTS.get(key)
+        if req is None or req.get("requested_role") != "agent":
+            return None
+        request_id = req.get("id")
+    return review_professional(request_id, decision, admin, note)
+
+
+def _pending_request_on_supplier(supplier: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Pending professional request staged on this supplier.
+
+    Sharing a customer id is not enough. The request must name this supplier,
+    or this supplier must name that request. The supplier role wins when both
+    roles were staged here, so the agents desk still reviews the agent request.
+    """
+    sid = str(supplier.get("id") or "")
+    if not sid:
+        return None
+    linked = {str(item) for item in (supplier.get("professional_request_ids") or []) if item}
+    primary = str(supplier.get("professional_request_id") or "")
+    if primary:
+        linked.add(primary)
+    customer_id = str(supplier.get("customer_id") or "")
+    chosen = None
+    for role in ("supplier", "agent"):
+        req = _pending_role_request(customer_id, role)
+        if not req:
+            continue
+        request_id = str(req.get("id") or "")
+        staged_here = request_id in linked or str(req.get("supplier_id") or "") == sid
+        if not staged_here:
+            continue
+        if role == "supplier":
+            return req
+        chosen = chosen or req
+    return chosen
+
+
+def continue_supplier_application(supplier_or_request_id: str, decision: str, admin: str,
+                                  note: str = "") -> Optional[Dict[str, Any]]:
+    """Continue the professional request staged on this supplier.
+
+    A request id continues that request (the closed-supplier row uses the
+    request id). Any other supplier stays on approve_supplier / reject_supplier.
+    """
+    key = str(supplier_or_request_id or "").strip()
+    with _LOCK:
+        _ensure_loaded()
+        target_id = ""
+        direct = REQUESTS.get(key)
+        if (
+            direct
+            and direct.get("status") == "pending"
+            and direct.get("requested_role") in ("supplier", "agent")
+        ):
+            target_id = str(direct.get("id") or "")
+        else:
+            supplier = None
+            try:
+                supplier = _supply().suppliers.get(key)
+            except RewardError:
+                supplier = None
+            if not isinstance(supplier, dict):
+                return None
+            target = _pending_request_on_supplier(supplier)
+            if target is None:
+                return None
+            target_id = str(target.get("id") or "")
+    if not target_id:
+        return None
+    return review_professional(target_id, decision, admin, note)
 
 
 def _audit(action: str, entity: str, entity_id: str, details: Dict[str, Any]) -> None:
@@ -3534,23 +4061,46 @@ def _audit(action: str, entity: str, entity_id: str, details: Dict[str, Any]) ->
 
 
 def professional_status(customer_id: str) -> Dict[str, Any]:
+    """Desks follow the supplier record.
+
+    A professional request marked approved is not a supplier approval. The
+    supplier desk is approved only when that supplier was activated. Until
+    then neither desk is reported as approved, and a withdrawn row is not
+    presented as a live ``supplier_id`` or ``agent_id``.
+    """
     with _LOCK:
         _ensure_loaded()
-        out = {}
+        try:
+            supplier = _find_supplier(customer_id)
+        except RewardError:
+            supplier = None
+        live = isinstance(supplier, dict) and _supplier_was_approved(supplier)
+        record_status = str((supplier or {}).get("status") or "").strip().lower()
+        out: Dict[str, Any] = {}
         for role in ("agent", "supplier"):
             req = REQUESTS.get(_request_id(customer_id, role))
-            out[role] = public_request(req) if req else {"status": "none", "requested_role": role}
-        agent = out.get("agent") or {}
-        supplier = out.get("supplier") or {}
-        if supplier.get("status") != "approved" and agent.get("status") == "approved" and agent.get("supplier_id"):
-            out["supplier"] = {
-                "status": "approved",
-                "requested_role": "supplier",
-                "supplier_id": agent.get("supplier_id"),
-                "customer_id": customer_id,
-                "via": "agent",
-                "agent_id": agent.get("agent_id"),
-            }
+            view = public_request(req) if req else {"status": "none", "requested_role": role}
+            if not live and view.get("status") == "approved":
+                view = dict(view)
+                view["status"] = record_status or "none"
+                if record_status == "withdrawn":
+                    view["supplier_id"] = None
+                    view["agent_id"] = None
+            out[role] = view
+        if isinstance(supplier, dict):
+            desk = dict(out.get("supplier") or {})
+            desk["requested_role"] = "supplier"
+            desk["customer_id"] = customer_id
+            if live:
+                desk["status"] = "approved"
+                desk["supplier_id"] = supplier.get("id")
+            else:
+                desk["status"] = record_status or desk.get("status") or "none"
+                if record_status == "withdrawn":
+                    desk["supplier_id"] = None
+                    desk["agent_id"] = None
+            desk.pop("via", None)
+            out["supplier"] = desk
         return out
 
 

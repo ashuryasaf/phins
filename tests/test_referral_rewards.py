@@ -1782,6 +1782,1121 @@ def test_declined_company_is_not_the_supplier_name():
     assert "North Clinic" not in json.dumps(supplier["company_name"])
 
 
+def _file_professional_chat(session, role, *, name, company=None, confirm_identity=False):
+    filed, status = _post("/api/customer/professional-requests", {"role": role}, token=session)
+    assert status == 200, filed
+    link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
+    _chat(link, "confirm_person", {
+        "personal": {
+            "name": name,
+            "phone": "555-0177",
+            "address": "8 Herzl",
+            "city": "Haifa",
+            "country": "IL",
+        },
+    })
+    _chat(link, "identity", "confirm" if confirm_identity else "skip")
+    if company:
+        _chat(link, "company", company)
+    else:
+        _chat(link, "company", "no")
+    _chat(link, "evidence", "skip")
+    submitted = _chat(link, "review", "submit")
+    assert submitted.get("status") == "pending"
+    assert (submitted.get("request") or {}).get("id") == filed["id"]
+    return filed["id"]
+
+
+def test_filed_chat_is_pending_on_the_supplier_and_agent_desks():
+    """Staff see the same filed request, then the existing fee ledger."""
+    supplier_email = "desk-supplier@example.com"
+    supplier_customer = _register("Desk Clinic", supplier_email)
+    supplier_session, _role = _login(supplier_email, "secure123456")
+    from services.customer_identity_service import set_identity
+    set_identity(
+        portal.CUSTOMERS, supplier_customer, "123456782", "IL",
+        source="chat", actor="professional_inquiry",
+    )
+    master = {
+        "name": portal.CUSTOMERS[supplier_customer]["name"],
+        "email": portal.CUSTOMERS[supplier_customer]["email"],
+    }
+    supplier_request = _file_professional_chat(
+        supplier_session, "supplier", name="Desk Clinic", confirm_identity=True,
+        company={"company_name": "Desk Clinic", "supplier_type": "clinic"},
+    )
+    assert portal.CUSTOMERS[supplier_customer]["name"] == master["name"]
+    assert portal.CUSTOMERS[supplier_customer]["email"] == master["email"]
+    assert "supplier_id" not in portal.CUSTOMERS[supplier_customer]
+    assert "national_id" not in portal.CUSTOMERS[supplier_customer]
+    stored = rewards.REQUESTS[supplier_request]
+    assert "123456782" not in json.dumps(stored)
+
+    agent_email = "desk-agent@example.com"
+    agent_customer = _register("Desk Agent", agent_email)
+    agent_session, _role = _login(agent_email, "secure123456")
+    agent_request = _file_professional_chat(
+        agent_session, "agent", name="Desk Agent",
+    )
+    agent_stored = rewards.REQUESTS[agent_request]
+    assert agent_stored["inquiry"]["has_company"] is False
+    assert agent_stored["company_name"] is None
+    assert agent_stored["supplier_type"] is None
+    assert agent_stored["inquiry"]["company"] is None
+    agent_suppliers = [
+        item for item in portal.supply_chain_service.suppliers.values()
+        if item.get("customer_id") == agent_customer
+    ]
+    assert len(agent_suppliers) == 1
+    assert agent_suppliers[0]["status"] == "pending"
+    assert agent_suppliers[0]["company_name"] == "Desk Agent"
+    assert agent_suppliers[0]["company_name_source"] == "placeholder"
+    assert agent_suppliers[0]["supplier_type"] == "other"
+    assert not agent_suppliers[0].get("business_registration_number")
+    assert agent_request in agent_suppliers[0]["professional_request_ids"]
+    assert "123456782" not in json.dumps(agent_suppliers[0])
+    assert "supplier_id" not in portal.CUSTOMERS[agent_customer]
+    assert "agent_id" not in portal.CUSTOMERS[agent_customer]
+
+    admin, _ = _login("admin", "admin123")
+    pending, status = _get("/api/admin/suppliers/pending", token=admin)
+    assert status == 200, pending
+    supplier_row = next(
+        item for item in pending["items"]
+        if supplier_request in (item.get("professional_request_ids") or [])
+        or item.get("professional_request_id") == supplier_request
+    )
+    assert supplier_row["status"] == "pending"
+    assert supplier_row["customer_id"] == supplier_customer
+    assert "123456782" not in json.dumps(pending)
+    stats, status = _get("/api/admin/suppliers/analytics", token=admin)
+    assert status == 200, stats
+    assert stats["pending_applications"] >= 2
+
+    invitations, status = _get("/api/admin/agent-invitations", token=admin)
+    assert status == 200, invitations
+    agent_row = next(item for item in invitations["items"] if item.get("code") == agent_request)
+    assert agent_row["status"] == "pending_approval"
+    assert agent_row["professional_request_id"] == agent_request
+    assert "123456782" not in json.dumps(invitations)
+    pending_codes = [
+        item.get("code") for item in invitations["items"] if item.get("status") == "pending_approval"
+    ]
+    assert len(pending_codes) == len(set(pending_codes))
+    overview, status = _get("/api/admin/agents/overview", token=admin)
+    assert status == 200, overview
+    assert overview["invitations_pending_approval"] == len(pending_codes)
+
+    approved, status = _post(
+        f"/api/admin/suppliers/{supplier_row['id']}/approve",
+        {"notes": "Same request"},
+        token=admin,
+    )
+    assert status == 200, approved
+    assert approved["request"]["id"] == supplier_request
+    assert approved["request"]["status"] == "approved"
+    assert portal.CUSTOMERS[supplier_customer]["name"] == master["name"]
+    assert portal.CUSTOMERS[supplier_customer]["supplier_id"] == approved["supplier_id"]
+    assert "national_id" not in portal.CUSTOMERS[supplier_customer]
+    clinic = portal.supply_chain_service.suppliers[approved["supplier_id"]]
+    assert clinic["status"] == "approved"
+    assert clinic["company_name"] == "Desk Clinic"
+    assert "supplier_id" not in portal.CUSTOMERS[agent_customer]
+
+    still, status = _get("/api/admin/agent-invitations", token=admin)
+    assert any(item.get("code") == agent_request for item in still["items"])
+    agent_approved, status = _post("/api/admin/agent-invitations/approve", {
+        "code": agent_request,
+        "commission_rate": 25,
+    }, token=admin)
+    assert status == 200, agent_approved
+    assert agent_approved["request"]["id"] == agent_request
+    assert agent_approved["request"]["status"] == "approved"
+    assert agent_approved["request"]["supplier_id"] == agent_suppliers[0]["id"]
+    assert len([
+        item for item in portal.supply_chain_service.suppliers.values()
+        if item.get("customer_id") == agent_customer
+    ]) == 1
+    shared = portal.supply_chain_service.suppliers[agent_suppliers[0]["id"]]
+    assert shared["status"] == "approved"
+    assert "agent" in shared["roles"] and "supplier" in shared["roles"]
+    assert shared["agent_id"] == agent_approved["request"]["agent_id"]
+    from services.agent_ecosystem_service import get_agent
+    assert get_agent(shared["agent_id"])["default_commission_rate"] == pytest.approx(0.1)
+    assert portal.CUSTOMERS[agent_customer]["email"] == agent_email
+    assert "national_id" not in portal.CUSTOMERS[agent_customer]
+
+    portal.SUPPLIER_ORDERS["ORD-DESK-FEE"] = {
+        "id": "ORD-DESK-FEE",
+        "supplier_id": approved["supplier_id"],
+        "customer_id": "CUST-DESK-BUYER",
+        "platform_fee": 11.0,
+        "commission": 11.0,
+        "supplier_payout": 89.0,
+        "total_amount": 100.0,
+        "status": "completed",
+    }
+    before = float(portal.PHINS_BALANCE_SHEET["expense_breakdown"].get("customer_acquisition") or 0)
+    report, status = _get("/api/admin/supplier-agent-pipeline?audience=supplier", token=admin)
+    assert status == 200, report
+    fee_row = next(item for item in report["rows"] if item["supplier_id"] == approved["supplier_id"])
+    assert fee_row["sales_fees"] == pytest.approx(11.0)
+    sealed, status = _post("/api/admin/supplier-agent-pipeline/seal", {
+        "supplier_id": approved["supplier_id"],
+    }, token=admin)
+    assert status == 200, sealed
+    assert sealed["cash_event"] is False
+    assert float(portal.PHINS_BALANCE_SHEET["expense_breakdown"].get("customer_acquisition") or 0) == pytest.approx(before)
+    statements = [
+        entry for entry in portal.supply_chain_service.ledger.values()
+        if entry.get("entry_type") == "pipeline_statement"
+        and entry.get("supplier_id") == approved["supplier_id"]
+    ]
+    assert len(statements) == 1
+    assert statements[0]["amount"] == 0
+    portal.SUPPLIER_ORDERS.pop("ORD-DESK-FEE", None)
+
+
+def test_unrelated_supplier_desk_action_leaves_the_filed_request_pending():
+    """A supplier that only shares the customer is not the staged application."""
+    email = "unrelated-desk@example.com"
+    customer_id = _register("Unrelated Desk", email)
+    session, _role = _login(email, "secure123456")
+    request_id = _file_professional_chat(session, "supplier", name="Unrelated Desk", company={
+        "company_name": "Unrelated Clinic",
+        "supplier_type": "clinic",
+    })
+    staged = next(
+        item for item in portal.supply_chain_service.suppliers.values()
+        if request_id in (item.get("professional_request_ids") or [])
+    )
+    service = portal.supply_chain_service
+    service.suppliers["SUP-UNRELATED-APPROVE"] = {
+        "id": "SUP-UNRELATED-APPROVE",
+        "company_name": "Separate Approve",
+        "contact_email": "separate-approve@example.com",
+        "contact_name": "Separate",
+        "supplier_type": "clinic",
+        "status": "pending",
+        "customer_id": customer_id,
+        "portal_active": False,
+        "application_date": "2026-01-01T00:00:00",
+    }
+    service.suppliers["SUP-UNRELATED-REJECT"] = {
+        "id": "SUP-UNRELATED-REJECT",
+        "company_name": "Separate Reject",
+        "contact_email": "separate-reject@example.com",
+        "contact_name": "Separate",
+        "supplier_type": "clinic",
+        "status": "pending",
+        "customer_id": customer_id,
+        "portal_active": False,
+        "application_date": "2026-01-02T00:00:00",
+    }
+    admin, _ = _login("admin", "admin123")
+    approved, status = _post("/api/admin/suppliers/SUP-UNRELATED-APPROVE/approve", {
+        "notes": "Classic supplier",
+    }, token=admin)
+    assert status == 200, approved
+    assert "request" not in approved
+    assert service.suppliers["SUP-UNRELATED-APPROVE"]["status"] == "approved"
+    assert rewards.REQUESTS[request_id]["status"] == "pending"
+    assert staged["status"] == "pending"
+    assert "supplier_id" not in portal.CUSTOMERS[customer_id]
+    rejected, status = _post("/api/admin/suppliers/SUP-UNRELATED-REJECT/reject", {
+        "reason": "Not this application",
+    }, token=admin)
+    assert status == 200, rejected
+    assert "request" not in rejected
+    assert service.suppliers["SUP-UNRELATED-REJECT"]["status"] == "rejected"
+    assert rewards.REQUESTS[request_id]["status"] == "pending"
+    assert staged["status"] == "pending"
+
+
+def test_agent_overview_counts_a_professional_request_once():
+    email = "overview-once@example.com"
+    _register("Overview Once", email)
+    session, _role = _login(email, "secure123456")
+    request_id = _file_professional_chat(session, "agent", name="Overview Once")
+    admin, _ = _login("admin", "admin123")
+    before_items, status = _get("/api/admin/agent-invitations", token=admin)
+    assert status == 200, before_items
+    before_codes = [item.get("code") for item in before_items["items"]]
+    assert before_codes.count(request_id) == 1
+    before, status = _get("/api/admin/agents/overview", token=admin)
+    assert status == 200, before
+    pending_before = [
+        item.get("code") for item in before_items["items"] if item.get("status") == "pending_approval"
+    ]
+    assert before["invitations_pending_approval"] == len(pending_before)
+
+    from services.agent_ecosystem_service import INVITATIONS
+    INVITATIONS[request_id] = {
+        "code": request_id,
+        "agent_id": "AGT-OVERVIEW",
+        "invitee_type": "agent",
+        "status": "pending_approval",
+        "proposed_rate": 0.1,
+        "commission_rate": None,
+        "created_at": "2026-01-01T00:00:00",
+    }
+    try:
+        after_items, status = _get("/api/admin/agent-invitations", token=admin)
+        assert status == 200, after_items
+        assert [item.get("code") for item in after_items["items"]].count(request_id) == 1
+        after, status = _get("/api/admin/agents/overview", token=admin)
+        assert status == 200, after
+        pending_after = [
+            item.get("code") for item in after_items["items"] if item.get("status") == "pending_approval"
+        ]
+        assert after["invitations_pending_approval"] == len(set(pending_after))
+        assert after["invitations_pending_approval"] == before["invitations_pending_approval"]
+    finally:
+        INVITATIONS.pop(request_id, None)
+
+
+def test_declined_application_can_be_filed_again_on_the_same_supplier():
+    """A decline withdraws the staged row. It does not close the person."""
+    email = "decline-again@example.com"
+    customer_id = _register("Decline Again", email)
+    session, _role = _login(email, "secure123456")
+    request_id = _file_professional_chat(session, "supplier", name="Decline Again", company={
+        "company_name": "Decline Clinic",
+        "supplier_type": "clinic",
+    })
+    staged_id = rewards.REQUESTS[request_id]["supplier_id"]
+    admin, _ = _login("admin", "admin123")
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": request_id, "decision": "reject", "note": "Not this time",
+    }, token=admin)
+    assert status == 200, declined
+    supplier = portal.supply_chain_service.suppliers[staged_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["status"] not in ("rejected", "suspended", "terminated")
+    assert supplier["portal_active"] is False
+    assert "supplier_id" not in portal.CUSTOMERS[customer_id]
+    pending, status = _get("/api/admin/suppliers/pending", token=admin)
+    assert status == 200, pending
+    assert all(item.get("id") != staged_id for item in pending["items"])
+
+    again = _file_professional_chat(session, "supplier", name="Decline Again", company={
+        "company_name": "Decline Clinic",
+        "supplier_type": "clinic",
+    })
+    assert again == request_id
+    assert rewards.REQUESTS[request_id]["status"] == "pending"
+    assert rewards.REQUESTS[request_id]["supplier_id"] == staged_id
+    assert portal.supply_chain_service.suppliers[staged_id]["status"] == "pending"
+    assert len([
+        item for item in portal.supply_chain_service.suppliers.values()
+        if item.get("customer_id") == customer_id
+    ]) == 1
+    approved, status = _post("/api/admin/professional-requests/review", {
+        "id": request_id, "decision": "approve",
+    }, token=admin)
+    assert status == 200, approved
+    assert portal.supply_chain_service.suppliers[staged_id]["status"] == "approved"
+    assert portal.CUSTOMERS[customer_id]["supplier_id"] == staged_id
+    assert portal.CUSTOMERS[customer_id]["name"] == "Decline Again"
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+
+
+def test_declining_supplier_request_keeps_an_approved_agent_role():
+    email = "keep-agent@example.com"
+    customer_id = _register("Keep Agent", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="Keep Agent", company={
+        "company_name": "Keep Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="Keep Agent", company={
+        "company_name": "Keep Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/agent-invitations/approve", {
+        "code": agent_request,
+        "commission_rate": 40,
+    }, token=admin)
+    assert status == 200, opened
+    supplier_id = opened["request"]["supplier_id"]
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "pending"
+    assert "agent" in supplier["roles"]
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    assert rewards.REQUESTS[supplier_request]["status"] == "rejected"
+    assert rewards.REQUESTS[agent_request]["status"] == "approved"
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    assert supplier["status"] not in ("approved", "rejected", "suspended", "terminated")
+    assert "agent_id" not in supplier
+    assert rewards.REQUESTS[agent_request].get("supplier_id") != supplier_id
+    assert rewards.REQUESTS[agent_request].get("agent_id") == opened["request"]["agent_id"]
+    assert rewards.grant_for(customer_id, "agent")["agent_id"] == opened["request"]["agent_id"]
+    switched, status = _post("/api/customer/role-switch", {"role": "agent"}, token=session)
+    assert status == 200, switched
+    desks = rewards.professional_status(customer_id)
+    assert desks["supplier"]["status"] == "withdrawn"
+    assert desks["agent"]["status"] == "withdrawn"
+    assert desks["supplier"].get("status") != "approved"
+    assert desks["agent"].get("status") != "approved"
+    assert desks["supplier"].get("supplier_id") in (None, "")
+    assert desks["agent"].get("agent_id") in (None, "")
+    assert "via" not in desks["supplier"]
+    assert len([
+        item for item in portal.supply_chain_service.suppliers.values()
+        if item.get("customer_id") == customer_id
+    ]) == 1
+    from services.agent_ecosystem_service import get_agent
+    assert get_agent(opened["request"]["agent_id"])["default_commission_rate"] == pytest.approx(0.1)
+
+
+def test_approved_agent_without_a_grant_can_be_filed_again(monkeypatch):
+    """An approved stamp with no usable agent is not left closed."""
+    stored = []
+    real_persist = rewards._persist_request
+
+    def capture(req):
+        stored.append({
+            "id": req.get("id"),
+            "status": req.get("status"),
+            "supplier_id": req.get("supplier_id"),
+            "agent_id": req.get("agent_id"),
+        })
+        return real_persist(req)
+
+    monkeypatch.setattr(rewards, "_persist_request", capture)
+    email = "no-grant@example.com"
+    customer_id = _register("No Grant", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="No Grant", company={
+        "company_name": "No Grant Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="No Grant", company={
+        "company_name": "No Grant Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    supplier_id = opened["request"]["supplier_id"]
+    agent_id = opened["request"]["agent_id"]
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    rewards.REQUESTS[agent_request].pop("agent_id", None)
+    stored.clear()
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    assert "agent_id" not in supplier
+    request = rewards.REQUESTS[agent_request]
+    assert request["status"] == "inquiry"
+    assert request.get("status") != "approved"
+    assert not request.get("agent_id")
+    assert request.get("supplier_id") != supplier_id
+    written = [row for row in stored if row["id"] == agent_request]
+    assert written
+    assert written[-1]["status"] == "inquiry"
+    assert written[-1]["agent_id"] is None
+    assert written[-1]["supplier_id"] is None
+    from services.agent_ecosystem_service import AGENTS, get_agent
+    assert get_agent(agent_id)["id"] == agent_id
+    assert agent_id in AGENTS
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=session)
+    assert status == 200, filed
+    assert filed["status"] == "inquiry"
+    assert filed.get("code") != "already_approved"
+
+
+def test_outside_agent_with_the_same_login_survives_decline():
+    """A decline deletes only the detached id, not every agent on that login."""
+    from services.agent_ecosystem_service import AGENTS, create_agent, get_agent
+    email = "outside-agent@example.com"
+    customer_id = _register("Outside Agent", email)
+    session, _role = _login(email, "secure123456")
+    outside = create_agent(
+        username=email, display_name="Outside Agent", email=email, created_by="desk",
+    )
+    outside_id = outside["id"]
+    supplier_request = _file_professional_chat(session, "supplier", name="Outside Agent", company={
+        "company_name": "Outside Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="Outside Agent", company={
+        "company_name": "Outside Clinic",
+        "supplier_type": "clinic",
+    })
+    supplier_id = rewards.REQUESTS[supplier_request]["supplier_id"]
+    rewards.REQUESTS[agent_request]["status"] = "approved"
+    rewards.REQUESTS[agent_request]["supplier_id"] = supplier_id
+    rewards.REQUESTS[agent_request].pop("agent_id", None)
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    admin, _ = _login("admin", "admin123")
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    assert get_agent(outside_id)["user_username"] == email
+    assert outside_id in AGENTS
+    request = rewards.REQUESTS[agent_request]
+    assert request["status"] == "inquiry"
+    assert request.get("agent_id") != outside_id
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+    assert "supplier_approval" not in {
+        entry.get("entry_type")
+        for entry in portal.supply_chain_service.ledger.values()
+        if isinstance(entry, dict) and entry.get("supplier_id") == supplier_id
+    }
+
+
+def test_later_approval_reuses_the_agent_the_customer_still_names(monkeypatch):
+    """Decline must not drop an agent the customer record still names."""
+    from services import agent_ecosystem_service as agents
+    email = "reuse-agent@example.com"
+    customer_id = _register("Reuse Agent", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="Reuse Agent", company={
+        "company_name": "Reuse Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="Reuse Agent", company={
+        "company_name": "Reuse Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    agent_id = opened["request"]["agent_id"]
+    supplier_id = opened["request"]["supplier_id"]
+    assert portal.CUSTOMERS[customer_id]["agent_id"] == agent_id
+    username = agents.get_agent(agent_id)["user_username"]
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    real_get = agents.get_agent
+    monkeypatch.setattr(agents, "get_agent", lambda _agent_id: None)
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    monkeypatch.setattr(agents, "get_agent", real_get)
+    assert status == 200, declined
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    assert rewards.REQUESTS[agent_request]["status"] == "inquiry"
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert agents.get_agent(agent_id)["id"] == agent_id
+    assert agents.AGENT_BY_USER.get(username) == agent_id
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+    assert "supplier_approval" not in {
+        entry.get("entry_type")
+        for entry in portal.supply_chain_service.ledger.values()
+        if isinstance(entry, dict) and entry.get("supplier_id") == supplier_id
+    }
+    again_supplier = _file_professional_chat(session, "supplier", name="Reuse Agent", company={
+        "company_name": "Reuse Clinic",
+        "supplier_type": "clinic",
+    })
+    again_agent = _file_professional_chat(session, "agent", name="Reuse Agent", company={
+        "company_name": "Reuse Clinic",
+        "supplier_type": "clinic",
+    })
+    assert again_supplier == supplier_request
+    assert again_agent == agent_request
+    reviewed, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, reviewed
+    assert reviewed["request"]["agent_id"] == agent_id
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier.get("pipeline_detail_conflict") is not True
+    assert supplier.get("agent_id") == agent_id
+    assert portal.CUSTOMERS[customer_id]["agent_id"] == agent_id
+    assert agents.AGENT_BY_USER.get(username) == agent_id
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+
+
+def test_discard_agent_keeps_memory_when_the_database_delete_fails(monkeypatch):
+    from services import agent_ecosystem_service as agents
+    created = agents.create_agent(
+        username="db-fail-agent@example.com",
+        display_name="DB Fail",
+        email="db-fail-agent@example.com",
+        created_by="desk",
+    )
+    aid = created["id"]
+
+    class Broken:
+        def __enter__(self):
+            raise RuntimeError("db delete failed")
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(agents, "_db_enabled", lambda: True)
+    monkeypatch.setattr(agents, "_db", lambda: Broken())
+    with pytest.raises(RuntimeError, match="db delete failed"):
+        agents.discard_agent(aid)
+    assert agents.get_agent(aid)["id"] == aid
+    assert agents.AGENT_BY_USER.get("db-fail-agent@example.com") == aid
+
+
+def test_failed_agent_delete_leaves_both_requests_unchanged(monkeypatch):
+    """A failed agent delete stores neither the sibling nor the declined request."""
+    from services import agent_ecosystem_service as agents
+    email = "delete-fails@example.com"
+    customer_id = _register("Delete Fails", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="Delete Fails", company={
+        "company_name": "Delete Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="Delete Fails", company={
+        "company_name": "Delete Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    agent_id = opened["request"]["agent_id"]
+    supplier_id = opened["request"]["supplier_id"]
+    rewards.REQUESTS[agent_request]["agent_id"] = "AGT-UNRESOLVED"
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    before_agent = {
+        "status": rewards.REQUESTS[agent_request]["status"],
+        "supplier_id": rewards.REQUESTS[agent_request].get("supplier_id"),
+        "agent_id": rewards.REQUESTS[agent_request].get("agent_id"),
+    }
+    before_supplier_request = {
+        "status": rewards.REQUESTS[supplier_request]["status"],
+        "supplier_id": rewards.REQUESTS[supplier_request].get("supplier_id"),
+    }
+    stored = []
+    real_persist = rewards._persist_request
+
+    def capture(req):
+        stored.append(req.get("id"))
+        return real_persist(req)
+
+    def refuse(_agent_id):
+        raise RuntimeError("db delete failed")
+
+    monkeypatch.setattr(rewards, "_persist_request", capture)
+    monkeypatch.setattr(agents, "discard_agent", refuse)
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status >= 500, declined
+    assert stored == []
+    assert rewards.REQUESTS[agent_request]["status"] == before_agent["status"]
+    assert rewards.REQUESTS[agent_request].get("supplier_id") == before_agent["supplier_id"]
+    assert rewards.REQUESTS[agent_request].get("agent_id") == before_agent["agent_id"]
+    assert rewards.REQUESTS[supplier_request]["status"] == before_supplier_request["status"]
+    assert rewards.REQUESTS[supplier_request].get("supplier_id") == before_supplier_request["supplier_id"]
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "pending"
+    assert supplier["portal_active"] is False
+    assert supplier.get("agent_id") == agent_id
+    assert agents.get_agent(agent_id)["id"] == agent_id
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+
+
+def _stored_professional_request(request_id):
+    blob = json.loads(rewards._state_path().read_text(encoding="utf-8"))
+    for item in blob["state"]["requests"]:
+        if item.get("id") == request_id:
+            return item
+    raise AssertionError(request_id)
+
+
+def test_failed_persist_restores_the_sibling_and_the_supplier(monkeypatch):
+    """A failed sibling persist puts that request and the supplier back."""
+    email = "persist-fails@example.com"
+    customer_id = _register("Persist Fails", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="Persist Fails", company={
+        "company_name": "Persist Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="Persist Fails", company={
+        "company_name": "Persist Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    agent_id = opened["request"]["agent_id"]
+    supplier_id = opened["request"]["supplier_id"]
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    real_persist = rewards._persist_request
+    armed = {"on": True}
+    written = []
+
+    def fail_detached(req):
+        if armed["on"] and req.get("id") == agent_request and req.get("supplier_id") != supplier_id:
+            raise RuntimeError("persist failed")
+        written.append({
+            "id": req.get("id"),
+            "status": req.get("status"),
+            "supplier_id": req.get("supplier_id"),
+            "agent_id": req.get("agent_id"),
+        })
+        return real_persist(req)
+
+    monkeypatch.setattr(rewards, "_persist_request", fail_detached)
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status >= 500, declined
+    assert rewards.REQUESTS[agent_request]["status"] == "approved"
+    assert rewards.REQUESTS[agent_request].get("supplier_id") == supplier_id
+    assert rewards.REQUESTS[agent_request].get("agent_id") == agent_id
+    assert rewards.REQUESTS[supplier_request]["status"] == "pending"
+    assert rewards.REQUESTS[supplier_request].get("supplier_id") == supplier_id
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "pending"
+    assert supplier["portal_active"] is False
+    assert supplier.get("agent_id") == agent_id
+    stored_agent = _stored_professional_request(agent_request)
+    assert stored_agent["status"] == "approved"
+    assert stored_agent.get("supplier_id") == supplier_id
+    assert stored_agent.get("agent_id") == agent_id
+    stored_supplier = _stored_professional_request(supplier_request)
+    assert stored_supplier["status"] == "pending"
+    assert stored_supplier.get("supplier_id") == supplier_id
+    assert all(item.get("supplier_id") == supplier_id for item in written if item["id"] == agent_request)
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+    armed["on"] = False
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    assert rewards.REQUESTS[supplier_request]["status"] == "rejected"
+    assert rewards.REQUESTS[agent_request]["status"] == "approved"
+    assert rewards.REQUESTS[agent_request].get("agent_id") == agent_id
+    assert rewards.REQUESTS[agent_request].get("supplier_id") in (None, "")
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    stored_agent = _stored_professional_request(agent_request)
+    assert stored_agent["status"] == "approved"
+    assert stored_agent.get("supplier_id") in (None, "")
+    assert stored_agent.get("agent_id") == agent_id
+    assert portal.CUSTOMERS[customer_id] == before_customer
+
+
+def test_detached_sibling_request_is_stored(monkeypatch):
+    """The sibling row is written, not only edited in memory."""
+    stored = []
+    real_persist = rewards._persist_request
+
+    def capture(req):
+        stored.append({
+            "id": req.get("id"),
+            "status": req.get("status"),
+            "supplier_id": req.get("supplier_id"),
+            "agent_id": req.get("agent_id"),
+        })
+        return real_persist(req)
+
+    monkeypatch.setattr(rewards, "_persist_request", capture)
+    service = portal.supply_chain_service
+    real_approve = service.approve_supplier
+    real_reject = service.reject_supplier
+    calls = {"approve": 0, "reject": 0}
+
+    def count_approve(*args, **kwargs):
+        calls["approve"] += 1
+        return real_approve(*args, **kwargs)
+
+    def count_reject(*args, **kwargs):
+        calls["reject"] += 1
+        return real_reject(*args, **kwargs)
+
+    monkeypatch.setattr(service, "approve_supplier", count_approve)
+    monkeypatch.setattr(service, "reject_supplier", count_reject)
+    admin, _ = _login("admin", "admin123")
+
+    def file_pair(email, name, company):
+        customer_id = _register(name, email)
+        session, _role = _login(email, "secure123456")
+        supplier_request = _file_professional_chat(session, "supplier", name=name, company=company)
+        agent_request = _file_professional_chat(session, "agent", name=name, company=company)
+        return customer_id, supplier_request, agent_request
+
+    def sibling_rows(agent_request):
+        return [row for row in stored if row["id"] == agent_request]
+
+    customer_id, supplier_request, agent_request = file_pair(
+        "store-sibling@example.com", "Store Sibling",
+        {"company_name": "Store Clinic", "supplier_type": "clinic"},
+    )
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    supplier_id = opened["request"]["supplier_id"]
+    assert service.suppliers[supplier_id]["portal_active"] is False
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    before_ledger = _supplier_ledger(service, supplier_id)
+    stored.clear()
+    calls["approve"] = 0
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    written = sibling_rows(agent_request)
+    assert written, stored
+    assert written[-1]["status"] == "approved"
+    assert written[-1]["supplier_id"] is None
+    assert written[-1]["agent_id"] == opened["request"]["agent_id"]
+    assert any(row["id"] == supplier_request and row["status"] == "rejected" for row in stored)
+    assert calls == {"approve": 0, "reject": 0}
+    assert service.suppliers[supplier_id]["status"] == "withdrawn"
+    assert service.suppliers[supplier_id]["portal_active"] is False
+    assert "agent_id" not in service.suppliers[supplier_id]
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert _supplier_ledger(service, supplier_id) == before_ledger
+
+    desk_customer, desk_supplier, desk_agent = file_pair(
+        "store-desk@example.com", "Store Desk",
+        {"company_name": "Desk Clinic", "supplier_type": "clinic"},
+    )
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": desk_agent}, token=admin)
+    assert status == 200, opened
+    desk_supplier_id = opened["request"]["supplier_id"]
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[desk_customer]))
+    stored.clear()
+    calls["approve"] = 0
+    rejected, status = _post(f"/api/admin/suppliers/{desk_supplier_id}/reject", {
+        "reason": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, rejected
+    written = sibling_rows(desk_agent)
+    assert written, stored
+    assert written[-1]["status"] == "approved"
+    assert written[-1]["supplier_id"] is None
+    assert written[-1]["agent_id"] == opened["request"]["agent_id"]
+    assert calls == {"approve": 0, "reject": 0}
+    assert service.suppliers[desk_supplier_id]["status"] == "withdrawn"
+    assert portal.CUSTOMERS[desk_customer] == before_customer
+    assert "national_id" not in service.suppliers[desk_supplier_id]
+
+    live_customer, live_supplier, live_agent = file_pair(
+        "store-live@example.com", "Store Live",
+        {"company_name": "Live Clinic", "supplier_type": "clinic"},
+    )
+    approved, status = _post("/api/admin/professional-requests/review", {
+        "id": live_supplier, "decision": "approve",
+    }, token=admin)
+    assert status == 200, approved
+    live_id = approved["supplier_id"]
+    assert service.suppliers[live_id]["portal_active"] is True
+    stored.clear()
+    calls["approve"] = 0
+    declined_agent, status = _post("/api/admin/agent-invitations/reject", {
+        "code": live_agent, "note": "Agent application declined",
+    }, token=admin)
+    assert status == 200, declined_agent
+    assert sibling_rows(live_supplier) == []
+    assert rewards.REQUESTS[live_supplier]["status"] == "approved"
+    assert rewards.REQUESTS[live_supplier]["supplier_id"] == live_id
+    assert service.suppliers[live_id]["status"] == "approved"
+    assert service.suppliers[live_id]["portal_active"] is True
+    assert calls == {"approve": 0, "reject": 0}
+    assert "national_id" not in portal.CUSTOMERS[live_customer]
+
+
+def _supplier_ledger(service, supplier_id):
+    rows = []
+    for entry in (getattr(service, "ledger", {}) or {}).values():
+        if isinstance(entry, dict) and entry.get("supplier_id") == supplier_id:
+            rows.append((entry.get("entry_type"), entry.get("amount"), entry.get("commission")))
+    return sorted(rows, key=lambda item: (str(item[0]), str(item[1]), str(item[2])))
+
+
+def test_decline_with_an_approved_role_does_not_rerun_approval(monkeypatch):
+    """A request approval does not make a staged supplier approved."""
+    service = portal.supply_chain_service
+    real_approve = service.approve_supplier
+    real_reject = service.reject_supplier
+    calls = {"approve": 0, "reject": 0}
+
+    def count_approve(*args, **kwargs):
+        calls["approve"] += 1
+        return real_approve(*args, **kwargs)
+
+    def count_reject(*args, **kwargs):
+        calls["reject"] += 1
+        return real_reject(*args, **kwargs)
+
+    monkeypatch.setattr(service, "approve_supplier", count_approve)
+    monkeypatch.setattr(service, "reject_supplier", count_reject)
+    admin, _ = _login("admin", "admin123")
+    from services.agent_ecosystem_service import AGENTS
+
+    email = "no-rerun@example.com"
+    customer_id = _register("No Rerun", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="No Rerun", company={
+        "company_name": "No Rerun Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="No Rerun", company={
+        "company_name": "No Rerun Clinic",
+        "supplier_type": "clinic",
+    })
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    supplier_id = opened["request"]["supplier_id"]
+    agent_id = opened["request"]["agent_id"]
+    supplier = service.suppliers[supplier_id]
+    assert supplier["status"] == "pending"
+    assert supplier["portal_active"] is False
+    assert calls == {"approve": 0, "reject": 0}
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    before_ledger = _supplier_ledger(service, supplier_id)
+    before_agents = set(AGENTS)
+    before_expenses = portal.PHINS_BALANCE_SHEET.get("total_expenses")
+    statements = [
+        entry for entry in service.ledger.values()
+        if isinstance(entry, dict) and entry.get("entry_type") == "pipeline_statement"
+    ]
+
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    supplier = service.suppliers[supplier_id]
+    assert calls == {"approve": 0, "reject": 0}
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    assert "supplier_approval" not in {row[0] for row in _supplier_ledger(service, supplier_id)}
+    assert supplier_request not in (supplier.get("professional_request_ids") or [])
+    assert supplier.get("professional_request_id") != supplier_request
+    assert "agent_id" not in supplier
+    assert rewards.REQUESTS[agent_request].get("supplier_id") != supplier_id
+    assert rewards.REQUESTS[agent_request].get("agent_id") == agent_id
+    desks = rewards.professional_status(customer_id)
+    assert desks["supplier"]["status"] != "approved"
+    assert desks["agent"]["status"] != "approved"
+    assert desks["supplier"].get("supplier_id") in (None, "")
+    assert "via" not in desks["supplier"]
+    assert set(AGENTS) == before_agents
+    assert _supplier_ledger(service, supplier_id) == before_ledger
+    assert [
+        entry for entry in service.ledger.values()
+        if isinstance(entry, dict) and entry.get("entry_type") == "pipeline_statement"
+    ] == statements
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+    assert portal.PHINS_BALANCE_SHEET.get("total_expenses") == before_expenses
+    assert rewards.REQUESTS[agent_request]["status"] == "approved"
+    assert rewards._supplier_is_closed(supplier) is False
+
+    again = _file_professional_chat(session, "supplier", name="No Rerun", company={
+        "company_name": "No Rerun Clinic",
+        "supplier_type": "clinic",
+    })
+    assert again == supplier_request
+    reused = service.suppliers[supplier_id]
+    assert reused["status"] == "pending"
+    assert reused["portal_active"] is False
+    assert calls == {"approve": 0, "reject": 0}
+    assert "supplier_approval" not in {row[0] for row in _supplier_ledger(service, supplier_id)}
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert len([
+        item for item in service.suppliers.values() if item.get("customer_id") == customer_id
+    ]) == 1
+
+    other_email = "no-rerun-agent@example.com"
+    other_customer = _register("No Rerun Agent", other_email)
+    other_session, _role = _login(other_email, "secure123456")
+    other_supplier = _file_professional_chat(other_session, "supplier", name="No Rerun Agent", company={
+        "company_name": "Open Clinic",
+        "supplier_type": "clinic",
+    })
+    other_agent = _file_professional_chat(other_session, "agent", name="No Rerun Agent", company={
+        "company_name": "Open Clinic",
+        "supplier_type": "clinic",
+    })
+    calls["approve"] = 0
+    approved, status = _post("/api/admin/professional-requests/review", {
+        "id": other_supplier, "decision": "approve",
+    }, token=admin)
+    assert status == 200, approved
+    other_id = approved["supplier_id"]
+    assert calls["approve"] == 1
+    assert service.suppliers[other_id]["portal_active"] is True
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[other_customer]))
+    before_ledger = _supplier_ledger(service, other_id)
+    before_agents = set(AGENTS)
+    calls["approve"] = 0
+    declined_agent, status = _post("/api/admin/professional-requests/review", {
+        "id": other_agent, "decision": "reject", "note": "Agent application declined",
+    }, token=admin)
+    assert status == 200, declined_agent
+    kept = service.suppliers[other_id]
+    assert calls == {"approve": 0, "reject": 0}
+    assert kept["status"] == "approved"
+    assert kept["portal_active"] is True
+    assert other_agent not in (kept.get("professional_request_ids") or [])
+    live_desks = rewards.professional_status(other_customer)
+    assert live_desks["supplier"]["status"] == "approved"
+    assert live_desks["supplier"]["supplier_id"] == other_id
+    assert live_desks["agent"]["status"] != "approved"
+    assert "via" not in live_desks["supplier"]
+    assert set(AGENTS) == before_agents
+    assert _supplier_ledger(service, other_id) == before_ledger
+    assert portal.CUSTOMERS[other_customer] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[other_customer]
+
+
+def test_staging_failure_leaves_the_inquiry_resubmittable(monkeypatch):
+    email = "stage-fail@example.com"
+    _register("Stage Fail", email)
+    session, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=session)
+    assert status == 200, filed
+    link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
+    _chat(link, "confirm_person", {
+        "personal": {
+            "name": "Stage Fail",
+            "phone": "555-0177",
+            "address": "8 Herzl",
+            "city": "Haifa",
+            "country": "IL",
+        },
+    })
+    _chat(link, "identity", "skip")
+    _chat(link, "company", {"company_name": "Stage Clinic", "supplier_type": "clinic"})
+    _chat(link, "evidence", "skip")
+    real = rewards._stage_staff_application
+    calls = {"n": 0}
+
+    def fail_once(req):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("supplier service unavailable")
+        return real(req)
+
+    monkeypatch.setattr(rewards, "_stage_staff_application", fail_once)
+    failed, status = _post("/api/professional-inquiry/chat", {
+        "token": link, "step": "review", "value": "submit",
+    })
+    assert status == 503, failed
+    assert failed["code"] == "application_not_staged"
+    assert rewards.REQUESTS[filed["id"]]["status"] == "inquiry"
+    assert not rewards.REQUESTS[filed["id"]].get("supplier_id")
+    submitted = _chat(link, "review", "submit")
+    assert submitted.get("status") == "pending"
+    assert rewards.REQUESTS[filed["id"]]["supplier_id"]
+    assert portal.supply_chain_service.suppliers[
+        rewards.REQUESTS[filed["id"]]["supplier_id"]
+    ]["status"] == "pending"
+
+
+def test_professional_review_route_persists_approve_and_decline(monkeypatch):
+    """The review route writes the supplier the desks already write."""
+    saved = []
+
+    def remember(sid, data):
+        saved.append((sid, data.get("status")))
+
+    monkeypatch.setattr(portal, "_persist_supplier", remember)
+    admin, _ = _login("admin", "admin123")
+
+    decline_email = "review-decline@example.com"
+    decline_customer = _register("Review Decline", decline_email)
+    decline_session, _role = _login(decline_email, "secure123456")
+    decline_request = _file_professional_chat(
+        decline_session, "supplier", name="Review Decline",
+        company={"company_name": "Review Clinic", "supplier_type": "clinic"},
+    )
+    decline_supplier = rewards.REQUESTS[decline_request]["supplier_id"]
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": decline_request, "decision": "reject", "note": "Not now",
+    }, token=admin)
+    assert status == 200, declined
+    assert saved == [(decline_supplier, "withdrawn")]
+    assert portal.supply_chain_service.suppliers[decline_supplier]["status"] == "withdrawn"
+    assert "supplier_id" not in portal.CUSTOMERS[decline_customer]
+    assert "national_id" not in portal.CUSTOMERS[decline_customer]
+
+    saved.clear()
+    approve_email = "review-approve@example.com"
+    approve_customer = _register("Review Approve", approve_email)
+    approve_session, _role = _login(approve_email, "secure123456")
+    approve_request = _file_professional_chat(
+        approve_session, "supplier", name="Review Approve",
+        company={"company_name": "Approve Clinic", "supplier_type": "clinic"},
+    )
+    approve_supplier = rewards.REQUESTS[approve_request]["supplier_id"]
+    approved, status = _post("/api/admin/professional-requests/review", {
+        "id": approve_request, "decision": "approve",
+    }, token=admin)
+    assert status == 200, approved
+    assert saved == [(approve_supplier, "approved")]
+    assert portal.CUSTOMERS[approve_customer]["supplier_id"] == approve_supplier
+    assert portal.CUSTOMERS[approve_customer]["name"] == "Review Approve"
+    assert "national_id" not in portal.CUSTOMERS[approve_customer]
+
+    saved.clear()
+    closed = portal.supply_chain_service.suppliers[approve_supplier]
+    closed["status"] = "suspended"
+    closed["portal_active"] = False
+    agent_email = approve_email
+    agent_request_filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=approve_session)
+    assert status == 200, agent_request_filed
+    _finish_inquiry(agent_request_filed, name="Review Approve")
+    refused, status = _post("/api/admin/professional-requests/review", {
+        "id": agent_request_filed["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 409, refused
+    assert refused["code"] == "supplier_closed"
+    assert saved == []
+    assert portal.supply_chain_service.suppliers[approve_supplier]["status"] == "suspended"
+
+
+def test_agent_desk_persists_the_staged_supplier(monkeypatch):
+    email = "persist-agent@example.com"
+    _register("Persist Agent", email)
+    session, _role = _login(email, "secure123456")
+    request_id = _file_professional_chat(session, "agent", name="Persist Agent")
+    supplier_id = rewards.REQUESTS[request_id]["supplier_id"]
+    saved = []
+
+    def remember(sid, data):
+        saved.append((sid, data.get("status")))
+
+    monkeypatch.setattr(portal, "_persist_supplier", remember)
+    admin, _ = _login("admin", "admin123")
+    approved, status = _post("/api/admin/agent-invitations/approve", {
+        "code": request_id,
+    }, token=admin)
+    assert status == 200, approved
+    assert saved == [(supplier_id, "approved")]
+    assert portal.supply_chain_service.suppliers[supplier_id]["status"] == "approved"
+
+
 def test_filed_inquiry_link_returns_status_only_and_expires_in_every_status():
     email = "filed-link@example.com"
     _register("Filed Link", email)

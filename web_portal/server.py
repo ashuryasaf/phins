@@ -28816,6 +28816,11 @@ For claims or questions, please contact:
             
             with STATE_LOCK:
                 items = [s for s in SUPPLIERS.values() if s.get('status') in ['pending', 'under_review']]
+            try:
+                from services.referral_reward_service import pending_supplier_desk_rows
+                items.extend(pending_supplier_desk_rows(item.get('id') for item in items))
+            except Exception as exc:
+                print(f"[SUPPLIER] pending professional requests were not listed: {exc}")
             
             if type_filter:
                 items = [s for s in items if s.get('supplier_type') == type_filter]
@@ -48251,6 +48256,29 @@ For claims or questions, please contact:
                 admin_user = (session or {}).get('username', 'admin')
                 payload = json.loads(body or '{}')
                 notes = payload.get('notes')
+
+                from services.referral_reward_service import RewardError, continue_supplier_application
+                try:
+                    reviewed = continue_supplier_application(supplier_id, 'approve', admin_user, notes or '')
+                except RewardError as exc:
+                    self._set_json_headers(exc.status)
+                    self.wfile.write(json.dumps(exc.to_dict()).encode('utf-8'))
+                    return
+                if reviewed is not None:
+                    linked = reviewed.get('supplier_id')
+                    if linked and linked in SUPPLIERS:
+                        _persist_supplier(linked, SUPPLIERS[linked])
+                    if audit:
+                        audit.log(admin_user, 'approve', 'professional_request', reviewed.get('id'), {
+                            'supplier_id': linked,
+                        })
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'supplier_id': linked,
+                        'request': reviewed,
+                    }).encode('utf-8'))
+                    return
                 
                 result = supplier_service.approve_supplier(supplier_id, admin_user, notes)
                 
@@ -48297,6 +48325,29 @@ For claims or questions, please contact:
                 if not reason:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Rejection reason required'}).encode('utf-8'))
+                    return
+
+                from services.referral_reward_service import RewardError, continue_supplier_application
+                try:
+                    reviewed = continue_supplier_application(supplier_id, 'reject', admin_user, reason)
+                except RewardError as exc:
+                    self._set_json_headers(exc.status)
+                    self.wfile.write(json.dumps(exc.to_dict()).encode('utf-8'))
+                    return
+                if reviewed is not None:
+                    linked = reviewed.get('supplier_id')
+                    if linked and linked in SUPPLIERS:
+                        _persist_supplier(linked, SUPPLIERS[linked])
+                    if audit:
+                        audit.log(admin_user, 'reject', 'professional_request', reviewed.get('id'), {
+                            'supplier_id': linked, 'reason': reason,
+                        })
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'supplier_id': linked,
+                        'request': reviewed,
+                    }).encode('utf-8'))
                     return
                 
                 result = supplier_service.reject_supplier(supplier_id, admin_user, reason)
