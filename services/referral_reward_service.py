@@ -1937,6 +1937,10 @@ def _safe_origin(value: str) -> str:
     return f"{parts.scheme}://{host}{port}"
 
 
+_PUBLIC_INQUIRY_ORIGIN = "https://www.phins.ai"
+_PUBLIC_INQUIRY_HOSTS = frozenset({"phins.ai", "www.phins.ai"})
+
+
 def _configured_origin() -> str:
     portal = _portal()
     getter = getattr(portal, "public_portal_base_url", None) if portal else None
@@ -1948,19 +1952,33 @@ def _configured_origin() -> str:
         return ""
 
 
+def _trusted_request_origin(value: str) -> str:
+    """The live site, unless the request host is phins.ai or www.phins.ai.
+
+    The inquiry token is emailed. An arbitrary ``Host`` is not an origin:
+    a spoofed header must not receive that link. A custom port is not kept.
+    """
+    origin = _safe_origin(value)
+    if origin:
+        parts = urlsplit(origin)
+        host = str(parts.hostname or "").lower().rstrip(".")
+        if host in _PUBLIC_INQUIRY_HOSTS and parts.port in (None, 443):
+            return f"https://{host}"
+    return _PUBLIC_INQUIRY_ORIGIN
+
+
 def _inquiry_path(token: str, request_id: str, public_origin: str = "") -> str:
     """Absolute chat link. The token is the query value, never a log line.
 
     ``r`` is the request id, not a secret. ``t`` stays last. The origin is
-    ``BASE_URL``, then ``WEBHOOK_BASE_URL`` (``TEST_BASE_URL`` under test),
-    then the public host of the request that asked for the email.
+    ``BASE_URL``, then ``WEBHOOK_BASE_URL`` (``TEST_BASE_URL`` under test).
+    With neither set, the link is ``https://www.phins.ai`` unless the
+    request host is exactly ``phins.ai`` or ``www.phins.ai``.
     """
     query = urlencode((("r", str(request_id or "")), ("t", token)))
     page = "/professional-inquiry-chat.html"
-    origin = _safe_origin(public_origin) or _configured_origin()
-    if origin:
-        return f"{origin}{page}?{query}"
-    return f"{page}?{query}"
+    origin = _configured_origin() or _trusted_request_origin(public_origin)
+    return f"{origin}{page}?{query}"
 
 
 def _arm_inquiry(req: Dict[str, Any], supplier_type: str, company_name: str) -> str:

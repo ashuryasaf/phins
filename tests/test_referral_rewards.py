@@ -25,12 +25,14 @@ from services.referral_reward_service import RewardError
 BASE = os.environ.get("TEST_BASE_URL", "http://localhost:8000")
 
 
-def _post(path, payload, token=None):
+def _post(path, payload, token=None, headers=None):
     data = json.dumps(payload).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
+    merged = {"Content-Type": "application/json"}
+    if headers:
+        merged.update(headers)
     if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = Request(BASE + path, data=data, headers=headers)
+        merged["Authorization"] = f"Bearer {token}"
+    req = Request(BASE + path, data=data, headers=merged)
     try:
         with urlopen(req) as resp:
             return json.loads(resp.read().decode("utf-8")), resp.status
@@ -1302,36 +1304,85 @@ def _assert_openable_inquiry_link(url, request_id):
     return query["t"][0]
 
 
-def test_inquiry_email_link_is_absolute_on_the_request_host(monkeypatch, caplog):
-    """No BASE_URL and no WEBHOOK_BASE_URL: the public request host is the origin.
-
-    A relative `professional-inquiry-chat.html/?r=` link does not open in a
-    mail client. The mailed URL is absolute and has no slash before `?`.
-    """
+def _clear_inquiry_origins(monkeypatch):
     monkeypatch.delenv("BASE_URL", raising=False)
     monkeypatch.delenv("WEBHOOK_BASE_URL", raising=False)
     monkeypatch.delenv("TEST_BASE_URL", raising=False)
-    caplog.set_level("DEBUG")
-    email = "inquiry-request-host@example.com"
-    _register("Request Host", email)
+
+
+def _mailed_inquiry(email, name, role="supplier", host=None):
+    _register(name, email)
     token, _role = _login(email, "secure123456")
-    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    extra = {"Host": host} if host else None
+    filed, status = _post(
+        "/api/customer/professional-requests",
+        {"role": role},
+        token=token,
+        headers=extra,
+    )
     assert status == 200, filed
-    host = urlparse(BASE).netloc
-    prefix = f"http://{host}/professional-inquiry-chat.html?"
-    assert filed["inquiry_path"].startswith(prefix)
-    link = _assert_openable_inquiry_link(filed["inquiry_path"], filed["id"])
     from services.notification_service import get_notification_service
     provider = get_notification_service()._email_provider
     sent = [item for item in getattr(provider, "sent_emails", []) if item.get("to") == email]
     assert sent, "inquiry email was not sent by NotificationService"
-    body = sent[-1]["body"]
-    html = sent[-1].get("html_body") or ""
+    return filed, sent[-1]
+
+
+def test_inquiry_email_link_uses_the_live_site_when_no_origin_is_configured(monkeypatch, caplog):
+    """No configured origin: the mailed link is the live site, not the request host.
+
+    A relative `professional-inquiry-chat.html/?r=` link does not open in a
+    mail client. The mailed URL is absolute and has no slash before `?`.
+    """
+    _clear_inquiry_origins(monkeypatch)
+    caplog.set_level("DEBUG")
+    email = "inquiry-live-site@example.com"
+    filed, message = _mailed_inquiry(email, "Live Site")
+    prefix = "https://www.phins.ai/professional-inquiry-chat.html?"
+    assert filed["inquiry_path"].startswith(prefix)
+    request_host = urlparse(BASE).netloc
+    assert request_host not in filed["inquiry_path"]
+    link = _assert_openable_inquiry_link(filed["inquiry_path"], filed["id"])
+    body = message["body"]
+    html = message.get("html_body") or ""
     assert filed["inquiry_path"] in body
     assert filed["inquiry_path"] in html
     assert ".html/?" not in body
     assert ".html/?" not in html
     assert link not in caplog.text
+
+
+def test_inquiry_email_link_ignores_a_foreign_host(monkeypatch):
+    """A spoofed Host must not receive the inquiry token."""
+    _clear_inquiry_origins(monkeypatch)
+    foreign = "attacker.example"
+    email = "inquiry-foreign-host@example.com"
+    filed, message = _mailed_inquiry(email, "Foreign Host", host=foreign)
+    prefix = "https://www.phins.ai/professional-inquiry-chat.html?"
+    assert filed["inquiry_path"].startswith(prefix)
+    _assert_openable_inquiry_link(filed["inquiry_path"], filed["id"])
+    mailed = message["body"] + (message.get("html_body") or "")
+    assert filed["inquiry_path"] in mailed
+    assert foreign not in filed["inquiry_path"]
+    assert foreign not in mailed
+    assert ".html/?" not in mailed
+
+    lookalike = "evil.phins.ai"
+    look_email = "inquiry-lookalike-host@example.com"
+    look, look_message = _mailed_inquiry(look_email, "Lookalike Host", host=lookalike)
+    assert look["inquiry_path"].startswith(prefix)
+    look_mail = look_message["body"] + (look_message.get("html_body") or "")
+    assert lookalike not in look["inquiry_path"]
+    assert lookalike not in look_mail
+
+    allowed, allowed_message = _mailed_inquiry(
+        "inquiry-apex-host@example.com", "Apex Host", host="phins.ai",
+    )
+    apex = "https://phins.ai/professional-inquiry-chat.html?"
+    assert allowed["inquiry_path"].startswith(apex)
+    _assert_openable_inquiry_link(allowed["inquiry_path"], allowed["id"])
+    assert allowed["inquiry_path"] in allowed_message["body"]
+    assert "www.phins.ai" not in allowed["inquiry_path"]
 
 
 def test_inquiry_email_link_drops_a_page_path_on_the_configured_origin(monkeypatch):

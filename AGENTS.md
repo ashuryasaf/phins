@@ -231,8 +231,10 @@ PHINS is a Python platform built around:
  are recorded in the disclosed Phin chat. The email link is
  `https://<origin>/professional-inquiry-chat.html?r=<id>&t=<token>` with
  no slash between `.html` and `?`. The origin is `BASE_URL`, then
- `WEBHOOK_BASE_URL` (`TEST_BASE_URL` under test), then the public host of
- the request that asked for the email. The token is not logged. A customer record
+ `WEBHOOK_BASE_URL` (`TEST_BASE_URL` under test). With neither set, the
+ link is `https://www.phins.ai`. A request host is used only when it is
+ exactly `phins.ai` or `www.phins.ai`; any other `Host` is ignored. The
+ token is not logged. A customer record
  with no email uses the authenticated login for both the inquiry mail and
  the identity code when that login is an email address. That same address
  is shown on the classic form and in the Phin chat. The customer does not
