@@ -257,6 +257,13 @@ def _inquiry_otp_request(token: str, client_ip: str, user_agent: str) -> Tuple[i
             "error_code": "OTP_DELIVERY_FAILED",
             "retryable": True,
         }
+    if delivered:
+        masked = str(response.get("masked_email") or "your email")
+        noted = rewards.note_inquiry_delivery(
+            token,
+            f"I sent a 6-digit code to {masked}. Type it in this chat.",
+        )
+        response["chat"] = noted.get("chat")
     return 200, response
 
 

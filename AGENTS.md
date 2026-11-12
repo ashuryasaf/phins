@@ -223,7 +223,13 @@ PHINS is a Python platform built around:
  investments. Customer `REF-` codes use this
  rail; agent `AGI-` codes stay on the commission rail and are not paid
  twice. A customer can request an agent or supplier role
- (`PRO-{customer}-{role}`). The email opens one disclosed Phin chat
+ (`PRO-{customer}-{role}`). The inquiry email
+ (`professional_inquiry_chat`) and the identity code (`otp_email`) both go
+ through `NotificationService.send`, the same sender apply and claims chats
+ use for `otp_email`. Both are recorded in the disclosed Phin chat. The
+ email link is absolute when `BASE_URL` or `WEBHOOK_BASE_URL` is set
+ (`TEST_BASE_URL` under test). Without that origin the link stays a
+ relative path. The email opens one disclosed Phin chat
  (`/professional-inquiry-chat.html`, same request as the classic form):
  confirm details, identity through `set_identity` (a new ID needs the email
  code first; nationality and last four only on the request), optional company,

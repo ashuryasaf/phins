@@ -258,17 +258,22 @@
       body: JSON.stringify(inquiryBody({})),
     });
     const body = await response.json().catch(function () { return {}; });
-    const messages = (state.chat.messages || []).slice();
-    messages.push({
-      role: "bot",
-      text: response.ok
-        ? "A code is on its way to the email on your customer record."
-        : (body.error || "The code could not be sent."),
-    });
-    renderMessages(messages);
-    if (response.ok && body.verification_id) {
-      state.verification_id = body.verification_id;
+    if (!response.ok) {
+      const failed = (state.chat.messages || []).slice();
+      failed.push({ role: "bot", text: body.error || "The code could not be sent." });
+      renderMessages(failed);
+      return;
     }
+    if (body.chat) state.chat = Object.assign({}, state.chat || {}, body.chat);
+    const messages = ((body.chat && body.chat.messages) || state.chat.messages || []).slice();
+    if (body.demo_otp_code) {
+      messages.push({
+        role: "bot",
+        text: "Demo environment: your verification code is " + body.demo_otp_code + ".",
+      });
+    }
+    renderMessages(messages);
+    if (body.verification_id) state.verification_id = body.verification_id;
   }
 
   async function verifyCode() {
@@ -282,12 +287,17 @@
       })),
     });
     const body = await response.json().catch(function () { return {}; });
-    const messages = (state.chat.messages || []).slice();
-    messages.push({
-      role: "bot",
-      text: response.ok ? "Code verified. You can record your identity." : (body.error || "That code was not accepted."),
-    });
-    renderMessages(messages);
+    if (response.ok && body.chat) {
+      state.chat = Object.assign({}, state.chat || {}, body.chat);
+      renderMessages(body.chat.messages || []);
+    } else {
+      const messages = (state.chat.messages || []).slice();
+      messages.push({
+        role: "bot",
+        text: response.ok ? "Code verified. You can record your identity." : (body.error || "That code was not accepted."),
+      });
+      renderMessages(messages);
+    }
     const box = document.getElementById("otp-code");
     if (box) box.value = "";
   }

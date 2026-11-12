@@ -2002,40 +2002,45 @@ def public_request(req: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _send_inquiry_email(customer_id: str, role: str, path: str) -> bool:
+def _send_inquiry_email(customer_id: str, role: str, path: str) -> Tuple[bool, str]:
+    """Send the chat link through the same NotificationService the chats use for codes.
+
+    ``otp_email`` and ``professional_inquiry_chat`` are templates on that one
+    service. This does not open a second mailer. The raw link stays in the
+    email only; the chat transcript does not repeat it.
+    """
     rec = _customer_record(customer_id)
     email = str((rec or {}).get("email") or "").strip()
     if not rec or not email:
-        return False
-    subject = "Finish your PHINS supplier application" if role == "supplier" else "Finish your PHINS agent application"
-    message = (
-        "Use the link in this email to finish with Phin. "
-        "The chat shows every step before you submit: your details, identity, "
-        "a company only if you add one, then optional documents, voice, or video. "
-        "An agent is opened as a role on one supplier record. "
-        f"The chat is at {path}"
-    )
+        return False, ""
+    role_label = "supplier" if str(role or "").strip().lower() == "supplier" else "agent"
     try:
-        from services.notification_service import create_notification_service, should_use_mock_notifications
-        from services.customer_agent.communication import get_customer_communication_agent
-        agent = get_customer_communication_agent(
-            notification_service=create_notification_service(use_mock=should_use_mock_notifications())
+        from services.notification_service import (
+            NotificationChannel,
+            NotificationPriority,
+            NotificationRequest,
+            get_notification_service,
         )
-        result = agent.send_customer_outreach(
-            customer_id=customer_id,
-            customer_name=str(rec.get("name") or "PHINS Customer"),
-            email=email,
-            template="inquiry",
-            channels="email",
-            subject=subject,
-            custom_message=message,
-            login_url=path,
-            actor="referral_rewards",
-            customer_record=rec,
-        )
+        result = get_notification_service().send(NotificationRequest(
+            channel=NotificationChannel.EMAIL,
+            recipient=email,
+            template_id="professional_inquiry_chat",
+            template_vars={
+                "name": _clip_text(rec.get("name") or "PHINS Customer", 80),
+                "role": role_label,
+                "chat_url": path,
+            },
+            priority=NotificationPriority.HIGH,
+            customer_id=str(customer_id),
+            metadata={
+                "purpose": "professional_inquiry",
+                "template": "professional_inquiry_chat",
+                "requested_role": role_label,
+            },
+        ))
     except Exception:
-        return False
-    return bool((result or {}).get("success"))
+        return False, ""
+    return bool(getattr(result, "success", False)), str(getattr(result, "notification_id", "") or "")
 
 
 def request_professional(customer_id: str, role: str, login_username: str = "",
@@ -2086,11 +2091,14 @@ def request_professional(customer_id: str, role: str, login_username: str = "",
         REQUESTS[key] = req
         _persist_request(req)
         path = _inquiry_path(token, key)
-    sent = _send_inquiry_email(customer_id, role, path)
+    sent, notification_id = _send_inquiry_email(customer_id, role, path)
     with _LOCK:
         current = REQUESTS.get(key) or req
         inquiry = current.setdefault("inquiry", {})
         inquiry["email_sent"] = bool(sent)
+        if notification_id:
+            inquiry["email_notification_id"] = notification_id
+        _seed_chat_notice(current, bool(sent))
         current["updated_at"] = _now()
         _persist_request(current)
         view = public_request(current)
@@ -2264,9 +2272,11 @@ def confirm_identity_otp(token: str, verification_id: str) -> Dict[str, Any]:
         otp["session_sha256"] = presented
         inquiry["identity_otp"] = otp
         req["inquiry"] = inquiry
+        chat = _ensure_chat(req)
+        _say(chat, "bot", "Code verified. You can record your identity.")
         req["updated_at"] = otp["verified_at"]
         _persist_request(req)
-        return {"otp_verified": True}
+        return {"otp_verified": True, "chat": _public_chat(req, token)}
 
 
 def _add_seconds(stamp: str, seconds: int) -> str:
@@ -2605,6 +2615,36 @@ def _say(chat: Dict[str, Any], role: str, text: str) -> None:
     chat["transcript"] = chat["transcript"][-40:]
 
 
+def _seed_chat_notice(req: Dict[str, Any], email_sent: bool) -> None:
+    """Open the disclosed chat with the email result. The link token stays out."""
+    chat = _ensure_chat(req)
+    if chat.get("transcript"):
+        return
+    _say(chat, "bot", _INQUIRY_OPENING)
+    if email_sent:
+        _say(chat, "bot", (
+            "I sent this chat to the email on your customer record. "
+            "Open that message to come back to this application. "
+            "A code for a new identity goes to that same email."
+        ))
+    else:
+        _say(chat, "bot", (
+            "This chat is open. The email could not be sent, so continue here."
+        ))
+    _say(chat, "bot", _step_prompt("confirm_person", req, _identity_public(req)))
+
+
+def note_inquiry_delivery(token: str, text: str) -> Dict[str, Any]:
+    """Record a notification in the disclosed chat. The text must not carry a secret."""
+    with _LOCK:
+        req = _open_chat_request(token)
+        chat = _ensure_chat(req)
+        _say(chat, "bot", text)
+        req["updated_at"] = _now()
+        _persist_request(req)
+        return _chat_payload(req, token)
+
+
 def _public_media(chat: Dict[str, Any]) -> List[Dict[str, Any]]:
     shown = []
     for item in chat.get("media") or []:
@@ -2649,6 +2689,11 @@ def _public_chat(req: Dict[str, Any], presented: str = "") -> Dict[str, Any]:
         "media": _public_media(chat),
         "identity": identity,
         "editable": req.get("status") == "inquiry",
+        "notification": {
+            "template": "professional_inquiry_chat",
+            "sent": bool(inquiry.get("email_sent")),
+            "notification_id": inquiry.get("email_notification_id") or None,
+        },
     }
 
 

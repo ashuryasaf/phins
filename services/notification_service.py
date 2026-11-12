@@ -3413,6 +3413,18 @@ If you did not request this code, please ignore this email.
             'otp_whatsapp': {
                 'body': 'Your PHINS verification code is {{ code }}. It expires in {{ expiry_minutes }} min. Never share this code.'
             },
+            # Same sender as otp_email. The body is the disclosed application chat.
+            'professional_inquiry_chat': {
+                'subject': 'Finish your PHINS {{ role }} application',
+                'body': '''Hello {{ name }},
+
+Phin has your professional application in one disclosed chat.
+Open this chat to confirm your details, identity, a company only if you add one, then optional documents, and a review. An agent is a role on one supplier record.
+
+{{ chat_url }}
+
+- PHINS''',
+            },
             'password_reset': {
                 'subject': 'PHINS Password Reset Request',
                 'body': '''Hello {{ name }},

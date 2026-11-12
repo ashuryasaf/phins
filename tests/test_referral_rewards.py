@@ -1193,6 +1193,64 @@ def test_professional_chat_discloses_every_step_and_keeps_the_id_in_the_vault():
     assert "getUserMedia" in script
 
 
+def test_inquiry_email_and_identity_code_use_the_chat_notification_service(monkeypatch):
+    """The inquiry email and the identity code share NotificationService and the Phin chat.
+
+    Customer outreach is a different mail path. The chat records both sends and
+    does not store the email token or the verification code.
+    """
+    def _outreach(*_args, **_kwargs):
+        raise AssertionError("professional inquiry must not use a second mail path")
+
+    monkeypatch.setattr(
+        "services.customer_agent.communication.CustomerCommunicationAgent.send_customer_outreach",
+        _outreach,
+    )
+    email = "inquiry-notify@example.com"
+    _register("Inquiry Notify", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, filed
+    assert filed["email_sent"] is True
+
+    from services.notification_service import get_notification_service
+    provider = get_notification_service()._email_provider
+    sent = [item for item in getattr(provider, "sent_emails", []) if item.get("to") == email]
+    assert sent, "inquiry email was not sent by NotificationService"
+    body = sent[-1]["body"]
+    assert "/professional-inquiry-chat.html" in body
+    assert "one disclosed chat" in body
+    assert "Open your PHINS portal" not in (sent[-1].get("body") or "")
+    assert "Open your PHINS portal" not in (sent[-1].get("html_body") or "")
+    parts = urlparse(filed["inquiry_path"])
+    query = parse_qs(parts.query)
+    link = query["t"][0]
+    assert link in body
+    prefill, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, prefill
+    messages = json.dumps(prefill["chat"]["messages"])
+    assert "email on your customer record" in messages
+    assert link not in messages
+    assert "inq_" not in messages
+    note = prefill["chat"]["notification"]
+    assert note["template"] == "professional_inquiry_chat"
+    assert note["sent"] is True
+    assert note["notification_id"]
+
+    otp, status = _post("/api/professional-inquiry/otp/request", {"token": link})
+    assert status == 200, otp
+    assert otp.get("notification_sent") is True
+    assert otp.get("demo_otp_code")
+    otp_messages = json.dumps((otp.get("chat") or {}).get("messages") or [])
+    assert "6-digit code" in otp_messages
+    assert otp["demo_otp_code"] not in otp_messages
+    again, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, again
+    stored = json.dumps(again["chat"]["messages"])
+    assert "6-digit code" in stored
+    assert otp["demo_otp_code"] not in stored
+
+
 @pytest.mark.parametrize("closed_status", ["rejected", "suspended"])
 def test_approval_does_not_reopen_a_closed_supplier(closed_status):
     email = f"closed-{closed_status}@example.com"
