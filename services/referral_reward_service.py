@@ -41,6 +41,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
@@ -50,6 +51,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import urlencode
+
+logger = logging.getLogger("phins.referral_rewards")
 
 DESTINATIONS: Tuple[str, ...] = ("premium", "health_wallet", "savings", "cash")
 LAYERS = (1, 2, 3)
@@ -1915,6 +1918,9 @@ def _arm_inquiry(req: Dict[str, Any], supplier_type: str, company_name: str) -> 
     link_prefix = "inq_"
     token = link_prefix + secrets.token_hex(16)
     known = _known_customer(req["customer_id"])
+    linked = _inquiry_email_for(req)
+    if linked:
+        known["email"] = linked
     has_company = bool(company_name and supplier_type)
     company = None
     if has_company:
@@ -2002,40 +2008,94 @@ def public_request(req: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _send_inquiry_email(customer_id: str, role: str, path: str) -> bool:
-    rec = _customer_record(customer_id)
-    email = str((rec or {}).get("email") or "").strip()
-    if not rec or not email:
+def _looks_like_email(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text or " " in text or text.count("@") != 1:
         return False
-    subject = "Finish your PHINS supplier application" if role == "supplier" else "Finish your PHINS agent application"
-    message = (
-        "Use the link in this email to finish with Phin. "
-        "The chat shows every step before you submit: your details, identity, "
-        "a company only if you add one, then optional documents, voice, or video. "
-        "An agent is opened as a role on one supplier record. "
-        f"The chat is at {path}"
+    local, _, domain = text.partition("@")
+    return bool(local and "." in domain)
+
+
+def _inquiry_recipient(customer_id: str, login_username: str = "") -> Tuple[str, str]:
+    """Address and display name for the inquiry email.
+
+    The customer record wins. The login username is used only when that record
+    has no email: it is the authenticated account, not an address from the
+    request body. Without this, a record that omitted email returned before
+    NotificationService.send and the customer received nothing.
+    """
+    rec = _customer_record(customer_id) or {}
+    email = str(rec.get("email") or "").strip()
+    if not email:
+        login = str(login_username or "").strip()
+        if _looks_like_email(login):
+            email = login
+    name = _clip_text(rec.get("name") or "PHINS Customer", 80)
+    return email, name
+
+
+def _inquiry_email_for(req: Dict[str, Any]) -> str:
+    """The address already known for this inquiry.
+
+    Same resolution as the inquiry email and the identity code: the customer
+    record, or the login stored when the request was opened. A form or chat
+    body is never a source, and this does not write the customer master.
+    """
+    email, _name = _inquiry_recipient(
+        str((req or {}).get("customer_id") or ""),
+        str((req or {}).get("login_username") or ""),
     )
+    return _clip_text(email, 254)
+
+
+def _send_inquiry_email(customer_id: str, role: str, path: str,
+                        login_username: str = "") -> Tuple[bool, str]:
+    """Send the chat link through the same NotificationService the chats use for codes.
+
+    ``otp_email`` and ``professional_inquiry_chat`` are templates on that one
+    service. Delivery uses ``deliver_notification``, the same fresh-service
+    plus configured-provider retry the identity code uses. This does not open
+    a second mailer. The raw link stays in the email only; the chat transcript
+    does not repeat it.
+    """
+    email, name = _inquiry_recipient(customer_id, login_username)
+    if not email:
+        return False, ""
+    role_label = "supplier" if str(role or "").strip().lower() == "supplier" else "agent"
     try:
-        from services.notification_service import create_notification_service, should_use_mock_notifications
-        from services.customer_agent.communication import get_customer_communication_agent
-        agent = get_customer_communication_agent(
-            notification_service=create_notification_service(use_mock=should_use_mock_notifications())
+        from services.notification_service import (
+            NotificationChannel,
+            NotificationPriority,
+            NotificationRequest,
+            deliver_notification,
         )
-        result = agent.send_customer_outreach(
-            customer_id=customer_id,
-            customer_name=str(rec.get("name") or "PHINS Customer"),
-            email=email,
-            template="inquiry",
-            channels="email",
-            subject=subject,
-            custom_message=message,
-            login_url=path,
-            actor="referral_rewards",
-            customer_record=rec,
-        )
+        result = deliver_notification(NotificationRequest(
+            channel=NotificationChannel.EMAIL,
+            recipient=email,
+            template_id="professional_inquiry_chat",
+            template_vars={
+                "name": name,
+                "role": role_label,
+                "chat_url": path,
+            },
+            priority=NotificationPriority.HIGH,
+            customer_id=str(customer_id),
+            metadata={
+                "purpose": "professional_inquiry",
+                "template": "professional_inquiry_chat",
+                "requested_role": role_label,
+            },
+        ))
     except Exception:
-        return False
-    return bool((result or {}).get("success"))
+        logger.warning("professional inquiry email was not handed to the notification service")
+        return False, ""
+    sent = bool(getattr(result, "success", False))
+    if not sent:
+        logger.warning(
+            "professional inquiry email was not delivered (%s)",
+            getattr(result, "error_code", None) or "SEND_FAILED",
+        )
+    return sent, str(getattr(result, "notification_id", "") or "")
 
 
 def request_professional(customer_id: str, role: str, login_username: str = "",
@@ -2086,11 +2146,16 @@ def request_professional(customer_id: str, role: str, login_username: str = "",
         REQUESTS[key] = req
         _persist_request(req)
         path = _inquiry_path(token, key)
-    sent = _send_inquiry_email(customer_id, role, path)
+    sent, notification_id = _send_inquiry_email(
+        customer_id, role, path, login_username,
+    )
     with _LOCK:
         current = REQUESTS.get(key) or req
         inquiry = current.setdefault("inquiry", {})
         inquiry["email_sent"] = bool(sent)
+        if notification_id:
+            inquiry["email_notification_id"] = notification_id
+        _seed_chat_notice(current, bool(sent))
         current["updated_at"] = _now()
         _persist_request(current)
         view = public_request(current)
@@ -2208,14 +2273,17 @@ def _identity_otp_fresh(req: Dict[str, Any], token: str = "") -> bool:
 
 
 def inquiry_otp_context(token: str) -> Dict[str, Any]:
-    """The address a code may be sent to. It is the customer record, not the form."""
+    """The address a code may be sent to.
+
+    Same recipient as the inquiry email: the customer record, or the login
+    stored when this request was opened, when that login looks like an email.
+    The OTP request body cannot supply a different address.
+    """
     with _LOCK:
         req = _open_chat_request(token)
-        rec = _customer_record(req.get("customer_id")) or {}
-        email = str(rec.get("email") or "").strip()
         return {
             "request_id": req.get("id"),
-            "email": email,
+            "email": _inquiry_email_for(req),
             "otp_verified": _identity_otp_fresh(req, token),
         }
 
@@ -2264,9 +2332,11 @@ def confirm_identity_otp(token: str, verification_id: str) -> Dict[str, Any]:
         otp["session_sha256"] = presented
         inquiry["identity_otp"] = otp
         req["inquiry"] = inquiry
+        chat = _ensure_chat(req)
+        _say(chat, "bot", "Code verified. You can record your identity.")
         req["updated_at"] = otp["verified_at"]
         _persist_request(req)
-        return {"otp_verified": True}
+        return {"otp_verified": True, "chat": _public_chat(req, token)}
 
 
 def _add_seconds(stamp: str, seconds: int) -> str:
@@ -2302,7 +2372,11 @@ def inquiry_prefill(token: str) -> Dict[str, Any]:
             raise RewardError("This inquiry link has expired", status=410, code="inquiry_expired")
         if req.get("status") != "inquiry":
             return _inquiry_status_only(req)
-        known = inquiry.get("known") if isinstance(inquiry.get("known"), dict) else _known_customer(req["customer_id"])
+        stored_known = inquiry.get("known") if isinstance(inquiry.get("known"), dict) else _known_customer(req["customer_id"])
+        known = dict(stored_known)
+        linked = _inquiry_email_for(req)
+        if linked:
+            known["email"] = linked
         personal = inquiry.get("personal") if isinstance(inquiry.get("personal"), dict) else {}
         company = inquiry.get("company") if isinstance(inquiry.get("company"), dict) else {}
         return {
@@ -2504,11 +2578,18 @@ def _step_prompt(step_id: str, req: Dict[str, Any], identity: Dict[str, Any]) ->
     personal = inquiry.get("personal") if isinstance(inquiry.get("personal"), dict) else {}
     if step_id == "confirm_person":
         name = personal.get("name") or "there"
+        address = _inquiry_email_for(req)
+        linked = (
+            f" Your email {address} is already linked to this application. You do not type it again."
+            if address else ""
+        )
         return (
             f"{name}, confirm the name, phone, and address for this application. "
             "They are already filled from your customer record. Correct anything that changed."
+            + linked
         )
     if step_id == "identity":
+        address = _inquiry_email_for(req) or "the email already linked to this application"
         if identity.get("complete"):
             masked = identity.get("national_id_masked") or "on file"
             nation = identity.get("nationality") or "your nationality"
@@ -2519,12 +2600,12 @@ def _step_prompt(step_id: str, req: Dict[str, Any], identity: Dict[str, Any]) ->
         if identity.get("required"):
             return (
                 "This application needs your nationality and personal ID before it can continue. "
-                "First enter the code sent to the email on your customer record. "
+                f"First enter the code sent to {address}. "
                 "The number goes to the identity vault only. This application keeps the last four digits."
             )
         return (
             "Add your nationality and personal ID, or skip this step. "
-            "Recording a new ID needs the code sent to the email on your customer record. "
+            f"Recording a new ID needs the code sent to {address}. "
             "When the platform requires an identity and none is on file, this step cannot be skipped. "
             "The number goes to the identity vault only."
         )
@@ -2555,7 +2636,7 @@ def _step_input(step_id: str, req: Dict[str, Any], identity: Dict[str, Any], pre
     inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
     if step_id == "confirm_person":
         personal = inquiry.get("personal") if isinstance(inquiry.get("personal"), dict) else {}
-        return {"type": "person", "prefill": personal}
+        return {"type": "person", "prefill": personal, "email": _inquiry_email_for(req)}
     if step_id == "identity":
         return {
             "type": "identity",
@@ -2564,6 +2645,7 @@ def _step_input(step_id: str, req: Dict[str, Any], identity: Dict[str, Any], pre
             "nationality": identity.get("nationality"),
             "national_id_masked": identity.get("national_id_masked"),
             "otp_verified": _identity_otp_fresh(req, presented),
+            "email": _inquiry_email_for(req),
         }
     if step_id == "company":
         company = inquiry.get("company") if isinstance(inquiry.get("company"), dict) else {}
@@ -2605,6 +2687,58 @@ def _say(chat: Dict[str, Any], role: str, text: str) -> None:
     chat["transcript"] = chat["transcript"][-40:]
 
 
+_INQUIRY_EMAIL_UNSENT = (
+    "This chat is open. The email could not be sent, so continue here."
+)
+
+
+def _inquiry_mail_line(req: Dict[str, Any], email_sent: bool) -> str:
+    """Name the linked address in the chat. The link token stays out of the line."""
+    if not email_sent:
+        return _INQUIRY_EMAIL_UNSENT
+    email = _inquiry_email_for(req)
+    target = email or "the email on your customer record"
+    return (
+        f"I sent this chat to {target}. "
+        "That address is already on this application, so you do not type it again. "
+        "Open that message to come back to this application. "
+        "A code for a new identity goes to that same email."
+    )
+
+
+def _seed_chat_notice(req: Dict[str, Any], email_sent: bool) -> None:
+    """Open the disclosed chat with the email result. The link token stays out.
+
+    A later successful send still records itself when an earlier attempt left
+    only the failure line. The token is not written into either line.
+    """
+    chat = _ensure_chat(req)
+    line = _inquiry_mail_line(req, email_sent)
+    texts = [
+        str(item.get("text") or "")
+        for item in (chat.get("transcript") or [])
+        if isinstance(item, dict)
+    ]
+    if texts:
+        if email_sent and line not in texts:
+            _say(chat, "bot", line)
+        return
+    _say(chat, "bot", _INQUIRY_OPENING)
+    _say(chat, "bot", line)
+    _say(chat, "bot", _step_prompt("confirm_person", req, _identity_public(req)))
+
+
+def note_inquiry_delivery(token: str, text: str) -> Dict[str, Any]:
+    """Record a notification in the disclosed chat. The text must not carry a secret."""
+    with _LOCK:
+        req = _open_chat_request(token)
+        chat = _ensure_chat(req)
+        _say(chat, "bot", text)
+        req["updated_at"] = _now()
+        _persist_request(req)
+        return _chat_payload(req, token)
+
+
 def _public_media(chat: Dict[str, Any]) -> List[Dict[str, Any]]:
     shown = []
     for item in chat.get("media") or []:
@@ -2639,9 +2773,11 @@ def _public_chat(req: Dict[str, Any], presented: str = "") -> Dict[str, Any]:
             {"role": "bot", "text": _INQUIRY_OPENING},
             {"role": "bot", "text": step["prompt"]},
         ]
+    email = _inquiry_email_for(req)
     return {
         "agent": "Phin",
         "disclosed": True,
+        "email": email,
         "process": [dict(item) for item in INQUIRY_PROCESS],
         "cursor": cursor,
         "step": step,
@@ -2649,6 +2785,11 @@ def _public_chat(req: Dict[str, Any], presented: str = "") -> Dict[str, Any]:
         "media": _public_media(chat),
         "identity": identity,
         "editable": req.get("status") == "inquiry",
+        "notification": {
+            "template": "professional_inquiry_chat",
+            "sent": bool(inquiry.get("email_sent")),
+            "notification_id": inquiry.get("email_notification_id") or None,
+        },
     }
 
 
@@ -2805,7 +2946,11 @@ def _advance_identity(token: str, value: Any) -> Dict[str, Any]:
         chat = _ensure_chat(req)
         if chat.get("cursor") != "identity":
             raise RewardError("Finish the step that is open", status=409, code="step_mismatch")
-        req["inquiry"]["known"] = _known_customer(customer_id)
+        known = _known_customer(customer_id)
+        linked = _inquiry_email_for(req)
+        if linked:
+            known["email"] = linked
+        req["inquiry"]["known"] = known
         chat["identity_confirmed"] = not deferred
         chat["identity_deferred"] = deferred
         if not deferred:

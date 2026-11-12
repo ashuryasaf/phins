@@ -192,7 +192,7 @@ def _inquiry_credential(explicit: Any, cookies: Any = None, request_id: Any = ""
 
 
 def _inquiry_otp_request(token: str, client_ip: str, user_agent: str) -> Tuple[int, Dict[str, Any]]:
-    """Send a code to the email already on the customer record. The body cannot redirect it."""
+    """Send a code to the same address as the inquiry email. The body cannot redirect it."""
     try:
         context = rewards.inquiry_otp_context(token)
     except rewards.RewardError as exc:
@@ -257,6 +257,19 @@ def _inquiry_otp_request(token: str, client_ip: str, user_agent: str) -> Tuple[i
             "error_code": "OTP_DELIVERY_FAILED",
             "retryable": True,
         }
+    if delivered:
+        masked = str(response.get("masked_email") or "your email")
+        # The code is already emailed. A transcript write that fails
+        # (expired session, concurrent submit) must not hide verification_id.
+        try:
+            noted = rewards.note_inquiry_delivery(
+                token,
+                f"I sent a 6-digit code to {masked}. Type it in this chat.",
+            )
+        except Exception:
+            noted = None
+        if isinstance(noted, dict):
+            response["chat"] = noted.get("chat")
     return 200, response
 
 
