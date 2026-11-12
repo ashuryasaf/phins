@@ -115,7 +115,11 @@ if (typeof document !== "undefined") {
     wrap.className = "inquiry-fields";
     if (input.type === "person") {
       const prefill = input.prefill || {};
-      wrap.innerHTML = field("p-name", "Name", prefill.name) +
+      const email = input.email || chat.email || "";
+      wrap.innerHTML = (email
+        ? "<p class=\"inquiry-note\">Email " + esc(email) + " is already linked. You do not type it again.</p>"
+        : "") +
+        field("p-name", "Name", prefill.name) +
         field("p-phone", "Phone", prefill.phone, "tel") +
         field("p-address", "Address", prefill.address) +
         field("p-city", "City", prefill.city) +
@@ -140,7 +144,10 @@ if (typeof document !== "undefined") {
         wrap.appendChild(note);
         wrap.appendChild(button("This identity is mine", function () { send("confirm"); }));
       } else {
-        note.textContent = "A code goes to the email on your customer record before a new ID is recorded. The number is not kept on this application.";
+        const email = input.email || chat.email || "";
+        note.textContent = email
+          ? "A code goes to " + email + " before a new ID is recorded. You do not type that address. The number is not kept on this application."
+          : "A code goes to the email already linked to this application before a new ID is recorded. The number is not kept on this application.";
         wrap.appendChild(note);
         wrap.appendChild(button("Email me a code", function () { requestCode(); }, true));
         wrap.insertAdjacentHTML("beforeend", field("otp-code", "Email code", ""));
@@ -232,9 +239,25 @@ if (typeof document !== "undefined") {
     return el;
   }
 
+  function showLinkedEmail(email) {
+    let note = document.getElementById("linked-email");
+    if (!note) {
+      note = document.createElement("p");
+      note.id = "linked-email";
+      note.className = "inquiry-note";
+      const start = document.getElementById("start-btn");
+      if (start && start.parentNode) start.parentNode.insertBefore(note, start);
+    }
+    note.textContent = email
+      ? "Your email " + email + " is already linked. You do not type it again."
+      : "";
+  }
+
   function applyState(body) {
     state = body;
     const chat = (body && body.chat) || {};
+    const known = (body && body.known) || {};
+    showLinkedEmail(known.email || chat.email || "");
     renderProcess(chat.process || body.process || [], chat.cursor);
     renderMessages(chat.messages || []);
     renderDock(chat);

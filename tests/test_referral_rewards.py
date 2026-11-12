@@ -1190,6 +1190,9 @@ def test_professional_chat_discloses_every_step_and_keeps_the_id_in_the_vault():
     assert "/api/professional-inquiry/session" in script
     assert "/api/professional-inquiry/otp/request" in script
     assert "/api/professional-inquiry/session" in classic
+    assert 'id="email"' in classic
+    assert "readonly" in classic
+    assert "You do not type it again" in script
     assert "getUserMedia" in script
 
 
@@ -1233,7 +1236,8 @@ def test_inquiry_email_and_identity_code_use_the_chat_notification_service(monke
     prefill, status = _get("/api/professional-inquiry?t=" + link)
     assert status == 200, prefill
     messages = json.dumps(prefill["chat"]["messages"])
-    assert "email on your customer record" in messages
+    assert email in messages
+    assert "same email" in messages
     assert link not in messages
     assert "inq_" not in messages
     note = prefill["chat"]["notification"]
@@ -1275,7 +1279,8 @@ def test_inquiry_email_is_absolute_when_only_webhook_base_url_is_set(monkeypatch
     link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
     prefill, status = _get("/api/professional-inquiry?t=" + link)
     assert status == 200, prefill
-    assert "email on your customer record" in json.dumps(prefill["chat"]["messages"])
+    assert email in json.dumps(prefill["chat"]["messages"])
+    assert "same email" in json.dumps(prefill["chat"]["messages"])
     assert link not in json.dumps(prefill["chat"]["messages"])
 
 
@@ -1324,7 +1329,8 @@ def test_inquiry_email_retries_when_the_first_provider_fails(monkeypatch):
     assert link in sent[-1]["body"]
     prefill, status = _get("/api/professional-inquiry?t=" + link)
     assert status == 200, prefill
-    assert "email on your customer record" in json.dumps(prefill["chat"]["messages"])
+    assert email in json.dumps(prefill["chat"]["messages"])
+    assert "same email" in json.dumps(prefill["chat"]["messages"])
     assert link not in json.dumps(prefill["chat"]["messages"])
 
 
@@ -1367,6 +1373,42 @@ def test_inquiry_email_uses_the_login_when_the_record_has_no_email(monkeypatch):
     assert "6-digit code" in messages
     assert otp["demo_otp_code"] not in messages
     assert link not in messages
+    prefill, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, prefill
+    assert prefill["known"]["email"] == email
+    assert prefill["chat"]["email"] == email
+    assert prefill["chat"]["step"]["input"]["email"] == email
+    shown = json.dumps(prefill["chat"]["messages"])
+    assert email in shown
+    assert other not in shown
+    assert portal.CUSTOMERS[customer_id]["email"] == ""
+    moved = _chat(link, "confirm_person", {
+        "email": other,
+        "personal": {
+            "name": "Login Mail",
+            "email": other,
+            "phone": "555-0100",
+            "address": "1 Herzl",
+            "city": "Tel Aviv",
+            "country": "IL",
+        },
+    })
+    assert moved["request_id"] == filed["id"]
+    assert moved["chat"]["email"] == email
+    assert other not in json.dumps(moved)
+    _chat(link, "identity", "skip")
+    still, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, still
+    assert still["known"]["email"] == email
+    assert portal.CUSTOMERS[customer_id]["email"] == ""
+    _chat(link, "company", "no")
+    _chat(link, "evidence", "skip")
+    submitted = _chat(link, "review", "submit")
+    assert submitted["request_id"] == filed["id"]
+    assert submitted["status"] == "pending"
+    assert submitted["request"]["id"] == filed["id"]
+    assert [key for key, row in rewards.REQUESTS.items() if row.get("customer_id") == customer_id] == [filed["id"]]
+    assert portal.CUSTOMERS[customer_id]["email"] == ""
 
 
 def test_a_failed_chat_note_still_returns_the_emailed_code(monkeypatch):

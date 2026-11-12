@@ -53,6 +53,7 @@
       color: var(--text, #12203f);
       font: inherit;
     }
+    input[readonly] { background: #f4f7fb; }
     .wide { grid-column: 1 / -1; }
     .known {
       display: flex;
@@ -105,6 +106,7 @@
       <section class="panel">
         <h2>Already on file</h2>
         <div class="known" id="known">Loading…</div>
+        <label class="wide">Email<input id="email" name="email" type="email" readonly autocomplete="email"></label>
       </section>
       <section class="panel">
         <h2>Personal details</h2>
@@ -262,7 +264,9 @@
       ].filter(Boolean);
       document.getElementById('known').innerHTML = bits.length
         ? bits.map(function(bit) { return '<span>' + esc(bit) + '</span>'; }).join('')
-        : 'We will keep the email already on your customer record.';
+        : 'No email is linked to this application yet.';
+      const emailBox = document.getElementById('email');
+      if (emailBox) emailBox.value = known.email || '';
       fill('name', personal.name);
       fill('phone', personal.phone);
       fill('address', personal.address);

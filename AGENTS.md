@@ -232,8 +232,10 @@ PHINS is a Python platform built around:
  `BASE_URL` or `WEBHOOK_BASE_URL` is set (`TEST_BASE_URL` under test).
  Without that origin the link stays a relative path. A customer record
  with no email uses the authenticated login for both the inquiry mail and
- the identity code when that login is an email address. The OTP body
- cannot supply a different address. The email opens one disclosed Phin chat
+ the identity code when that login is an email address. That same address
+ is shown on the classic form and in the Phin chat. The customer does not
+ type it, a form or OTP body cannot replace it, and the customer master is
+ not rewritten. The email opens one disclosed Phin chat
  (`/professional-inquiry-chat.html`, same request as the classic form):
  confirm details, identity through `set_identity` (a new ID needs the email
  code first; nationality and last four only on the request), optional company,
