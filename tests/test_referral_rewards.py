@@ -25,12 +25,14 @@ from services.referral_reward_service import RewardError
 BASE = os.environ.get("TEST_BASE_URL", "http://localhost:8000")
 
 
-def _post(path, payload, token=None):
+def _post(path, payload, token=None, headers=None):
     data = json.dumps(payload).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
+    merged = {"Content-Type": "application/json"}
+    if headers:
+        merged.update(headers)
     if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = Request(BASE + path, data=data, headers=headers)
+        merged["Authorization"] = f"Bearer {token}"
+    req = Request(BASE + path, data=data, headers=merged)
     try:
         with urlopen(req) as resp:
             return json.loads(resp.read().decode("utf-8")), resp.status
@@ -1225,7 +1227,9 @@ def test_inquiry_email_and_identity_code_use_the_chat_notification_service(monke
     absolute = "https://portal.example.test/professional-inquiry-chat.html"
     assert absolute in body
     assert absolute in (sent[-1].get("html_body") or "")
-    assert filed["inquiry_path"].startswith(absolute)
+    assert filed["inquiry_path"].startswith(absolute + "?")
+    assert ".html/?" not in filed["inquiry_path"]
+    assert ".html/?" not in body
     assert "one disclosed chat" in body
     assert "Open your PHINS portal" not in (sent[-1].get("body") or "")
     assert "Open your PHINS portal" not in (sent[-1].get("html_body") or "")
@@ -1275,13 +1279,215 @@ def test_inquiry_email_is_absolute_when_only_webhook_base_url_is_set(monkeypatch
     assert sent
     absolute = "https://hooks.example.test/professional-inquiry-chat.html"
     assert absolute in sent[-1]["body"]
-    assert filed["inquiry_path"].startswith(absolute)
+    assert filed["inquiry_path"].startswith(absolute + "?")
+    assert ".html/?" not in filed["inquiry_path"]
+    assert ".html/?" not in sent[-1]["body"]
     link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
     prefill, status = _get("/api/professional-inquiry?t=" + link)
     assert status == 200, prefill
     assert email in json.dumps(prefill["chat"]["messages"])
     assert "same email" in json.dumps(prefill["chat"]["messages"])
     assert link not in json.dumps(prefill["chat"]["messages"])
+
+
+def _assert_openable_inquiry_link(url, request_id):
+    """A mail client can open this: absolute, and `.html?` with no slash."""
+    assert ".html/?" not in url
+    assert url.split("?", 1)[0].endswith(".html")
+    parts = urlparse(url)
+    query = parse_qs(parts.query)
+    assert parts.scheme in ("http", "https")
+    assert parts.netloc
+    assert parts.path == "/professional-inquiry-chat.html"
+    assert query["r"] == [request_id]
+    assert query["t"][0].startswith("inq_")
+    return query["t"][0]
+
+
+def _clear_inquiry_origins(monkeypatch):
+    monkeypatch.delenv("BASE_URL", raising=False)
+    monkeypatch.delenv("WEBHOOK_BASE_URL", raising=False)
+    monkeypatch.delenv("TEST_BASE_URL", raising=False)
+
+
+def _mailed_inquiry(email, name, role="supplier", host=None):
+    _register(name, email)
+    token, _role = _login(email, "secure123456")
+    extra = {"Host": host} if host else None
+    filed, status = _post(
+        "/api/customer/professional-requests",
+        {"role": role},
+        token=token,
+        headers=extra,
+    )
+    assert status == 200, filed
+    from services.notification_service import get_notification_service
+    provider = get_notification_service()._email_provider
+    sent = [item for item in getattr(provider, "sent_emails", []) if item.get("to") == email]
+    assert sent, "inquiry email was not sent by NotificationService"
+    return filed, sent[-1]
+
+
+def test_inquiry_email_link_uses_the_live_site_when_no_origin_is_configured(monkeypatch, caplog):
+    """No configured origin: the mailed link is the live site, not the request host.
+
+    A relative `professional-inquiry-chat.html/?r=` link does not open in a
+    mail client. The mailed URL is absolute and has no slash before `?`.
+    """
+    _clear_inquiry_origins(monkeypatch)
+    caplog.set_level("DEBUG")
+    email = "inquiry-live-site@example.com"
+    filed, message = _mailed_inquiry(email, "Live Site")
+    prefix = "https://www.phins.ai/professional-inquiry-chat.html?"
+    assert filed["inquiry_path"].startswith(prefix)
+    request_host = urlparse(BASE).netloc
+    assert request_host not in filed["inquiry_path"]
+    link = _assert_openable_inquiry_link(filed["inquiry_path"], filed["id"])
+    body = message["body"]
+    html = message.get("html_body") or ""
+    assert filed["inquiry_path"] in body
+    assert filed["inquiry_path"] in html
+    assert ".html/?" not in body
+    assert ".html/?" not in html
+    assert link not in caplog.text
+
+
+def test_inquiry_email_link_ignores_a_foreign_host(monkeypatch):
+    """A spoofed Host must not receive the inquiry token."""
+    _clear_inquiry_origins(monkeypatch)
+    foreign = "attacker.example"
+    email = "inquiry-foreign-host@example.com"
+    filed, message = _mailed_inquiry(email, "Foreign Host", host=foreign)
+    prefix = "https://www.phins.ai/professional-inquiry-chat.html?"
+    assert filed["inquiry_path"].startswith(prefix)
+    _assert_openable_inquiry_link(filed["inquiry_path"], filed["id"])
+    mailed = message["body"] + (message.get("html_body") or "")
+    assert filed["inquiry_path"] in mailed
+    assert foreign not in filed["inquiry_path"]
+    assert foreign not in mailed
+    assert ".html/?" not in mailed
+
+    lookalike = "evil.phins.ai"
+    look_email = "inquiry-lookalike-host@example.com"
+    look, look_message = _mailed_inquiry(look_email, "Lookalike Host", host=lookalike)
+    assert look["inquiry_path"].startswith(prefix)
+    look_mail = look_message["body"] + (look_message.get("html_body") or "")
+    assert lookalike not in look["inquiry_path"]
+    assert lookalike not in look_mail
+
+    allowed, allowed_message = _mailed_inquiry(
+        "inquiry-apex-host@example.com", "Apex Host", host="phins.ai",
+    )
+    apex = "https://phins.ai/professional-inquiry-chat.html?"
+    assert allowed["inquiry_path"].startswith(apex)
+    _assert_openable_inquiry_link(allowed["inquiry_path"], allowed["id"])
+    assert allowed["inquiry_path"] in allowed_message["body"]
+    assert "www.phins.ai" not in allowed["inquiry_path"]
+
+
+def test_inquiry_email_link_drops_a_page_path_on_the_configured_origin(monkeypatch):
+    """A BASE_URL that already names the page must not become `.html/?r=`."""
+    monkeypatch.setenv(
+        "BASE_URL",
+        "https://portal.example.test/professional-inquiry-chat.html/",
+    )
+    monkeypatch.delenv("WEBHOOK_BASE_URL", raising=False)
+    email = "inquiry-origin-path@example.com"
+    _register("Origin Path", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, filed
+    assert filed["inquiry_path"].startswith(
+        "https://portal.example.test/professional-inquiry-chat.html?"
+    )
+    _assert_openable_inquiry_link(filed["inquiry_path"], filed["id"])
+    assert "/professional-inquiry-chat.html/professional-inquiry-chat.html" not in filed["inquiry_path"]
+
+
+def test_inquiry_identity_records_through_a_database_style_store():
+    """Record my identity uses the customer store even when it is not a dict.
+
+    Production CUSTOMERS is a DatabaseDict. The inquiry path used to refuse
+    that store after the verification code. The national ID stays off the
+    transcript, and the email-link token still cannot record it.
+    """
+    class _CopyStore:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def __getitem__(self, key):
+            value = self._inner[key]
+            return dict(value) if isinstance(value, dict) else value
+
+        def __setitem__(self, key, value):
+            self._inner[key] = value
+
+        def get(self, key, default=None):
+            try:
+                return self[key]
+            except KeyError:
+                return default
+
+        def items(self):
+            return list(self._inner.items())
+
+    email = "inquiry-vault@example.com"
+    customer_id = _register("Inquiry Vault", email)
+    session, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=session)
+    assert status == 200, filed
+    link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
+    _chat(link, "confirm_person", {
+        "personal": {
+            "name": "Inquiry Vault",
+            "phone": "555-0142",
+            "address": "4 Herzl",
+            "city": "Tel Aviv",
+            "country": "IL",
+        },
+    })
+    national_id = "123456782"
+    opened, status, set_cookies = _open("/api/professional-inquiry/session", {"token": link})
+    assert status == 200, opened
+    cookie_name, secret, _header = _inquiry_set_cookie(set_cookies)
+    cookie = cookie_name + "=" + secret
+    otp, status = _post("/api/professional-inquiry/otp/request", {"token": link})
+    assert status == 200, otp
+    checked, status, _cookies = _open("/api/professional-inquiry/otp/verify", {
+        "request_id": opened["request_id"],
+        "verification_id": otp["verification_id"],
+        "otp_code": otp["demo_otp_code"],
+    }, cookie=cookie)
+    assert status == 200, checked
+    store = _CopyStore(portal.CUSTOMERS)
+    assert not isinstance(store, dict)
+    previous = portal.CUSTOMERS
+    portal.CUSTOMERS = store
+    try:
+        stolen, status = _post("/api/professional-inquiry/chat", {
+            "token": link, "step": "identity",
+            "value": {"nationality": "IL", "national_id": national_id},
+        })
+        assert status == 403, stolen
+        assert stolen["code"] == "otp_required"
+        recorded, status, _cookies = _open("/api/professional-inquiry/chat", {
+            "request_id": opened["request_id"],
+            "step": "identity",
+            "value": {"nationality": "IL", "national_id": national_id},
+        }, cookie=cookie)
+    finally:
+        portal.CUSTOMERS = previous
+    assert status == 200, recorded
+    dumped = json.dumps(recorded)
+    assert national_id not in dumped
+    assert "Identity vault is unavailable" not in dumped
+    assert recorded["chat"]["identity"]["complete"] is True
+    assert recorded["chat"]["identity"]["national_id_masked"].endswith("6782")
+    assert portal.CUSTOMERS[customer_id]["national_id_last4"] == "6782"
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    stored = json.dumps(rewards.REQUESTS[filed["id"]])
+    assert national_id not in stored
+    assert "Identity recorded" in stored
 
 
 def test_inquiry_email_retries_when_the_first_provider_fails(monkeypatch):

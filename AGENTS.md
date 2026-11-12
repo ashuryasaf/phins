@@ -228,17 +228,23 @@ PHINS is a Python platform built around:
  through `NotificationService.send` (`deliver_notification`), the same
  sender apply and claims chats use for `otp_email`, including that path's
  retry onto the next configured provider when the first send fails. Both
- are recorded in the disclosed Phin chat. The email link is absolute when
- `BASE_URL` or `WEBHOOK_BASE_URL` is set (`TEST_BASE_URL` under test).
- Without that origin the link stays a relative path. A customer record
+ are recorded in the disclosed Phin chat. The email link is
+ `https://<origin>/professional-inquiry-chat.html?r=<id>&t=<token>` with
+ no slash between `.html` and `?`. The origin is `BASE_URL`, then
+ `WEBHOOK_BASE_URL` (`TEST_BASE_URL` under test). With neither set, the
+ link is `https://www.phins.ai`. A request host is used only when it is
+ exactly `phins.ai` or `www.phins.ai`; any other `Host` is ignored. The
+ token is not logged. A customer record
  with no email uses the authenticated login for both the inquiry mail and
  the identity code when that login is an email address. That same address
  is shown on the classic form and in the Phin chat. The customer does not
  type it, a form or OTP body cannot replace it, and the customer master is
  not rewritten. The email opens one disclosed Phin chat
  (`/professional-inquiry-chat.html`, same request as the classic form):
- confirm details, identity through `set_identity` (a new ID needs the email
- code first; nationality and last four only on the request), optional company,
+ confirm details, identity through `set_identity` on the same customer
+ store the other Phin chats use, including the database-backed store (a new
+ ID needs the email code first; nationality and last four only on the
+ request), optional company,
  optional document/voice/video sealed by SHA-256, then review. The page
  exchanges the email token for a short HttpOnly cookie named per request
  and drops it from the URL. The email also carries `r`, the request id,

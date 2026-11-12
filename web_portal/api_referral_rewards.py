@@ -353,7 +353,8 @@ def dispatch_get(path: str, session: Optional[Dict[str, Any]], query: Dict[str, 
 
 
 def dispatch_post(path: str, session: Optional[Dict[str, Any]], body: Dict[str, Any],
-                  inquiry_cookie: Any = None, client_ip: str = "", user_agent: str = "") -> Result:
+                  inquiry_cookie: Any = None, client_ip: str = "", user_agent: str = "",
+                  public_origin: str = "") -> Result:
     body = body if isinstance(body, dict) else {}
     if path == "/api/customer/referral-rewards/accept":
         denied = _own(session)
@@ -380,6 +381,7 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]], body: Dict[str, 
             str(body.get("supplier_type") or ""),
             str(body.get("company_name") or ""),
             str(body.get("note") or ""),
+            str(public_origin or ""),
         )
     if path == "/api/customer/role-switch":
         denied = _own(session)
