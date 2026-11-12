@@ -601,6 +601,35 @@ def get_agent(agent_id: str) -> Optional[Dict[str, Any]]:
         return AGENTS.get(agent_id)
 
 
+def discard_agent(agent_id: str) -> bool:
+    """Remove an agent row no request can still reach.
+
+    The in-memory maps are cleared first. A durable row is deleted when the
+    database is on, so a later hydrate does not restore an orphan.
+    """
+    aid = str(agent_id or "").strip()
+    if not aid:
+        return False
+    with _LOCK:
+        _hydrate_from_db(force=True)
+        agent = AGENTS.pop(aid, None)
+        if isinstance(agent, dict):
+            user = str(agent.get("user_username") or "")
+            if AGENT_BY_USER.get(user) == aid:
+                AGENT_BY_USER.pop(user, None)
+        else:
+            for user, mapped in list(AGENT_BY_USER.items()):
+                if mapped == aid:
+                    AGENT_BY_USER.pop(user, None)
+        if _db_enabled():
+            try:
+                with _db() as db:
+                    db.agents.delete(aid)
+            except Exception:
+                return isinstance(agent, dict)
+        return True
+
+
 def list_agents() -> List[Dict[str, Any]]:
     with _LOCK:
         _hydrate_from_db()

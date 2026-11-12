@@ -2135,7 +2135,10 @@ def test_declining_supplier_request_keeps_an_approved_agent_role():
     assert supplier["status"] not in ("approved", "rejected", "suspended", "terminated")
     assert "agent_id" not in supplier
     assert rewards.REQUESTS[agent_request].get("supplier_id") != supplier_id
-    assert rewards.REQUESTS[agent_request].get("agent_id") != opened["request"]["agent_id"]
+    assert rewards.REQUESTS[agent_request].get("agent_id") == opened["request"]["agent_id"]
+    assert rewards.grant_for(customer_id, "agent")["agent_id"] == opened["request"]["agent_id"]
+    switched, status = _post("/api/customer/role-switch", {"role": "agent"}, token=session)
+    assert status == 200, switched
     desks = rewards.professional_status(customer_id)
     assert desks["supplier"]["status"] == "withdrawn"
     assert desks["agent"]["status"] == "withdrawn"
@@ -2150,6 +2153,70 @@ def test_declining_supplier_request_keeps_an_approved_agent_role():
     ]) == 1
     from services.agent_ecosystem_service import get_agent
     assert get_agent(opened["request"]["agent_id"])["default_commission_rate"] == pytest.approx(0.1)
+
+
+def test_approved_agent_without_a_grant_can_be_filed_again(monkeypatch):
+    """An approved stamp with no usable agent is not left closed."""
+    stored = []
+    real_persist = rewards._persist_request
+
+    def capture(req):
+        stored.append({
+            "id": req.get("id"),
+            "status": req.get("status"),
+            "supplier_id": req.get("supplier_id"),
+            "agent_id": req.get("agent_id"),
+        })
+        return real_persist(req)
+
+    monkeypatch.setattr(rewards, "_persist_request", capture)
+    email = "no-grant@example.com"
+    customer_id = _register("No Grant", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="No Grant", company={
+        "company_name": "No Grant Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="No Grant", company={
+        "company_name": "No Grant Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    supplier_id = opened["request"]["supplier_id"]
+    agent_id = opened["request"]["agent_id"]
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    rewards.REQUESTS[agent_request].pop("agent_id", None)
+    stored.clear()
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    assert "agent_id" not in supplier
+    request = rewards.REQUESTS[agent_request]
+    assert request["status"] == "inquiry"
+    assert request.get("status") != "approved"
+    assert not request.get("agent_id")
+    assert request.get("supplier_id") != supplier_id
+    written = [row for row in stored if row["id"] == agent_request]
+    assert written
+    assert written[-1]["status"] == "inquiry"
+    assert written[-1]["agent_id"] is None
+    assert written[-1]["supplier_id"] is None
+    from services.agent_ecosystem_service import AGENTS, get_agent
+    assert get_agent(agent_id) is None
+    assert agent_id not in AGENTS
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=session)
+    assert status == 200, filed
+    assert filed["status"] == "inquiry"
+    assert filed.get("code") != "already_approved"
 
 
 def test_detached_sibling_request_is_stored(monkeypatch):
@@ -2214,7 +2281,7 @@ def test_detached_sibling_request_is_stored(monkeypatch):
     assert written, stored
     assert written[-1]["status"] == "approved"
     assert written[-1]["supplier_id"] is None
-    assert written[-1]["agent_id"] is None
+    assert written[-1]["agent_id"] == opened["request"]["agent_id"]
     assert any(row["id"] == supplier_request and row["status"] == "rejected" for row in stored)
     assert calls == {"approve": 0, "reject": 0}
     assert service.suppliers[supplier_id]["status"] == "withdrawn"
@@ -2242,7 +2309,7 @@ def test_detached_sibling_request_is_stored(monkeypatch):
     assert written, stored
     assert written[-1]["status"] == "approved"
     assert written[-1]["supplier_id"] is None
-    assert written[-1]["agent_id"] is None
+    assert written[-1]["agent_id"] == opened["request"]["agent_id"]
     assert calls == {"approve": 0, "reject": 0}
     assert service.suppliers[desk_supplier_id]["status"] == "withdrawn"
     assert portal.CUSTOMERS[desk_customer] == before_customer
@@ -2342,7 +2409,7 @@ def test_decline_with_an_approved_role_does_not_rerun_approval(monkeypatch):
     assert supplier.get("professional_request_id") != supplier_request
     assert "agent_id" not in supplier
     assert rewards.REQUESTS[agent_request].get("supplier_id") != supplier_id
-    assert rewards.REQUESTS[agent_request].get("agent_id") != agent_id
+    assert rewards.REQUESTS[agent_request].get("agent_id") == agent_id
     desks = rewards.professional_status(customer_id)
     assert desks["supplier"]["status"] != "approved"
     assert desks["agent"]["status"] != "approved"

@@ -3569,14 +3569,52 @@ def _supplier_was_approved(supplier: Dict[str, Any]) -> bool:
     return False
 
 
-def _detach_withdrawn_supplier(supplier: Dict[str, Any]) -> None:
-    """A withdrawn row is not a live supplier or a live agent.
+def _usable_agent_id(req: Dict[str, Any]) -> str:
+    """An agent grant role-switch can still open."""
+    if str(req.get("requested_role") or "") != "agent":
+        return ""
+    agent_id = str(req.get("agent_id") or "")
+    if not agent_id:
+        return ""
+    from services.agent_ecosystem_service import get_agent
+    agent = get_agent(agent_id)
+    return agent_id if isinstance(agent, dict) else ""
 
-    The request may still say approved. That stamp is not an activation, so
-    it must not keep ``supplier_id`` or ``agent_id`` on this row. Each
-    request this clears is stored the same way as the declined request.
-    The direct review route and both desks reach this through
-    ``review_professional``.
+
+def _drop_unreachable_agent(req: Dict[str, Any], dangling: str) -> None:
+    """Remove an agent row this request can no longer name."""
+    from services.agent_ecosystem_service import discard_agent, get_agent_by_username
+    kept = {
+        str(item.get("agent_id") or "")
+        for item in REQUESTS.values()
+        if isinstance(item, dict) and item.get("agent_id")
+    }
+    candidates = []
+    if dangling and dangling not in kept:
+        candidates.append(dangling)
+    rec = _customer_record(str(req.get("customer_id") or "")) or {}
+    username = str(
+        req.get("login_username") or rec.get("email") or req.get("customer_id") or ""
+    )
+    mapped = get_agent_by_username(username) if username else None
+    mapped_id = str((mapped or {}).get("id") or "")
+    if mapped_id and mapped_id not in kept:
+        candidates.append(mapped_id)
+    for aid in dict.fromkeys(candidates):
+        if aid in kept:
+            continue
+        discard_agent(aid)
+
+
+def _detach_withdrawn_supplier(supplier: Dict[str, Any]) -> None:
+    """A withdrawn row is not a live supplier.
+
+    A granted agent keeps ``agent_id`` so role-switch still works, and stops
+    pointing ``supplier_id`` at this row. An approved stamp with no usable
+    agent goes back to inquiry, and an agent row that stamp can no longer
+    reach is removed. Each request this changes is stored the same way as
+    the declined request. The direct review route and both desks reach this
+    through ``review_professional``.
     """
     sid = str(supplier.get("id") or "")
     supplier.pop("agent_id", None)
@@ -3585,10 +3623,20 @@ def _detach_withdrawn_supplier(supplier: Dict[str, Any]) -> None:
         other = REQUESTS.get(_request_id(customer_id, role))
         if not isinstance(other, dict) or other.get("status") != "approved":
             continue
-        if sid and str(other.get("supplier_id") or "") == sid:
+        if not (sid and str(other.get("supplier_id") or "") == sid):
+            continue
+        kept = _usable_agent_id(other)
+        if kept:
             other.pop("supplier_id", None)
-            other.pop("agent_id", None)
+            other["agent_id"] = kept
             _persist_request(other)
+            continue
+        dangling = str(other.get("agent_id") or "")
+        other.pop("supplier_id", None)
+        other.pop("agent_id", None)
+        other["status"] = "inquiry"
+        _persist_request(other)
+        _drop_unreachable_agent(other, dangling)
 
 
 def _withdraw_staged_supplier(supplier: Dict[str, Any], request_id: str) -> None:
