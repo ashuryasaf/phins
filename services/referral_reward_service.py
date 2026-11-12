@@ -3372,13 +3372,6 @@ def _supplier_is_closed(supplier: Dict[str, Any]) -> bool:
     if supplier_status in _CLOSED_SUPPLIER_STATUSES:
         return True
     if supplier_status == "approved" and supplier.get("portal_active") is False:
-        # Staff turned the portal off and no professional role is still
-        # approved. A decline that keeps another role does not activate the
-        # portal, so that supplier stays open.
-        if _approved_role_on_supplier(
-            supplier, {"id": "", "customer_id": supplier.get("customer_id")},
-        ):
-            return False
         return True
     return supplier_status not in ("approved", "pending", "under_review")
 
@@ -3553,15 +3546,45 @@ def _link_staged_request(req: Dict[str, Any]) -> None:
         _link_professional_request(supplier, req)
 
 
+def _supplier_was_approved(supplier: Dict[str, Any]) -> bool:
+    """The supplier itself was approved, not only a professional request.
+
+    The portal is on, or a ``supplier_approval`` ledger row already exists.
+    A request marked approved while the row is still staged is not enough.
+    """
+    if supplier.get("portal_active") is True:
+        return True
+    sid = str(supplier.get("id") or "")
+    if not sid:
+        return False
+    try:
+        ledger = getattr(_supply(), "ledger", {}) or {}
+    except RewardError:
+        return False
+    for entry in ledger.values():
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("supplier_id") == sid and entry.get("entry_type") == "supplier_approval":
+            return True
+    return False
+
+
+def _withdraw_staged_supplier(supplier: Dict[str, Any], request_id: str) -> None:
+    _unlink_professional_request(supplier, request_id)
+    supplier["status"] = "withdrawn"
+    supplier["portal_active"] = False
+    supplier["rejection_reason"] = None
+
+
 def _release_staged_supplier(req: Dict[str, Any], _admin: str, _note: str) -> None:
     """Take a declined application off the desk without closing the person.
 
-    A pending row that exists only for this application becomes ``withdrawn``,
-    which a later filing reuses. It is not ``rejected``. When another role is
-    already approved, this unlinks the declined request and, if the row was
-    still pending only because that application was open, restores
-    ``approved``. It does not call ``approve_supplier``: that activates the
-    portal and writes a ledger row.     A supplier that was already rejected,
+    A staged row that was never activated becomes ``withdrawn``, including
+    when another professional request is approved. ``approved`` is kept only
+    when this supplier was already approved: the portal is on, or a
+    ``supplier_approval`` ledger row already exists. This does not call
+    ``approve_supplier`` or ``reject_supplier``, and it does not turn the
+    portal on or write a ledger row. A supplier that was already rejected,
     suspended, or terminated is not touched here.
     """
     try:
@@ -3570,31 +3593,27 @@ def _release_staged_supplier(req: Dict[str, Any], _admin: str, _note: str) -> No
         return
     if not isinstance(supplier, dict):
         return
+    request_id = str(req.get("id") or "")
     status = str(supplier.get("status") or "").strip().lower()
     if status in _CLOSED_SUPPLIER_STATUSES:
         return
-    if (
-        status == "approved"
-        and supplier.get("portal_active") is False
-        and not _approved_role_on_supplier(supplier, req)
-    ):
+    if status == "approved" and supplier.get("portal_active") is False:
+        if _supplier_was_approved(supplier):
+            _unlink_professional_request(supplier, request_id)
         return
     for role in ("supplier", "agent"):
         other = _pending_role_request(req.get("customer_id"), role)
         if other and other.get("id") != req.get("id"):
-            _unlink_professional_request(supplier, str(req.get("id") or ""))
+            _unlink_professional_request(supplier, request_id)
             return
-    if _approved_role_on_supplier(supplier, req):
+    if _supplier_was_approved(supplier):
         if status in ("pending", "under_review"):
             supplier["status"] = "approved"
-        _unlink_professional_request(supplier, str(req.get("id") or ""))
+        _unlink_professional_request(supplier, request_id)
         return
     if status not in ("pending", "under_review"):
         return
-    _unlink_professional_request(supplier, str(req.get("id") or ""))
-    supplier["status"] = "withdrawn"
-    supplier["portal_active"] = False
-    supplier["rejection_reason"] = None
+    _withdraw_staged_supplier(supplier, request_id)
 
 
 def _ledger_agent_link(service: Any, supplier_id: str, agent_id: str) -> None:

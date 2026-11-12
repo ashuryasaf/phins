@@ -2130,8 +2130,9 @@ def test_declining_supplier_request_keeps_an_approved_agent_role():
     assert rewards.REQUESTS[supplier_request]["status"] == "rejected"
     assert rewards.REQUESTS[agent_request]["status"] == "approved"
     supplier = portal.supply_chain_service.suppliers[supplier_id]
-    assert supplier["status"] == "approved"
-    assert supplier["status"] not in ("rejected", "suspended", "terminated")
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    assert supplier["status"] not in ("approved", "rejected", "suspended", "terminated")
     assert supplier["agent_id"] == opened["request"]["agent_id"]
     assert len([
         item for item in portal.supply_chain_service.suppliers.values()
@@ -2150,7 +2151,7 @@ def _supplier_ledger(service, supplier_id):
 
 
 def test_decline_with_an_approved_role_does_not_rerun_approval(monkeypatch):
-    """Keeping the other role restores approved and unlinks. It does not approve again."""
+    """A request approval does not make a staged supplier approved."""
     service = portal.supply_chain_service
     real_approve = service.approve_supplier
     real_reject = service.reject_supplier
@@ -2203,8 +2204,9 @@ def test_decline_with_an_approved_role_does_not_rerun_approval(monkeypatch):
     assert status == 200, declined
     supplier = service.suppliers[supplier_id]
     assert calls == {"approve": 0, "reject": 0}
-    assert supplier["status"] == "approved"
+    assert supplier["status"] == "withdrawn"
     assert supplier["portal_active"] is False
+    assert "supplier_approval" not in {row[0] for row in _supplier_ledger(service, supplier_id)}
     assert supplier_request not in (supplier.get("professional_request_ids") or [])
     assert supplier.get("professional_request_id") != supplier_request
     assert supplier["agent_id"] == agent_id
@@ -2219,7 +2221,22 @@ def test_decline_with_an_approved_role_does_not_rerun_approval(monkeypatch):
     assert "national_id" not in supplier
     assert portal.PHINS_BALANCE_SHEET.get("total_expenses") == before_expenses
     assert rewards.REQUESTS[agent_request]["status"] == "approved"
-    assert not rewards._supplier_is_closed(supplier)
+    assert rewards._supplier_is_closed(supplier) is False
+
+    again = _file_professional_chat(session, "supplier", name="No Rerun", company={
+        "company_name": "No Rerun Clinic",
+        "supplier_type": "clinic",
+    })
+    assert again == supplier_request
+    reused = service.suppliers[supplier_id]
+    assert reused["status"] == "pending"
+    assert reused["portal_active"] is False
+    assert calls == {"approve": 0, "reject": 0}
+    assert "supplier_approval" not in {row[0] for row in _supplier_ledger(service, supplier_id)}
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert len([
+        item for item in service.suppliers.values() if item.get("customer_id") == customer_id
+    ]) == 1
 
     other_email = "no-rerun-agent@example.com"
     other_customer = _register("No Rerun Agent", other_email)
