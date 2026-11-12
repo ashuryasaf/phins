@@ -150,14 +150,24 @@ def handle_get(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             return 200, {"items": svc.list_agents()}
         if path == "/api/admin/agent-invitations":
             status = _first(qs, "status")
-            return 200, {"items": svc.list_invitations(status=status)}
+            items = svc.list_invitations(status=status)
+            if not status or status == "pending_approval":
+                from services.referral_reward_service import pending_agent_desk_rows
+                known = {item.get("code") for item in items}
+                items.extend(row for row in pending_agent_desk_rows() if row.get("code") not in known)
+            return 200, {"items": items}
         if path == "/api/admin/agents/commissions":
             _recompute(data_sources)
             agent_id = _first(qs, "agent_id")
             return 200, {"items": svc.list_commissions(agent_id=agent_id)}
         if path == "/api/admin/agents/overview":
             _recompute(data_sources)
-            return 200, svc.community_overview()
+            overview = svc.community_overview()
+            from services.referral_reward_service import pending_agent_desk_rows
+            overview["invitations_pending_approval"] = int(
+                overview.get("invitations_pending_approval") or 0
+            ) + len(pending_agent_desk_rows())
+            return 200, overview
         if path == "/api/admin/agents/affiliations":
             agent_id = _first(qs, "agent_id")
             if not agent_id:
@@ -341,6 +351,22 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             code = body.get("code")
             if not code:
                 return 400, {"error": "code is required"}
+            from services.referral_reward_service import RewardError, continue_agent_application
+            try:
+                reviewed = continue_agent_application(
+                    code, "approve", admin, body.get("commission_rate"), body.get("note") or "",
+                )
+            except RewardError as exc:
+                return exc.status, exc.to_dict()
+            if reviewed is not None:
+                return 200, {
+                    "invitation": {
+                        "code": code,
+                        "status": "approved",
+                        "professional_request_id": reviewed.get("id"),
+                    },
+                    "request": reviewed,
+                }
             ok, result = svc.approve_invitation(code, body.get("commission_rate"), admin)
             return (200, {"invitation": result}) if ok else (400, {"error": result})
 
@@ -348,6 +374,22 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             code = body.get("code")
             if not code:
                 return 400, {"error": "code is required"}
+            from services.referral_reward_service import RewardError, continue_agent_application
+            try:
+                reviewed = continue_agent_application(
+                    code, "reject", admin, None, body.get("reason") or "",
+                )
+            except RewardError as exc:
+                return exc.status, exc.to_dict()
+            if reviewed is not None:
+                return 200, {
+                    "invitation": {
+                        "code": code,
+                        "status": "rejected",
+                        "professional_request_id": reviewed.get("id"),
+                    },
+                    "request": reviewed,
+                }
             ok, result = svc.reject_invitation(code, admin, body.get("reason", ""))
             return (200, {"invitation": result}) if ok else (400, {"error": result})
 

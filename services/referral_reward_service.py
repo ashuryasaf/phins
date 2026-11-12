@@ -2556,6 +2556,8 @@ def submit_inquiry(token: str, body: Dict[str, Any]) -> Dict[str, Any]:
         else:
             req["company_name"] = None
             req["supplier_type"] = None
+            inquiry["company"] = None
+        _stage_staff_application(req)
         _persist_request(req)
         return public_request(req)
 
@@ -3342,37 +3344,66 @@ def _stamp_supplier_details(supplier: Dict[str, Any], req: Dict[str, Any],
         supplier["pipeline_detail_conflict"] = True
 
 
-def _ensure_supplier(req: Dict[str, Any], admin: str) -> Dict[str, Any]:
-    """One supplier for this customer. A second approval reuses it."""
+def _supplier_is_closed(supplier: Dict[str, Any]) -> bool:
+    supplier_status = str(supplier.get("status") or "").strip().lower()
+    if supplier_status in _CLOSED_SUPPLIER_STATUSES:
+        return True
+    if supplier_status == "approved" and supplier.get("portal_active") is False:
+        return True
+    return supplier_status not in ("approved", "pending", "under_review")
+
+
+def _link_professional_request(supplier: Dict[str, Any], req: Dict[str, Any]) -> None:
+    """Remember this request on the one supplier. The inquiry token is not stored."""
+    ids = [str(item) for item in (supplier.get("professional_request_ids") or []) if item]
+    request_id = str(req.get("id") or "")
+    if request_id and request_id not in ids:
+        ids.append(request_id)
+    supplier["professional_request_ids"] = ids
+    supplier_req = REQUESTS.get(_request_id(req.get("customer_id"), "supplier"))
+    if supplier_req and supplier_req.get("status") == "pending":
+        supplier["professional_request_id"] = supplier_req.get("id")
+    elif request_id:
+        supplier["professional_request_id"] = request_id
+
+
+def _pending_role_request(customer_id: str, role: str) -> Optional[Dict[str, Any]]:
+    req = REQUESTS.get(_request_id(customer_id, role))
+    if req and req.get("status") == "pending":
+        return req
+    return None
+
+
+def _ensure_supplier(req: Dict[str, Any], admin: str, *, approve: bool = True,
+                     write_customer: bool = True) -> Dict[str, Any]:
+    """One supplier for this customer. A second approval reuses it.
+
+    ``approve`` is false while the application is only waiting on the staff
+    desk. That leaves the record pending and does not write the customer master.
+    """
     name, stype, from_company = _company_from_request(req)
     existing = _find_supplier(req["customer_id"])
     service = _supply()
     if existing:
-        supplier_status = str(existing.get("status") or "").strip().lower()
-        if supplier_status in _CLOSED_SUPPLIER_STATUSES or (
-            supplier_status == "approved" and existing.get("portal_active") is False
-        ):
-            raise RewardError(
-                "This supplier is closed and is not reopened from the application",
-                status=409,
-                code="supplier_closed",
-            )
-        if supplier_status not in ("approved", "pending", "under_review"):
+        if _supplier_is_closed(existing):
             raise RewardError(
                 "This supplier is closed and is not reopened from the application",
                 status=409,
                 code="supplier_closed",
             )
         _stamp_supplier_details(existing, req, name, stype, from_company)
-        if supplier_status in ("pending", "under_review"):
+        supplier_status = str(existing.get("status") or "").strip().lower()
+        if approve and supplier_status in ("pending", "under_review"):
             service.approve_supplier(existing["id"], admin or "admin", notes=f"Approved with {req['id']}")
         existing["customer_id"] = req["customer_id"]
-        rec = _customer_record(req["customer_id"])
-        if isinstance(rec, dict):
-            rec["supplier_id"] = existing["id"]
+        if write_customer:
+            rec = _customer_record(req["customer_id"])
+            if isinstance(rec, dict):
+                rec["supplier_id"] = existing["id"]
         req["supplier_id"] = existing["id"]
         if not req.get("invitation_code"):
             req["invitation_code"] = existing.get("invitation_code")
+        _link_professional_request(existing, req)
         return existing
     rec = _customer_record(req["customer_id"]) or {}
     issued = service.generate_invitation_code(
@@ -3406,20 +3437,68 @@ def _ensure_supplier(req: Dict[str, Any], admin: str) -> Dict[str, Any]:
     supplier_id = (registered or {}).get("supplier_id")
     if not supplier_id:
         raise RewardError("Supplier registration did not return an id", code="supplier_failed")
-    service.approve_supplier(supplier_id, admin or "admin", notes=f"Approved with {req['id']}")
+    if approve:
+        service.approve_supplier(supplier_id, admin or "admin", notes=f"Approved with {req['id']}")
     supplier = service.suppliers.get(supplier_id)
     if not isinstance(supplier, dict):
         raise RewardError("Supplier registration did not return a record", code="supplier_failed")
     supplier["customer_id"] = req["customer_id"]
-    supplier["portal_active"] = True
+    if approve:
+        supplier["portal_active"] = True
     supplier["company_name_source"] = "inquiry" if from_company else "placeholder"
     supplier["roles"] = ["supplier"]
     _stamp_supplier_details(supplier, req, name, stype, from_company)
-    if isinstance(rec, dict):
+    if write_customer and isinstance(rec, dict):
         rec["supplier_id"] = supplier_id
     req["invitation_code"] = code
     req["supplier_id"] = supplier_id
+    _link_professional_request(supplier, req)
     return supplier
+
+
+def _stage_staff_application(req: Dict[str, Any]) -> None:
+    """Show this filed request on the staff desks. Do not approve it.
+
+    A closed supplier is left closed. The request stays pending and is not
+    copied onto a second supplier. The customer master is not written.
+    """
+    existing = _find_supplier(req["customer_id"])
+    if existing and _supplier_is_closed(existing):
+        req["supplier_id"] = existing.get("id")
+        req["staff_hold"] = "supplier_closed"
+        return
+    _ensure_supplier(req, "professional_inquiry", approve=False, write_customer=False)
+
+
+def _supplier_application_still_open(req: Dict[str, Any]) -> bool:
+    other = REQUESTS.get(_request_id(req.get("customer_id"), "supplier"))
+    return bool(
+        other
+        and other.get("status") == "pending"
+        and other.get("id") != req.get("id")
+    )
+
+
+def _release_staged_supplier(req: Dict[str, Any], admin: str, note: str) -> None:
+    """Drop a pending supplier only when no other application is still waiting."""
+    try:
+        supplier = _find_supplier(req["customer_id"])
+    except RewardError:
+        return
+    if not isinstance(supplier, dict):
+        return
+    if str(supplier.get("status") or "").strip().lower() not in ("pending", "under_review"):
+        return
+    for role in ("supplier", "agent"):
+        other = _pending_role_request(req.get("customer_id"), role)
+        if other and other.get("id") != req.get("id"):
+            return
+    try:
+        _supply().reject_supplier(
+            supplier["id"], admin or "admin", note or "Application declined",
+        )
+    except Exception:
+        return
 
 
 def _ledger_agent_link(service: Any, supplier_id: str, agent_id: str) -> None:
@@ -3466,23 +3545,29 @@ def _attach_agent_role(supplier: Dict[str, Any], agent: Dict[str, Any], req: Dic
     req["supplier_id"] = supplier.get("id")
 
 
-def _open_agent(req: Dict[str, Any], admin: str) -> Dict[str, Any]:
+def _open_agent(req: Dict[str, Any], admin: str, default_rate: Any = None) -> Dict[str, Any]:
     from services.agent_ecosystem_service import create_agent
-    supplier = _ensure_supplier(req, admin)
+    supplier = _ensure_supplier(
+        req, admin, approve=not _supplier_application_still_open(req),
+    )
     rec = _customer_record(req["customer_id"]) or {}
     username = req.get("login_username") or rec.get("email") or req["customer_id"]
+    rate = default_rate
+    if rate is None:
+        rate = int(CONFIG.get("agent_default_rate_percent") or 0)
     agent = create_agent(
         username=str(username),
         display_name=str((req.get("inquiry") or {}).get("personal", {}).get("name") or rec.get("name") or username),
         email=str(rec.get("email") or ""),
-        default_rate=int(CONFIG.get("agent_default_rate_percent") or 0),
+        default_rate=rate,
         created_by="referral_rewards",
     )
     _attach_agent_role(supplier, agent, req)
     return agent
 
 
-def review_professional(request_id: str, decision: str, admin: str, note: str = "") -> Dict[str, Any]:
+def review_professional(request_id: str, decision: str, admin: str, note: str = "",
+                        default_rate: Any = None) -> Dict[str, Any]:
     decision = str(decision or "").strip().lower()
     if decision not in ("approve", "reject"):
         raise RewardError("Decision must be approve or reject")
@@ -3498,7 +3583,7 @@ def review_professional(request_id: str, decision: str, admin: str, note: str = 
         if decision == "approve":
             try:
                 if req["requested_role"] == "agent":
-                    agent = _open_agent(req, admin)
+                    agent = _open_agent(req, admin, default_rate)
                     req["agent_id"] = agent.get("id")
                 else:
                     supplier = _ensure_supplier(req, admin)
@@ -3510,6 +3595,7 @@ def review_professional(request_id: str, decision: str, admin: str, note: str = 
             req["status"] = "approved"
         else:
             req["status"] = "rejected"
+            _release_staged_supplier(req, admin, str(note or ""))
         req["reviewed_by"] = str(admin or "admin")[:80]
         req["reviewed_at"] = _now()
         req["review_note"] = str(note or "")[:500]
@@ -3520,6 +3606,147 @@ def review_professional(request_id: str, decision: str, admin: str, note: str = 
             "agent_id": req.get("agent_id"), "supplier_id": req.get("supplier_id"),
         })
         return public_request(req)
+
+
+def pending_agent_desk_rows() -> List[Dict[str, Any]]:
+    """Agent applications waiting on the agents dashboard.
+
+    The code is the request id ``PRO-{customer}-agent``. That is the same
+    request the desk approves. The inquiry token is not included.
+    """
+    with _LOCK:
+        _ensure_loaded()
+        rate_percent = int((CONFIG or default_config()).get("agent_default_rate_percent") or 0)
+        proposed = round(rate_percent / 100.0, 6)
+        rows = []
+        for req in REQUESTS.values():
+            if req.get("requested_role") != "agent" or req.get("status") != "pending":
+                continue
+            rows.append({
+                "code": req.get("id"),
+                "agent_id": req.get("supplier_id") or req.get("customer_id"),
+                "invitee_type": "agent",
+                "proposed_rate": proposed,
+                "commission_rate": None,
+                "status": "pending_approval",
+                "professional_request_id": req.get("id"),
+                "notes": "Professional application",
+                "created_at": ((req.get("inquiry") or {}).get("submitted_at") if isinstance(req.get("inquiry"), dict) else None)
+                or req.get("updated_at"),
+            })
+        rows.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+        return rows
+
+
+def _desk_supplier_row(req: Dict[str, Any]) -> Dict[str, Any]:
+    name, stype, from_company = _company_from_request(req)
+    inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+    personal = inquiry.get("personal") if isinstance(inquiry.get("personal"), dict) else {}
+    return {
+        "id": req.get("id"),
+        "professional_request_id": req.get("id"),
+        "professional_request_ids": [req.get("id")],
+        "customer_id": req.get("customer_id"),
+        "company_name": name if from_company else (personal.get("name") or name),
+        "supplier_type": stype if from_company else "other",
+        "contact_name": personal.get("name") or "",
+        "contact_email": _inquiry_email_for(req),
+        "application_date": inquiry.get("submitted_at") or req.get("updated_at"),
+        "status": "pending",
+        "ai_trust_score": 0,
+        "ai_recommendation": "review",
+        "staff_hold": req.get("staff_hold"),
+    }
+
+
+def pending_supplier_desk_rows(visible_supplier_ids: Iterable[str] = ()) -> List[Dict[str, Any]]:
+    """Filed requests that are not already a pending supplier row.
+
+    A live pending supplier is the application. This adds a request the desk
+    would otherwise miss, including one held because the supplier is closed.
+    """
+    visible = {str(item) for item in visible_supplier_ids if item}
+    with _LOCK:
+        _ensure_loaded()
+        rows = []
+        seen = set()
+        for req in list(REQUESTS.values()):
+            if req.get("status") != "pending":
+                continue
+            if req.get("requested_role") not in ("supplier", "agent"):
+                continue
+            customer_id = str(req.get("customer_id") or "")
+            if customer_id in seen:
+                continue
+            sid = str(req.get("supplier_id") or "")
+            if sid and sid in visible:
+                continue
+            supplier = None
+            if sid:
+                try:
+                    supplier = _supply().suppliers.get(sid)
+                except RewardError:
+                    supplier = None
+            if isinstance(supplier, dict) and str(supplier.get("status") or "").lower() in ("pending", "under_review"):
+                continue
+            chosen = req
+            if req.get("requested_role") != "supplier":
+                supplier_req = _pending_role_request(customer_id, "supplier")
+                if supplier_req:
+                    chosen = supplier_req
+            seen.add(customer_id)
+            rows.append(_desk_supplier_row(chosen))
+        return rows
+
+
+def continue_agent_application(code: str, decision: str, admin: str,
+                               commission_rate: Any = None, note: str = "") -> Optional[Dict[str, Any]]:
+    """Approve or reject the agent request whose id is the desk code.
+
+    A normal agent-invitation code is not a professional request and returns
+    None so that invitation stays on its own path.
+    """
+    key = str(code or "").strip()
+    with _LOCK:
+        _ensure_loaded()
+        req = REQUESTS.get(key)
+        if req is None or req.get("requested_role") != "agent":
+            return None
+        request_id = req.get("id")
+    return review_professional(request_id, decision, admin, note, default_rate=commission_rate)
+
+
+def continue_supplier_application(supplier_or_request_id: str, decision: str, admin: str,
+                                  note: str = "") -> Optional[Dict[str, Any]]:
+    """Continue the professional request behind a supplier-desk action.
+
+    The supplier role wins when both roles are waiting, so the agents desk
+    still reviews the agent request. Returns None when this supplier was not
+    opened from a professional application.
+    """
+    key = str(supplier_or_request_id or "").strip()
+    with _LOCK:
+        _ensure_loaded()
+        target_id = ""
+        direct = REQUESTS.get(key)
+        if direct and direct.get("status") == "pending":
+            target_id = str(direct.get("id") or "")
+        else:
+            supplier = None
+            try:
+                supplier = _supply().suppliers.get(key)
+            except RewardError:
+                supplier = None
+            if not isinstance(supplier, dict):
+                return None
+            customer_id = str(supplier.get("customer_id") or "")
+            target = _pending_role_request(customer_id, "supplier") or _pending_role_request(customer_id, "agent")
+            if target is None:
+                return None
+            target_id = str(target.get("id") or "")
+    if not target_id:
+        return None
+    return review_professional(target_id, decision, admin, note)
 
 
 def _audit(action: str, entity: str, entity_id: str, details: Dict[str, Any]) -> None:

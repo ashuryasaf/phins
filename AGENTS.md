@@ -254,7 +254,11 @@ PHINS is a Python platform built around:
  inquiry does not take the first. The access log redacts `t` on both inquiry
  pages. A new identity code is fresh only for the browser session that
  verified it. A filed link returns status only, and the 14-day expiry
- applies in every status. A rejected or suspended supplier is not reopened.
+ applies in every status. Filing stages one pending supplier for that
+ customer, so Supplier Management lists the same `PRO-{customer}-{role}`
+ request. An agent application is that same supplier plus a pending row on
+ the agents dashboard whose code is the request id. Approving either desk
+ continues that request. A rejected or suspended supplier is not reopened.
  Declining a company clears that name before approval. Approval opens that profile and a role-switch
  token without rewriting `USERS.role`. An agent is a role on that one supplier. An approved agent invitation cap is
  100 (customer cap stays 10). `affiliated_cac_plan()` is the planning view

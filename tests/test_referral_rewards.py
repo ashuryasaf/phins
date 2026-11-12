@@ -1782,6 +1782,177 @@ def test_declined_company_is_not_the_supplier_name():
     assert "North Clinic" not in json.dumps(supplier["company_name"])
 
 
+def _file_professional_chat(session, role, *, name, company=None, confirm_identity=False):
+    filed, status = _post("/api/customer/professional-requests", {"role": role}, token=session)
+    assert status == 200, filed
+    link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
+    _chat(link, "confirm_person", {
+        "personal": {
+            "name": name,
+            "phone": "555-0177",
+            "address": "8 Herzl",
+            "city": "Haifa",
+            "country": "IL",
+        },
+    })
+    _chat(link, "identity", "confirm" if confirm_identity else "skip")
+    if company:
+        _chat(link, "company", company)
+    else:
+        _chat(link, "company", "no")
+    _chat(link, "evidence", "skip")
+    submitted = _chat(link, "review", "submit")
+    assert submitted.get("status") == "pending"
+    assert (submitted.get("request") or {}).get("id") == filed["id"]
+    return filed["id"]
+
+
+def test_filed_chat_is_pending_on_the_supplier_and_agent_desks():
+    """Staff see the same filed request, then the existing fee ledger."""
+    supplier_email = "desk-supplier@example.com"
+    supplier_customer = _register("Desk Clinic", supplier_email)
+    supplier_session, _role = _login(supplier_email, "secure123456")
+    from services.customer_identity_service import set_identity
+    set_identity(
+        portal.CUSTOMERS, supplier_customer, "123456782", "IL",
+        source="chat", actor="professional_inquiry",
+    )
+    master = {
+        "name": portal.CUSTOMERS[supplier_customer]["name"],
+        "email": portal.CUSTOMERS[supplier_customer]["email"],
+    }
+    supplier_request = _file_professional_chat(
+        supplier_session, "supplier", name="Desk Clinic", confirm_identity=True,
+        company={"company_name": "Desk Clinic", "supplier_type": "clinic"},
+    )
+    assert portal.CUSTOMERS[supplier_customer]["name"] == master["name"]
+    assert portal.CUSTOMERS[supplier_customer]["email"] == master["email"]
+    assert "supplier_id" not in portal.CUSTOMERS[supplier_customer]
+    assert "national_id" not in portal.CUSTOMERS[supplier_customer]
+    stored = rewards.REQUESTS[supplier_request]
+    assert "123456782" not in json.dumps(stored)
+
+    agent_email = "desk-agent@example.com"
+    agent_customer = _register("Desk Agent", agent_email)
+    agent_session, _role = _login(agent_email, "secure123456")
+    agent_request = _file_professional_chat(
+        agent_session, "agent", name="Desk Agent",
+    )
+    agent_stored = rewards.REQUESTS[agent_request]
+    assert agent_stored["inquiry"]["has_company"] is False
+    assert agent_stored["company_name"] is None
+    assert agent_stored["supplier_type"] is None
+    assert agent_stored["inquiry"]["company"] is None
+    agent_suppliers = [
+        item for item in portal.supply_chain_service.suppliers.values()
+        if item.get("customer_id") == agent_customer
+    ]
+    assert len(agent_suppliers) == 1
+    assert agent_suppliers[0]["status"] == "pending"
+    assert agent_suppliers[0]["company_name"] == "Desk Agent"
+    assert agent_suppliers[0]["company_name_source"] == "placeholder"
+    assert agent_suppliers[0]["supplier_type"] == "other"
+    assert not agent_suppliers[0].get("business_registration_number")
+    assert agent_request in agent_suppliers[0]["professional_request_ids"]
+    assert "123456782" not in json.dumps(agent_suppliers[0])
+    assert "supplier_id" not in portal.CUSTOMERS[agent_customer]
+    assert "agent_id" not in portal.CUSTOMERS[agent_customer]
+
+    admin, _ = _login("admin", "admin123")
+    pending, status = _get("/api/admin/suppliers/pending", token=admin)
+    assert status == 200, pending
+    supplier_row = next(
+        item for item in pending["items"]
+        if supplier_request in (item.get("professional_request_ids") or [])
+        or item.get("professional_request_id") == supplier_request
+    )
+    assert supplier_row["status"] == "pending"
+    assert supplier_row["customer_id"] == supplier_customer
+    assert "123456782" not in json.dumps(pending)
+    stats, status = _get("/api/admin/suppliers/analytics", token=admin)
+    assert status == 200, stats
+    assert stats["pending_applications"] >= 2
+
+    invitations, status = _get("/api/admin/agent-invitations", token=admin)
+    assert status == 200, invitations
+    agent_row = next(item for item in invitations["items"] if item.get("code") == agent_request)
+    assert agent_row["status"] == "pending_approval"
+    assert agent_row["professional_request_id"] == agent_request
+    assert "123456782" not in json.dumps(invitations)
+    overview, status = _get("/api/admin/agents/overview", token=admin)
+    assert status == 200, overview
+    assert overview["invitations_pending_approval"] >= 1
+
+    approved, status = _post(
+        f"/api/admin/suppliers/{supplier_row['id']}/approve",
+        {"notes": "Same request"},
+        token=admin,
+    )
+    assert status == 200, approved
+    assert approved["request"]["id"] == supplier_request
+    assert approved["request"]["status"] == "approved"
+    assert portal.CUSTOMERS[supplier_customer]["name"] == master["name"]
+    assert portal.CUSTOMERS[supplier_customer]["supplier_id"] == approved["supplier_id"]
+    assert "national_id" not in portal.CUSTOMERS[supplier_customer]
+    clinic = portal.supply_chain_service.suppliers[approved["supplier_id"]]
+    assert clinic["status"] == "approved"
+    assert clinic["company_name"] == "Desk Clinic"
+    assert "supplier_id" not in portal.CUSTOMERS[agent_customer]
+
+    still, status = _get("/api/admin/agent-invitations", token=admin)
+    assert any(item.get("code") == agent_request for item in still["items"])
+    agent_approved, status = _post("/api/admin/agent-invitations/approve", {
+        "code": agent_request,
+        "commission_rate": 10,
+    }, token=admin)
+    assert status == 200, agent_approved
+    assert agent_approved["request"]["id"] == agent_request
+    assert agent_approved["request"]["status"] == "approved"
+    assert agent_approved["request"]["supplier_id"] == agent_suppliers[0]["id"]
+    assert len([
+        item for item in portal.supply_chain_service.suppliers.values()
+        if item.get("customer_id") == agent_customer
+    ]) == 1
+    shared = portal.supply_chain_service.suppliers[agent_suppliers[0]["id"]]
+    assert shared["status"] == "approved"
+    assert "agent" in shared["roles"] and "supplier" in shared["roles"]
+    assert shared["agent_id"] == agent_approved["request"]["agent_id"]
+    from services.agent_ecosystem_service import get_agent
+    assert get_agent(shared["agent_id"])["default_commission_rate"] == pytest.approx(0.1)
+    assert portal.CUSTOMERS[agent_customer]["email"] == agent_email
+    assert "national_id" not in portal.CUSTOMERS[agent_customer]
+
+    portal.SUPPLIER_ORDERS["ORD-DESK-FEE"] = {
+        "id": "ORD-DESK-FEE",
+        "supplier_id": approved["supplier_id"],
+        "customer_id": "CUST-DESK-BUYER",
+        "platform_fee": 11.0,
+        "commission": 11.0,
+        "supplier_payout": 89.0,
+        "total_amount": 100.0,
+        "status": "completed",
+    }
+    before = float(portal.PHINS_BALANCE_SHEET["expense_breakdown"].get("customer_acquisition") or 0)
+    report, status = _get("/api/admin/supplier-agent-pipeline?audience=supplier", token=admin)
+    assert status == 200, report
+    fee_row = next(item for item in report["rows"] if item["supplier_id"] == approved["supplier_id"])
+    assert fee_row["sales_fees"] == pytest.approx(11.0)
+    sealed, status = _post("/api/admin/supplier-agent-pipeline/seal", {
+        "supplier_id": approved["supplier_id"],
+    }, token=admin)
+    assert status == 200, sealed
+    assert sealed["cash_event"] is False
+    assert float(portal.PHINS_BALANCE_SHEET["expense_breakdown"].get("customer_acquisition") or 0) == pytest.approx(before)
+    statements = [
+        entry for entry in portal.supply_chain_service.ledger.values()
+        if entry.get("entry_type") == "pipeline_statement"
+        and entry.get("supplier_id") == approved["supplier_id"]
+    ]
+    assert len(statements) == 1
+    assert statements[0]["amount"] == 0
+    portal.SUPPLIER_ORDERS.pop("ORD-DESK-FEE", None)
+
+
 def test_filed_inquiry_link_returns_status_only_and_expires_in_every_status():
     email = "filed-link@example.com"
     _register("Filed Link", email)
