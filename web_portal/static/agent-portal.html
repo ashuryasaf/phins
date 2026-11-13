@@ -126,13 +126,16 @@
         <p class="muted" id="affiliation-book-summary">Loading your affiliation…</p>
         <p class="muted"><a href="/billing.html">Billing</a> · <a href="/savings-portfolio.html">Investments</a> · <button type="button" id="affiliation-open-wallet" class="btn">Health wallet</button></p>
         <table id="affiliation-book-table"><thead><tr><th>Affiliated customer</th><th>Layer</th><th>Amount</th><th>Blocked</th><th>Ready to use</th><th>Distribution</th></tr></thead><tbody></tbody></table>
+        <h3 style="margin-top:16px">Referred customers</h3>
+        <p class="muted" id="referred-acquisition-summary">Acquisition is measured from each referred customer's settlement. Commission stays on its own rail.</p>
+        <table id="referred-acquisition-table"><thead><tr><th>Referred customer</th><th>Code</th><th>Allocated</th><th>Blocked</th><th>Releasable</th><th>Settled</th><th>Reversed</th></tr></thead><tbody></tbody></table>
       </div>
 
       <h2>My invitations</h2>
       <div class="card" style="overflow-x:auto"><table id="inv-table"><thead><tr><th>Code</th><th>Type</th><th>Proposed</th><th>Locked</th><th>Status</th></tr></thead><tbody></tbody></table></div>
 
       <h2>My network (affiliated customers)</h2>
-      <div class="card" style="overflow-x:auto"><table id="net-table"><thead><tr><th>Customer</th><th>Status</th><th>Policies</th><th>Premium basis</th><th>Rate</th><th>Accrued commission</th><th>Renewals</th></tr></thead><tbody></tbody></table>
+      <div class="card" style="overflow-x:auto"><table id="net-table"><thead><tr><th>Customer</th><th>Status</th><th>Policies</th><th>Premium basis</th><th>Rate</th><th>Accrued commission</th><th>Renewals</th><th>Allocated</th><th>Blocked</th><th>Releasable</th><th>Settled</th><th>Reversed</th></tr></thead><tbody></tbody></table>
         <p class="muted" style="margin-top:8px">Outline only — affiliated customers' PII/medical data is never exposed to agents.</p>
       </div>
 
@@ -220,10 +223,12 @@
       const {status, body} = await api('/api/customer/invitations');
       if(status!==200){
         if(note) note.textContent = 'Open this portal from your customer account to send your affiliated join link.';
+        renderReferredAcquisition({});
         return;
       }
       const active = (body.codes||[]).find(item => item.status==='active' && item.join_link);
       if(box) box.value = active ? absoluteJoinLink(active.join_link) : '';
+      renderReferredAcquisition(body.stats || {});
       const above = (body.affiliation && body.affiliation.layers_above) || [];
       const chain = above.map(item => 'Layer '+item.layer+' above you remains '+(item.name||item.customer_id)).join('. ');
       if(note) note.textContent = chain || 'A new member who uses this link puts you at layer 1.';
@@ -264,12 +269,36 @@
       $('#inv-table tbody').innerHTML = rows || '<tr><td colspan="5" class="muted">No invitations yet.</td></tr>';
     }
 
+    function renderReferredAcquisition(stats){
+      const summary = document.getElementById('referred-acquisition-summary');
+      const table = document.getElementById('referred-acquisition-table');
+      if(!table) return;
+      const totals = stats.acquisition_totals || {};
+      if(summary) summary.textContent = 'Acquisition on these referrals: allocated '+fmt(totals.allocated||0)+
+        ', blocked '+fmt(totals.blocked||0)+', releasable '+fmt(totals.releasable||0)+
+        ', settled '+fmt(totals.settled||0)+', reversed '+fmt(totals.reversed||0)+
+        '. Commission is not included.';
+      const rows = stats.referred_customers || [];
+      table.querySelector('tbody').innerHTML = rows.length ? rows.map(function(row){
+        const measure = row.acquisition || {};
+        return '<tr><td>'+escHtml(row.name||'')+'</td><td>'+escHtml(row.code_used||'')+'</td>'+
+          '<td>'+fmt(measure.allocated||0)+'</td><td>'+fmt(measure.blocked||0)+'</td>'+
+          '<td>'+fmt(measure.releasable||0)+'</td><td>'+fmt(measure.settled||0)+'</td>'+
+          '<td>'+fmt(measure.reversed||0)+'</td></tr>';
+      }).join('') : '<tr><td colspan="7" class="muted">No referred customers yet.</td></tr>';
+    }
+
     async function loadNetwork(){
       const {body} = await api('/api/agent/network/customers');
-      const rows = (body.items||[]).map(r=>`<tr><td>${escHtml(r.name)}</td><td>${escHtml(r.status)}</td><td>${r.policy_count}</td>`+
+      const rows = (body.items||[]).map(r=>{
+        const measure = r.acquisition || {};
+        return `<tr><td>${escHtml(r.name)}</td><td>${escHtml(r.status)}</td><td>${r.policy_count}</td>`+
         `<td>${fmt(r.premium_basis)}</td><td>${Math.round((r.commission_rate||0)*100)}%</td><td>${fmt(r.accrued_commission)}</td>`+
-        `<td>${r.renewal_periods||0} <span class="muted">(${fmt(r.renewal_commission)})</span></td></tr>`).join('');
-      $('#net-table tbody').innerHTML = rows || '<tr><td colspan="7" class="muted">No affiliated customers yet.</td></tr>';
+        `<td>${r.renewal_periods||0} <span class="muted">(${fmt(r.renewal_commission)})</span></td>`+
+        `<td>${fmt(measure.allocated||0)}</td><td>${fmt(measure.blocked||0)}</td><td>${fmt(measure.releasable||0)}</td>`+
+        `<td>${fmt(measure.settled||0)}</td><td>${fmt(measure.reversed||0)}</td></tr>`;
+      }).join('');
+      $('#net-table tbody').innerHTML = rows || '<tr><td colspan="12" class="muted">No affiliated customers yet.</td></tr>';
     }
 
     const STAGE_LABELS = {invitations_created:'Invited', invitations_approved:'Approved', invitations_redeemed:'Redeemed',

@@ -25448,6 +25448,7 @@ For claims or questions, please contact:
                 from services.referral_reward_service import (
                     affiliated_join_link,
                     affiliation_for,
+                    referred_acquisition,
                 )
                 customer_codes = []
                 for code in CUSTOMER_INVITATIONS.values():
@@ -25459,7 +25460,8 @@ For claims or questions, please contact:
                     customer_codes.append(item)
                 customer_codes.sort(key=lambda x: x.get('created_at', ''), reverse=True)
                 
-                # Get referral stats
+                # Get referral stats. Acquisition figures are read from the
+                # settlement book and are not written back onto the stats.
                 stats = CUSTOMER_REFERRAL_STATS.get(customer_id, {
                     'codes_generated': 0,
                     'successful_referrals': 0,
@@ -25467,6 +25469,7 @@ For claims or questions, please contact:
                     'referred_customers': [],
                     'rewards': []
                 })
+                measured = referred_acquisition(customer_id, stats.get('referred_customers') or [])
                 
                 invitation_limit = customer_invitation_limit(customer_id)
                 self._set_json_headers(200)
@@ -25475,7 +25478,15 @@ For claims or questions, please contact:
                     'total': len(customer_codes),
                     'active': len([c for c in customer_codes if get_status_lower(c) == 'active']),
                     'used': len([c for c in customer_codes if get_status_lower(c) == 'used']),
-                    'stats': stats,
+                    'stats': {
+                        'codes_generated': stats.get('codes_generated', 0),
+                        'successful_referrals': stats.get('successful_referrals', 0),
+                        'codes': list(stats.get('codes') or []),
+                        'referred_customers': measured['referred_customers'],
+                        'acquisition_totals': measured['acquisition_totals'],
+                        'rewards': list(stats.get('rewards') or []),
+                        'total_reward_value': stats.get('total_reward_value', 0),
+                    },
                     'max_allowed': invitation_limit,
                     'can_generate_more': len(customer_codes) < invitation_limit,
                     'affiliation': affiliation_for(customer_id),
