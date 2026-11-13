@@ -2045,10 +2045,11 @@
                 <th style="padding: 12px 16px; text-align: right; color: #333; font-weight: 600;">Releasable</th>
                 <th style="padding: 12px 16px; text-align: right; color: #333; font-weight: 600;">Settled</th>
                 <th style="padding: 12px 16px; text-align: right; color: #333; font-weight: 600;">Reversed</th>
+                <th style="padding: 12px 16px; text-align: right; color: #333; font-weight: 600;">Your share</th>
               </tr>
             </thead>
             <tbody id="referred-customers-table">
-              <tr><td colspan="8" style="padding: 24px; text-align: center; color: #666;">No referrals yet. Share your code to invite friends!</td></tr>
+              <tr><td colspan="9" style="padding: 24px; text-align: center; color: #666;">No referrals yet. Share your code to invite friends!</td></tr>
             </tbody>
           </table>
         </div>
@@ -10379,21 +10380,24 @@
       const referredCustomers = referralData.stats.referred_customers || [];
       const totals = referralData.stats.acquisition_totals || {};
       if (summary) {
-        summary.textContent = 'Acquisition on these referrals: allocated ' + formatCurrency(totals.allocated || 0, 2) +
+        const shareTotals = referralData.stats.viewer_share_totals || {};
+        summary.textContent = 'Settlement on these referrals: allocated ' + formatCurrency(totals.allocated || 0, 2) +
           ', blocked ' + formatCurrency(totals.blocked || 0, 2) +
           ', releasable ' + formatCurrency(totals.releasable || 0, 2) +
           ', settled ' + formatCurrency(totals.settled || 0, 2) +
-          ', reversed ' + formatCurrency(totals.reversed || 0, 2) + '.';
+          ', reversed ' + formatCurrency(totals.reversed || 0, 2) +
+          '. Your share: ' + formatCurrency(shareTotals.allocated || 0, 2) + '.';
       }
       
       if (!referredCustomers || referredCustomers.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="padding: 24px; text-align: center; color: #666;">No referrals yet. Share your code to invite friends!</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="padding: 24px; text-align: center; color: #666;">No referrals yet. Share your code to invite friends!</td></tr>';
         return;
       }
       
       tbody.innerHTML = referredCustomers.map(customer => {
         const joinedDate = customer.referred_at ? new Date(customer.referred_at).toLocaleDateString() : '';
         const measure = customer.acquisition || {};
+        const share = customer.viewer_share || {};
         return `
           <tr style="border-bottom: 1px solid #eee;">
             <td style="padding: 12px 16px; color: #333; font-weight: 500;">${escReferral(customer.name || 'PHINS Customer')}</td>
@@ -10404,6 +10408,7 @@
             <td style="padding: 12px 16px; text-align: right;">${acquisitionMoney(measure, 'releasable')}</td>
             <td style="padding: 12px 16px; text-align: right;">${acquisitionMoney(measure, 'settled')}</td>
             <td style="padding: 12px 16px; text-align: right;">${acquisitionMoney(measure, 'reversed')}</td>
+            <td style="padding: 12px 16px; text-align: right;">${acquisitionMoney(share, 'allocated')}</td>
           </tr>
         `;
       }).join('');

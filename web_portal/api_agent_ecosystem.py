@@ -130,9 +130,12 @@ def handle_get(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             payload = svc.network_customers(
                 aid, data_sources.get("customers", {}), data_sources.get("policies", {}),
                 page=page, page_size=page_size)
-            from services.referral_reward_service import acquisition_for_customers
-            measures = acquisition_for_customers(
-                row.get("customer_id") for row in payload.get("items") or []
+            from services.referral_reward_service import network_acquisition
+            # Own layer only, and only when this agent referred the customer.
+            # The read does not refresh or attach the rest of the settlement.
+            measures = network_acquisition(
+                ctx.get("customer_id"),
+                (row.get("customer_id") for row in payload.get("items") or []),
             )
             for row in payload.get("items") or []:
                 row["acquisition"] = measures.get(str(row.get("customer_id") or "")) or {

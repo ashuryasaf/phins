@@ -734,12 +734,47 @@ def test_lapsed_balance_reverses_the_single_settlement_once():
     assert plan["allocated"] == pytest.approx(0.0)
 
 
+def _legacy_plan_totals():
+    """The planning totals from the global settlement and reward loops."""
+    allocated = blocked = releasable = settled = reversed_cents = 0
+    for settlement in rewards.SETTLEMENTS.values():
+        cents = int(settlement.get("allocated_cents") or 0)
+        status = settlement.get("status")
+        if status == "reversed":
+            reversed_cents += cents
+            continue
+        allocated += cents
+        if status == "settled":
+            settled += cents
+    for reward in rewards.REWARDS.values():
+        cents = int(reward.get("amount_cents") or 0)
+        if reward.get("status") == "held":
+            blocked += cents
+        elif reward.get("status") == "earned":
+            releasable += cents
+    return {
+        "allocated": rewards.dollars(allocated),
+        "blocked": rewards.dollars(blocked),
+        "releasable": rewards.dollars(releasable),
+        "settled": rewards.dollars(settled),
+        "reversed": rewards.dollars(reversed_cents),
+    }
+
+
 def _acquisition_matches_plan():
     plan = rewards.affiliated_cac_plan()
-    measures = rewards.acquisition_for_customers(rewards.SETTLEMENTS)
+    legacy = _legacy_plan_totals()
     for key in ("allocated", "blocked", "releasable", "settled", "reversed"):
-        assert sum(item[key] for item in measures.values()) == pytest.approx(plan[key])
+        assert plan[key] == pytest.approx(legacy[key])
     return plan
+
+
+def _book_fingerprint():
+    return json.dumps(
+        {"settlements": rewards.SETTLEMENTS, "rewards": rewards.REWARDS, "links": rewards.LINKS},
+        sort_keys=True,
+        default=str,
+    )
 
 
 def test_referred_customer_acquisition_matches_the_settlement(monkeypatch):
@@ -764,7 +799,24 @@ def test_referred_customer_acquisition_matches_the_settlement(monkeypatch):
     book = rewards.customer_dashboard("A2")["affiliation_book"]
     share = next(item for item in book["rows"] if item["referee_customer_id"] == "A3")
     assert share["amount"] == pytest.approx(500.0)
+    assert row["viewer_share"]["settlement_id"] == "CACSET-A3"
+    assert row["viewer_share"]["layer"] == 1
+    assert row["viewer_share"]["allocated"] == pytest.approx(500.0)
+    assert row["viewer_share"]["blocked"] == pytest.approx(500.0)
+    assert row["viewer_share"]["allocated"] != pytest.approx(row["acquisition"]["allocated"])
+    assert rewards.REWARDS["RWRD-A3-L2"]["amount_cents"] == 10000
+    assert rewards.REWARDS["RWRD-A3-L3"]["amount_cents"] == 5000
+    direct = rewards.network_acquisition("A2", ["A3"])["A3"]
+    assert direct["allocated"] == pytest.approx(500.0)
+    assert direct["blocked"] == pytest.approx(500.0)
+    assert direct["settlement_id"] == "CACSET-A3"
+    upstream = rewards.network_acquisition("A1", ["A3"])["A3"]
+    assert upstream == {
+        "settlement_id": None, "status": "none",
+        "allocated": 0.0, "blocked": 0.0, "releasable": 0.0, "settled": 0.0, "reversed": 0.0,
+    }
     assert report["acquisition_totals"]["allocated"] == pytest.approx(650.0)
+    assert report["viewer_share_totals"]["allocated"] == pytest.approx(500.0)
     plan = _acquisition_matches_plan()
     assert plan["allocated"] == pytest.approx(650.0)
     assert plan["blocked"] == pytest.approx(650.0)
@@ -784,6 +836,11 @@ def test_referred_customer_acquisition_matches_the_settlement(monkeypatch):
     settled = rewards.acquisition_for_customers(["A3"])["A3"]
     assert settled["settled"] == pytest.approx(650.0)
     assert settled["blocked"] == pytest.approx(0.0)
+    settled_share = rewards.referred_acquisition("A2")
+    settled_row = next(item for item in settled_share["referred_customers"] if item["customer_id"] == "A3")
+    assert settled_row["viewer_share"]["settled"] == pytest.approx(500.0)
+    assert settled_row["viewer_share"]["allocated"] == pytest.approx(500.0)
+    assert settled_row["acquisition"]["settled"] == pytest.approx(650.0)
     plan = _acquisition_matches_plan()
     assert plan["settled"] == pytest.approx(650.0)
     assert plan["reversed"] == pytest.approx(650.0)
@@ -799,12 +856,54 @@ def test_referred_customer_acquisition_matches_the_settlement(monkeypatch):
     before_referrer = json.loads(json.dumps(portal.CUSTOMERS[referrer]))
     _pay(referee, "BILL-ACQ-REF")
     rewards.on_customer_paying(referee)
-    listing, status = _get("/api/customer/invitations", token=token)
+    _customer("LAPSE-REF", name="Holder")
+    _customer("LAPSE", "LAPSE-REF", "Lapsed Unread")
+    _pay("LAPSE", "BILL-LAPSE")
+    rewards.on_customer_paying("LAPSE")
+    portal.BILLING["BILL-LAPSE"]["status"] = "open"
+    assert rewards.SETTLEMENTS["LAPSE"]["status"] == "held"
+    assert rewards.REWARDS["RWRD-LAPSE-L1"]["status"] == "held"
+    stored_book = _book_fingerprint()
+    hits = []
+    refresh = rewards._refresh_all_locked
+    persist_settlement = rewards._persist_settlement
+    persist_reward = rewards._persist_reward
+
+    def refuse_refresh(*_args, **_kwargs):
+        hits.append("refresh")
+        raise AssertionError("a read refreshed the book")
+
+    def refuse_settlement(*_args, **_kwargs):
+        hits.append("settlement")
+        raise AssertionError("a read persisted a settlement")
+
+    def refuse_reward(*_args, **_kwargs):
+        hits.append("reward")
+        raise AssertionError("a read persisted a reward")
+
+    rewards._refresh_all_locked = refuse_refresh
+    rewards._persist_settlement = refuse_settlement
+    rewards._persist_reward = refuse_reward
+    try:
+        listing, status = _get("/api/customer/invitations", token=token)
+    finally:
+        rewards._refresh_all_locked = refresh
+        rewards._persist_settlement = persist_settlement
+        rewards._persist_reward = persist_reward
+    assert hits == []
+    assert _book_fingerprint() == stored_book
+    assert rewards.SETTLEMENTS["LAPSE"]["status"] == "held"
+    assert rewards.REWARDS["RWRD-LAPSE-L1"]["status"] == "held"
     assert status == 200, listing
     shown = next(item for item in listing["stats"]["referred_customers"] if item["customer_id"] == referee)
     assert shown["acquisition"]["allocated"] == pytest.approx(650.0)
     assert shown["acquisition"]["blocked"] == pytest.approx(650.0)
     assert shown["acquisition"]["settlement_id"] == f"CACSET-{referee}"
+    layer = rewards.REWARDS[f"RWRD-{referee}-L1"]
+    assert layer["beneficiary_customer_id"] == referrer
+    assert shown["viewer_share"]["settlement_id"] == f"CACSET-{referee}"
+    assert shown["viewer_share"]["layer"] == 1
+    assert shown["viewer_share"]["allocated"] == pytest.approx(layer["amount_cents"] / 100.0)
     assert shown["code_used"] == code
     assert "email" not in shown and "national_id" not in shown
     assert listing["stats"]["acquisition_totals"]["allocated"] == pytest.approx(650.0)
@@ -842,12 +941,35 @@ def test_referred_customer_acquisition_matches_the_settlement(monkeypatch):
     before_solo = json.loads(json.dumps(portal.CUSTOMERS[solo]))
     agent_token, role = _login("agent", "agent123")
     assert role == "agent"
-    network, status = _get("/api/agent/network/customers", token=agent_token)
+    _customer("LAPSE2-REF", name="Holder Two")
+    _customer("LAPSE2", "LAPSE2-REF", "Lapsed Network")
+    _pay("LAPSE2", "BILL-LAPSE2")
+    rewards.on_customer_paying("LAPSE2")
+    portal.BILLING["BILL-LAPSE2"]["status"] = "open"
+    assert rewards.SETTLEMENTS["LAPSE2"]["status"] == "held"
+    stored_book = _book_fingerprint()
+    hits = []
+    rewards._refresh_all_locked = refuse_refresh
+    rewards._persist_settlement = refuse_settlement
+    rewards._persist_reward = refuse_reward
+    try:
+        network, status = _get("/api/agent/network/customers", token=agent_token)
+    finally:
+        rewards._refresh_all_locked = refresh
+        rewards._persist_settlement = persist_settlement
+        rewards._persist_reward = persist_reward
+    assert hits == []
+    assert _book_fingerprint() == stored_book
+    assert rewards.SETTLEMENTS["LAPSE2"]["status"] == "held"
+    assert rewards.REWARDS["RWRD-LAPSE2-L1"]["status"] == "held"
     assert status == 200, network
     paying = next(item for item in network["items"] if item["customer_id"] == referee)
     commission_only = next(item for item in network["items"] if item["customer_id"] == solo)
-    assert paying["acquisition"]["allocated"] == pytest.approx(650.0)
-    assert paying["acquisition"]["blocked"] == pytest.approx(650.0)
+    empty_acquisition = {
+        "settlement_id": None, "status": "none",
+        "allocated": 0.0, "blocked": 0.0, "releasable": 0.0, "settled": 0.0, "reversed": 0.0,
+    }
+    assert paying["acquisition"] == empty_acquisition
     assert paying["accrued_commission"] == pytest.approx(0.0)
     assert commission_only["acquisition"] == {
         "settlement_id": None, "status": "none",
@@ -865,9 +987,13 @@ def test_referred_customer_acquisition_matches_the_settlement(monkeypatch):
     assert 'id="referred-customers-table"' in dashboard
     assert 'id="referred-acquisition-summary"' in dashboard
     assert ">Allocated<" in dashboard and ">Releasable<" in dashboard and ">Reversed<" in dashboard
+    assert ">Your share<" in dashboard
+    assert "escReferral" in dashboard
     assert 'id="referred-acquisition-table"' in agent_page
     assert 'id="referred-acquisition-summary"' in agent_page
     assert ">Releasable<" in agent_page and ">Settled<" in agent_page
+    assert ">Your share<" in agent_page
+    assert "escHtml" in agent_page
 
 
 def test_settlement_survives_a_reload_and_a_bad_checksum_is_not_paid():

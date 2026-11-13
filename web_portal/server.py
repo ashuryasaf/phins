@@ -25484,6 +25484,7 @@ For claims or questions, please contact:
                         'codes': list(stats.get('codes') or []),
                         'referred_customers': measured['referred_customers'],
                         'acquisition_totals': measured['acquisition_totals'],
+                        'viewer_share_totals': measured['viewer_share_totals'],
                         'rewards': list(stats.get('rewards') or []),
                         'total_reward_value': stats.get('total_reward_value', 0),
                     },

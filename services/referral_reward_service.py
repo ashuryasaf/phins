@@ -4875,8 +4875,69 @@ def _acquisition_totals(rows: Iterable[Dict[str, Any]]) -> Dict[str, float]:
     }
 
 
-def _referred_row(customer_id: str, name: Any, referred_at: Any, code_used: Any) -> Dict[str, Any]:
+def _viewer_share_cents(viewer_id: str, referee_id: str) -> Dict[str, Any]:
+    """This viewer's own layer on one settlement. Other layers are not included."""
+    viewer_id = str(viewer_id or "")
+    referee_id = str(referee_id or "")
+    allocated = blocked = releasable = settled = reversed_cents = 0
+    layer = None
+    settlement_id = None
+    status = "none"
+    for reward in REWARDS.values():
+        if str(reward.get("referee_customer_id") or "") != referee_id:
+            continue
+        if str(reward.get("beneficiary_customer_id") or "") != viewer_id:
+            continue
+        cents = int(reward.get("amount_cents") or 0)
+        layer = int(reward.get("layer") or 0) or layer
+        settlement_id = reward.get("settlement_id") or settlement_id
+        reward_status = str(reward.get("status") or "none")
+        status = reward_status
+        if reward_status == "forfeited":
+            reversed_cents += cents
+        elif reward_status == "held":
+            allocated += cents
+            blocked += cents
+        elif reward_status == "earned":
+            allocated += cents
+            releasable += cents
+        elif reward_status == "dispatched":
+            allocated += cents
+            settled += cents
+    return {
+        "settlement_id": settlement_id,
+        "status": status,
+        "layer": layer,
+        "allocated_cents": allocated,
+        "blocked_cents": blocked,
+        "releasable_cents": releasable,
+        "settled_cents": settled,
+        "reversed_cents": reversed_cents,
+    }
+
+
+def _public_share(raw: Dict[str, Any]) -> Dict[str, Any]:
+    share = _public_acquisition(raw)
+    share["layer"] = raw.get("layer")
+    return share
+
+
+def _viewer_referred(viewer_id: str, referee_id: str) -> bool:
+    viewer_id = str(viewer_id or "")
+    referee_id = str(referee_id or "")
+    if not viewer_id or not referee_id:
+        return False
+    link = LINKS.get(referee_id)
+    if isinstance(link, dict) and str(link.get("referrer_customer_id") or "") == viewer_id:
+        return True
+    rec = _customers().get(referee_id)
+    return isinstance(rec, dict) and str(rec.get("referred_by") or "") == viewer_id
+
+
+def _referred_row(customer_id: str, name: Any, referred_at: Any, code_used: Any,
+                  viewer_id: str) -> Dict[str, Any]:
     measure = _public_acquisition(_measure_referee_cents(customer_id))
+    share = _public_share(_viewer_share_cents(viewer_id, customer_id))
     return {
         "customer_id": customer_id,
         "name": name or _first_name(customer_id) or "PHINS Customer",
@@ -4884,6 +4945,7 @@ def _referred_row(customer_id: str, name: Any, referred_at: Any, code_used: Any)
         "code_used": str(code_used or ""),
         "reward_status": measure["status"],
         "acquisition": measure,
+        "viewer_share": share,
     }
 
 
@@ -4903,7 +4965,9 @@ def _referred_acquisition_locked(referrer_customer_id: str, listed: Iterable[Dic
         if not cid or cid in seen:
             continue
         seen.add(cid)
-        rows.append(_referred_row(cid, entry.get("name"), entry.get("referred_at"), entry.get("code_used")))
+        rows.append(_referred_row(
+            cid, entry.get("name"), entry.get("referred_at"), entry.get("code_used"), referrer,
+        ))
     for referee, link in LINKS.items():
         if not isinstance(link, dict):
             continue
@@ -4914,7 +4978,7 @@ def _referred_acquisition_locked(referrer_customer_id: str, listed: Iterable[Dic
             continue
         seen.add(cid)
         rows.append(_referred_row(
-            cid, link.get("referee_name"), link.get("joined_at"), link.get("invitation_code"),
+            cid, link.get("referee_name"), link.get("joined_at"), link.get("invitation_code"), referrer,
         ))
     for cid, rec in _customers().items():
         if not isinstance(rec, dict):
@@ -4925,26 +4989,30 @@ def _referred_acquisition_locked(referrer_customer_id: str, listed: Iterable[Dic
         if not key or key in seen:
             continue
         seen.add(key)
-        rows.append(_referred_row(key, rec.get("name"), None, ""))
+        rows.append(_referred_row(key, rec.get("name"), None, "", referrer))
+    share_rows = [{"acquisition": row.get("viewer_share") or {}} for row in rows]
     return {
         "referred_customers": rows,
         "acquisition_totals": _acquisition_totals(rows),
+        "viewer_share_totals": _acquisition_totals(share_rows),
     }
 
 
 def referred_acquisition(referrer_customer_id: str, listed: Optional[Iterable[Dict[str, Any]]] = None) -> Dict[str, Any]:
-    """Acquisition measurement for the customers this person referred."""
+    """Read acquisition for the customers this person referred.
+
+    Does not refresh or persist the book. Callers that already hold the
+    reward lock use ``_referred_acquisition_locked``.
+    """
     with _LOCK:
         _ensure_loaded()
-        _refresh_all_locked()
         return _referred_acquisition_locked(referrer_customer_id, listed or [])
 
 
 def acquisition_for_customers(customer_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
-    """Read each customer's acquisition settlement. Do not read commission."""
+    """Read each customer's stored settlement. Do not refresh or persist it."""
     with _LOCK:
         _ensure_loaded()
-        _refresh_all_locked()
         found: Dict[str, Dict[str, Any]] = {}
         for customer_id in customer_ids:
             key = str(customer_id or "")
@@ -4954,20 +5022,54 @@ def acquisition_for_customers(customer_ids: Iterable[str]) -> Dict[str, Dict[str
         return found
 
 
+def network_acquisition(viewer_customer_id: str, customer_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
+    """The agent's own layer, and only for customers that agent referred.
+
+    A customer this agent did not refer contributes no acquisition dollars.
+    The full multi-layer settlement is not attached. This read does not
+    refresh or persist the book.
+    """
+    with _LOCK:
+        _ensure_loaded()
+        viewer = str(viewer_customer_id or "")
+        found: Dict[str, Dict[str, Any]] = {}
+        for customer_id in customer_ids:
+            key = str(customer_id or "")
+            if not key or key in found:
+                continue
+            if viewer and _viewer_referred(viewer, key):
+                found[key] = _public_share(_viewer_share_cents(viewer, key))
+            else:
+                found[key] = _empty_acquisition()
+        return found
+
+
 def _plan_locked() -> Dict[str, Any]:
-    """Affiliated-customer CAC plan: what is booked, blocked, and still conditional."""
+    """Affiliated-customer CAC plan: what is booked, blocked, and still conditional.
+
+    Totals stay on the global settlement and reward loops. A per-customer
+    report does not replace them.
+    """
+    allocated = blocked = releasable = settled = reversed_cents = projected = 0
     referees = set(LINKS) | set(SETTLEMENTS)
     paying = sum(1 for referee in referees if _is_paying(referee))
-    measured_ids = set(SETTLEMENTS) | {
-        str(reward.get("referee_customer_id") or "") for reward in REWARDS.values()
-    }
-    measures = [_measure_referee_cents(referee) for referee in measured_ids]
-    allocated = sum(item["allocated_cents"] for item in measures)
-    blocked = sum(item["blocked_cents"] for item in measures)
-    releasable = sum(item["releasable_cents"] for item in measures)
-    settled = sum(item["settled_cents"] for item in measures)
-    reversed_cents = sum(item["reversed_cents"] for item in measures)
-    projected = sum(item["projected_cents"] for item in measures)
+    for settlement in SETTLEMENTS.values():
+        cents = int(settlement.get("allocated_cents") or 0)
+        status = settlement.get("status")
+        if status == "reversed":
+            reversed_cents += cents
+            continue
+        allocated += cents
+        if status == "settled":
+            settled += cents
+    for reward in REWARDS.values():
+        cents = int(reward.get("amount_cents") or 0)
+        if reward.get("status") == "held":
+            blocked += cents
+            if _is_paying(str(reward.get("referee_customer_id") or "")):
+                projected += cents
+        elif reward.get("status") == "earned":
+            releasable += cents
     cfg = CONFIG or default_config()
     fee = int(cfg.get("fee_cents") or 0)
     program = config_to_admin(cfg)

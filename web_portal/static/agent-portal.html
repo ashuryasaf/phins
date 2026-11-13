@@ -127,16 +127,16 @@
         <p class="muted"><a href="/billing.html">Billing</a> · <a href="/savings-portfolio.html">Investments</a> · <button type="button" id="affiliation-open-wallet" class="btn">Health wallet</button></p>
         <table id="affiliation-book-table"><thead><tr><th>Affiliated customer</th><th>Layer</th><th>Amount</th><th>Blocked</th><th>Ready to use</th><th>Distribution</th></tr></thead><tbody></tbody></table>
         <h3 style="margin-top:16px">Referred customers</h3>
-        <p class="muted" id="referred-acquisition-summary">Acquisition is measured from each referred customer's settlement. Commission stays on its own rail.</p>
-        <table id="referred-acquisition-table"><thead><tr><th>Referred customer</th><th>Code</th><th>Allocated</th><th>Blocked</th><th>Releasable</th><th>Settled</th><th>Reversed</th></tr></thead><tbody></tbody></table>
+        <p class="muted" id="referred-acquisition-summary">Each referred customer's settlement is shown beside your own layer. Commission stays on its own rail.</p>
+        <table id="referred-acquisition-table"><thead><tr><th>Referred customer</th><th>Code</th><th>Allocated</th><th>Blocked</th><th>Releasable</th><th>Settled</th><th>Reversed</th><th>Your share</th></tr></thead><tbody></tbody></table>
       </div>
 
       <h2>My invitations</h2>
       <div class="card" style="overflow-x:auto"><table id="inv-table"><thead><tr><th>Code</th><th>Type</th><th>Proposed</th><th>Locked</th><th>Status</th></tr></thead><tbody></tbody></table></div>
 
       <h2>My network (affiliated customers)</h2>
-      <div class="card" style="overflow-x:auto"><table id="net-table"><thead><tr><th>Customer</th><th>Status</th><th>Policies</th><th>Premium basis</th><th>Rate</th><th>Accrued commission</th><th>Renewals</th><th>Allocated</th><th>Blocked</th><th>Releasable</th><th>Settled</th><th>Reversed</th></tr></thead><tbody></tbody></table>
-        <p class="muted" style="margin-top:8px">Outline only — affiliated customers' PII/medical data is never exposed to agents.</p>
+      <div class="card" style="overflow-x:auto"><table id="net-table"><thead><tr><th>Customer</th><th>Status</th><th>Policies</th><th>Premium basis</th><th>Rate</th><th>Accrued commission</th><th>Renewals</th><th>Your share</th></tr></thead><tbody></tbody></table>
+        <p class="muted" style="margin-top:8px">Outline only — affiliated customers' PII/medical data is never exposed to agents. Your share is your own layer, and only for customers you referred. Commission stays in accrued commission.</p>
       </div>
 
       <h2>Broker funnel</h2>
@@ -274,18 +274,20 @@
       const table = document.getElementById('referred-acquisition-table');
       if(!table) return;
       const totals = stats.acquisition_totals || {};
-      if(summary) summary.textContent = 'Acquisition on these referrals: allocated '+fmt(totals.allocated||0)+
+      const shareTotals = stats.viewer_share_totals || {};
+      if(summary) summary.textContent = 'Settlement on these referrals: allocated '+fmt(totals.allocated||0)+
         ', blocked '+fmt(totals.blocked||0)+', releasable '+fmt(totals.releasable||0)+
         ', settled '+fmt(totals.settled||0)+', reversed '+fmt(totals.reversed||0)+
-        '. Commission is not included.';
+        '. Your share: '+fmt(shareTotals.allocated||0)+'. Commission is not included.';
       const rows = stats.referred_customers || [];
       table.querySelector('tbody').innerHTML = rows.length ? rows.map(function(row){
         const measure = row.acquisition || {};
+        const share = row.viewer_share || {};
         return '<tr><td>'+escHtml(row.name||'')+'</td><td>'+escHtml(row.code_used||'')+'</td>'+
           '<td>'+fmt(measure.allocated||0)+'</td><td>'+fmt(measure.blocked||0)+'</td>'+
           '<td>'+fmt(measure.releasable||0)+'</td><td>'+fmt(measure.settled||0)+'</td>'+
-          '<td>'+fmt(measure.reversed||0)+'</td></tr>';
-      }).join('') : '<tr><td colspan="7" class="muted">No referred customers yet.</td></tr>';
+          '<td>'+fmt(measure.reversed||0)+'</td><td>'+fmt(share.allocated||0)+'</td></tr>';
+      }).join('') : '<tr><td colspan="8" class="muted">No referred customers yet.</td></tr>';
     }
 
     async function loadNetwork(){
@@ -295,10 +297,9 @@
         return `<tr><td>${escHtml(r.name)}</td><td>${escHtml(r.status)}</td><td>${r.policy_count}</td>`+
         `<td>${fmt(r.premium_basis)}</td><td>${Math.round((r.commission_rate||0)*100)}%</td><td>${fmt(r.accrued_commission)}</td>`+
         `<td>${r.renewal_periods||0} <span class="muted">(${fmt(r.renewal_commission)})</span></td>`+
-        `<td>${fmt(measure.allocated||0)}</td><td>${fmt(measure.blocked||0)}</td><td>${fmt(measure.releasable||0)}</td>`+
-        `<td>${fmt(measure.settled||0)}</td><td>${fmt(measure.reversed||0)}</td></tr>`;
+        `<td>${fmt(measure.allocated||0)}</td></tr>`;
       }).join('');
-      $('#net-table tbody').innerHTML = rows || '<tr><td colspan="12" class="muted">No affiliated customers yet.</td></tr>';
+      $('#net-table tbody').innerHTML = rows || '<tr><td colspan="8" class="muted">No affiliated customers yet.</td></tr>';
     }
 
     const STAGE_LABELS = {invitations_created:'Invited', invitations_approved:'Approved', invitations_redeemed:'Redeemed',
