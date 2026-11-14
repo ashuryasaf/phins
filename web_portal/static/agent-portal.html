@@ -114,6 +114,7 @@
         <label for="affiliated-join-link">Join link</label>
         <input id="affiliated-join-link" readonly placeholder="Generate a join link from your customer account">
         <p class="muted" id="affiliated-join-note" style="margin-top:8px"></p>
+        <table id="referral-invitation-table" style="margin-top:12px"><thead><tr><th>Code</th><th>Status</th><th>Checksum</th></tr></thead><tbody></tbody></table>
         <div class="row" style="margin-top:12px">
           <button class="btn primary" id="affiliated-join-copy" type="button">Copy join link</button>
           <button class="btn" id="affiliated-join-new" type="button">Generate join link</button>
@@ -223,11 +224,22 @@
       const {status, body} = await api('/api/customer/invitations');
       if(status!==200){
         if(note) note.textContent = 'Open this portal from your customer account to send your affiliated join link.';
+        const invitationTable = document.getElementById('referral-invitation-table');
+        if(invitationTable) invitationTable.querySelector('tbody').innerHTML = '<tr><td colspan="3" class="muted">No referral invitations yet.</td></tr>';
         renderReferredAcquisition({});
         return;
       }
       const active = (body.codes||[]).find(item => item.status==='active' && item.join_link);
       if(box) box.value = active ? absoluteJoinLink(active.join_link) : '';
+      const invitationTable = document.getElementById('referral-invitation-table');
+      if(invitationTable){
+        const invitationRows = (body.codes||[]).map(function(item){
+          return '<tr><td><code>'+escHtml(item.code||'')+'</code></td><td>'+escHtml(item.status||'')+
+            '</td><td><code>'+escHtml(item.checksum||'')+'</code></td></tr>';
+        }).join('');
+        invitationTable.querySelector('tbody').innerHTML = invitationRows ||
+          '<tr><td colspan="3" class="muted">No referral invitations yet.</td></tr>';
+      }
       renderReferredAcquisition(body.stats || {});
       const above = (body.affiliation && body.affiliation.layers_above) || [];
       const chain = above.map(item => 'Layer '+item.layer+' above you remains '+(item.name||item.customer_id)).join('. ');

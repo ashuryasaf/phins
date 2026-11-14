@@ -9755,13 +9755,16 @@
             ? (code.creator_name || code.creator_customer_id || 'Customer')
             : (code.created_by || 'Admin');
           
+          const checksumLine = code.checksum
+            ? `<div style="font-size: 0.7rem; opacity: 0.75; font-family: monospace;">${escAdmin(code.checksum)}</div>`
+            : '';
           return `<tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
-            <td style="padding: 12px 8px; font-family: monospace; letter-spacing: 1px;">${code.code}</td>
+            <td style="padding: 12px 8px; font-family: monospace; letter-spacing: 1px;">${escAdmin(code.code || '')}${checksumLine}</td>
             <td style="padding: 12px 8px; text-align: center;">${typeBadge}</td>
-            <td style="padding: 12px 8px; text-align: center;">${code.used_count || 0}/${code.max_uses || 1}</td>
-            <td style="padding: 12px 8px; ${isExpired ? 'color: #ffcccc;' : ''}">${expiresDate}</td>
+            <td style="padding: 12px 8px; text-align: center;">${escAdmin(code.used_count || 0)}/${escAdmin(code.max_uses || 1)}</td>
+            <td style="padding: 12px 8px; ${isExpired ? 'color: #ffcccc;' : ''}">${escAdmin(expiresDate)}</td>
             <td style="padding: 12px 8px;">${statusBadge}</td>
-            <td style="padding: 12px 8px; font-size: 0.85rem; opacity: 0.8;">${creatorInfo}</td>
+            <td style="padding: 12px 8px; font-size: 0.85rem; opacity: 0.8;">${escAdmin(creatorInfo)}</td>
           </tr>`;
         }).join('');
         

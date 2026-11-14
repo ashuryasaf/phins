@@ -3394,6 +3394,25 @@ class ReferralSettlement(Base):
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class ReferralInvitation(Base):
+    """One customer referral invitation (``REF-``).
+
+    The same row is what the admin desk, the customer referral tab, and the
+    agent portal read. ``payload_json`` is the canonical record and
+    ``checksum`` is the sha256 of its sealed fields. A mismatch is not
+    served and is not paid. This is a NEW table — it does not modify any
+    existing data.
+    """
+    __tablename__ = 'referral_invitations'
+
+    code = Column(String(80), primary_key=True)
+    creator_customer_id = Column(String(50), index=True, nullable=False)
+    status = Column(String(20), nullable=False, index=True)
+    checksum = Column(String(64), nullable=False)
+    payload_json = Column(Text, nullable=False)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class SignedDocumentBlob(Base):
     """Checksummed bytes for a sealed signature or one use-ledger entry.
 
