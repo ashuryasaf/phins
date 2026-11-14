@@ -9304,6 +9304,11 @@ def load_invitation_codes_from_file():
         if customer_codes:
             CUSTOMER_INVITATIONS.update(customer_codes)
             print(f"[INVITATIONS] Loaded {len(customer_codes)} customer referral codes")
+            try:
+                from services.referral_reward_service import adopt_referral_invitations
+                adopt_referral_invitations(customer_codes)
+            except Exception as adopt_err:
+                print(f"[INVITATIONS] Referral invitation adopt skipped: {adopt_err}")
         
         # Load referral stats
         referral_stats = data.get('referral_stats', {})
@@ -9541,6 +9546,11 @@ def load_ledger_data():
         if loaded_customer_invitations:
             CUSTOMER_INVITATIONS.update(loaded_customer_invitations)
             print(f"  - Customer Invitations: {len(CUSTOMER_INVITATIONS)} referral codes loaded from persistence")
+            try:
+                from services.referral_reward_service import adopt_referral_invitations
+                adopt_referral_invitations(loaded_customer_invitations)
+            except Exception as adopt_err:
+                print(f"  - Customer Invitations: adopt skipped: {adopt_err}")
         if loaded_referral_stats:
             CUSTOMER_REFERRAL_STATS.update(loaded_referral_stats)
             print(f"  - Customer Referral Stats: {len(CUSTOMER_REFERRAL_STATS)} customer stats loaded from persistence")
@@ -25276,10 +25286,30 @@ For claims or questions, please contact:
                 invitation = INVITATION_CODES.get(code)
                 invitation_type = 'admin'
                 
-                # If not found in admin codes, check customer-generated codes
+                # If not found in admin codes, check the sealed referral invitation.
+                # A checksum mismatch is not served. Agent AGI- codes stay below.
                 if not invitation:
-                    invitation = CUSTOMER_INVITATIONS.get(code)
-                    invitation_type = 'customer'
+                    try:
+                        from services.referral_reward_service import (
+                            invitation_withheld,
+                            referral_invitation,
+                        )
+                        if invitation_withheld(code):
+                            self._set_json_headers(200)
+                            self.wfile.write(json.dumps({
+                                'valid': False,
+                                'error': 'Invitation code is not available',
+                            }).encode('utf-8'))
+                            return
+                        stored_invitation = referral_invitation(code)
+                    except Exception:
+                        stored_invitation = None
+                    if stored_invitation:
+                        invitation = stored_invitation
+                        invitation_type = 'customer'
+                    else:
+                        invitation = CUSTOMER_INVITATIONS.get(code)
+                        invitation_type = 'customer'
 
                 # Agent ecosystem invitations (AGI-...) — same public validate
                 # surface the registration form already uses.
@@ -25351,7 +25381,11 @@ For claims or questions, please contact:
                 
                 # Compile comprehensive statistics
                 admin_codes = list(INVITATION_CODES.values())
-                customer_codes = list(CUSTOMER_INVITATIONS.values())
+                try:
+                    from services.referral_reward_service import list_referral_invitations
+                    customer_codes = list_referral_invitations()
+                except Exception:
+                    customer_codes = list(CUSTOMER_INVITATIONS.values())
                 
                 # Admin code stats
                 admin_active = len([c for c in admin_codes if get_status_lower(c) == 'active'])
@@ -25405,7 +25439,11 @@ For claims or questions, please contact:
             
             # Return all invitation codes (admin + customer)
             admin_codes = list(INVITATION_CODES.values())
-            customer_codes = list(CUSTOMER_INVITATIONS.values())
+            try:
+                from services.referral_reward_service import list_referral_invitations
+                customer_codes = list_referral_invitations()
+            except Exception:
+                customer_codes = list(CUSTOMER_INVITATIONS.values())
             
             # Mark types for display
             for code in admin_codes:
@@ -25448,13 +25486,13 @@ For claims or questions, please contact:
                 from services.referral_reward_service import (
                     affiliated_join_link,
                     affiliation_for,
+                    list_referral_invitations,
                     referred_acquisition,
                 )
                 customer_codes = []
-                for code in CUSTOMER_INVITATIONS.values():
-                    if code.get('creator_customer_id') != customer_id:
-                        continue
+                for code in list_referral_invitations(customer_id):
                     item = dict(code)
+                    item.pop('notes', None)
                     item['join_link'] = affiliated_join_link(item.get('code'))
                     item['registration_link'] = item['join_link']
                     customer_codes.append(item)
@@ -44343,30 +44381,35 @@ For claims or questions, please contact:
                 code = f"REF-{customer_short}-{secrets.token_hex(3).upper()}"
                 
                 # Ensure unique
-                while code in CUSTOMER_INVITATIONS:
+                from services.referral_reward_service import (
+                    invitation_withheld as _invitation_withheld,
+                    referral_invitation as _referral_invitation,
+                )
+                while (
+                    code in CUSTOMER_INVITATIONS
+                    or _referral_invitation(code)
+                    or _invitation_withheld(code)
+                ):
                     code = f"REF-{customer_short}-{secrets.token_hex(3).upper()}"
                 
                 # Calculate expiration (default 90 days for customer referrals)
                 expires_days = min(int(data.get('expires_days', 90)), 365)  # Max 1 year
                 expires_at = (datetime.now() + timedelta(days=expires_days)).isoformat()
                 
-                # Create invitation record
-                invitation = {
+                from services.referral_reward_service import issue_referral_invitation
+                invitation = issue_referral_invitation({
                     'code': code,
                     'creator_customer_id': customer_id,
                     'creator_name': customer.get('name', ''),
-                    'creator_email': customer.get('email', ''),
                     'created_at': datetime.now().isoformat(),
                     'expires_at': expires_at,
-                    'max_uses': 1,  # Each referral code is single-use
+                    'max_uses': 1,
                     'used_count': 0,
                     'used_by': [],
                     'status': 'active',
                     'notes': data.get('notes', ''),
-                    'reward_status': 'pending'  # For tracking referral rewards
-                }
-                
-                # Store in CUSTOMER_INVITATIONS
+                    'reward_status': 'pending',
+                })
                 CUSTOMER_INVITATIONS[code] = invitation
                 
                 # Update customer's referral stats
@@ -46272,10 +46315,30 @@ For claims or questions, please contact:
                     invitation_type = 'admin'
                     agent_invite_meta = None
                     if not invitation:
-                        invitation = CUSTOMER_INVITATIONS.get(invitation_code)
-                        invitation_type = 'customer'
-                        if invitation:
-                            referrer_customer_id = invitation.get('creator_customer_id')
+                        try:
+                            from services.referral_reward_service import (
+                                invitation_withheld,
+                                referral_invitation,
+                            )
+                            if invitation_withheld(invitation_code):
+                                self._set_json_headers(409)
+                                self.wfile.write(json.dumps({
+                                    'error': 'Invitation code is not available',
+                                    'code': 'checksum',
+                                }).encode('utf-8'))
+                                return
+                            stored_invitation = referral_invitation(invitation_code)
+                        except Exception:
+                            stored_invitation = None
+                        if stored_invitation:
+                            invitation = stored_invitation
+                            invitation_type = 'customer'
+                            referrer_customer_id = stored_invitation.get('creator_customer_id')
+                        else:
+                            invitation = CUSTOMER_INVITATIONS.get(invitation_code)
+                            invitation_type = 'customer'
+                            if invitation:
+                                referrer_customer_id = invitation.get('creator_customer_id')
                     if not invitation:
                         try:
                             from services import agent_ecosystem_service as _aes
@@ -46428,6 +46491,29 @@ For claims or questions, please contact:
                         customer_record['referring_agent_id'] = aff_or_err.get('agent_id')
                         _aes.persist_referring_agent(
                             'customer', customer_id, aff_or_err.get('agent_id'))
+                    elif invitation_type == 'customer' and referrer_customer_id:
+                        from services.referral_reward_service import (
+                            mark_referral_invitation_used,
+                            referral_invitation as _stored_referral_invitation,
+                        )
+                        if _stored_referral_invitation(invitation_code):
+                            invitation = mark_referral_invitation_used(
+                                invitation_code, customer_id, registration_date,
+                            )
+                            CUSTOMER_INVITATIONS[invitation_code] = invitation
+                        else:
+                            invitation['used_count'] = invitation.get('used_count', 0) + 1
+                            used_by_entries = invitation.setdefault('used_by', [])
+                            if not isinstance(used_by_entries, list):
+                                used_by_entries = []
+                                invitation['used_by'] = used_by_entries
+                            used_by_entries.append({
+                                'email': email,
+                                'customer_id': customer_id,
+                                'used_at': registration_date
+                            })
+                            if invitation['used_count'] >= invitation.get('max_uses', 1):
+                                invitation['status'] = 'used'
                     else:
                         invitation['used_count'] = invitation.get('used_count', 0) + 1
                         used_by_entries = invitation.setdefault('used_by', [])

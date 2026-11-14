@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from database.models import (
     ProfessionalRequest,
+    ReferralInvitation,
     ReferralLink,
     ReferralProgramConfig,
     ReferralReward,
@@ -206,6 +207,38 @@ class ReferralRewardRepository:
             'reversal_ledger_id': row.reversal_ledger_id,
             'checksum': row.checksum or '',
         }
+
+    # -- referral invitations ----------------------------------------------
+    def list_invitations(self) -> List[Dict[str, Any]]:
+        rows = self.session.query(ReferralInvitation).all()
+        return [self._invitation_dict(row) for row in rows]
+
+    def upsert_invitation(self, data: Dict[str, Any]) -> None:
+        code = str(data.get('code') or '')
+        row = self.session.get(ReferralInvitation, code)
+        payload = dict(data)
+        payload.pop('_quarantined', None)
+        if row is None:
+            row = ReferralInvitation(
+                code=code,
+                creator_customer_id=str(data.get('creator_customer_id') or ''),
+                status=str(data.get('status') or 'active'),
+                checksum=str(data.get('checksum') or ''),
+                payload_json=_dumps(payload),
+            )
+            self.session.add(row)
+        else:
+            row.creator_customer_id = str(data.get('creator_customer_id') or row.creator_customer_id)
+            row.status = str(data.get('status') or row.status)
+            row.checksum = str(data.get('checksum') or '')
+            row.payload_json = _dumps(payload)
+        self._commit()
+
+    def _invitation_dict(self, row: ReferralInvitation) -> Dict[str, Any]:
+        payload = _loads(row.payload_json) or {}
+        if not isinstance(payload, dict):
+            payload = {}
+        return {'payload': payload, 'checksum': row.checksum or ''}
 
     # -- professional requests ---------------------------------------------
     def list_requests(self) -> List[Dict[str, Any]]:

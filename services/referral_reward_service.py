@@ -64,6 +64,7 @@ LINKS: Dict[str, Dict[str, Any]] = {}          # referee_customer_id -> link
 REWARDS: Dict[str, Dict[str, Any]] = {}        # reward id -> reward
 SETTLEMENTS: Dict[str, Dict[str, Any]] = {}    # referee_customer_id -> one settlement
 REQUESTS: Dict[str, Dict[str, Any]] = {}       # request id -> professional request
+INVITATIONS: Dict[str, Dict[str, Any]] = {}    # referral code -> one sealed invitation
 QUARANTINE: List[Dict[str, Any]] = []
 FLAGS: Dict[str, Any] = {}
 
@@ -80,6 +81,10 @@ _SETTLEMENT_FIELDS = (
     "status", "hold_months", "paying_at", "release_at", "reversed_at",
     "books_tx_id", "reversal_tx_id", "ledger_entry_id",
     "released_ledger_id", "reversal_ledger_id",
+)
+_INVITATION_FIELDS = (
+    "code", "creator_customer_id", "creator_name", "created_at", "expires_at",
+    "max_uses", "used_count", "used_by", "status", "notes", "reward_status",
 )
 
 
@@ -618,6 +623,82 @@ def _settlement_intact(settlement: Dict[str, Any]) -> bool:
     return stated == _settlement_checksum(settlement)
 
 
+def _invitation_checksum(invitation: Dict[str, Any]) -> str:
+    return _sha({key: invitation.get(key) for key in _INVITATION_FIELDS})
+
+
+def _seal_invitation(invitation: Dict[str, Any]) -> Dict[str, Any]:
+    invitation["checksum"] = _invitation_checksum(invitation)
+    invitation.pop("_quarantined", None)
+    return invitation
+
+
+def _invitation_intact(invitation: Dict[str, Any], column_checksum: Optional[str] = None) -> bool:
+    stated = str(invitation.get("checksum") or "")
+    if not stated or invitation.get("_quarantined"):
+        return False
+    if column_checksum is not None and str(column_checksum) != stated:
+        return False
+    return stated == _invitation_checksum(invitation)
+
+
+def _used_by_entries(entries: Any) -> List[Dict[str, str]]:
+    cleaned: List[Dict[str, str]] = []
+    if not isinstance(entries, list):
+        return cleaned
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        cleaned.append({
+            "customer_id": str(entry.get("customer_id") or ""),
+            "used_at": str(entry.get("used_at") or ""),
+        })
+    return cleaned
+
+
+def _invitation_record(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """The sealed fields of one referral invitation. National ID is not a field."""
+    expires = raw.get("expires_at")
+    return {
+        "code": str(raw.get("code") or ""),
+        "creator_customer_id": str(raw.get("creator_customer_id") or ""),
+        "creator_name": str(raw.get("creator_name") or "")[:120],
+        "created_at": str(raw.get("created_at") or ""),
+        "expires_at": None if expires in (None, "") else str(expires),
+        "max_uses": int(raw.get("max_uses") or 1),
+        "used_count": int(raw.get("used_count") or 0),
+        "used_by": _used_by_entries(raw.get("used_by")),
+        "status": str(raw.get("status") or "active"),
+        "notes": str(raw.get("notes") or ""),
+        "reward_status": str(raw.get("reward_status") or "pending"),
+    }
+
+
+def _apply_invitation(invitation: Dict[str, Any], column_checksum: Optional[str] = None) -> None:
+    code = str((invitation or {}).get("code") or "")
+    if not code:
+        return
+    record = _invitation_record(invitation)
+    record["checksum"] = str(invitation.get("checksum") or "")
+    if not _invitation_intact(record, column_checksum):
+        QUARANTINE.append({"id": code, "reason": "invitation_checksum_mismatch"})
+        blocked = dict(record)
+        blocked["_quarantined"] = True
+        INVITATIONS[code] = blocked
+        return
+    INVITATIONS[code] = record
+
+
+def _mirror_invitation(invitation: Dict[str, Any]) -> None:
+    """Keep the process cache on the sealed record. This does not write the book."""
+    portal = _portal()
+    if portal is None or not _invitation_intact(invitation):
+        return
+    bucket = getattr(portal, "CUSTOMER_INVITATIONS", None)
+    if isinstance(bucket, dict):
+        bucket[str(invitation.get("code") or "")] = dict(invitation)
+
+
 def _seal(reward: Dict[str, Any]) -> Dict[str, Any]:
     reward["checksum"] = _reward_checksum(reward)
     return reward
@@ -638,6 +719,7 @@ def _envelope() -> Dict[str, Any]:
         "rewards": list(REWARDS.values()),
         "settlements": list(SETTLEMENTS.values()),
         "requests": list(REQUESTS.values()),
+        "invitations": list(INVITATIONS.values()),
     }
 
 
@@ -673,6 +755,15 @@ def _persist_link(link: Dict[str, Any]) -> None:
     if _db_enabled():
         with _repo() as db:
             db.referral_rewards.upsert_link(link)
+        return
+    _save_file()
+
+
+def _persist_invitation(invitation: Dict[str, Any]) -> None:
+    _seal_invitation(invitation)
+    if _db_enabled():
+        with _repo() as db:
+            db.referral_rewards.upsert_invitation(invitation)
         return
     _save_file()
 
@@ -732,6 +823,9 @@ def _load_file() -> None:
     for req in state.get("requests") or []:
         if isinstance(req, dict) and req.get("id"):
             REQUESTS[str(req["id"])] = req
+    for invitation in state.get("invitations") or []:
+        if isinstance(invitation, dict):
+            _apply_invitation(invitation)
 
 
 def _apply_settlement(settlement: Dict[str, Any]) -> None:
@@ -755,6 +849,7 @@ def _hydrate_db() -> None:
             rewards = db.referral_rewards.list_rewards()
             settlements = db.referral_rewards.list_settlements()
             requests = db.referral_rewards.list_requests()
+            invitations = db.referral_rewards.list_invitations()
     except Exception:
         FLAGS["db_unreadable"] = True
         return
@@ -775,6 +870,8 @@ def _hydrate_db() -> None:
         _apply_settlement(settlement)
     for req in requests:
         REQUESTS[str(req["id"])] = req
+    for invitation in invitations:
+        _apply_invitation(invitation.get("payload") or {}, invitation.get("checksum"))
 
 
 def _ensure_loaded() -> None:
@@ -800,6 +897,7 @@ def reset_referral_rewards() -> None:
         REWARDS.clear()
         SETTLEMENTS.clear()
         REQUESTS.clear()
+        INVITATIONS.clear()
         QUARANTINE.clear()
         FLAGS.clear()
         _loaded = True
@@ -1242,6 +1340,113 @@ def invitation_cap_for(customer_id: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Referral invitations — one sealed record for every view
+# ---------------------------------------------------------------------------
+def _invitation_withheld_locked(code: str) -> bool:
+    record = INVITATIONS.get(str(code or ""))
+    return bool(record) and not _invitation_intact(record)
+
+
+def invitation_withheld(code: str) -> bool:
+    """True when this referral code is stored and its checksum does not match."""
+    with _LOCK:
+        _ensure_loaded()
+        return _invitation_withheld_locked(code)
+
+
+def referral_invitation(code: str) -> Optional[Dict[str, Any]]:
+    """The intact invitation, or nothing when it is missing or withheld."""
+    with _LOCK:
+        _ensure_loaded()
+        record = INVITATIONS.get(str(code or ""))
+        if not record or not _invitation_intact(record):
+            return None
+        return dict(record)
+
+
+def list_referral_invitations(creator_customer_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Read intact referral invitations. Does not refresh or persist the book."""
+    with _LOCK:
+        _ensure_loaded()
+        creator = str(creator_customer_id or "")
+        rows = []
+        for record in INVITATIONS.values():
+            if not _invitation_intact(record):
+                continue
+            if creator and str(record.get("creator_customer_id") or "") != creator:
+                continue
+            rows.append(dict(record))
+        rows.sort(key=lambda item: (item.get("created_at") or "", item.get("code") or ""), reverse=True)
+        return rows
+
+
+def issue_referral_invitation(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Seal one new referral invitation and store that same record."""
+    record = _invitation_record(raw or {})
+    if not record["code"] or not record["creator_customer_id"]:
+        raise RewardError("A referral invitation needs a code and a customer")
+    with _LOCK:
+        _ensure_loaded()
+        if record["code"] in INVITATIONS:
+            raise RewardError("Invitation code already exists", status=409, code="duplicate")
+        sealed = _seal_invitation(record)
+        INVITATIONS[sealed["code"]] = sealed
+        _persist_invitation(sealed)
+        _mirror_invitation(sealed)
+        return dict(sealed)
+
+
+def mark_referral_invitation_used(code: str, customer_id: str, used_at: str) -> Dict[str, Any]:
+    """Record one use on the existing invitation. The code itself is not rewritten."""
+    key = str(code or "")
+    with _LOCK:
+        _ensure_loaded()
+        current = INVITATIONS.get(key)
+        if not current or not _invitation_intact(current):
+            raise RewardError(
+                "Invitation checksum does not match; the code is not served",
+                status=409,
+                code="checksum",
+            )
+        updated = _invitation_record(current)
+        updated["used_count"] = int(updated["used_count"]) + 1
+        updated["used_by"] = list(updated["used_by"]) + [{
+            "customer_id": str(customer_id or ""),
+            "used_at": str(used_at or ""),
+        }]
+        if updated["used_count"] >= int(updated["max_uses"] or 1):
+            updated["status"] = "used"
+        updated["reward_status"] = "eligible"
+        sealed = _seal_invitation(updated)
+        INVITATIONS[key] = sealed
+        _persist_invitation(sealed)
+        _mirror_invitation(sealed)
+        return dict(sealed)
+
+
+def adopt_referral_invitations(records: Any) -> None:
+    """Seal referral codes that are not already in the book.
+
+    Startup only. A code the book already holds is left as stored, and a
+    view never calls this.
+    """
+    if not isinstance(records, dict):
+        return
+    with _LOCK:
+        _ensure_loaded()
+        for raw in records.values():
+            if not isinstance(raw, dict):
+                continue
+            code = str(raw.get("code") or "")
+            if not code.startswith("REF-") or code in INVITATIONS:
+                continue
+            sealed = _seal_invitation(_invitation_record(raw))
+            INVITATIONS[code] = sealed
+            _persist_invitation(sealed)
+            _mirror_invitation(sealed)
+
+
+# ---------------------------------------------------------------------------
 # Join + earn
 # ---------------------------------------------------------------------------
 def on_customer_joined(*, referee_customer_id: str, referrer_customer_id: str,
@@ -1335,6 +1540,9 @@ def on_customer_paying(customer_id: str, billing: Optional[Dict[str, Any]] = Non
         except RewardError:
             raise
         link = LINKS.get(referee)
+        invitation_code = str((link or {}).get("invitation_code") or "")
+        if _invitation_withheld_locked(invitation_code):
+            return []
         paying_at = _now()
         if link is not None and not link.get("paying_at"):
             link["paying_at"] = paying_at

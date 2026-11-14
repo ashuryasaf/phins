@@ -2066,11 +2066,12 @@
                 <th style="padding: 12px 16px; text-align: left; color: #333; font-weight: 600;">Created</th>
                 <th style="padding: 12px 16px; text-align: left; color: #333; font-weight: 600;">Expires</th>
                 <th style="padding: 12px 16px; text-align: center; color: #333; font-weight: 600;">Status</th>
+                <th style="padding: 12px 16px; text-align: left; color: #333; font-weight: 600;">Checksum</th>
                 <th style="padding: 12px 16px; text-align: center; color: #333; font-weight: 600;">Actions</th>
               </tr>
             </thead>
             <tbody id="referral-codes-table">
-              <tr><td colspan="5" style="padding: 24px; text-align: center; color: #666;">Loading referral codes...</td></tr>
+              <tr><td colspan="6" style="padding: 24px; text-align: center; color: #666;">Loading referral codes...</td></tr>
             </tbody>
           </table>
         </div>
@@ -10919,7 +10920,7 @@
       const tbody = document.getElementById('referral-codes-table');
       
       if (!referralData.codes || referralData.codes.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="padding: 24px; text-align: center; color: #666;">No join links yet. Generate one to invite a customer, an agent, or a supplier.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="padding: 24px; text-align: center; color: #666;">No join links yet. Generate one to invite a customer, an agent, or a supplier.</td></tr>';
         return;
       }
       
@@ -10936,8 +10937,9 @@
             <td style="padding: 12px 16px; color: #666;">${createdDate}</td>
             <td style="padding: 12px 16px; color: #666;">${expiresDate}</td>
             <td style="padding: 12px 16px; text-align: center;">
-              <span style="background: ${statusColor}15; color: ${statusColor}; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">${statusText}</span>
+              <span style="background: ${statusColor}15; color: ${statusColor}; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">${escReferral(statusText)}</span>
             </td>
+            <td style="padding: 12px 16px; color: #666; font-family: monospace; font-size: 0.75rem;">${escReferral(code.checksum || '')}</td>
             <td style="padding: 12px 16px; text-align: center;">
               ${code.status === 'active' ? `
                 <button onclick="copyCodeToClipboard('${escReferral(joinLink)}')" style="background: #0d47a1; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; margin-right: 4px;">Copy join link</button>

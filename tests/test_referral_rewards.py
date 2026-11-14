@@ -603,6 +603,168 @@ def test_registration_with_a_customer_code_earns_on_the_first_payment():
     assert sheet["referral_rewards"]["earned"] == pytest.approx(650.0)
 
 
+def _invitation_view(payload):
+    """code, status, and checksum from one served invitation."""
+    return payload.get("code"), payload.get("status"), payload.get("checksum")
+
+
+def test_referral_invitation_is_the_same_record_on_every_view():
+    """Admin, customer, and agent views serve one sealed invitation."""
+    email = "invite-view@example.com"
+    referrer = _register("Invite View", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, filed
+    saved = _finish_inquiry(filed, name="Invite View")
+    admin, _role = _login("admin", "admin123")
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": saved["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, reviewed
+    switched, status = _post("/api/customer/role-switch", {"role": "agent"}, token=token)
+    assert status == 200, switched
+    agent_token = switched["token"]
+    assert switched["role"] == "agent"
+    assert switched["customer_id"] == referrer
+
+    issued, status = _post("/api/customer/invitations/generate", {}, token=token)
+    assert status == 201, issued
+    code = issued["invitation"]["code"]
+    assert code.startswith("REF-")
+    assert issued["join_link"].endswith("/join.html?code=" + code)
+    assert list(parse_qs(urlparse(issued["join_link"]).query)) == ["code"]
+    checksum = issued["invitation"]["checksum"]
+    assert checksum and "national_id" not in issued["invitation"]
+    assert "email" not in issued["invitation"]
+
+    def _views():
+        admin_list, admin_status = _get("/api/invitations", token=admin)
+        customer_list, customer_status = _get("/api/customer/invitations", token=token)
+        agent_list, agent_status = _get("/api/customer/invitations", token=agent_token)
+        assert admin_status == 200, admin_list
+        assert customer_status == 200, customer_list
+        assert agent_status == 200, agent_list
+        admin_row = next(item for item in admin_list["codes"] if item.get("code") == code)
+        customer_row = next(item for item in customer_list["codes"] if item.get("code") == code)
+        agent_row = next(item for item in agent_list["codes"] if item.get("code") == code)
+        return admin_row, customer_row, agent_row
+
+    admin_row, customer_row, agent_row = _views()
+    assert _invitation_view(admin_row) == _invitation_view(customer_row) == _invitation_view(agent_row)
+    assert admin_row["status"] == "active"
+    assert admin_row["checksum"] == checksum
+    assert "national_id" not in admin_row and "national_id" not in customer_row and "national_id" not in agent_row
+    commission, status = _get("/api/agent/invitations", token=agent_token)
+    assert status == 200, commission
+    assert all(item.get("code") != code for item in commission.get("items") or [])
+    static = Path(__file__).resolve().parents[1] / "web_portal" / "static"
+    assert ">Checksum<" in (static / "dashboard.html").read_text(encoding="utf-8")
+    assert 'id="referral-invitation-table"' in (static / "agent-portal.html").read_text(encoding="utf-8")
+    assert "escAdmin(code.checksum)" in (static / "admin.html").read_text(encoding="utf-8")
+
+    rewards.INVITATIONS.clear()
+    rewards._loaded = False
+    reloaded = rewards.referral_invitation(code)
+    assert reloaded["code"] == code
+    assert reloaded["status"] == "active"
+    assert reloaded["checksum"] == checksum
+
+    fingerprint = json.dumps(rewards.INVITATIONS, sort_keys=True, default=str)
+    persist = rewards._persist_invitation
+    refresh = rewards._refresh_all_locked
+    hits = []
+
+    def refuse_persist(*_args, **_kwargs):
+        hits.append("persist")
+        raise AssertionError("a view persisted an invitation")
+
+    def refuse_refresh(*_args, **_kwargs):
+        hits.append("refresh")
+        raise AssertionError("a view refreshed the book")
+
+    rewards._persist_invitation = refuse_persist
+    rewards._refresh_all_locked = refuse_refresh
+    try:
+        _views()
+    finally:
+        rewards._persist_invitation = persist
+        rewards._refresh_all_locked = refresh
+    assert hits == []
+    assert json.dumps(rewards.INVITATIONS, sort_keys=True, default=str) == fingerprint
+
+    referee = _register("Invite Referee", "invite-referee@example.com", code=code)
+    used = rewards.referral_invitation(code)
+    assert used["code"] == code
+    assert used["status"] == "used"
+    assert used["checksum"] != checksum
+    assert used["used_by"] == [{"customer_id": referee, "used_at": used["used_by"][0]["used_at"]}]
+    assert "email" not in json.dumps(used["used_by"])
+    admin_row, customer_row, agent_row = _views()
+    assert _invitation_view(admin_row) == _invitation_view(customer_row) == _invitation_view(agent_row)
+    assert admin_row["status"] == "used"
+    assert admin_row["checksum"] == used["checksum"]
+
+    rewards.INVITATIONS[code]["checksum"] = "0" * 64
+    rewards._save_file()
+    rewards.INVITATIONS.clear()
+    rewards._loaded = False
+    assert rewards.referral_invitation(code) is None
+    assert rewards.invitation_withheld(code) is True
+    admin_list, _status = _get("/api/invitations", token=admin)
+    customer_list, _status = _get("/api/customer/invitations", token=token)
+    agent_list, _status = _get("/api/customer/invitations", token=agent_token)
+    assert all(item.get("code") != code for item in admin_list["codes"])
+    assert all(item.get("code") != code for item in customer_list["codes"])
+    assert all(item.get("code") != code for item in agent_list["codes"])
+    _pay(referee, "BILL-INVITE-VIEW")
+    rewards.on_customer_paying(referee)
+    assert referee not in rewards.SETTLEMENTS
+
+
+def test_referral_invitation_survives_the_database(monkeypatch):
+    from database import init_database
+    from database.manager import DatabaseManager
+
+    init_database()
+    monkeypatch.setattr(rewards, "_db_enabled", lambda: True)
+    rewards.INVITATIONS.clear()
+    rewards._loaded = False
+    code = "REF-DB-" + os.urandom(4).hex().upper()
+    sealed = rewards.issue_referral_invitation({
+        "code": code,
+        "creator_customer_id": "CUST-DB-VIEW",
+        "creator_name": "Database",
+        "created_at": "2026-11-14T00:00:00Z",
+        "expires_at": "2027-11-14T00:00:00Z",
+        "max_uses": 1,
+        "used_count": 0,
+        "used_by": [],
+        "status": "active",
+        "notes": "",
+        "reward_status": "pending",
+    })
+    rewards.INVITATIONS.clear()
+    rewards._loaded = False
+    again = rewards.referral_invitation(code)
+    assert again["code"] == sealed["code"]
+    assert again["status"] == sealed["status"]
+    assert again["checksum"] == sealed["checksum"]
+    assert "national_id" not in again
+    with DatabaseManager() as db:
+        stored = next(
+            row for row in db.referral_rewards.list_invitations()
+            if (row.get("payload") or {}).get("code") == code
+        )
+        bad = dict(stored["payload"])
+        bad["checksum"] = "0" * 64
+        db.referral_rewards.upsert_invitation(bad)
+    rewards.INVITATIONS.clear()
+    rewards._loaded = False
+    assert rewards.referral_invitation(code) is None
+    assert rewards.invitation_withheld(code) is True
+    assert all(item.get("code") != code for item in rewards.list_referral_invitations())
+
+
 def test_repository_round_trip():
     from database import init_database
     from database.manager import DatabaseManager
