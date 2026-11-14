@@ -7064,6 +7064,7 @@
         setTimeout(() => {
           loadWalletBalance();
           loadActivityLog();
+          loadPurchaseHistory();
         }, 1000);
         
       } catch (error) {
@@ -7135,8 +7136,8 @@
       homecare: 'healthcare_provider',
       residential: 'healthcare_provider',
       legal: 'legal_service',
-      wellness: 'wellness',
-      laboratory: 'laboratory',
+      wellness: 'healthcare_provider',
+      laboratory: 'healthcare_provider',
       imaging: '',
       other: ''
     };
@@ -7229,13 +7230,21 @@
 
     async function fetchMarketplaceProviders(category) {
       try {
+        const here = await getBrowserLocationPayload();
+        const body = { category: category, limit: 12, radius_km: 25 };
+        if (here) {
+          body.latitude = here.latitude;
+          body.longitude = here.longitude;
+        }
         const response = await fetch('/api/marketplace/providers/search', {
           method: 'POST',
           headers: bookAuthHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ category: category, limit: 12 })
+          body: JSON.stringify(body)
         });
         const data = await response.json();
-        return Array.isArray(data.providers) ? data.providers : [];
+        const providers = Array.isArray(data.providers) ? data.providers : [];
+        providers.locationShared = !!here;
+        return providers;
       } catch (err) {
         console.error('Provider search unavailable', err);
         return [];
@@ -7406,7 +7415,9 @@
         } else if (usingDemoCatalog || hasLinkedCatalog) {
           marketplaceSubtitle = 'Demo catalog and published marketplace prices. These illustrations are placeholders where a supplier has not listed the item. A purchase is a wallet catalog charge, not a supplier order, until an approved supplier lists the item.';
         } else if (providers.length && products.length === 0) {
-          marketplaceSubtitle = 'These providers have no catalog price. Continue in the priced visit category to buy.';
+          marketplaceSubtitle = providers.locationShared
+            ? 'These providers have no catalog price. Continue in the priced visit category to buy.'
+            : 'These providers have no catalog price. The browser did not share a location, so this list uses the directory default area. Continue in the priced visit category to buy.';
         } else {
           marketplaceSubtitle = 'Approved supplier offers. Checkout uses the offer price on the supply-chain order and ledger. Supplier photos and videos replace the illustration when the listing includes them.';
         }
@@ -7471,6 +7482,12 @@
         if (source.browse_bucket) stored.browse_bucket = source.browse_bucket;
         if (source.item_type) stored.item_type = source.item_type;
         if (source.catalog_source) stored.catalog_source = source.catalog_source;
+        const sourceLat = Number(source.latitude);
+        const sourceLng = Number(source.longitude);
+        if (Number.isFinite(sourceLat) && Number.isFinite(sourceLng)) {
+          stored.latitude = sourceLat;
+          stored.longitude = sourceLng;
+        }
       }
       purchaseById[purchase.id] = stored;
       const list = Array.isArray(medicalPurchases) ? medicalPurchases.slice() : [];
@@ -7524,6 +7541,10 @@
 
     function deliveryLocationFields(prefix, seed) {
       const source = seed || {};
+      const lat = Number(source.latitude);
+      const lng = Number(source.longitude);
+      const latValue = Number.isFinite(lat) ? String(lat) : '';
+      const lngValue = Number.isFinite(lng) ? String(lng) : '';
       return `
         <label>${escapeHtml(prefix === 'pickup' ? 'Pickup address' : 'Delivery address')}
           <input id="delivery-${prefix}-address" type="text" value="${escapeHtml(source.address || '')}" autocomplete="street-address">
@@ -7533,15 +7554,39 @@
         </label>
         <label>Country
           <input id="delivery-${prefix}-country" type="text" value="${escapeHtml(source.country || '')}" autocomplete="country-name">
-        </label>`;
+        </label>
+        <label>Latitude
+          <input id="delivery-${prefix}-latitude" type="number" step="0.000001" value="${escapeHtml(latValue)}" inputmode="decimal">
+        </label>
+        <label>Longitude
+          <input id="delivery-${prefix}-longitude" type="number" step="0.000001" value="${escapeHtml(lngValue)}" inputmode="decimal">
+        </label>
+        <button type="button" class="phins-btn phins-btn-quiet" onclick="fillDeliveryCoordinates('${prefix}')">Use my location</button>`;
+    }
+
+    async function fillDeliveryCoordinates(prefix) {
+      const position = await getBrowserLocationPayload();
+      if (!position) {
+        showNotification('Location was not shared. Enter the map coordinates for this stop.', 'error');
+        return;
+      }
+      const lat = document.getElementById(`delivery-${prefix}-latitude`);
+      const lng = document.getElementById(`delivery-${prefix}-longitude`);
+      if (lat) lat.value = String(position.latitude);
+      if (lng) lng.value = String(position.longitude);
     }
 
     function readDeliveryLocation(prefix) {
       const address = (document.getElementById(`delivery-${prefix}-address`)?.value || '').trim();
       const city = (document.getElementById(`delivery-${prefix}-city`)?.value || '').trim();
       const country = (document.getElementById(`delivery-${prefix}-country`)?.value || '').trim();
+      const latitude = Number(document.getElementById(`delivery-${prefix}-latitude`)?.value);
+      const longitude = Number(document.getElementById(`delivery-${prefix}-longitude`)?.value);
       if (!address || !city || !country) return null;
-      return { address, city, country, contact: {} };
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+      if (latitude === 0 && longitude === 0) return null;
+      if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+      return { address, city, country, latitude, longitude, contact: {} };
     }
 
     function renderDeliveryStatus(track, bids, purchase) {
@@ -7617,12 +7662,14 @@
       const pickupSeed = {
         address: purchase.provider_name || purchase.provider || '',
         city: purchase.supplier_city || '',
-        country: purchase.supplier_country || ''
+        country: purchase.supplier_country || '',
+        latitude: purchase.latitude,
+        longitude: purchase.longitude
       };
       body.innerHTML = `
         <form class="phins-market-empty" style="text-align:left;" onsubmit="submitPurchaseDelivery(event, '${marketplaceDomId(purchase.id)}')">
           <h3>Arrange delivery</h3>
-          <p>This opens a bidding window on the purchase you just made. The bid you accept is the delivery handoff. The product price is unchanged.</p>
+          <p>This opens a bidding window on the purchase you just made. Pickup and delivery need map coordinates so a courier can be matched. The bid you accept is the delivery handoff. The product price is unchanged.</p>
           <div class="phins-search-filters">${deliveryLocationFields('pickup', pickupSeed)}</div>
           <div class="phins-search-filters">${deliveryLocationFields('delivery', {})}</div>
           <label>Priority
@@ -7640,6 +7687,13 @@
           </div>
         </form>`;
       section.scrollIntoView({ behavior: 'smooth' });
+      getBrowserLocationPayload().then(position => {
+        if (!position) return;
+        const lat = document.getElementById('delivery-delivery-latitude');
+        const lng = document.getElementById('delivery-delivery-longitude');
+        if (lat && lat.value === '') lat.value = String(position.latitude);
+        if (lng && lng.value === '') lng.value = String(position.longitude);
+      });
     }
 
     async function submitPurchaseDelivery(event, purchaseId) {
@@ -7649,7 +7703,7 @@
       const pickup = readDeliveryLocation('pickup');
       const delivery = readDeliveryLocation('delivery');
       if (!pickup || !delivery) {
-        showNotification('Enter a pickup and a delivery address, city, and country', 'error');
+        showNotification('Enter an address, city, country, and map coordinates for pickup and delivery', 'error');
         return;
       }
       const orderId = purchaseOrderKey(purchase);
