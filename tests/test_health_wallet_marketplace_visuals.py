@@ -76,7 +76,9 @@ def test_catalog_illustrations_exist_and_are_wired():
     assert "legal: 'legal_service'" in dashboard
     assert "legal: 'service'" in dashboard
     assert "wellness: 'healthcare_provider'" in dashboard
-    assert "delivery-${prefix}-latitude" in dashboard
+    assert "delivery-${stop}-latitude" in dashboard
+    assert "applyDeliveryLocationSeed" in dashboard
+    assert 'value="${escapeHtml(source.address' not in dashboard
     assert "Use my location" in dashboard
     assert "/api/marketplace/products" in dashboard
     assert "/api/delivery/request" in dashboard

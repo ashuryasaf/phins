@@ -6220,12 +6220,12 @@
     let marketplaceOfferIndex = {};
     let healthWalletAISearchResults = [];
     
-    // HTML escape helper function
+    // HTML escape helper. Quotes are encoded so the result is safe in an attribute.
     function escapeHtml(text) {
       if (!text) return '';
       const div = document.createElement('div');
       div.textContent = text;
-      return div.innerHTML;
+      return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     function openHealthWalletAISearch() {
@@ -7539,49 +7539,72 @@
       returnToHealthWallet();
     }
 
-    function deliveryLocationFields(prefix, seed) {
-      const source = seed || {};
-      const lat = Number(source.latitude);
-      const lng = Number(source.longitude);
-      const latValue = Number.isFinite(lat) ? String(lat) : '';
-      const lngValue = Number.isFinite(lng) ? String(lng) : '';
+    function deliveryStopPrefix(prefix) {
+      return prefix === 'delivery' ? 'delivery' : 'pickup';
+    }
+
+    function deliveryLocationFields(prefix) {
+      const stop = deliveryStopPrefix(prefix);
+      const label = stop === 'pickup' ? 'Pickup address' : 'Delivery address';
       return `
-        <label>${escapeHtml(prefix === 'pickup' ? 'Pickup address' : 'Delivery address')}
-          <input id="delivery-${prefix}-address" type="text" value="${escapeHtml(source.address || '')}" autocomplete="street-address">
+        <label>${label}
+          <input id="delivery-${stop}-address" type="text" autocomplete="street-address">
         </label>
         <label>City
-          <input id="delivery-${prefix}-city" type="text" value="${escapeHtml(source.city || '')}" autocomplete="address-level2">
+          <input id="delivery-${stop}-city" type="text" autocomplete="address-level2">
         </label>
         <label>Country
-          <input id="delivery-${prefix}-country" type="text" value="${escapeHtml(source.country || '')}" autocomplete="country-name">
+          <input id="delivery-${stop}-country" type="text" autocomplete="country-name">
         </label>
         <label>Latitude
-          <input id="delivery-${prefix}-latitude" type="number" step="0.000001" value="${escapeHtml(latValue)}" inputmode="decimal">
+          <input id="delivery-${stop}-latitude" type="number" step="0.000001" inputmode="decimal">
         </label>
         <label>Longitude
-          <input id="delivery-${prefix}-longitude" type="number" step="0.000001" value="${escapeHtml(lngValue)}" inputmode="decimal">
+          <input id="delivery-${stop}-longitude" type="number" step="0.000001" inputmode="decimal">
         </label>
-        <button type="button" class="phins-btn phins-btn-quiet" onclick="fillDeliveryCoordinates('${prefix}')">Use my location</button>`;
+        <button type="button" class="phins-btn phins-btn-quiet" onclick="fillDeliveryCoordinates('${stop}')">Use my location</button>`;
+    }
+
+    function applyDeliveryLocationSeed(prefix, seed) {
+      const stop = deliveryStopPrefix(prefix);
+      const source = seed || {};
+      const textFields = {
+        address: source.address || '',
+        city: source.city || '',
+        country: source.country || ''
+      };
+      Object.keys(textFields).forEach(name => {
+        const input = document.getElementById(`delivery-${stop}-${name}`);
+        if (input) input.value = String(textFields[name]);
+      });
+      const lat = Number(source.latitude);
+      const lng = Number(source.longitude);
+      const latInput = document.getElementById(`delivery-${stop}-latitude`);
+      const lngInput = document.getElementById(`delivery-${stop}-longitude`);
+      if (latInput && Number.isFinite(lat)) latInput.value = String(lat);
+      if (lngInput && Number.isFinite(lng)) lngInput.value = String(lng);
     }
 
     async function fillDeliveryCoordinates(prefix) {
+      const stop = deliveryStopPrefix(prefix);
       const position = await getBrowserLocationPayload();
       if (!position) {
         showNotification('Location was not shared. Enter the map coordinates for this stop.', 'error');
         return;
       }
-      const lat = document.getElementById(`delivery-${prefix}-latitude`);
-      const lng = document.getElementById(`delivery-${prefix}-longitude`);
+      const lat = document.getElementById(`delivery-${stop}-latitude`);
+      const lng = document.getElementById(`delivery-${stop}-longitude`);
       if (lat) lat.value = String(position.latitude);
       if (lng) lng.value = String(position.longitude);
     }
 
     function readDeliveryLocation(prefix) {
-      const address = (document.getElementById(`delivery-${prefix}-address`)?.value || '').trim();
-      const city = (document.getElementById(`delivery-${prefix}-city`)?.value || '').trim();
-      const country = (document.getElementById(`delivery-${prefix}-country`)?.value || '').trim();
-      const latitude = Number(document.getElementById(`delivery-${prefix}-latitude`)?.value);
-      const longitude = Number(document.getElementById(`delivery-${prefix}-longitude`)?.value);
+      const stop = deliveryStopPrefix(prefix);
+      const address = (document.getElementById(`delivery-${stop}-address`)?.value || '').trim();
+      const city = (document.getElementById(`delivery-${stop}-city`)?.value || '').trim();
+      const country = (document.getElementById(`delivery-${stop}-country`)?.value || '').trim();
+      const latitude = Number(document.getElementById(`delivery-${stop}-latitude`)?.value);
+      const longitude = Number(document.getElementById(`delivery-${stop}-longitude`)?.value);
       if (!address || !city || !country) return null;
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
       if (latitude === 0 && longitude === 0) return null;
@@ -7670,8 +7693,8 @@
         <form class="phins-market-empty" style="text-align:left;" onsubmit="submitPurchaseDelivery(event, '${marketplaceDomId(purchase.id)}')">
           <h3>Arrange delivery</h3>
           <p>This opens a bidding window on the purchase you just made. Pickup and delivery need map coordinates so a courier can be matched. The bid you accept is the delivery handoff. The product price is unchanged.</p>
-          <div class="phins-search-filters">${deliveryLocationFields('pickup', pickupSeed)}</div>
-          <div class="phins-search-filters">${deliveryLocationFields('delivery', {})}</div>
+          <div class="phins-search-filters">${deliveryLocationFields('pickup')}</div>
+          <div class="phins-search-filters">${deliveryLocationFields('delivery')}</div>
           <label>Priority
             <select id="delivery-priority">
               <option value="standard">Standard</option>
@@ -7686,6 +7709,8 @@
             <button type="button" class="phins-btn phins-btn-quiet" onclick="returnToHealthWallet()">Back to wallet</button>
           </div>
         </form>`;
+      applyDeliveryLocationSeed('pickup', pickupSeed);
+      applyDeliveryLocationSeed('delivery', {});
       section.scrollIntoView({ behavior: 'smooth' });
       getBrowserLocationPayload().then(position => {
         if (!position) return;
