@@ -10870,7 +10870,8 @@
         const codesGenerated = referralData.codes.length;
         const successfulReferrals = referralData.stats.successful_referrals || 0;
         const maxAllowed = data.max_allowed || 10;
-        const remaining = maxAllowed - codesGenerated;
+        const slotsUsed = (typeof data.slots_used === 'number') ? data.slots_used : codesGenerated;
+        const remaining = Math.max(0, maxAllowed - slotsUsed);
         const rewardsEarned = referralData.stats.total_reward_value || 0;
         
         document.getElementById('referral-codes-generated').textContent = codesGenerated;

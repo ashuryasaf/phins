@@ -278,8 +278,11 @@ PHINS is a Python platform built around:
  A referral invitation is one sealed record in that same book
  (`referral_invitations` when the database is on). The admin desk, the
  customer referral tab, and the agent portal read that record's code,
- status, and checksum. Opening a view does not refresh or persist it. A
- checksum mismatch is not served and is not paid. State is a checksummed
+ status, and checksum. Opening a view does not refresh or persist it. The
+ invitation cap counts those sealed codes for that creator, including a
+ row reloaded from the database or the checksummed file. The same code
+ counts once. A checksum mismatch still occupies its slot. A checksum
+ mismatch is not served and is not paid. State is a checksummed
  JSON book (`PHINS_REFERRAL_REWARDS_PATH`) or the referral tables
  (including `referral_settlements`) when the database is on. A checksum
  mismatch is not paid. Customer and admin invitation links

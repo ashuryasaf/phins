@@ -805,6 +805,206 @@ def test_referral_invitation_survives_the_database(monkeypatch):
     assert all(item.get("code") != code for item in rewards.list_referral_invitations())
 
 
+def _invitation_body(code, creator):
+    return {
+        "code": code,
+        "creator_customer_id": creator,
+        "creator_name": "Cap",
+        "created_at": "2026-11-14T00:00:00Z",
+        "expires_at": "2027-11-14T00:00:00Z",
+        "max_uses": 1,
+        "used_count": 0,
+        "used_by": [],
+        "status": "active",
+        "notes": "",
+        "reward_status": "pending",
+    }
+
+
+def test_reloaded_invitation_cap_counts_each_sealed_code_once(monkeypatch):
+    """A creator already at the cap cannot mint another code after a reload.
+
+    The count is the sealed book, including a checksum mismatch. The same
+    code counts once. Opening the views does not persist the book, and the
+    refusal does not rewrite a code or the customer.
+    """
+    email = "cap-reload@example.com"
+    customer_id = _register("Cap Reload", email)
+    token, _role = _login(email, "secure123456")
+    admin, _role = _login("admin", "admin123")
+    issued = []
+    for _ in range(10):
+        body, status = _post("/api/customer/invitations/generate", {}, token=token)
+        assert status == 201, body
+        issued.append(body["invitation"]["code"])
+    assert rewards.invitation_cap_for(customer_id) == 10
+    assert rewards.default_config()["customer_invitation_cap"] == 10
+    assert rewards.default_config()["agent_invitation_cap"] == 100
+    assert rewards.invitation_slots_used(customer_id) == 10
+    cached = [
+        item.get("code") for item in portal.CUSTOMER_INVITATIONS.values()
+        if item.get("creator_customer_id") == customer_id
+    ]
+    assert set(cached) == set(issued)
+
+    intact = {
+        code: rewards.referral_invitation(code)["checksum"]
+        for code in issued[:-1]
+    }
+    withheld = issued[-1]
+    customer_before = json.dumps(portal.CUSTOMERS[customer_id], sort_keys=True, default=str)
+    rewards.INVITATIONS[withheld]["checksum"] = "0" * 64
+    rewards._save_file()
+    for code in list(portal.CUSTOMER_INVITATIONS):
+        item = portal.CUSTOMER_INVITATIONS.get(code) or {}
+        if item.get("creator_customer_id") == customer_id:
+            portal.CUSTOMER_INVITATIONS.pop(code, None)
+    rewards.INVITATIONS.clear()
+    rewards.QUARANTINE.clear()
+    rewards._loaded = False
+
+    assert rewards.invitation_slots_used(customer_id) == 10
+    assert rewards.invitation_withheld(withheld) is True
+    assert rewards.referral_invitation(withheld) is None
+    for code, checksum in intact.items():
+        again = rewards.referral_invitation(code)
+        assert again["code"] == code
+        assert again["checksum"] == checksum
+    portal.CUSTOMER_INVITATIONS[issued[0]] = {
+        "code": issued[0],
+        "creator_customer_id": customer_id,
+        "checksum": intact[issued[0]],
+    }
+    portal.CUSTOMER_INVITATIONS[withheld] = {
+        "code": withheld,
+        "creator_customer_id": customer_id,
+        "checksum": "0" * 64,
+    }
+    assert rewards.invitation_slots_used(customer_id) == 10
+
+    persist = rewards._persist_invitation
+    save = rewards._save_file
+    hits = []
+
+    def refuse_persist(*_args, **_kwargs):
+        hits.append("persist")
+        raise AssertionError("the cap refusal persisted an invitation")
+
+    def refuse_save(*_args, **_kwargs):
+        hits.append("save")
+        raise AssertionError("the cap refusal saved the book")
+
+    rewards._persist_invitation = refuse_persist
+    rewards._save_file = refuse_save
+    try:
+        with pytest.raises(RewardError) as exc:
+            rewards.issue_referral_invitation(_invitation_body("REF-CAP-EXTRA", customer_id))
+        assert exc.value.code == "invitation_cap"
+        blocked, status = _post("/api/customer/invitations/generate", {}, token=token)
+        assert status == 400, blocked
+        assert blocked["limit"] == 10
+        assert blocked["current_count"] == 10
+        listing, status = _get("/api/customer/invitations", token=token)
+        assert status == 200, listing
+        admin_list, admin_status = _get("/api/invitations", token=admin)
+        assert admin_status == 200, admin_list
+    finally:
+        rewards._persist_invitation = persist
+        rewards._save_file = save
+    assert hits == []
+    assert listing["max_allowed"] == 10
+    assert listing["slots_used"] == 10
+    assert listing["can_generate_more"] is False
+    assert len(listing["codes"]) == 9
+    assert all(item.get("code") != withheld for item in listing["codes"])
+    assert all(item.get("code") != withheld for item in admin_list["codes"])
+    for code, checksum in intact.items():
+        again = rewards.referral_invitation(code)
+        assert again["code"] == code
+        assert again["checksum"] == checksum
+        assert again["creator_customer_id"] == customer_id
+    assert rewards.INVITATIONS[withheld]["code"] == withheld
+    assert rewards.invitation_withheld(withheld) is True
+    assert json.dumps(portal.CUSTOMERS[customer_id], sort_keys=True, default=str) == customer_before
+    assert "national_id" not in customer_before
+    static = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "dashboard.html"
+    assert "data.slots_used" in static.read_text(encoding="utf-8")
+
+    agent_id = "CUST-CAP-AGENT"
+    rewards.REQUESTS[f"PRO-{agent_id}-agent"] = {
+        "id": f"PRO-{agent_id}-agent",
+        "customer_id": agent_id,
+        "requested_role": "agent",
+        "status": "approved",
+    }
+    assert rewards.invitation_cap_for(agent_id) == 100
+    opened = rewards.issue_referral_invitation(_invitation_body("REF-CAP-AGENT", agent_id))
+    assert opened["code"] == "REF-CAP-AGENT"
+    assert rewards.invitation_slots_used(customer_id) == 10
+    assert rewards.referral_invitation(issued[0])["checksum"] == intact[issued[0]]
+
+    from database import init_database
+    from database.manager import DatabaseManager
+
+    init_database()
+    monkeypatch.setattr(rewards, "_db_enabled", lambda: True)
+    rewards.INVITATIONS.clear()
+    rewards.QUARANTINE.clear()
+    rewards._loaded = False
+    suffix = os.urandom(4).hex().upper()
+    db_creator = "CUST-CAP-DB-" + suffix
+    db_codes = []
+    for index in range(10):
+        sealed = rewards.issue_referral_invitation(
+            _invitation_body(f"REF-CAPDB-{suffix}-{index:02d}", db_creator)
+        )
+        db_codes.append(sealed["code"])
+    with DatabaseManager() as db:
+        stored = next(
+            row for row in db.referral_rewards.list_invitations()
+            if (row.get("payload") or {}).get("code") == db_codes[-1]
+        )
+        bad = dict(stored["payload"])
+        bad["checksum"] = "0" * 64
+        db.referral_rewards.upsert_invitation(bad)
+
+    def stored_checksums():
+        with DatabaseManager() as db:
+            found = {}
+            for row in db.referral_rewards.list_invitations():
+                payload = row.get("payload") or {}
+                if payload.get("creator_customer_id") == db_creator:
+                    found[payload.get("code")] = payload.get("checksum")
+            return found
+
+    before_rows = stored_checksums()
+    rewards.INVITATIONS.clear()
+    rewards.QUARANTINE.clear()
+    rewards._loaded = False
+    assert rewards.invitation_slots_used(db_creator) == 10
+    assert rewards.invitation_withheld(db_codes[-1]) is True
+    assert len(rewards.list_referral_invitations(db_creator)) == 9
+    rewards._persist_invitation = refuse_persist
+    rewards._save_file = refuse_save
+    hits.clear()
+    try:
+        with pytest.raises(RewardError) as exc:
+            rewards.issue_referral_invitation(_invitation_body(f"REF-CAPDB-{suffix}-EXTRA", db_creator))
+        assert exc.value.code == "invitation_cap"
+        assert rewards.list_referral_invitations(db_creator)
+    finally:
+        rewards._persist_invitation = persist
+        rewards._save_file = save
+    assert hits == []
+    assert stored_checksums() == before_rows
+    for code in db_codes[:-1]:
+        again = rewards.referral_invitation(code)
+        assert again["code"] == code
+        assert again["creator_customer_id"] == db_creator
+    for code in (issued[0], withheld):
+        portal.CUSTOMER_INVITATIONS.pop(code, None)
+
+
 def test_repository_round_trip():
     from database import init_database
     from database.manager import DatabaseManager

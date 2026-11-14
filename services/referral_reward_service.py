@@ -1326,17 +1326,50 @@ def affiliation_for(customer_id: str) -> Dict[str, Any]:
         }
 
 
+def _invitation_cap_locked(customer_id: str) -> int:
+    cfg = CONFIG or default_config()
+    if _approved_request(customer_id, "agent"):
+        return int(cfg["agent_invitation_cap"])
+    rec = _customer_record(customer_id)
+    if rec and rec.get("agent_id"):
+        return int(cfg["agent_invitation_cap"])
+    return int(cfg["customer_invitation_cap"])
+
+
 def invitation_cap_for(customer_id: str) -> int:
     """Customers share a small book of codes; an approved agent gets the larger one."""
     with _LOCK:
         _ensure_loaded()
-        cfg = CONFIG or default_config()
-        if _approved_request(customer_id, "agent"):
-            return int(cfg["agent_invitation_cap"])
-        rec = _customer_record(customer_id)
-        if rec and rec.get("agent_id"):
-            return int(cfg["agent_invitation_cap"])
-        return int(cfg["customer_invitation_cap"])
+        return _invitation_cap_locked(customer_id)
+
+
+def _invitation_slots_used_locked(creator_customer_id: str) -> int:
+    """Unique sealed codes for this creator, including a checksum mismatch."""
+    creator = str(creator_customer_id or "")
+    if not creator:
+        return 0
+    codes = set()
+    for key, record in INVITATIONS.items():
+        if not isinstance(record, dict):
+            continue
+        if str(record.get("creator_customer_id") or "") != creator:
+            continue
+        code = str(record.get("code") or key or "")
+        if code:
+            codes.add(code)
+    return len(codes)
+
+
+def invitation_slots_used(creator_customer_id: str) -> int:
+    """How many sealed referral codes this creator already holds.
+
+    Rows reloaded from the database or the checksummed file count. A checksum
+    mismatch still occupies its slot. The same code counts once. This read
+    does not persist the book.
+    """
+    with _LOCK:
+        _ensure_loaded()
+        return _invitation_slots_used_locked(creator_customer_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1389,6 +1422,14 @@ def issue_referral_invitation(raw: Dict[str, Any]) -> Dict[str, Any]:
         _ensure_loaded()
         if record["code"] in INVITATIONS:
             raise RewardError("Invitation code already exists", status=409, code="duplicate")
+        cap = _invitation_cap_locked(record["creator_customer_id"])
+        used = _invitation_slots_used_locked(record["creator_customer_id"])
+        if used >= cap:
+            raise RewardError(
+                f"Maximum referral limit reached ({cap} codes)",
+                status=400,
+                code="invitation_cap",
+            )
         sealed = _seal_invitation(record)
         INVITATIONS[sealed["code"]] = sealed
         _persist_invitation(sealed)

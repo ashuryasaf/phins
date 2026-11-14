@@ -25480,12 +25480,14 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Customer account required'}).encode('utf-8'))
                 return
             
-            # GET /api/customer/invitations - List customer's own invitation codes
+            # GET /api/customer/invitations - List this customer's sealed codes.
+            # A checksum mismatch is omitted and still occupies a cap slot.
             if path == '/api/customer/invitations':
-                # Get customer's invitation codes from CUSTOMER_INVITATIONS
+                # This read does not persist the book.
                 from services.referral_reward_service import (
                     affiliated_join_link,
                     affiliation_for,
+                    invitation_slots_used,
                     list_referral_invitations,
                     referred_acquisition,
                 )
@@ -25510,6 +25512,7 @@ For claims or questions, please contact:
                 measured = referred_acquisition(customer_id, stats.get('referred_customers') or [])
                 
                 invitation_limit = customer_invitation_limit(customer_id)
+                slots_used = invitation_slots_used(customer_id)
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'codes': customer_codes,
@@ -25527,7 +25530,8 @@ For claims or questions, please contact:
                         'total_reward_value': stats.get('total_reward_value', 0),
                     },
                     'max_allowed': invitation_limit,
-                    'can_generate_more': len(customer_codes) < invitation_limit,
+                    'slots_used': slots_used,
+                    'can_generate_more': slots_used < invitation_limit,
                     'affiliation': affiliation_for(customer_id),
                 }).encode('utf-8'))
                 return
@@ -44350,19 +44354,21 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Customer profile not found'}).encode('utf-8'))
                 return
             
-            # Count sealed referral codes for this customer. Loading the
-            # book does not refill the process cache, so the cache is empty
-            # after a restart that kept referral_invitations.
-            from services.referral_reward_service import list_referral_invitations
-            existing_codes = list_referral_invitations(customer_id)
-            
+            # The cap is the sealed book, including rows reloaded from the
+            # database or the checksummed file. A checksum mismatch still
+            # occupies its slot. The in-memory cache is not a second count.
+            from services.referral_reward_service import (
+                RewardError,
+                invitation_slots_used as _invitation_slots_used,
+            )
+            occupied = _invitation_slots_used(customer_id)
             invitation_limit = customer_invitation_limit(customer_id)
-            if len(existing_codes) >= invitation_limit:
+            if occupied >= invitation_limit:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({
                     'error': f'Maximum referral limit reached ({invitation_limit} codes)',
                     'limit': invitation_limit,
-                    'current_count': len(existing_codes)
+                    'current_count': occupied
                 }).encode('utf-8'))
                 return
             
@@ -44449,8 +44455,8 @@ For claims or questions, please contact:
                     'join_link': registration_link,
                     'registration_link': registration_link,
                     'affiliation': affiliation_for(customer_id),
-                    'remaining_codes': invitation_limit - len(existing_codes) - 1,
-                    'total_generated': len(existing_codes) + 1,
+                    'remaining_codes': invitation_limit - occupied - 1,
+                    'total_generated': occupied + 1,
                     'max_allowed': invitation_limit
                 }).encode('utf-8'))
                 return
@@ -44458,6 +44464,10 @@ For claims or questions, please contact:
             except json.JSONDecodeError:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            except RewardError as exc:
+                self._set_json_headers(exc.status)
+                self.wfile.write(json.dumps(exc.to_dict()).encode('utf-8'))
                 return
             except Exception as e:
                 print(f"Error generating customer invitation: {e}")
