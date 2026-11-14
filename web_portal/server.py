@@ -44350,11 +44350,11 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Customer profile not found'}).encode('utf-8'))
                 return
             
-            # Count existing codes for this customer
-            existing_codes = [
-                c for c in CUSTOMER_INVITATIONS.values()
-                if c.get('creator_customer_id') == customer_id
-            ]
+            # Count sealed referral codes for this customer. Loading the
+            # book does not refill the process cache, so the cache is empty
+            # after a restart that kept referral_invitations.
+            from services.referral_reward_service import list_referral_invitations
+            existing_codes = list_referral_invitations(customer_id)
             
             invitation_limit = customer_invitation_limit(customer_id)
             if len(existing_codes) >= invitation_limit:

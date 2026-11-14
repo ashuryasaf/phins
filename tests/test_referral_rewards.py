@@ -581,6 +581,46 @@ def test_invitation_cap_stays_at_ten_until_the_agent_role_is_approved():
     assert rewards.invitation_cap_for(customer_id) == 100
 
 
+def test_invitation_cap_counts_the_sealed_book_after_reload(monkeypatch):
+    """A restart keeps sealed REF- codes when the process cache is empty."""
+    from database import init_database
+
+    init_database()
+    monkeypatch.setattr(rewards, "_db_enabled", lambda: True)
+    email = "cap-sealed-book@example.com"
+    customer_id = _register("Cap Sealed", email)
+    token, _role = _login(email, "secure123456")
+    rewards.INVITATIONS.clear()
+    rewards._loaded = False
+    cap = rewards.invitation_cap_for(customer_id)
+    assert cap == 10
+    stamp = os.urandom(3).hex().upper()
+    for index in range(cap):
+        rewards.issue_referral_invitation({
+            "code": f"REF-CAP-{stamp}-{index:02d}",
+            "creator_customer_id": customer_id,
+            "creator_name": "Cap Sealed",
+            "created_at": "2026-11-14T00:00:00Z",
+            "expires_at": "2027-11-14T00:00:00Z",
+            "max_uses": 1,
+            "used_count": 0,
+            "used_by": [],
+            "status": "active",
+            "notes": "",
+            "reward_status": "pending",
+        })
+    for code in list(portal.CUSTOMER_INVITATIONS):
+        row = portal.CUSTOMER_INVITATIONS.get(code)
+        if isinstance(row, dict) and row.get("creator_customer_id") == customer_id:
+            portal.CUSTOMER_INVITATIONS.pop(code, None)
+    rewards.INVITATIONS.clear()
+    rewards._loaded = False
+    blocked, status = _post("/api/customer/invitations/generate", {}, token=token)
+    assert status == 400, blocked
+    assert blocked["current_count"] == cap
+    assert len(rewards.list_referral_invitations(customer_id)) == cap
+
+
 def test_registration_with_a_customer_code_earns_on_the_first_payment():
     referrer_email = "referrer-rewards@example.com"
     referrer = _register("Referrer", referrer_email)
