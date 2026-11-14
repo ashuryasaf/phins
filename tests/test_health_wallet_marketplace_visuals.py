@@ -80,6 +80,10 @@ def test_catalog_illustrations_exist_and_are_wired():
     assert "applyDeliveryLocationSeed" in dashboard
     assert 'value="${escapeHtml(source.address' not in dashboard
     assert "Use my location" in dashboard
+    service_block = dashboard.split("SERVICE_PURCHASE_CATEGORIES", 1)[1].split("SHIPPABLE_PURCHASE_CATEGORIES", 1)[0]
+    shippable_block = dashboard.split("SHIPPABLE_PURCHASE_CATEGORIES", 1)[1].split("function purchaseCanBeDelivered", 1)[0]
+    assert "'home_care'" in service_block
+    assert "'home_care'" not in shippable_block
     assert "/api/marketplace/products" in dashboard
     assert "/api/delivery/request" in dashboard
     assert "/api/delivery/track/" in dashboard
