@@ -37,4 +37,8 @@ regexes = [
     '''['"]token['"]\s*:\s*token\s*,''',
     '''\bkey\s*===\s*["']REDACTED["']''',
     '''PHINS_EMERGENCY_UNLOCK_KEY''',
+    # Commit dd742cf named a browser sessionStorage slot DELIVERY_LINK_KEY.
+    # generic-api-key treats that assignment as a credential. The slot name
+    # is not a secret, and the live identifier is PURCHASE_DELIVERY_SLOT.
+    '''\bDELIVERY_LINK_KEY\s*=\s*['"]phins\.purchase\.delivery\.v1['"]''',
 ]
