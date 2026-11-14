@@ -734,6 +734,268 @@ def test_lapsed_balance_reverses_the_single_settlement_once():
     assert plan["allocated"] == pytest.approx(0.0)
 
 
+def _legacy_plan_totals():
+    """The planning totals from the global settlement and reward loops."""
+    allocated = blocked = releasable = settled = reversed_cents = 0
+    for settlement in rewards.SETTLEMENTS.values():
+        cents = int(settlement.get("allocated_cents") or 0)
+        status = settlement.get("status")
+        if status == "reversed":
+            reversed_cents += cents
+            continue
+        allocated += cents
+        if status == "settled":
+            settled += cents
+    for reward in rewards.REWARDS.values():
+        cents = int(reward.get("amount_cents") or 0)
+        if reward.get("status") == "held":
+            blocked += cents
+        elif reward.get("status") == "earned":
+            releasable += cents
+    return {
+        "allocated": rewards.dollars(allocated),
+        "blocked": rewards.dollars(blocked),
+        "releasable": rewards.dollars(releasable),
+        "settled": rewards.dollars(settled),
+        "reversed": rewards.dollars(reversed_cents),
+    }
+
+
+def _acquisition_matches_plan():
+    plan = rewards.affiliated_cac_plan()
+    legacy = _legacy_plan_totals()
+    for key in ("allocated", "blocked", "releasable", "settled", "reversed"):
+        assert plan[key] == pytest.approx(legacy[key])
+    return plan
+
+
+def _book_fingerprint():
+    return json.dumps(
+        {"settlements": rewards.SETTLEMENTS, "rewards": rewards.REWARDS, "links": rewards.LINKS},
+        sort_keys=True,
+        default=str,
+    )
+
+
+def test_referred_customer_acquisition_matches_the_settlement(monkeypatch):
+    """Referred customers report the settlement, and that report ties to the plan."""
+    monkeypatch.setattr(rewards, "_now", lambda: "2026-01-15T00:00:00Z")
+    _customer("A0", name="Top")
+    _customer("A1", "A0", "Middle")
+    _customer("A2", "A1", "Direct")
+    _customer("A3", "A2", "Paying")
+    _pay("A3", "BILL-A3")
+    rewards.on_customer_paying("A3")
+    report = rewards.referred_acquisition("A2")
+    row = next(item for item in report["referred_customers"] if item["customer_id"] == "A3")
+    assert row["acquisition"]["settlement_id"] == "CACSET-A3"
+    assert row["acquisition"]["allocated"] == pytest.approx(650.0)
+    assert row["acquisition"]["blocked"] == pytest.approx(650.0)
+    assert row["acquisition"]["releasable"] == pytest.approx(0.0)
+    assert row["acquisition"]["settled"] == pytest.approx(0.0)
+    assert row["acquisition"]["reversed"] == pytest.approx(0.0)
+    assert row["name"] == "Paying"
+    assert "email" not in row and "national_id" not in row
+    book = rewards.customer_dashboard("A2")["affiliation_book"]
+    share = next(item for item in book["rows"] if item["referee_customer_id"] == "A3")
+    assert share["amount"] == pytest.approx(500.0)
+    assert row["viewer_share"]["settlement_id"] == "CACSET-A3"
+    assert row["viewer_share"]["layer"] == 1
+    assert row["viewer_share"]["allocated"] == pytest.approx(500.0)
+    assert row["viewer_share"]["blocked"] == pytest.approx(500.0)
+    assert row["viewer_share"]["allocated"] != pytest.approx(row["acquisition"]["allocated"])
+    assert rewards.REWARDS["RWRD-A3-L2"]["amount_cents"] == 10000
+    assert rewards.REWARDS["RWRD-A3-L3"]["amount_cents"] == 5000
+    direct = rewards.network_acquisition("A2", ["A3"])["A3"]
+    assert direct["allocated"] == pytest.approx(500.0)
+    assert direct["blocked"] == pytest.approx(500.0)
+    assert direct["settlement_id"] == "CACSET-A3"
+    upstream = rewards.network_acquisition("A1", ["A3"])["A3"]
+    assert upstream == {
+        "settlement_id": None, "status": "none",
+        "allocated": 0.0, "blocked": 0.0, "releasable": 0.0, "settled": 0.0, "reversed": 0.0,
+    }
+    assert report["acquisition_totals"]["allocated"] == pytest.approx(650.0)
+    assert report["viewer_share_totals"]["allocated"] == pytest.approx(500.0)
+    plan = _acquisition_matches_plan()
+    assert plan["allocated"] == pytest.approx(650.0)
+    assert plan["blocked"] == pytest.approx(650.0)
+    _customer("B1", name="Other")
+    _customer("B2", "B1", "Lapsed")
+    _pay("B2", "BILL-B2")
+    rewards.on_customer_paying("B2")
+    portal.BILLING["BILL-B2"]["status"] = "open"
+    rewards.on_customer_paying("B2")
+    lapsed = rewards.acquisition_for_customers(["B2"])["B2"]
+    assert lapsed["reversed"] == pytest.approx(650.0)
+    assert lapsed["allocated"] == pytest.approx(0.0)
+    monkeypatch.setattr(rewards, "_now", lambda: "2026-04-15T00:00:00Z")
+    for layer, beneficiary in ((1, "A2"), (2, "A1"), (3, "A0")):
+        accepted = rewards.accept_reward(f"RWRD-A3-L{layer}", beneficiary)
+        assert accepted["status"] == "dispatched"
+    settled = rewards.acquisition_for_customers(["A3"])["A3"]
+    assert settled["settled"] == pytest.approx(650.0)
+    assert settled["blocked"] == pytest.approx(0.0)
+    settled_share = rewards.referred_acquisition("A2")
+    settled_row = next(item for item in settled_share["referred_customers"] if item["customer_id"] == "A3")
+    assert settled_row["viewer_share"]["settled"] == pytest.approx(500.0)
+    assert settled_row["viewer_share"]["allocated"] == pytest.approx(500.0)
+    assert settled_row["acquisition"]["settled"] == pytest.approx(650.0)
+    plan = _acquisition_matches_plan()
+    assert plan["settled"] == pytest.approx(650.0)
+    assert plan["reversed"] == pytest.approx(650.0)
+
+    email = "acq-referrer@example.com"
+    referrer = _register("Acq Referrer", email)
+    token, _role = _login(email, "secure123456")
+    issued, status = _post("/api/customer/invitations/generate", {}, token=token)
+    assert status == 201, issued
+    code = issued["invitation"]["code"]
+    assert code.startswith("REF-")
+    referee = _register("Acq Referee", "acq-referee@example.com", code=code)
+    before_referrer = json.loads(json.dumps(portal.CUSTOMERS[referrer]))
+    _pay(referee, "BILL-ACQ-REF")
+    rewards.on_customer_paying(referee)
+    _customer("LAPSE-REF", name="Holder")
+    _customer("LAPSE", "LAPSE-REF", "Lapsed Unread")
+    _pay("LAPSE", "BILL-LAPSE")
+    rewards.on_customer_paying("LAPSE")
+    portal.BILLING["BILL-LAPSE"]["status"] = "open"
+    assert rewards.SETTLEMENTS["LAPSE"]["status"] == "held"
+    assert rewards.REWARDS["RWRD-LAPSE-L1"]["status"] == "held"
+    stored_book = _book_fingerprint()
+    hits = []
+    refresh = rewards._refresh_all_locked
+    persist_settlement = rewards._persist_settlement
+    persist_reward = rewards._persist_reward
+
+    def refuse_refresh(*_args, **_kwargs):
+        hits.append("refresh")
+        raise AssertionError("a read refreshed the book")
+
+    def refuse_settlement(*_args, **_kwargs):
+        hits.append("settlement")
+        raise AssertionError("a read persisted a settlement")
+
+    def refuse_reward(*_args, **_kwargs):
+        hits.append("reward")
+        raise AssertionError("a read persisted a reward")
+
+    rewards._refresh_all_locked = refuse_refresh
+    rewards._persist_settlement = refuse_settlement
+    rewards._persist_reward = refuse_reward
+    try:
+        listing, status = _get("/api/customer/invitations", token=token)
+    finally:
+        rewards._refresh_all_locked = refresh
+        rewards._persist_settlement = persist_settlement
+        rewards._persist_reward = persist_reward
+    assert hits == []
+    assert _book_fingerprint() == stored_book
+    assert rewards.SETTLEMENTS["LAPSE"]["status"] == "held"
+    assert rewards.REWARDS["RWRD-LAPSE-L1"]["status"] == "held"
+    assert status == 200, listing
+    shown = next(item for item in listing["stats"]["referred_customers"] if item["customer_id"] == referee)
+    assert shown["acquisition"]["allocated"] == pytest.approx(650.0)
+    assert shown["acquisition"]["blocked"] == pytest.approx(650.0)
+    assert shown["acquisition"]["settlement_id"] == f"CACSET-{referee}"
+    layer = rewards.REWARDS[f"RWRD-{referee}-L1"]
+    assert layer["beneficiary_customer_id"] == referrer
+    assert shown["viewer_share"]["settlement_id"] == f"CACSET-{referee}"
+    assert shown["viewer_share"]["layer"] == 1
+    assert shown["viewer_share"]["allocated"] == pytest.approx(layer["amount_cents"] / 100.0)
+    assert shown["code_used"] == code
+    assert "email" not in shown and "national_id" not in shown
+    assert listing["stats"]["acquisition_totals"]["allocated"] == pytest.approx(650.0)
+    assert portal.CUSTOMERS[referrer] == before_referrer
+    stored = portal.CUSTOMER_REFERRAL_STATS[referrer]["referred_customers"]
+    assert stored and all("acquisition" not in item for item in stored)
+    _acquisition_matches_plan()
+
+    from services import agent_ecosystem_service as agents
+    agent = agents.get_agent_by_username("agent") or agents.create_agent(
+        "agent", "Demo Agent", default_rate=0.1, created_by="admin",
+    )
+    ok, inv = agents.create_invitation(agent["id"], "customer", proposed_rate=0.1)
+    assert ok, inv
+    approved, _invite = agents.approve_invitation(inv["code"], 0.1, "admin")
+    assert approved
+    linked, affiliation = agents.redeem_invitation(inv["code"], "customer", referee)
+    assert linked, affiliation
+    solo = "ACQ-SOLO"
+    _customer(solo, name="Commission Only")
+    ok, inv2 = agents.create_invitation(agent["id"], "customer", proposed_rate=0.1)
+    assert ok, inv2
+    agents.approve_invitation(inv2["code"], 0.1, "admin")
+    linked, affiliation = agents.redeem_invitation(inv2["code"], "customer", solo)
+    assert linked, affiliation
+    portal.POLICIES["POL-SOLO"] = {
+        "id": "POL-SOLO", "customer_id": solo, "annual_premium": 1000,
+        "status": "active", "start_date": "2026-01-01T00:00:00",
+    }
+    portal.BILLING["BILL-SOLO"] = {
+        "id": "BILL-SOLO", "policy_id": "POL-SOLO", "customer_id": solo,
+        "amount": 100, "amount_paid": 100, "status": "paid",
+        "billing_period_start": "2026-01-01", "due_date": "2026-01-01", "paid_date": "2026-01-01",
+    }
+    before_solo = json.loads(json.dumps(portal.CUSTOMERS[solo]))
+    agent_token, role = _login("agent", "agent123")
+    assert role == "agent"
+    _customer("LAPSE2-REF", name="Holder Two")
+    _customer("LAPSE2", "LAPSE2-REF", "Lapsed Network")
+    _pay("LAPSE2", "BILL-LAPSE2")
+    rewards.on_customer_paying("LAPSE2")
+    portal.BILLING["BILL-LAPSE2"]["status"] = "open"
+    assert rewards.SETTLEMENTS["LAPSE2"]["status"] == "held"
+    stored_book = _book_fingerprint()
+    hits = []
+    rewards._refresh_all_locked = refuse_refresh
+    rewards._persist_settlement = refuse_settlement
+    rewards._persist_reward = refuse_reward
+    try:
+        network, status = _get("/api/agent/network/customers", token=agent_token)
+    finally:
+        rewards._refresh_all_locked = refresh
+        rewards._persist_settlement = persist_settlement
+        rewards._persist_reward = persist_reward
+    assert hits == []
+    assert _book_fingerprint() == stored_book
+    assert rewards.SETTLEMENTS["LAPSE2"]["status"] == "held"
+    assert rewards.REWARDS["RWRD-LAPSE2-L1"]["status"] == "held"
+    assert status == 200, network
+    paying = next(item for item in network["items"] if item["customer_id"] == referee)
+    commission_only = next(item for item in network["items"] if item["customer_id"] == solo)
+    empty_acquisition = {
+        "settlement_id": None, "status": "none",
+        "allocated": 0.0, "blocked": 0.0, "releasable": 0.0, "settled": 0.0, "reversed": 0.0,
+    }
+    assert paying["acquisition"] == empty_acquisition
+    assert paying["accrued_commission"] == pytest.approx(0.0)
+    assert commission_only["acquisition"] == {
+        "settlement_id": None, "status": "none",
+        "allocated": 0.0, "blocked": 0.0, "releasable": 0.0, "settled": 0.0, "reversed": 0.0,
+    }
+    assert commission_only["accrued_commission"] > 0
+    assert "national_id" not in paying and "national_id" not in commission_only
+    assert portal.CUSTOMERS[solo]["name"] == before_solo["name"]
+    assert portal.CUSTOMERS[referrer] == before_referrer
+    _acquisition_matches_plan()
+
+    static = Path(__file__).resolve().parents[1] / "web_portal" / "static"
+    dashboard = (static / "dashboard.html").read_text(encoding="utf-8")
+    agent_page = (static / "agent-portal.html").read_text(encoding="utf-8")
+    assert 'id="referred-customers-table"' in dashboard
+    assert 'id="referred-acquisition-summary"' in dashboard
+    assert ">Allocated<" in dashboard and ">Releasable<" in dashboard and ">Reversed<" in dashboard
+    assert ">Your share<" in dashboard
+    assert "escReferral" in dashboard
+    assert 'id="referred-acquisition-table"' in agent_page
+    assert 'id="referred-acquisition-summary"' in agent_page
+    assert ">Releasable<" in agent_page and ">Settled<" in agent_page
+    assert ">Your share<" in agent_page
+    assert "escHtml" in agent_page
+
+
 def test_settlement_survives_a_reload_and_a_bad_checksum_is_not_paid():
     _customer("C1", name="Direct")
     _customer("C2", "C1", "New")

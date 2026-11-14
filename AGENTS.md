@@ -266,7 +266,15 @@ PHINS is a Python platform built around:
  token without rewriting `USERS.role`. An agent is a role on that one supplier. An approved agent invitation cap is
  100 (customer cap stays 10). `affiliated_cac_plan()` is the planning view
  (allocated, blocked, releasable, settled, reversed, projected release,
- layer schedule, and one row per reward).
+ layer schedule, and one row per reward). Those planning totals stay
+ on the global settlement and reward loops. The referral tab reads the
+ stored book and, for customers that person referred, shows the settlement
+ figures beside that viewer's own layer share. Both reconcile to
+ `CACSET-{referee}`. Opening the tab does not refresh or persist the book.
+ The agent network shows acquisition only for customers that agent referred,
+ and only that agent's layer. A customer they did not refer shows no
+ acquisition dollars. Commission stays in accrued commission and is not
+ added to acquisition.
  State is a checksummed JSON book (`PHINS_REFERRAL_REWARDS_PATH`) or the
  referral tables (including `referral_settlements`) when the database is
  on. A checksum mismatch is not paid. Customer and admin invitation links

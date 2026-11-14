@@ -127,9 +127,27 @@ def handle_get(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             _recompute(data_sources)
             page = int(_first(qs, "page", 1) or 1)
             page_size = int(_first(qs, "page_size", 50) or 50)
-            return 200, svc.network_customers(
+            payload = svc.network_customers(
                 aid, data_sources.get("customers", {}), data_sources.get("policies", {}),
                 page=page, page_size=page_size)
+            from services.referral_reward_service import network_acquisition
+            # Own layer only, and only when this agent referred the customer.
+            # The read does not refresh or attach the rest of the settlement.
+            measures = network_acquisition(
+                ctx.get("customer_id"),
+                (row.get("customer_id") for row in payload.get("items") or []),
+            )
+            for row in payload.get("items") or []:
+                row["acquisition"] = measures.get(str(row.get("customer_id") or "")) or {
+                    "settlement_id": None,
+                    "status": "none",
+                    "allocated": 0.0,
+                    "blocked": 0.0,
+                    "releasable": 0.0,
+                    "settled": 0.0,
+                    "reversed": 0.0,
+                }
+            return 200, payload
         if path == "/api/agent/invitations":
             return 200, {"items": svc.list_invitations(agent_id=aid)}
         if path == "/api/agent/ledger":
