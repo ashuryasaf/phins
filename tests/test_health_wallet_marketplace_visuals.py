@@ -71,6 +71,10 @@ def test_catalog_illustrations_exist_and_are_wired():
     assert "returnToHealthWallet" in dashboard
     assert "revealCustomerSection" in dashboard
     assert "linkedProductCatalog" in dashboard
+    assert "function purchaseCanBeDelivered" in dashboard
+    assert "PURCHASE_DELIVERY_SLOT" in dashboard
+    assert "legal: 'legal_service'" in dashboard
+    assert "legal: 'service'" in dashboard
     assert "/api/marketplace/products" in dashboard
     assert "/api/delivery/request" in dashboard
     assert "/api/delivery/track/" in dashboard

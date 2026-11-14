@@ -7050,14 +7050,15 @@
           if (!response.ok) {
             throw new Error(purchaseResult.error || 'Purchase failed');
           }
-          if (purchaseResult.purchase) completedPurchases.push(rememberPurchase(purchaseResult.purchase));
+          if (purchaseResult.purchase) completedPurchases.push(rememberPurchase(purchaseResult.purchase, item.product_details || item));
         }
         
         // Success - clear cart and refresh
         showNotification(` Order complete! ${getCartItemCount()} item(s) purchased for $${total.toFixed(2)}`, 'success');
         clearCart();
         hideCartPanel();
-        if (completedPurchases.length) openPurchaseDelivery(completedPurchases[completedPurchases.length - 1].id);
+        const shippablePurchases = completedPurchases.filter(purchaseCanBeDelivered);
+        if (shippablePurchases.length) openPurchaseDelivery(shippablePurchases[shippablePurchases.length - 1].id);
         
         // Refresh balances
         setTimeout(() => {
@@ -7133,7 +7134,7 @@
       pharmacy: 'pharmacy',
       homecare: 'healthcare_provider',
       residential: 'healthcare_provider',
-      legal: '',
+      legal: 'legal_service',
       wellness: 'wellness',
       laboratory: 'laboratory',
       imaging: '',
@@ -7147,7 +7148,9 @@
       pharmacy: 'product',
       homecare: 'service',
       residential: 'service',
-      legal: ''
+      legal: 'service',
+      wellness: 'service',
+      laboratory: 'service'
     };
 
     // Priced rows from POST /api/marketplace/products. Ids are the catalog's
@@ -7338,9 +7341,6 @@
         if (products.length === 0) {
           products = demoItems;
           usingDemoCatalog = products.length > 0;
-        } else if (category !== 'residential') {
-          appendUniqueProducts(products, demoItems);
-          usingDemoCatalog = demoItems.length > 0;
         }
 
         if (category === 'residential') {
@@ -7444,11 +7444,11 @@
       returnToHealthWallet();
     }
 
-    const DELIVERY_LINK_KEY = 'phins.purchase.delivery.v1';
+    const PURCHASE_DELIVERY_SLOT = 'phins.purchase.delivery.v1';
 
     function readDeliveryLinks() {
       try {
-        const parsed = JSON.parse(sessionStorage.getItem(DELIVERY_LINK_KEY) || '{}');
+        const parsed = JSON.parse(sessionStorage.getItem(PURCHASE_DELIVERY_SLOT) || '{}');
         return parsed && typeof parsed === 'object' ? parsed : {};
       } catch (_) {
         return {};
@@ -7459,20 +7459,53 @@
       if (!orderKey || !requestId) return;
       const links = readDeliveryLinks();
       links[orderKey] = requestId;
-      try { sessionStorage.setItem(DELIVERY_LINK_KEY, JSON.stringify(links)); } catch (_) { /* session only */ }
+      try { sessionStorage.setItem(PURCHASE_DELIVERY_SLOT, JSON.stringify(links)); } catch (_) { /* session only */ }
     }
 
     const purchaseById = {};
 
-    function rememberPurchase(purchase) {
+    function rememberPurchase(purchase, source) {
       if (!purchase || !purchase.id) return purchase;
-      purchaseById[purchase.id] = Object.assign({}, purchaseById[purchase.id] || {}, purchase);
+      const stored = Object.assign({}, purchaseById[purchase.id] || {}, purchase);
+      if (source && typeof source === 'object') {
+        if (source.browse_bucket) stored.browse_bucket = source.browse_bucket;
+        if (source.item_type) stored.item_type = source.item_type;
+        if (source.catalog_source) stored.catalog_source = source.catalog_source;
+      }
+      purchaseById[purchase.id] = stored;
       const list = Array.isArray(medicalPurchases) ? medicalPurchases.slice() : [];
       const index = list.findIndex(item => item && item.id === purchase.id);
       if (index >= 0) list[index] = purchaseById[purchase.id];
       else list.push(purchaseById[purchase.id]);
       medicalPurchases = list;
       return purchaseById[purchase.id];
+    }
+
+    const SERVICE_PURCHASE_CATEGORIES = new Set([
+      'consultation', 'consult', 'telehealth', 'gp', 'homecare', 'home_health', 'homehealth',
+      'medical_services', 'medical_service', 'service', 'services',
+      'legal', 'legal_service', 'legal_services', 'law',
+      'residential', 'residential_care', 'health_care_residential', 'home_bundle', 'extra_bundle', 'full_accommodation',
+      'wellness', 'laboratory', 'imaging', 'mental_health'
+    ]);
+    const SHIPPABLE_PURCHASE_CATEGORIES = new Set([
+      'devices', 'device', 'supplies', 'supply', 'pharmacy', 'medication', 'medications',
+      'medical_equipment', 'equipment', 'product',
+      'prosthetics', 'mobility_devices', 'monitoring_devices', 'respiratory',
+      'daily_supplies', 'wound_care',
+      'mobility', 'monitoring', 'bathroom_safety', 'safety', 'home_care'
+    ]);
+
+    function purchaseCanBeDelivered(purchase) {
+      if (!purchase) return false;
+      const itemType = String(purchase.item_type || '').toLowerCase();
+      if (itemType === 'service') return false;
+      const labels = [purchase.browse_bucket, purchase.category, purchase.normalized_category]
+        .map(value => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_'))
+        .filter(Boolean);
+      if (labels.some(label => SERVICE_PURCHASE_CATEGORIES.has(label))) return false;
+      if (itemType === 'product' || purchase.catalog_source === 'marketplace_products') return true;
+      return labels.some(label => SHIPPABLE_PURCHASE_CATEGORIES.has(label));
     }
 
     function findRememberedPurchase(purchaseId) {
@@ -7567,9 +7600,14 @@
         showNotification('Open a purchase before arranging delivery', 'error');
         return;
       }
+      const existingRequest = readDeliveryLinks()[purchaseOrderKey(purchase)];
+      if (!purchaseCanBeDelivered(purchase) && !existingRequest) {
+        showNotification('Delivery bidding is for a product that ships. This purchase is a service.', 'info');
+        return;
+      }
       revealCustomerSection(section);
       if (lead) lead.textContent = `${purchase.product_name || 'Purchase'} · status, bidding window, and handoff use the existing delivery bidding service.`;
-      const requestId = readDeliveryLinks()[purchaseOrderKey(purchase)];
+      const requestId = existingRequest;
       if (requestId) {
         body.innerHTML = '<div class="phins-market-empty">Loading delivery status...</div>';
         section.scrollIntoView({ behavior: 'smooth' });
@@ -8116,8 +8154,8 @@
           // Confirmation uses the ledger amount, which is the card price for catalog bundles.
           showNotification(` Purchased ${shownName} for $${shownAmount.toFixed(2)}!\n NFT: ${purchaseResult.nft_token_id?.substring(0, 12)}...`, 'success');
           if (purchaseResult.purchase) {
-            rememberPurchase(purchaseResult.purchase);
-            openPurchaseDelivery(purchaseResult.purchase.id);
+            const storedPurchase = rememberPurchase(purchaseResult.purchase, details);
+            if (purchaseCanBeDelivered(storedPurchase)) openPurchaseDelivery(storedPurchase.id);
           }
           
           // Refresh data
@@ -8902,7 +8940,7 @@
             </td>
             <td>
               <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <button type="button" onclick="openPurchaseDelivery('${marketplaceDomId(p.id)}')" class="btn" style="background:#0d47a1;color:white;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">Delivery</button>
+                ${purchaseCanBeDelivered(p) ? `<button type="button" onclick="openPurchaseDelivery('${marketplaceDomId(p.id)}')" class="btn" style="background:#0d47a1;color:white;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">Delivery</button>` : ''}
                 ${qrButton}
                 ${canCancel ? `<button onclick="cancelMarketplacePurchase('${p.id}')" class="btn" style="background:#ef5350;color:white;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">Cancel</button>` : ''}
                 ${canRefund ? `<button onclick="refundMarketplacePurchase('${p.id}')" class="btn" style="background:#43a047;color:white;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">Refund</button>` : ''}
