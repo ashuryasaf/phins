@@ -11275,8 +11275,13 @@
         console.error('Error generating referral code:', err);
         showNotification(' ' + (err.message || 'Failed to generate referral code'), 'error');
       } finally {
-        genBtn.disabled = false;
+        const remainingText = document.getElementById('referral-remaining');
+        const slotsLeft = remainingText ? parseInt(remainingText.textContent, 10) : NaN;
+        const atCap = slotsLeft === 0;
+        genBtn.disabled = atCap;
         genBtn.textContent = 'Generate join link';
+        genBtn.style.opacity = atCap ? '0.5' : '1';
+        genBtn.style.cursor = atCap ? 'not-allowed' : 'pointer';
       }
     }
     
