@@ -66,8 +66,17 @@ def test_catalog_illustrations_exist_and_are_wired():
     assert "/marketplace/gp-consult.jpg" in dashboard
     assert "Demo catalog" in dashboard
     assert "min_radius_km" in dashboard
-    for name in ("Book Consultation", "Medical Devices", "Daily Supplies", "Pharmacy", "Home Care", "Health Care Residential Solutions", "AI Search Offers"):
+    for name in ("Book Consultation", "Medical Devices", "Daily Supplies", "Pharmacy", "Home Care", "Health Care Residential Solutions", "AI Search Offers", "Legal Services", "Wellness", "Laboratory", "Imaging", "Other offers"):
         assert name in dashboard
+    assert "returnToHealthWallet" in dashboard
+    assert "revealCustomerSection" in dashboard
+    assert "linkedProductCatalog" in dashboard
+    assert "/api/marketplace/products" in dashboard
+    assert "/api/delivery/request" in dashboard
+    assert "/api/delivery/track/" in dashboard
+    assert "/api/delivery/bids/" in dashboard
+    assert "/api/delivery/accept-bid" in dashboard
+    assert "No catalog price is published for this provider" in dashboard
     assert "/marketplace/residential-solutions.jpg" in dashboard
     assert "res-home" in dashboard
 
@@ -215,6 +224,39 @@ def test_offerings_keep_wallet_tabs_prices_and_registered_location():
                 portal.SUPPLIER_OFFERS.pop(homecare_id, None)
             else:
                 portal.SUPPLIER_OFFERS[homecare_id] = previous_home
+
+
+def test_wallet_links_use_the_published_marketplace_catalog_prices():
+    """The wallet purchase path points at catalog rows that already exist.
+
+    Prices stay the values the marketplace service publishes. Categories
+    that only have a pricing tier are named on the page and are not given
+    a new price.
+    """
+    from services.marketplace_service import get_marketplace_service
+
+    service = get_marketplace_service()
+    categories = service.get_all_categories()
+    product_ids = {row["id"] for row in categories["products"]}
+    service_ids = {row["id"] for row in categories["services"]}
+    assert {"medication", "prosthetics", "mobility_devices", "monitoring_devices", "daily_supplies", "wound_care", "respiratory"} <= product_ids
+    assert {"laboratory", "imaging", "consultation", "home_care", "transportation"} <= service_ids
+
+    expected = {
+        "medication": ("MED-001", 15.0),
+        "prosthetics": ("PROS-001", 45000.0),
+        "mobility_devices": ("MOB-001", 3500.0),
+        "monitoring_devices": ("MON-002", 89.99),
+        "daily_supplies": ("SUP-001", 65.0),
+        "wound_care": ("WND-001", 125.0),
+        "respiratory": ("RESP-002", 850.0),
+    }
+    dashboard = open(os.path.join(ROOT, "web_portal", "static", "dashboard.html"), encoding="utf-8").read()
+    for category, (product_id, price) in expected.items():
+        assert category in dashboard
+        products = service.get_products(category)
+        match = next(item for item in products if item["product_id"] == product_id)
+        assert match["price"] == price
 
 
 def test_supplier_type_groups_cover_ecosystem_types_without_collapsing_exact_matches():

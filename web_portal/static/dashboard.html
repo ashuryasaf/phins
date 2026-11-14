@@ -1100,6 +1100,41 @@
             </span>
           </button>
         </div>
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('legal')">
+          <img src="/marketplace/legal-consult.jpg" alt="Legal consultation">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Services</span>
+            <span class="phins-wallet-action-title">Legal Services</span>
+          </span>
+        </button>
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('wellness')">
+          <img src="/marketplace/mental-health.jpg" alt="Wellness session">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Services</span>
+            <span class="phins-wallet-action-title">Wellness</span>
+          </span>
+        </button>
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('laboratory')">
+          <img src="/marketplace/specialist-consult.jpg" alt="Clinical laboratory">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Services</span>
+            <span class="phins-wallet-action-title">Laboratory</span>
+          </span>
+        </button>
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('imaging')">
+          <img src="/marketplace/bp-monitor.jpg" alt="Monitoring equipment used for imaging visits">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Services</span>
+            <span class="phins-wallet-action-title">Imaging</span>
+          </span>
+        </button>
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('other')">
+          <img src="/marketplace/ai-search.jpg" alt="Additional supplier offers">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Suppliers</span>
+            <span class="phins-wallet-action-title">Other offers</span>
+          </span>
+        </button>
         <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showTransferModal()">
           <img src="/marketplace/medical-alert.jpg" alt="Personal medical alert device">
           <span class="phins-wallet-action-copy">
@@ -1124,12 +1159,24 @@
           <h2 id="marketplace-title"><span class="tab-brand-mark"><img src="/phins-logo.svg" alt=""></span>Medical Products & Services</h2>
           <p id="marketplace-subtitle" class="phins-market-sub"></p>
         </div>
-        <button type="button" class="phins-text-btn" onclick="closeMarketplace()" aria-label="Close marketplace">Close</button>
+        <button type="button" class="phins-text-btn" onclick="returnToHealthWallet()" aria-label="Back to wallet">Back to wallet</button>
       </div>
       
       <div id="product-grid" class="phins-market-grid">
         <!-- Products loaded dynamically -->
       </div>
+    </section>
+
+    <!-- Delivery handoff for the purchase just made. Uses the existing bidding API. -->
+    <section id="purchase-delivery" class="section-content customer-tab" data-collapsible="true" data-collapsed="true" data-tone="light" style="display: none;">
+      <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+        <div>
+          <h2 id="purchase-delivery-title"><span class="tab-brand-mark"><img src="/phins-logo.svg" alt=""></span>Delivery</h2>
+          <p id="purchase-delivery-lead" class="phins-market-sub">Status, bidding window, and handoff for this purchase.</p>
+        </div>
+        <button type="button" class="phins-text-btn" onclick="closePurchaseDelivery()">Back to wallet</button>
+      </div>
+      <div id="purchase-delivery-body" class="phins-market-grid"></div>
     </section>
 
     <!-- AI Supplier Offer Search -->
@@ -1141,7 +1188,7 @@
             Search all available offers from registered suppliers and purchase through the same wallet, billing, ledger, and marketplace integrity pipeline.
           </p>
         </div>
-        <button type="button" class="phins-text-btn" onclick="closeHealthWalletAISearch()">Close</button>
+        <button type="button" class="phins-text-btn" onclick="closeHealthWalletAISearch()">Back to wallet</button>
       </div>
 
       <div class="phins-search-suggest">
@@ -1167,6 +1214,8 @@
           <option value="hospital">Hospital</option>
           <option value="equipment">Equipment</option>
           <option value="wellness">Wellness</option>
+          <option value="laboratory">Laboratory</option>
+          <option value="legal_service">Legal</option>
           <option value="delivery">Delivery</option>
         </select>
         <button type="button" onclick="runHealthWalletAISearch()">Search</button>
@@ -6159,7 +6208,11 @@
       pharmacy: 'Pharmacy & Medications',
       homecare: 'Home Care Services',
       residential: 'Health Care Residential Solutions',
-      legal: 'Legal Services'
+      legal: 'Legal Services',
+      wellness: 'Wellness',
+      laboratory: 'Laboratory',
+      imaging: 'Imaging',
+      other: 'Other offers'
     };
     
     // ========== SHOPPING CART SYSTEM ==========
@@ -6179,6 +6232,7 @@
       const section = document.getElementById('health-wallet-ai-search');
       if (!section) return;
       section.style.display = 'block';
+      if (typeof setSectionCollapsed === 'function') setSectionCollapsed(section, false);
       section.scrollIntoView({ behavior: 'smooth' });
       const queryInput = document.getElementById('health-ai-search-query');
       if (queryInput) queryInput.focus();
@@ -6187,6 +6241,7 @@
     function closeHealthWalletAISearch() {
       const section = document.getElementById('health-wallet-ai-search');
       if (section) section.style.display = 'none';
+      returnToHealthWallet();
     }
 
     function scoreHealthWalletOffer(offer, queryTerms) {
@@ -6243,7 +6298,17 @@
       medical_services: '/marketplace/gp-consult.jpg',
       medical_equipment: '/marketplace/wheelchair.jpg',
       medications: '/marketplace/prescription.jpg',
-      wellness: '/marketplace/mental-health.jpg'
+      wellness: '/marketplace/mental-health.jpg',
+      laboratory: '/marketplace/specialist-consult.jpg',
+      imaging: '/marketplace/bp-monitor.jpg',
+      prosthetics: '/marketplace/wheelchair.jpg',
+      mobility_devices: '/marketplace/walker.jpg',
+      monitoring_devices: '/marketplace/bp-monitor.jpg',
+      respiratory: '/marketplace/hospital-bed.jpg',
+      daily_supplies: '/marketplace/wound-care.jpg',
+      wound_care: '/marketplace/wound-care.jpg',
+      medication: '/marketplace/prescription.jpg',
+      other: '/marketplace/ai-search.jpg'
     };
 
     function marketplaceDomId(value) {
@@ -6511,7 +6576,7 @@
               <div class="phins-product-actions">
                 <button type="button" class="phins-btn phins-btn-gold" onclick="addIndexedToCart('${safeId}', '${safeCategory}')">Add to cart</button>
                 <button type="button" class="phins-btn phins-btn-navy" onclick="${isResidentialCatalog(product) ? `buyResidentialProduct('${safeId}', '${safeCategory}')` : `buyIndexedProduct('${safeId}', '${safeCategory}')`}">Buy now</button>
-                ${product.isSupplierOffer ? `<button type="button" class="phins-btn phins-btn-quiet" onclick="showMedicalCategory('${safeCategory}')">Open category</button>` : ''}
+                ${product.isSupplierOffer && safeCategory && safeCategory !== currentMarketplaceCategory ? `<button type="button" class="phins-btn phins-btn-quiet" onclick="showMedicalCategory('${safeCategory}')">Open category</button>` : `<button type="button" class="phins-btn phins-btn-quiet" onclick="returnToHealthWallet()">Back to wallet</button>`}
               </div>
             </div>
           </div>
@@ -6954,6 +7019,7 @@
         }
 
         // Process each item in cart
+        const completedPurchases = [];
         for (const item of shoppingCart) {
           const lineQuote = cartLineQuote(item);
           const itemTotal = lineQuote ? lineQuote.catalog_amount : item.price * item.quantity;
@@ -6980,16 +7046,18 @@
             })
           });
           
+          const purchaseResult = await response.json();
           if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Purchase failed');
+            throw new Error(purchaseResult.error || 'Purchase failed');
           }
+          if (purchaseResult.purchase) completedPurchases.push(rememberPurchase(purchaseResult.purchase));
         }
         
         // Success - clear cart and refresh
         showNotification(` Order complete! ${getCartItemCount()} item(s) purchased for $${total.toFixed(2)}`, 'success');
         clearCart();
         hideCartPanel();
+        if (completedPurchases.length) openPurchaseDelivery(completedPurchases[completedPurchases.length - 1].id);
         
         // Refresh balances
         setTimeout(() => {
@@ -7065,7 +7133,11 @@
       pharmacy: 'pharmacy',
       homecare: 'healthcare_provider',
       residential: 'healthcare_provider',
-      legal: 'legal_service'
+      legal: '',
+      wellness: 'wellness',
+      laboratory: 'laboratory',
+      imaging: '',
+      other: ''
     };
     
     const categoryToItemType = {
@@ -7075,8 +7147,25 @@
       pharmacy: 'product',
       homecare: 'service',
       residential: 'service',
-      legal: 'service'
+      legal: ''
     };
+
+    // Priced rows from POST /api/marketplace/products. Ids are the catalog's
+    // own product_id values. Prices are displayed as that API returns them.
+    const linkedProductCatalog = {
+      devices: ['prosthetics', 'mobility_devices', 'monitoring_devices', 'respiratory'],
+      supplies: ['daily_supplies', 'wound_care'],
+      pharmacy: ['medication']
+    };
+
+    // Provider search categories have a pricing tier and no catalog price.
+    // The purchase path is the priced wallet category named here.
+    const unpricedServicePurchase = {
+      laboratory: 'consultation',
+      imaging: 'consultation'
+    };
+
+    let currentMarketplaceCategory = '';
     
     function setMarketplaceHeading(title, subtitle) {
       const heading = document.getElementById('marketplace-title');
@@ -7087,10 +7176,118 @@
       if (sub) sub.textContent = subtitle || '';
     }
 
+    function revealCustomerSection(section) {
+      if (!section) return;
+      section.style.display = 'block';
+      if (typeof setSectionCollapsed === 'function') setSectionCollapsed(section, false);
+    }
+
+    function marketplaceEmptyState(title, message) {
+      return `<div class="phins-market-empty"><h3>${escapeHtml(title)}</h3><p>${escapeHtml(message)}</p><div class="phins-product-actions" style="justify-content:center;margin-top:12px;"><button type="button" class="phins-btn phins-btn-navy" onclick="returnToHealthWallet()">Back to wallet</button><button type="button" class="phins-btn phins-btn-quiet" onclick="openHealthWalletAISearch()">Search supplier offers</button></div></div>`;
+    }
+
+    async function linkedCatalogProducts(category) {
+      const keys = linkedProductCatalog[category] || [];
+      const items = [];
+      for (const key of keys) {
+        try {
+          const response = await fetch('/api/marketplace/products', {
+            method: 'POST',
+            headers: bookAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ category: key })
+          });
+          const data = await response.json();
+          (data.products || []).forEach(product => {
+            if (!product || !product.product_id) return;
+            const price = Number(product.price);
+            if (!Number.isFinite(price)) return;
+            items.push({
+              id: product.product_id,
+              name: product.name,
+              price: price,
+              description: product.description || '',
+              category: product.category || key,
+              normalized_category: product.category || key,
+              browse_bucket: category,
+              provider: product.manufacturer || 'PHINS Marketplace',
+              image_url: (Array.isArray(product.images) && product.images[0]) || '',
+              unit: product.subcategory || '',
+              delivery_days: product.delivery_days,
+              isSupplierOffer: false,
+              catalog_source: 'marketplace_products'
+            });
+          });
+        } catch (err) {
+          console.error('Marketplace catalog unavailable', key, err);
+        }
+      }
+      return items;
+    }
+
+    async function fetchMarketplaceProviders(category) {
+      try {
+        const response = await fetch('/api/marketplace/providers/search', {
+          method: 'POST',
+          headers: bookAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ category: category, limit: 12 })
+        });
+        const data = await response.json();
+        return Array.isArray(data.providers) ? data.providers : [];
+      } catch (err) {
+        console.error('Provider search unavailable', err);
+        return [];
+      }
+    }
+
+    function renderProviderPathCard(provider, category) {
+      const purchaseCategory = unpricedServicePurchase[category] || 'consultation';
+      const purchaseTitle = categoryTitles[purchaseCategory] || 'Book Consultation';
+      const name = provider.name || 'Provider';
+      const specs = Array.isArray(provider.specializations) ? provider.specializations.join(', ') : '';
+      const where = provider.location && (provider.location.city || provider.location.address) ? [provider.location.city, provider.location.country].filter(Boolean).join(', ') : '';
+      return `
+        <article class="phins-product-card product-card">
+          <div class="phins-product-media">
+            <img src="${escapeHtml(catalogIllustrationByCategory[category] || '/marketplace/gp-consult.jpg')}" alt="${escapeHtml(name)}" loading="lazy">
+            <span class="phins-product-badge">Provider</span>
+          </div>
+          <div class="phins-product-body">
+            <div class="phins-product-kicker">service</div>
+            <h3>${escapeHtml(name)}</h3>
+            <p>${escapeHtml(specs || 'Listed provider. This record has a pricing tier and no catalog price.')}</p>
+            <div class="phins-chip-row">
+              <span class="phins-chip">${escapeHtml(provider.pricing_tier || 'standard')}</span>
+              ${provider.rating ? `<span class="phins-chip">${Number(provider.rating).toFixed(1)} · ${provider.reviews_count || 0} reviews</span>` : ''}
+            </div>
+            ${where ? `<div class="phins-product-meta">${escapeHtml(where)}</div>` : ''}
+            <div class="phins-product-meta">No catalog price is published for this provider. Continue in ${escapeHtml(purchaseTitle)}, where the visit has a price.</div>
+            <div class="phins-product-foot">
+              <span class="phins-product-price">Priced in ${escapeHtml(purchaseTitle)}</span>
+              <div class="phins-product-actions">
+                <button type="button" class="phins-btn phins-btn-navy" onclick="showMedicalCategory('${marketplaceDomId(purchaseCategory)}')">Open ${escapeHtml(purchaseTitle)}</button>
+                <button type="button" class="phins-btn phins-btn-quiet" onclick="returnToHealthWallet()">Back to wallet</button>
+              </div>
+            </div>
+          </div>
+        </article>`;
+    }
+
+    function appendUniqueProducts(products, extras) {
+      const seen = new Set((products || []).map(item => item && item.id).filter(Boolean));
+      (extras || []).forEach(item => {
+        if (!item || !item.id || seen.has(item.id)) return;
+        seen.add(item.id);
+        products.push(item);
+      });
+      return products;
+    }
+
     async function showMedicalCategory(category) {
       const title = categoryTitles[category] || 'Products';
+      currentMarketplaceCategory = category;
       setMarketplaceHeading(title, 'Loading approved supplier offers...');
-      document.getElementById('medical-marketplace').style.display = 'block';
+      const market = document.getElementById('medical-marketplace');
+      revealCustomerSection(market);
       
       const grid = document.getElementById('product-grid');
       grid.innerHTML = '<div class="phins-market-empty">Loading offerings from approved suppliers...</div>';
@@ -7133,13 +7330,17 @@
           }));
         }
         
+        const demoItems = (medicalProducts[category] || []).map(product => ({
+          ...product,
+          isSupplierOffer: false,
+          browse_bucket: category
+        }));
         if (products.length === 0) {
-          products = (medicalProducts[category] || []).map(product => ({
-            ...product,
-            isSupplierOffer: false,
-            browse_bucket: category
-          }));
+          products = demoItems;
           usingDemoCatalog = products.length > 0;
+        } else if (category !== 'residential') {
+          appendUniqueProducts(products, demoItems);
+          usingDemoCatalog = demoItems.length > 0;
         }
 
         if (category === 'residential') {
@@ -7176,22 +7377,36 @@
           });
           usingDemoCatalog = false;
         }
+
+        if (category !== 'residential') {
+          appendUniqueProducts(products, await linkedCatalogProducts(category));
+        }
+
+        const providers = unpricedServicePurchase[category]
+          ? await fetchMarketplaceProviders(category)
+          : [];
         
-        if (products.length === 0) {
+        if (products.length === 0 && providers.length === 0) {
           setMarketplaceHeading(title, 'Approved suppliers have not listed this category yet.');
-          grid.innerHTML = '<div class="phins-market-empty"><h3>No offerings available yet</h3><p>Approved suppliers will add products and services in this category.</p></div>';
+          grid.innerHTML = marketplaceEmptyState('No offerings available yet', 'Approved suppliers will add products and services in this category. Search offers, or return to the wallet.');
+          market.scrollIntoView({ behavior: 'smooth' });
           return;
         }
 
         const hasResidentialCatalog = products.some(item => item && (item.catalog_locked || item.price_source === 'residential_catalog'));
         const hasSupplierOffers = products.some(item => item && item.isSupplierOffer);
+        const hasLinkedCatalog = products.some(item => item && item.catalog_source === 'marketplace_products');
         let marketplaceSubtitle;
         if (hasResidentialCatalog && hasSupplierOffers) {
           marketplaceSubtitle = 'Platform bundles post the discounted card price to the health-wallet ledger. Approved supplier offers settle through the supply-chain order at the offer price.';
         } else if (hasResidentialCatalog) {
           marketplaceSubtitle = 'Platform care bundles. Six months or longer is 20% off automatically. Annual accommodation is 30% off. The card price is the amount posted to the health-wallet ledger.';
-        } else if (usingDemoCatalog) {
-          marketplaceSubtitle = 'Demo catalog. These illustrations are placeholders. A purchase is a wallet catalog charge, not a supplier order, until an approved supplier lists the item.';
+        } else if (hasSupplierOffers && (usingDemoCatalog || hasLinkedCatalog)) {
+          marketplaceSubtitle = 'Supplier offers stay at the offer price. Catalog items stay on the wallet purchase. Every listed price is the price already published for that item.';
+        } else if (usingDemoCatalog || hasLinkedCatalog) {
+          marketplaceSubtitle = 'Demo catalog and published marketplace prices. These illustrations are placeholders where a supplier has not listed the item. A purchase is a wallet catalog charge, not a supplier order, until an approved supplier lists the item.';
+        } else if (providers.length && products.length === 0) {
+          marketplaceSubtitle = 'These providers have no catalog price. Continue in the priced visit category to buy.';
         } else {
           marketplaceSubtitle = 'Approved supplier offers. Checkout uses the offer price on the supply-chain order and ledger. Supplier photos and videos replace the illustration when the listing includes them.';
         }
@@ -7202,17 +7417,261 @@
           marketplaceOfferIndex[product.id] = product;
         });
         
-        grid.innerHTML = products.map(product => renderMarketplaceCard(product, category)).join('');
-        document.getElementById('medical-marketplace').scrollIntoView({ behavior: 'smooth' });
+        grid.innerHTML = products.map(product => renderMarketplaceCard(product, category)).join('')
+          + providers.map(provider => renderProviderPathCard(provider, category)).join('');
+        market.scrollIntoView({ behavior: 'smooth' });
       } catch (err) {
         console.error('Error loading marketplace:', err);
         setMarketplaceHeading(title, 'The marketplace could not be loaded.');
-        grid.innerHTML = '<div class="phins-market-empty"><h3>Unable to load products</h3><p>Please try again later.</p></div>';
+        grid.innerHTML = marketplaceEmptyState('Unable to load products', 'Please try again later.');
       }
     }
     
+    function returnToHealthWallet() {
+      const market = document.getElementById('medical-marketplace');
+      if (market) market.style.display = 'none';
+      const search = document.getElementById('health-wallet-ai-search');
+      if (search) search.style.display = 'none';
+      const delivery = document.getElementById('purchase-delivery');
+      if (delivery) delivery.style.display = 'none';
+      const wallet = document.getElementById('health-wallet');
+      if (!wallet) return;
+      revealCustomerSection(wallet);
+      wallet.scrollIntoView({ behavior: 'smooth' });
+    }
+
     function closeMarketplace() {
-      document.getElementById('medical-marketplace').style.display = 'none';
+      returnToHealthWallet();
+    }
+
+    const DELIVERY_LINK_KEY = 'phins.purchase.delivery.v1';
+
+    function readDeliveryLinks() {
+      try {
+        const parsed = JSON.parse(sessionStorage.getItem(DELIVERY_LINK_KEY) || '{}');
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function writeDeliveryLink(orderKey, requestId) {
+      if (!orderKey || !requestId) return;
+      const links = readDeliveryLinks();
+      links[orderKey] = requestId;
+      try { sessionStorage.setItem(DELIVERY_LINK_KEY, JSON.stringify(links)); } catch (_) { /* session only */ }
+    }
+
+    const purchaseById = {};
+
+    function rememberPurchase(purchase) {
+      if (!purchase || !purchase.id) return purchase;
+      purchaseById[purchase.id] = Object.assign({}, purchaseById[purchase.id] || {}, purchase);
+      const list = Array.isArray(medicalPurchases) ? medicalPurchases.slice() : [];
+      const index = list.findIndex(item => item && item.id === purchase.id);
+      if (index >= 0) list[index] = purchaseById[purchase.id];
+      else list.push(purchaseById[purchase.id]);
+      medicalPurchases = list;
+      return purchaseById[purchase.id];
+    }
+
+    function findRememberedPurchase(purchaseId) {
+      return purchaseById[purchaseId] || (medicalPurchases || []).find(item => item && item.id === purchaseId) || null;
+    }
+
+    function purchaseOrderKey(purchase) {
+      return String((purchase && (purchase.order_id || purchase.id)) || '');
+    }
+
+    function closePurchaseDelivery() {
+      const section = document.getElementById('purchase-delivery');
+      if (section) section.style.display = 'none';
+      returnToHealthWallet();
+    }
+
+    function deliveryLocationFields(prefix, seed) {
+      const source = seed || {};
+      return `
+        <label>${escapeHtml(prefix === 'pickup' ? 'Pickup address' : 'Delivery address')}
+          <input id="delivery-${prefix}-address" type="text" value="${escapeHtml(source.address || '')}" autocomplete="street-address">
+        </label>
+        <label>City
+          <input id="delivery-${prefix}-city" type="text" value="${escapeHtml(source.city || '')}" autocomplete="address-level2">
+        </label>
+        <label>Country
+          <input id="delivery-${prefix}-country" type="text" value="${escapeHtml(source.country || '')}" autocomplete="country-name">
+        </label>`;
+    }
+
+    function readDeliveryLocation(prefix) {
+      const address = (document.getElementById(`delivery-${prefix}-address`)?.value || '').trim();
+      const city = (document.getElementById(`delivery-${prefix}-city`)?.value || '').trim();
+      const country = (document.getElementById(`delivery-${prefix}-country`)?.value || '').trim();
+      if (!address || !city || !country) return null;
+      return { address, city, country, contact: {} };
+    }
+
+    function renderDeliveryStatus(track, bids, purchase) {
+      const request = (bids && bids.request_status) || (track && track.current_status) || '';
+      const events = (track && track.tracking_events) || [];
+      const bidRows = (bids && bids.bids) || [];
+      const windowOpen = request === 'bidding_open';
+      const canAccept = request === 'bidding_open' || request === 'bidding_closed';
+      const eventHtml = events.map(event => `<li>${escapeHtml(event.status || '')}${event.notes ? ` — ${escapeHtml(event.notes)}` : ''}</li>`).join('');
+      const bidHtml = bidRows.length ? bidRows.map(bid => {
+        const safeBid = marketplaceDomId(bid.bid_id);
+        const pending = String(bid.status || '') === 'pending' && canAccept;
+        return `<article class="phins-product-card product-card"><div class="phins-product-body"><h3>${escapeHtml(bid.supplier_name || bid.supplier_id || 'Supplier')}</h3><p>Bid ${escapeHtml(String(bid.bid_price))} ${escapeHtml(bid.currency || 'USD')} · ${escapeHtml(bid.status || '')}</p><div class="phins-product-meta">Pickup ${escapeHtml(bid.estimated_pickup_time || '')}<br>Delivery ${escapeHtml(bid.estimated_delivery_time || '')}</div>${pending ? `<div class="phins-product-actions"><button type="button" class="phins-btn phins-btn-navy" onclick="acceptPurchaseDeliveryBid('${marketplaceDomId(bids.request_id)}', '${safeBid}')">Accept this bid</button></div>` : ''}</div></article>`;
+      }).join('') : '<div class="phins-market-empty">No bids yet. The bidding window stays open until it elapses.</div>';
+      return `
+        <div class="phins-market-empty" style="text-align:left;">
+          <h3>${escapeHtml((purchase && purchase.product_name) || 'Delivery')}</h3>
+          <p>Status: ${escapeHtml(request || 'unknown')}</p>
+          <p>Bidding window ends: ${escapeHtml((bids && bids.bidding_ends_at) || '—')}${windowOpen ? ' · open' : ''}</p>
+          ${bids && bids.bidding_closed_at ? `<p>Window closed: ${escapeHtml(bids.bidding_closed_at)}${bids.closed_reason ? ` · ${escapeHtml(String(bids.closed_reason).replace(/_/g, ' '))}` : ''}</p>` : ''}
+          <ul>${eventHtml || '<li>Tracking will appear here.</li>'}</ul>
+          <div class="phins-product-actions">
+            <button type="button" class="phins-btn phins-btn-quiet" onclick="refreshPurchaseDelivery('${marketplaceDomId(purchase && purchase.id)}')">Refresh status</button>
+            <button type="button" class="phins-btn phins-btn-quiet" onclick="returnToHealthWallet()">Back to wallet</button>
+          </div>
+        </div>
+        ${bidHtml}`;
+    }
+
+    async function refreshPurchaseDelivery(purchaseId) {
+      const purchase = findRememberedPurchase(purchaseId);
+      if (!purchase) return;
+      const requestId = readDeliveryLinks()[purchaseOrderKey(purchase)];
+      const body = document.getElementById('purchase-delivery-body');
+      if (!requestId || !body) return;
+      const headers = bookAuthHeaders();
+      const [trackResponse, bidsResponse] = await Promise.all([
+        fetch(`/api/delivery/track/${encodeURIComponent(requestId)}`, { headers }),
+        fetch(`/api/delivery/bids/${encodeURIComponent(requestId)}`, { headers })
+      ]);
+      const track = await trackResponse.json();
+      const bids = await bidsResponse.json();
+      if (!trackResponse.ok || track.error) {
+        body.innerHTML = marketplaceEmptyState('Delivery status unavailable', track.error || 'The delivery request could not be read.');
+        return;
+      }
+      body.innerHTML = renderDeliveryStatus(track, bidsResponse.ok ? bids : { request_id: requestId, bids: [], error: bids.error }, purchase);
+    }
+
+    function openPurchaseDelivery(purchaseId) {
+      const purchase = findRememberedPurchase(purchaseId);
+      const section = document.getElementById('purchase-delivery');
+      const body = document.getElementById('purchase-delivery-body');
+      const lead = document.getElementById('purchase-delivery-lead');
+      if (!purchase || !section || !body) {
+        showNotification('Open a purchase before arranging delivery', 'error');
+        return;
+      }
+      revealCustomerSection(section);
+      if (lead) lead.textContent = `${purchase.product_name || 'Purchase'} · status, bidding window, and handoff use the existing delivery bidding service.`;
+      const requestId = readDeliveryLinks()[purchaseOrderKey(purchase)];
+      if (requestId) {
+        body.innerHTML = '<div class="phins-market-empty">Loading delivery status...</div>';
+        section.scrollIntoView({ behavior: 'smooth' });
+        refreshPurchaseDelivery(purchase.id);
+        return;
+      }
+      const pickupSeed = {
+        address: purchase.provider_name || purchase.provider || '',
+        city: purchase.supplier_city || '',
+        country: purchase.supplier_country || ''
+      };
+      body.innerHTML = `
+        <form class="phins-market-empty" style="text-align:left;" onsubmit="submitPurchaseDelivery(event, '${marketplaceDomId(purchase.id)}')">
+          <h3>Arrange delivery</h3>
+          <p>This opens a bidding window on the purchase you just made. The bid you accept is the delivery handoff. The product price is unchanged.</p>
+          <div class="phins-search-filters">${deliveryLocationFields('pickup', pickupSeed)}</div>
+          <div class="phins-search-filters">${deliveryLocationFields('delivery', {})}</div>
+          <label>Priority
+            <select id="delivery-priority">
+              <option value="standard">Standard</option>
+              <option value="express">Express</option>
+              <option value="same_day">Same day</option>
+              <option value="urgent">Urgent</option>
+              <option value="medical_critical">Medical critical</option>
+            </select>
+          </label>
+          <div class="phins-product-actions" style="margin-top:12px;">
+            <button type="submit" class="phins-btn phins-btn-navy">Open bidding window</button>
+            <button type="button" class="phins-btn phins-btn-quiet" onclick="returnToHealthWallet()">Back to wallet</button>
+          </div>
+        </form>`;
+      section.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    async function submitPurchaseDelivery(event, purchaseId) {
+      event.preventDefault();
+      const purchase = findRememberedPurchase(purchaseId);
+      if (!purchase) return;
+      const pickup = readDeliveryLocation('pickup');
+      const delivery = readDeliveryLocation('delivery');
+      if (!pickup || !delivery) {
+        showNotification('Enter a pickup and a delivery address, city, and country', 'error');
+        return;
+      }
+      const orderId = purchaseOrderKey(purchase);
+      const priority = document.getElementById('delivery-priority')?.value || 'standard';
+      try {
+        const response = await fetch('/api/delivery/request', {
+          method: 'POST',
+          headers: bookAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            customer_id: customerId || sessionStorage.getItem('customer_id') || '',
+            order_id: orderId,
+            pickup_location: pickup,
+            delivery_location: delivery,
+            package_info: {
+              description: purchase.product_name || purchase.product_id || 'Health wallet purchase',
+              medical_item: true
+            },
+            priority: priority
+          })
+        });
+        const data = await response.json();
+        if (!response.ok || data.error) throw new Error(data.error || 'Delivery request was not opened');
+        writeDeliveryLink(orderId, data.request_id);
+        showNotification(`Bidding window open until ${data.bidding_ends_at || 'the delivery deadline'}`, 'success');
+        refreshPurchaseDelivery(purchase.id);
+      } catch (err) {
+        showNotification(err.message || 'Delivery request failed', 'error');
+      }
+    }
+
+    async function acceptPurchaseDeliveryBid(requestId, bidId) {
+      const bidsResponse = await fetch(`/api/delivery/bids/${encodeURIComponent(requestId)}`, { headers: bookAuthHeaders() });
+      const bids = await bidsResponse.json();
+      const bid = (bids.bids || []).find(item => item && item.bid_id === bidId);
+      const price = bid ? Number(bid.bid_price) : null;
+      const name = (bid && bid.supplier_name) || 'this supplier';
+      const confirmed = window.confirm(price == null
+        ? `Accept the bid from ${name}? Accepting posts that bid to your health wallet.`
+        : `Accept ${name} for $${price.toFixed(2)}? Accepting posts that bid to your health wallet.`);
+      if (!confirmed) return;
+      try {
+        const response = await fetch('/api/delivery/accept-bid', {
+          method: 'POST',
+          headers: bookAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ request_id: requestId, bid_id: bidId })
+        });
+        const data = await response.json();
+        if (!response.ok || data.error) throw new Error(data.error || 'Bid was not accepted');
+        if (typeof data.new_wallet_balance === 'number') {
+          walletBalance = data.new_wallet_balance;
+          updateWalletDisplay();
+        }
+        showNotification(`Handoff accepted. Status: ${data.status || 'bid_selected'}`, 'success');
+        const purchase = Object.keys(purchaseById).map(id => purchaseById[id]).find(item => readDeliveryLinks()[purchaseOrderKey(item)] === requestId)
+          || (medicalPurchases || []).find(item => readDeliveryLinks()[purchaseOrderKey(item)] === requestId);
+        if (purchase) refreshPurchaseDelivery(purchase.id);
+        loadWalletBalance();
+      } catch (err) {
+        showNotification(err.message || 'Handoff failed', 'error');
+      }
     }
     
     async function ensureResidentialCatalog() {
@@ -7656,6 +8115,10 @@
           
           // Confirmation uses the ledger amount, which is the card price for catalog bundles.
           showNotification(` Purchased ${shownName} for $${shownAmount.toFixed(2)}!\n NFT: ${purchaseResult.nft_token_id?.substring(0, 12)}...`, 'success');
+          if (purchaseResult.purchase) {
+            rememberPurchase(purchaseResult.purchase);
+            openPurchaseDelivery(purchaseResult.purchase.id);
+          }
           
           // Refresh data
           loadPurchaseHistory();
@@ -8368,6 +8831,7 @@
     function renderPurchaseHistory(purchases) {
       const tbody = document.getElementById('purchase-history-table');
       medicalPurchases = purchases || []; // Store for validation
+      medicalPurchases.forEach(rememberPurchase);
       
       if (!purchases || purchases.length === 0) {
         tbody.innerHTML = `
@@ -8438,10 +8902,10 @@
             </td>
             <td>
               <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button type="button" onclick="openPurchaseDelivery('${marketplaceDomId(p.id)}')" class="btn" style="background:#0d47a1;color:white;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">Delivery</button>
                 ${qrButton}
                 ${canCancel ? `<button onclick="cancelMarketplacePurchase('${p.id}')" class="btn" style="background:#ef5350;color:white;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">Cancel</button>` : ''}
                 ${canRefund ? `<button onclick="refundMarketplacePurchase('${p.id}')" class="btn" style="background:#43a047;color:white;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">Refund</button>` : ''}
-                ${!canCancel && !canRefund ? '<span style="font-size:0.8rem;color:#78909c;">No actions</span>' : ''}
               </div>
             </td>
           </tr>
