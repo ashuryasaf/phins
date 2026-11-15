@@ -1035,17 +1035,21 @@ def _plain(value: Any) -> Any:
 
 
 def _project_review(review: Mapping[str, Any], sections: Sequence[str],
-                    integrity: Mapping[str, Any]) -> Dict[str, Any]:
+                    integrity: Mapping[str, Any], view: str = "both") -> Dict[str, Any]:
     selected = set(sections)
+    # ``prior`` is the one section on both panes. A quick or full view keeps
+    # it on that pane, so the shared name does not open the other one.
+    quick_selected = selected - {"prior"} if view == "full" else selected
+    full_selected = selected - {"prior"} if view == "quick" else selected
     quick_src = review.get("quick") if isinstance(review.get("quick"), Mapping) else {}
     full_src = review.get("full") if isinstance(review.get("full"), Mapping) else {}
     quick: Dict[str, Any] = {}
     for section, key in _QUICK_FIELDS.items():
-        if section in selected and key in quick_src:
+        if section in quick_selected and key in quick_src:
             quick[key] = _plain(quick_src.get(key))
     full: Dict[str, Any] = {}
     for section, key in _FULL_FIELDS.items():
-        if section in selected and key in full_src:
+        if section in full_selected and key in full_src:
             full[key] = _plain(full_src.get(key))
     if full:
         full["integrity"] = {
@@ -1324,7 +1328,7 @@ def present_process_review(review: Mapping[str, Any], *, view: str = "both",
                 ask=ask, narrate=False,
             )
         return shown
-    shown.update(_project_review(review, selected, integrity))
+    shown.update(_project_review(review, selected, integrity, view_name))
     if "ai" in selected:
         shown["ai_report"] = explain_sealed_review(
             review, ask=ask, narrate=narrate, provider=provider,

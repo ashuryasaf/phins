@@ -899,6 +899,60 @@ def test_ai_report_drops_invented_figures_and_invalid_schema():
     assert review["quick"]["personal"]["name"] == name_before
 
 
+def test_prior_section_stays_on_the_requested_view():
+    from services.chat_answer_revisions import (
+        FULL_REVIEW_SECTIONS,
+        QUICK_REVIEW_SECTIONS,
+        build_review,
+        present_process_review,
+    )
+
+    review = build_review(
+        kind="policy_application",
+        application_id="CHAPP-PRIOR-VIEW",
+        status="submitted",
+        subject={
+            "name": "Nora Quill",
+            "email": "nora.prior.view@example.com",
+            "health": {},
+            "billing": {"claimed_amount": 2500},
+            "coverage": {},
+        },
+        revisions=[],
+        books={"applications": {}, "policies": {}, "claims": {}, "customers": {}},
+    )
+    quick_sections = list(QUICK_REVIEW_SECTIONS) + ["ai"]
+    full_sections = list(FULL_REVIEW_SECTIONS) + ["ai"]
+
+    quick = present_process_review(
+        review, view="quick", sections=quick_sections, narrate=False,
+    )
+    assert "full" not in quick
+    assert quick["quick"]["prior"]["count"] == 0
+    assert "personal" in quick["quick"]
+
+    full = present_process_review(
+        review, view="full", sections=full_sections, narrate=False,
+    )
+    assert "quick" not in full
+    assert full["full"]["prior"] == []
+    assert "contradictions" in full["full"]
+    assert "integrity" in full["full"]
+
+    both = present_process_review(
+        review, view="both", sections=quick_sections + full_sections, narrate=False,
+    )
+    assert both["quick"]["prior"]["count"] == 0
+    assert both["full"]["prior"] == []
+
+    mixed = present_process_review(
+        review, view="full", sections=["billing", "prior"], narrate=False,
+    )
+    assert mixed["quick"]["billing"]["claimed_amount"] == 2500
+    assert "prior" not in mixed["quick"]
+    assert mixed["full"]["prior"] == []
+
+
 def test_database_seal_is_read_without_writing_memory():
     from services.chat_answer_revisions import append_revision, build_seal, serve_process_review
 
