@@ -308,9 +308,23 @@
   var langLink = document.getElementById('deck-lang');
   if (langLink) {
     var other = deckLang === 'he' ? '/investor-deck.html' : '/investor-deck.he.html';
+    var otherLang = deckLang === 'he' ? 'en' : 'he';
     langLink.textContent = deckLang === 'he' ? 'English' : 'עברית';
-    langLink.setAttribute('href', other + location.search + location.hash);
-    langLink.setAttribute('lang', deckLang === 'he' ? 'en' : 'he');
+    langLink.setAttribute('lang', otherLang);
+    if (framed || location.protocol === 'about:') {
+      langLink.setAttribute('href', '#');
+      langLink.addEventListener('click', function (event) {
+        event.preventDefault();
+        try {
+          window.parent.postMessage(
+            { type: 'phins-deck-lang', lang: otherLang },
+            window.location.origin
+          );
+        } catch (e) { /* the parent frame decides whether to switch */ }
+      });
+    } else {
+      langLink.setAttribute('href', other + location.search + location.hash);
+    }
   }
   if (params.get('embed') === '1' || framed.indexOf('embed=1') !== -1) document.body.classList.add('is-embed');
   var wantEdit = params.get('edit') === '1';

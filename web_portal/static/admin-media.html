@@ -2620,6 +2620,15 @@ Notes:
             setInvestorDeckChoice(investorDeckChoice);
         }
 
+        window.addEventListener('message', function (event) {
+            if (event.origin !== window.location.origin) return;
+            var data = event.data;
+            if (!data || data.type !== 'phins-deck-lang') return;
+            var frame = document.getElementById('investor-deck-frame');
+            if (!frame || event.source !== frame.contentWindow) return;
+            setInvestorDeckLanguage(data.lang);
+        });
+
         function switchMainTab(tabName, options = {}) {
             const updateHash = options.updateHash !== false;
             if (!VALID_MAIN_TABS.includes(tabName)) tabName = 'media';
@@ -2678,10 +2687,19 @@ Notes:
             if (!frame) return;
             var desired = frame.getAttribute('data-src');
             if (!desired) return;
+            if (
+                frame.getAttribute('data-loaded') === desired &&
+                frame.srcdoc &&
+                frame.srcdoc.indexOf('id="deck-count"') !== -1
+            ) {
+                return;
+            }
+            if (frame.getAttribute('data-loading') === desired) return;
             var headers = {};
             var auth = getToken();
             if (auth) headers.Authorization = 'Bearer ' + auth;
             frame.removeAttribute('src');
+            frame.setAttribute('data-loading', desired);
             fetch(desired, { headers: headers, credentials: 'same-origin', cache: 'no-store' })
                 .then(function (response) {
                     return response.text().then(function (text) {
@@ -2689,13 +2707,20 @@ Notes:
                     });
                 })
                 .then(function (result) {
+                    frame.removeAttribute('data-loading');
+                    if (frame.getAttribute('data-src') !== desired) return;
                     if (!result.ok || result.text.indexOf('id="deck-count"') === -1) {
+                        frame.removeAttribute('data-loaded');
                         frame.srcdoc = investorDeckFrameMessage('The investor deck could not be opened. Sign in as staff and open this tab again.');
                         return;
                     }
+                    frame.setAttribute('data-loaded', desired);
                     frame.srcdoc = result.text;
                 })
                 .catch(function () {
+                    frame.removeAttribute('data-loading');
+                    frame.removeAttribute('data-loaded');
+                    if (frame.getAttribute('data-src') !== desired) return;
                     frame.srcdoc = investorDeckFrameMessage('The investor deck could not be opened. Sign in as staff and open this tab again.');
                 });
         }

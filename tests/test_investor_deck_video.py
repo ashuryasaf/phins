@@ -476,8 +476,13 @@ def test_send_stores_one_scene_and_leaves_the_plan_and_placements_alone():
         asset = portal.MEDIA_ASSETS[scene["last_asset_id"]]
         assert not str(asset.get("url") or "").strip()
         assert str(asset.get("data") or "").startswith("data:video/mp4")
-        assert scene["playback_url"].startswith(f"/media-files/{scene['last_asset_id']}/")
+        assert scene["playback_url"] == f"/deck-media/{scene['last_asset_id']}"
         assert "data:video" not in scene["playback_url"]
+        sealed = copy.deepcopy(asset)
+        with urlopen(base + scene["playback_url"]) as played:
+            assert played.status == 200
+            assert played.read()
+        assert portal.MEDIA_ASSETS[scene["last_asset_id"]] == sealed
         assert scene["figures_current"] is True
         assert scene["presenter_id"]
         assert again["stream_count"] == 1
@@ -725,6 +730,9 @@ def test_presentation_page_is_wired_and_does_not_bake_figures():
     assert "videoSrc" in page
     assert "loadInvestorDeckFrame" in media
     assert "srcdoc" in media
+    assert "data-loaded" in media
+    assert "phins-deck-lang" in page
+    assert "phins-deck-lang" in media
     assert 'id="deck-scenes"' in page and "data-scene-show" in page
     assert "figures stay on the slide" not in page.lower()
 
@@ -778,8 +786,14 @@ def test_presentation_streams_a_data_url_and_a_staff_cookie_without_rewriting_th
         assert status == 200, saved
         media = saved["presentation"]["slides"][1]["media"]
         assert media["intact"] is True
-        assert media["playback_url"].startswith(f"/media-files/{asset_id}/")
+        assert media["playback_url"] == f"/deck-media/{asset_id}"
         assert inline not in json.dumps(saved["presentation"])
+        try:
+            urlopen(base + media["playback_url"])
+            raise AssertionError("a checksum that does not match the bytes must not stream")
+        except HTTPError as exc:
+            assert exc.code == 409
+        assert portal.MEDIA_ASSETS[asset_id] == library_before
         assert "charts" not in saved["presentation"]
         assert any(str(slide.get("chart_svg") or "").startswith("<svg") for slide in saved["presentation"]["slides"])
         assert portal.MEDIA_ASSETS[asset_id] == library_before
@@ -789,7 +803,7 @@ def test_presentation_streams_a_data_url_and_a_staff_cookie_without_rewriting_th
         status, watched = _json_request(path, cookie=cookie)
         assert status == 200, watched
         assert watched["can_assign"] is False
-        assert watched["slides"][1]["media"]["playback_url"].startswith(f"/media-files/{asset_id}/")
+        assert watched["slides"][1]["media"]["playback_url"] == f"/deck-media/{asset_id}"
         assert inline not in json.dumps(watched)
         assert portal.MEDIA_ASSETS[asset_id] == library_before
         assert portal.DESIGN_SETTINGS["investor_deck_slide_media"]["2"]["asset_checksum"] == "d" * 64
@@ -810,7 +824,7 @@ def test_presentation_streams_a_data_url_and_a_staff_cookie_without_rewriting_th
         )
         status, missing = _json_request(path, cookie=missing_cookie)
         assert status == 200, missing
-        assert missing["can_assign"] is True
+        assert missing["can_assign"] is False
         status, missing_write = _json_request(
             path, method="POST", cookie=missing_cookie,
             payload={"slide_no": 2, "clear": True},

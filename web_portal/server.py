@@ -6657,32 +6657,94 @@ def _investor_deck_media_store() -> Dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
+def _deck_media_id(asset_id: str) -> str:
+    text = str(asset_id or '').strip()
+    if (
+        not text
+        or len(text) > 80
+        or '/' in text
+        or '\\' in text
+        or text.startswith('.')
+        or any(ch.isspace() for ch in text)
+        or not text.replace('-', '').replace('_', '').replace('.', '').isalnum()
+    ):
+        return ''
+    return text
+
+
+def read_deck_media_bytes(asset: Dict[str, Any]) -> Dict[str, Any]:
+    """Read one sealed video or image for ``/deck-media/`` without writing.
+
+    A cache file is read when its checksum matches. Otherwise a ``data:``
+    payload is decoded in memory. The asset dict, the cache, and the durable
+    copy are left as they were.
+    """
+    if not isinstance(asset, dict):
+        return {'error': 'missing'}
+    kind = str(asset.get('type') or '')
+    if kind not in ('video', 'image'):
+        return {'error': 'missing'}
+    expected = str(asset.get('checksum') or '').strip().lower()
+    if not expected:
+        return {'error': 'missing'}
+    mime = _library_media_mime(asset) or ('video/mp4' if kind == 'video' else 'image/png')
+    file_path = str(asset.get('file_path') or '').strip()
+    if file_path and os.path.isfile(file_path) and _media_path_within_storage(file_path):
+        try:
+            with open(file_path, 'rb') as handle:
+                payload = handle.read()
+        except OSError:
+            return {'error': 'missing'}
+        if compute_media_checksum(payload) != expected:
+            return {'error': 'checksum_mismatch'}
+        return {'payload': payload, 'mime': mime, 'error': ''}
+    data_url = str(asset.get('data') or '').strip()
+    if not data_url.startswith('data:'):
+        stored = str(asset.get('url') or '').strip()
+        data_url = stored if stored.startswith('data:') else ''
+    if not data_url.startswith('data:'):
+        return {'error': 'missing'}
+    try:
+        payload, decoded_mime = decode_media_data_url(data_url)
+    except Exception:
+        return {'error': 'missing'}
+    if not payload or compute_media_checksum(payload) != expected:
+        return {'error': 'checksum_mismatch' if payload else 'missing'}
+    if decoded_mime:
+        mime = decoded_mime
+    return {'payload': payload, 'mime': mime, 'error': ''}
+
+
 def _deck_playback_url(media: Dict[str, Any]) -> str:
     """A short playable address for a deck response.
 
-    A stored ``/…`` or http(s) address is returned as stored. A ``data:``
-    address is not copied into the JSON: the same library id is named on
-    ``/media-files/``, which streams the checksummed file. This function
-    does not read or write the library record.
+    A stored ``/…`` or http(s) address is returned as stored. A video or
+    image whose only address is a ``data:`` URL is named on
+    ``/deck-media/{id}``, which reads the bytes and does not write the
+    library. ``/media-files/`` is not invented here: that route stores the
+    bytes and clears ``data``.
     """
     if not isinstance(media, dict):
         return ''
     url = str(media.get('url') or '').strip()
+    if url.startswith('data:'):
+        url = ''
     if url.startswith('/') and not url.startswith('//') and '\\' not in url:
         return url
     if url.startswith('http://') or url.startswith('https://'):
         return url
-    asset_id = str(media.get('id') or '').strip()
-    if (
-        not asset_id
-        or '/' in asset_id
-        or '\\' in asset_id
-        or asset_id.startswith('.')
-        or any(ch.isspace() for ch in asset_id)
-    ):
+    if str(media.get('type') or '') not in ('video', 'image'):
         return ''
-    name = str(media.get('name') or media.get('filename') or asset_id)
-    return build_internal_media_file_url(asset_id, name)
+    asset_id = _deck_media_id(str(media.get('id') or ''))
+    if not asset_id:
+        return ''
+    data_url = str(media.get('data') or '').strip()
+    file_path = str(media.get('file_path') or '').strip()
+    has_inline = data_url.startswith('data:')
+    has_file = bool(file_path and os.path.isfile(file_path) and _media_path_within_storage(file_path))
+    if not has_inline and not has_file:
+        return ''
+    return f'/deck-media/{asset_id}'
 
 
 def _investor_deck_asset_brief(media: Dict[str, Any]) -> Dict[str, Any]:
@@ -23737,6 +23799,45 @@ For claims or questions, please contact:
                 self.wfile.write(chunk)
                 remaining -= len(chunk)
 
+    def _serve_media_bytes(self, payload: bytes, content_type: str = '') -> None:
+        """Serve an in-memory video with the same range headers as a file.
+
+        The bytes are the caller's copy. This does not touch the library.
+        """
+        from security.headers import static_asset_security_headers
+
+        body = bytes(payload or b'')
+        size = len(body)
+        explicit = str(content_type or '').split(';', 1)[0].strip().lower()
+        content_type = explicit if explicit.startswith('video/') else 'video/mp4'
+        start = 0
+        end = size - 1 if size else 0
+        status = 200
+        range_hdr = (self.headers.get('Range') or self.headers.get('range') or '').strip()
+        if range_hdr.startswith('bytes=') and size > 0:
+            spec = range_hdr.split('=', 1)[1].split(',', 1)[0].strip()
+            first, _, last = spec.partition('-')
+            try:
+                if first:
+                    start = max(0, min(size - 1, int(first)))
+                if last:
+                    end = max(start, min(size - 1, int(last)))
+                status = 206
+            except ValueError:
+                start, end, status = 0, size - 1, 200
+        length = (end - start + 1) if size else 0
+        self.send_response(status)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Accept-Ranges', 'bytes')
+        self.send_header('Content-Length', str(length))
+        if status == 206:
+            self.send_header('Content-Range', f'bytes {start}-{end}/{size}')
+        for name, value in static_asset_security_headers():
+            self.send_header(name, value)
+        self.end_headers()
+        if length > 0:
+            self.wfile.write(body[start:end + 1])
+
     def do_HEAD(self):
         """Handle HEAD requests.
         
@@ -24997,7 +25098,7 @@ For claims or questions, please contact:
                     return
                 try:
                     payload = investor_deck_presentation_view(
-                        can_assign=require_role(reader, ['admin', 'media']),
+                        can_assign=bool(session and require_role(session, ['admin', 'media'])),
                         lang=deck_lang,
                     )
                 except Exception as exc:
@@ -40663,6 +40764,31 @@ For claims or questions, please contact:
             
             self._set_json_headers()
             self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            return
+
+        if path.startswith('/deck-media/'):
+            asset_id = _deck_media_id(path[len('/deck-media/'):])
+            asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
+            served = read_deck_media_bytes(asset) if isinstance(asset, dict) else {'error': 'missing'}
+            if served.get('error') == 'checksum_mismatch':
+                self.send_error(409, 'Media checksum mismatch')
+                return
+            payload = served.get('payload') if not served.get('error') else b''
+            if not payload:
+                self.send_error(404, 'Not found')
+                return
+            mime = str(served.get('mime') or '')
+            if mime.startswith('video/'):
+                self._serve_media_bytes(payload, mime)
+            else:
+                from security.headers import static_asset_security_headers
+                self.send_response(200)
+                self.send_header('Content-Type', mime or 'application/octet-stream')
+                self.send_header('Content-Length', str(len(payload)))
+                for name, value in static_asset_security_headers():
+                    self.send_header(name, value)
+                self.end_headers()
+                self.wfile.write(payload)
             return
 
         if path.startswith('/media-files/'):
