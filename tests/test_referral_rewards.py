@@ -3834,6 +3834,26 @@ def test_one_supplier_login_reconciles_sales_and_the_supplier_desk(monkeypatch):
         "status": "accrued",
         "period": "initial",
         "created_at": now,
+        "invitation_code": "AGI-DESK-1",
+    }
+    agents.COMMISSIONS["COMM-DESK-REF"] = {
+        "id": "COMM-DESK-REF",
+        "agent_id": agent_id,
+        "amount": 40.0,
+        "status": "accrued",
+        "period": "initial",
+        "created_at": now,
+        "invitation_code": "REF-NOT-COMMISSION",
+        "code": "REF-NOT-COMMISSION",
+    }
+    agents.COMMISSIONS["COMM-DESK-REF-SOURCE"] = {
+        "id": "COMM-DESK-REF-SOURCE",
+        "agent_id": agent_id,
+        "amount": 25.0,
+        "status": "payable",
+        "period": "initial",
+        "created_at": now,
+        "source_invitation_code": "REF-SOURCE-ONLY",
     }
     supplier = portal.supply_chain_service.suppliers[supplier_id]
     supplier["national_id"] = "123456782"
@@ -3892,8 +3912,23 @@ def test_one_supplier_login_reconciles_sales_and_the_supplier_desk(monkeypatch):
         assert view["sales"]["referral"]["available"] == pytest.approx(0)
         assert view["sales"]["referral"]["rows"][0]["settlement_id"] == f"CACSET-{referee}"
         assert view["sales"]["commission"]["rail"] == "commission"
-        assert view["sales"]["commission"]["accrued_total"] == pytest.approx(summary["accrued_total"])
+        listed = view["sales"]["commission"]["rows"]
+        assert [row["commission_id"] for row in listed] == ["COMM-DESK-1"]
+        assert view["sales"]["commission"]["accrued_total"] == pytest.approx(sum(
+            row["amount"] for row in listed if row["status"] == "accrued"
+        ))
+        assert view["sales"]["commission"]["payable_total"] == pytest.approx(sum(
+            row["amount"] for row in listed if row["status"] == "payable"
+        ))
+        assert view["sales"]["commission"]["paid_total"] == pytest.approx(sum(
+            row["amount"] for row in listed if row["status"] == "paid"
+        ))
+        assert view["sales"]["commission"]["lifetime_total"] == pytest.approx(sum(
+            row["amount"] for row in listed
+        ))
         assert view["sales"]["commission"]["accrued_total"] == pytest.approx(15.0)
+        assert summary["accrued_total"] == pytest.approx(55.0)
+        assert view["sales"]["referral"]["blocked"] != pytest.approx(summary["accrued_total"])
         assert view["desk"]["products"] == 1
         assert view["desk"]["services"] == 1
         assert view["desk"]["delivery"]["orders"] == 1
@@ -3933,13 +3968,63 @@ def test_one_supplier_login_reconciles_sales_and_the_supplier_desk(monkeypatch):
     assert "/api/supplier/desk" in login_html
     assert 'id="supplier-desk-summary"' in agent_html
     assert surface_decision("supplier", "/supplier-portal.html")["allowed"] is True
-    assert surface_decision("agent", "/supplier-portal.html")["allowed"] is True
-    assert surface_decision("customer", "/supplier-login.html")["allowed"] is True
+    assert surface_decision("agent", "/supplier-portal.html")["allowed"] is False
+    assert surface_decision("customer", "/supplier-login.html")["allowed"] is False
     assert surface_decision("admin", "/supplier-portal.html")["allowed"] is False
+    owner_page, status = _get("/api/access/surface?path=/supplier-portal.html", token=agent_session["token"])
+    assert status == 200, owner_page
+    assert owner_page["allowed"] is True
+    supplier_page, status = _get("/api/access/surface?path=/supplier-login.html", token=logged["token"])
+    assert status == 200, supplier_page
+    assert supplier_page["allowed"] is True
     portal.SUPPLIER_ORDERS.pop("ORD-DESK-1", None)
     portal.SUPPLIER_OFFERS.pop("OFF-DESK-SVC", None)
     portal.SUPPLIER_OFFERS.pop("OFF-DESK-PRD", None)
     agents.COMMISSIONS.pop("COMM-DESK-1", None)
+    agents.COMMISSIONS.pop("COMM-DESK-REF", None)
+    agents.COMMISSIONS.pop("COMM-DESK-REF-SOURCE", None)
+
+
+@pytest.mark.parametrize("closed_status", ["rejected", "suspended", "terminated", "closed"])
+def test_desk_read_leaves_a_closed_supplier_closed_on_the_live_book(closed_status, monkeypatch):
+    """The desk read uses the supply-chain supplier and does not reopen it."""
+    service = portal.supply_chain_service
+    email = f"live-closed-{closed_status}@example.com"
+    _register("Live Closed", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, filed
+    saved = _finish_inquiry(filed, name="Live Closed")
+    admin, _role = _login("admin", "admin123")
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": saved["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, reviewed
+    supplier_id = reviewed["supplier_id"]
+    live = service.suppliers[supplier_id]
+    assert live is portal.supplier_service.suppliers[supplier_id]
+    live["status"] = closed_status
+    live["portal_active"] = False
+    calls = {"approve": 0}
+
+    def _refuse_approve(*_args, **_kwargs):
+        calls["approve"] += 1
+        raise AssertionError("desk read must not approve a supplier")
+
+    monkeypatch.setattr(service, "approve_supplier", _refuse_approve)
+    switched, status = _post("/api/customer/role-switch", {"role": "agent"}, token=token)
+    assert status == 200, switched
+    desk, status = _get("/api/supplier/desk", token=switched["token"])
+    assert status == 200, desk
+    again = service.suppliers[supplier_id]
+    assert again["status"] == closed_status
+    assert again["portal_active"] is False
+    assert portal.supplier_service.suppliers[supplier_id]["status"] == closed_status
+    assert portal.supplier_service.suppliers[supplier_id]["portal_active"] is False
+    assert desk["desk"]["approval"]["status"] == closed_status
+    assert desk["desk"]["approval"]["portal_active"] is False
+    assert desk["desk"]["writes_open"] is False
+    assert calls["approve"] == 0
 
 
 def test_supplier_desk_stays_closed_without_a_supplier_role():
@@ -3951,6 +4036,11 @@ def test_supplier_desk_stays_closed_without_a_supplier_role():
     denied, status = _get("/api/supplier/desk", token=token)
     assert status == 403, denied
     assert denied.get("code") == "role_closed"
+    for page in ("/supplier-portal.html", "/supplier-login.html", "/supplier-dashboard.html"):
+        shell, status = _get("/api/access/surface?path=" + page, token=token)
+        assert status == 200, shell
+        assert shell["allowed"] is False
+        assert shell["redirect"] == "/dashboard.html"
 
 
 def test_two_inquiries_in_one_tab_follow_the_new_email_link():

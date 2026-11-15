@@ -24036,9 +24036,9 @@ For claims or questions, please contact:
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
                 return
-            from security.access_hierarchy import surface_decision
+            from security.access_hierarchy import surface_for_session
             requested = (qs.get('path', ['/'])[0] or '/')
-            decision = surface_decision(get_effective_role(session), requested)
+            decision = surface_for_session(session, get_effective_role(session), requested)
             self._set_json_headers(200)
             self.wfile.write(json.dumps({
                 'allowed': bool(decision.get('allowed')),

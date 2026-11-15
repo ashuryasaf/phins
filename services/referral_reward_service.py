@@ -4989,8 +4989,21 @@ def _sales_referral_locked(customer_id: str) -> Dict[str, Any]:
     }
 
 
+def _referral_commission_code(item: Dict[str, Any]) -> str:
+    """A REF- code belongs to the referral book, not the commission rail."""
+    for key in ("invitation_code", "code", "source_invitation_code"):
+        code = str(item.get(key) or "")
+        if code.startswith("REF-"):
+            return code
+    return ""
+
+
 def _sales_commission(agent_id: str) -> Dict[str, Any]:
-    """Commission totals copied from the agent book. Referral codes are not included."""
+    """Commission rows and totals from the agent book, without referral codes.
+
+    The totals are the filtered rows. ``income_summary`` still counts every
+    commission, including a REF- row, and those dollars are not added here.
+    """
     empty = {
         "rail": "commission",
         "agent_id": agent_id or None,
@@ -5002,30 +5015,63 @@ def _sales_commission(agent_id: str) -> Dict[str, Any]:
     }
     if not agent_id:
         return empty
-    from services.agent_ecosystem_service import income_summary, list_commissions
-    summary = income_summary(agent_id)
+    from services.agent_ecosystem_service import list_commissions
     rows = []
     for item in list_commissions(agent_id):
-        if not isinstance(item, dict):
-            continue
-        code = str(item.get("invitation_code") or item.get("code") or "")
-        if code.startswith("REF-"):
+        if not isinstance(item, dict) or _referral_commission_code(item):
             continue
         rows.append({
             "commission_id": item.get("id"),
-            "amount": item.get("amount"),
+            "amount": _money(item.get("amount")),
             "status": item.get("status"),
             "rail": "commission",
         })
+
+    def _total(status: Optional[str] = None) -> float:
+        return round(sum(
+            float(row.get("amount") or 0)
+            for row in rows
+            if status is None or row.get("status") == status
+        ), 2)
+
     return {
         "rail": "commission",
         "agent_id": agent_id,
-        "accrued_total": summary.get("accrued_total") or 0,
-        "payable_total": summary.get("payable_total") or 0,
-        "paid_total": summary.get("paid_total") or 0,
-        "lifetime_total": summary.get("lifetime_total") or 0,
+        "accrued_total": _total("accrued"),
+        "payable_total": _total("payable"),
+        "paid_total": _total("paid"),
+        "lifetime_total": _total(),
         "rows": rows,
     }
+
+
+def supplier_shell_open(session: Optional[Dict[str, Any]]) -> bool:
+    """Whether this session may see the supplier portal shell.
+
+    A supplier session may. A customer or agent session may when it owns
+    that supplier or an approved agent grant. The check does not refresh
+    or write either book, and it does not reopen a closed supplier.
+    """
+    if not isinstance(session, dict):
+        return False
+    role = str(session.get("role") or "").strip().lower()
+    if role == "supplier":
+        return True
+    if role not in ("customer", "agent"):
+        return False
+    customer_id = str(session.get("customer_id") or "")
+    if not customer_id:
+        return False
+    with _LOCK:
+        _ensure_loaded()
+        try:
+            supplier = _find_supplier(customer_id)
+        except RewardError:
+            supplier = None
+        agent_grant = _approved_request(customer_id, "agent")
+    if isinstance(supplier, dict) and supplier.get("id"):
+        return True
+    return bool(isinstance(agent_grant, dict) and agent_grant.get("agent_id"))
 
 
 def _empty_supplier_balance() -> Dict[str, Any]:
