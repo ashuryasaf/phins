@@ -134,26 +134,22 @@
     }
 
     function armClip(video) {
-        if (!video || video.dataset.armed === '1') return;
+        if (!video || video.dataset.armed === '1' || !video.getAttribute('src')) return;
         // A later scene starts from the previous clip's ended event, which is
-        // not a user gesture. play() during the click clears that restriction
-        // on this element; pause before a frame so the film does not overlap.
-        var run = function () {
-            if (!video || video.dataset.armed === '1' || !video.getAttribute('src')) return;
-            video.muted = true;
-            try {
-                var pending = video.play();
-                video.pause();
-                try { video.currentTime = 0; } catch (e) { /* metadata not in yet */ }
-                video.muted = false;
-                video.dataset.armed = '1';
-                if (pending && pending.catch) pending.catch(function () {});
-            } catch (e) {
-                video.muted = false;
-            }
-        };
-        if (video.getAttribute('src')) run();
-        else openDeckMedia(video).then(run).catch(function () {});
+        // not a user gesture. play() has to run in this click, while the
+        // element already has a src. A blob that arrives later is left
+        // unarmed so the next click can unlock it.
+        video.muted = true;
+        try {
+            var pending = video.play();
+            video.pause();
+            try { video.currentTime = 0; } catch (e) { /* metadata not in yet */ }
+            video.muted = false;
+            video.dataset.armed = '1';
+            if (pending && pending.catch) pending.catch(function () {});
+        } catch (e) {
+            video.muted = false;
+        }
     }
 
     function armOtherClips(state, currentIndex) {
@@ -258,7 +254,12 @@
         };
         if (video.getAttribute('src')) startPlayback();
         else {
-            openDeckMedia(video).then(startPlayback).catch(function () {
+            state.blocked = true;
+            if (state.root) setStatus(state.root, 'The film is still loading. Press Play the film again.');
+            openDeckMedia(video).then(function () {
+                if (state.generation !== generation) return;
+                if (video.getAttribute('src') && state.root) setStatus(state.root, 'Press Play the film.');
+            }).catch(function () {
                 if (state.generation !== generation) return;
                 if (state.root) setStatus(state.root, 'A clip could not be played. The library file was not changed.');
             });

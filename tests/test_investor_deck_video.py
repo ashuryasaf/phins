@@ -744,6 +744,8 @@ def test_presentation_page_is_wired_and_does_not_bake_figures():
     lab = (root / "web_portal" / "static" / "investor-deck-lab.js").read_text(encoding="utf-8")
     assert "openDeckMedia" in lab
     assert "data-deck-src" in lab and "warmDeckMedia" in lab
+    arm = lab.split("function armClip", 1)[1].split("function armOtherClips", 1)[0]
+    assert "dataset.armed = '1'" in arm and ".then(" not in arm
     assert 'id="deck-scenes"' in page and "data-scene-show" in page
     assert "figures stay on the slide" not in page.lower()
 
