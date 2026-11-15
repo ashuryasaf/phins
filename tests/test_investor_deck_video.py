@@ -875,6 +875,19 @@ def test_presentation_streams_a_data_url_and_a_staff_cookie_without_rewriting_th
             raise AssertionError("deck media requires a reader")
         except HTTPError as exc:
             assert exc.code == 401
+        try:
+            urlopen(Request(
+                base + f"/deck-media/{matched_id}",
+                headers={"Cookie": cookie},
+            ))
+            raise AssertionError("a clip the deck does not point at must not stream")
+        except HTTPError as exc:
+            assert exc.code == 404
+        slide_media = portal.DESIGN_SETTINGS.get("investor_deck_slide_media")
+        if not isinstance(slide_media, dict):
+            slide_media = {}
+            portal.DESIGN_SETTINGS["investor_deck_slide_media"] = slide_media
+        slide_media["8"] = {"asset_id": matched_id}
         with urlopen(Request(
             base + f"/deck-media/{matched_id}",
             headers={"Cookie": cookie},
@@ -894,6 +907,19 @@ def test_presentation_streams_a_data_url_and_a_staff_cookie_without_rewriting_th
         }
         url_before = copy.deepcopy(portal.MEDIA_ASSETS[url_only])
         assert portal._deck_playback_url(portal.MEDIA_ASSETS[url_only]) == f"/deck-media/{url_only}"
+        try:
+            urlopen(Request(
+                base + f"/deck-media/{url_only}",
+                headers={"Authorization": "Bearer " + admin},
+            ))
+            raise AssertionError("a clip the deck does not point at must not stream")
+        except HTTPError as exc:
+            assert exc.code == 404
+        scenes = portal.DESIGN_SETTINGS.get("investor_deck_scenes")
+        if not isinstance(scenes, dict):
+            scenes = {}
+            portal.DESIGN_SETTINGS["investor_deck_scenes"] = scenes
+        scenes["s01p01"] = {"last_asset_id": url_only}
         with urlopen(Request(
             base + f"/deck-media/{url_only}",
             headers={"Authorization": "Bearer " + admin},

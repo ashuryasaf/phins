@@ -6720,6 +6720,54 @@ def read_deck_media_bytes(asset: Dict[str, Any]) -> Dict[str, Any]:
     return {'payload': payload, 'mime': mime, 'error': ''}
 
 
+def _deck_referenced_media_ids() -> set:
+    """Library ids the investor deck or the Swiss Re deck already points at.
+
+    A scene clip, a scene photo, a combined slide video, a watermark image,
+    and a slide chrome image. Nothing else is streamed from ``/deck-media/``.
+    """
+    found = set()
+
+    def add(value: Any) -> None:
+        text = str(value or '').strip()
+        if text:
+            found.add(text)
+
+    for name in (
+        'investor_deck_scenes',
+        'investor_deck_scenes_he',
+        'reinsurer_deck_scenes',
+        'reinsurer_deck_scenes_he',
+    ):
+        store = DESIGN_SETTINGS.get(name)
+        if not isinstance(store, dict):
+            continue
+        for record in store.values():
+            if not isinstance(record, dict):
+                continue
+            add(record.get('last_asset_id'))
+            add(record.get('reference_image_asset_id'))
+    slide_media = DESIGN_SETTINGS.get('investor_deck_slide_media')
+    if isinstance(slide_media, dict):
+        for record in slide_media.values():
+            if isinstance(record, dict):
+                add(record.get('asset_id'))
+    watermark = DESIGN_SETTINGS.get('investor_deck_watermark')
+    if isinstance(watermark, dict):
+        for item in watermark.get('images') or []:
+            if isinstance(item, dict):
+                add(item.get('asset_id'))
+    chrome = DESIGN_SETTINGS.get('investor_deck_slide_chrome')
+    if isinstance(chrome, dict):
+        for record in chrome.values():
+            if isinstance(record, dict):
+                add(record.get('image_asset_id'))
+    portrait = str(DESIGN_SETTINGS.get('founder_portrait_id') or '').strip()
+    if portrait:
+        found.add(portrait)
+    return found
+
+
 def _deck_playback_url(media: Dict[str, Any]) -> str:
     """A short playable address for a deck response.
 
@@ -40811,6 +40859,9 @@ For claims or questions, please contact:
                 self.send_error(401, 'Authentication required')
                 return
             asset_id = _deck_media_id(path[len('/deck-media/'):])
+            if not asset_id or asset_id not in _deck_referenced_media_ids():
+                self.send_error(404, 'Not found')
+                return
             asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
             served = read_deck_media_bytes(asset) if isinstance(asset, dict) else {'error': 'missing'}
             if served.get('error') == 'checksum_mismatch':
