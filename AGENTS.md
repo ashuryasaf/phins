@@ -263,7 +263,14 @@ PHINS is a Python platform built around:
  rejected or suspended is not reopened. Filing stays an open inquiry
  until that desk row exists.
  Declining a company clears that name before approval. Approval opens that profile and a role-switch
- token without rewriting `USERS.role`. An agent is a role on that one supplier. An approved agent invitation cap is
+ token without rewriting `USERS.role`. An agent is a role on that one supplier. `/supplier-login.html` is the one
+ supplier sign-in and opens `/supplier-portal.html`. That dashboard has two
+ sections: affiliation-to-sales (referral `CACSET-{referee}` and, separately,
+ agent commission) and the supplier desk (products, services, delivery,
+ approval, billing, balance, and invoices). Both read the existing books.
+ Opening the desk does not refresh, reverse, promote, or persist them. A
+ rejected, suspended, terminated, or closed supplier stays closed. National
+ ID stays off the desk. An approved agent invitation cap is
  100 (customer cap stays 10). `affiliated_cac_plan()` is the planning view
  (allocated, blocked, releasable, settled, reversed, projected release,
  layer schedule, and one row per reward). Those planning totals stay

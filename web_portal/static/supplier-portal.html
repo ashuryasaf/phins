@@ -425,6 +425,9 @@
       </button>
     </div>
 
+    <section id="sales-section" data-section="affiliation-to-sales">
+    <h2 style="margin:0 0 12px">Affiliation to sales</h2>
+    <p class="muted-text" style="margin:0 0 12px">Referral acquisition and agent commission stay on their own rails. Customer REF- codes are not paid as agent commission, and agent AGI- codes are not paid from a referral settlement.</p>
     <div class="card" style="margin-bottom:16px">
       <h3 style="margin:0 0 8px">Affiliated-customer acquisition</h3>
       <p class="muted-text" id="affiliation-book-summary">Loading your affiliation…</p>
@@ -447,6 +450,42 @@
         <button class="btn btn-outline" type="button" onclick="generateAffiliatedJoinLink()">Generate join link</button>
       </div>
     </div>
+    <div class="card" id="sales-commission-card" style="margin-bottom:16px">
+      <h3 style="margin:0 0 8px">Agent commission</h3>
+      <p class="muted-text" id="sales-commission-summary">Loading commission…</p>
+    </div>
+    </section>
+
+    <section id="desk-section" data-section="supplier-desk">
+    <h2 style="margin:0 0 12px">Supplier desk</h2>
+    <p class="muted-text" id="desk-billing" style="margin:0 0 12px">Products, services, delivery, approval, billing, balance, and invoices from the supplier books.</p>
+    <div class="dashboard-grid" id="desk-summary">
+      <div class="stat-card">
+        <div class="label">Products</div>
+        <div class="value" id="desk-products">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Services</div>
+        <div class="value" id="desk-services">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Delivery</div>
+        <div class="value" id="desk-delivery">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Approval</div>
+        <div class="value" id="desk-approval">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Balance</div>
+        <div class="value" id="desk-balance">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Invoices</div>
+        <div class="value" id="desk-invoices">-</div>
+      </div>
+    </div>
+    <p id="desk-writes" class="muted-text" style="margin:0 0 12px"></p>
 
     <!-- Dashboard Stats -->
     <div class="dashboard-grid">
@@ -606,6 +645,7 @@
         </div>
       </div>
     </div>
+    </section>
   </main>
 
   <!-- Offer Modal -->
@@ -962,7 +1002,7 @@
       }
       try {
         const s = await apiGet('/api/session/validate');
-        if (s.role !== 'supplier') {
+        if (!['supplier', 'agent', 'customer'].includes(s.role)) {
           who.textContent = `Access denied for role: ${s.role}`;
           return null;
         }
@@ -1695,39 +1735,95 @@
       window.location.href = href;
     }
 
-    async function loadAffiliationBook() {
-      const token = getToken();
+    function renderUnifiedDesk(desk) {
+      const sales = (desk && desk.sales) || {};
+      const referral = sales.referral || {};
+      const commission = sales.commission || {};
+      const operations = (desk && desk.desk) || {};
+      const balance = operations.balance || {};
+      const approval = operations.approval || {};
       const summary = document.getElementById('affiliation-book-summary');
       const table = document.getElementById('affiliation-book-table');
-      if (!table || !token) return;
-      const response = await fetch('/api/customer/referral-rewards', {
-        headers: { 'Authorization': 'Bearer ' + token }
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        if (summary) summary.textContent = 'The acquisition book opens from your customer account.';
-        return;
-      }
-      const book = body.affiliation_book || {};
-      const layers = book.by_layer || {};
+      const layers = referral.by_layer || {};
       const line = [1, 2, 3].map(function(layer) {
         const slot = layers[String(layer)] || {};
         return (slot.customers || 0) + ' on layer ' + layer + ' totaling ' + money(slot.amount || 0);
       }).join(' · ');
       if (summary) {
-        summary.textContent = (book.affiliated_customers || 0) + ' affiliated customers · ' + line +
-          ' · blocked ' + money(book.blocked || 0) + ' · ready to use ' + money(book.available || 0);
+        const layerText = referral.by_layer ? (' · ' + line) : '';
+        summary.textContent = (referral.affiliated_customers || 0) + ' affiliated customers' + layerText +
+          ' · blocked ' + money(referral.blocked || 0) + ' · ready to use ' + money(referral.available || 0);
       }
-      const rows = book.rows || [];
-      table.querySelector('tbody').innerHTML = rows.length ? rows.map(function(row) {
-        const links = (row.links || []).map(function(link) {
-          return '<button type="button" class="btn btn-outline" data-affiliation-href="' + escAffiliation(link.href) + '">' + escAffiliation(link.label) + '</button>';
-        }).join(' ');
-        const amount = row.booked === false ? ('Projected ' + money(row.projected_amount || 0)) : money(row.amount || 0);
-        return '<tr><td>' + escAffiliation(row.referee_name || '') + '</td><td>' + escAffiliation(row.layer) + '</td><td>' + amount +
-          '</td><td>' + money(row.blocked_amount || 0) + '</td><td>' + money(row.available_amount || 0) +
-          '</td><td>' + escAffiliation(row.distribution || String(row.status || '').replace(/_/g, ' ')) + ' ' + links + '</td></tr>';
-      }).join('') : '<tr><td colspan="6">No affiliated customers yet.</td></tr>';
+      const rows = referral.rows || [];
+      if (table) {
+        table.querySelector('tbody').innerHTML = rows.length ? rows.map(function(row) {
+          const amount = row.booked === false ? ('Projected ' + money(row.amount || 0)) : money(row.amount || 0);
+          return '<tr><td>' + escAffiliation(row.referee_name || '') + '</td><td>' + escAffiliation(row.layer) +
+            '</td><td>' + amount + '</td><td>' + money(row.blocked_amount || 0) + '</td><td>' +
+            money(row.available_amount || 0) + '</td><td>' + escAffiliation(row.settlement_id || '') + ' ' +
+            escAffiliation(String(row.status || '').replace(/_/g, ' ')) + '</td></tr>';
+        }).join('') : '<tr><td colspan="6">No affiliated customers yet.</td></tr>';
+      }
+      const commissionSummary = document.getElementById('sales-commission-summary');
+      if (commissionSummary) {
+        commissionSummary.textContent = 'Accrued ' + money(commission.accrued_total || 0) +
+          ' · payable ' + money(commission.payable_total || 0) +
+          ' · paid ' + money(commission.paid_total || 0) +
+          '. This commission is not added to the referral settlement or the supplier balance.';
+      }
+      const setText = function(id, value) {
+        const node = document.getElementById(id);
+        if (node) node.textContent = value;
+      };
+      setText('desk-products', String(operations.products || 0));
+      setText('desk-services', String(operations.services || 0));
+      setText('desk-delivery', String((operations.delivery || {}).orders || 0));
+      setText('desk-approval', String(approval.status || 'none'));
+      setText('desk-balance', money(balance.net_payout || 0));
+      setText('desk-invoices', String((operations.invoices || []).length));
+      const billing = document.getElementById('desk-billing');
+      if (billing) {
+        billing.textContent = 'Billing gross ' + money(balance.gross_sales || 0) +
+          ' · refunds ' + money(balance.refunds || 0) +
+          ' · platform commission ' + money(balance.platform_commission || 0) +
+          ' · pending ' + money(balance.pending_settlement || 0) +
+          ' · settled ' + money(balance.settled_amount || 0) +
+          ' · net payout ' + money(balance.net_payout || 0) + '.';
+      }
+      if (operations.company_name) {
+        const company = document.getElementById('company-name');
+        if (company) company.textContent = operations.company_name;
+      }
+      const addBtn = document.querySelector('.add-offer-btn');
+      if (addBtn) addBtn.style.display = operations.writes_open ? '' : 'none';
+      const writes = document.getElementById('desk-writes');
+      if (writes) {
+        if (operations.writes_open) {
+          writes.textContent = '';
+        } else if (approval.status === 'approved') {
+          writes.textContent = 'Supplier edits use this same login once the supplier role is the open session.';
+        } else if (approval.status && approval.status !== 'none') {
+          writes.textContent = 'This supplier is ' + approval.status + '. The desk stays closed.';
+        } else {
+          writes.textContent = 'The product and delivery desk is not open on this account.';
+        }
+      }
+    }
+
+    async function loadUnifiedDesk() {
+      const token = getToken();
+      if (!token) return null;
+      const response = await fetch('/api/supplier/desk', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      const body = await response.json().catch(function() { return {}; });
+      if (!response.ok) {
+        const who = document.getElementById('whoami');
+        if (who) who.textContent = body.error || 'This desk is not open for this account.';
+        return null;
+      }
+      renderUnifiedDesk(body);
+      return body;
     }
 
     async function loadAffiliatedJoinLink() {
@@ -1785,14 +1881,19 @@
       selectSupplierPortalTab(getSupplierPortalRequestedTab());
       const session = await loadSession();
       if (session) {
-        await Promise.all([
-          loadSupplierInfo(),
-          loadOffers(),
-          refreshOrders(),
-          loadSettlementData(),
-          loadAffiliatedJoinLink(),
-          loadAffiliationBook()
-        ]);
+        const desk = await loadUnifiedDesk();
+        const writesOpen = desk && desk.desk && desk.desk.writes_open;
+        if (writesOpen) {
+          await Promise.all([
+            loadSupplierInfo(),
+            loadOffers(),
+            refreshOrders(),
+            loadSettlementData(),
+            loadAffiliatedJoinLink()
+          ]);
+        } else {
+          await loadAffiliatedJoinLink();
+        }
       }
     });
 

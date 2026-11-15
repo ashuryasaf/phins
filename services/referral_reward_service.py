@@ -4914,11 +4914,281 @@ def _tools(customer_id: str) -> Dict[str, Any]:
         "links": [
             {"id": "invite", "label": "Invite a customer", "href": "/dashboard.html#referrals", "enabled": True},
             {"id": "agent", "label": "Agent portal", "href": "/agent-portal.html", "enabled": bool(agent)},
-            {"id": "supplier", "label": "Supplier portal", "href": "/supplier-login.html", "enabled": bool(supplier)},
+            {"id": "supplier", "label": "Supplier portal", "href": "/supplier-portal.html", "enabled": bool(supplier)},
             {"id": "supplier_register", "label": "Supplier registration", "href": supplier_href, "enabled": True},
             {"id": "solutions", "label": "Solution theaters", "href": "/solutions.html", "enabled": True},
             {"id": "admin_agents", "label": "Agent administration", "href": "/admin-agents.html", "enabled": False},
         ],
+    }
+
+
+def _supplier_by_id(supplier_id: str) -> Optional[Dict[str, Any]]:
+    if not supplier_id:
+        return None
+    try:
+        service = _supply()
+    except RewardError:
+        return None
+    found = (getattr(service, "suppliers", {}) or {}).get(supplier_id)
+    return found if isinstance(found, dict) else None
+
+
+def _empty_sales_referral() -> Dict[str, Any]:
+    return {
+        "rail": "referral",
+        "affiliated_customers": 0,
+        "blocked": 0.0,
+        "available": 0.0,
+        "dispatched": 0.0,
+        "rows": [],
+    }
+
+
+def _sales_referral_locked(customer_id: str) -> Dict[str, Any]:
+    """Intact referral rows for one affiliate. A bad checksum is left out."""
+    book = _affiliate_book_locked(customer_id)
+    kept: List[Dict[str, Any]] = []
+    for row in book.get("rows") or []:
+        if not isinstance(row, dict):
+            continue
+        referee = str(row.get("referee_customer_id") or "")
+        reward_id = row.get("reward_id")
+        if reward_id:
+            reward = REWARDS.get(reward_id)
+            if not isinstance(reward, dict) or not _reward_intact(reward):
+                continue
+        settlement = SETTLEMENTS.get(referee) if referee else None
+        if isinstance(settlement, dict) and not _settlement_intact(settlement):
+            continue
+        kept.append({
+            "settlement_id": f"CACSET-{referee}" if referee else None,
+            "referee_name": row.get("referee_name"),
+            "layer": row.get("layer"),
+            "amount": row.get("amount") or 0,
+            "blocked_amount": row.get("blocked_amount") or 0,
+            "available_amount": row.get("available_amount") or 0,
+            "status": row.get("status"),
+            "booked": row.get("booked"),
+            "rail": "referral",
+        })
+    booked = [
+        row for row in kept
+        if row.get("booked") is not False and row.get("status") != "forfeited"
+    ]
+
+    def _sum(field: str, status: str) -> float:
+        return round(sum(float(row.get(field) or 0) for row in booked if row.get("status") == status), 2)
+
+    return {
+        "rail": "referral",
+        "affiliated_customers": len(booked),
+        "blocked": _sum("blocked_amount", "held"),
+        "available": _sum("available_amount", "earned"),
+        "dispatched": _sum("amount", "dispatched"),
+        "rows": kept,
+    }
+
+
+def _sales_commission(agent_id: str) -> Dict[str, Any]:
+    """Commission totals copied from the agent book. Referral codes are not included."""
+    empty = {
+        "rail": "commission",
+        "agent_id": agent_id or None,
+        "accrued_total": 0.0,
+        "payable_total": 0.0,
+        "paid_total": 0.0,
+        "lifetime_total": 0.0,
+        "rows": [],
+    }
+    if not agent_id:
+        return empty
+    from services.agent_ecosystem_service import income_summary, list_commissions
+    summary = income_summary(agent_id)
+    rows = []
+    for item in list_commissions(agent_id):
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("invitation_code") or item.get("code") or "")
+        if code.startswith("REF-"):
+            continue
+        rows.append({
+            "commission_id": item.get("id"),
+            "amount": item.get("amount"),
+            "status": item.get("status"),
+            "rail": "commission",
+        })
+    return {
+        "rail": "commission",
+        "agent_id": agent_id,
+        "accrued_total": summary.get("accrued_total") or 0,
+        "payable_total": summary.get("payable_total") or 0,
+        "paid_total": summary.get("paid_total") or 0,
+        "lifetime_total": summary.get("lifetime_total") or 0,
+        "rows": rows,
+    }
+
+
+def _empty_supplier_balance() -> Dict[str, Any]:
+    return {
+        "net_payout": 0.0,
+        "pending_settlement": 0.0,
+        "settled_amount": 0.0,
+        "gross_sales": 0.0,
+        "refunds": 0.0,
+        "platform_commission": 0.0,
+        "awaiting_customer_approval": 0.0,
+        "book": "supply_chain",
+    }
+
+
+def _balance_from_pnl(service: Any, supplier_id: Any) -> Dict[str, Any]:
+    balance = _empty_supplier_balance()
+    if service is None or not supplier_id or not hasattr(service, "generate_supplier_pnl"):
+        return balance
+    pnl = service.generate_supplier_pnl(supplier_id)
+    report = (pnl or {}).get("report") or {}
+    balance.update({
+        "net_payout": _money(report.get("net_payout")),
+        "pending_settlement": _money(report.get("pending_settlement")),
+        "settled_amount": _money(report.get("settled_amount")),
+        "gross_sales": _money(report.get("gross_sales")),
+        "refunds": _money(report.get("refunds")),
+        "platform_commission": _money(report.get("platform_commission")),
+        "awaiting_customer_approval": _money(report.get("other_fees")),
+        "book": "supply_chain",
+    })
+    return balance
+
+
+def _operations_desk(supplier: Optional[Dict[str, Any]], writes_open: bool) -> Dict[str, Any]:
+    """Products, delivery, approval, and cash copied from the supplier books."""
+    if not isinstance(supplier, dict):
+        balance = _empty_supplier_balance()
+        return {
+            "present": False,
+            "writes_open": False,
+            "products": 0,
+            "services": 0,
+            "offers": 0,
+            "delivery": {"orders": 0, "by_status": {}},
+            "approval": {"status": "none", "portal_active": False, "writes_open": False},
+            "billing": balance,
+            "balance": dict(balance),
+            "invoices": [],
+        }
+    try:
+        service = _supply()
+    except RewardError:
+        service = None
+    sid = supplier.get("id")
+    offers = []
+    orders = []
+    if service is not None:
+        offers = [
+            offer for offer in (getattr(service, "offers", {}) or {}).values()
+            if isinstance(offer, dict) and offer.get("supplier_id") == sid
+        ]
+        orders = [
+            order for order in (getattr(service, "orders", {}) or {}).values()
+            if isinstance(order, dict) and order.get("supplier_id") == sid
+        ]
+    products = sum(1 for offer in offers if str(offer.get("item_type") or "").lower() == "product")
+    services = sum(1 for offer in offers if str(offer.get("item_type") or "").lower() != "product")
+    by_status: Dict[str, int] = {}
+    invoices = []
+    for order in orders:
+        status = str(order.get("status") or "unknown")
+        by_status[status] = by_status.get(status, 0) + 1
+        invoices.append({
+            "invoice_id": order.get("id"),
+            "order_id": order.get("id"),
+            "item_name": order.get("item_name"),
+            "total_amount": _money(order.get("total_amount")),
+            "supplier_payout": _money(order.get("supplier_payout")),
+            "status": status,
+            "settlement_status": order.get("settlement_status"),
+            "book": "supply_chain",
+        })
+    balance = _balance_from_pnl(service, sid)
+    return {
+        "present": True,
+        "company_name": supplier.get("company_name"),
+        "supplier_type": supplier.get("supplier_type"),
+        "writes_open": writes_open,
+        "products": products,
+        "services": services,
+        "offers": len(offers),
+        "delivery": {"orders": len(orders), "by_status": by_status},
+        "approval": {
+            "status": supplier.get("status"),
+            "portal_active": bool(supplier.get("portal_active")),
+            "verification_status": supplier.get("verification_status"),
+            "writes_open": writes_open,
+        },
+        "billing": balance,
+        "balance": dict(balance),
+        "invoices": invoices,
+    }
+
+
+def read_unified_desk(session: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """One read of affiliation sales and the supplier desk.
+
+    The referral book, the commission book, and the supply-chain P&L are
+    copied. This does not refresh, reverse, promote, or persist any of them,
+    and it does not change a supplier's status.
+    """
+    if not isinstance(session, dict) or not session:
+        raise RewardError("Authentication required", status=401, code="auth_required")
+    role = str(session.get("role") or "").strip().lower()
+    if role not in ("supplier", "agent", "customer"):
+        raise RewardError("Forbidden", status=403, code="forbidden")
+    customer_id = str(session.get("customer_id") or "")
+    supplier: Optional[Dict[str, Any]] = None
+    with _LOCK:
+        _ensure_loaded()
+        if role == "supplier":
+            supplier = _supplier_by_id(str(session.get("supplier_id") or session.get("username") or ""))
+            if isinstance(supplier, dict) and not customer_id:
+                customer_id = str(supplier.get("customer_id") or "")
+        elif customer_id:
+            try:
+                supplier = _find_supplier(customer_id)
+            except RewardError:
+                supplier = None
+        agent_grant = _approved_request(customer_id, "agent") if customer_id else None
+        referral = _sales_referral_locked(customer_id) if customer_id else _empty_sales_referral()
+    if role == "supplier" and not isinstance(supplier, dict):
+        raise RewardError("Supplier not found", status=404, code="not_found")
+    agent_id = str((agent_grant or {}).get("agent_id") or "")
+    if isinstance(supplier, dict) and not agent_id:
+        agent_id = str(supplier.get("agent_id") or "")
+    if role in ("customer", "agent") and not isinstance(supplier, dict) and not agent_id:
+        raise RewardError(
+            "The supplier desk is not open for this account",
+            status=403,
+            code="role_closed",
+        )
+    status = str((supplier or {}).get("status") or "").strip().lower()
+    closed = status in set(_CLOSED_SUPPLIER_STATUSES) | {"closed"}
+    writes_open = bool(
+        role == "supplier"
+        and isinstance(supplier, dict)
+        and status == "approved"
+        and supplier.get("portal_active")
+        and not closed
+    )
+    return {
+        "opens": True,
+        "role": role,
+        "customer_id": customer_id or None,
+        "supplier_id": supplier.get("id") if isinstance(supplier, dict) else None,
+        "sections": ["affiliation-to-sales", "supplier-desk"],
+        "sales": {
+            "referral": referral,
+            "commission": _sales_commission(agent_id),
+        },
+        "desk": _operations_desk(supplier, writes_open),
     }
 
 

@@ -91,6 +91,11 @@
     <!-- App -->
     <div id="app" class="hidden">
       <div class="grid kpis" id="kpis"></div>
+      <h2>Supplier desk</h2>
+      <div class="card" id="supplier-desk-summary">
+        <p class="muted" id="supplier-desk-figures">The product, delivery, and billing desk opens from the same supplier login.</p>
+        <p class="muted" style="margin-top:8px"><a href="/supplier-portal.html">Open the supplier dashboard</a></p>
+      </div>
 
       <h2>Invite a prospect</h2>
       <div class="card">
@@ -252,9 +257,30 @@
       showApp(true);
       loadAffiliatedJoin();
       loadAffiliationBook();
+      loadSupplierDesk();
       $('#who').textContent = (me.body.agent && me.body.agent.display_name) || 'Agent';
       renderKpis(me.body.summary);
       loadInvitations(); loadNetwork(); loadFunnel(); loadPayouts();
+    }
+
+    async function loadSupplierDesk(){
+      const node = document.getElementById('supplier-desk-figures');
+      const {status, body} = await api('/api/supplier/desk');
+      if(status!==200 || !body || !body.desk){
+        if(node) node.textContent = 'The product, delivery, and billing desk is not open on this account.';
+        return;
+      }
+      const balance = body.desk.balance || {};
+      const approval = body.desk.approval || {};
+      if(node){
+        node.textContent = 'Approval ' + (approval.status || 'none') +
+          ' · products ' + (body.desk.products || 0) +
+          ' · services ' + (body.desk.services || 0) +
+          ' · delivery ' + ((body.desk.delivery || {}).orders || 0) +
+          ' · invoices ' + ((body.desk.invoices || []).length) +
+          ' · net payout ' + fmt(balance.net_payout || 0) +
+          '. These figures are the supplier books, separate from commission above.';
+      }
     }
 
     function renderKpis(s){

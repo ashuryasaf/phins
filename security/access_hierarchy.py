@@ -45,9 +45,9 @@ ADMIN_AI_BI_API = "/api/admin/ai-bi"
 
 # Another principal's own portal. Admin does not inherit these.
 PRIVATE_PORTAL_PAGES: Dict[str, FrozenSet[str]] = {
-    "/supplier-dashboard.html": frozenset({"supplier"}),
-    "/supplier-portal.html": frozenset({"supplier"}),
-    "/supplier-login.html": frozenset({"supplier"}),
+    "/supplier-dashboard.html": frozenset({"supplier", "agent", "customer"}),
+    "/supplier-portal.html": frozenset({"supplier", "agent", "customer"}),
+    "/supplier-login.html": frozenset({"supplier", "agent", "customer"}),
     "/supplier-register.html": frozenset({"supplier"}),
     "/agent-portal.html": frozenset({"agent"}),
     "/regulator-dashboard.html": frozenset({"regulator"}),
