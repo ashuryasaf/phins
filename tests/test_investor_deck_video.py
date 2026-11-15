@@ -1,5 +1,6 @@
 """Investor-deck scenes stay sealed to the plan and play only when filmed."""
 
+import base64
 import copy
 import json
 import random
@@ -833,6 +834,28 @@ def test_presentation_streams_a_data_url_and_a_staff_cookie_without_rewriting_th
         assert portal.MEDIA_ASSETS[asset_id] == library_before
         assert portal.DESIGN_SETTINGS["investor_deck_slide_media"]["2"]["asset_checksum"] == "d" * 64
 
+        matched_id = "vid-deck-inline-match"
+        matched_bytes = b"deck-inline-clip"
+        matched_inline = "data:video/mp4;base64," + base64.b64encode(matched_bytes).decode("ascii")
+        portal.MEDIA_ASSETS[matched_id] = {
+            "id": matched_id,
+            "type": "video",
+            "name": "Matched clip.mp4",
+            "checksum": portal.compute_media_checksum(matched_bytes),
+            "url": matched_inline,
+            "data": matched_inline,
+        }
+        matched_before = copy.deepcopy(portal.MEDIA_ASSETS[matched_id])
+        stream = portal.build_internal_media_file_url(matched_id, "Matched clip.mp4")
+        for _ in range(2):
+            with urlopen(base + stream) as resp:
+                assert resp.status == 200
+                assert resp.read() == matched_bytes
+        assert portal.MEDIA_ASSETS[matched_id] == matched_before
+        assert portal.MEDIA_ASSETS[matched_id]["url"] == matched_inline
+        assert portal.MEDIA_ASSETS[matched_id]["data"] == matched_inline
+        assert not portal.MEDIA_ASSETS[matched_id].get("file_path")
+
         demoted = "deck-cookie-demoted"
         previous_user = portal.USERS.get(demoted)
         portal.USERS[demoted] = {"username": demoted, "role": "customer", "name": "Demoted"}
@@ -854,6 +877,7 @@ def test_presentation_streams_a_data_url_and_a_staff_cookie_without_rewriting_th
                 portal.USERS[demoted] = previous_user
     finally:
         portal.MEDIA_ASSETS.pop(asset_id, None)
+        portal.MEDIA_ASSETS.pop("vid-deck-inline-match", None)
         if media_before is None:
             portal.DESIGN_SETTINGS.pop("investor_deck_slide_media", None)
         else:

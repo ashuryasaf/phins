@@ -3845,6 +3845,10 @@ def _restore_media_asset_from_durable_store(asset: Dict[str, Any]) -> Dict[str, 
     except OSError as exc:
         print(f"[MEDIA] Cache restore failed for {asset_id}: {type(exc).__name__}")
         return {'path': '', 'error': ''}
+    # A data-URL library record is streamed from the cache file. The stored
+    # URL, inline bytes, and file path stay as they were.
+    if _library_record_keeps_inline_payload(asset):
+        return {'path': dest, 'error': '', 'mime': _library_media_mime(asset)}
     asset['file_path'] = dest
     asset['checksum'] = sha
     asset['stored_externally'] = True
@@ -3937,11 +3941,17 @@ def _recover_media_from_provider(asset: Dict[str, Any]) -> Dict[str, str]:
     return {'path': file_path, 'error': '', 'mime': _library_media_mime(asset)}
 
 
+def _library_record_keeps_inline_payload(asset: Dict[str, Any]) -> bool:
+    """True when the library bytes are still the stored ``data:`` payload."""
+    return str(asset.get('data') or '').strip().startswith('data:')
+
+
 def ensure_media_asset_file(asset: Dict[str, Any]) -> Dict[str, str]:
     """Return a checksum-checked cache path, restoring from the database when needed.
 
     ``error`` is empty, ``missing``, or ``checksum_mismatch``. A mismatched
-    file is never returned.
+    file is never returned. An inline ``data:`` payload is streamed from a
+    cache file; that read does not change the library record.
     """
     if not isinstance(asset, dict):
         return {'path': '', 'error': 'missing'}
@@ -3959,6 +3969,10 @@ def ensure_media_asset_file(asset: Dict[str, Any]) -> Dict[str, str]:
         except OSError:
             actual = ''
         if actual and (not expected or actual == expected):
+            # A cache file for an inline payload is only for streaming.
+            # The stored URL, bytes, and file_path stay as they were.
+            if inferred_path and _library_record_keeps_inline_payload(asset):
+                return {'path': file_path, 'error': '', 'mime': _library_media_mime(asset)}
             if not expected:
                 asset['checksum'] = actual
             asset['file_path'] = file_path
@@ -3987,15 +4001,6 @@ def ensure_media_asset_file(asset: Dict[str, Any]) -> Dict[str, str]:
                 _write_verified_media_bytes(dest, payload, actual)
             except Exception:
                 return {'path': '', 'error': 'missing', 'mime': ''}
-            asset['file_path'] = dest
-            asset['checksum'] = actual
-            asset['stored_externally'] = True
-            asset['data'] = ''
-            asset['url'] = asset.get('url') or build_internal_media_file_url(
-                str(asset.get('id') or ''),
-                str(asset.get('name') or asset.get('id') or ''),
-            )
-            persist_durable_media_asset(asset)
             return {'path': dest, 'error': '', 'mime': _library_media_mime(asset)}
 
     if not local_mismatch:
