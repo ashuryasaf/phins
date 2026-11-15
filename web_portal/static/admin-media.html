@@ -2707,8 +2707,8 @@ Notes:
                     });
                 })
                 .then(function (result) {
-                    frame.removeAttribute('data-loading');
                     if (frame.getAttribute('data-src') !== desired) return;
+                    if (frame.getAttribute('data-loading') === desired) frame.removeAttribute('data-loading');
                     if (!result.ok || result.text.indexOf('id="deck-count"') === -1) {
                         frame.removeAttribute('data-loaded');
                         frame.srcdoc = investorDeckFrameMessage('The investor deck could not be opened. Sign in as staff and open this tab again.');
@@ -2718,9 +2718,9 @@ Notes:
                     frame.srcdoc = result.text;
                 })
                 .catch(function () {
-                    frame.removeAttribute('data-loading');
-                    frame.removeAttribute('data-loaded');
                     if (frame.getAttribute('data-src') !== desired) return;
+                    if (frame.getAttribute('data-loading') === desired) frame.removeAttribute('data-loading');
+                    frame.removeAttribute('data-loaded');
                     frame.srcdoc = investorDeckFrameMessage('The investor deck could not be opened. Sign in as staff and open this tab again.');
                 });
         }

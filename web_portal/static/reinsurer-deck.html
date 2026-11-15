@@ -289,8 +289,21 @@
 <script src="/investor-deck-lab.js"></script>
 <script>
 (function () {
-  var params = new URLSearchParams(window.location.search);
-  var deckLang = /reinsurer-deck\.he\.html$/i.test(location.pathname) ? 'he' : 'en';
+  function frameAddress() {
+    try {
+      if (window.frameElement) {
+        return window.frameElement.getAttribute('data-src') || window.frameElement.getAttribute('src') || '';
+      }
+    } catch (e) { /* a sandboxed frame cannot read its element */ }
+    return '';
+  }
+  var framed = frameAddress();
+  var insideFrame = !!(framed && (location.protocol === 'about:' || !/reinsurer-deck/i.test(location.pathname || '')));
+  var params = new URLSearchParams(insideFrame ? ((framed.split('?')[1] || '').split('#')[0]) : window.location.search);
+  var deckLang = (
+    /reinsurer-deck\.he\.html$/i.test(location.pathname || '') ||
+    /reinsurer-deck\.he\.html/i.test(framed)
+  ) ? 'he' : 'en';
   var UI = {
     en: {
       title: 'PHINS — Swiss Re Israel · 8 December 2026',
@@ -407,11 +420,25 @@
   var langLink = document.getElementById('deck-lang');
   if (langLink) {
     var other = deckLang === 'he' ? '/reinsurer-deck.html' : '/reinsurer-deck.he.html';
+    var otherLang = deckLang === 'he' ? 'en' : 'he';
     langLink.textContent = deckLang === 'he' ? 'English' : 'עברית';
-    langLink.setAttribute('href', other + location.search + location.hash);
-    langLink.setAttribute('lang', deckLang === 'he' ? 'en' : 'he');
+    langLink.setAttribute('lang', otherLang);
+    if (insideFrame || location.protocol === 'about:') {
+      langLink.setAttribute('href', '#');
+      langLink.addEventListener('click', function (event) {
+        event.preventDefault();
+        try {
+          window.parent.postMessage(
+            { type: 'phins-deck-lang', lang: otherLang },
+            window.location.origin
+          );
+        } catch (e) { /* the parent frame decides whether to switch */ }
+      });
+    } else {
+      langLink.setAttribute('href', other + location.search + location.hash);
+    }
   }
-  if (params.get('embed') === '1') document.body.classList.add('is-embed');
+  if (params.get('embed') === '1' || framed.indexOf('embed=1') !== -1) document.body.classList.add('is-embed');
   var wantEdit = params.get('edit') === '1';
   function readHidden(raw) {
     var set = {};
@@ -671,6 +698,7 @@
     return out;
   }
   function syncUrl() {
+    if (insideFrame || location.protocol === 'about:') return;
     var next = new URLSearchParams(window.location.search);
     (state.data && state.data.factors || []).forEach(function (row) { next.delete(row.id); });
     var moved = factorQuery();

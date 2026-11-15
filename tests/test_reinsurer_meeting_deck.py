@@ -861,8 +861,11 @@ def test_presentation_page_and_lab_are_wired_for_the_reinsurer_deck():
     assert "auto_publish_to_hero: false" in page
     assert "prompt_override" not in page
     assert "₪" not in page  # figures come from the plan, never the file
-    # Hebrew edition on the same file: language from the path, RTL, a switch.
+    # Hebrew edition on the same file: language from the path, or from the
+    # frame address when the media lab places this HTML in srcdoc.
     assert "reinsurer-deck\\.he\\.html" in page
+    assert "frameElement" in page
+    assert "phins-deck-lang" in page
     assert 'id="deck-lang"' in page and "is-he" in page
     assert "Swiss Re ישראל · מצגת הפגישה · 8 בדצמבר 2026" in page
     assert "dir=\"rtl\"" in page or "dir='rtl'" in page or "direction: rtl" in page or "dir = 'rtl'" in page
