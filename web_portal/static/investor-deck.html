@@ -271,8 +271,24 @@
 <script src="/phins-doc-return.js"></script>
 <script>
 (function () {
+  function frameAddress() {
+    try {
+      if (window.frameElement) {
+        return window.frameElement.getAttribute('data-src') || window.frameElement.getAttribute('src') || '';
+      }
+    } catch (e) { /* a sandboxed frame cannot read its element */ }
+    return '';
+  }
+  var framed = frameAddress();
   var params = new URLSearchParams(window.location.search);
-  var deckLang = /investor-deck\.he\.html$/i.test(location.pathname) ? 'he' : 'en';
+  if (framed && (location.protocol === 'about:' || !/investor-deck/i.test(location.pathname || ''))) {
+    params = new URLSearchParams((framed.split('?')[1] || '').split('#')[0]);
+  }
+  var deckLang = (
+    /investor-deck\.he\.html$/i.test(location.pathname || '') ||
+    /investor-deck\.he\.html/i.test(framed) ||
+    params.get('lang') === 'he'
+  ) ? 'he' : 'en';
   if (deckLang === 'he') {
     document.documentElement.lang = 'he';
     document.documentElement.dir = 'rtl';
@@ -292,11 +308,25 @@
   var langLink = document.getElementById('deck-lang');
   if (langLink) {
     var other = deckLang === 'he' ? '/investor-deck.html' : '/investor-deck.he.html';
+    var otherLang = deckLang === 'he' ? 'en' : 'he';
     langLink.textContent = deckLang === 'he' ? 'English' : 'עברית';
-    langLink.setAttribute('href', other + location.search + location.hash);
-    langLink.setAttribute('lang', deckLang === 'he' ? 'en' : 'he');
+    langLink.setAttribute('lang', otherLang);
+    if (framed || location.protocol === 'about:') {
+      langLink.setAttribute('href', '#');
+      langLink.addEventListener('click', function (event) {
+        event.preventDefault();
+        try {
+          window.parent.postMessage(
+            { type: 'phins-deck-lang', lang: otherLang },
+            window.location.origin
+          );
+        } catch (e) { /* the parent frame decides whether to switch */ }
+      });
+    } else {
+      langLink.setAttribute('href', other + location.search + location.hash);
+    }
   }
-  if (params.get('embed') === '1') document.body.classList.add('is-embed');
+  if (params.get('embed') === '1' || framed.indexOf('embed=1') !== -1) document.body.classList.add('is-embed');
   var wantEdit = params.get('edit') === '1';
   function readHidden(raw) {
     var set = {};
@@ -331,6 +361,94 @@
     if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(text)) return text;
     return '';
   }
+  function videoSrc(url) {
+    var text = safeSrc(url);
+    if (!text || text.indexOf('data:') === 0) return '';
+    return text;
+  }
+  var deckBlobs = {};
+  function warmDeckMedia(src) {
+    if (!src || src.indexOf('/deck-media/') !== 0 || !token()) return Promise.resolve('');
+    var slot = deckBlobs[src];
+    if (slot && slot.url) return Promise.resolve(slot.url);
+    if (slot && slot.pending) return slot.pending;
+    slot = {};
+    deckBlobs[src] = slot;
+    slot.pending = fetch(src, { headers: { Authorization: 'Bearer ' + token() }, credentials: 'same-origin' })
+      .then(function (response) {
+        if (!response.ok) throw new Error('closed');
+        return response.blob();
+      })
+      .then(function (blob) {
+        slot.url = URL.createObjectURL(blob);
+        return slot.url;
+      })
+      .catch(function (err) {
+        delete deckBlobs[src];
+        throw err;
+      });
+    return slot.pending;
+  }
+  function resolvedDeckUrl(src) {
+    var slot = src && deckBlobs[src];
+    return slot && slot.url ? slot.url : '';
+  }
+  function mediaSrcAttr(src) {
+    if (!src) return '';
+    var ready = resolvedDeckUrl(src);
+    if (ready) return 'src="' + esc(ready) + '"';
+    if (src.indexOf('/deck-media/') === 0 && token()) return 'data-deck-src="' + esc(src) + '"';
+    return 'src="' + esc(src) + '"';
+  }
+  function openDeckMedia(node) {
+    if (!node) return Promise.resolve();
+    var src = node.getAttribute('data-deck-src') || '';
+    if (!src) {
+      var live = node.getAttribute('src') || '';
+      if (live.indexOf('/deck-media/') === 0) src = live;
+    }
+    if (!src || src.indexOf('/deck-media/') !== 0 || !token()) return Promise.resolve();
+    node.removeAttribute('src');
+    node.setAttribute('data-deck-src', src);
+    if (typeof node.load === 'function') node.load();
+    return warmDeckMedia(src).then(function (url) {
+      if (!url || node.getAttribute('data-deck-src') !== src) return;
+      node.removeAttribute('data-deck-src');
+      node.src = url;
+    });
+  }
+  function openDeckMediaIn(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-deck-src], video[src^="/deck-media/"], img[src^="/deck-media/"]').forEach(function (node) {
+      openDeckMedia(node);
+    });
+  }
+  function playAssigned(node, src) {
+    if (!node) return;
+    var ready = resolvedDeckUrl(src);
+    if (ready) {
+      node.removeAttribute('data-deck-src');
+      node.src = ready;
+    } else if (!src || src.indexOf('/deck-media/') !== 0 || !token()) {
+      node.removeAttribute('data-deck-src');
+      node.src = src || '';
+    } else {
+      node.removeAttribute('src');
+      node.setAttribute('data-deck-src', src);
+      if (typeof node.load === 'function') node.load();
+    }
+    var start = function () {
+      if (!node.getAttribute('src')) return;
+      var played = node.play();
+      if (played && played.catch) played.catch(function () {});
+    };
+    if (node.getAttribute('src')) start();
+    else openDeckMedia(node).then(start).catch(function () {});
+  }
+  function markPlan(text) {
+    var count = document.getElementById('deck-count');
+    if (count) count.textContent = text || '';
+  }
   function headers(json) {
     var h = { 'Authorization': 'Bearer ' + token() };
     if (json) h['Content-Type'] = 'application/json';
@@ -345,7 +463,7 @@
   }
   function shownFilmed(current) {
     return ((current && current.filmed) || []).filter(function (clip) {
-      return clip && clip.playback_url && !state.hidden[clip.scene_key];
+      return clip && videoSrc(clip.playback_url) && !state.hidden[clip.scene_key];
     });
   }
   function showMode(current) {
@@ -376,7 +494,7 @@
     var rows = [];
     state.slides.forEach(function (item) {
       (item.filmed || []).forEach(function (clip) {
-        if (!clip || !clip.scene_key || !clip.playback_url) return;
+        if (!clip || !clip.scene_key || !videoSrc(clip.playback_url)) return;
         rows.push({ slide_no: item.slide_no, clip: clip });
       });
     });
@@ -418,21 +536,28 @@
     }
     var embedded = current.chrome && current.chrome.image;
     if (embedded && embedded.intact && safeSrc(embedded.playback_url)) {
-      parts.push('<img class="embed-still" alt="" src="' + esc(safeSrc(embedded.playback_url)) + '">');
+      warmDeckMedia(safeSrc(embedded.playback_url));
+      parts.push('<img class="embed-still" alt="" ' + mediaSrcAttr(safeSrc(embedded.playback_url)) + '>');
       if (embedded.name) parts.push('<p class="deck-caption">Library · ' + esc(embedded.name) + '</p>');
     }
     var mode = showMode(current);
-    if (mode === 'library') {
-      parts.push('<video controls playsinline src="' + esc(current.media.playback_url) + '"></video>');
-      if (current.media.name) parts.push('<p class="deck-caption">Library · ' + esc(current.media.name) + '</p>');
     var filmed = mode === 'filmed' ? shownFilmed(current) : [];
-    if (mode === 'filmed' && filmed.length) {
+    if (mode === 'library') {
+      var librarySrc = videoSrc(current.media && current.media.playback_url);
+      if (librarySrc) {
+        warmDeckMedia(librarySrc);
+        parts.push('<video controls playsinline preload="metadata" ' + mediaSrcAttr(librarySrc) + '></video>');
+        if (current.media.name) parts.push('<p class="deck-caption">Library · ' + esc(current.media.name) + '</p>');
+      }
+    } else if (filmed.length) {
+      filmed.forEach(function (clip) { warmDeckMedia(videoSrc(clip.playback_url)); });
       var first = filmed[0];
-      parts.push('<video controls playsinline data-filmed="0" src="' + esc(first.playback_url) + '"></video>');
+      parts.push('<video controls playsinline preload="metadata" data-filmed="0" ' + mediaSrcAttr(videoSrc(first.playback_url)) + '></video>');
       parts.push('<p class="deck-caption" data-filmed-caption>Paragraph ' + esc(first.paragraph_no) +
         (first.presenter_label ? ' · ' + esc(first.presenter_label) : '') + '</p>');
     }
     side.innerHTML = parts.join('');
+    openDeckMediaIn(side);
     document.getElementById('deck-body').classList.toggle('solo', side.innerHTML === '');
     applyChrome(current);
     paintWatermark();
@@ -443,14 +568,12 @@
         var clip = filmed[at];
         if (!clip) return;
         video.setAttribute('data-filmed', String(at));
-        video.src = clip.playback_url;
         var caption = side.querySelector('[data-filmed-caption]');
         if (caption) {
           caption.textContent = 'Paragraph ' + clip.paragraph_no +
             (clip.presenter_label ? ' · ' + clip.presenter_label : '');
         }
-        var played = video.play();
-        if (played && played.catch) played.catch(function () {});
+        playAssigned(video, videoSrc(clip.playback_url));
       });
     }
     var portrait = side.querySelector('img.portrait');
@@ -522,9 +645,11 @@
     var cols = images.length === 1 ? 1 : (images.length <= 4 ? 2 : 3);
     node.hidden = false;
     node.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+    images.forEach(function (item) { warmDeckMedia(safeSrc(item.playback_url)); });
     node.innerHTML = images.map(function (item) {
-      return '<img alt="" src="' + esc(safeSrc(item.playback_url)) + '">';
+      return '<img alt="" ' + mediaSrcAttr(safeSrc(item.playback_url)) + '>';
     }).join('');
+    openDeckMediaIn(node);
   }
   function applyChrome(current) {
     var chrome = current && current.chrome ? current.chrome : {};
@@ -594,12 +719,20 @@
     var requestHeaders = token() ? headers(false) : {};
     var response = await fetch('/api/admin/media/investor-deck/presentation?lang=' + encodeURIComponent(deckLang), {
       headers: requestHeaders,
-      credentials: 'same-origin'
+      credentials: 'same-origin',
+      cache: 'no-store'
     });
-    var data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'The investor deck could not be loaded');
+    var text = await response.text();
+    var data = null;
+    try { data = JSON.parse(text); } catch (e) { data = null; }
+    if (!data || !response.ok) {
+      throw new Error((data && data.error) || (deckLang === 'he' ? 'המצגת לא נטענה' : 'The plan could not be loaded'));
+    }
     applyPayload(data);
-    if (data.can_assign) await loadLibrary();
+    if (data.can_assign) {
+      try { await loadLibrary(); }
+      catch (err) { setStatus((err && err.message) || 'The media library could not be loaded'); }
+    }
   }
   async function loadLibrary() {
     var response = await fetch('/api/media?brief=1', { headers: headers(false) });
@@ -836,7 +969,9 @@
     else if (event.key === 'End') go(state.slides.length - 1);
   });
   load().catch(function (err) {
-    setStatus(err.message || 'The investor deck could not be loaded');
+    var message = (err && err.message) || (deckLang === 'he' ? 'המצגת לא נטענה' : 'The plan could not be loaded');
+    markPlan(deckLang === 'he' ? 'המצגת לא נטענה' : 'The plan could not be loaded');
+    setStatus(message);
   });
 })();
 </script>

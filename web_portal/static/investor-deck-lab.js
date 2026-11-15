@@ -66,6 +66,66 @@
         return headers;
     }
 
+    var deckBlobs = {};
+    function warmDeckMedia(src) {
+        if (!src || src.indexOf('/deck-media/') !== 0 || !token()) return Promise.resolve('');
+        var slot = deckBlobs[src];
+        if (slot && slot.url) return Promise.resolve(slot.url);
+        if (slot && slot.pending) return slot.pending;
+        slot = {};
+        deckBlobs[src] = slot;
+        slot.pending = fetch(src, { headers: { Authorization: 'Bearer ' + token() }, credentials: 'same-origin' })
+            .then(function (response) {
+                if (!response.ok) throw new Error('closed');
+                return response.blob();
+            })
+            .then(function (blob) {
+                slot.url = URL.createObjectURL(blob);
+                return slot.url;
+            })
+            .catch(function (err) {
+                delete deckBlobs[src];
+                throw err;
+            });
+        return slot.pending;
+    }
+    function resolvedDeckUrl(src) {
+        var slot = src && deckBlobs[src];
+        return slot && slot.url ? slot.url : '';
+    }
+    function mediaSrcAttr(src) {
+        if (!src) return '';
+        var ready = resolvedDeckUrl(src);
+        if (ready) return 'src="' + esc(ready) + '"';
+        if (src.indexOf('/deck-media/') === 0 && token()) return 'data-deck-src="' + esc(src) + '"';
+        return 'src="' + esc(src) + '"';
+    }
+    function openDeckMedia(node) {
+        if (!node) return Promise.resolve();
+        var src = node.getAttribute('data-deck-src') || '';
+        if (!src) {
+            var live = node.getAttribute('src') || '';
+            if (live.indexOf('/deck-media/') === 0) src = live;
+        }
+        if (!src || src.indexOf('/deck-media/') !== 0 || !token()) return Promise.resolve();
+        node.removeAttribute('src');
+        node.setAttribute('data-deck-src', src);
+        if (typeof node.load === 'function') node.load();
+        return warmDeckMedia(src).then(function (url) {
+            if (!url || node.getAttribute('data-deck-src') !== src) return;
+            node.removeAttribute('data-deck-src');
+            node.src = url;
+        });
+    }
+
+    function playableUrl(url) {
+        var text = String(url || '').trim();
+        if (!text || text.indexOf('data:') === 0) return '';
+        if (text.indexOf('/') === 0 && text.indexOf('//') !== 0 && text.indexOf('\\') === -1) return text;
+        if (/^https?:\/\//i.test(text)) return text;
+        return '';
+    }
+
     function chartSvg(data, chartId) {
         if (!chartId || !data.charts || !data.charts[chartId]) return '';
         var svg = String(data.charts[chartId].svg || '');
@@ -74,10 +134,11 @@
     }
 
     function armClip(video) {
-        if (!video || video.dataset.armed === '1') return;
+        if (!video || video.dataset.armed === '1' || !video.getAttribute('src')) return;
         // A later scene starts from the previous clip's ended event, which is
-        // not a user gesture. play() during the click clears that restriction
-        // on this element; pause before a frame so the film does not overlap.
+        // not a user gesture. play() has to run in this click, while the
+        // element already has a src. A blob that arrives later is left
+        // unarmed so the next click can unlock it.
         video.muted = true;
         try {
             var pending = video.play();
@@ -101,7 +162,9 @@
     function renderStream(root, data, state) {
         var host = root.querySelector('[data-idl-stream]');
         if (!host) return;
-        var stream = Array.isArray(data.stream) ? data.stream : [];
+        var stream = (Array.isArray(data.stream) ? data.stream : []).filter(function (scene) {
+            return playableUrl(scene && scene.playback_url);
+        });
         if (!stream.length) {
             host.innerHTML = deckLang(root) === 'he'
                 ? '<p class="idl-note">עדיין אין סצנות מצולמות לתוכנית זו. פסקה מצטרפת לסרט רק אחרי שהקליפ שלה (15 שניות) נשמר והשורה המדוברת שלה עדיין תואמת את התוכנית. פסקה בלי קליפ מדולגת.</p>'
@@ -109,15 +172,23 @@
             state.clips = [];
             return;
         }
+        stream.forEach(function (scene) {
+            warmDeckMedia(playableUrl(scene && scene.playback_url));
+            warmDeckMedia(playableUrl(scene && scene.reference_url));
+        });
         host.innerHTML = stream.map(function (scene, index) {
             var chart = chartSvg(data, scene.chart_id);
             var photo = scene.photo_url ? '<img alt="Founder portrait" src="' + esc(scene.photo_url) + '" data-idl-photo>' : '';
-            var reference = scene.reference_url ? '<img alt="Scene photo" src="' + esc(scene.reference_url) + '">' : '';
+            var referenceSrc = playableUrl(scene.reference_url);
+            var reference = referenceSrc
+                ? '<img alt="Scene photo" ' + mediaSrcAttr(referenceSrc) + '>'
+                : '';
             var aside = chart || photo || reference
                 ? '<div class="idl-side">' + chart + photo + reference + '</div>'
                 : '';
+            var src = playableUrl(scene.playback_url);
             return '<article class="idl-clip" data-stream-index="' + index + '">' +
-                '<video playsinline webkit-playsinline preload="' + (index === 0 ? 'auto' : 'metadata') + '" src="' + esc(scene.playback_url) + '"></video>' +
+                '<video playsinline webkit-playsinline preload="' + (index === 0 ? 'auto' : 'metadata') + '" ' + mediaSrcAttr(src) + '></video>' +
                 aside +
                 '<div class="idl-caption"><strong>Slide ' + esc(scene.slide_no) + ' · ' + esc(scene.slide_title) +
                 '</strong><br>Paragraph ' + esc(scene.paragraph_no) + ' of ' + esc(scene.paragraph_count) +
@@ -126,17 +197,22 @@
                 '<br>Spoken · ' + esc(scene.script || scene.sealed_narration || '') +
                 '<br>On the slide · ' + esc(scene.narration) + '</div></article>';
         }).join('');
+        host.querySelectorAll('[data-deck-src], video[src^="/deck-media/"], img[src^="/deck-media/"]').forEach(openDeckMedia);
         host.querySelectorAll('[data-idl-photo]').forEach(function (img) {
             img.addEventListener('error', function () { img.remove(); });
         });
         state.clips = Array.prototype.slice.call(host.querySelectorAll('.idl-clip'));
         state.clips.forEach(function (clip, index) {
             var video = clip.querySelector('video');
+            if (!video) return;
             video.addEventListener('ended', function () {
                 if (state.cursor === index && index + 1 < state.clips.length) playAt(state, index + 1);
             });
             video.addEventListener('error', function () {
-                if (state.cursor === index && index + 1 < state.clips.length) playAt(state, index + 1);
+                if (video.getAttribute('data-deck-src')) return;
+                if (state.cursor === index && state.root) {
+                    setStatus(state.root, 'A clip could not be played. The library file was not changed.');
+                }
             });
         });
     }
@@ -163,13 +239,29 @@
         video.muted = false;
         var generation = (state.generation || 0) + 1;
         state.generation = generation;
-        var played = video.play();
-        if (played && played.catch) {
-            played.catch(function (err) {
+        var startPlayback = function () {
+            if (state.generation !== generation || !video.getAttribute('src')) return;
+            video.muted = false;
+            var played = video.play();
+            if (played && played.catch) {
+                played.catch(function (err) {
+                    if (state.generation !== generation) return;
+                    if (err && err.name === 'AbortError') return;
+                    state.blocked = true;
+                    if (state.root) setStatus(state.root, 'The film stopped. Press Play the film to continue.');
+                });
+            }
+        };
+        if (video.getAttribute('src')) startPlayback();
+        else {
+            state.blocked = true;
+            if (state.root) setStatus(state.root, 'The film is still loading. Press Play the film again.');
+            openDeckMedia(video).then(function () {
                 if (state.generation !== generation) return;
-                if (err && err.name === 'AbortError') return;
-                state.blocked = true;
-                if (state.root) setStatus(state.root, 'The film stopped. Press Play the film to continue.');
+                if (video.getAttribute('src') && state.root) setStatus(state.root, 'Press Play the film.');
+            }).catch(function () {
+                if (state.generation !== generation) return;
+                if (state.root) setStatus(state.root, 'A clip could not be played. The library file was not changed.');
             });
         }
     }
