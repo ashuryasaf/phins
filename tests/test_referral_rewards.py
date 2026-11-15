@@ -3937,6 +3937,8 @@ def test_one_supplier_login_reconciles_sales_and_the_supplier_desk(monkeypatch):
         booked_rows = [row for row in view["sales"]["referral"]["rows"] if row.get("booked") is not False]
         waiting_rows = [row for row in view["sales"]["referral"]["rows"] if row.get("booked") is False]
         assert [row["settlement_id"] for row in booked_rows] == [f"CACSET-{referee}"]
+        assert booked_rows[0]["projected_amount"] is None
+        assert booked_rows[0]["amount"] == pytest.approx(paid)
         assert len(waiting_rows) == 1
         assert waiting_rows[0]["amount"] == pytest.approx(0)
         assert waiting_rows[0]["projected_amount"] > 0

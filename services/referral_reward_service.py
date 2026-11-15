@@ -4965,7 +4965,7 @@ def _sales_referral_locked(customer_id: str) -> Dict[str, Any]:
             "referee_name": row.get("referee_name"),
             "layer": row.get("layer"),
             "amount": row.get("amount") or 0,
-            "projected_amount": row.get("projected_amount") or 0,
+            "projected_amount": row.get("projected_amount") if row.get("booked") is False else None,
             "blocked_amount": row.get("blocked_amount") or 0,
             "available_amount": row.get("available_amount") or 0,
             "status": row.get("status"),
