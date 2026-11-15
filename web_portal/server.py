@@ -2183,8 +2183,10 @@ REFERRAL_API_PREFIXES = (
     '/api/customer/referral-rewards',
     '/api/customer/professional-requests',
     '/api/customer/role-switch',
+    '/api/professional-inquiry',
     '/api/admin/referral-rewards',
     '/api/admin/professional-requests',
+    '/api/admin/supplier-agent-pipeline',
 )
 
 # Import API extensions for the chat-style New Policy Application ("Phin")
@@ -6465,6 +6467,21 @@ def _investor_deck_store(lang: str = 'en') -> Dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
+def _deck_store_name_for_key(scene_key: str) -> str:
+    """Scene stores by key prefix: ``re-`` reinsurer deck, ``he-`` Hebrew, else English."""
+    key = str(scene_key or '')
+    if key.startswith('re-'):
+        # ``re-he-`` keys go to the reinsurer deck's own Hebrew store.
+        from services.reinsurer_meeting_deck import store_name_for_key
+        return store_name_for_key(key)
+    return _investor_deck_store_name('he' if key.startswith('he-') else 'en')
+
+
+def _deck_store_for_key(scene_key: str) -> Dict[str, Any]:
+    raw = DESIGN_SETTINGS.get(_deck_store_name_for_key(scene_key))
+    return raw if isinstance(raw, dict) else {}
+
+
 def _deck_query_lang(qs: Optional[Dict[str, Any]]) -> str:
     if not qs:
         return 'en'
@@ -6545,7 +6562,7 @@ def _persist_investor_deck_scene_unlocked(record: Dict[str, Any]) -> bool:
         previous = _snapshot_design_settings()
     except Exception:
         return False
-    field = _investor_deck_store_name('he' if str(key).startswith('he-') else 'en')
+    field = _deck_store_name_for_key(key)
     store = DESIGN_SETTINGS.get(field)
     if not isinstance(store, dict):
         store = {}
@@ -6571,7 +6588,7 @@ def load_investor_deck_scene(scene_key: str) -> Dict[str, Any]:
     if spec is None:
         from services.investor_deck_video import InvestorDeckError
         raise InvestorDeckError(f'Unknown investor-deck scene: {scene_key}')
-    stored = _investor_deck_store('he' if str(scene_key).startswith('he-') else 'en').get(scene_key)
+    stored = _deck_store_for_key(scene_key).get(scene_key)
     if not isinstance(stored, dict):
         return fresh_scene(spec)
     record = dict(stored)
@@ -6583,9 +6600,7 @@ def load_investor_deck_scene(scene_key: str) -> Dict[str, Any]:
 def investor_deck_lab_view(lang: str = 'en') -> Dict[str, Any]:
     """Slides, the current spoken lines, and the film of clips that still match."""
     from services.investor_deck_video import (
-        SCENE_ENGINES,
         catalog,
-        clip_is_scene_length,
         normalize_deck_lang,
         scene_view,
         stream_of,
@@ -6611,34 +6626,7 @@ def investor_deck_lab_view(lang: str = 'en') -> Dict[str, Any]:
             photo_url=photo_url,
             reference_url=_investor_deck_reference_url(reference_id),
         ))
-    try:
-        service = get_media_generation_service()
-    except Exception:
-        service = None
-    probe = getattr(service, '_kling_use_evolink_profile', None)
-
-    def _evolink(model: str) -> bool:
-        if not callable(probe):
-            return False
-        try:
-            return bool(probe(model))
-        except Exception:
-            return False
-
-    capabilities = media_video_provider_capabilities() if service is not None else {}
-    providers = capabilities.get('providers') if isinstance(capabilities, dict) else {}
-    if not isinstance(providers, dict):
-        providers = {}
-    engines = []
-    for engine in SCENE_ENGINES:
-        provider_config = providers.get(engine['provider'])
-        if not isinstance(provider_config, dict) or not provider_config.get('enabled'):
-            continue
-        seconds = clip_is_scene_length(
-            engine['provider'], engine['model'], evolink=_evolink(engine['model']),
-        )
-        if seconds == 15:
-            engines.append(dict(engine))
+    engines = _deck_scene_engines()
     stream = stream_of(scenes)
     return {
         'success': True,
@@ -6825,6 +6813,194 @@ def investor_deck_presentation_view(
     body['can_assign'] = bool(can_assign)
     body['photo_url'] = photo_url
     body['lang'] = language
+    return body
+
+
+def _reinsurer_deck_scenes(plan: Dict[str, Any], lang: str = 'en') -> List[Dict[str, Any]]:
+    """Scene views for the reinsurer deck over its own store (one per language)."""
+    from services.investor_deck_video import scene_view
+    from services.reinsurer_meeting_deck import catalog as reinsurer_catalog, store_name_for_lang
+
+    raw = DESIGN_SETTINGS.get(store_name_for_lang(lang))
+    store = raw if isinstance(raw, dict) else {}
+    scenes = []
+    for spec in reinsurer_catalog(lang):
+        stored = store.get(spec['scene_key'])
+        record = stored if isinstance(stored, dict) else None
+        asset_id = str((record or {}).get('last_asset_id') or '')
+        asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
+        brief = None
+        if isinstance(asset, dict):
+            brief = {
+                'type': str(asset.get('type') or ''),
+                'checksum': str(asset.get('checksum') or ''),
+                'playback_url': media_asset_url(asset) if str(asset.get('checksum') or '') else '',
+            }
+        reference_id = str((record or {}).get('reference_image_asset_id') or '')
+        scenes.append(scene_view(
+            spec,
+            record,
+            plan,
+            brief,
+            reference_url=_investor_deck_reference_url(reference_id),
+        ))
+    return scenes
+
+
+def _deck_scene_engines() -> List[Dict[str, Any]]:
+    """Connected engines whose own clip length is the 15-second scene."""
+    from services.investor_deck_video import SCENE_ENGINES, clip_is_scene_length
+
+    try:
+        service = get_media_generation_service()
+    except Exception:
+        service = None
+    probe = getattr(service, '_kling_use_evolink_profile', None)
+
+    def _evolink(model: str) -> bool:
+        if not callable(probe):
+            return False
+        try:
+            return bool(probe(model))
+        except Exception:
+            return False
+
+    capabilities = media_video_provider_capabilities() if service is not None else {}
+    providers = capabilities.get('providers') if isinstance(capabilities, dict) else {}
+    if not isinstance(providers, dict):
+        providers = {}
+    engines = []
+    for engine in SCENE_ENGINES:
+        provider_config = providers.get(engine['provider'])
+        if not isinstance(provider_config, dict) or not provider_config.get('enabled'):
+            continue
+        seconds = clip_is_scene_length(
+            engine['provider'], engine['model'], evolink=_evolink(engine['model']),
+        )
+        if seconds == 15:
+            engines.append(dict(engine))
+    return engines
+
+
+def reinsurer_deck_lab_view(lang: str = 'en') -> Dict[str, Any]:
+    """The Swiss Re Israel deck for the media lab: scenes, scripts, film, engines.
+
+    The lab always reads the baseline plan (saved factors, else canonical);
+    a viewer scenario never reaches a seal.
+    """
+    from services.investor_deck_video import stream_of
+    from services.reinsurer_meeting_deck import (
+        charts as reinsurer_charts,
+        meeting_facts,
+        normalize_lang,
+        page_path_for_lang,
+    )
+
+    language = normalize_lang(lang)
+    plan, meta = _investor_deck_plan()
+    scenes = _reinsurer_deck_scenes(plan, language)
+    stream = stream_of(scenes)
+    return {
+        'success': True,
+        'deck': 'reinsurer',
+        'meeting': meeting_facts(language),
+        'duration_seconds': 15,
+        'plan': meta,
+        'slide_count': len({scene['slide_no'] for scene in scenes}),
+        'scene_count': len(scenes),
+        'stream_count': len(stream),
+        'scenes': scenes,
+        'stream': stream,
+        'charts': reinsurer_charts(plan, language),
+        'engines': _deck_scene_engines(),
+        'photo_url': '',
+        'lang': language,
+        'page_path': page_path_for_lang(language),
+    }
+
+
+class _ReinsurerScenarioRefused(ValueError):
+    """A viewer factor the register refuses, or a scenario whose identities fail."""
+
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+
+
+def reinsurer_deck_presentation_view(
+    *,
+    can_assign: bool,
+    plan_pair: Optional[Tuple[Dict[str, Any], Dict[str, Any]]] = None,
+    lang: str = 'en',
+    query: Optional[Dict[str, Any]] = None,
+    whitelist: Any = None,
+) -> Dict[str, Any]:
+    """The Swiss Re Israel deck as slides, each with its film script.
+
+    ``query`` may move the reinsurance factors of the plan's own register
+    (``cession_rate`` and the others in ``ADJUSTABLE_FACTORS``) over the
+    viewer's baseline — the saved factors, or the set frozen on a share link
+    (``plan_pair``). The result is ``compute_plan`` under its own content
+    hash, labelled a scenario, and is never written. ``whitelist`` narrows
+    the movable factors for a share viewer. A value the register refuses
+    raises ``_ReinsurerScenarioRefused`` (400); a scenario whose identities
+    do not hold raises it with 409.
+    """
+    from services.business_plan_model import compute_plan
+    from services.reinsurer_meeting_deck import (
+        allowed_factors,
+        charts as reinsurer_charts,
+        factor_panel,
+        normalize_lang,
+        presentation_of as reinsurer_presentation,
+        scenario_overrides,
+    )
+
+    language = normalize_lang(lang)
+    base_plan, base_meta = _investor_deck_plan() if plan_pair is None else plan_pair
+    baseline = dict(base_plan.get('inputs') or {})
+    allowed = allowed_factors(whitelist)
+    resolved = scenario_overrides(query or {}, baseline=baseline, allowed=allowed)
+    if resolved['errors']:
+        raise _ReinsurerScenarioRefused(400, '; '.join(resolved['errors']))
+    scenario = {
+        'adjusted': resolved['adjusted'],
+        'restricted': resolved['restricted'],
+        'baseline_content_hash': str(base_meta.get('content_hash') or ''),
+        'baseline_source': str(base_meta.get('factors_source') or ''),
+    }
+    if resolved['adjusted']:
+        plan = compute_plan(resolved['effective'])
+        meta = {
+            'content_hash': str(plan.get('content_hash') or ''),
+            'plan_version': str(plan.get('plan_version') or ''),
+            'factors_source': 'scenario',
+            'baseline_source': str(base_meta.get('factors_source') or ''),
+            'baseline_content_hash': str(base_meta.get('content_hash') or ''),
+            'integrity_all_hold': (plan.get('integrity') or {}).get('all_hold') is True,
+        }
+        if not meta['integrity_all_hold']:
+            raise _ReinsurerScenarioRefused(409, 'Scenario identities do not hold. Nothing was shown.')
+    else:
+        plan, meta = base_plan, dict(base_meta)
+    scenes = _reinsurer_deck_scenes(plan, language)
+    chart_svgs = reinsurer_charts(plan, language)
+    body = reinsurer_presentation(
+        plan,
+        scenes,
+        chart_svgs=chart_svgs,
+        lang=language,
+        factors=factor_panel(plan, baseline=baseline, allowed=allowed, lang=language),
+        scenario=scenario,
+    )
+    body['success'] = True
+    body['plan'] = meta
+    body['can_assign'] = bool(can_assign)
+    body['charts'] = chart_svgs
+    body['photo_url'] = ''
+    # The script sheet films through the same 15-second engines as the lab.
+    # A reader who cannot assign gets an empty list, so the sheet stays a script.
+    body['engines'] = _deck_scene_engines() if can_assign else []
     return body
 
 
@@ -7067,8 +7243,7 @@ def save_investor_deck_slide_chrome(payload: Dict[str, Any], *, actor: str) -> D
 def save_investor_deck_scene(scene_key: str, payload: Dict[str, Any], *, actor: str) -> Dict[str, Any]:
     from services.investor_deck_video import InvestorDeckError, apply_scene_edit
 
-    lang = 'he' if str(scene_key).startswith('he-') else 'en'
-    current = _investor_deck_store(lang).get(scene_key)
+    current = _deck_store_for_key(scene_key).get(scene_key)
     try:
         record = apply_scene_edit(
             scene_key,
@@ -7093,9 +7268,7 @@ def save_investor_deck_scene(scene_key: str, payload: Dict[str, Any], *, actor: 
     record['updated_by'] = actor or 'admin'
     if not _persist_investor_deck_scene(record):
         raise InvestorDeckError('Investor deck scene could not be stored durably')
-    view = investor_deck_lab_view('he' if str(scene_key).startswith('he-') else 'en')
-    scene = next((item for item in view['scenes'] if item['scene_key'] == scene_key), None)
-    return scene or {}
+    return _investor_deck_scene_from_lab(scene_key)
 
 
 def note_investor_deck_video_asset(job: Dict[str, Any], asset_id: str) -> None:
@@ -7131,8 +7304,7 @@ def note_investor_deck_video_asset(job: Dict[str, Any], asset_id: str) -> None:
 
 def _investor_deck_used_presenters(except_key: str = '') -> List[str]:
     used = []
-    lang = 'he' if str(except_key).startswith('he-') else 'en'
-    for key, record in _investor_deck_store(lang).items():
+    for key, record in _deck_store_for_key(except_key).items():
         if key == except_key or not isinstance(record, dict):
             continue
         presenter_id = str(record.get('presenter_id') or '')
@@ -7301,7 +7473,8 @@ def send_investor_deck_scene(
         'success': True,
         'deduplicated': False,
         'message': (
-            f'Investor deck scene sent to {provider}'
+            ('Reinsurer deck scene sent to ' if str(scene_key).startswith('re-') else 'Investor deck scene sent to ')
+            + provider
             + (f' ({requested_model})' if requested_model else '')
             + f' at {SCENE_SECONDS} seconds. The prompt is the deck paragraph. '
             'The plan and the public pages were not changed.'
@@ -7339,7 +7512,11 @@ def seal_for_send_investor_deck(
 
 
 def _investor_deck_scene_from_lab(scene_key: str) -> Dict[str, Any]:
-    view = investor_deck_lab_view('he' if str(scene_key).startswith('he-') else 'en')
+    if str(scene_key).startswith('re-'):
+        from services.reinsurer_meeting_deck import lang_of_scene_key as _re_lang
+        view = reinsurer_deck_lab_view(_re_lang(scene_key))
+    else:
+        view = investor_deck_lab_view('he' if str(scene_key).startswith('he-') else 'en')
     return next((item for item in view['scenes'] if item['scene_key'] == scene_key), {})
 
 
@@ -9142,6 +9319,11 @@ def load_invitation_codes_from_file():
         if customer_codes:
             CUSTOMER_INVITATIONS.update(customer_codes)
             print(f"[INVITATIONS] Loaded {len(customer_codes)} customer referral codes")
+            try:
+                from services.referral_reward_service import adopt_referral_invitations
+                adopt_referral_invitations(customer_codes)
+            except Exception as adopt_err:
+                print(f"[INVITATIONS] Referral invitation adopt skipped: {adopt_err}")
         
         # Load referral stats
         referral_stats = data.get('referral_stats', {})
@@ -9379,6 +9561,11 @@ def load_ledger_data():
         if loaded_customer_invitations:
             CUSTOMER_INVITATIONS.update(loaded_customer_invitations)
             print(f"  - Customer Invitations: {len(CUSTOMER_INVITATIONS)} referral codes loaded from persistence")
+            try:
+                from services.referral_reward_service import adopt_referral_invitations
+                adopt_referral_invitations(loaded_customer_invitations)
+            except Exception as adopt_err:
+                print(f"  - Customer Invitations: adopt skipped: {adopt_err}")
         if loaded_referral_stats:
             CUSTOMER_REFERRAL_STATS.update(loaded_referral_stats)
             print(f"  - Customer Referral Stats: {len(CUSTOMER_REFERRAL_STATS)} customer stats loaded from persistence")
@@ -17204,6 +17391,20 @@ def _record_document_use(**fields) -> None:
         print(f"⚠️  [DOCUMENT USE] not recorded: {exc}")
 
 
+def _record_share_lifecycle(action: str, share: Dict[str, Any], actor: str) -> None:
+    """Append revoke or delete on the use ledger. The share row is already closed."""
+    _record_document_use(
+        action=action,
+        idempotency_key=f"{action}:{share.get('id')}",
+        document_path=str(share.get("path") or ""),
+        document_name=str(share.get("label") or share.get("path") or "Share link"),
+        share_id=str(share.get("id") or ""),
+        actor=str(actor or "admin"),
+        content_sha256=str(share.get("nda_sha256") or ""),
+        doc_instance_id=str(share.get("nda_doc_instance_id") or ""),
+    )
+
+
 def _inject_capture_guard(handler, path: str, html_content: str) -> str:
     """Block capture on a confidential document opened from a share link.
 
@@ -20842,6 +21043,13 @@ _ACCESS_LOG_PII_QUERY_KEYS = frozenset({
     'ssn',
     'id_num',
 })
+# The inquiry email token travels as ``t`` on these pages and on the API.
+# ``token`` and ``resume_code`` are already masked. ``t`` is not a global key.
+_INQUIRY_TOKEN_LOG_PATHS = (
+    '/professional-inquiry.html',
+    '/professional-inquiry-chat.html',
+    '/api/professional-inquiry',
+)
 
 
 def _redact_pii_query(raw: str) -> str:
@@ -20856,13 +21064,16 @@ def _redact_pii_query(raw: str) -> str:
     base, sep, rest = text.partition('?')
     if not sep:
         return text
+    path = base.strip().split(' ')[-1]
+    inquiry_token = path in _INQUIRY_TOKEN_LOG_PATHS or path.startswith('/api/professional-inquiry/')
     query, space, proto = rest.partition(' ')
     parts = []
     for part in query.split('&'):
         if not part:
             continue
         name, eq, _value = part.partition('=')
-        if eq and name.strip().lower() in _ACCESS_LOG_PII_QUERY_KEYS:
+        key = name.strip().lower()
+        if eq and (key in _ACCESS_LOG_PII_QUERY_KEYS or (inquiry_token and key == 't')):
             parts.append(f'{name}=REDACTED')
         else:
             parts.append(part)
@@ -21183,6 +21394,41 @@ class PortalHandler(BaseHTTPRequestHandler):
         for header in pending:
             if header:
                 self.send_header('Set-Cookie', header)
+
+    def _inquiry_browser_cookie(self) -> Dict[str, str]:
+        """Every open inquiry cookie. Each request has its own name."""
+        try:
+            jar = confidential_access.parse_cookies(self.headers.get('Cookie')) or {}
+        except Exception:
+            return {}
+        from services.referral_reward_service import INQUIRY_SESSION_COOKIE
+        prefix = INQUIRY_SESSION_COOKIE + '_'
+        return {
+            str(key): str(value)
+            for key, value in jar.items()
+            if str(key).startswith(prefix) and value
+        }
+
+    def _finish_referral(self, result) -> None:
+        """Write a referral JSON response, moving a new inquiry session onto a cookie."""
+        status_code, response_data = result
+        if isinstance(response_data, dict):
+            secret = response_data.pop('_inquiry_session', None)
+            request_id = response_data.get('request_id')
+            if secret and request_id:
+                from services.referral_reward_service import (
+                    INQUIRY_SESSION_SECONDS,
+                    inquiry_cookie_name,
+                )
+                self._pending_cookies = list(getattr(self, '_pending_cookies', None) or [])
+                self._pending_cookies.append(confidential_access.access_cookie_header(
+                    str(secret),
+                    secure=self._request_is_secure(),
+                    max_age=INQUIRY_SESSION_SECONDS,
+                    cookie_name=inquiry_cookie_name(str(request_id)),
+                ))
+        self._set_json_headers(status_code)
+        self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
 
     def _bearer_token(self) -> Optional[str]:
         auth_header = self.headers.get('Authorization', '') or ''
@@ -22558,7 +22804,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                     return True
                 try:
                     from services.confidential_share_service import get_confidential_share_service
-                    items = get_confidential_share_service().list_shares()
+                    items = get_confidential_share_service().list_shares(reveal_password=True)
                 except Exception as exc:
                     self._set_json_headers(500)
                     self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
@@ -22600,7 +22846,11 @@ class PortalHandler(BaseHTTPRequestHandler):
                     # Access to the PHINS Unified Business Plan through an open
                     # link is always conditional on the platform NDA.
                     composition = None
-                    if confidential_access.is_business_plan_path(share_path) or confidential_access.is_investor_deck_page(share_path):
+                    if (
+                        confidential_access.is_business_plan_path(share_path)
+                        or confidential_access.is_investor_deck_page(share_path)
+                        or confidential_access.is_reinsurer_deck_page(share_path)
+                    ):
                         nda_required = True
                         composition = self._business_plan_link_composition(body_data)
                     created = get_confidential_share_service().create_share(
@@ -22652,9 +22902,45 @@ class PortalHandler(BaseHTTPRequestHandler):
                     ShareError,
                     get_confidential_share_service,
                 )
+                actor = str((session or {}).get('username') or 'admin')
                 revoked = get_confidential_share_service().revoke_share(
                     share_id,
-                    revoked_by=str((session or {}).get('username') or 'admin'),
+                    revoked_by=actor,
+                )
+            except ShareError as exc:
+                message = str(exc)
+                self._set_json_headers(409 if message == 'Share link has been deleted.' else 404)
+                self.wfile.write(json.dumps({'error': message}).encode('utf-8'))
+                return True
+            except Exception as exc:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return True
+            _record_share_lifecycle('revoked', revoked, actor)
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps({'success': True, 'share': revoked}).encode('utf-8'))
+            return True
+
+        if (
+            self.command == 'POST'
+            and path.startswith('/api/confidential/shares/')
+            and path.rstrip('/').endswith('/delete')
+        ):
+            if not confidential_access.session_is_staff(session) and not staff_cookie_ok:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Staff authorization required.'}).encode('utf-8'))
+                return True
+            parts = [part for part in path.split('/') if part]
+            share_id = parts[3] if len(parts) >= 5 else ''
+            try:
+                from services.confidential_share_service import (
+                    ShareError,
+                    get_confidential_share_service,
+                )
+                actor = str((session or {}).get('username') or 'admin')
+                deleted = get_confidential_share_service().delete_share(
+                    share_id,
+                    deleted_by=actor,
                 )
             except ShareError as exc:
                 self._set_json_headers(404)
@@ -22664,8 +22950,9 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
                 return True
+            _record_share_lifecycle('deleted', deleted, actor)
             self._set_json_headers(200)
-            self.wfile.write(json.dumps({'success': True, 'share': revoked}).encode('utf-8'))
+            self.wfile.write(json.dumps({'success': True, 'share': deleted}).encode('utf-8'))
             return True
 
         if path == '/api/confidential/signed-documents' or path.startswith('/api/confidential/signed-documents/'):
@@ -23726,10 +24013,18 @@ For claims or questions, please contact:
         path = parsed.path
         qs = urlparse.parse_qs(parsed.query)
 
-        # Redirect deprecated client-portal.html to main dashboard
-        if path == '/client-portal.html':
+        # Alias desks. The query string is kept so a bookmarked deep link
+        # still opens the same tab. The fragment stays in the browser.
+        if path in ('/client-portal.html', '/admin-portal.html', '/supplier-dashboard.html'):
+            destination = {
+                '/client-portal.html': '/dashboard.html',
+                '/admin-portal.html': '/admin.html',
+                '/supplier-dashboard.html': '/supplier-portal.html',
+            }[path]
+            if parsed.query:
+                destination = destination + '?' + parsed.query
             self.send_response(301)
-            self.send_header('Location', '/dashboard.html')
+            self.send_header('Location', destination)
             self.end_headers()
             return
 
@@ -23785,9 +24080,9 @@ For claims or questions, please contact:
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
                 return
-            from security.access_hierarchy import surface_decision
+            from security.access_hierarchy import surface_for_session
             requested = (qs.get('path', ['/'])[0] or '/')
-            decision = surface_decision(get_effective_role(session), requested)
+            decision = surface_for_session(session, get_effective_role(session), requested)
             self._set_json_headers(200)
             self.wfile.write(json.dumps({
                 'allowed': bool(decision.get('allowed')),
@@ -24401,11 +24696,11 @@ For claims or questions, please contact:
         # =====================================================================
         if referral_rewards_enabled and api_referral_get and path.startswith(REFERRAL_API_PREFIXES):
             try:
-                referral_result = api_referral_get(path, session, qs)
+                referral_result = api_referral_get(
+                    path, session, qs, self._inquiry_browser_cookie(),
+                )
                 if referral_result is not None:
-                    status_code, response_data = referral_result
-                    self._set_json_headers(status_code)
-                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    self._finish_referral(referral_result)
                     return
             except Exception as e:
                 print(f"Referral Rewards error (GET {path}): {e}")
@@ -24577,6 +24872,87 @@ For claims or questions, please contact:
                 self._set_json_headers(503)
                 self.wfile.write(json.dumps({'error': f'The investor deck could not be prepared: {exc}'}).encode('utf-8'))
                 return
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/admin/media/reinsurer-deck':
+            if not require_role(session, ['admin', 'media']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Admin or Media access required'}).encode('utf-8'))
+                return
+            try:
+                payload = reinsurer_deck_lab_view(_deck_query_lang(qs))
+            except Exception as exc:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': f'The reinsurer deck could not be prepared: {exc}'}).encode('utf-8'))
+                return
+            self._set_json_headers(200)
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/admin/media/reinsurer-deck/presentation':
+            decision = getattr(self, '_confidential_decision', None)
+            share_viewer = bool(decision and getattr(decision, 'is_share_viewer', False))
+            deck_lang = _deck_query_lang(qs)
+            # The reinsurance factors a viewer may move arrive as query
+            # values of the plan's own register (``cession_rate=0.3`` …).
+            factor_query = _parse_business_plan_query(qs)
+            if share_viewer:
+                # A share link freezes the factor set the way a plan or deck
+                # link does; live settings are not read for a share viewer,
+                # and only the factors frozen as adjustable on the link move.
+                try:
+                    composition = self._share_composition()
+                    if (
+                        not isinstance(composition, dict)
+                        or composition.get('legacy')
+                        or not isinstance(composition.get('saved_factors'), dict)
+                    ):
+                        raise LookupError('share composition unavailable')
+                    plan_pair = _investor_deck_plan_from_share(composition['saved_factors'])
+                    if not plan_pair[1].get('integrity_all_hold'):
+                        self._set_json_headers(409)
+                        self.wfile.write(json.dumps({
+                            'error': 'Plan identities do not hold. Nothing was shown.',
+                        }).encode('utf-8'))
+                        return
+                    share_adjustable = composition.get('viewer_adjustable')
+                    payload = reinsurer_deck_presentation_view(
+                        can_assign=False,
+                        plan_pair=plan_pair,
+                        lang=deck_lang,
+                        query=factor_query,
+                        whitelist=share_adjustable if isinstance(share_adjustable, list) else None,
+                    )
+                except _ReinsurerScenarioRefused as exc:
+                    self._set_json_headers(exc.status)
+                    self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                    return
+                except Exception as exc:
+                    print(f'⚠️  [REINSURER DECK] share presentation unavailable: {exc}')
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({'error': 'This link could not be prepared.'}).encode('utf-8'))
+                    return
+            else:
+                if not require_role(session, _INVESTOR_DECK_READ_ROLES):
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Staff access required'}).encode('utf-8'))
+                    return
+                try:
+                    payload = reinsurer_deck_presentation_view(
+                        can_assign=require_role(session, ['admin', 'media']),
+                        lang=deck_lang,
+                        query=factor_query,
+                    )
+                except _ReinsurerScenarioRefused as exc:
+                    self._set_json_headers(exc.status)
+                    self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                    return
+                except Exception as exc:
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({'error': f'The reinsurer deck could not be prepared: {exc}'}).encode('utf-8'))
+                    return
             self._set_json_headers(200)
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
@@ -24955,10 +25331,30 @@ For claims or questions, please contact:
                 invitation = INVITATION_CODES.get(code)
                 invitation_type = 'admin'
                 
-                # If not found in admin codes, check customer-generated codes
+                # If not found in admin codes, check the sealed referral invitation.
+                # A checksum mismatch is not served. Agent AGI- codes stay below.
                 if not invitation:
-                    invitation = CUSTOMER_INVITATIONS.get(code)
-                    invitation_type = 'customer'
+                    try:
+                        from services.referral_reward_service import (
+                            invitation_withheld,
+                            referral_invitation,
+                        )
+                        if invitation_withheld(code):
+                            self._set_json_headers(200)
+                            self.wfile.write(json.dumps({
+                                'valid': False,
+                                'error': 'Invitation code is not available',
+                            }).encode('utf-8'))
+                            return
+                        stored_invitation = referral_invitation(code)
+                    except Exception:
+                        stored_invitation = None
+                    if stored_invitation:
+                        invitation = stored_invitation
+                        invitation_type = 'customer'
+                    else:
+                        invitation = CUSTOMER_INVITATIONS.get(code)
+                        invitation_type = 'customer'
 
                 # Agent ecosystem invitations (AGI-...) — same public validate
                 # surface the registration form already uses.
@@ -25030,7 +25426,11 @@ For claims or questions, please contact:
                 
                 # Compile comprehensive statistics
                 admin_codes = list(INVITATION_CODES.values())
-                customer_codes = list(CUSTOMER_INVITATIONS.values())
+                try:
+                    from services.referral_reward_service import list_referral_invitations
+                    customer_codes = list_referral_invitations()
+                except Exception:
+                    customer_codes = list(CUSTOMER_INVITATIONS.values())
                 
                 # Admin code stats
                 admin_active = len([c for c in admin_codes if get_status_lower(c) == 'active'])
@@ -25084,7 +25484,11 @@ For claims or questions, please contact:
             
             # Return all invitation codes (admin + customer)
             admin_codes = list(INVITATION_CODES.values())
-            customer_codes = list(CUSTOMER_INVITATIONS.values())
+            try:
+                from services.referral_reward_service import list_referral_invitations
+                customer_codes = list_referral_invitations()
+            except Exception:
+                customer_codes = list(CUSTOMER_INVITATIONS.values())
             
             # Mark types for display
             for code in admin_codes:
@@ -25121,24 +25525,28 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Customer account required'}).encode('utf-8'))
                 return
             
-            # GET /api/customer/invitations - List customer's own invitation codes
+            # GET /api/customer/invitations - List this customer's sealed codes.
+            # A checksum mismatch is omitted and still occupies a cap slot.
             if path == '/api/customer/invitations':
-                # Get customer's invitation codes from CUSTOMER_INVITATIONS
+                # This read does not persist the book.
                 from services.referral_reward_service import (
                     affiliated_join_link,
                     affiliation_for,
+                    invitation_slots_used,
+                    list_referral_invitations,
+                    referred_acquisition,
                 )
                 customer_codes = []
-                for code in CUSTOMER_INVITATIONS.values():
-                    if code.get('creator_customer_id') != customer_id:
-                        continue
+                for code in list_referral_invitations(customer_id):
                     item = dict(code)
+                    item.pop('notes', None)
                     item['join_link'] = affiliated_join_link(item.get('code'))
                     item['registration_link'] = item['join_link']
                     customer_codes.append(item)
                 customer_codes.sort(key=lambda x: x.get('created_at', ''), reverse=True)
                 
-                # Get referral stats
+                # Get referral stats. Acquisition figures are read from the
+                # settlement book and are not written back onto the stats.
                 stats = CUSTOMER_REFERRAL_STATS.get(customer_id, {
                     'codes_generated': 0,
                     'successful_referrals': 0,
@@ -25146,17 +25554,29 @@ For claims or questions, please contact:
                     'referred_customers': [],
                     'rewards': []
                 })
+                measured = referred_acquisition(customer_id, stats.get('referred_customers') or [])
                 
                 invitation_limit = customer_invitation_limit(customer_id)
+                slots_used = invitation_slots_used(customer_id)
                 self._set_json_headers(200)
                 self.wfile.write(json.dumps({
                     'codes': customer_codes,
                     'total': len(customer_codes),
                     'active': len([c for c in customer_codes if get_status_lower(c) == 'active']),
                     'used': len([c for c in customer_codes if get_status_lower(c) == 'used']),
-                    'stats': stats,
+                    'stats': {
+                        'codes_generated': stats.get('codes_generated', 0),
+                        'successful_referrals': stats.get('successful_referrals', 0),
+                        'codes': list(stats.get('codes') or []),
+                        'referred_customers': measured['referred_customers'],
+                        'acquisition_totals': measured['acquisition_totals'],
+                        'viewer_share_totals': measured['viewer_share_totals'],
+                        'rewards': list(stats.get('rewards') or []),
+                        'total_reward_value': stats.get('total_reward_value', 0),
+                    },
                     'max_allowed': invitation_limit,
-                    'can_generate_more': len(customer_codes) < invitation_limit,
+                    'slots_used': slots_used,
+                    'can_generate_more': slots_used < invitation_limit,
                     'affiliation': affiliation_for(customer_id),
                 }).encode('utf-8'))
                 return
@@ -28495,6 +28915,11 @@ For claims or questions, please contact:
             
             with STATE_LOCK:
                 items = [s for s in SUPPLIERS.values() if s.get('status') in ['pending', 'under_review']]
+            try:
+                from services.referral_reward_service import pending_supplier_desk_rows
+                items.extend(pending_supplier_desk_rows(item.get('id') for item in items))
+            except Exception as exc:
+                print(f"[SUPPLIER] pending professional requests were not listed: {exc}")
             
             if type_filter:
                 items = [s for s in items if s.get('supplier_type') == type_filter]
@@ -28616,6 +29041,28 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
+        # One read of affiliation-to-sales and the supplier desk.
+        # Opening this does not refresh, reverse, promote, or persist a book.
+        if path == '/api/supplier/desk':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                from services.referral_reward_service import RewardError, read_unified_desk
+                payload = read_unified_desk(session)
+            except RewardError as exc:
+                self._set_json_headers(exc.status)
+                self.wfile.write(json.dumps(exc.to_dict()).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
         # Supplier: Get own profile
         if path == '/api/supplier/profile':
             if not require_role(session, ['supplier']):
@@ -31727,9 +32174,9 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'report_id is required'}).encode('utf-8'))
                 return
 
-            if export_format not in ['pdf', 'excel', 'csv']:
+            if export_format not in ['pdf', 'excel', 'csv', 'html']:
                 self._set_json_headers(400)
-                self.wfile.write(json.dumps({'error': 'Unsupported format. Use pdf or excel.'}).encode('utf-8'))
+                self.wfile.write(json.dumps({'error': 'Unsupported format. Use pdf, excel, or html.'}).encode('utf-8'))
                 return
 
             try:
@@ -31750,6 +32197,17 @@ For claims or questions, please contact:
 
                 title_stem = self._safe_download_filename(summary_payload.get('title', ''), fallback='report_summary')
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+                if export_format == 'html':
+                    from services.risk_reports.pdf_export import build_report_letterhead_html
+                    html_doc = build_report_letterhead_html(summary_payload)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/html; charset=utf-8')
+                    self.send_header('X-Content-Type-Options', 'nosniff')
+                    self.send_header('Cache-Control', 'no-store')
+                    self.end_headers()
+                    self.wfile.write(html_doc.encode('utf-8'))
+                    return
 
                 if export_format == 'pdf':
                     file_bytes = self._build_report_summary_pdf_bytes(summary_payload)
@@ -40219,6 +40677,8 @@ For claims or questions, please contact:
             rel = path.lstrip('/')
             if path == '/investor-deck.he.html':
                 rel = 'investor-deck.html'
+            elif path == '/reinsurer-deck.he.html':
+                rel = 'reinsurer-deck.html'
             file_path = os.path.join(ROOT, rel)
             allowed_root = ROOT
         
@@ -40461,7 +40921,10 @@ For claims or questions, please contact:
         # crawler hits (seen repeatedly as 404 in production after PR #603).
         # Redirect to GET so a JS-disabled resume submit is not a dead end
         # and does not look like a missing application API.
-        if path in ('/apply-chat.html', '/apply.html', '/claims-chat.html', '/file-a-claim.html'):
+        if path in (
+            '/apply-chat.html', '/apply.html', '/claims-chat.html', '/file-a-claim.html',
+            '/professional-inquiry-chat.html', '/professional-inquiry.html',
+        ):
             if content_length > 0:
                 try:
                     remaining = content_length
@@ -42912,7 +43375,10 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
             return
 
-        if path in {'/api/admin/media/investor-deck', '/api/admin/media/investor-deck/send'}:
+        if path in {
+            '/api/admin/media/investor-deck', '/api/admin/media/investor-deck/send',
+            '/api/admin/media/reinsurer-deck', '/api/admin/media/reinsurer-deck/send',
+        }:
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
             session = validate_session(token) if token else None
@@ -42942,7 +43408,11 @@ For claims or questions, please contact:
                     scene = save_investor_deck_scene(scene_key, data, actor=actor)
                     status_code, payload = 200, {
                         'success': True,
-                        'message': 'Investor deck scene saved. The plan was not changed.',
+                        'message': (
+                            'Reinsurer deck scene saved. The plan was not changed.'
+                            if scene_key.startswith('re-')
+                            else 'Investor deck scene saved. The plan was not changed.'
+                        ),
                         'scene': scene,
                     }
             except InvestorDeckError as exc:
@@ -43951,19 +44421,21 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Customer profile not found'}).encode('utf-8'))
                 return
             
-            # Count existing codes for this customer
-            existing_codes = [
-                c for c in CUSTOMER_INVITATIONS.values()
-                if c.get('creator_customer_id') == customer_id
-            ]
-            
+            # The cap is the sealed book, including rows reloaded from the
+            # database or the checksummed file. A checksum mismatch still
+            # occupies its slot. The in-memory cache is not a second count.
+            from services.referral_reward_service import (
+                RewardError,
+                invitation_slots_used as _invitation_slots_used,
+            )
+            occupied = _invitation_slots_used(customer_id)
             invitation_limit = customer_invitation_limit(customer_id)
-            if len(existing_codes) >= invitation_limit:
+            if occupied >= invitation_limit:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({
                     'error': f'Maximum referral limit reached ({invitation_limit} codes)',
                     'limit': invitation_limit,
-                    'current_count': len(existing_codes)
+                    'current_count': occupied
                 }).encode('utf-8'))
                 return
             
@@ -43982,30 +44454,35 @@ For claims or questions, please contact:
                 code = f"REF-{customer_short}-{secrets.token_hex(3).upper()}"
                 
                 # Ensure unique
-                while code in CUSTOMER_INVITATIONS:
+                from services.referral_reward_service import (
+                    invitation_withheld as _invitation_withheld,
+                    referral_invitation as _referral_invitation,
+                )
+                while (
+                    code in CUSTOMER_INVITATIONS
+                    or _referral_invitation(code)
+                    or _invitation_withheld(code)
+                ):
                     code = f"REF-{customer_short}-{secrets.token_hex(3).upper()}"
                 
                 # Calculate expiration (default 90 days for customer referrals)
                 expires_days = min(int(data.get('expires_days', 90)), 365)  # Max 1 year
                 expires_at = (datetime.now() + timedelta(days=expires_days)).isoformat()
                 
-                # Create invitation record
-                invitation = {
+                from services.referral_reward_service import issue_referral_invitation
+                invitation = issue_referral_invitation({
                     'code': code,
                     'creator_customer_id': customer_id,
                     'creator_name': customer.get('name', ''),
-                    'creator_email': customer.get('email', ''),
                     'created_at': datetime.now().isoformat(),
                     'expires_at': expires_at,
-                    'max_uses': 1,  # Each referral code is single-use
+                    'max_uses': 1,
                     'used_count': 0,
                     'used_by': [],
                     'status': 'active',
                     'notes': data.get('notes', ''),
-                    'reward_status': 'pending'  # For tracking referral rewards
-                }
-                
-                # Store in CUSTOMER_INVITATIONS
+                    'reward_status': 'pending',
+                })
                 CUSTOMER_INVITATIONS[code] = invitation
                 
                 # Update customer's referral stats
@@ -44045,8 +44522,8 @@ For claims or questions, please contact:
                     'join_link': registration_link,
                     'registration_link': registration_link,
                     'affiliation': affiliation_for(customer_id),
-                    'remaining_codes': invitation_limit - len(existing_codes) - 1,
-                    'total_generated': len(existing_codes) + 1,
+                    'remaining_codes': invitation_limit - occupied - 1,
+                    'total_generated': occupied + 1,
                     'max_allowed': invitation_limit
                 }).encode('utf-8'))
                 return
@@ -44054,6 +44531,10 @@ For claims or questions, please contact:
             except json.JSONDecodeError:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
+                return
+            except RewardError as exc:
+                self._set_json_headers(exc.status)
+                self.wfile.write(json.dumps(exc.to_dict()).encode('utf-8'))
                 return
             except Exception as e:
                 print(f"Error generating customer invitation: {e}")
@@ -44785,11 +45266,15 @@ For claims or questions, please contact:
                     referral_body = {}
                 if not isinstance(referral_body, dict):
                     referral_body = {}
-                referral_result = api_referral_post(path, session, referral_body)
+                referral_result = api_referral_post(
+                    path, session, referral_body,
+                    self._inquiry_browser_cookie(),
+                    client_ip,
+                    self.headers.get('User-Agent', '') or '',
+                    self._preview_origin(),
+                )
                 if referral_result is not None:
-                    status_code, response_data = referral_result
-                    self._set_json_headers(status_code)
-                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    self._finish_referral(referral_result)
                     return
             except Exception as e:
                 print(f"Referral Rewards error (POST {path}): {e}")
@@ -45907,10 +46392,30 @@ For claims or questions, please contact:
                     invitation_type = 'admin'
                     agent_invite_meta = None
                     if not invitation:
-                        invitation = CUSTOMER_INVITATIONS.get(invitation_code)
-                        invitation_type = 'customer'
-                        if invitation:
-                            referrer_customer_id = invitation.get('creator_customer_id')
+                        try:
+                            from services.referral_reward_service import (
+                                invitation_withheld,
+                                referral_invitation,
+                            )
+                            if invitation_withheld(invitation_code):
+                                self._set_json_headers(409)
+                                self.wfile.write(json.dumps({
+                                    'error': 'Invitation code is not available',
+                                    'code': 'checksum',
+                                }).encode('utf-8'))
+                                return
+                            stored_invitation = referral_invitation(invitation_code)
+                        except Exception:
+                            stored_invitation = None
+                        if stored_invitation:
+                            invitation = stored_invitation
+                            invitation_type = 'customer'
+                            referrer_customer_id = stored_invitation.get('creator_customer_id')
+                        else:
+                            invitation = CUSTOMER_INVITATIONS.get(invitation_code)
+                            invitation_type = 'customer'
+                            if invitation:
+                                referrer_customer_id = invitation.get('creator_customer_id')
                     if not invitation:
                         try:
                             from services import agent_ecosystem_service as _aes
@@ -46063,6 +46568,29 @@ For claims or questions, please contact:
                         customer_record['referring_agent_id'] = aff_or_err.get('agent_id')
                         _aes.persist_referring_agent(
                             'customer', customer_id, aff_or_err.get('agent_id'))
+                    elif invitation_type == 'customer' and referrer_customer_id:
+                        from services.referral_reward_service import (
+                            mark_referral_invitation_used,
+                            referral_invitation as _stored_referral_invitation,
+                        )
+                        if _stored_referral_invitation(invitation_code):
+                            invitation = mark_referral_invitation_used(
+                                invitation_code, customer_id, registration_date,
+                            )
+                            CUSTOMER_INVITATIONS[invitation_code] = invitation
+                        else:
+                            invitation['used_count'] = invitation.get('used_count', 0) + 1
+                            used_by_entries = invitation.setdefault('used_by', [])
+                            if not isinstance(used_by_entries, list):
+                                used_by_entries = []
+                                invitation['used_by'] = used_by_entries
+                            used_by_entries.append({
+                                'email': email,
+                                'customer_id': customer_id,
+                                'used_at': registration_date
+                            })
+                            if invitation['used_count'] >= invitation.get('max_uses', 1):
+                                invitation['status'] = 'used'
                     else:
                         invitation['used_count'] = invitation.get('used_count', 0) + 1
                         used_by_entries = invitation.setdefault('used_by', [])
@@ -47903,6 +48431,29 @@ For claims or questions, please contact:
                 admin_user = (session or {}).get('username', 'admin')
                 payload = json.loads(body or '{}')
                 notes = payload.get('notes')
+
+                from services.referral_reward_service import RewardError, continue_supplier_application
+                try:
+                    reviewed = continue_supplier_application(supplier_id, 'approve', admin_user, notes or '')
+                except RewardError as exc:
+                    self._set_json_headers(exc.status)
+                    self.wfile.write(json.dumps(exc.to_dict()).encode('utf-8'))
+                    return
+                if reviewed is not None:
+                    linked = reviewed.get('supplier_id')
+                    if linked and linked in SUPPLIERS:
+                        _persist_supplier(linked, SUPPLIERS[linked])
+                    if audit:
+                        audit.log(admin_user, 'approve', 'professional_request', reviewed.get('id'), {
+                            'supplier_id': linked,
+                        })
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'supplier_id': linked,
+                        'request': reviewed,
+                    }).encode('utf-8'))
+                    return
                 
                 result = supplier_service.approve_supplier(supplier_id, admin_user, notes)
                 
@@ -47949,6 +48500,29 @@ For claims or questions, please contact:
                 if not reason:
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({'error': 'Rejection reason required'}).encode('utf-8'))
+                    return
+
+                from services.referral_reward_service import RewardError, continue_supplier_application
+                try:
+                    reviewed = continue_supplier_application(supplier_id, 'reject', admin_user, reason)
+                except RewardError as exc:
+                    self._set_json_headers(exc.status)
+                    self.wfile.write(json.dumps(exc.to_dict()).encode('utf-8'))
+                    return
+                if reviewed is not None:
+                    linked = reviewed.get('supplier_id')
+                    if linked and linked in SUPPLIERS:
+                        _persist_supplier(linked, SUPPLIERS[linked])
+                    if audit:
+                        audit.log(admin_user, 'reject', 'professional_request', reviewed.get('id'), {
+                            'supplier_id': linked, 'reason': reason,
+                        })
+                    self._set_json_headers()
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'supplier_id': linked,
+                        'request': reviewed,
+                    }).encode('utf-8'))
                     return
                 
                 result = supplier_service.reject_supplier(supplier_id, admin_user, reason)

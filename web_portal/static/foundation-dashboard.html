@@ -1458,17 +1458,28 @@
 <body>
   <div class="foundation-container">
     <!-- Navigation -->
-    <nav class="nav-bar">
-      <div class="nav-links">
-        <a href="/dashboard.html" class="nav-link">Dashboard</a>
-        <a href="/foundation-dashboard.html" class="nav-link active">Foundations</a>
-        <a href="/settings.html" class="nav-link">Settings</a>
+    <header class="phins-header">
+      <div class="phins-header-inner">
+        <a href="/dashboard.html" class="phins-logo">
+          <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
+          <span class="phins-logo-text">PHINS</span>
+        </a>
+        <button class="mobile-menu-btn" type="button" onclick="toggleMobileMenu()">Menu</button>
+        <nav class="phins-nav" id="mobile-nav">
+          <a href="/dashboard.html">Dashboard</a>
+          <a href="/foundation-dashboard.html" class="active">Foundations</a>
+          <a href="/settings.html">Settings</a>
+          <span id="user-name">User</span>
+          <span class="user-avatar" id="user-avatar">U</span>
+        </nav>
       </div>
-      <div class="user-info">
-        <span id="user-name">User</span>
-        <div class="user-avatar" id="user-avatar">U</div>
-      </div>
-    </nav>
+    </header>
+    <script>
+      function toggleMobileMenu() {
+        var nav = document.getElementById('mobile-nav');
+        if (nav) nav.classList.toggle('open');
+      }
+    </script>
     
     <!-- Header -->
     <header class="foundation-header">
@@ -2165,7 +2176,7 @@
         
         <!-- AI Assessment Preview -->
         <div id="ai-assessment-preview" style="display: none; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 16px; border-radius: 12px; margin-bottom: 20px;">
-          <h4 style="margin: 0 0 12px; color: #1565c0; display: flex; align-items: center; gap: 8px;">AI Assessment Preview
+          <h4 style="margin: 0 0 12px; color: var(--phins-gold); display: flex; align-items: center; gap: 8px;">AI Assessment Preview
           </h4>
           <div id="ai-assessment-content"></div>
         </div>
@@ -2210,7 +2221,7 @@
           </div>
         </div>
         
-        <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; font-size: 0.85rem; color: #1565c0;">Wallet funds can be used for instant contributions to any foundation you're a member of.
+        <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; font-size: 0.85rem; color: var(--phins-gold);">Wallet funds can be used for instant contributions to any foundation you're a member of.
         </div>
       </div>
       <div class="modal-footer">
@@ -3181,7 +3192,7 @@
                 <div style="color: #666; font-size: 0.85rem;">Total Balance</div>
               </div>
               <div style="background: #e3f2fd; padding: 16px; border-radius: 12px; text-align: center;">
-                <div style="font-size: 2rem; font-weight: 700; color: #1565c0;">${data.active_votes || 0}</div>
+                <div style="font-size: 2rem; font-weight: 700; color: var(--phins-gold);">${data.active_votes || 0}</div>
                 <div style="color: #666; font-size: 0.85rem;">Active Votes</div>
               </div>
             </div>
@@ -3965,7 +3976,7 @@
           <h4 style="color: var(--foundation-dark); margin: 0 0 16px;">️ Governance Summary</h4>
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
             <div style="background: #e3f2fd; padding: 16px; border-radius: 8px; text-align: center;">
-              <div style="font-size: 1.5rem; font-weight: 700; color: #1565c0;">${report.governance?.total_votes || 0}</div>
+              <div style="font-size: 1.5rem; font-weight: 700; color: var(--phins-gold);">${report.governance?.total_votes || 0}</div>
               <div style="font-size: 0.85rem; color: #666;">Total Votes</div>
             </div>
             <div style="background: #e8f5e9; padding: 16px; border-radius: 8px; text-align: center;">
@@ -4000,7 +4011,7 @@
               <div style="font-size: 0.85rem; color: #666;">Approved</div>
             </div>
             <div style="background: #e3f2fd; padding: 16px; border-radius: 8px; text-align: center;">
-              <div style="font-size: 1.5rem; font-weight: 700; color: #1565c0;">$${formatNumber(report.claims?.total_approved_amount || 0)}</div>
+              <div style="font-size: 1.5rem; font-weight: 700; color: var(--phins-gold);">$${formatNumber(report.claims?.total_approved_amount || 0)}</div>
               <div style="font-size: 0.85rem; color: #666;">Amount Paid</div>
             </div>
           </div>
@@ -4019,7 +4030,7 @@
               <div style="font-size: 0.85rem; color: #666;">Active Contributors</div>
             </div>
             <div style="background: #e3f2fd; padding: 16px; border-radius: 8px; text-align: center;">
-              <div style="font-size: 1.5rem; font-weight: 700; color: #1565c0;">$${formatNumber(billing.members?.average_contribution || 0)}</div>
+              <div style="font-size: 1.5rem; font-weight: 700; color: var(--phins-gold);">$${formatNumber(billing.members?.average_contribution || 0)}</div>
               <div style="font-size: 0.85rem; color: #666;">Avg. Contribution</div>
             </div>
           </div>

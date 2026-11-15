@@ -1147,7 +1147,7 @@
 
     .data-badge.private {
       background: #e3f2fd;
-      color: #0d47a1;
+      color: var(--phins-navy);
     }
 
     .data-badge.proxy {
@@ -1535,6 +1535,114 @@
       to { opacity: 1; transform: none; }
     }
 
+    .signed-use-card {
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .signed-use-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+      gap: 12px;
+      cursor: pointer;
+    }
+
+    .signed-use-head-copy {
+      min-width: 0;
+    }
+
+    .signed-use-summary {
+      margin: 6px 0 0;
+      font-size: 9pt;
+      color: var(--text-sub);
+    }
+
+    .signed-use-toggle {
+      flex: 0 0 auto;
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      border: 1px solid rgba(13, 42, 92, 0.22);
+      background: #fff;
+      color: #0d2a5c;
+      font-family: "Space Grotesk", sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .signed-use-toggle:hover {
+      background: rgba(247, 226, 160, 0.35);
+      border-color: rgba(201, 160, 78, 0.8);
+    }
+
+    .signed-use-card.is-open .signed-use-toggle {
+      background: linear-gradient(135deg, #f7e2a0, #e3bf6f);
+      color: #071022;
+      border-color: transparent;
+    }
+
+    .signed-use-card.is-collapsed #signed-use-body {
+      display: none;
+    }
+
+    .address-book {
+      overflow-x: auto;
+      max-width: 100%;
+      margin: 0 0 14px;
+    }
+
+    .address-book table {
+      width: 100%;
+      min-width: 920px;
+      border-collapse: collapse;
+      font-size: 8.3pt;
+    }
+
+    .address-book th,
+    .address-book td {
+      text-align: left;
+      vertical-align: top;
+      padding: 8px 8px;
+      border-top: 1px solid var(--border);
+    }
+
+    .address-book th {
+      font-size: 7.6pt;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-sub);
+      border-top: none;
+    }
+
+    .address-book a,
+    .address-book code {
+      word-break: break-all;
+    }
+
+    .signed-use-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .signed-use-actions .exec-dl-btn {
+      height: auto;
+      padding: 4px 8px;
+      font-size: 8pt;
+    }
+
+    @media print {
+      .signed-use-card.is-collapsed #signed-use-body { display: block; }
+      .signed-use-toggle { display: none; }
+    }
+
     .pitch-tab-back-row {
       display: flex;
       align-items: center;
@@ -1810,7 +1918,7 @@
       font-family: "Space Grotesk", "Heebo", sans-serif;
       font-size: 12pt;
       font-weight: 800;
-      color: #0d47a1;
+      color: var(--phins-navy);
       line-height: 1.1;
     }
 
@@ -1906,7 +2014,7 @@
     }
 
     .pm-op-table th {
-      background: #0d47a1;
+      background: var(--phins-navy);
       color: #fff;
       font-weight: 700;
     }
@@ -2427,7 +2535,7 @@
       transition: width 0.5s ease;
     }
 
-    .exec-bar-item .ebi-fill.ai { background: linear-gradient(135deg, #1565c0, #42a5f5); }
+    .exec-bar-item .ebi-fill.ai { background: linear-gradient(135deg, var(--phins-gold), var(--phins-gold)); }
     .exec-bar-item .ebi-fill.data { background: linear-gradient(135deg, #2e7d32, #66bb6a); }
     .exec-bar-item .ebi-fill.cloud { background: linear-gradient(135deg, #6a1b9a, #ab47bc); }
     .exec-bar-item .ebi-fill.block { background: linear-gradient(135deg, #e65100, #ff9800); }
@@ -2738,6 +2846,8 @@
       <a href="#aspire-ohayun-meeting-26oct" class="pitch-nav-link">Aspire · Ohayun 26.10</a>
       <a href="#uzan-followup-meeting-28oct" class="pitch-nav-link">Uzan follow-up 28.10</a>
       <a href="#dnr-benzvi-meeting-12nov" class="pitch-nav-link">DNR · Ben Zvi 12.11</a>
+      <a href="#reinsurer-ceo-assessment-nov2026" class="pitch-nav-link">Reinsurer CEO assessment</a>
+      <a href="#swissre-israel-meeting-8dec2026" class="pitch-nav-link">Swiss Re Israel 8.12</a>
       <a href="#il-meeting-diary" class="pitch-nav-link">Meeting Diary</a>
       <a href="#exec-summary-section" class="pitch-nav-link">Executive Summary</a>
       <a href="#scenario-assessment-section" class="pitch-nav-link">Scenario Lab</a>
@@ -2779,7 +2889,7 @@
 
     <!-- Investor Due Diligence & Documentation hub -->
     <section id="investor-documents-section" style="margin-bottom:28px;">
-      <div class="exec-summary-banner" style="background: linear-gradient(135deg,#0d47a1 0%,#1565c0 50%,#1976d2 100%); box-shadow: 0 12px 32px rgba(13,71,161,0.22);">
+      <div class="exec-summary-banner" style="background: linear-gradient(135deg,var(--phins-navy) 0%,var(--phins-gold) 50%,var(--phins-gold) 100%); box-shadow: 0 12px 32px rgba(13,71,161,0.22);">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
           <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;"> Investor &amp; Investment Documents</span>
           <span style="font-size:8.5pt;opacity:0.85;">Due-diligence library · architecture, AI/BI optimization, data integrity</span>
@@ -2849,13 +2959,26 @@
         <p style="font-size:8.5pt;color:var(--text-sub);margin:8px 0 0;">A business-plan link freezes the document structure and the adjustable factors saved in <a href="/business-plan.html#bp-factor-panel">Admin tools</a> at the moment it is created. An investor-deck link freezes that same factor set onto the 13 slides (English or Hebrew). A later edit does not change a link already sent, and each link needs its own signature — opening one does not open the next.</p>
       </div>
 
-      <div id="signed-use-section" hidden style="margin-top:16px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--bg-card);box-shadow:var(--shadow);">
-        <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--amber-1);margin-bottom:6px;">Staff · Signed documents</div>
-        <h3 style="margin:0 0 8px 0;font-size:12pt;">Signed documents and use ledger</h3>
-        <p style="font-size:9.5pt;color:var(--text-sub);margin:0 0 12px 0;">Every anchored signature is sealed with its digest. Sent, signed, opened, and used events sit on one hash chain. A broken seal is shown and is not repaired.</p>
-        <div id="document-use-ledger" style="font-size:9.5pt;color:var(--text-sub);margin-bottom:12px;">Loading use ledger…</div>
-        <div id="signed-documents-folder">
-          <div id="signed-documents-list" style="font-size:9.5pt;color:var(--text-sub);">Loading signed documents…</div>
+      <div id="signed-use-section" class="signed-use-card is-collapsed" hidden style="margin-top:16px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--bg-card);box-shadow:var(--shadow);">
+        <div class="signed-use-head" id="signed-use-head">
+          <button type="button" id="signed-use-toggle" class="signed-use-toggle" aria-expanded="false" aria-controls="signed-use-body" aria-label="Maximise signed documents">+</button>
+          <div class="signed-use-head-copy">
+            <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--amber-1);margin-bottom:6px;">Staff · Signed documents</div>
+            <h3 style="margin:0;font-size:12pt;">Signed documents and use ledger</h3>
+            <p id="signed-use-summary" class="signed-use-summary">Addressed links, seals, and the use ledger.</p>
+          </div>
+        </div>
+        <div id="signed-use-body">
+          <p style="font-size:9.5pt;color:var(--text-sub);margin:12px 0;">Each row is one addressed link: recipient, link, open password, status, and uses. Revoke or delete closes that link. The record, the sealed signature, and the hash chain stay, so a later check still resolves. A broken seal is shown and is not repaired.</p>
+          <h4 style="margin:0 0 8px;font-size:10.5pt;">Addressed links</h4>
+          <div id="addressed-links" class="address-book" style="font-size:9.5pt;color:var(--text-sub);">Loading addressed links…</div>
+          <p id="addressed-links-msg" style="font-size:9pt;margin:0 0 12px;min-height:1.2em;color:var(--text-sub);"></p>
+          <h4 style="margin:0 0 8px;font-size:10.5pt;">Use ledger</h4>
+          <div id="document-use-ledger" style="font-size:9.5pt;color:var(--text-sub);margin-bottom:12px;">Loading use ledger…</div>
+          <h4 style="margin:0 0 8px;font-size:10.5pt;">Sealed signatures</h4>
+          <div id="signed-documents-folder">
+            <div id="signed-documents-list" style="font-size:9.5pt;color:var(--text-sub);">Loading signed documents…</div>
+          </div>
         </div>
       </div>
 
@@ -2881,6 +3004,8 @@
               <a href="#aspire-ohayun-meeting-26oct" class="exec-dl-btn" style="background:rgba(255,255,255,0.1);color:#fff;border-color:rgba(255,255,255,0.3);">Aspire · Ohayun · 26 Oct · local growth</a>
               <a href="#uzan-followup-meeting-28oct" class="exec-dl-btn" style="background:rgba(255,255,255,0.1);color:#fff;border-color:rgba(255,255,255,0.3);">Uzan · 28 Oct · local investor</a>
               <a href="#dnr-benzvi-meeting-12nov" class="exec-dl-btn" style="background:rgba(255,255,255,0.1);color:#fff;border-color:rgba(255,255,255,0.3);">DNR · Ben Zvi · 12 Nov · agency</a>
+              <a href="#reinsurer-ceo-assessment-nov2026" class="exec-dl-btn" style="background:rgba(255,255,255,0.1);color:#fff;border-color:rgba(255,255,255,0.3);">Reinsurer Group CEO · 7 Nov · assessment</a>
+              <a href="#swissre-israel-meeting-8dec2026" class="exec-dl-btn" style="background:rgba(255,255,255,0.1);color:#fff;border-color:rgba(255,255,255,0.3);">Swiss Re Israel · Damelin · 8 Dec · meeting deck</a>
             </div>
           </div>
           <div id="investor-deck-film" style="margin-top:14px;"></div>
@@ -3306,7 +3431,7 @@
           </div>
           <div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;" id="inv-deck-version-picker">
             <button type="button" class="inv-deck-ver-btn" data-deck-doc="detailed" id="inv-deck-ver-detailed" style="text-align:left;border:2px solid #0f766e;background:#ecfdf5;border-radius:12px;padding:12px 14px;cursor:pointer;font-family:inherit;">
-              <div style="font-size:7.4pt;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#0d47a1;">Extended version</div>
+              <div style="font-size:7.4pt;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:var(--phins-navy);">Extended version</div>
               <div style="font-size:10pt;font-weight:800;color:var(--blue-dark);margin-top:2px;">Platform plan before these changes</div>
               <div style="font-size:8pt;color:var(--text-sub);margin-top:4px;">Section 10, the ask, pre/post-money, investor stake, quarterly forecast, and deal structures.</div>
             </button>
@@ -3346,7 +3471,7 @@
             The 26 May 2026 actuary meeting cleared the first credibility gate: an IAA-recognised executive actuary validated
             the pricing model and agreed to join PHINS on the recommended hybrid path. He has now opened the door to
             <strong><span class="inv-investor-name">Mr. Meir Uzan</span></strong> — capital plus deep Israeli insurance-industry operating experience. PHINS sits at the
-            boundary between a built platform (<span data-live-modules>143</span> deployed modules) and a funded, regulated go-to-market in Israel. The right
+            boundary between a built platform (<span data-live-modules>159</span> deployed modules) and a funded, regulated go-to-market in Israel. The right
             partner here both <em>funds</em> the build phase and <em>de-risks</em> regulatory and distribution execution.
           </p>
           <h3 style="margin-top:18px;">Target profile &amp; objective</h3>
@@ -3410,7 +3535,7 @@
           <div style="overflow-x:auto;">
             <table style="width:100%;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
               <thead>
-                <tr style="background:#0d47a1;color:#fff;">
+                <tr style="background:var(--phins-navy);color:#fff;">
                   <th style="padding:6px 8px;text-align:left;font-weight:700;">Cost category</th>
                   <th style="padding:6px 8px;text-align:right;font-weight:700;">Budget (<span class="inv-cur-sym">₪</span>)</th>
                   <th style="padding:6px 8px;text-align:right;font-weight:700;">Share</th>
@@ -3427,7 +3552,7 @@
                 <tr><td style="padding:5px 8px;">Contingency (≈11.7%)</td><td style="padding:5px 8px;text-align:right;" class="inv-money inv-scale" data-ils="700000"></td><td style="padding:5px 8px;text-align:right;">11.7%</td></tr>
               </tbody>
               <tfoot>
-                <tr style="background:#e6eefa;font-weight:800;color:#0d47a1;">
+                <tr style="background:#e6eefa;font-weight:800;color:var(--phins-navy);">
                   <td style="padding:6px 8px;">Total build budget</td>
                   <td style="padding:6px 8px;text-align:right;" class="inv-money inv-scale" data-ils="6000000"></td>
                   <td style="padding:6px 8px;text-align:right;">100%</td>
@@ -3438,18 +3563,18 @@
           <div class="exec-donut-wrap">
             <svg class="exec-donut-svg" width="170" height="170" viewBox="0 0 170 170" role="img" aria-label="Build budget composition by cost category">
               <circle cx="85" cy="85" r="60" fill="none" stroke="#e6eef9" stroke-width="22"/>
-              <circle cx="85" cy="85" r="60" fill="none" stroke="#1565c0" stroke-width="22" stroke-dasharray="152.06 224.93" stroke-dashoffset="0" transform="rotate(-90 85 85)"/>
+              <circle cx="85" cy="85" r="60" fill="none" stroke="var(--phins-gold)" stroke-width="22" stroke-dasharray="152.06 224.93" stroke-dashoffset="0" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#6a1b9a" stroke-width="22" stroke-dasharray="55.29 321.70" stroke-dashoffset="-152.06" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#00838f" stroke-width="22" stroke-dasharray="32.67 344.32" stroke-dashoffset="-207.35" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#e65100" stroke-width="22" stroke-dasharray="27.01 349.98" stroke-dashoffset="-240.02" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#2e7d32" stroke-width="22" stroke-dasharray="40.84 336.15" stroke-dashoffset="-267.03" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#f59e0b" stroke-width="22" stroke-dasharray="25.13 351.86" stroke-dashoffset="-307.87" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#78909c" stroke-width="22" stroke-dasharray="43.98 333.01" stroke-dashoffset="-333.00" transform="rotate(-90 85 85)"/>
-              <text x="85" y="82" text-anchor="middle" font-size="11" font-weight="800" fill="#0d47a1" id="inv-build-total">₪6.0M</text>
+              <text x="85" y="82" text-anchor="middle" font-size="11" font-weight="800" fill="var(--phins-navy)" id="inv-build-total">₪6.0M</text>
               <text x="85" y="96" text-anchor="middle" font-size="7.5" fill="#64748b">Build budget</text>
             </svg>
             <div class="exec-donut-legend">
-              <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#1565c0;"></span> Technology (platform + cloud/AI) — 40.3%</div>
+              <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:var(--phins-gold);"></span> Technology (platform + cloud/AI) — 40.3%</div>
               <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#6a1b9a;"></span> Legal, regulatory &amp; licensing — 14.7%</div>
               <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#00838f;"></span> Actuarial &amp; pricing — 8.7%</div>
               <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#e65100;"></span> QA &amp; security — 7.2%</div>
@@ -3509,7 +3634,7 @@
           <div style="overflow-x:auto;">
             <table style="width:100%;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
               <thead>
-                <tr style="background:#0d47a1;color:#fff;">
+                <tr style="background:var(--phins-navy);color:#fff;">
                   <th style="padding:6px 8px;text-align:left;font-weight:700;">Line item (<span class="inv-cur-sym">₪</span>)</th>
                   <th style="padding:6px 8px;text-align:right;font-weight:700;">2027</th>
                   <th style="padding:6px 8px;text-align:right;font-weight:700;">2028</th>
@@ -3580,7 +3705,7 @@
         <div style="overflow-x:auto;">
           <table style="width:100%;min-width:980px;font-size:7.8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
             <thead>
-              <tr style="background:linear-gradient(135deg,#0d47a1,#1565c0);color:#fff;">
+              <tr style="background:linear-gradient(135deg,var(--phins-navy),var(--phins-gold));color:#fff;">
                 <th style="padding:8px;text-align:left;font-weight:700;">Structure</th>
                 <th style="padding:8px;text-align:center;font-weight:700;">Capital (<span class="inv-cur-sym">₪</span>)</th>
                 <th style="padding:8px;text-align:center;font-weight:700;">Valuation basis</th>
@@ -3599,7 +3724,7 @@
             <div id="inv-callout-primary">—</div>
           </div>
           <div style="background:#f0f7ff;border-radius:8px;padding:10px;border:1px solid #bbdefb;">
-            <div style="font-weight:800;color:#1565c0;margin-bottom:4px;">Fallback — investor only</div>
+            <div style="font-weight:800;color:var(--phins-gold);margin-bottom:4px;">Fallback — investor only</div>
             <div id="inv-callout-fallback">—</div>
           </div>
         </div>
@@ -3672,7 +3797,7 @@
         <div style="overflow-x:auto;margin-top:12px;">
           <table style="width:100%;min-width:820px;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;" id="diary-table">
             <thead>
-              <tr style="background:#0d47a1;color:#fff;">
+              <tr style="background:var(--phins-navy);color:#fff;">
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Date</th>
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Time</th>
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Counterparty</th>
@@ -3818,7 +3943,7 @@
             <h3 class="pm-op-title">A built insurance operating system, sitting on the last large regulated data industry still running a legacy core.</h3>
             <p class="pm-op-lede">
               Written for a principal who already understands both the capital stack and the technology.
-              PHINS is not a deck looking for a product. It is a <strong>production insurance OS</strong> — <span data-live-modules>143</span> service modules live —
+              PHINS is not a deck looking for a product. It is a <strong>production insurance OS</strong> — <span data-live-modules>159</span> service modules live —
               originating a lifelong disability / LTC severity layer as a <strong>capital-light digital MGA</strong>.
               Underwriting risk never sits on the PHINS balance sheet. Israel is the proof market (sales from 1 January 2027).
               Every further OECD market is a configuration and a filing, not a rebuild.
@@ -3826,7 +3951,7 @@
               equity at seed terms, and/or co-development with per-market license and GWP royalty.
             </p>
             <div class="pm-op-kpis">
-              <div class="pm-op-kpi"><div class="v" data-live-modules>143</div><div class="l">Service modules</div></div>
+              <div class="pm-op-kpi"><div class="v" data-live-modules>159</div><div class="l">Service modules</div></div>
               <div class="pm-op-kpi"><div class="v" data-live="seed_m">₪6.0M</div><div class="l">Seed / build round</div></div>
               <div class="pm-op-kpi"><div class="v" data-live="pre_m">₪24M</div><div class="l">Pre-money (base)</div></div>
               <div class="pm-op-kpi"><div class="v" data-live="take_pct">25%</div><div class="l">PHINS take on GWP</div></div>
@@ -3901,7 +4026,7 @@
                 OECD expansion is configuration, not a second core.
               </div>
               <div class="pm-op-ask-box fallback">
-                <strong class="label" style="color:#1565c0;">Fallback &amp; next</strong>
+                <strong class="label" style="color:var(--phins-gold);">Fallback &amp; next</strong>
                 Priced equity or convertible if a pure-investor role is preferred.
                 Next: mutual NDA, term sheet, confirmatory diligence on the live platform
                 (policy → UW → billing → claim → reinsurance, with audit log).
@@ -3934,14 +4059,14 @@
             <h3 class="pm-op-title">מערכת הפעלה ביטוחית בנויה — הענף המוסדר הגדול האחרון שעדיין רץ על ליבה מיושנת.</h3>
             <p class="pm-op-lede">
               נכתב עבור משקיע גלובלי בעל עומק פיננסי וטכנולוגי.
-              PHINS איננה מצגת שמחפשת מוצר. זו <strong>מערכת הפעלה ביטוחית בפרודקשן</strong> — <span data-live-modules>143</span> מודולי שירות פרוסים —
+              PHINS איננה מצגת שמחפשת מוצר. זו <strong>מערכת הפעלה ביטוחית בפרודקשן</strong> — <span data-live-modules>159</span> מודולי שירות פרוסים —
               שמנפיקה שכבת נכות/סיעוד חמורה (הפעלת 3+ ADL) כ-<strong>MGA דיגיטלי קל-הון</strong>.
               סיכון החיתום אינו יושב במאזן של PHINS. ישראל היא שוק ההוכחה (מכירות מ-1 בינואר 2027).
               כל שוק OECD נוסף הוא תצורה והגשה רגולטורית — לא בניה מחדש.
               לחברת AI ציבורית זה <strong>משטח הטמעה מפוקח</strong>: הון בתנאי סיד, ו/או פיתוח משותף עם רישיון לשוק ותמלוג על הפרמיה.
             </p>
             <div class="pm-op-kpis">
-              <div class="pm-op-kpi"><div class="v" data-live-modules>143</div><div class="l">מודולי שירות</div></div>
+              <div class="pm-op-kpi"><div class="v" data-live-modules>159</div><div class="l">מודולי שירות</div></div>
               <div class="pm-op-kpi"><div class="v" data-live="seed_m">₪6.0M</div><div class="l">סבב סיד / בניה</div></div>
               <div class="pm-op-kpi"><div class="v" data-live="pre_m">₪24M</div><div class="l">שווי טרום-כסף</div></div>
               <div class="pm-op-kpi"><div class="v" data-live="take_pct">25%</div><div class="l">נתח PHINS מהפרמיה</div></div>
@@ -4016,7 +4141,7 @@
                 הרחבה ל-OECD היא תצורה, לא ליבה שנייה.
               </div>
               <div class="pm-op-ask-box fallback">
-                <strong class="label" style="color:#1565c0;">חלופה והמשך</strong>
+                <strong class="label" style="color:var(--phins-gold);">חלופה והמשך</strong>
                 הון מתומחר או המרה אם מועדף תפקיד משקיע בלבד.
                 הבא: הסכם סודיות הדדי, מזכר תנאים, ובדיקת נאותות על הפלטפורמה החיה
                 (פוליסה → חיתום → חיוב → תביעה → ביטוח משנה, עם יומן ביקורת).
@@ -4041,7 +4166,7 @@
 
           <div style="border:1px solid #c7d2fe;background:#eef2ff;border-radius:10px;padding:10px 12px;margin-top:10px;" id="pm-a-elevator">
             <div style="font-size:7.6pt;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:#4338ca;margin-bottom:4px;"> Elevator pitch — 30 seconds</div>
-            <p style="font-size:8.6pt;margin:0;">PHINS is an <strong>AI-operated insurance operating system</strong> — <span data-live-modules>143</span> deployed service modules on an append-only, hash-chained ledger where <strong>AI recommends but never posts</strong>. We are opening the disability / long-term-care market: Israel first, then OECD markets on the same codebase. For a public AI-technology company, PHINS is a ready regulated-industry deployment surface: <strong>invest at seed terms, co-develop the stack, and open new markets together</strong> — equity plus recurring license-and-royalty technology revenue.</p>
+            <p style="font-size:8.6pt;margin:0;">PHINS is an <strong>AI-operated insurance operating system</strong> — <span data-live-modules>159</span> deployed service modules on an append-only, hash-chained ledger where <strong>AI recommends but never posts</strong>. We are opening the disability / long-term-care market: Israel first, then OECD markets on the same codebase. For a public AI-technology company, PHINS is a ready regulated-industry deployment surface: <strong>invest at seed terms, co-develop the stack, and open new markets together</strong> — equity plus recurring license-and-royalty technology revenue.</p>
           </div>
 
           <div style="border:1px solid var(--border);background:#f8fafc;border-radius:10px;padding:10px 12px;margin-top:10px;" id="pm-a-exec">
@@ -4154,7 +4279,7 @@
 
     <!-- Regulatory Meeting — 27 July 2026 (Herzog Fox Neeman & Co. Advocates) -->
     <section id="regulatory-meeting-27jul" style="margin-bottom:28px;">
-      <div class="exec-summary-banner" style="background: linear-gradient(135deg,#312e81 0%,#6a1b9a 52%,#0d47a1 100%); box-shadow: 0 12px 32px rgba(106,27,154,0.22);">
+      <div class="exec-summary-banner" style="background: linear-gradient(135deg,#312e81 0%,#6a1b9a 52%,var(--phins-navy) 100%); box-shadow: 0 12px 32px rgba(106,27,154,0.22);">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
           <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;"> Internal · Confidential</span>
           <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,0.16);font-size:8.5pt;font-weight:700;"> Regulatory counsel</span>
@@ -4205,7 +4330,7 @@
                 <tr style="background:#ffffff;">
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">00–03</td>
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">Opening — PHINS in 90 seconds</td>
-                  <td style="padding:5px 8px;border-top:1px solid var(--border);">AI-operated insurance operating system, <span data-live-modules>143</span> deployed modules on an append-only hash-chained ledger — <strong>AI recommends, the ledger decides</strong>. Disability / LTC severity product; Israel first.</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">AI-operated insurance operating system, <span data-live-modules>159</span> deployed modules on an append-only hash-chained ledger — <strong>AI recommends, the ledger decides</strong>. Disability / LTC severity product; Israel first.</td>
                 </tr>
                 <tr style="background:#f8fafc;">
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">03–09</td>
@@ -4239,8 +4364,8 @@
         </div>
 
         <!-- Scope, prep and decision outputs -->
-        <div class="exec-chart-panel" id="reg-scope-panel" style="border:2px solid #0d47a1;background:linear-gradient(180deg,#f0f6ff 0%,#ffffff 55%);">
-          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0d47a1;margin-bottom:6px;"> Scope · prep · decision outputs</div>
+        <div class="exec-chart-panel" id="reg-scope-panel" style="border:2px solid var(--phins-navy);background:linear-gradient(180deg,#f0f6ff 0%,#ffffff 55%);">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--phins-navy);margin-bottom:6px;"> Scope · prep · decision outputs</div>
           <h3 style="margin:0 0 6px 0;"> What we bring · what we ask · what we leave with</h3>
 
           <div style="border:1px solid #c7d2fe;background:#eef2ff;border-radius:10px;padding:10px 12px;margin-top:10px;" id="reg-elevator">
@@ -4339,7 +4464,7 @@
                 <tr style="background:#ffffff;">
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">00–05</td>
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">Opening — PHINS in five minutes</td>
-                  <td style="padding:5px 8px;border-top:1px solid var(--border);">AI-operated insurance operating system, <span data-live-modules>143</span> deployed modules on an append-only hash-chained ledger — <strong>AI recommends, the ledger decides</strong>. State the goal of the session up front: a pre-ruling path that approves all PHINS assumptions.</td>
+                  <td style="padding:5px 8px;border-top:1px solid var(--border);">AI-operated insurance operating system, <span data-live-modules>159</span> deployed modules on an append-only hash-chained ledger — <strong>AI recommends, the ledger decides</strong>. State the goal of the session up front: a pre-ruling path that approves all PHINS assumptions.</td>
                 </tr>
                 <tr style="background:#f8fafc;">
                   <td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;white-space:nowrap;">05–15</td>
@@ -5094,7 +5219,7 @@
           <h3 style="margin:0 0 6px 0;">A built operating system, now in a gated go-to-market</h3>
           <p class="ecp-sub" style="margin-top:0;">19 August described the need. This call describes the system that exists, and the phase it is in.</p>
           <ul style="font-size:8.4pt;margin:8px 0 0 0;padding-left:16px;line-height:1.6;">
-            <li><strong>Production OS.</strong> Policy, underwriting, billing, claims, reinsurance, and the audit log are one platform — <span data-live-modules>143</span> service modules. This is not a deck looking for a product.</li>
+            <li><strong>Production OS.</strong> Policy, underwriting, billing, claims, reinsurance, and the audit log are one platform — <span data-live-modules>159</span> service modules. This is not a deck looking for a product.</li>
             <li><strong>Digital MGA.</strong> PHINS takes <strong>25%</strong> of risk GWP. A licensed carrier holds <strong>75%</strong>. Claims reserves are not PHINS revenue.</li>
             <li><strong>One Israel book</strong> (Investor Meeting): premium <strong>ILS 4,518</strong>; EoY in-force <strong>24,000 / 94,080 / 230,554</strong>; average in-force <strong>12,000 / 59,040 / 162,317</strong>; risk GWP <strong>₪54,216,000 / ₪266,742,720 / ₪733,348,206</strong>; PHINS net revenue <strong>₪13,554,000 / ₪66,685,680 / ₪183,337,052</strong>.</li>
             <li><strong>Integrity contract.</strong> AI recommends. The hash-chained ledger decides and records. People supervise.</li>
@@ -5984,6 +6109,187 @@
       </div>
     </section>
 
+    <!-- Global reinsurer Group CEO assessment (role exercise, 7 November 2026) -->
+    <section id="reinsurer-ceo-assessment-nov2026" style="margin-bottom:28px;">
+      <div class="exec-summary-banner" style="background: linear-gradient(135deg,#0b1f3f 0%,#0e2f63 42%,#7a1f2b 100%); box-shadow: 0 12px 32px rgba(11,31,63,0.26);">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+          <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">Internal · Confidential</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,0.16);font-size:8.5pt;font-weight:700;">Reinsurer · Group CEO seat · role exercise</span>
+          <span style="font-size:8.5pt;opacity:0.9;">Saturday 7 November 2026 · assessment on file · no approach made</span>
+        </div>
+        <h2>Global Reinsurer Group CEO Assessment — 7 November 2026 · risk appetite, InsurTech openness, venture exposure</h2>
+        <p class="exec-subtitle">
+          A regional CEO of a global reinsurance group escalates PHINS as a strategic opportunity. This bar is the
+          <strong>Group CEO's answer</strong>, written from that seat as a planning exercise: the measures of
+          <strong>risk appetite</strong> for long-term disability, long-term care and savings, the measures of
+          <strong>InsurTech openness and venture exposure</strong>, and an assessment of PHINS against them with
+          <strong>every option kept on the table</strong>. No reinsurer has been approached and none is named as a
+          counterparty. The treaty counterparty is the licensed carrier of record; PHINS is the technology. Lineage:
+          <a href="#techno-yes-section" style="color:#fff;text-decoration:underline;">Techno Yes — the reinsurer loop</a>,
+          Appendix B of the unified plan, and
+          <a href="#partner-meetings-13jul" style="color:#fff;text-decoration:underline;">Partner Meetings 13 July, Meeting B</a>. Address the
+          <a href="#unified-business-plan-card" style="color:#fff;text-decoration:underline;">Unified Business Plan · Investor Deck · Appendices · One standard</a>.
+        </p>
+        <div class="exec-dl-row">
+          <a href="/investor-docs/reinsurer-group-ceo-assessment-nov2026-brief.html" target="_blank" rel="noopener" class="exec-dl-btn">Open designed assessment</a>
+          <a href="/investor-docs/reinsurer-group-ceo-assessment-nov2026-brief.pdf" target="_blank" rel="noopener" class="exec-dl-btn">Open assessment (PDF)</a>
+          <a href="/investor-docs/reinsurer-group-ceo-assessment-nov2026-brief.pdf" target="_blank" rel="noopener" class="exec-dl-btn" download>Download assessment (PDF)</a>
+          <a href="#unified-business-plan-card" class="exec-dl-btn">One standard</a>
+          <a href="/business-plan.html" class="exec-dl-btn">Unified plan</a>
+          <a href="/business-plan.html#part-deck" class="exec-dl-btn">Investor deck</a>
+          <a href="/business-plan.html#part-appendices" class="exec-dl-btn">Appendices A–H</a>
+          <a href="#techno-yes-section" class="exec-dl-btn">Techno Yes · reinsurer loop</a>
+          <a href="#partner-meetings-13jul" class="exec-dl-btn">Partner Meetings 13.7</a>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;margin-top:18px;">
+        <div class="exec-chart-panel" id="reinsurer-nov2026-ceded" style="border:2px solid #0e2f63;background:linear-gradient(180deg,#eef3fb 0%,#ffffff 55%);grid-column:1/-1;">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0e2f63;margin-bottom:6px;">What a reinsurer actually sees · the ceded line · Israel anchor book · default factors</div>
+          <h3 style="margin:0 0 6px 0;">18% cession · 62% expected claims · 25% ceding commission — the plan's own placeholder, to be replaced by term sheets</h3>
+          <div style="overflow-x:auto;margin-top:8px;">
+            <table style="width:100%;min-width:560px;font-size:8.2pt;border-collapse:collapse;border:1px solid var(--border);">
+              <thead><tr style="background:#0e2f63;color:#fff;"><th style="padding:6px 8px;text-align:left;">Year</th><th style="padding:6px 8px;text-align:right;">Risk GWP</th><th style="padding:6px 8px;text-align:right;">Ceded premium</th><th style="padding:6px 8px;text-align:right;">Ceded claims</th><th style="padding:6px 8px;text-align:right;">Ceding commission</th><th style="padding:6px 8px;text-align:right;">Reinsurer technical result</th><th style="padding:6px 8px;text-align:right;">Result (USD, planning FX)</th></tr></thead>
+              <tbody>
+                <tr><td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">2027</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪54.2M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪9.8M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪6.1M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪2.4M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪1.3M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">$0.3M</td></tr>
+                <tr style="background:#eef3fb;"><td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">2028</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪266.7M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪48.0M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪29.8M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪12.0M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪6.2M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">$1.7M</td></tr>
+                <tr><td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">2029</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪733.3M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪132.0M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪81.8M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪33.0M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪17.2M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">$4.7M</td></tr>
+                <tr style="background:#eef3fb;"><td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">2030</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪1.33B</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪238.5M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪147.9M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪59.6M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪31.0M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">$8.4M</td></tr>
+                <tr><td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">2031</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪1.87B</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪336.6M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪208.7M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪84.1M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪43.8M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">$11.9M</td></tr>
+                <tr style="background:#dfe8f6;font-weight:700;"><td style="padding:5px 8px;border-top:2px solid #0e2f63;">Five years</td><td style="padding:5px 8px;border-top:2px solid #0e2f63;text-align:right;">₪4.25B</td><td style="padding:5px 8px;border-top:2px solid #0e2f63;text-align:right;">₪764.9M</td><td style="padding:5px 8px;border-top:2px solid #0e2f63;text-align:right;">₪474.2M</td><td style="padding:5px 8px;border-top:2px solid #0e2f63;text-align:right;">₪191.2M</td><td style="padding:5px 8px;border-top:2px solid #0e2f63;text-align:right;">₪99.4M</td><td style="padding:5px 8px;border-top:2px solid #0e2f63;text-align:right;">$27.0M</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="font-size:8.2pt;margin-top:8px;color:var(--text-sub);">Technical margin 13 points of ceded premium every year (1 − 62% − 25%); break-even expected claims ratio 75%; at the factor ceiling of 95% the result is −20 points. The carrier keeps 5.7% of GWP. Group envelope at the same default cession: 18% of group risk GWP is ₪9.8M / ₪52.9M / ₪165.8M / ₪367.2M / ₪674.5M for 2027–2031 ($183.3M in 2031) — arithmetic on the group GWP row, not a model row. The savings flow is outside risk GWP and is never split with the carrier or the reinsurer.</p>
+        </div>
+        <div class="exec-chart-panel" id="reinsurer-nov2026-appetite" style="border:2px solid #7a1f2b;background:linear-gradient(180deg,#fbeeee 0%,#ffffff 55%);">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#7a1f2b;margin-bottom:6px;">Risk appetite · the measures the group applies</div>
+          <h3 style="margin:0 0 6px 0;">An objective severity trigger, a bounded tail, no guarantees on the treaty</h3>
+          <ul style="font-size:8.4pt;margin:8px 0 0 0;padding-left:16px;line-height:1.6;">
+            <li><strong>Trigger objectivity.</strong> Permanent loss of 3+ ADL; 1:4 below 65, 1:1 from 65. Inside appetite — the class the market now quotes.</li>
+            <li><strong>Benefit form and tail.</strong> Lump sum ILS 250,000 below 65 on a face of ILS 1,000,000; no daily benefit, no indexation in the kernel. The measure is aggregate ceded sum at risk per market; Group Risk sets the cap.</li>
+            <li><strong>Pricing and repricing.</strong> One pricing kernel on the published tables (0.25 / 0.20 per ILS 1,000 monthly, age factor 1.255 at 42; ILS 4,518). Acceptable for a new book only with a repricing right at each gate and a sliding-scale commission.</li>
+            <li><strong>Claims corridor.</strong> 62% at default inside a 20–95% factor range; break-even 75%. The measure is the corridor, not the point.</li>
+            <li><strong>Persistency.</strong> 96% first-year, 92% renewal (8% churn); measured against the plan at Gate 7 (24,000 in force).</li>
+            <li><strong>Guarantees.</strong> None on the treaty: savings is a separately licensed flow (30% × 3.0×), never split.</li>
+            <li><strong>Model and AI risk.</strong> Agents recommend, humans decide; <code>ai_decision_log</code>; audited threshold promotion; golden sets. Inside appetite with audit rights to the decision log and bordereaux with provenance.</li>
+            <li><strong>Counterparty and timing.</strong> Treaty with the carrier of record; PHINS named administrator with step-in. No capacity before the filing is accepted (pre-ruling 12 October 2026; sales only after Gate 5 on 1 January 2027).</li>
+          </ul>
+        </div>
+        <div class="exec-chart-panel" id="reinsurer-nov2026-options" style="border:2px solid #0e2f63;background:linear-gradient(180deg,#eef3fb 0%,#ffffff 55%);">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0e2f63;margin-bottom:6px;">InsurTech openness · venture exposure · all options on the table</div>
+          <h3 style="margin:0 0 6px 0;">Three rails, never linked: capacity, equity, services</h3>
+          <ul style="font-size:8.4pt;margin:8px 0 0 0;padding-left:16px;line-height:1.6;">
+            <li><strong>A. Quota-share capacity</strong> behind the Israel carrier on the plan's own 18% / 25% placeholder, experience-rated. Term sheet Q4 2026; bound at Gate 5.</li>
+            <li><strong>B. Lead reinsurer and technical partner</strong> across the 10 markets — one wording behind each local carrier, from the first partner market in 2028.</li>
+            <li><strong>C. Strategic minority inside the seed</strong> — ILS 6,000,000 on ILS 24,000,000 pre (ILS 30,000,000 post, 20%); same price as every investor; no reinsurer round; no linked cession.</li>
+            <li><strong>D. Series A anchor option</strong> — the ₪18.0M indication (2028), decided on Gate 7 data.</li>
+            <li><strong>E. Carrier introductions and fronting bridge</strong> in partner markets; no retail brand of our own.</li>
+            <li><strong>F. Data access only</strong> — bordereaux view and decision-log audit; no capital. <strong>G. Pass</strong> — under the stated conditions.</li>
+            <li><strong>Reported record</strong> (Techno Yes registry, with source labels): reinsurers partner, fund and buy the MGA — NEXT (US$2.6B), At-Bay (US$575M), Dayforward's platform, Lemonade's US$250M facility, Ethos reinsured — and retreat from running a retail brand (iptiQ). PHINS as the MGA layer fits; PHINS as a subsidiary would not.</li>
+            <li><strong>Delegation.</strong> The region may sign the NDA, open the data room, run due diligence and give a non-binding indication. Group Risk binds capacity. Group decides any equity ticket. Never a linked price.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="exec-integrity-note">
+        <strong>Data integrity notice:</strong> Every PHINS figure in this bar is a canonical default of plan identity <code>unified-2026.10-v1</code> (content hash <code>9128223e1c222388…</code>): ILS 4,518; 25% / 75%; in-force 24,000 / 94,080 / 230,554; risk GWP ILS 54,216,000 / 266,742,720 / 733,348,206; PHINS net ILS 13,554,000 / 66,685,680 / 183,337,052. Ceded line at the default factors (18% cession, 62% expected claims, 25% ceding commission): 2027 ceded premium 54,216,000 × 0.18 = ILS 9,758,880; ceding commission ILS 2,439,720; ceded claims ILS 6,050,505.60; reinsurer technical result ILS 1,268,654.40 (13% of ceded premium); break-even claims ratio 75%. Seed ILS 6,000,000 / 24,000,000 / 30,000,000; Series A indication ILS 18,000,000. Facts about other companies are quoted from the Techno Yes registry with their source labels and are reported, not verified here. No reinsurer limit, cap, ticket or price is set — those are Group decisions. This section does not write the platform ledger.
+      </div>
+    </section>
+
+    <!-- Swiss Re Israel · Regional CEO meeting (Mr. Hillel Damelin, 8 December 2026) -->
+    <section id="swissre-israel-meeting-8dec2026" style="margin-bottom:28px;">
+      <div class="exec-summary-banner" style="background: linear-gradient(135deg,#0b1f3f 0%,#0e2f63 48%,#1f5a46 100%); box-shadow: 0 12px 32px rgba(11,31,63,0.26);">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+          <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,0.18);font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">Internal · Confidential</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,0.16);font-size:8.5pt;font-weight:700;">Swiss Re · Regional CEO Israel · Mr. Hillel Damelin</span>
+          <span style="font-size:8.5pt;opacity:0.9;">Tuesday 8 December 2026 · scheduled · meeting deck and film script on file</span>
+        </div>
+        <h2>Swiss Re Israel — 8 December 2026 · the Israel pilot and the five-year plan from the reinsurer's seat</h2>
+        <p class="exec-subtitle">
+          A meeting is set with <strong>Mr. Hillel Damelin, Regional CEO Israel, Swiss Re</strong>. This bar carries the
+          <strong>12-slide meeting deck</strong> built with the investor-deck method — every figure filled from the unified
+          plan, one 15-second scene per paragraph, that paragraph spoken in full, sealed scenes and a
+          filmed stream in the media lab — plus the <strong>Israel pilot adjustments</strong> (Gates 5–7, the ceded line
+          for 2027) and the <strong>five-year plan</strong> as the reinsurer sees it: ceded premium, ceded claims, ceding
+          commission and technical result for the anchor book, quota-share <strong>scenarios</strong> at 30% and 50%
+          computed by the same model, and the group envelope. It follows the
+          <a href="#reinsurer-ceo-assessment-nov2026" style="color:#fff;text-decoration:underline;">Group CEO assessment of 7 November</a>
+          and addresses the
+          <a href="#unified-business-plan-card" style="color:#fff;text-decoration:underline;">Unified Business Plan · Investor Deck · Appendices · One standard</a>.
+          Nothing is bound and no limit, ticket or price is set here.
+        </p>
+        <div class="exec-dl-row">
+          <a href="/reinsurer-deck.html" target="_blank" rel="noopener" class="exec-dl-btn">Present the meeting deck</a>
+          <a href="/reinsurer-deck.he.html" target="_blank" rel="noopener" class="exec-dl-btn" lang="he">הצגת המצגת · עברית</a>
+          <a href="/reinsurer-deck.html?cession_rate=0.3" target="_blank" rel="noopener" class="exec-dl-btn">Open at 30% cession · viewer scenario</a>
+          <a href="/admin-media.html#reinsurer-deck" target="_blank" rel="noopener" class="exec-dl-btn">Film the scenes · media lab</a>
+          <a href="/investor-docs/swiss-re-israel-meeting-8dec2026-deck.html" target="_blank" rel="noopener" class="exec-dl-btn">Open meeting pack · slides and script</a>
+          <a href="/investor-docs/swiss-re-israel-meeting-8dec2026-deck.he.html" target="_blank" rel="noopener" class="exec-dl-btn" lang="he">חבילת הפגישה · עברית</a>
+          <a href="/investor-docs/swiss-re-israel-meeting-8dec2026-deck.pdf" target="_blank" rel="noopener" class="exec-dl-btn">Open meeting pack (PDF)</a>
+          <a href="/investor-docs/swiss-re-israel-meeting-8dec2026-deck.he.pdf" target="_blank" rel="noopener" class="exec-dl-btn" lang="he">חבילת הפגישה (PDF) · עברית</a>
+          <a href="/investor-docs/swiss-re-israel-meeting-8dec2026-deck.pdf" target="_blank" rel="noopener" class="exec-dl-btn" download>Download meeting pack (PDF)</a>
+          <a href="#reinsurer-ceo-assessment-nov2026" class="exec-dl-btn">Group CEO assessment · 7.11</a>
+          <a href="#unified-business-plan-card" class="exec-dl-btn">One standard</a>
+          <a href="/business-plan.html" class="exec-dl-btn">Unified plan</a>
+          <a href="/investor-deck.html" class="exec-dl-btn">Investor deck · Part II</a>
+          <a href="#techno-yes-section" class="exec-dl-btn">Techno Yes · reinsurer loop</a>
+          <a href="#il-meeting-diary" class="exec-dl-btn">Meeting diary</a>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;margin-top:18px;">
+        <div class="exec-chart-panel" id="swissre-8dec-pilot" style="border:2px solid #1f5a46;background:linear-gradient(180deg,#edf6f1 0%,#ffffff 55%);">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#1f5a46;margin-bottom:6px;">The pilot in Israel · 2027 · adjustments for the reinsurer</div>
+          <h3 style="margin:0 0 6px 0;">Gate 5 sales on 1 January 2027 · Gate 6 first 1,000 in force · Gate 7 24,000 at year end</h3>
+          <ul style="font-size:8.4pt;margin:8px 0 0 0;padding-left:16px;line-height:1.6;">
+            <li><strong>Pilot-year ceded line.</strong> Risk GWP ₪54.2M; ceded premium at the plan's 18% quota share ₪9.8M; ceded claims ₪6.1M at 62% expected claims; ceding commission ₪2.4M at 25%; reinsurer technical result ₪1.3M ($0.3M at planning FX 3.68).</li>
+            <li><strong>What the reinsurer underwrites.</strong> One contract family: life ₪1,000,000 face with the lifelong ADL-3 mechanism (lump sum ₪250,000 below 65), long-term care and a separately licensed savings flow — never split. Monthly premium ₪4,518 at 42, split 25% risk / 75% savings.</li>
+            <li><strong>Pilot governance.</strong> Appointed Actuary review against the pricing kernel at Gate 6; repricing right at each gate; bordereaux with evidence provenance; audit rights to <code>ai_decision_log</code>. Capacity only after the filing is accepted (pre-ruling 12 October 2026).</li>
+            <li><strong>The ask.</strong> A non-binding indication on the 18% / 25% structure by the Q4 2026 gate and a technical review of the kernel and the published tables under NDA. Lead reinsurer for the pilot; every further option stays on the table; never a linked price.</li>
+          </ul>
+        </div>
+        <div class="exec-chart-panel" id="swissre-8dec-scenarios" style="border:2px solid #0e2f63;background:linear-gradient(180deg,#eef3fb 0%,#ffffff 55%);grid-column:1/-1;">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0e2f63;margin-bottom:6px;">Quota-share options · scenarios of the same model · five years</div>
+          <h3 style="margin:0 0 6px 0;">18% is the plan; 30% and 50% are scenarios with their own hash — PHINS revenue and EBITDA do not move</h3>
+          <div style="overflow-x:auto;margin-top:8px;">
+            <table style="width:100%;min-width:420px;font-size:8.2pt;border-collapse:collapse;border:1px solid var(--border);">
+              <thead><tr style="background:#0e2f63;color:#fff;"><th style="padding:6px 8px;text-align:left;">Cession</th><th style="padding:6px 8px;text-align:right;">Ceded 2027</th><th style="padding:6px 8px;text-align:right;">Result 2027</th><th style="padding:6px 8px;text-align:right;">Ceded 5y</th><th style="padding:6px 8px;text-align:right;">Result 5y</th><th style="padding:6px 8px;text-align:right;">Carrier margin</th><th style="padding:6px 8px;text-align:left;">Hash</th></tr></thead>
+              <tbody>
+                <tr><td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">18% · plan</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪9.8M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪1.3M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪764.9M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪99.4M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">5.7%</td><td style="padding:5px 8px;border-top:1px solid var(--border);"><code>9128223e1c222388</code> · canonical</td></tr>
+                <tr style="background:#eef3fb;"><td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">30% · scenario</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪16.3M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪2.1M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪1.27B</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪165.7M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">4.1%</td><td style="padding:5px 8px;border-top:1px solid var(--border);"><code>e8ce587db069e0e5</code> · scenario</td></tr>
+                <tr><td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">50% · scenario</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪27.1M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪3.5M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪2.12B</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪276.2M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">1.5%</td><td style="padding:5px 8px;border-top:1px solid var(--border);"><code>f266eba844a0e2d3</code> · scenario</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="font-size:8.2pt;margin-top:8px;color:var(--text-sub);">Each scenario is <code>compute_plan()</code> with only <code>cession_rate</code> changed; every identity holds; the plan's saved factors are not written. Technical margin 13 points of ceded premium (1 − 62% − 25%); break-even claims ratio 75%. The split between carrier and reinsurer is what moves; PHINS five-year revenue ₪1.48B and group EBITDA ₪683.3M are the same row in all three.</p>
+        </div>
+        <div class="exec-chart-panel" id="swissre-8dec-fiveyear" style="border:2px solid #0e2f63;background:linear-gradient(180deg,#eef3fb 0%,#ffffff 55%);grid-column:1/-1;">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0e2f63;margin-bottom:6px;">Five-year plan · the reinsurer's line · Israel anchor book and group envelope · default factors</div>
+          <h3 style="margin:0 0 6px 0;">Ceded premium ₪764.9M ($207.9M) · technical result ₪99.4M ($27.0M) over 2027–2031 · group envelope ₪674.5M ($183.3M) in 2031</h3>
+          <div style="overflow-x:auto;margin-top:8px;">
+            <table style="width:100%;min-width:620px;font-size:8.2pt;border-collapse:collapse;border:1px solid var(--border);">
+              <thead><tr style="background:#0e2f63;color:#fff;"><th style="padding:6px 8px;text-align:left;">Year</th><th style="padding:6px 8px;text-align:right;">In force</th><th style="padding:6px 8px;text-align:right;">Risk GWP</th><th style="padding:6px 8px;text-align:right;">Ceded premium</th><th style="padding:6px 8px;text-align:right;">Technical result</th><th style="padding:6px 8px;text-align:right;">Result (USD)</th><th style="padding:6px 8px;text-align:right;">Group envelope (18% of group GWP)</th></tr></thead>
+              <tbody>
+                <tr><td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">2027 · pilot</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">24,000</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪54.2M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪9.8M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪1.3M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">$0.3M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪9.8M</td></tr>
+                <tr style="background:#eef3fb;"><td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">2028</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">94,080</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪266.7M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪48.0M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪6.2M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">$1.7M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪52.9M</td></tr>
+                <tr><td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">2029</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">230,554</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪733.3M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪132.0M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪17.2M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">$4.7M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪165.8M</td></tr>
+                <tr style="background:#eef3fb;"><td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">2030</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">356,110</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪1.33B</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪238.5M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪31.0M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">$8.4M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪367.2M</td></tr>
+                <tr><td style="padding:5px 8px;border-top:1px solid var(--border);font-weight:700;">2031</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">471,621</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪1.87B</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪336.6M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪43.8M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">$11.9M</td><td style="padding:5px 8px;border-top:1px solid var(--border);text-align:right;">₪674.5M</td></tr>
+                <tr style="background:#dfe8f6;font-weight:700;"><td style="padding:5px 8px;border-top:2px solid #0e2f63;">Five years</td><td style="padding:5px 8px;border-top:2px solid #0e2f63;text-align:right;">—</td><td style="padding:5px 8px;border-top:2px solid #0e2f63;text-align:right;">₪4.25B</td><td style="padding:5px 8px;border-top:2px solid #0e2f63;text-align:right;">₪764.9M</td><td style="padding:5px 8px;border-top:2px solid #0e2f63;text-align:right;">₪99.4M</td><td style="padding:5px 8px;border-top:2px solid #0e2f63;text-align:right;">$27.0M</td><td style="padding:5px 8px;border-top:2px solid #0e2f63;text-align:right;">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="font-size:8.2pt;margin-top:8px;color:var(--text-sub);">The savings flow (₪660.0M in 2029, ₪1.68B in 2031; ₪3.82B over five years) is outside risk GWP and is never split with the carrier or the reinsurer. The group envelope is 18% of the group risk GWP row — arithmetic, not a model row. Capital: seed ₪6.0M on ₪24M pre (₪30M post); Series A ₪18.0M indicative in 2028; group EBITDA positive in 2029. The reinsurer's capacity carries the book; it does not fund PHINS. Timeline: 12 October 2026 pre-ruling · Q4 2026 seed close and term sheets · 1 January 2027 sales begin · Q4 2027 Gate 7 · 2028 first partner market · 2031 ten markets.</p>
+        </div>
+        <div class="exec-chart-panel" id="swissre-8dec-film" style="border:2px solid #1f5a46;background:linear-gradient(180deg,#edf6f1 0%,#ffffff 55%);grid-column:1/-1;">
+          <div style="font-size:8.5pt;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#1f5a46;margin-bottom:6px;">The short film · investor-deck method · 12 slides · 24 scenes · 15 seconds each · 6:00 at most</div>
+          <h3 style="margin:0 0 6px 0;">Each paragraph is a sealed scene; the spoken line is that paragraph, including its figures</h3>
+          <p style="font-size:8.4pt;margin:8px 0 0 0;line-height:1.6;">The deck is <code>services/reinsurer_meeting_deck.py</code>: twelve templated slides whose placeholders are filled from <code>compute_plan()</code> at render time, the same way Part II of the unified plan is filmed. Scene keys are <code>re-sNNpNN</code>, campaign ids <code>DECK-re-…</code>, and the scenes live in their own store (<code>reinsurer_deck_scenes</code>) so the investor-deck seals are untouched. A send seals the spoken paragraph, the plan hash and the presenter; nothing is added around that paragraph. The stream on <a href="/reinsurer-deck.html">/reinsurer-deck.html</a> plays only scenes whose library checksum matches and whose sealed line is still the current paragraph, and the viewer chooses which of those scenes play. The script sheet on that page is the printable film script for the meeting. The Hebrew edition is <a href="/reinsurer-deck.he.html">/reinsurer-deck.he.html</a>: the same slides through the plan's Hebrew dictionary, scene keys <code>re-he-sNNpNN</code> in their own store (<code>reinsurer_deck_scenes_he</code>), a Hebrew spoken line, and a Hebrew meeting pack (<code>…-deck.he.md</code> / <code>.he.pdf</code> / <code>.he.html</code>) bound to the same content hash. On either page a viewer may move the four reinsurance factors of the plan's own register — quota-share cession, ceding commission, expected claims ratio, carrier own expenses — and every slide, the spoken lines, the ceded line and the quota-share rows re-render from <code>compute_plan()</code> under the scenario's own hash, labelled a scenario; a value outside the register's range is refused and the saved factors are not written. A clip sealed to the plan leaves the film while a scenario's figures differ, and the library file is not rewritten. The factor panel folds with −/+. A share link moves only the factors frozen as adjustable on that link. The investor deck chooses its filmed scenes the same way. Slides: 1 PHINS × Swiss Re Israel · 2 Why a reinsurer, why now · 3 The pilot in Israel — 2027 · 4 The contract the reinsurer underwrites · 5 The ceded line — five years · 6 Quota-share options for the pilot · 7 Five-year plan — Israel anchor book · 8 Five-year plan — the group · 9 What PHINS asks of Swiss Re Israel · 10 What Swiss Re sees — governance and data · 11 Capital and timeline · 12 Next steps after 8 December.</p>
+        </div>
+      </div>
+      <div class="exec-integrity-note">
+        <strong>Data integrity notice:</strong> Every PHINS figure in this bar and in the meeting deck is a canonical default of plan identity <code>unified-2026.10-v1</code> (content hash <code>9128223e1c222388…</code>): ILS 4,518; 25% / 75%; in-force 24,000 / 94,080 / 230,554 / 356,110 / 471,621; risk GWP ILS 54,216,000 / 266,742,720 / 733,348,206 / 1,325,273,976 / 1,869,846,588. Ceded line at the default factors (18% cession, 62% expected claims, 25% ceding commission): 2027 ceded premium 54,216,000 × 0.18 = ILS 9,758,880; ceding commission ILS 2,439,720; ceded claims ILS 6,050,505.60; reinsurer technical result ILS 1,268,654.40 (13% of ceded premium); five-year ceded premium ILS 764,896,948.20 and technical result ILS 99,436,603.27. The 30% and 50% rows are scenarios of the same model with their own content hashes (<code>e8ce587d…</code>, <code>f266eba8…</code>) and are labelled as such; they do not change the plan's saved factors. Seed ILS 6,000,000 / 24,000,000 / 30,000,000; Series A indication ILS 18,000,000. No Swiss Re limit, ticket or price is set — nothing is bound by this meeting. This section does not write the platform ledger.
+      </div>
+    </section>
+
     <!-- Executive Summary Section -->
     <section id="exec-summary-section" style="margin-bottom:28px;">
       <div class="exec-summary-banner">
@@ -6081,7 +6387,7 @@
             </div>
             <div class="exec-tech-card">
               <div class="etc-icon"></div>
-              <h4><span data-live-modules>143</span> Modular Services</h4>
+              <h4><span data-live-modules>159</span> Modular Services</h4>
               <p>Service-oriented design: billing, actuarial, risk, trading, foundations, marketplace, delivery bidding, and BI analytics operate independently and scale on demand.</p>
             </div>
             <div class="exec-tech-card">
@@ -6223,7 +6529,7 @@
           <div class="exec-donut-wrap">
             <svg class="exec-donut-svg" width="170" height="170" viewBox="0 0 170 170">
               <circle cx="85" cy="85" r="60" fill="none" stroke="#e6eef9" stroke-width="22"/>
-              <circle cx="85" cy="85" r="60" fill="none" stroke="#1565c0" stroke-width="22"
+              <circle cx="85" cy="85" r="60" fill="none" stroke="var(--phins-gold)" stroke-width="22"
                 stroke-dasharray="113.1 263.89" stroke-dashoffset="0" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#2e7d32" stroke-width="22"
                 stroke-dasharray="75.4 301.59" stroke-dashoffset="-113.1" transform="rotate(-90 85 85)"/>
@@ -6233,11 +6539,11 @@
                 stroke-dasharray="45.24 331.75" stroke-dashoffset="-245.04" transform="rotate(-90 85 85)"/>
               <circle cx="85" cy="85" r="60" fill="none" stroke="#78909c" stroke-width="22"
                 stroke-dasharray="86.71 290.28" stroke-dashoffset="-290.28" transform="rotate(-90 85 85)"/>
-              <text x="85" y="82" text-anchor="middle" font-size="11" font-weight="800" fill="#0d47a1">PHINS</text>
+              <text x="85" y="82" text-anchor="middle" font-size="11" font-weight="800" fill="var(--phins-navy)">PHINS</text>
               <text x="85" y="96" text-anchor="middle" font-size="7.5" fill="#64748b">Tech Stack</text>
             </svg>
             <div class="exec-donut-legend">
-              <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#1565c0;"></span> AI / ML Infrastructure — 30%</div>
+              <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:var(--phins-gold);"></span> AI / ML Infrastructure — 30%</div>
               <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#2e7d32;"></span> Data & Analytics — 20%</div>
               <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#6a1b9a;"></span> Cloud & DevOps — 15%</div>
               <div class="exec-donut-legend-item"><span class="edl-swatch" style="background:#e65100;"></span> Blockchain / Ledger — 12%</div>
@@ -6355,7 +6661,7 @@
           <h4 style="font-size:9pt;font-weight:800;color:var(--text-main);margin-bottom:8px;"> Core Assumptions</h4>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:7.8pt;color:var(--text-main);">
             <div style="background:#e3f2fd;border-radius:8px;padding:8px;">
-              <div style="font-weight:800;color:#1565c0;margin-bottom:4px;">Customer Base</div>
+              <div style="font-weight:800;color:var(--phins-gold);margin-bottom:4px;">Customer Base</div>
               <div>• 100,000 underwritten customers</div>
               <div>• Each customer uses platform <strong>1×/month</strong></div>
               <div>• 100K monthly agent interactions</div>
@@ -6380,7 +6686,7 @@
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px;">
           <div style="border-radius:12px;background:#f0f7ff;padding:16px;border:1px solid #bbd6f7;">
-            <h4 style="font-size:9.5pt;font-weight:800;color:#1565c0;margin-bottom:8px;">Cloud AI Engine Services</h4>
+            <h4 style="font-size:9.5pt;font-weight:800;color:var(--phins-gold);margin-bottom:8px;">Cloud AI Engine Services</h4>
             <table style="width:100%;font-size:7.8pt;border-collapse:collapse;">
               <thead>
                 <tr style="border-bottom:1px solid #bbd6f7;">
@@ -6405,7 +6711,7 @@
                 <tr><td style="padding:2px 4px;">AI Model Registry (hosted inference)</td><td style="text-align:center;padding:2px 4px;">12,000</td><td style="text-align:right;padding:2px 4px;">$19,200</td></tr>
                 <tr><td style="padding:2px 4px;">Assessment Center NLP</td><td style="text-align:center;padding:2px 4px;">2,800</td><td style="text-align:right;padding:2px 4px;">$14,400</td></tr>
                 <tr><td style="padding:2px 4px;">Voice AI Assistant (STT/TTS)</td><td style="text-align:center;padding:2px 4px;">25,000</td><td style="text-align:right;padding:2px 4px;">$26,400</td></tr>
-                <tr style="border-top:2px solid #1565c0;font-weight:800;background:#dbeafe;">
+                <tr style="border-top:2px solid var(--phins-gold);font-weight:800;background:#dbeafe;">
                   <td style="padding:4px;">Total Annual Cloud AI</td>
                   <td style="text-align:center;padding:4px;">~312K/mo</td>
                   <td style="text-align:right;padding:4px;">$603,900</td>
@@ -6533,14 +6839,14 @@
             </div>
           </div>
           <div style="display:flex;gap:14px;margin-top:8px;font-size:7pt;">
-            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:linear-gradient(135deg,#1565c0,#42a5f5);opacity:0.4;vertical-align:middle;"></span> Cloud AI baseline (100%)</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:linear-gradient(135deg,var(--phins-gold),var(--phins-gold));opacity:0.4;vertical-align:middle;"></span> Cloud AI baseline (100%)</span>
             <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:linear-gradient(135deg,#2e7d32,#66bb6a);vertical-align:middle;"></span> Local LLM cost (% of cloud, Year 2+)</span>
           </div>
         </div>
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
           <div>
-            <h4 style="font-size:9pt;font-weight:800;color:#1565c0;margin-bottom:6px;">Cloud AI — Strategic Advantages</h4>
+            <h4 style="font-size:9pt;font-weight:800;color:var(--phins-gold);margin-bottom:6px;">Cloud AI — Strategic Advantages</h4>
             <ul style="font-size:7.8pt;color:var(--text-main);margin:0;padding-left:14px;line-height:1.7;">
               <li>Zero upfront capex; pay-per-use elasticity</li>
               <li>Instant access to frontier models (GPT-4o, Claude 4, Gemini)</li>
@@ -6588,7 +6894,7 @@
         </div>
 
         <div style="margin-top:14px;border-radius:10px;background:linear-gradient(135deg,#e3f2fd,#f3e5f5);padding:14px;border:1px solid #bbdefb;">
-          <h4 style="font-size:9pt;font-weight:800;color:#0d47a1;margin-bottom:6px;"> Recommended Strategy: Hybrid Approach</h4>
+          <h4 style="font-size:9pt;font-weight:800;color:var(--phins-navy);margin-bottom:6px;"> Recommended Strategy: Hybrid Approach</h4>
           <p style="font-size:8pt;color:var(--text-main);margin:0;line-height:1.6;">
             <strong>Phase 1 (Year 1):</strong> Cloud-first for all 15 agents — $604K opex, zero capex. Fastest time-to-market at 100K customers.<br>
             <strong>Phase 2 (Year 2):</strong> Deploy local inference for high-volume agents (Underwriting, Claims, Investment, Trading, Customer Comms) — saves $248K/yr vs cloud at equivalent scale. Israeli data residency achieved.<br>
@@ -6653,7 +6959,7 @@
                 <div><strong>Performance:</strong> 32 PFLOPS FP8 training + inference</div>
                 <div><strong>Ideal for:</strong> Enterprise deployment with Dell ProSupport + Israeli resellers</div>
                 <div style="margin-top:6px;padding:6px;background:#e3f2fd;border-radius:6px;">
-                  <div style="font-weight:800;color:#1565c0;">Cost Range</div>
+                  <div style="font-weight:800;color:var(--phins-gold);">Cost Range</div>
                   <div><strong>Purchase:</strong> $280,000 – $380,000</div>
                   <div><strong>Lease (36mo):</strong> $10,500 – $14,000/month</div>
                   <div><strong>Dell APEX (pay-per-use):</strong> $28,000 – $35,000/month</div>
@@ -6688,7 +6994,7 @@
           <div style="margin-top:14px;overflow-x:auto;">
             <table style="width:100%;font-size:7.8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
               <thead>
-                <tr style="background:#0d47a1;color:#fff;">
+                <tr style="background:var(--phins-navy);color:#fff;">
                   <th style="padding:6px 8px;text-align:left;font-weight:700;">Option</th>
                   <th style="padding:6px 8px;text-align:center;font-weight:700;">Purchase Range</th>
                   <th style="padding:6px 8px;text-align:center;font-weight:700;">Monthly Lease</th>
@@ -6740,7 +7046,7 @@
               <div>Start with <strong>Option 4</strong> (L40S Cluster, $85–140K) for Phase 2 inference, then add <strong>Option 2</strong> (Lambda Hyperplane, $250–350K) for Phase 3 full training. Total capex: <strong>$335K – $490K</strong> over 18 months.</div>
             </div>
             <div style="background:#f0f7ff;border-radius:8px;padding:10px;border:1px solid #bbdefb;">
-              <div style="font-weight:800;color:#1565c0;margin-bottom:4px;">Recommended Path (Enterprise-Grade)</div>
+              <div style="font-weight:800;color:var(--phins-gold);margin-bottom:4px;">Recommended Path (Enterprise-Grade)</div>
               <div>Deploy <strong>Option 1</strong> (NVIDIA DGX H100, $320–420K) as single turnkey solution for Phase 2+3 combined. Premium pricing offset by NVIDIA enterprise support, certified stack, and single-vendor warranty. Total capex: <strong>$320K – $420K</strong> at once.</div>
             </div>
           </div>
@@ -6748,7 +7054,7 @@
       </div>
 
       <div class="exec-integrity-note">
-        <strong>Data integrity notice:</strong> This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections. Portugal market data is sourced from ASF, Banco de Portugal, OECD, and INE official publications. All capability maturity scores reflect current deployed platform state across <span data-live-modules>143</span> service modules. AI cost assessment based on published cloud provider pricing (June 2025) and Israel commercial infrastructure rates.
+        <strong>Data integrity notice:</strong> This executive summary contains only publicly disclosable technology descriptions, architecture maturity benchmarks, and OECD-sourced market context. No proprietary commercial figures, contract structures, pricing models, revenue data, customer counts, or monetization methods are included. Charts represent indexed capability scores and proportional engineering allocations, not financial projections. Portugal market data is sourced from ASF, Banco de Portugal, OECD, and INE official publications. All capability maturity scores reflect current deployed platform state across <span data-live-modules>159</span> service modules. AI cost assessment based on published cloud provider pricing (June 2025) and Israel commercial infrastructure rates.
       </div>
     </section>
 
@@ -7507,13 +7813,13 @@
         One adjustable template replaces 26 near-duplicate files.
       </p>
       <div class="jurisdiction-picker" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:1.25rem;display:grid;gap:12px;max-width:720px;">
-        <label style="font-weight:600;color:#0d47a1;">Country / Jurisdiction
+        <label style="font-weight:600;color:var(--phins-navy);">Country / Jurisdiction
           <select id="pitch-jurisdiction" style="display:block;width:100%;margin-top:6px;padding:10px 12px;border-radius:8px;border:1px solid #cbd5e1;font-size:1rem;"></select>
         </label>
         <div id="pitch-authority-preview" style="color:#334155;font-size:0.95rem;"></div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <button type="button" id="pitch-open-btn" class="btn" style="background:linear-gradient(135deg,#0d47a1,#1565c0);color:#fff;border:none;padding:10px 18px;border-radius:10px;font-weight:700;cursor:pointer;">Open Pitch →</button>
-          <button type="button" id="pitch-print-btn" class="btn" style="background:#fff;color:#0d47a1;border:1.5px solid #0d47a1;padding:10px 18px;border-radius:10px;font-weight:700;cursor:pointer;">Print / Download PDF</button>
+          <button type="button" id="pitch-open-btn" class="btn" style="background:linear-gradient(135deg,var(--phins-navy),var(--phins-gold));color:#fff;border:none;padding:10px 18px;border-radius:10px;font-weight:700;cursor:pointer;">Open Pitch →</button>
+          <button type="button" id="pitch-print-btn" class="btn" style="background:#fff;color:var(--phins-navy);border:1.5px solid var(--phins-navy);padding:10px 18px;border-radius:10px;font-weight:700;cursor:pointer;">Print / Download PDF</button>
         </div>
       </div>
       <script>
@@ -7604,7 +7910,7 @@
       </p>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 8px;">
-        <button type="button" class="export-btn" id="toggle-bp-panel" style="background:linear-gradient(135deg,#0d47a1,#1565c0);color:#fff;border:none;font-weight:700;">Open Business Plan Dashboard</button>
+        <button type="button" class="export-btn" id="toggle-bp-panel" style="background:linear-gradient(135deg,var(--phins-navy),var(--phins-gold));color:#fff;border:none;font-weight:700;">Open Business Plan Dashboard</button>
         <button type="button" class="export-btn" id="bp-download-pdf-btn" style="background:var(--green-1);color:#fff;border:none;">Download Tech Investor PDF</button>
         <span class="helper-note" id="bp-status"></span>
       </div>
@@ -7688,7 +7994,7 @@
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;" id="bp-tech-indicators">
           <div style="border:1px solid var(--border);border-radius:14px;padding:14px;background:#fff;">
             <div style="font-size:7pt;color:var(--text-soft);text-transform:uppercase;">Platform Modules</div>
-            <div style="font-size:16pt;font-weight:850;color:var(--blue-dark);" data-live-modules>143</div>
+            <div style="font-size:16pt;font-weight:850;color:var(--blue-dark);" data-live-modules>159</div>
             <div style="font-size:7pt;color:var(--text-soft);">Deployed service modules</div>
           </div>
           <div style="border:1px solid var(--border);border-radius:14px;padding:14px;background:#fff;">
@@ -7717,19 +8023,19 @@
         <div style="overflow-x:auto;margin-bottom:16px;border:1px solid var(--border);border-radius:14px;background:#fff;">
           <table style="min-width:1200px;margin:0;font-size:7.5pt;border-collapse:separate;border-spacing:0;" id="bp-market-table">
             <thead>
-              <tr style="background:linear-gradient(135deg,#0d47a1,#1565c0);">
-                <th style="padding:10px 10px;color:#fff;font-weight:700;text-align:left;border-bottom:2px solid #0d47a1;border-radius:14px 0 0 0;">Market</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:center;border-bottom:2px solid #0d47a1;">PHINS Eq%</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Addressable</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Written Lives</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">GWP (local)</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">GWP (USD)</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Net (USD)</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Royalty</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Rev Share</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">SaaS Fee</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;">Total Rev</th>
-                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid #0d47a1;border-radius:0 14px 0 0;">JV Equity Val</th>
+              <tr style="background:linear-gradient(135deg,var(--phins-navy),var(--phins-gold));">
+                <th style="padding:10px 10px;color:#fff;font-weight:700;text-align:left;border-bottom:2px solid var(--phins-navy);border-radius:14px 0 0 0;">Market</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:center;border-bottom:2px solid var(--phins-navy);">PHINS Eq%</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">Addressable</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">Written Lives</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">GWP (local)</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">GWP (USD)</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">Net (USD)</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">Royalty</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">Rev Share</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">SaaS Fee</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);">Total Rev</th>
+                <th style="padding:10px 8px;color:#fff;font-weight:700;text-align:right;border-bottom:2px solid var(--phins-navy);border-radius:0 14px 0 0;">JV Equity Val</th>
               </tr>
             </thead>
             <tbody id="bp-market-body"></tbody>
@@ -7787,7 +8093,7 @@
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;" id="bp-thesis-cards">
             <div style="border:1px solid var(--border);border-radius:12px;padding:14px;background:linear-gradient(180deg,#f0f5ff,#fff);">
               <div style="font-size:10pt;margin-bottom:6px;">Software Platform</div>
-              <div style="font-size:8pt;color:var(--text-sub);">PHINS is an <strong>insurance operating system</strong>, not a single product. <span data-live-modules>143</span> modular services create SaaS licensing potential per jurisdiction. Each JV market adds a recurring technology royalty stream without proportional engineering cost.</div>
+              <div style="font-size:8pt;color:var(--text-sub);">PHINS is an <strong>insurance operating system</strong>, not a single product. <span data-live-modules>159</span> modular services create SaaS licensing potential per jurisdiction. Each JV market adds a recurring technology royalty stream without proportional engineering cost.</div>
             </div>
             <div style="border:1px solid var(--border);border-radius:12px;padding:14px;background:linear-gradient(180deg,#f0fff4,#fff);">
               <div style="font-size:10pt;margin-bottom:6px;">JV Multiplier Effect</div>
@@ -7914,7 +8220,7 @@
         <div class="table-wrap">
           <table style="width:100%;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
             <thead>
-              <tr style="background:#0d47a1;color:#fff;">
+              <tr style="background:var(--phins-navy);color:#fff;">
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Company</th>
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Model</th>
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">2025–2026 public fact</th>
@@ -7935,7 +8241,7 @@
         <div class="table-wrap">
           <table style="width:100%;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
             <thead>
-              <tr style="background:#0d47a1;color:#fff;">
+              <tr style="background:var(--phins-navy);color:#fff;">
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Horizon</th>
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Plan years</th>
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Architecture deliverables</th>
@@ -7986,7 +8292,7 @@
         <div class="table-wrap" style="margin-top:18px;">
           <table style="width:100%;font-size:8pt;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;">
             <thead>
-              <tr style="background:#0d47a1;color:#fff;">
+              <tr style="background:var(--phins-navy);color:#fff;">
                 <th style="padding:6px 8px;text-align:left;font-weight:700;">Cost line</th>
                 <th style="padding:6px 8px;text-align:right;font-weight:700;">Y1</th>
                 <th style="padding:6px 8px;text-align:right;font-weight:700;">Y2</th>
@@ -8027,9 +8333,9 @@
       {
         "risk_premium_ils": 4518,
         "cost_lines": [
-          {"key": "personnel", "label": "Personnel (loaded)", "color": "#0d47a1"},
-          {"key": "ai_dev", "label": "AI development tokens", "color": "#1976d2"},
-          {"key": "ai_runtime", "label": "AI runtime (agents, OCR, STT)", "color": "#42a5f5"},
+          {"key": "personnel", "label": "Personnel (loaded)", "color": "var(--phins-navy)"},
+          {"key": "ai_dev", "label": "AI development tokens", "color": "var(--phins-gold)"},
+          {"key": "ai_runtime", "label": "AI runtime (agents, OCR, STT)", "color": "var(--phins-gold)"},
           {"key": "cloud", "label": "Cloud & electricity", "color": "#26a69a"},
           {"key": "security", "label": "Security & compliance", "color": "#c9a227"},
           {"key": "actuarial_reg", "label": "Actuarial & regulatory tooling", "color": "#7e57c2"}
@@ -8140,7 +8446,7 @@
             var vals = years.map(function (y) { return y[key]; });
             var total = vals.reduce(function (a, v) { return a + (typeof v === 'number' ? v : 0); }, 0);
             var render = opts.render || fmt;
-            var bg = opts.bg ? ' style="background:' + opts.bg + (opts.bold ? ';font-weight:800;color:#0d47a1' : '') + ';"' : '';
+            var bg = opts.bg ? ' style="background:' + opts.bg + (opts.bold ? ';font-weight:800;color:var(--phins-navy)' : '') + ';"' : '';
             return '<tr' + bg + '><td style="padding:5px 8px;' + (opts.bold ? 'font-weight:700;' : '') + '">' + esc(label) + '</td>' +
               vals.map(function (v) { return cell(render(v), opts.bold); }).join('') +
               cell(opts.total === false ? '—' : render(total), true) + '</tr>';
@@ -10595,7 +10901,7 @@
           return '<div style="display:grid;grid-template-columns:85px 1fr 100px;align-items:center;gap:10px;padding:4px 0;">' +
             '<div style="font-size:8pt;font-weight:700;color:var(--text-main);">Year ' + (i+1) + ' (' + (ramp*100).toFixed(0) + '%)</div>' +
             '<div style="background:#e8eef7;border-radius:9px;height:22px;overflow:hidden;">' +
-            '<div style="width:' + pct + '%;height:100%;background:linear-gradient(90deg,#0d47a1,#1976d2,#42a5f5);border-radius:9px;transition:width 0.4s ease;"></div></div>' +
+            '<div style="width:' + pct + '%;height:100%;background:linear-gradient(90deg,var(--phins-navy),var(--phins-gold),var(--phins-gold));border-radius:9px;transition:width 0.4s ease;"></div></div>' +
             '<div style="font-size:8.5pt;font-weight:700;color:var(--blue-dark);text-align:right;">' + fmtUsd(rev) + '</div>' +
             '</div>';
         }).join("");
@@ -10916,9 +11222,10 @@
     (function () {
       var tbody = document.getElementById("diary-tbody");
       if (!tbody) return;
-      // v9: 25 Oct NBA Law, 26 Oct Aspire / Eyal Ohayun, 28 Oct Meir Uzan, 12 Nov D.N.R.
-      // v8 remains a fallback read for browsers that already saved the previous seed.
-      var STORAGE_ID = "phins.il.meeting.diary.v9";
+      // v10: 8 Dec Swiss Re Israel (Mr. Hillel Damelin) joins the v9 rows
+      // (25 Oct NBA Law, 26 Oct Aspire / Eyal Ohayun, 28 Oct Meir Uzan, 12 Nov D.N.R.).
+      // v9 and v8 remain fallback reads for browsers that already saved a previous seed.
+      var STORAGE_ID = "phins.il.meeting.diary.v10";
       var statusEl = document.getElementById("diary-status");
       var COLUMNS = ["date", "time", "counterparty", "location", "purpose", "status"];
 
@@ -11011,6 +11318,11 @@
             date: "2026-11-12", time: "TBC · 60 min", counterparty: "Mr. Yosi Ben Zvi — CEO, D.N.R. Insurance Agency",
             location: "TBC", purpose: "Thursday 12 November 2026. Local agency distribution and a potential investment. D.N.R. is an agency house (about 300 agents), not the designated carrier. No commission figure is set. Pack: DNR 12.11 section + /investor-docs/dnr-benzvi-meeting-12nov-brief.pdf.",
             status: "Scheduled"
+          },
+          {
+            date: "2026-12-08", time: "TBC · 60 min", counterparty: "Mr. Hillel Damelin — Regional CEO Israel, Swiss Re",
+            location: "TBC", purpose: "Tuesday 8 December 2026. Israel pilot (Gates 5–7, 2027 ceded line ILS 9,758,880 at the plan's 18% quota share) and the five-year plan from the reinsurer's seat; quota-share scenarios at 30% / 50% are labelled scenarios of the same model. Ask: non-binding indication on 18% / 25% and a kernel review under NDA. Nothing is bound; no limit, ticket or price is set. Pack: Swiss Re Israel 8.12 section + /reinsurer-deck.html and /reinsurer-deck.he.html (12 slides, 24 film scenes each; adjustable reinsurance factors as labelled scenarios) + /investor-docs/swiss-re-israel-meeting-8dec2026-deck.pdf (+ .he.pdf).",
+            status: "Scheduled"
           }
         ];
       }
@@ -11060,7 +11372,7 @@
         var v = (value || "").toLowerCase();
         if (v.indexOf("held") >= 0 || v.indexOf("done") >= 0) return "background:#dcfce7;color:#15803d;";
         if (v.indexOf("cancel") >= 0) return "background:#fee2e2;color:#b91c1c;";
-        return "background:#dbeafe;color:#1565c0;";
+        return "background:#dbeafe;color:var(--phins-gold);";
       }
 
       function render() {
@@ -11182,7 +11494,7 @@
           if (typeof window.phinsDiaryRows === "function") {
             rows = window.phinsDiaryRows() || [];
           } else {
-            rows = JSON.parse(localStorage.getItem("phins.il.meeting.diary.v9") || localStorage.getItem("phins.il.meeting.diary.v8") || localStorage.getItem("phins.il.meeting.diary.v7") || localStorage.getItem("phins.il.meeting.diary.v6") || "[]") || [];
+            rows = JSON.parse(localStorage.getItem("phins.il.meeting.diary.v10") || localStorage.getItem("phins.il.meeting.diary.v9") || localStorage.getItem("phins.il.meeting.diary.v8") || localStorage.getItem("phins.il.meeting.diary.v7") || localStorage.getItem("phins.il.meeting.diary.v6") || "[]") || [];
           }
         } catch (e) { rows = []; }
         rows.forEach(function (rec, idx) {
@@ -11285,7 +11597,7 @@
           badges.appendChild(status);
           (note.tags || []).forEach(function (tag) {
             var chip = document.createElement("span");
-            chip.style.cssText = "font-size:7.6pt;font-weight:700;border-radius:20px;padding:2px 8px;background:#dbeafe;color:#1565c0;text-transform:uppercase;";
+            chip.style.cssText = "font-size:7.6pt;font-weight:700;border-radius:20px;padding:2px 8px;background:#dbeafe;color:var(--phins-gold);text-transform:uppercase;";
             chip.textContent = tag;
             badges.appendChild(chip);
           });
@@ -12680,100 +12992,414 @@
       if (!panel || !form) return;
 
       function authToken() {
-        try { return localStorage.getItem("phins_auth_token") || ""; } catch (e) { return ""; }
+        // The confidential unlock stores phins_auth_token. A normal staff
+        // login stores phins_token. The shares API still requires a staff session.
+        try {
+          return localStorage.getItem("phins_auth_token") ||
+                 localStorage.getItem("phins_token") ||
+                 sessionStorage.getItem("phins_token") || "";
+        } catch (e) { return ""; }
+      }
+
+      var deskToken = "";
+
+      function setSignedUseOpen(open) {
+        var section = document.getElementById("signed-use-section");
+        var btn = document.getElementById("signed-use-toggle");
+        if (!section || !btn) return;
+        section.classList.toggle("is-open", !!open);
+        section.classList.toggle("is-collapsed", !open);
+        btn.textContent = open ? "\u2212" : "+";
+        btn.setAttribute("aria-expanded", open ? "true" : "false");
+        btn.setAttribute("aria-label", open ? "Minimise signed documents" : "Maximise signed documents");
+        try { localStorage.setItem("phins-signed-use-open", open ? "1" : "0"); } catch (e) {}
+      }
+      window.phinsSetSignedUseOpen = setSignedUseOpen;
+
+      (function initSignedUseFold() {
+        var open = false;
+        try { open = localStorage.getItem("phins-signed-use-open") === "1"; } catch (e) {}
+        if ((location.hash || "") === "#signed-use-section") open = true;
+        setSignedUseOpen(open);
+        var btn = document.getElementById("signed-use-toggle");
+        var head = document.getElementById("signed-use-head");
+        if (btn) {
+          btn.addEventListener("click", function (ev) {
+            ev.stopPropagation();
+            var section = document.getElementById("signed-use-section");
+            setSignedUseOpen(!(section && section.classList.contains("is-open")));
+          });
+        }
+        if (head) {
+          head.addEventListener("click", function () {
+            var section = document.getElementById("signed-use-section");
+            setSignedUseOpen(!(section && section.classList.contains("is-open")));
+          });
+        }
+      })();
+
+      function staffHeaders(token) {
+        return { "Authorization": "Bearer " + token };
+      }
+
+      function fetchJson(url, token) {
+        return fetch(url, { headers: staffHeaders(token), credentials: "same-origin" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .catch(function () { return null; });
+      }
+
+      function stamp(value) {
+        return String(value || "").replace("T", " ").replace("Z", " UTC");
+      }
+
+      function shareUrl(item) {
+        var path = String((item && item.share_url_path) || "");
+        if (path.charAt(0) !== "/") return "";
+        return location.origin + path;
+      }
+
+      function usesText(item) {
+        var used = Number(item.used_count || 0);
+        var openings = Array.isArray(item.openings) ? item.openings.length : 0;
+        var core = item.max_uses == null
+          ? used + (used === 1 ? " use" : " uses") + " \u00b7 unlimited"
+          : used + " / " + item.max_uses + " \u00b7 " + (item.remaining_uses == null ? 0 : item.remaining_uses) + " left";
+        return core + " \u00b7 " + openings + (openings === 1 ? " opening" : " openings");
+      }
+
+      function windowText(item) {
+        var hours = Math.round(Number(item.access_window_seconds || 0) / 3600);
+        var idle = Math.round(Number(item.idle_timeout_seconds || 0) / 60);
+        var bits = [];
+        if (hours) bits.push(hours + "h window");
+        if (idle) bits.push(idle + "m idle");
+        if (item.expires_at) bits.push("lapses " + String(item.expires_at).slice(0, 10));
+        if (item.mode) bits.push(item.mode);
+        return bits.join(" \u00b7 ");
+      }
+
+      function passwordLabel(item) {
+        if (item.password_retained && item.password) return String(item.password);
+        if (item.password_unreadable) return "Seal unreadable";
+        return "Not retained";
+      }
+
+      function copyText(value, button, doneLabel) {
+        if (!navigator.clipboard || !navigator.clipboard.writeText) {
+          button.textContent = "Copy unavailable";
+          return;
+        }
+        navigator.clipboard.writeText(value).then(function () {
+          button.textContent = doneLabel || "Copied";
+        }).catch(function () { button.textContent = "Copy failed"; });
+      }
+
+      function openSeal(archiveId, button) {
+        fetch("/api/confidential/signed-documents/" + encodeURIComponent(archiveId) + "/html", {
+          headers: staffHeaders(deskToken),
+          credentials: "same-origin"
+        }).then(function (r) { return r.ok ? r.text() : Promise.reject(); }).then(function (html) {
+          var blob = new Blob([html], { type: "text/html" });
+          window.open(URL.createObjectURL(blob), "_blank", "noopener");
+        }).catch(function () { button.textContent = "Could not open"; });
+      }
+
+      function closeLink(item, kind) {
+        var name = item.label || item.id || "this link";
+        var verb = kind === "delete" ? "Delete" : "Revoke";
+        var note = kind === "delete"
+          ? "Delete the link for " + name + "? It stops opening and stays on the book as deleted. The seal and the use ledger are kept."
+          : "Revoke the link for " + name + "? It stops opening. The record, the seal, and the use ledger are kept.";
+        if (!window.confirm(note)) return;
+        var msg = document.getElementById("addressed-links-msg");
+        if (msg) msg.textContent = verb + "\u2026";
+        var url = "/api/confidential/shares/" + encodeURIComponent(item.id);
+        var headers = staffHeaders(deskToken);
+        var opts = { method: "DELETE", headers: headers, credentials: "same-origin" };
+        if (kind === "delete") {
+          url += "/delete";
+          opts.method = "POST";
+          opts.headers = { "Authorization": headers.Authorization, "Content-Type": "application/json" };
+          opts.body = "{}";
+        }
+        fetch(url, opts).then(function (r) {
+          return r.json().then(function (data) { return { ok: r.ok, data: data || {} }; });
+        }).then(function (res) {
+          if (!res.ok) {
+            if (msg) msg.textContent = (res.data && res.data.error) || (verb + " failed");
+            return;
+          }
+          if (msg) {
+            msg.textContent = kind === "delete"
+              ? "Link deleted. The record, the seal, and the chain are kept."
+              : "Link revoked. The record, the seal, and the chain are kept.";
+          }
+          loadSignedDesk(deskToken);
+        }).catch(function () {
+          if (msg) msg.textContent = "Network error \u2014 try again.";
+        });
+      }
+
+      function renderSummary(shares, ledger, docs) {
+        var node = document.getElementById("signed-use-summary");
+        if (!node) return;
+        var linkCount = shares && Array.isArray(shares.items) ? shares.items.length : 0;
+        var sealCount = docs && Array.isArray(docs.items) ? docs.items.length : 0;
+        var eventCount = ledger && typeof ledger.total === "number" ? ledger.total : 0;
+        var chain = !ledger ? "ledger unread" : (ledger.intact ? "chain intact" : "chain does not verify");
+        node.textContent = linkCount + " addressed link" + (linkCount === 1 ? "" : "s")
+          + " \u00b7 " + sealCount + " sealed \u00b7 " + eventCount + " ledger events \u00b7 " + chain;
+      }
+
+      function renderAddressed(data, token) {
+        var box = document.getElementById("addressed-links");
+        if (!box) return;
+        box.innerHTML = "";
+        if (!data) {
+          box.textContent = "Addressed links could not be loaded.";
+          return;
+        }
+        var items = data.items || [];
+        if (!items.length) {
+          box.textContent = "No addressed links yet. Create one in Staff \u00b7 Share links above.";
+          return;
+        }
+        var table = document.createElement("table");
+        var head = document.createElement("thead");
+        var headRow = document.createElement("tr");
+        ["Addressed to", "Link", "Password", "Status", "Uses", "Window", "Signatures", ""].forEach(function (label) {
+          var th = document.createElement("th");
+          th.textContent = label;
+          headRow.appendChild(th);
+        });
+        head.appendChild(headRow);
+        table.appendChild(head);
+        var body = document.createElement("tbody");
+        items.forEach(function (item) {
+          var tr = document.createElement("tr");
+
+          var who = document.createElement("td");
+          var name = document.createElement("strong");
+          name.textContent = item.label || "Untitled recipient";
+          who.appendChild(name);
+          var meta = document.createElement("div");
+          meta.style.color = "#667";
+          var bits = [item.id || "", item.lang || ""];
+          if (item.nda_required) bits.push("NDA");
+          if (item.nda_doc_instance_id) bits.push(item.nda_doc_instance_id);
+          if (item.created_at) bits.push("created " + stamp(item.created_at));
+          if (item.created_by) bits.push("by " + item.created_by);
+          meta.textContent = bits.filter(Boolean).join(" \u00b7 ");
+          who.appendChild(meta);
+          tr.appendChild(who);
+
+          var linkCell = document.createElement("td");
+          var url = shareUrl(item);
+          if (url) {
+            var anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.target = "_blank";
+            anchor.rel = "noopener";
+            anchor.textContent = url;
+            linkCell.appendChild(anchor);
+            var copyLink = document.createElement("button");
+            copyLink.type = "button";
+            copyLink.className = "exec-dl-btn";
+            copyLink.style.marginTop = "6px";
+            copyLink.textContent = "Copy link";
+            copyLink.addEventListener("click", function () { copyText(url, copyLink, "Copied"); });
+            linkCell.appendChild(document.createElement("br"));
+            linkCell.appendChild(copyLink);
+          } else {
+            linkCell.textContent = item.path || "";
+          }
+          tr.appendChild(linkCell);
+
+          var passCell = document.createElement("td");
+          var code = document.createElement("code");
+          code.textContent = passwordLabel(item);
+          passCell.appendChild(code);
+          if (item.password_retained && item.password) {
+            var copyPass = document.createElement("button");
+            copyPass.type = "button";
+            copyPass.className = "exec-dl-btn";
+            copyPass.style.marginTop = "6px";
+            copyPass.textContent = "Copy password";
+            copyPass.addEventListener("click", function () { copyText(String(item.password), copyPass, "Copied"); });
+            passCell.appendChild(document.createElement("br"));
+            passCell.appendChild(copyPass);
+          }
+          tr.appendChild(passCell);
+
+          var statusCell = document.createElement("td");
+          var status = document.createElement("strong");
+          status.textContent = item.status || "";
+          statusCell.appendChild(status);
+          var statusMeta = document.createElement("div");
+          statusMeta.style.color = "#667";
+          var statusBits = [];
+          if (item.revoked_at) statusBits.push("revoked " + stamp(item.revoked_at) + (item.revoked_by ? " by " + item.revoked_by : ""));
+          if (item.deleted_at) statusBits.push("deleted " + stamp(item.deleted_at) + (item.deleted_by ? " by " + item.deleted_by : ""));
+          statusMeta.textContent = statusBits.join(" \u00b7 ");
+          statusCell.appendChild(statusMeta);
+          tr.appendChild(statusCell);
+
+          var usesCell = document.createElement("td");
+          usesCell.textContent = usesText(item);
+          tr.appendChild(usesCell);
+
+          var windowCell = document.createElement("td");
+          windowCell.textContent = windowText(item);
+          tr.appendChild(windowCell);
+
+          var sigCell = document.createElement("td");
+          var acceptances = Array.isArray(item.nda_acceptances) ? item.nda_acceptances : [];
+          if (!acceptances.length) {
+            sigCell.textContent = "None yet";
+          } else {
+            acceptances.forEach(function (acc, index) {
+              if (index) sigCell.appendChild(document.createElement("br"));
+              var line = document.createElement("span");
+              line.textContent = (acc.signer_name || "Signer") + (acc.at ? " \u00b7 " + stamp(acc.at) : "");
+              sigCell.appendChild(line);
+              var archiveId = acc.ledger && acc.ledger.archive_id;
+              if (archiveId) {
+                var open = document.createElement("button");
+                open.type = "button";
+                open.className = "exec-dl-btn";
+                open.style.marginLeft = "6px";
+                open.textContent = "Open seal";
+                open.addEventListener("click", function () { openSeal(archiveId, open); });
+                sigCell.appendChild(open);
+              }
+            });
+          }
+          tr.appendChild(sigCell);
+
+          var actions = document.createElement("td");
+          var wrap = document.createElement("div");
+          wrap.className = "signed-use-actions";
+          var closed = item.status === "revoked" || item.status === "deleted";
+          var revoke = document.createElement("button");
+          revoke.type = "button";
+          revoke.className = "exec-dl-btn";
+          revoke.textContent = "Revoke";
+          revoke.disabled = closed;
+          if (!closed) revoke.addEventListener("click", function () { closeLink(item, "revoke"); });
+          var del = document.createElement("button");
+          del.type = "button";
+          del.className = "exec-dl-btn";
+          del.textContent = "Delete";
+          del.disabled = item.status === "deleted";
+          if (item.status !== "deleted") del.addEventListener("click", function () { closeLink(item, "delete"); });
+          wrap.appendChild(revoke);
+          wrap.appendChild(del);
+          actions.appendChild(wrap);
+          tr.appendChild(actions);
+
+          body.appendChild(tr);
+        });
+        table.appendChild(body);
+        box.appendChild(table);
+        void token;
+      }
+
+      function renderLedger(data) {
+        var box = document.getElementById("document-use-ledger");
+        if (!box) return;
+        if (!data) { box.textContent = "Use ledger could not be loaded."; return; }
+        var items = data.items || [];
+        box.innerHTML = "";
+        var head = document.createElement("div");
+        head.style.marginBottom = "6px";
+        head.textContent = (data.intact ? "Chain intact" : "Chain does not verify") + " \u00b7 " + (data.total || 0) + " events";
+        box.appendChild(head);
+        if (!items.length) {
+          var empty = document.createElement("div");
+          empty.textContent = "No sent, signed, opened, used, revoked, or deleted events yet.";
+          box.appendChild(empty);
+          return;
+        }
+        items.slice(0, 40).forEach(function (item) {
+          var row = document.createElement("div");
+          row.style.cssText = "padding:4px 0;border-top:1px solid var(--border);";
+          var parts = [item.action || "", item.document_name || item.document_path || "document", item.actor || "", stamp(item.at)];
+          if (item.share_id) parts.push(item.share_id);
+          row.textContent = parts.filter(Boolean).join(" \u00b7 ");
+          box.appendChild(row);
+        });
+      }
+
+      function renderSigned(data) {
+        var list = document.getElementById("signed-documents-list");
+        if (!list) return;
+        if (!data) { list.textContent = "Signed documents could not be loaded."; return; }
+        var items = data.items || [];
+        if (!items.length) { list.textContent = "No signed documents yet."; return; }
+        list.innerHTML = "";
+        items.forEach(function (item) {
+          var row = document.createElement("div");
+          row.style.cssText = "padding:8px 0;border-top:1px solid var(--border);";
+          if (!item.intact) {
+            row.textContent = (item.archive_id || "record") + " \u2014 seal failed" + (item.error ? ": " + item.error : "");
+            list.appendChild(row);
+            return;
+          }
+          var who = document.createElement("strong");
+          who.textContent = item.signer_name || "Signer";
+          var when = document.createElement("span");
+          when.textContent = " \u00b7 " + (item.label || "") + " \u00b7 " + stamp(item.signed_at);
+          var meta = document.createElement("div");
+          meta.style.color = "#667";
+          var metaBits = [item.doc_instance_id || "", String(item.nda_sha256 || "").slice(0, 16)];
+          if (item.sequence_no) metaBits.push("ledger #" + item.sequence_no);
+          if (item.share_id) metaBits.push(item.share_id);
+          meta.textContent = metaBits.filter(Boolean).join(" \u00b7 ");
+          row.appendChild(who);
+          row.appendChild(when);
+          row.appendChild(meta);
+          var open = document.createElement("button");
+          open.type = "button";
+          open.className = "exec-dl-btn";
+          open.style.marginTop = "6px";
+          open.textContent = "Open signed document";
+          open.addEventListener("click", function () { openSeal(item.archive_id, open); });
+          row.appendChild(open);
+          list.appendChild(row);
+        });
+      }
+
+      function loadSignedDesk(token) {
+        deskToken = token;
+        return Promise.all([
+          fetchJson("/api/confidential/shares", token),
+          fetchJson("/api/confidential/document-ledger", token),
+          fetchJson("/api/confidential/signed-documents", token)
+        ]).then(function (parts) {
+          renderAddressed(parts[0], token);
+          renderLedger(parts[1]);
+          renderSigned(parts[2]);
+          renderSummary(parts[0], parts[1], parts[2]);
+        });
       }
 
       function revealIfStaff() {
         var token = authToken();
         if (!token) return;
         fetch("/api/confidential/shares", {
-          headers: { "Authorization": "Bearer " + token },
+          headers: staffHeaders(token),
           credentials: "same-origin"
         }).then(function (r) {
           if (r.ok) {
             panel.hidden = false;
             var section = document.getElementById("signed-use-section");
             if (section) section.hidden = false;
-            loadSignedDocuments(token);
-            loadUseLedger(token);
+            return r.json().then(function (shares) {
+              renderAddressed(shares, token);
+              return loadSignedDesk(token);
+            });
           }
         }).catch(function () {});
-      }
-
-      function loadUseLedger(token) {
-        var box = document.getElementById("document-use-ledger");
-        if (!box) return;
-        fetch("/api/confidential/document-ledger", {
-          headers: { "Authorization": "Bearer " + token },
-          credentials: "same-origin"
-        }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
-          if (!data) { box.textContent = "Use ledger could not be loaded."; return; }
-          var items = data.items || [];
-          box.innerHTML = "";
-          var head = document.createElement("div");
-          head.style.marginBottom = "6px";
-          head.textContent = (data.intact ? "Chain intact" : "Chain does not verify") + " · " + (data.total || 0) + " events";
-          box.appendChild(head);
-          if (!items.length) {
-            var empty = document.createElement("div");
-            empty.textContent = "No sent, signed, opened, or used events yet.";
-            box.appendChild(empty);
-            return;
-          }
-          items.slice(0, 40).forEach(function (item) {
-            var row = document.createElement("div");
-            row.style.cssText = "padding:4px 0;border-top:1px solid var(--border);";
-            var when = String(item.at || "").replace("T", " ").replace("Z", " UTC");
-            row.textContent = String(item.action || "") + " · " + (item.document_name || item.document_path || "document") +
-              " · " + (item.actor || "") + " · " + when;
-            box.appendChild(row);
-          });
-        }).catch(function () { box.textContent = "Use ledger could not be loaded."; });
-      }
-
-      function loadSignedDocuments(token) {
-        var list = document.getElementById("signed-documents-list");
-        if (!list) return;
-        fetch("/api/confidential/signed-documents", {
-          headers: { "Authorization": "Bearer " + token },
-          credentials: "same-origin"
-        }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
-          if (!data) { list.textContent = "Signed documents could not be loaded."; return; }
-          var items = data.items || [];
-          if (!items.length) { list.textContent = "No signed documents yet."; return; }
-          list.innerHTML = "";
-          items.forEach(function (item) {
-            var row = document.createElement("div");
-            row.style.cssText = "padding:8px 0;border-top:1px solid var(--border);";
-            if (!item.intact) {
-              row.textContent = (item.archive_id || "record") + " — seal failed" + (item.error ? ": " + item.error : "");
-              list.appendChild(row);
-              return;
-            }
-            var when = String(item.signed_at || "").replace("T", " ").replace("Z", " UTC");
-            row.innerHTML = "<strong></strong> · <span></span><br><span style=\"color:#667;\"></span>";
-            row.querySelector("strong").textContent = item.signer_name || "Signer";
-            row.querySelectorAll("span")[0].textContent = (item.label || "") + " · " + when;
-            row.querySelectorAll("span")[1].textContent = (item.doc_instance_id || "") + " · " + String(item.nda_sha256 || "").slice(0, 16) + "… · ledger #" + (item.sequence_no || "");
-            var open = document.createElement("button");
-            open.type = "button";
-            open.className = "exec-dl-btn";
-            open.style.marginTop = "6px";
-            open.textContent = "Open signed document";
-            open.addEventListener("click", function () {
-              fetch("/api/confidential/signed-documents/" + encodeURIComponent(item.archive_id) + "/html", {
-                headers: { "Authorization": "Bearer " + token },
-                credentials: "same-origin"
-              }).then(function (r) { return r.ok ? r.text() : Promise.reject(); }).then(function (html) {
-                var blob = new Blob([html], { type: "text/html" });
-                window.open(URL.createObjectURL(blob), "_blank", "noopener");
-              }).catch(function () { open.textContent = "Could not open"; });
-            });
-            row.appendChild(document.createElement("br"));
-            row.appendChild(open);
-            list.appendChild(row);
-          });
-        }).catch(function () { list.textContent = "Signed documents could not be loaded."; });
       }
 
       form.addEventListener("submit", function (ev) {
@@ -12851,6 +13477,8 @@
                   : "")
               : "") +
             "<br><span style=\"color:#666\">Copied to clipboard when supported. Downloads stay excluded.</span>";
+          if (window.phinsSetSignedUseOpen) window.phinsSetSignedUseOpen(true);
+          loadSignedDesk(token);
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(url + "\nPassword: " + body.password).catch(function () {});
           }
@@ -12904,11 +13532,14 @@
         "aspire-ohayun-meeting-26oct",
         "uzan-followup-meeting-28oct",
         "dnr-benzvi-meeting-12nov",
+        "reinsurer-ceo-assessment-nov2026",
+        "swissre-israel-meeting-8dec2026",
         "exec-summary-section",
         "scenario-assessment-section",
         "techno-yes-section"
       ];
       var NESTED_PARENTS = {
+        "signed-use-section": "investor-documents-section",
         "il-meeting-diary": "investor-meeting-section",
         "investor-configurator": "investor-meeting-section",
         "investor-deck-config": "investor-meeting-section",
@@ -12972,6 +13603,9 @@
       }
 
       function expandForTarget(id) {
+        if (id === "signed-use-section" && window.phinsSetSignedUseOpen) {
+          window.phinsSetSignedUseOpen(true);
+        }
         var parentId = NESTED_PARENTS[id] || id;
         var section = document.getElementById(parentId);
         if (section && section.classList.contains("pitch-fold")) {
@@ -13318,5 +13952,6 @@
 
 <script src="/phins-doc-open.js"></script>
 <script src="/pitch-session.js"></script>
+  <script src="/ui-clarity.js"></script>
 </body>
 </html>

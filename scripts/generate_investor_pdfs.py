@@ -169,6 +169,18 @@ DOCUMENTS = [
      'investor-docs/dnr-benzvi-meeting-12nov-brief.pdf',
      'PHINS — D.N.R. Meeting Brief (12 November 2026) · '
      'Mr. Yosi Ben Zvi, CEO, D.N.R. Insurance Agency'),
+    ('investor-docs/reinsurer-group-ceo-assessment-nov2026-brief.md',
+     'investor-docs/reinsurer-group-ceo-assessment-nov2026-brief.pdf',
+     'PHINS — Global Reinsurer Group CEO Assessment (7 November 2026) · '
+     'Risk appetite, InsurTech openness and venture exposure'),
+    ('investor-docs/swiss-re-israel-meeting-8dec2026-deck.md',
+     'investor-docs/swiss-re-israel-meeting-8dec2026-deck.pdf',
+     'PHINS × Swiss Re Israel — Meeting Deck and Film Script (8 December 2026) · '
+     'Mr. Hillel Damelin, Regional CEO Israel'),
+    ('investor-docs/swiss-re-israel-meeting-8dec2026-deck.he.md',
+     'investor-docs/swiss-re-israel-meeting-8dec2026-deck.he.pdf',
+     'PHINS × Swiss Re ישראל — מצגת הפגישה ותסריט הסרט (8 בדצמבר 2026) · '
+     'מר הלל דמלין, מנכ"ל אזורי ישראל'),
 ]
 
 # Meeting briefs that also ship a self-contained HTML edition on the
@@ -199,6 +211,25 @@ DESIGNED_BRIEFS = {
         'subtitle': 'Mr. Yosi Ben Zvi · D.N.R. Insurance Agency',
         'footer': 'PHINS · Confidential · D.N.R. meeting brief · 12 November 2026 · canonical defaults of unified-2026.10-v1',
     },
+    'investor-docs/reinsurer-group-ceo-assessment-nov2026-brief.md': {
+        'html': 'investor-docs/reinsurer-group-ceo-assessment-nov2026-brief.html',
+        'eyebrow': 'Reinsurer assessment · 7 November 2026',
+        'subtitle': 'Group CEO seat · regional CEO escalation · all options on the table',
+        'footer': 'PHINS · Confidential · Global reinsurer Group CEO assessment · 7 November 2026 · canonical defaults of unified-2026.10-v1',
+    },
+    'investor-docs/swiss-re-israel-meeting-8dec2026-deck.md': {
+        'html': 'investor-docs/swiss-re-israel-meeting-8dec2026-deck.html',
+        'eyebrow': 'Meeting deck and film script · 8 December 2026',
+        'subtitle': 'Mr. Hillel Damelin · Regional CEO Israel · Swiss Re · Israel pilot and the five-year plan',
+        'footer': 'PHINS · Confidential · Swiss Re Israel meeting deck · 8 December 2026 · canonical defaults of unified-2026.10-v1 · scenarios labelled',
+    },
+    'investor-docs/swiss-re-israel-meeting-8dec2026-deck.he.md': {
+        'html': 'investor-docs/swiss-re-israel-meeting-8dec2026-deck.he.html',
+        'eyebrow': 'מצגת הפגישה ותסריט הסרט · 8 בדצמבר 2026',
+        'subtitle': 'מר הלל דמלין · מנכ"ל אזורי ישראל · Swiss Re · הפיילוט בישראל ותוכנית החומש',
+        'footer': 'PHINS · סודי · מצגת הפגישה עם Swiss Re ישראל · 8 בדצמבר 2026 · ברירות המחדל הקנוניות של unified-2026.10-v1 · התרחישים מסומנים',
+        'lang': 'he',
+    },
 }
 
 # Sources rendered right-to-left (Hebrew). RTL documents use a Hebrew-capable
@@ -211,6 +242,7 @@ RTL_DOCUMENTS = {
     'investor-docs/aspire-invest-meeting-sep2026-brief-he.md',
     'investor-docs/aspire-invest-business-plan-sep2026-he.md',
     'investor-docs/aspire-invest-nda-sep2026-he.md',
+    'investor-docs/swiss-re-israel-meeting-8dec2026-deck.he.md',
 }
 
 # Candidate Hebrew-capable fonts (first hit wins). DejaVu Sans covers the
@@ -1025,6 +1057,7 @@ def write_designed_brief(md_path: str, html_path: str, meta: dict, title: str) -
         subtitle=meta['subtitle'],
         body_html=body,
         footer=html.escape(meta['footer']),
+        lang=str(meta.get('lang') or 'en'),
     )
     with open(html_path, 'w', encoding='utf-8') as fh:
         fh.write(document)

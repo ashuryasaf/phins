@@ -4,8 +4,12 @@ The fee is snapshotted in cents. Upper layers take their dollars from that fee
 and the rest stays with the direct affiliate. Agent commission stays on the
 AGI rail and is not paid from this book.
 """
+import base64
+import hashlib
 import json
 import os
+import shutil
+import subprocess
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -21,12 +25,14 @@ from services.referral_reward_service import RewardError
 BASE = os.environ.get("TEST_BASE_URL", "http://localhost:8000")
 
 
-def _post(path, payload, token=None):
+def _post(path, payload, token=None, headers=None):
     data = json.dumps(payload).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
+    merged = {"Content-Type": "application/json"}
+    if headers:
+        merged.update(headers)
     if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = Request(BASE + path, data=data, headers=headers)
+        merged["Authorization"] = f"Bearer {token}"
+    req = Request(BASE + path, data=data, headers=merged)
     try:
         with urlopen(req) as resp:
             return json.loads(resp.read().decode("utf-8")), resp.status
@@ -34,16 +40,50 @@ def _post(path, payload, token=None):
         return json.loads(exc.read().decode("utf-8")), exc.code
 
 
-def _get(path, token=None):
+def _open(path, payload=None, token=None, cookie=None, method=None):
     headers = {}
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    req = Request(BASE + path, headers=headers)
+    if cookie:
+        headers["Cookie"] = cookie
+    req = Request(BASE + path, data=data, headers=headers, method=method)
     try:
         with urlopen(req) as resp:
-            return json.loads(resp.read().decode("utf-8")), resp.status
+            raw = resp.read().decode("utf-8")
+            cookies = list(resp.headers.get_all("Set-Cookie") or [])
+            return json.loads(raw) if raw else {}, resp.status, cookies
     except HTTPError as exc:
-        return json.loads(exc.read().decode("utf-8")), exc.code
+        raw = exc.read().decode("utf-8")
+        cookies = list(exc.headers.get_all("Set-Cookie") or [])
+        return json.loads(raw) if raw else {}, exc.code, cookies
+
+
+def _get(path, token=None, cookie=None):
+    body, status, _cookies = _open(path, token=token, cookie=cookie, method="GET")
+    return body, status
+
+
+def _cookie_value(headers, name):
+    prefix = name + "="
+    for header in headers:
+        part = header.split(";", 1)[0].strip()
+        if part.startswith(prefix):
+            return part[len(prefix):]
+    return ""
+
+
+def _inquiry_set_cookie(headers):
+    """Return name, secret, and the full Set-Cookie header for one inquiry."""
+    for header in headers:
+        part = header.split(";", 1)[0].strip()
+        name, _, value = part.partition("=")
+        if name.startswith("phins_inquiry_"):
+            return name, value, header
+    return "", "", ""
 
 
 def _login(username, password):
@@ -84,6 +124,33 @@ def _pay(customer_id, bill_id):
         "amount": 120.0,
         "amount_paid": 120.0,
     }
+
+
+def _finish_inquiry(filed, *, name="Applicant", company=None):
+    token = filed["inquiry_path"].split("t=", 1)[1]
+    prefill, status = _get("/api/professional-inquiry?t=" + token)
+    assert status == 200, prefill
+    assert "national_id_hash" not in json.dumps(prefill)
+    assert "id_number" not in json.dumps(prefill)
+    assert prefill["known"]["email"]
+    body = {
+        "token": token,
+        "personal": {
+            "name": name,
+            "phone": "555-0100",
+            "address": "1 Herzl",
+            "city": "Tel Aviv",
+            "country": "IL",
+        },
+        "has_company": bool(company),
+    }
+    if company:
+        body["company"] = company
+    saved, status = _post("/api/professional-inquiry", body)
+    assert status == 200, saved
+    assert saved["status"] == "pending"
+    assert "token_sha256" not in json.dumps(saved)
+    return saved
 
 
 @pytest.fixture(autouse=True)
@@ -303,19 +370,35 @@ def test_professional_agent_opens_a_switchable_portal_and_raises_the_cap():
     token, _role = _login(email, "secure123456")
     filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
     assert status == 200, filed
-    assert filed["status"] == "pending"
+    assert filed["status"] == "inquiry"
+    assert filed["inquiry_path"].startswith("/") or filed["inquiry_path"].startswith("http")
+    assert filed["email_sent"] is True
     admin, _ = _login("admin", "admin123")
-    reviewed, status = _post("/api/admin/professional-requests/review", {
+    early, status = _post("/api/admin/professional-requests/review", {
         "id": filed["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 409, early
+    assert early.get("code") == "inquiry_open"
+    saved = _finish_inquiry(filed, name="Pro Agent")
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": saved["id"], "decision": "approve",
     }, token=admin)
     assert status == 200, reviewed
     assert reviewed["agent_id"]
+    assert reviewed["supplier_id"]
+    supplier = portal.supply_chain_service.suppliers[reviewed["supplier_id"]]
+    assert supplier["customer_id"] == customer_id
+    assert "agent" in supplier["roles"] and "supplier" in supplier["roles"]
+    assert supplier["agent_id"] == reviewed["agent_id"]
     assert rewards.invitation_cap_for(customer_id) == 100
     switched, status = _post("/api/customer/role-switch", {"role": "agent"}, token=token)
     assert status == 200, switched
     me, status = _get("/api/agent/me", token=switched["token"])
     assert status == 200, me
     assert me["agent"]["id"] == reviewed["agent_id"]
+    desk, status = _post("/api/customer/role-switch", {"role": "supplier"}, token=token)
+    assert status == 200, desk
+    assert desk["supplier_id"] == reviewed["supplier_id"]
 
 
 def test_supplier_approval_stamps_the_customer_and_hides_the_password(monkeypatch):
@@ -329,9 +412,17 @@ def test_supplier_approval_stamps_the_customer_and_hides_the_password(monkeypatc
         "company_name": "North Clinic",
     }, token=token)
     assert status == 200, filed
+    assert filed["status"] == "inquiry"
+    saved = _finish_inquiry(filed, name="Pro Clinic", company={
+        "company_name": "North Clinic",
+        "supplier_type": "clinic",
+        "registration_number": "REG-1",
+        "city": "Haifa",
+        "country": "IL",
+    })
     admin, _ = _login("admin", "admin123")
     reviewed, status = _post("/api/admin/professional-requests/review", {
-        "id": filed["id"], "decision": "approve",
+        "id": saved["id"], "decision": "approve",
     }, token=admin)
     assert status == 200, reviewed
     assert "known-secret-password-value" not in json.dumps(reviewed)
@@ -341,6 +432,105 @@ def test_supplier_approval_stamps_the_customer_and_hides_the_password(monkeypatc
     assert supplier["customer_id"] == customer_id
     assert "known-secret-password-value" not in json.dumps(supplier)
     assert portal.CUSTOMERS[customer_id]["supplier_id"] == reviewed["supplier_id"]
+
+
+def test_agent_and_supplier_share_one_record_and_keep_a_conflicting_name():
+    email = "one-supplier-rewards@example.com"
+    customer_id = _register("One Person", email)
+    token, _role = _login(email, "secure123456")
+    supplier_filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    assert status == 200, supplier_filed
+    _finish_inquiry(supplier_filed, name="One Person", company={
+        "company_name": "North Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_filed["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, opened
+    agent_filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, agent_filed
+    _finish_inquiry(agent_filed, name="One Person", company={
+        "company_name": "Other Clinic",
+        "supplier_type": "pharmacy",
+    })
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": agent_filed["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, reviewed
+    assert reviewed["supplier_id"] == opened["supplier_id"]
+    assert len([s for s in portal.supply_chain_service.suppliers.values()
+                if s.get("customer_id") == customer_id]) == 1
+    supplier = portal.supply_chain_service.suppliers[opened["supplier_id"]]
+    assert supplier["company_name"] == "North Clinic"
+    assert supplier["pipeline_detail_conflict"] is True
+    assert supplier["agent_id"] == reviewed["agent_id"]
+    again, status = _post("/api/professional-inquiry", {"token": "inq_" + "ab" * 16})
+    assert status == 404, again
+
+
+def test_pipeline_report_reads_existing_fees_and_seals_without_a_second_posting():
+    email = "pipeline-rewards@example.com"
+    customer_id = _register("Pipeline", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    _finish_inquiry(filed, name="Pipeline", company={
+        "company_name": "Pipeline Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": filed["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, reviewed
+    portal.SUPPLIER_ORDERS["ORD-PIPE"] = {
+        "id": "ORD-PIPE",
+        "supplier_id": reviewed["supplier_id"],
+        "customer_id": "CUST-BUYER",
+        "platform_fee": 11.0,
+        "commission": 11.0,
+        "supplier_payout": 89.0,
+        "total_amount": 100.0,
+        "status": "completed",
+        "payment_method": "health_wallet",
+    }
+    _customer("BUYER", customer_id, "Buyer")
+    _pay("BUYER", "BILL-PIPE")
+    rewards.on_customer_paying("BUYER")
+    before = float(portal.PHINS_BALANCE_SHEET["expense_breakdown"].get("customer_acquisition") or 0)
+    report, status = _get("/api/admin/supplier-agent-pipeline?audience=supplier", token=admin)
+    assert status == 200, report
+    row = next(item for item in report["rows"] if item["supplier_id"] == reviewed["supplier_id"])
+    assert row["sales_fees"] == pytest.approx(11.0)
+    assert row["acquisition_rewards"] == pytest.approx(650.0)
+    assert row["agent_commissions"] == pytest.approx(0.0)
+    tax, status = _get("/api/admin/supplier-agent-pipeline?audience=tax", token=admin)
+    assert status == 200, tax
+    dumped = json.dumps(tax)
+    assert email not in dumped
+    assert "555-0100" not in dumped
+    regulator, status = _get("/api/admin/supplier-agent-pipeline?audience=regulator", token=admin)
+    assert status == 200, regulator
+    assert regulator["personal_data"] is False
+    assert email not in json.dumps(regulator)
+    sealed, status = _post("/api/admin/supplier-agent-pipeline/seal", {}, token=admin)
+    assert status == 200, sealed
+    assert float(portal.PHINS_BALANCE_SHEET["expense_breakdown"].get("customer_acquisition") or 0) == pytest.approx(before)
+    again, status = _post("/api/admin/supplier-agent-pipeline/seal", {
+        "supplier_id": reviewed["supplier_id"],
+    }, token=admin)
+    assert status == 200, again
+    assert again["sealed"][0]["reused"] is True
+    assert again["cash_event"] is False
+    statements = [
+        entry for entry in portal.supply_chain_service.ledger.values()
+        if entry.get("entry_type") == "pipeline_statement"
+        and entry.get("supplier_id") == reviewed["supplier_id"]
+    ]
+    assert len(statements) == 1
+    assert statements[0]["amount"] == 0
+    portal.SUPPLIER_ORDERS.pop("ORD-PIPE", None)
 
 
 def test_customer_cannot_read_the_book_or_accept_someone_elses_reward():
@@ -377,9 +567,10 @@ def test_invitation_cap_stays_at_ten_until_the_agent_role_is_approved():
     assert status == 400, blocked
     filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
     assert status == 200, filed
+    saved = _finish_inquiry(filed, name="Cap Customer")
     admin, _ = _login("admin", "admin123")
     reviewed, status = _post("/api/admin/professional-requests/review", {
-        "id": filed["id"], "decision": "approve",
+        "id": saved["id"], "decision": "approve",
     }, token=admin)
     assert status == 200, reviewed
     opened, status = _post("/api/customer/invitations/generate", {}, token=token)
@@ -388,6 +579,46 @@ def test_invitation_cap_stays_at_ten_until_the_agent_role_is_approved():
     assert status == 200, listing
     assert listing["max_allowed"] == 100
     assert rewards.invitation_cap_for(customer_id) == 100
+
+
+def test_invitation_cap_counts_the_sealed_book_after_reload(monkeypatch):
+    """A restart keeps sealed REF- codes when the process cache is empty."""
+    from database import init_database
+
+    init_database()
+    monkeypatch.setattr(rewards, "_db_enabled", lambda: True)
+    email = "cap-sealed-book@example.com"
+    customer_id = _register("Cap Sealed", email)
+    token, _role = _login(email, "secure123456")
+    rewards.INVITATIONS.clear()
+    rewards._loaded = False
+    cap = rewards.invitation_cap_for(customer_id)
+    assert cap == 10
+    stamp = os.urandom(3).hex().upper()
+    for index in range(cap):
+        rewards.issue_referral_invitation({
+            "code": f"REF-CAP-{stamp}-{index:02d}",
+            "creator_customer_id": customer_id,
+            "creator_name": "Cap Sealed",
+            "created_at": "2026-11-14T00:00:00Z",
+            "expires_at": "2027-11-14T00:00:00Z",
+            "max_uses": 1,
+            "used_count": 0,
+            "used_by": [],
+            "status": "active",
+            "notes": "",
+            "reward_status": "pending",
+        })
+    for code in list(portal.CUSTOMER_INVITATIONS):
+        row = portal.CUSTOMER_INVITATIONS.get(code)
+        if isinstance(row, dict) and row.get("creator_customer_id") == customer_id:
+            portal.CUSTOMER_INVITATIONS.pop(code, None)
+    rewards.INVITATIONS.clear()
+    rewards._loaded = False
+    blocked, status = _post("/api/customer/invitations/generate", {}, token=token)
+    assert status == 400, blocked
+    assert blocked["current_count"] == cap
+    assert len(rewards.list_referral_invitations(customer_id)) == cap
 
 
 def test_registration_with_a_customer_code_earns_on_the_first_payment():
@@ -410,6 +641,368 @@ def test_registration_with_a_customer_code_earns_on_the_first_payment():
     assert status == 200, sheet
     assert sheet["balance_sheet"]["expense_breakdown"]["customer_acquisition"] == pytest.approx(650.0)
     assert sheet["referral_rewards"]["earned"] == pytest.approx(650.0)
+
+
+def _invitation_view(payload):
+    """code, status, and checksum from one served invitation."""
+    return payload.get("code"), payload.get("status"), payload.get("checksum")
+
+
+def test_referral_invitation_is_the_same_record_on_every_view():
+    """Admin, customer, and agent views serve one sealed invitation."""
+    email = "invite-view@example.com"
+    referrer = _register("Invite View", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, filed
+    saved = _finish_inquiry(filed, name="Invite View")
+    admin, _role = _login("admin", "admin123")
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": saved["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, reviewed
+    switched, status = _post("/api/customer/role-switch", {"role": "agent"}, token=token)
+    assert status == 200, switched
+    agent_token = switched["token"]
+    assert switched["role"] == "agent"
+    assert switched["customer_id"] == referrer
+
+    issued, status = _post("/api/customer/invitations/generate", {}, token=token)
+    assert status == 201, issued
+    code = issued["invitation"]["code"]
+    assert code.startswith("REF-")
+    assert issued["join_link"].endswith("/join.html?code=" + code)
+    assert list(parse_qs(urlparse(issued["join_link"]).query)) == ["code"]
+    checksum = issued["invitation"]["checksum"]
+    assert checksum and "national_id" not in issued["invitation"]
+    assert "email" not in issued["invitation"]
+
+    def _views():
+        admin_list, admin_status = _get("/api/invitations", token=admin)
+        customer_list, customer_status = _get("/api/customer/invitations", token=token)
+        agent_list, agent_status = _get("/api/customer/invitations", token=agent_token)
+        assert admin_status == 200, admin_list
+        assert customer_status == 200, customer_list
+        assert agent_status == 200, agent_list
+        admin_row = next(item for item in admin_list["codes"] if item.get("code") == code)
+        customer_row = next(item for item in customer_list["codes"] if item.get("code") == code)
+        agent_row = next(item for item in agent_list["codes"] if item.get("code") == code)
+        return admin_row, customer_row, agent_row
+
+    admin_row, customer_row, agent_row = _views()
+    assert _invitation_view(admin_row) == _invitation_view(customer_row) == _invitation_view(agent_row)
+    assert admin_row["status"] == "active"
+    assert admin_row["checksum"] == checksum
+    assert "national_id" not in admin_row and "national_id" not in customer_row and "national_id" not in agent_row
+    commission, status = _get("/api/agent/invitations", token=agent_token)
+    assert status == 200, commission
+    assert all(item.get("code") != code for item in commission.get("items") or [])
+    static = Path(__file__).resolve().parents[1] / "web_portal" / "static"
+    assert ">Checksum<" in (static / "dashboard.html").read_text(encoding="utf-8")
+    assert 'id="referral-invitation-table"' in (static / "agent-portal.html").read_text(encoding="utf-8")
+    assert "escAdmin(code.checksum)" in (static / "admin.html").read_text(encoding="utf-8")
+
+    rewards.INVITATIONS.clear()
+    rewards._loaded = False
+    reloaded = rewards.referral_invitation(code)
+    assert reloaded["code"] == code
+    assert reloaded["status"] == "active"
+    assert reloaded["checksum"] == checksum
+
+    fingerprint = json.dumps(rewards.INVITATIONS, sort_keys=True, default=str)
+    persist = rewards._persist_invitation
+    refresh = rewards._refresh_all_locked
+    hits = []
+
+    def refuse_persist(*_args, **_kwargs):
+        hits.append("persist")
+        raise AssertionError("a view persisted an invitation")
+
+    def refuse_refresh(*_args, **_kwargs):
+        hits.append("refresh")
+        raise AssertionError("a view refreshed the book")
+
+    rewards._persist_invitation = refuse_persist
+    rewards._refresh_all_locked = refuse_refresh
+    try:
+        _views()
+    finally:
+        rewards._persist_invitation = persist
+        rewards._refresh_all_locked = refresh
+    assert hits == []
+    assert json.dumps(rewards.INVITATIONS, sort_keys=True, default=str) == fingerprint
+
+    referee = _register("Invite Referee", "invite-referee@example.com", code=code)
+    used = rewards.referral_invitation(code)
+    assert used["code"] == code
+    assert used["status"] == "used"
+    assert used["checksum"] != checksum
+    assert used["used_by"] == [{"customer_id": referee, "used_at": used["used_by"][0]["used_at"]}]
+    assert "email" not in json.dumps(used["used_by"])
+    admin_row, customer_row, agent_row = _views()
+    assert _invitation_view(admin_row) == _invitation_view(customer_row) == _invitation_view(agent_row)
+    assert admin_row["status"] == "used"
+    assert admin_row["checksum"] == used["checksum"]
+
+    rewards.INVITATIONS[code]["checksum"] = "0" * 64
+    rewards._save_file()
+    rewards.INVITATIONS.clear()
+    rewards._loaded = False
+    assert rewards.referral_invitation(code) is None
+    assert rewards.invitation_withheld(code) is True
+    admin_list, _status = _get("/api/invitations", token=admin)
+    customer_list, _status = _get("/api/customer/invitations", token=token)
+    agent_list, _status = _get("/api/customer/invitations", token=agent_token)
+    assert all(item.get("code") != code for item in admin_list["codes"])
+    assert all(item.get("code") != code for item in customer_list["codes"])
+    assert all(item.get("code") != code for item in agent_list["codes"])
+    _pay(referee, "BILL-INVITE-VIEW")
+    rewards.on_customer_paying(referee)
+    assert referee not in rewards.SETTLEMENTS
+
+
+def test_referral_invitation_survives_the_database(monkeypatch):
+    from database import init_database
+    from database.manager import DatabaseManager
+
+    init_database()
+    monkeypatch.setattr(rewards, "_db_enabled", lambda: True)
+    rewards.INVITATIONS.clear()
+    rewards._loaded = False
+    code = "REF-DB-" + os.urandom(4).hex().upper()
+    sealed = rewards.issue_referral_invitation({
+        "code": code,
+        "creator_customer_id": "CUST-DB-VIEW",
+        "creator_name": "Database",
+        "created_at": "2026-11-14T00:00:00Z",
+        "expires_at": "2027-11-14T00:00:00Z",
+        "max_uses": 1,
+        "used_count": 0,
+        "used_by": [],
+        "status": "active",
+        "notes": "",
+        "reward_status": "pending",
+    })
+    rewards.INVITATIONS.clear()
+    rewards._loaded = False
+    again = rewards.referral_invitation(code)
+    assert again["code"] == sealed["code"]
+    assert again["status"] == sealed["status"]
+    assert again["checksum"] == sealed["checksum"]
+    assert "national_id" not in again
+    with DatabaseManager() as db:
+        stored = next(
+            row for row in db.referral_rewards.list_invitations()
+            if (row.get("payload") or {}).get("code") == code
+        )
+        bad = dict(stored["payload"])
+        bad["checksum"] = "0" * 64
+        db.referral_rewards.upsert_invitation(bad)
+    rewards.INVITATIONS.clear()
+    rewards._loaded = False
+    assert rewards.referral_invitation(code) is None
+    assert rewards.invitation_withheld(code) is True
+    assert all(item.get("code") != code for item in rewards.list_referral_invitations())
+
+
+def _invitation_body(code, creator):
+    return {
+        "code": code,
+        "creator_customer_id": creator,
+        "creator_name": "Cap",
+        "created_at": "2026-11-14T00:00:00Z",
+        "expires_at": "2027-11-14T00:00:00Z",
+        "max_uses": 1,
+        "used_count": 0,
+        "used_by": [],
+        "status": "active",
+        "notes": "",
+        "reward_status": "pending",
+    }
+
+
+def test_reloaded_invitation_cap_counts_each_sealed_code_once(monkeypatch):
+    """A creator already at the cap cannot mint another code after a reload.
+
+    The count is the sealed book, including a checksum mismatch. The same
+    code counts once. Opening the views does not persist the book, and the
+    refusal does not rewrite a code or the customer.
+    """
+    email = "cap-reload@example.com"
+    customer_id = _register("Cap Reload", email)
+    token, _role = _login(email, "secure123456")
+    admin, _role = _login("admin", "admin123")
+    issued = []
+    for _ in range(10):
+        body, status = _post("/api/customer/invitations/generate", {}, token=token)
+        assert status == 201, body
+        issued.append(body["invitation"]["code"])
+    assert rewards.invitation_cap_for(customer_id) == 10
+    assert rewards.default_config()["customer_invitation_cap"] == 10
+    assert rewards.default_config()["agent_invitation_cap"] == 100
+    assert rewards.invitation_slots_used(customer_id) == 10
+    cached = [
+        item.get("code") for item in portal.CUSTOMER_INVITATIONS.values()
+        if item.get("creator_customer_id") == customer_id
+    ]
+    assert set(cached) == set(issued)
+
+    intact = {
+        code: rewards.referral_invitation(code)["checksum"]
+        for code in issued[:-1]
+    }
+    withheld = issued[-1]
+    customer_before = json.dumps(portal.CUSTOMERS[customer_id], sort_keys=True, default=str)
+    rewards.INVITATIONS[withheld]["checksum"] = "0" * 64
+    rewards._save_file()
+    for code in list(portal.CUSTOMER_INVITATIONS):
+        item = portal.CUSTOMER_INVITATIONS.get(code) or {}
+        if item.get("creator_customer_id") == customer_id:
+            portal.CUSTOMER_INVITATIONS.pop(code, None)
+    rewards.INVITATIONS.clear()
+    rewards.QUARANTINE.clear()
+    rewards._loaded = False
+
+    assert rewards.invitation_slots_used(customer_id) == 10
+    assert rewards.invitation_withheld(withheld) is True
+    assert rewards.referral_invitation(withheld) is None
+    for code, checksum in intact.items():
+        again = rewards.referral_invitation(code)
+        assert again["code"] == code
+        assert again["checksum"] == checksum
+    portal.CUSTOMER_INVITATIONS[issued[0]] = {
+        "code": issued[0],
+        "creator_customer_id": customer_id,
+        "checksum": intact[issued[0]],
+    }
+    portal.CUSTOMER_INVITATIONS[withheld] = {
+        "code": withheld,
+        "creator_customer_id": customer_id,
+        "checksum": "0" * 64,
+    }
+    assert rewards.invitation_slots_used(customer_id) == 10
+
+    persist = rewards._persist_invitation
+    save = rewards._save_file
+    hits = []
+
+    def refuse_persist(*_args, **_kwargs):
+        hits.append("persist")
+        raise AssertionError("the cap refusal persisted an invitation")
+
+    def refuse_save(*_args, **_kwargs):
+        hits.append("save")
+        raise AssertionError("the cap refusal saved the book")
+
+    rewards._persist_invitation = refuse_persist
+    rewards._save_file = refuse_save
+    try:
+        with pytest.raises(RewardError) as exc:
+            rewards.issue_referral_invitation(_invitation_body("REF-CAP-EXTRA", customer_id))
+        assert exc.value.code == "invitation_cap"
+        blocked, status = _post("/api/customer/invitations/generate", {}, token=token)
+        assert status == 400, blocked
+        assert blocked["limit"] == 10
+        assert blocked["current_count"] == 10
+        listing, status = _get("/api/customer/invitations", token=token)
+        assert status == 200, listing
+        admin_list, admin_status = _get("/api/invitations", token=admin)
+        assert admin_status == 200, admin_list
+    finally:
+        rewards._persist_invitation = persist
+        rewards._save_file = save
+    assert hits == []
+    assert listing["max_allowed"] == 10
+    assert listing["slots_used"] == 10
+    assert listing["can_generate_more"] is False
+    assert len(listing["codes"]) == 9
+    assert all(item.get("code") != withheld for item in listing["codes"])
+    assert all(item.get("code") != withheld for item in admin_list["codes"])
+    for code, checksum in intact.items():
+        again = rewards.referral_invitation(code)
+        assert again["code"] == code
+        assert again["checksum"] == checksum
+        assert again["creator_customer_id"] == customer_id
+    assert rewards.INVITATIONS[withheld]["code"] == withheld
+    assert rewards.invitation_withheld(withheld) is True
+    assert json.dumps(portal.CUSTOMERS[customer_id], sort_keys=True, default=str) == customer_before
+    assert "national_id" not in customer_before
+    static = Path(__file__).resolve().parents[1] / "web_portal" / "static" / "dashboard.html"
+    assert "data.slots_used" in static.read_text(encoding="utf-8")
+
+    agent_id = "CUST-CAP-AGENT"
+    rewards.REQUESTS[f"PRO-{agent_id}-agent"] = {
+        "id": f"PRO-{agent_id}-agent",
+        "customer_id": agent_id,
+        "requested_role": "agent",
+        "status": "approved",
+    }
+    assert rewards.invitation_cap_for(agent_id) == 100
+    opened = rewards.issue_referral_invitation(_invitation_body("REF-CAP-AGENT", agent_id))
+    assert opened["code"] == "REF-CAP-AGENT"
+    assert rewards.invitation_slots_used(customer_id) == 10
+    assert rewards.referral_invitation(issued[0])["checksum"] == intact[issued[0]]
+
+    from database import init_database
+    from database.manager import DatabaseManager
+
+    init_database()
+    monkeypatch.setattr(rewards, "_db_enabled", lambda: True)
+    rewards.INVITATIONS.clear()
+    rewards.QUARANTINE.clear()
+    rewards._loaded = False
+    suffix = os.urandom(4).hex().upper()
+    db_creator = "CUST-CAP-DB-" + suffix
+    db_codes = []
+    for index in range(10):
+        sealed = rewards.issue_referral_invitation(
+            _invitation_body(f"REF-CAPDB-{suffix}-{index:02d}", db_creator)
+        )
+        db_codes.append(sealed["code"])
+    with DatabaseManager() as db:
+        stored = next(
+            row for row in db.referral_rewards.list_invitations()
+            if (row.get("payload") or {}).get("code") == db_codes[-1]
+        )
+        bad = dict(stored["payload"])
+        bad["checksum"] = "0" * 64
+        db.referral_rewards.upsert_invitation(bad)
+
+    def stored_checksums():
+        with DatabaseManager() as db:
+            found = {}
+            for row in db.referral_rewards.list_invitations():
+                payload = row.get("payload") or {}
+                if payload.get("creator_customer_id") == db_creator:
+                    found[payload.get("code")] = payload.get("checksum")
+            return found
+
+    before_rows = stored_checksums()
+    rewards.INVITATIONS.clear()
+    rewards.QUARANTINE.clear()
+    rewards._loaded = False
+    assert rewards.invitation_slots_used(db_creator) == 10
+    assert rewards.invitation_withheld(db_codes[-1]) is True
+    assert len(rewards.list_referral_invitations(db_creator)) == 9
+    rewards._persist_invitation = refuse_persist
+    rewards._save_file = refuse_save
+    hits.clear()
+    try:
+        with pytest.raises(RewardError) as exc:
+            rewards.issue_referral_invitation(_invitation_body(f"REF-CAPDB-{suffix}-EXTRA", db_creator))
+        assert exc.value.code == "invitation_cap"
+        assert rewards.list_referral_invitations(db_creator)
+    finally:
+        rewards._persist_invitation = persist
+        rewards._save_file = save
+    assert hits == []
+    assert stored_checksums() == before_rows
+    for code in db_codes[:-1]:
+        again = rewards.referral_invitation(code)
+        assert again["code"] == code
+        assert again["creator_customer_id"] == db_creator
+    for code in (issued[0], withheld):
+        portal.CUSTOMER_INVITATIONS.pop(code, None)
 
 
 def test_repository_round_trip():
@@ -462,12 +1055,23 @@ def test_repository_round_trip():
             "checksum": "settlement-checksum",
         })
         settlements = {row["referee_customer_id"]: row for row in db.referral_rewards.list_settlements()}
+        db.referral_rewards.upsert_request({
+            "id": "PRO-CUST-DB-supplier",
+            "customer_id": "CUST-DB",
+            "requested_role": "supplier",
+            "status": "inquiry",
+            "created_at": "2026-10-19T00:00:00Z",
+            "inquiry": {"has_company": True, "token_sha256": "abc", "personal": {"name": "Dee"}},
+        })
+        stored_request = {row["id"]: row for row in db.referral_rewards.list_requests()}
     assert links["CUST-DB-REF"]["notified_join"] is True
     assert stored["RWRD-DB1-L1"]["amount_cents"] == 39000
     assert stored["RWRD-DB1-L1"]["program_shares"] == [6000, 2500, 1500]
     assert settlements["CUST-DB-REF"]["allocated_cents"] == 39000
     assert settlements["CUST-DB-REF"]["hold_months"] == 3
     assert settlements["CUST-DB-REF"]["release_at"] == "2027-01-19T00:00:00Z"
+    assert stored_request["PRO-CUST-DB-supplier"]["inquiry"]["personal"]["name"] == "Dee"
+    assert stored_request["PRO-CUST-DB-supplier"]["inquiry"]["token_sha256"] == "abc"
 
 
 def test_hold_months_clamps_to_the_end_of_the_month():
@@ -530,6 +1134,268 @@ def test_lapsed_balance_reverses_the_single_settlement_once():
     plan = rewards.affiliated_cac_plan()
     assert plan["reversed"] == pytest.approx(650.0)
     assert plan["allocated"] == pytest.approx(0.0)
+
+
+def _legacy_plan_totals():
+    """The planning totals from the global settlement and reward loops."""
+    allocated = blocked = releasable = settled = reversed_cents = 0
+    for settlement in rewards.SETTLEMENTS.values():
+        cents = int(settlement.get("allocated_cents") or 0)
+        status = settlement.get("status")
+        if status == "reversed":
+            reversed_cents += cents
+            continue
+        allocated += cents
+        if status == "settled":
+            settled += cents
+    for reward in rewards.REWARDS.values():
+        cents = int(reward.get("amount_cents") or 0)
+        if reward.get("status") == "held":
+            blocked += cents
+        elif reward.get("status") == "earned":
+            releasable += cents
+    return {
+        "allocated": rewards.dollars(allocated),
+        "blocked": rewards.dollars(blocked),
+        "releasable": rewards.dollars(releasable),
+        "settled": rewards.dollars(settled),
+        "reversed": rewards.dollars(reversed_cents),
+    }
+
+
+def _acquisition_matches_plan():
+    plan = rewards.affiliated_cac_plan()
+    legacy = _legacy_plan_totals()
+    for key in ("allocated", "blocked", "releasable", "settled", "reversed"):
+        assert plan[key] == pytest.approx(legacy[key])
+    return plan
+
+
+def _book_fingerprint():
+    return json.dumps(
+        {"settlements": rewards.SETTLEMENTS, "rewards": rewards.REWARDS, "links": rewards.LINKS},
+        sort_keys=True,
+        default=str,
+    )
+
+
+def test_referred_customer_acquisition_matches_the_settlement(monkeypatch):
+    """Referred customers report the settlement, and that report ties to the plan."""
+    monkeypatch.setattr(rewards, "_now", lambda: "2026-01-15T00:00:00Z")
+    _customer("A0", name="Top")
+    _customer("A1", "A0", "Middle")
+    _customer("A2", "A1", "Direct")
+    _customer("A3", "A2", "Paying")
+    _pay("A3", "BILL-A3")
+    rewards.on_customer_paying("A3")
+    report = rewards.referred_acquisition("A2")
+    row = next(item for item in report["referred_customers"] if item["customer_id"] == "A3")
+    assert row["acquisition"]["settlement_id"] == "CACSET-A3"
+    assert row["acquisition"]["allocated"] == pytest.approx(650.0)
+    assert row["acquisition"]["blocked"] == pytest.approx(650.0)
+    assert row["acquisition"]["releasable"] == pytest.approx(0.0)
+    assert row["acquisition"]["settled"] == pytest.approx(0.0)
+    assert row["acquisition"]["reversed"] == pytest.approx(0.0)
+    assert row["name"] == "Paying"
+    assert "email" not in row and "national_id" not in row
+    book = rewards.customer_dashboard("A2")["affiliation_book"]
+    share = next(item for item in book["rows"] if item["referee_customer_id"] == "A3")
+    assert share["amount"] == pytest.approx(500.0)
+    assert row["viewer_share"]["settlement_id"] == "CACSET-A3"
+    assert row["viewer_share"]["layer"] == 1
+    assert row["viewer_share"]["allocated"] == pytest.approx(500.0)
+    assert row["viewer_share"]["blocked"] == pytest.approx(500.0)
+    assert row["viewer_share"]["allocated"] != pytest.approx(row["acquisition"]["allocated"])
+    assert rewards.REWARDS["RWRD-A3-L2"]["amount_cents"] == 10000
+    assert rewards.REWARDS["RWRD-A3-L3"]["amount_cents"] == 5000
+    direct = rewards.network_acquisition("A2", ["A3"])["A3"]
+    assert direct["allocated"] == pytest.approx(500.0)
+    assert direct["blocked"] == pytest.approx(500.0)
+    assert direct["settlement_id"] == "CACSET-A3"
+    upstream = rewards.network_acquisition("A1", ["A3"])["A3"]
+    assert upstream == {
+        "settlement_id": None, "status": "none",
+        "allocated": 0.0, "blocked": 0.0, "releasable": 0.0, "settled": 0.0, "reversed": 0.0,
+    }
+    assert report["acquisition_totals"]["allocated"] == pytest.approx(650.0)
+    assert report["viewer_share_totals"]["allocated"] == pytest.approx(500.0)
+    plan = _acquisition_matches_plan()
+    assert plan["allocated"] == pytest.approx(650.0)
+    assert plan["blocked"] == pytest.approx(650.0)
+    _customer("B1", name="Other")
+    _customer("B2", "B1", "Lapsed")
+    _pay("B2", "BILL-B2")
+    rewards.on_customer_paying("B2")
+    portal.BILLING["BILL-B2"]["status"] = "open"
+    rewards.on_customer_paying("B2")
+    lapsed = rewards.acquisition_for_customers(["B2"])["B2"]
+    assert lapsed["reversed"] == pytest.approx(650.0)
+    assert lapsed["allocated"] == pytest.approx(0.0)
+    monkeypatch.setattr(rewards, "_now", lambda: "2026-04-15T00:00:00Z")
+    for layer, beneficiary in ((1, "A2"), (2, "A1"), (3, "A0")):
+        accepted = rewards.accept_reward(f"RWRD-A3-L{layer}", beneficiary)
+        assert accepted["status"] == "dispatched"
+    settled = rewards.acquisition_for_customers(["A3"])["A3"]
+    assert settled["settled"] == pytest.approx(650.0)
+    assert settled["blocked"] == pytest.approx(0.0)
+    settled_share = rewards.referred_acquisition("A2")
+    settled_row = next(item for item in settled_share["referred_customers"] if item["customer_id"] == "A3")
+    assert settled_row["viewer_share"]["settled"] == pytest.approx(500.0)
+    assert settled_row["viewer_share"]["allocated"] == pytest.approx(500.0)
+    assert settled_row["acquisition"]["settled"] == pytest.approx(650.0)
+    plan = _acquisition_matches_plan()
+    assert plan["settled"] == pytest.approx(650.0)
+    assert plan["reversed"] == pytest.approx(650.0)
+
+    email = "acq-referrer@example.com"
+    referrer = _register("Acq Referrer", email)
+    token, _role = _login(email, "secure123456")
+    issued, status = _post("/api/customer/invitations/generate", {}, token=token)
+    assert status == 201, issued
+    code = issued["invitation"]["code"]
+    assert code.startswith("REF-")
+    referee = _register("Acq Referee", "acq-referee@example.com", code=code)
+    before_referrer = json.loads(json.dumps(portal.CUSTOMERS[referrer]))
+    _pay(referee, "BILL-ACQ-REF")
+    rewards.on_customer_paying(referee)
+    _customer("LAPSE-REF", name="Holder")
+    _customer("LAPSE", "LAPSE-REF", "Lapsed Unread")
+    _pay("LAPSE", "BILL-LAPSE")
+    rewards.on_customer_paying("LAPSE")
+    portal.BILLING["BILL-LAPSE"]["status"] = "open"
+    assert rewards.SETTLEMENTS["LAPSE"]["status"] == "held"
+    assert rewards.REWARDS["RWRD-LAPSE-L1"]["status"] == "held"
+    stored_book = _book_fingerprint()
+    hits = []
+    refresh = rewards._refresh_all_locked
+    persist_settlement = rewards._persist_settlement
+    persist_reward = rewards._persist_reward
+
+    def refuse_refresh(*_args, **_kwargs):
+        hits.append("refresh")
+        raise AssertionError("a read refreshed the book")
+
+    def refuse_settlement(*_args, **_kwargs):
+        hits.append("settlement")
+        raise AssertionError("a read persisted a settlement")
+
+    def refuse_reward(*_args, **_kwargs):
+        hits.append("reward")
+        raise AssertionError("a read persisted a reward")
+
+    rewards._refresh_all_locked = refuse_refresh
+    rewards._persist_settlement = refuse_settlement
+    rewards._persist_reward = refuse_reward
+    try:
+        listing, status = _get("/api/customer/invitations", token=token)
+    finally:
+        rewards._refresh_all_locked = refresh
+        rewards._persist_settlement = persist_settlement
+        rewards._persist_reward = persist_reward
+    assert hits == []
+    assert _book_fingerprint() == stored_book
+    assert rewards.SETTLEMENTS["LAPSE"]["status"] == "held"
+    assert rewards.REWARDS["RWRD-LAPSE-L1"]["status"] == "held"
+    assert status == 200, listing
+    shown = next(item for item in listing["stats"]["referred_customers"] if item["customer_id"] == referee)
+    assert shown["acquisition"]["allocated"] == pytest.approx(650.0)
+    assert shown["acquisition"]["blocked"] == pytest.approx(650.0)
+    assert shown["acquisition"]["settlement_id"] == f"CACSET-{referee}"
+    layer = rewards.REWARDS[f"RWRD-{referee}-L1"]
+    assert layer["beneficiary_customer_id"] == referrer
+    assert shown["viewer_share"]["settlement_id"] == f"CACSET-{referee}"
+    assert shown["viewer_share"]["layer"] == 1
+    assert shown["viewer_share"]["allocated"] == pytest.approx(layer["amount_cents"] / 100.0)
+    assert shown["code_used"] == code
+    assert "email" not in shown and "national_id" not in shown
+    assert listing["stats"]["acquisition_totals"]["allocated"] == pytest.approx(650.0)
+    assert portal.CUSTOMERS[referrer] == before_referrer
+    stored = portal.CUSTOMER_REFERRAL_STATS[referrer]["referred_customers"]
+    assert stored and all("acquisition" not in item for item in stored)
+    _acquisition_matches_plan()
+
+    from services import agent_ecosystem_service as agents
+    agent = agents.get_agent_by_username("agent") or agents.create_agent(
+        "agent", "Demo Agent", default_rate=0.1, created_by="admin",
+    )
+    ok, inv = agents.create_invitation(agent["id"], "customer", proposed_rate=0.1)
+    assert ok, inv
+    approved, _invite = agents.approve_invitation(inv["code"], 0.1, "admin")
+    assert approved
+    linked, affiliation = agents.redeem_invitation(inv["code"], "customer", referee)
+    assert linked, affiliation
+    solo = "ACQ-SOLO"
+    _customer(solo, name="Commission Only")
+    ok, inv2 = agents.create_invitation(agent["id"], "customer", proposed_rate=0.1)
+    assert ok, inv2
+    agents.approve_invitation(inv2["code"], 0.1, "admin")
+    linked, affiliation = agents.redeem_invitation(inv2["code"], "customer", solo)
+    assert linked, affiliation
+    portal.POLICIES["POL-SOLO"] = {
+        "id": "POL-SOLO", "customer_id": solo, "annual_premium": 1000,
+        "status": "active", "start_date": "2026-01-01T00:00:00",
+    }
+    portal.BILLING["BILL-SOLO"] = {
+        "id": "BILL-SOLO", "policy_id": "POL-SOLO", "customer_id": solo,
+        "amount": 100, "amount_paid": 100, "status": "paid",
+        "billing_period_start": "2026-01-01", "due_date": "2026-01-01", "paid_date": "2026-01-01",
+    }
+    before_solo = json.loads(json.dumps(portal.CUSTOMERS[solo]))
+    agent_token, role = _login("agent", "agent123")
+    assert role == "agent"
+    _customer("LAPSE2-REF", name="Holder Two")
+    _customer("LAPSE2", "LAPSE2-REF", "Lapsed Network")
+    _pay("LAPSE2", "BILL-LAPSE2")
+    rewards.on_customer_paying("LAPSE2")
+    portal.BILLING["BILL-LAPSE2"]["status"] = "open"
+    assert rewards.SETTLEMENTS["LAPSE2"]["status"] == "held"
+    stored_book = _book_fingerprint()
+    hits = []
+    rewards._refresh_all_locked = refuse_refresh
+    rewards._persist_settlement = refuse_settlement
+    rewards._persist_reward = refuse_reward
+    try:
+        network, status = _get("/api/agent/network/customers", token=agent_token)
+    finally:
+        rewards._refresh_all_locked = refresh
+        rewards._persist_settlement = persist_settlement
+        rewards._persist_reward = persist_reward
+    assert hits == []
+    assert _book_fingerprint() == stored_book
+    assert rewards.SETTLEMENTS["LAPSE2"]["status"] == "held"
+    assert rewards.REWARDS["RWRD-LAPSE2-L1"]["status"] == "held"
+    assert status == 200, network
+    paying = next(item for item in network["items"] if item["customer_id"] == referee)
+    commission_only = next(item for item in network["items"] if item["customer_id"] == solo)
+    empty_acquisition = {
+        "settlement_id": None, "status": "none",
+        "allocated": 0.0, "blocked": 0.0, "releasable": 0.0, "settled": 0.0, "reversed": 0.0,
+    }
+    assert paying["acquisition"] == empty_acquisition
+    assert paying["accrued_commission"] == pytest.approx(0.0)
+    assert commission_only["acquisition"] == {
+        "settlement_id": None, "status": "none",
+        "allocated": 0.0, "blocked": 0.0, "releasable": 0.0, "settled": 0.0, "reversed": 0.0,
+    }
+    assert commission_only["accrued_commission"] > 0
+    assert "national_id" not in paying and "national_id" not in commission_only
+    assert portal.CUSTOMERS[solo]["name"] == before_solo["name"]
+    assert portal.CUSTOMERS[referrer] == before_referrer
+    _acquisition_matches_plan()
+
+    static = Path(__file__).resolve().parents[1] / "web_portal" / "static"
+    dashboard = (static / "dashboard.html").read_text(encoding="utf-8")
+    agent_page = (static / "agent-portal.html").read_text(encoding="utf-8")
+    assert 'id="referred-customers-table"' in dashboard
+    assert 'id="referred-acquisition-summary"' in dashboard
+    assert ">Allocated<" in dashboard and ">Releasable<" in dashboard and ">Reversed<" in dashboard
+    assert ">Your share<" in dashboard
+    assert "escReferral" in dashboard
+    assert 'id="referred-acquisition-table"' in agent_page
+    assert 'id="referred-acquisition-summary"' in agent_page
+    assert ">Releasable<" in agent_page and ">Settled<" in agent_page
+    assert ">Your share<" in agent_page
+    assert "escHtml" in agent_page
 
 
 def test_settlement_survives_a_reload_and_a_bad_checksum_is_not_paid():
@@ -839,3 +1705,2411 @@ def test_actuary_adjusts_the_layer_schedule_and_other_roles_cannot():
     assert 'id="affiliation-book-table"' in supplier
     assert "/savings-portfolio.html" in dashboard
     assert "/billing.html" in dashboard
+
+
+def _chat(token, step, value):
+    body, status = _post("/api/professional-inquiry/chat", {
+        "token": token, "step": step, "value": value,
+    })
+    assert status == 200, body
+    return body
+
+
+def test_professional_chat_discloses_every_step_and_keeps_the_id_in_the_vault():
+    email = "chat-supplier@example.com"
+    customer_id = _register("Chat Supplier", email)
+    session, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=session)
+    assert status == 200, filed
+    parts = urlparse(filed["inquiry_path"])
+    query = parse_qs(parts.query)
+    assert parts.path.endswith("/professional-inquiry-chat.html")
+    assert query["r"] == [filed["id"]]
+    assert query["t"][0].startswith("inq_")
+    assert filed["id"] not in query["t"][0]
+    link = query["t"][0]
+    prefill, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, prefill
+    assert prefill["agent"] == "Phin"
+    assert prefill["chat"]["disclosed"] is True
+    assert [step["id"] for step in prefill["process"]] == [
+        "confirm_person", "identity", "company", "evidence", "review",
+    ]
+    assert prefill["process"][2]["optional"] is True
+    assert prefill["process"][3]["optional"] is True
+    assert prefill["chat"]["cursor"] == "confirm_person"
+    early, status = _post("/api/professional-inquiry/chat", {
+        "token": link, "step": "identity", "value": "skip",
+    })
+    assert status == 409, early
+    assert early["code"] == "step_mismatch"
+    moved = _chat(link, "confirm_person", {
+        "personal": {
+            "name": "Chat Supplier",
+            "phone": "555-0199",
+            "address": "2 Herzl",
+            "city": "Haifa",
+            "country": "IL",
+        },
+    })
+    assert moved["chat"]["cursor"] == "identity"
+    national_id = "123456782"
+    blocked, status = _post("/api/professional-inquiry/chat", {
+        "token": link, "step": "identity",
+        "value": {"nationality": "IL", "national_id": national_id},
+    })
+    assert status == 403, blocked
+    assert blocked["code"] == "otp_required"
+    opened, status, set_cookies = _open("/api/professional-inquiry/session", {"token": link})
+    assert status == 200, opened
+    cookie_name, secret, cookie_header = _inquiry_set_cookie(set_cookies)
+    assert secret.startswith("inqs_")
+    assert "HttpOnly" in cookie_header
+    assert secret not in json.dumps(opened)
+    cookie = cookie_name + "=" + secret
+    otp, status = _post("/api/professional-inquiry/otp/request", {"token": link})
+    assert status == 200, otp
+    assert otp.get("demo_otp_code")
+    assert national_id not in json.dumps(otp)
+    checked, status, _cookies = _open("/api/professional-inquiry/otp/verify", {
+        "request_id": opened["request_id"],
+        "verification_id": otp["verification_id"],
+        "otp_code": otp["demo_otp_code"],
+    }, cookie=cookie)
+    assert status == 200, checked
+    stolen, status = _post("/api/professional-inquiry/chat", {
+        "token": link, "step": "identity",
+        "value": {"nationality": "IL", "national_id": national_id},
+    })
+    assert status == 403, stolen
+    assert stolen["code"] == "otp_required"
+    assert portal.CUSTOMERS[customer_id].get("national_id_last4") in (None, "")
+    recorded, status, _cookies = _open("/api/professional-inquiry/chat", {
+        "request_id": opened["request_id"],
+        "step": "identity",
+        "value": {"nationality": "IL", "national_id": national_id},
+    }, cookie=cookie)
+    assert status == 200, recorded
+    dumped = json.dumps(recorded)
+    assert national_id not in dumped
+    assert recorded["chat"]["identity"]["complete"] is True
+    assert recorded["chat"]["identity"]["national_id_masked"].endswith("6782")
+    again, status = _get("/api/professional-inquiry?t=" + link)
+    assert national_id not in json.dumps(again)
+    assert portal.CUSTOMERS[customer_id]["national_id_last4"] == "6782"
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    _chat(link, "company", "no")
+    payload = base64.b64encode(b"professional-evidence").decode("ascii")
+    media, status = _post("/api/professional-inquiry/media", {
+        "token": link,
+        "kind": "document",
+        "name": "licence.txt",
+        "mime_type": "text/plain",
+        "data_b64": payload,
+    })
+    assert status == 200, media
+    assert media["media"]["sha256"] == hashlib.sha256(b"professional-evidence").hexdigest()
+    assert "data_b64" not in json.dumps(media)
+    assert national_id not in json.dumps(media)
+    _chat(link, "evidence", "done")
+    submitted = _chat(link, "review", "submit")
+    assert submitted["status"] == "pending"
+    assert submitted["chat"]["cursor"] == "filed"
+    assert submitted["request"]["status"] == "pending"
+    stored = rewards.REQUESTS[filed["id"]]
+    assert national_id not in json.dumps(stored)
+    assert stored["inquiry"]["chat"]["media"][0]["document_id"]
+
+    fresh_email = "chat-skip@example.com"
+    _register("Chat Skip", fresh_email)
+    skip_session, _role = _login(fresh_email, "secure123456")
+    opened, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=skip_session)
+    assert status == 200, opened
+    skip_link = opened["inquiry_path"].split("t=", 1)[1]
+    _chat(skip_link, "confirm_person", {"name": "Chat Skip"})
+    os.environ["PHINS_IDENTITY_REQUIRED"] = "true"
+    try:
+        refused, status = _post("/api/professional-inquiry/chat", {
+            "token": skip_link, "step": "identity", "value": "skip",
+        })
+    finally:
+        os.environ.pop("PHINS_IDENTITY_REQUIRED", None)
+    assert status == 400, refused
+    assert refused["code"] == "identity_required"
+    os.environ.pop("PHINS_IDENTITY_REQUIRED", None)
+    _chat(skip_link, "identity", "skip")
+    _chat(skip_link, "company", "no")
+    _chat(skip_link, "evidence", "skip")
+    filed_skip = _chat(skip_link, "review", "submit")
+    assert filed_skip["status"] == "pending"
+    assert filed_skip["chat"]["media"] == []
+
+    page = (Path(__file__).resolve().parents[1] / "web_portal" / "static" / "professional-inquiry-chat.html").read_text(encoding="utf-8")
+    script = (Path(__file__).resolve().parents[1] / "web_portal" / "static" / "professional-inquiry-chat.js").read_text(encoding="utf-8")
+    classic = (Path(__file__).resolve().parents[1] / "web_portal" / "static" / "professional-inquiry.html").read_text(encoding="utf-8")
+    assert "Phin" in page
+    assert "disclosed" in page
+    assert 'name="referrer" content="same-origin"' in page
+    assert 'name="referrer" content="same-origin"' in classic
+    assert "/api/professional-inquiry/chat" in script
+    assert "/api/professional-inquiry/media" in script
+    assert "/api/professional-inquiry/session" in script
+    assert "/api/professional-inquiry/otp/request" in script
+    assert "/api/professional-inquiry/session" in classic
+    assert 'id="email"' in classic
+    assert "readonly" in classic
+    assert "You do not type it again" in script
+    assert "getUserMedia" in script
+
+
+def test_inquiry_email_and_identity_code_use_the_chat_notification_service(monkeypatch):
+    """The inquiry email and the identity code share NotificationService and the Phin chat.
+
+    Customer outreach is a different mail path. The chat records both sends and
+    does not store the email token or the verification code.
+    """
+    def _outreach(*_args, **_kwargs):
+        raise AssertionError("professional inquiry must not use a second mail path")
+
+    monkeypatch.setattr(
+        "services.customer_agent.communication.CustomerCommunicationAgent.send_customer_outreach",
+        _outreach,
+    )
+    monkeypatch.setenv("BASE_URL", "https://portal.example.test")
+    email = "inquiry-notify@example.com"
+    _register("Inquiry Notify", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, filed
+    assert filed["email_sent"] is True
+
+    from services.notification_service import get_notification_service
+    provider = get_notification_service()._email_provider
+    sent = [item for item in getattr(provider, "sent_emails", []) if item.get("to") == email]
+    assert sent, "inquiry email was not sent by NotificationService"
+    body = sent[-1]["body"]
+    absolute = "https://portal.example.test/professional-inquiry-chat.html"
+    assert absolute in body
+    assert absolute in (sent[-1].get("html_body") or "")
+    assert filed["inquiry_path"].startswith(absolute + "?")
+    assert ".html/?" not in filed["inquiry_path"]
+    assert ".html/?" not in body
+    assert "one disclosed chat" in body
+    assert "Open your PHINS portal" not in (sent[-1].get("body") or "")
+    assert "Open your PHINS portal" not in (sent[-1].get("html_body") or "")
+    parts = urlparse(filed["inquiry_path"])
+    query = parse_qs(parts.query)
+    link = query["t"][0]
+    assert link in body
+    prefill, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, prefill
+    messages = json.dumps(prefill["chat"]["messages"])
+    assert email in messages
+    assert "same email" in messages
+    assert link not in messages
+    assert "inq_" not in messages
+    note = prefill["chat"]["notification"]
+    assert note["template"] == "professional_inquiry_chat"
+    assert note["sent"] is True
+    assert note["notification_id"]
+
+    otp, status = _post("/api/professional-inquiry/otp/request", {"token": link})
+    assert status == 200, otp
+    assert otp.get("notification_sent") is True
+    assert otp.get("demo_otp_code")
+    otp_messages = json.dumps((otp.get("chat") or {}).get("messages") or [])
+    assert "6-digit code" in otp_messages
+    assert otp["demo_otp_code"] not in otp_messages
+    again, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, again
+    stored = json.dumps(again["chat"]["messages"])
+    assert "6-digit code" in stored
+    assert otp["demo_otp_code"] not in stored
+
+
+def test_inquiry_email_is_absolute_when_only_webhook_base_url_is_set(monkeypatch):
+    """WEBHOOK_BASE_URL is the second origin. A mail client can open that link."""
+    monkeypatch.delenv("BASE_URL", raising=False)
+    monkeypatch.setenv("WEBHOOK_BASE_URL", "https://hooks.example.test")
+    email = "inquiry-webhook-origin@example.com"
+    _register("Webhook Origin", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    assert status == 200, filed
+    assert filed["email_sent"] is True
+    from services.notification_service import get_notification_service
+    provider = get_notification_service()._email_provider
+    sent = [item for item in getattr(provider, "sent_emails", []) if item.get("to") == email]
+    assert sent
+    absolute = "https://hooks.example.test/professional-inquiry-chat.html"
+    assert absolute in sent[-1]["body"]
+    assert filed["inquiry_path"].startswith(absolute + "?")
+    assert ".html/?" not in filed["inquiry_path"]
+    assert ".html/?" not in sent[-1]["body"]
+    link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
+    prefill, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, prefill
+    assert email in json.dumps(prefill["chat"]["messages"])
+    assert "same email" in json.dumps(prefill["chat"]["messages"])
+    assert link not in json.dumps(prefill["chat"]["messages"])
+
+
+def _assert_openable_inquiry_link(url, request_id):
+    """A mail client can open this: absolute, and `.html?` with no slash."""
+    assert ".html/?" not in url
+    assert url.split("?", 1)[0].endswith(".html")
+    parts = urlparse(url)
+    query = parse_qs(parts.query)
+    assert parts.scheme in ("http", "https")
+    assert parts.netloc
+    assert parts.path == "/professional-inquiry-chat.html"
+    assert query["r"] == [request_id]
+    assert query["t"][0].startswith("inq_")
+    return query["t"][0]
+
+
+def _clear_inquiry_origins(monkeypatch):
+    monkeypatch.delenv("BASE_URL", raising=False)
+    monkeypatch.delenv("WEBHOOK_BASE_URL", raising=False)
+    monkeypatch.delenv("TEST_BASE_URL", raising=False)
+
+
+def _mailed_inquiry(email, name, role="supplier", host=None):
+    _register(name, email)
+    token, _role = _login(email, "secure123456")
+    extra = {"Host": host} if host else None
+    filed, status = _post(
+        "/api/customer/professional-requests",
+        {"role": role},
+        token=token,
+        headers=extra,
+    )
+    assert status == 200, filed
+    from services.notification_service import get_notification_service
+    provider = get_notification_service()._email_provider
+    sent = [item for item in getattr(provider, "sent_emails", []) if item.get("to") == email]
+    assert sent, "inquiry email was not sent by NotificationService"
+    return filed, sent[-1]
+
+
+def test_inquiry_email_link_uses_the_live_site_when_no_origin_is_configured(monkeypatch, caplog):
+    """No configured origin: the mailed link is the live site, not the request host.
+
+    A relative `professional-inquiry-chat.html/?r=` link does not open in a
+    mail client. The mailed URL is absolute and has no slash before `?`.
+    """
+    _clear_inquiry_origins(monkeypatch)
+    caplog.set_level("DEBUG")
+    email = "inquiry-live-site@example.com"
+    filed, message = _mailed_inquiry(email, "Live Site")
+    prefix = "https://www.phins.ai/professional-inquiry-chat.html?"
+    assert filed["inquiry_path"].startswith(prefix)
+    request_host = urlparse(BASE).netloc
+    assert request_host not in filed["inquiry_path"]
+    link = _assert_openable_inquiry_link(filed["inquiry_path"], filed["id"])
+    body = message["body"]
+    html = message.get("html_body") or ""
+    assert filed["inquiry_path"] in body
+    assert filed["inquiry_path"] in html
+    assert ".html/?" not in body
+    assert ".html/?" not in html
+    assert link not in caplog.text
+
+
+def test_inquiry_email_link_ignores_a_foreign_host(monkeypatch):
+    """A spoofed Host must not receive the inquiry token."""
+    _clear_inquiry_origins(monkeypatch)
+    foreign = "attacker.example"
+    email = "inquiry-foreign-host@example.com"
+    filed, message = _mailed_inquiry(email, "Foreign Host", host=foreign)
+    prefix = "https://www.phins.ai/professional-inquiry-chat.html?"
+    assert filed["inquiry_path"].startswith(prefix)
+    _assert_openable_inquiry_link(filed["inquiry_path"], filed["id"])
+    mailed = message["body"] + (message.get("html_body") or "")
+    assert filed["inquiry_path"] in mailed
+    assert foreign not in filed["inquiry_path"]
+    assert foreign not in mailed
+    assert ".html/?" not in mailed
+
+    lookalike = "evil.phins.ai"
+    look_email = "inquiry-lookalike-host@example.com"
+    look, look_message = _mailed_inquiry(look_email, "Lookalike Host", host=lookalike)
+    assert look["inquiry_path"].startswith(prefix)
+    look_mail = look_message["body"] + (look_message.get("html_body") or "")
+    assert lookalike not in look["inquiry_path"]
+    assert lookalike not in look_mail
+
+    allowed, allowed_message = _mailed_inquiry(
+        "inquiry-apex-host@example.com", "Apex Host", host="phins.ai",
+    )
+    apex = "https://phins.ai/professional-inquiry-chat.html?"
+    assert allowed["inquiry_path"].startswith(apex)
+    _assert_openable_inquiry_link(allowed["inquiry_path"], allowed["id"])
+    assert allowed["inquiry_path"] in allowed_message["body"]
+    assert "www.phins.ai" not in allowed["inquiry_path"]
+
+
+def test_inquiry_email_link_drops_a_page_path_on_the_configured_origin(monkeypatch):
+    """A BASE_URL that already names the page must not become `.html/?r=`."""
+    monkeypatch.setenv(
+        "BASE_URL",
+        "https://portal.example.test/professional-inquiry-chat.html/",
+    )
+    monkeypatch.delenv("WEBHOOK_BASE_URL", raising=False)
+    email = "inquiry-origin-path@example.com"
+    _register("Origin Path", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, filed
+    assert filed["inquiry_path"].startswith(
+        "https://portal.example.test/professional-inquiry-chat.html?"
+    )
+    _assert_openable_inquiry_link(filed["inquiry_path"], filed["id"])
+    assert "/professional-inquiry-chat.html/professional-inquiry-chat.html" not in filed["inquiry_path"]
+
+
+def test_inquiry_identity_records_through_a_database_style_store():
+    """Record my identity uses the customer store even when it is not a dict.
+
+    Production CUSTOMERS is a DatabaseDict. The inquiry path used to refuse
+    that store after the verification code. The national ID stays off the
+    transcript, and the email-link token still cannot record it.
+    """
+    class _CopyStore:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def __getitem__(self, key):
+            value = self._inner[key]
+            return dict(value) if isinstance(value, dict) else value
+
+        def __setitem__(self, key, value):
+            self._inner[key] = value
+
+        def get(self, key, default=None):
+            try:
+                return self[key]
+            except KeyError:
+                return default
+
+        def items(self):
+            return list(self._inner.items())
+
+    email = "inquiry-vault@example.com"
+    customer_id = _register("Inquiry Vault", email)
+    session, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=session)
+    assert status == 200, filed
+    link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
+    _chat(link, "confirm_person", {
+        "personal": {
+            "name": "Inquiry Vault",
+            "phone": "555-0142",
+            "address": "4 Herzl",
+            "city": "Tel Aviv",
+            "country": "IL",
+        },
+    })
+    national_id = "123456782"
+    opened, status, set_cookies = _open("/api/professional-inquiry/session", {"token": link})
+    assert status == 200, opened
+    cookie_name, secret, _header = _inquiry_set_cookie(set_cookies)
+    cookie = cookie_name + "=" + secret
+    otp, status = _post("/api/professional-inquiry/otp/request", {"token": link})
+    assert status == 200, otp
+    checked, status, _cookies = _open("/api/professional-inquiry/otp/verify", {
+        "request_id": opened["request_id"],
+        "verification_id": otp["verification_id"],
+        "otp_code": otp["demo_otp_code"],
+    }, cookie=cookie)
+    assert status == 200, checked
+    store = _CopyStore(portal.CUSTOMERS)
+    assert not isinstance(store, dict)
+    previous = portal.CUSTOMERS
+    portal.CUSTOMERS = store
+    try:
+        stolen, status = _post("/api/professional-inquiry/chat", {
+            "token": link, "step": "identity",
+            "value": {"nationality": "IL", "national_id": national_id},
+        })
+        assert status == 403, stolen
+        assert stolen["code"] == "otp_required"
+        recorded, status, _cookies = _open("/api/professional-inquiry/chat", {
+            "request_id": opened["request_id"],
+            "step": "identity",
+            "value": {"nationality": "IL", "national_id": national_id},
+        }, cookie=cookie)
+    finally:
+        portal.CUSTOMERS = previous
+    assert status == 200, recorded
+    dumped = json.dumps(recorded)
+    assert national_id not in dumped
+    assert "Identity vault is unavailable" not in dumped
+    assert recorded["chat"]["identity"]["complete"] is True
+    assert recorded["chat"]["identity"]["national_id_masked"].endswith("6782")
+    assert portal.CUSTOMERS[customer_id]["national_id_last4"] == "6782"
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    stored = json.dumps(rewards.REQUESTS[filed["id"]])
+    assert national_id not in stored
+    assert "Identity recorded" in stored
+
+
+def test_inquiry_email_retries_when_the_first_provider_fails(monkeypatch):
+    """A failed first NotificationService send must not be the end of the delivery.
+
+    The identity code already builds a fresh service and tries the next
+    configured provider. The inquiry email uses that same retry.
+    """
+    monkeypatch.setenv("BASE_URL", "https://portal.example.test")
+    monkeypatch.setenv("SENDGRID_API_KEY", "sg-test-not-a-real-key")
+    email = "inquiry-fallback@example.com"
+    _register("Fallback", email)
+    token, _role = _login(email, "secure123456")
+    monkeypatch.setattr(
+        "services.notification_service.should_use_mock_notifications",
+        lambda: False,
+    )
+    sent = []
+
+    class _Fail:
+        def send(self, to, subject, body, html_body=None, **_kwargs):
+            return False, None, "first provider rejected the message"
+
+    class _Record:
+        def send(self, to, subject, body, html_body=None, **_kwargs):
+            sent.append({"to": to, "body": body, "html_body": html_body})
+            return True, "fallback-msg", None
+
+    def _fresh(use_mock=False, email_provider=None, sms_provider=None):
+        from services.notification_service import MockSMSProvider, NotificationService
+        provider = _Fail() if email_provider is None else _Record()
+        return NotificationService(
+            email_provider=provider,
+            sms_provider=sms_provider or MockSMSProvider(),
+        )
+
+    monkeypatch.setattr("services.notification_service.create_notification_service", _fresh)
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, filed
+    assert filed["email_sent"] is True
+    assert sent, "the fallback provider was not asked to send"
+    absolute = "https://portal.example.test/professional-inquiry-chat.html"
+    assert absolute in sent[-1]["body"]
+    link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
+    assert link in sent[-1]["body"]
+    prefill, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, prefill
+    assert email in json.dumps(prefill["chat"]["messages"])
+    assert "same email" in json.dumps(prefill["chat"]["messages"])
+    assert link not in json.dumps(prefill["chat"]["messages"])
+
+
+def test_inquiry_email_uses_the_login_when_the_record_has_no_email(monkeypatch):
+    """A record with no email uses the login for the inquiry mail and the identity code."""
+    from services.notification_service import MockEmailProvider
+
+    email = "inquiry-login-mail@example.com"
+    other = "other-inbox@example.com"
+    customer_id = _register("Login Mail", email)
+    portal.CUSTOMERS[customer_id]["email"] = ""
+    token, _role = _login(email, "secure123456")
+    portal.CUSTOMERS[customer_id]["email"] = ""
+    recorded = []
+    original = MockEmailProvider.send
+
+    def _record(self, to, subject, body, html_body=None, *args, **kwargs):
+        recorded.append({"to": to, "subject": subject, "body": body})
+        return original(self, to, subject, body, html_body, *args, **kwargs)
+
+    monkeypatch.setattr(MockEmailProvider, "send", _record)
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, filed
+    assert filed["email_sent"] is True
+    link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
+    inquiry_mail = [item for item in recorded if "/professional-inquiry-chat.html" in item["body"]]
+    assert inquiry_mail, "inquiry email was not handed to NotificationService"
+    assert inquiry_mail[-1]["to"] == email
+    otp, status = _post("/api/professional-inquiry/otp/request", {"token": link, "email": other})
+    assert status == 200, otp
+    assert otp.get("notification_sent") is True
+    assert otp.get("verification_id")
+    assert otp.get("demo_otp_code")
+    code_mail = [item for item in recorded if "Verification Code" in item["subject"]]
+    assert code_mail, "identity code was not handed to NotificationService"
+    assert code_mail[-1]["to"] == email
+    assert other not in {item["to"] for item in recorded}
+    assert otp["demo_otp_code"] in code_mail[-1]["body"]
+    messages = json.dumps((otp.get("chat") or {}).get("messages") or [])
+    assert "6-digit code" in messages
+    assert otp["demo_otp_code"] not in messages
+    assert link not in messages
+    prefill, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, prefill
+    assert prefill["known"]["email"] == email
+    assert prefill["chat"]["email"] == email
+    assert prefill["chat"]["step"]["input"]["email"] == email
+    shown = json.dumps(prefill["chat"]["messages"])
+    assert email in shown
+    assert other not in shown
+    assert portal.CUSTOMERS[customer_id]["email"] == ""
+    moved = _chat(link, "confirm_person", {
+        "email": other,
+        "personal": {
+            "name": "Login Mail",
+            "email": other,
+            "phone": "555-0100",
+            "address": "1 Herzl",
+            "city": "Tel Aviv",
+            "country": "IL",
+        },
+    })
+    assert moved["request_id"] == filed["id"]
+    assert moved["chat"]["email"] == email
+    assert other not in json.dumps(moved)
+    _chat(link, "identity", "skip")
+    still, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, still
+    assert still["known"]["email"] == email
+    assert portal.CUSTOMERS[customer_id]["email"] == ""
+    _chat(link, "company", "no")
+    _chat(link, "evidence", "skip")
+    submitted = _chat(link, "review", "submit")
+    assert submitted["request_id"] == filed["id"]
+    assert submitted["status"] == "pending"
+    assert submitted["request"]["id"] == filed["id"]
+    assert [key for key, row in rewards.REQUESTS.items() if row.get("customer_id") == customer_id] == [filed["id"]]
+    assert portal.CUSTOMERS[customer_id]["email"] == ""
+
+
+def test_a_failed_chat_note_still_returns_the_emailed_code(monkeypatch):
+    """The transcript write is after the email. Its failure must not hide the code."""
+    def _boom(*_args, **_kwargs):
+        raise rewards.RewardError(
+            "This application was already submitted",
+            status=409,
+            code="inquiry_submitted",
+        )
+
+    monkeypatch.setattr(rewards, "note_inquiry_delivery", _boom)
+    email = "inquiry-note-fail@example.com"
+    _register("Note Fail", email)
+    session, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=session)
+    assert status == 200, filed
+    link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
+    opened, status, set_cookies = _open("/api/professional-inquiry/session", {"token": link})
+    assert status == 200, opened
+    cookie_name, secret, _header = _inquiry_set_cookie(set_cookies)
+    cookie = cookie_name + "=" + secret
+    otp, status = _post("/api/professional-inquiry/otp/request", {"token": link})
+    assert status == 200, otp
+    assert otp.get("success") is True
+    assert otp.get("verification_id")
+    assert otp.get("demo_otp_code")
+    assert otp.get("notification_sent") is True
+    assert "chat" not in otp
+    again, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, again
+    assert otp["demo_otp_code"] not in json.dumps(again["chat"]["messages"])
+    checked, status, _cookies = _open("/api/professional-inquiry/otp/verify", {
+        "request_id": opened["request_id"],
+        "verification_id": otp["verification_id"],
+        "otp_code": otp["demo_otp_code"],
+    }, cookie=cookie)
+    assert status == 200, checked
+    assert checked.get("otp_verified") is True
+
+
+def test_demo_code_stays_visible_after_a_failed_verify():
+    node = shutil.which("node")
+    assert node, "node is required to check the inquiry code bubble"
+    script = Path(__file__).resolve().parent / "professional_inquiry_otp.test.js"
+    completed = subprocess.run([node, str(script)], check=False, capture_output=True, text=True)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+@pytest.mark.parametrize("closed_status", ["rejected", "suspended"])
+def test_approval_does_not_reopen_a_closed_supplier(closed_status):
+    email = f"closed-{closed_status}@example.com"
+    _register("Closed Desk", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {
+        "role": "supplier",
+        "supplier_type": "clinic",
+        "company_name": "Closed Clinic",
+    }, token=token)
+    assert status == 200, filed
+    saved = _finish_inquiry(filed, name="Closed Desk", company={
+        "company_name": "Closed Clinic",
+        "supplier_type": "clinic",
+        "city": "Haifa",
+        "country": "IL",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/professional-requests/review", {
+        "id": saved["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, opened
+    supplier = portal.supply_chain_service.suppliers[opened["supplier_id"]]
+    supplier["status"] = closed_status
+    supplier["portal_active"] = False
+
+    agent_filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, agent_filed
+    agent_saved = _finish_inquiry(agent_filed, name="Closed Desk")
+    refused, status = _post("/api/admin/professional-requests/review", {
+        "id": agent_saved["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 409, refused
+    assert refused["code"] == "supplier_closed"
+    assert rewards.REQUESTS[agent_saved["id"]]["status"] == "pending"
+    assert supplier["status"] == closed_status
+    assert supplier["portal_active"] is False
+
+
+def test_classic_form_requires_identity_when_the_platform_does():
+    email = "classic-identity@example.com"
+    customer_id = _register("Classic Identity", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    assert status == 200, filed
+    link = filed["inquiry_path"].split("t=", 1)[1]
+    os.environ["PHINS_IDENTITY_REQUIRED"] = "true"
+    try:
+        refused, status = _post("/api/professional-inquiry", {
+            "token": link,
+            "personal": {
+                "name": "Classic Identity",
+                "phone": "555-0142",
+                "address": "4 Herzl",
+                "city": "Haifa",
+                "country": "IL",
+            },
+            "has_company": False,
+        })
+        assert status == 400, refused
+        assert refused["code"] == "identity_required"
+        assert rewards.REQUESTS[filed["id"]]["status"] == "inquiry"
+        from services.customer_identity_service import set_identity
+        set_identity(
+            portal.CUSTOMERS, customer_id, "123456782", "IL",
+            source="chat", actor="professional_inquiry",
+        )
+        saved, status = _post("/api/professional-inquiry", {
+            "token": link,
+            "personal": {
+                "name": "Classic Identity",
+                "phone": "555-0142",
+                "address": "4 Herzl",
+                "city": "Haifa",
+                "country": "IL",
+            },
+            "has_company": False,
+        })
+    finally:
+        os.environ.pop("PHINS_IDENTITY_REQUIRED", None)
+    assert status == 200, saved
+    assert saved["status"] == "pending"
+    assert "123456782" not in json.dumps(saved)
+
+
+def test_declined_company_is_not_the_supplier_name():
+    email = "declined-company@example.com"
+    _register("Declined Person", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {
+        "role": "supplier",
+        "supplier_type": "clinic",
+        "company_name": "North Clinic",
+    }, token=token)
+    assert status == 200, filed
+    saved = _finish_inquiry(filed, name="Declined Person")
+    stored = rewards.REQUESTS[saved["id"]]
+    assert stored["inquiry"]["has_company"] is False
+    assert stored["company_name"] is None
+    assert stored["supplier_type"] is None
+    stored["company_name"] = "North Clinic"
+    stored["supplier_type"] = "clinic"
+    stored["inquiry"]["company"] = {
+        "company_name": "North Clinic",
+        "supplier_type": "clinic",
+    }
+    admin, _ = _login("admin", "admin123")
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": saved["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, reviewed
+    supplier = portal.supply_chain_service.suppliers[reviewed["supplier_id"]]
+    assert supplier["company_name"] == "Declined Person"
+    assert supplier["company_name_source"] == "placeholder"
+    assert supplier["supplier_type"] == "other"
+    assert "North Clinic" not in json.dumps(supplier["company_name"])
+
+
+def _file_professional_chat(session, role, *, name, company=None, confirm_identity=False):
+    filed, status = _post("/api/customer/professional-requests", {"role": role}, token=session)
+    assert status == 200, filed
+    link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
+    _chat(link, "confirm_person", {
+        "personal": {
+            "name": name,
+            "phone": "555-0177",
+            "address": "8 Herzl",
+            "city": "Haifa",
+            "country": "IL",
+        },
+    })
+    _chat(link, "identity", "confirm" if confirm_identity else "skip")
+    if company:
+        _chat(link, "company", company)
+    else:
+        _chat(link, "company", "no")
+    _chat(link, "evidence", "skip")
+    submitted = _chat(link, "review", "submit")
+    assert submitted.get("status") == "pending"
+    assert (submitted.get("request") or {}).get("id") == filed["id"]
+    return filed["id"]
+
+
+def test_filed_chat_is_pending_on_the_supplier_and_agent_desks():
+    """Staff see the same filed request, then the existing fee ledger."""
+    supplier_email = "desk-supplier@example.com"
+    supplier_customer = _register("Desk Clinic", supplier_email)
+    supplier_session, _role = _login(supplier_email, "secure123456")
+    from services.customer_identity_service import set_identity
+    set_identity(
+        portal.CUSTOMERS, supplier_customer, "123456782", "IL",
+        source="chat", actor="professional_inquiry",
+    )
+    master = {
+        "name": portal.CUSTOMERS[supplier_customer]["name"],
+        "email": portal.CUSTOMERS[supplier_customer]["email"],
+    }
+    supplier_request = _file_professional_chat(
+        supplier_session, "supplier", name="Desk Clinic", confirm_identity=True,
+        company={"company_name": "Desk Clinic", "supplier_type": "clinic"},
+    )
+    assert portal.CUSTOMERS[supplier_customer]["name"] == master["name"]
+    assert portal.CUSTOMERS[supplier_customer]["email"] == master["email"]
+    assert "supplier_id" not in portal.CUSTOMERS[supplier_customer]
+    assert "national_id" not in portal.CUSTOMERS[supplier_customer]
+    stored = rewards.REQUESTS[supplier_request]
+    assert "123456782" not in json.dumps(stored)
+
+    agent_email = "desk-agent@example.com"
+    agent_customer = _register("Desk Agent", agent_email)
+    agent_session, _role = _login(agent_email, "secure123456")
+    agent_request = _file_professional_chat(
+        agent_session, "agent", name="Desk Agent",
+    )
+    agent_stored = rewards.REQUESTS[agent_request]
+    assert agent_stored["inquiry"]["has_company"] is False
+    assert agent_stored["company_name"] is None
+    assert agent_stored["supplier_type"] is None
+    assert agent_stored["inquiry"]["company"] is None
+    agent_suppliers = [
+        item for item in portal.supply_chain_service.suppliers.values()
+        if item.get("customer_id") == agent_customer
+    ]
+    assert len(agent_suppliers) == 1
+    assert agent_suppliers[0]["status"] == "pending"
+    assert agent_suppliers[0]["company_name"] == "Desk Agent"
+    assert agent_suppliers[0]["company_name_source"] == "placeholder"
+    assert agent_suppliers[0]["supplier_type"] == "other"
+    assert not agent_suppliers[0].get("business_registration_number")
+    assert agent_request in agent_suppliers[0]["professional_request_ids"]
+    assert "123456782" not in json.dumps(agent_suppliers[0])
+    assert "supplier_id" not in portal.CUSTOMERS[agent_customer]
+    assert "agent_id" not in portal.CUSTOMERS[agent_customer]
+
+    admin, _ = _login("admin", "admin123")
+    pending, status = _get("/api/admin/suppliers/pending", token=admin)
+    assert status == 200, pending
+    supplier_row = next(
+        item for item in pending["items"]
+        if supplier_request in (item.get("professional_request_ids") or [])
+        or item.get("professional_request_id") == supplier_request
+    )
+    assert supplier_row["status"] == "pending"
+    assert supplier_row["customer_id"] == supplier_customer
+    assert "123456782" not in json.dumps(pending)
+    stats, status = _get("/api/admin/suppliers/analytics", token=admin)
+    assert status == 200, stats
+    assert stats["pending_applications"] >= 2
+
+    invitations, status = _get("/api/admin/agent-invitations", token=admin)
+    assert status == 200, invitations
+    agent_row = next(item for item in invitations["items"] if item.get("code") == agent_request)
+    assert agent_row["status"] == "pending_approval"
+    assert agent_row["professional_request_id"] == agent_request
+    assert "123456782" not in json.dumps(invitations)
+    pending_codes = [
+        item.get("code") for item in invitations["items"] if item.get("status") == "pending_approval"
+    ]
+    assert len(pending_codes) == len(set(pending_codes))
+    overview, status = _get("/api/admin/agents/overview", token=admin)
+    assert status == 200, overview
+    assert overview["invitations_pending_approval"] == len(pending_codes)
+
+    approved, status = _post(
+        f"/api/admin/suppliers/{supplier_row['id']}/approve",
+        {"notes": "Same request"},
+        token=admin,
+    )
+    assert status == 200, approved
+    assert approved["request"]["id"] == supplier_request
+    assert approved["request"]["status"] == "approved"
+    assert portal.CUSTOMERS[supplier_customer]["name"] == master["name"]
+    assert portal.CUSTOMERS[supplier_customer]["supplier_id"] == approved["supplier_id"]
+    assert "national_id" not in portal.CUSTOMERS[supplier_customer]
+    clinic = portal.supply_chain_service.suppliers[approved["supplier_id"]]
+    assert clinic["status"] == "approved"
+    assert clinic["company_name"] == "Desk Clinic"
+    assert "supplier_id" not in portal.CUSTOMERS[agent_customer]
+
+    still, status = _get("/api/admin/agent-invitations", token=admin)
+    assert any(item.get("code") == agent_request for item in still["items"])
+    agent_approved, status = _post("/api/admin/agent-invitations/approve", {
+        "code": agent_request,
+        "commission_rate": 25,
+    }, token=admin)
+    assert status == 200, agent_approved
+    assert agent_approved["request"]["id"] == agent_request
+    assert agent_approved["request"]["status"] == "approved"
+    assert agent_approved["request"]["supplier_id"] == agent_suppliers[0]["id"]
+    assert len([
+        item for item in portal.supply_chain_service.suppliers.values()
+        if item.get("customer_id") == agent_customer
+    ]) == 1
+    shared = portal.supply_chain_service.suppliers[agent_suppliers[0]["id"]]
+    assert shared["status"] == "approved"
+    assert "agent" in shared["roles"] and "supplier" in shared["roles"]
+    assert shared["agent_id"] == agent_approved["request"]["agent_id"]
+    from services.agent_ecosystem_service import get_agent
+    assert get_agent(shared["agent_id"])["default_commission_rate"] == pytest.approx(0.1)
+    assert portal.CUSTOMERS[agent_customer]["email"] == agent_email
+    assert "national_id" not in portal.CUSTOMERS[agent_customer]
+
+    portal.SUPPLIER_ORDERS["ORD-DESK-FEE"] = {
+        "id": "ORD-DESK-FEE",
+        "supplier_id": approved["supplier_id"],
+        "customer_id": "CUST-DESK-BUYER",
+        "platform_fee": 11.0,
+        "commission": 11.0,
+        "supplier_payout": 89.0,
+        "total_amount": 100.0,
+        "status": "completed",
+    }
+    before = float(portal.PHINS_BALANCE_SHEET["expense_breakdown"].get("customer_acquisition") or 0)
+    report, status = _get("/api/admin/supplier-agent-pipeline?audience=supplier", token=admin)
+    assert status == 200, report
+    fee_row = next(item for item in report["rows"] if item["supplier_id"] == approved["supplier_id"])
+    assert fee_row["sales_fees"] == pytest.approx(11.0)
+    sealed, status = _post("/api/admin/supplier-agent-pipeline/seal", {
+        "supplier_id": approved["supplier_id"],
+    }, token=admin)
+    assert status == 200, sealed
+    assert sealed["cash_event"] is False
+    assert float(portal.PHINS_BALANCE_SHEET["expense_breakdown"].get("customer_acquisition") or 0) == pytest.approx(before)
+    statements = [
+        entry for entry in portal.supply_chain_service.ledger.values()
+        if entry.get("entry_type") == "pipeline_statement"
+        and entry.get("supplier_id") == approved["supplier_id"]
+    ]
+    assert len(statements) == 1
+    assert statements[0]["amount"] == 0
+    portal.SUPPLIER_ORDERS.pop("ORD-DESK-FEE", None)
+
+
+def test_unrelated_supplier_desk_action_leaves_the_filed_request_pending():
+    """A supplier that only shares the customer is not the staged application."""
+    email = "unrelated-desk@example.com"
+    customer_id = _register("Unrelated Desk", email)
+    session, _role = _login(email, "secure123456")
+    request_id = _file_professional_chat(session, "supplier", name="Unrelated Desk", company={
+        "company_name": "Unrelated Clinic",
+        "supplier_type": "clinic",
+    })
+    staged = next(
+        item for item in portal.supply_chain_service.suppliers.values()
+        if request_id in (item.get("professional_request_ids") or [])
+    )
+    service = portal.supply_chain_service
+    service.suppliers["SUP-UNRELATED-APPROVE"] = {
+        "id": "SUP-UNRELATED-APPROVE",
+        "company_name": "Separate Approve",
+        "contact_email": "separate-approve@example.com",
+        "contact_name": "Separate",
+        "supplier_type": "clinic",
+        "status": "pending",
+        "customer_id": customer_id,
+        "portal_active": False,
+        "application_date": "2026-01-01T00:00:00",
+    }
+    service.suppliers["SUP-UNRELATED-REJECT"] = {
+        "id": "SUP-UNRELATED-REJECT",
+        "company_name": "Separate Reject",
+        "contact_email": "separate-reject@example.com",
+        "contact_name": "Separate",
+        "supplier_type": "clinic",
+        "status": "pending",
+        "customer_id": customer_id,
+        "portal_active": False,
+        "application_date": "2026-01-02T00:00:00",
+    }
+    admin, _ = _login("admin", "admin123")
+    approved, status = _post("/api/admin/suppliers/SUP-UNRELATED-APPROVE/approve", {
+        "notes": "Classic supplier",
+    }, token=admin)
+    assert status == 200, approved
+    assert "request" not in approved
+    assert service.suppliers["SUP-UNRELATED-APPROVE"]["status"] == "approved"
+    assert rewards.REQUESTS[request_id]["status"] == "pending"
+    assert staged["status"] == "pending"
+    assert "supplier_id" not in portal.CUSTOMERS[customer_id]
+    rejected, status = _post("/api/admin/suppliers/SUP-UNRELATED-REJECT/reject", {
+        "reason": "Not this application",
+    }, token=admin)
+    assert status == 200, rejected
+    assert "request" not in rejected
+    assert service.suppliers["SUP-UNRELATED-REJECT"]["status"] == "rejected"
+    assert rewards.REQUESTS[request_id]["status"] == "pending"
+    assert staged["status"] == "pending"
+
+
+def test_agent_overview_counts_a_professional_request_once():
+    email = "overview-once@example.com"
+    _register("Overview Once", email)
+    session, _role = _login(email, "secure123456")
+    request_id = _file_professional_chat(session, "agent", name="Overview Once")
+    admin, _ = _login("admin", "admin123")
+    before_items, status = _get("/api/admin/agent-invitations", token=admin)
+    assert status == 200, before_items
+    before_codes = [item.get("code") for item in before_items["items"]]
+    assert before_codes.count(request_id) == 1
+    before, status = _get("/api/admin/agents/overview", token=admin)
+    assert status == 200, before
+    pending_before = [
+        item.get("code") for item in before_items["items"] if item.get("status") == "pending_approval"
+    ]
+    assert before["invitations_pending_approval"] == len(pending_before)
+
+    from services.agent_ecosystem_service import INVITATIONS
+    INVITATIONS[request_id] = {
+        "code": request_id,
+        "agent_id": "AGT-OVERVIEW",
+        "invitee_type": "agent",
+        "status": "pending_approval",
+        "proposed_rate": 0.1,
+        "commission_rate": None,
+        "created_at": "2026-01-01T00:00:00",
+    }
+    try:
+        after_items, status = _get("/api/admin/agent-invitations", token=admin)
+        assert status == 200, after_items
+        assert [item.get("code") for item in after_items["items"]].count(request_id) == 1
+        after, status = _get("/api/admin/agents/overview", token=admin)
+        assert status == 200, after
+        pending_after = [
+            item.get("code") for item in after_items["items"] if item.get("status") == "pending_approval"
+        ]
+        assert after["invitations_pending_approval"] == len(set(pending_after))
+        assert after["invitations_pending_approval"] == before["invitations_pending_approval"]
+    finally:
+        INVITATIONS.pop(request_id, None)
+
+
+def test_declined_application_can_be_filed_again_on_the_same_supplier():
+    """A decline withdraws the staged row. It does not close the person."""
+    email = "decline-again@example.com"
+    customer_id = _register("Decline Again", email)
+    session, _role = _login(email, "secure123456")
+    request_id = _file_professional_chat(session, "supplier", name="Decline Again", company={
+        "company_name": "Decline Clinic",
+        "supplier_type": "clinic",
+    })
+    staged_id = rewards.REQUESTS[request_id]["supplier_id"]
+    admin, _ = _login("admin", "admin123")
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": request_id, "decision": "reject", "note": "Not this time",
+    }, token=admin)
+    assert status == 200, declined
+    supplier = portal.supply_chain_service.suppliers[staged_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["status"] not in ("rejected", "suspended", "terminated")
+    assert supplier["portal_active"] is False
+    assert "supplier_id" not in portal.CUSTOMERS[customer_id]
+    pending, status = _get("/api/admin/suppliers/pending", token=admin)
+    assert status == 200, pending
+    assert all(item.get("id") != staged_id for item in pending["items"])
+
+    again = _file_professional_chat(session, "supplier", name="Decline Again", company={
+        "company_name": "Decline Clinic",
+        "supplier_type": "clinic",
+    })
+    assert again == request_id
+    assert rewards.REQUESTS[request_id]["status"] == "pending"
+    assert rewards.REQUESTS[request_id]["supplier_id"] == staged_id
+    assert portal.supply_chain_service.suppliers[staged_id]["status"] == "pending"
+    assert len([
+        item for item in portal.supply_chain_service.suppliers.values()
+        if item.get("customer_id") == customer_id
+    ]) == 1
+    approved, status = _post("/api/admin/professional-requests/review", {
+        "id": request_id, "decision": "approve",
+    }, token=admin)
+    assert status == 200, approved
+    assert portal.supply_chain_service.suppliers[staged_id]["status"] == "approved"
+    assert portal.CUSTOMERS[customer_id]["supplier_id"] == staged_id
+    assert portal.CUSTOMERS[customer_id]["name"] == "Decline Again"
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+
+
+def test_declining_supplier_request_keeps_an_approved_agent_role():
+    email = "keep-agent@example.com"
+    customer_id = _register("Keep Agent", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="Keep Agent", company={
+        "company_name": "Keep Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="Keep Agent", company={
+        "company_name": "Keep Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/agent-invitations/approve", {
+        "code": agent_request,
+        "commission_rate": 40,
+    }, token=admin)
+    assert status == 200, opened
+    supplier_id = opened["request"]["supplier_id"]
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "pending"
+    assert "agent" in supplier["roles"]
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    assert rewards.REQUESTS[supplier_request]["status"] == "rejected"
+    assert rewards.REQUESTS[agent_request]["status"] == "approved"
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    assert supplier["status"] not in ("approved", "rejected", "suspended", "terminated")
+    assert "agent_id" not in supplier
+    assert rewards.REQUESTS[agent_request].get("supplier_id") != supplier_id
+    assert rewards.REQUESTS[agent_request].get("agent_id") == opened["request"]["agent_id"]
+    assert rewards.grant_for(customer_id, "agent")["agent_id"] == opened["request"]["agent_id"]
+    switched, status = _post("/api/customer/role-switch", {"role": "agent"}, token=session)
+    assert status == 200, switched
+    desks = rewards.professional_status(customer_id)
+    assert desks["supplier"]["status"] == "withdrawn"
+    assert desks["agent"]["status"] == "withdrawn"
+    assert desks["supplier"].get("status") != "approved"
+    assert desks["agent"].get("status") != "approved"
+    assert desks["supplier"].get("supplier_id") in (None, "")
+    assert desks["agent"].get("agent_id") in (None, "")
+    assert "via" not in desks["supplier"]
+    assert len([
+        item for item in portal.supply_chain_service.suppliers.values()
+        if item.get("customer_id") == customer_id
+    ]) == 1
+    from services.agent_ecosystem_service import get_agent
+    assert get_agent(opened["request"]["agent_id"])["default_commission_rate"] == pytest.approx(0.1)
+
+
+def test_approved_agent_without_a_grant_can_be_filed_again(monkeypatch):
+    """An approved stamp with no usable agent is not left closed."""
+    stored = []
+    real_persist = rewards._persist_request
+
+    def capture(req):
+        stored.append({
+            "id": req.get("id"),
+            "status": req.get("status"),
+            "supplier_id": req.get("supplier_id"),
+            "agent_id": req.get("agent_id"),
+        })
+        return real_persist(req)
+
+    monkeypatch.setattr(rewards, "_persist_request", capture)
+    email = "no-grant@example.com"
+    customer_id = _register("No Grant", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="No Grant", company={
+        "company_name": "No Grant Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="No Grant", company={
+        "company_name": "No Grant Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    supplier_id = opened["request"]["supplier_id"]
+    agent_id = opened["request"]["agent_id"]
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    rewards.REQUESTS[agent_request].pop("agent_id", None)
+    stored.clear()
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    assert "agent_id" not in supplier
+    request = rewards.REQUESTS[agent_request]
+    assert request["status"] == "inquiry"
+    assert request.get("status") != "approved"
+    assert not request.get("agent_id")
+    assert request.get("supplier_id") != supplier_id
+    written = [row for row in stored if row["id"] == agent_request]
+    assert written
+    assert written[-1]["status"] == "inquiry"
+    assert written[-1]["agent_id"] is None
+    assert written[-1]["supplier_id"] is None
+    from services.agent_ecosystem_service import AGENTS, get_agent
+    assert get_agent(agent_id)["id"] == agent_id
+    assert agent_id in AGENTS
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=session)
+    assert status == 200, filed
+    assert filed["status"] == "inquiry"
+    assert filed.get("code") != "already_approved"
+
+
+def test_outside_agent_with_the_same_login_survives_decline():
+    """A decline deletes only the detached id, not every agent on that login."""
+    from services.agent_ecosystem_service import AGENTS, create_agent, get_agent
+    email = "outside-agent@example.com"
+    customer_id = _register("Outside Agent", email)
+    session, _role = _login(email, "secure123456")
+    outside = create_agent(
+        username=email, display_name="Outside Agent", email=email, created_by="desk",
+    )
+    outside_id = outside["id"]
+    supplier_request = _file_professional_chat(session, "supplier", name="Outside Agent", company={
+        "company_name": "Outside Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="Outside Agent", company={
+        "company_name": "Outside Clinic",
+        "supplier_type": "clinic",
+    })
+    supplier_id = rewards.REQUESTS[supplier_request]["supplier_id"]
+    rewards.REQUESTS[agent_request]["status"] = "approved"
+    rewards.REQUESTS[agent_request]["supplier_id"] = supplier_id
+    rewards.REQUESTS[agent_request].pop("agent_id", None)
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    admin, _ = _login("admin", "admin123")
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    assert get_agent(outside_id)["user_username"] == email
+    assert outside_id in AGENTS
+    request = rewards.REQUESTS[agent_request]
+    assert request["status"] == "inquiry"
+    assert request.get("agent_id") != outside_id
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+    assert "supplier_approval" not in {
+        entry.get("entry_type")
+        for entry in portal.supply_chain_service.ledger.values()
+        if isinstance(entry, dict) and entry.get("supplier_id") == supplier_id
+    }
+
+
+def test_later_approval_reuses_the_agent_the_customer_still_names(monkeypatch):
+    """Decline must not drop an agent the customer record still names."""
+    from services import agent_ecosystem_service as agents
+    email = "reuse-agent@example.com"
+    customer_id = _register("Reuse Agent", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="Reuse Agent", company={
+        "company_name": "Reuse Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="Reuse Agent", company={
+        "company_name": "Reuse Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    agent_id = opened["request"]["agent_id"]
+    supplier_id = opened["request"]["supplier_id"]
+    assert portal.CUSTOMERS[customer_id]["agent_id"] == agent_id
+    username = agents.get_agent(agent_id)["user_username"]
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    real_get = agents.get_agent
+    monkeypatch.setattr(agents, "get_agent", lambda _agent_id: None)
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    monkeypatch.setattr(agents, "get_agent", real_get)
+    assert status == 200, declined
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    assert rewards.REQUESTS[agent_request]["status"] == "inquiry"
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert agents.get_agent(agent_id)["id"] == agent_id
+    assert agents.AGENT_BY_USER.get(username) == agent_id
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+    assert "supplier_approval" not in {
+        entry.get("entry_type")
+        for entry in portal.supply_chain_service.ledger.values()
+        if isinstance(entry, dict) and entry.get("supplier_id") == supplier_id
+    }
+    again_supplier = _file_professional_chat(session, "supplier", name="Reuse Agent", company={
+        "company_name": "Reuse Clinic",
+        "supplier_type": "clinic",
+    })
+    again_agent = _file_professional_chat(session, "agent", name="Reuse Agent", company={
+        "company_name": "Reuse Clinic",
+        "supplier_type": "clinic",
+    })
+    assert again_supplier == supplier_request
+    assert again_agent == agent_request
+    reviewed, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, reviewed
+    assert reviewed["request"]["agent_id"] == agent_id
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier.get("pipeline_detail_conflict") is not True
+    assert supplier.get("agent_id") == agent_id
+    assert portal.CUSTOMERS[customer_id]["agent_id"] == agent_id
+    assert agents.AGENT_BY_USER.get(username) == agent_id
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+
+
+def test_discard_agent_keeps_memory_when_the_database_delete_fails(monkeypatch):
+    from services import agent_ecosystem_service as agents
+    created = agents.create_agent(
+        username="db-fail-agent@example.com",
+        display_name="DB Fail",
+        email="db-fail-agent@example.com",
+        created_by="desk",
+    )
+    aid = created["id"]
+
+    class Broken:
+        def __enter__(self):
+            raise RuntimeError("db delete failed")
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(agents, "_db_enabled", lambda: True)
+    monkeypatch.setattr(agents, "_db", lambda: Broken())
+    with pytest.raises(RuntimeError, match="db delete failed"):
+        agents.discard_agent(aid)
+    assert agents.get_agent(aid)["id"] == aid
+    assert agents.AGENT_BY_USER.get("db-fail-agent@example.com") == aid
+
+
+def test_failed_agent_delete_leaves_both_requests_unchanged(monkeypatch):
+    """A failed agent delete stores neither the sibling nor the declined request."""
+    from services import agent_ecosystem_service as agents
+    email = "delete-fails@example.com"
+    customer_id = _register("Delete Fails", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="Delete Fails", company={
+        "company_name": "Delete Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="Delete Fails", company={
+        "company_name": "Delete Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    agent_id = opened["request"]["agent_id"]
+    supplier_id = opened["request"]["supplier_id"]
+    rewards.REQUESTS[agent_request]["agent_id"] = "AGT-UNRESOLVED"
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    before_agent = {
+        "status": rewards.REQUESTS[agent_request]["status"],
+        "supplier_id": rewards.REQUESTS[agent_request].get("supplier_id"),
+        "agent_id": rewards.REQUESTS[agent_request].get("agent_id"),
+    }
+    before_supplier_request = {
+        "status": rewards.REQUESTS[supplier_request]["status"],
+        "supplier_id": rewards.REQUESTS[supplier_request].get("supplier_id"),
+    }
+    stored = []
+    real_persist = rewards._persist_request
+
+    def capture(req):
+        stored.append(req.get("id"))
+        return real_persist(req)
+
+    def refuse(_agent_id):
+        raise RuntimeError("db delete failed")
+
+    monkeypatch.setattr(rewards, "_persist_request", capture)
+    monkeypatch.setattr(agents, "discard_agent", refuse)
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status >= 500, declined
+    assert stored == []
+    assert rewards.REQUESTS[agent_request]["status"] == before_agent["status"]
+    assert rewards.REQUESTS[agent_request].get("supplier_id") == before_agent["supplier_id"]
+    assert rewards.REQUESTS[agent_request].get("agent_id") == before_agent["agent_id"]
+    assert rewards.REQUESTS[supplier_request]["status"] == before_supplier_request["status"]
+    assert rewards.REQUESTS[supplier_request].get("supplier_id") == before_supplier_request["supplier_id"]
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "pending"
+    assert supplier["portal_active"] is False
+    assert supplier.get("agent_id") == agent_id
+    assert agents.get_agent(agent_id)["id"] == agent_id
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+
+
+def _stored_professional_request(request_id):
+    blob = json.loads(rewards._state_path().read_text(encoding="utf-8"))
+    for item in blob["state"]["requests"]:
+        if item.get("id") == request_id:
+            return item
+    raise AssertionError(request_id)
+
+
+def test_failed_persist_restores_the_sibling_and_the_supplier(monkeypatch):
+    """A failed sibling persist puts that request and the supplier back."""
+    email = "persist-fails@example.com"
+    customer_id = _register("Persist Fails", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="Persist Fails", company={
+        "company_name": "Persist Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="Persist Fails", company={
+        "company_name": "Persist Clinic",
+        "supplier_type": "clinic",
+    })
+    admin, _ = _login("admin", "admin123")
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    agent_id = opened["request"]["agent_id"]
+    supplier_id = opened["request"]["supplier_id"]
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    real_persist = rewards._persist_request
+    armed = {"on": True}
+    written = []
+
+    def fail_detached(req):
+        if armed["on"] and req.get("id") == agent_request and req.get("supplier_id") != supplier_id:
+            raise RuntimeError("persist failed")
+        written.append({
+            "id": req.get("id"),
+            "status": req.get("status"),
+            "supplier_id": req.get("supplier_id"),
+            "agent_id": req.get("agent_id"),
+        })
+        return real_persist(req)
+
+    monkeypatch.setattr(rewards, "_persist_request", fail_detached)
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status >= 500, declined
+    assert rewards.REQUESTS[agent_request]["status"] == "approved"
+    assert rewards.REQUESTS[agent_request].get("supplier_id") == supplier_id
+    assert rewards.REQUESTS[agent_request].get("agent_id") == agent_id
+    assert rewards.REQUESTS[supplier_request]["status"] == "pending"
+    assert rewards.REQUESTS[supplier_request].get("supplier_id") == supplier_id
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "pending"
+    assert supplier["portal_active"] is False
+    assert supplier.get("agent_id") == agent_id
+    stored_agent = _stored_professional_request(agent_request)
+    assert stored_agent["status"] == "approved"
+    assert stored_agent.get("supplier_id") == supplier_id
+    assert stored_agent.get("agent_id") == agent_id
+    stored_supplier = _stored_professional_request(supplier_request)
+    assert stored_supplier["status"] == "pending"
+    assert stored_supplier.get("supplier_id") == supplier_id
+    assert all(item.get("supplier_id") == supplier_id for item in written if item["id"] == agent_request)
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+    armed["on"] = False
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    assert rewards.REQUESTS[supplier_request]["status"] == "rejected"
+    assert rewards.REQUESTS[agent_request]["status"] == "approved"
+    assert rewards.REQUESTS[agent_request].get("agent_id") == agent_id
+    assert rewards.REQUESTS[agent_request].get("supplier_id") in (None, "")
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    stored_agent = _stored_professional_request(agent_request)
+    assert stored_agent["status"] == "approved"
+    assert stored_agent.get("supplier_id") in (None, "")
+    assert stored_agent.get("agent_id") == agent_id
+    assert portal.CUSTOMERS[customer_id] == before_customer
+
+
+def test_detached_sibling_request_is_stored(monkeypatch):
+    """The sibling row is written, not only edited in memory."""
+    stored = []
+    real_persist = rewards._persist_request
+
+    def capture(req):
+        stored.append({
+            "id": req.get("id"),
+            "status": req.get("status"),
+            "supplier_id": req.get("supplier_id"),
+            "agent_id": req.get("agent_id"),
+        })
+        return real_persist(req)
+
+    monkeypatch.setattr(rewards, "_persist_request", capture)
+    service = portal.supply_chain_service
+    real_approve = service.approve_supplier
+    real_reject = service.reject_supplier
+    calls = {"approve": 0, "reject": 0}
+
+    def count_approve(*args, **kwargs):
+        calls["approve"] += 1
+        return real_approve(*args, **kwargs)
+
+    def count_reject(*args, **kwargs):
+        calls["reject"] += 1
+        return real_reject(*args, **kwargs)
+
+    monkeypatch.setattr(service, "approve_supplier", count_approve)
+    monkeypatch.setattr(service, "reject_supplier", count_reject)
+    admin, _ = _login("admin", "admin123")
+
+    def file_pair(email, name, company):
+        customer_id = _register(name, email)
+        session, _role = _login(email, "secure123456")
+        supplier_request = _file_professional_chat(session, "supplier", name=name, company=company)
+        agent_request = _file_professional_chat(session, "agent", name=name, company=company)
+        return customer_id, supplier_request, agent_request
+
+    def sibling_rows(agent_request):
+        return [row for row in stored if row["id"] == agent_request]
+
+    customer_id, supplier_request, agent_request = file_pair(
+        "store-sibling@example.com", "Store Sibling",
+        {"company_name": "Store Clinic", "supplier_type": "clinic"},
+    )
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    supplier_id = opened["request"]["supplier_id"]
+    assert service.suppliers[supplier_id]["portal_active"] is False
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    before_ledger = _supplier_ledger(service, supplier_id)
+    stored.clear()
+    calls["approve"] = 0
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    written = sibling_rows(agent_request)
+    assert written, stored
+    assert written[-1]["status"] == "approved"
+    assert written[-1]["supplier_id"] is None
+    assert written[-1]["agent_id"] == opened["request"]["agent_id"]
+    assert any(row["id"] == supplier_request and row["status"] == "rejected" for row in stored)
+    assert calls == {"approve": 0, "reject": 0}
+    assert service.suppliers[supplier_id]["status"] == "withdrawn"
+    assert service.suppliers[supplier_id]["portal_active"] is False
+    assert "agent_id" not in service.suppliers[supplier_id]
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert _supplier_ledger(service, supplier_id) == before_ledger
+
+    desk_customer, desk_supplier, desk_agent = file_pair(
+        "store-desk@example.com", "Store Desk",
+        {"company_name": "Desk Clinic", "supplier_type": "clinic"},
+    )
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": desk_agent}, token=admin)
+    assert status == 200, opened
+    desk_supplier_id = opened["request"]["supplier_id"]
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[desk_customer]))
+    stored.clear()
+    calls["approve"] = 0
+    rejected, status = _post(f"/api/admin/suppliers/{desk_supplier_id}/reject", {
+        "reason": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, rejected
+    written = sibling_rows(desk_agent)
+    assert written, stored
+    assert written[-1]["status"] == "approved"
+    assert written[-1]["supplier_id"] is None
+    assert written[-1]["agent_id"] == opened["request"]["agent_id"]
+    assert calls == {"approve": 0, "reject": 0}
+    assert service.suppliers[desk_supplier_id]["status"] == "withdrawn"
+    assert portal.CUSTOMERS[desk_customer] == before_customer
+    assert "national_id" not in service.suppliers[desk_supplier_id]
+
+    live_customer, live_supplier, live_agent = file_pair(
+        "store-live@example.com", "Store Live",
+        {"company_name": "Live Clinic", "supplier_type": "clinic"},
+    )
+    approved, status = _post("/api/admin/professional-requests/review", {
+        "id": live_supplier, "decision": "approve",
+    }, token=admin)
+    assert status == 200, approved
+    live_id = approved["supplier_id"]
+    assert service.suppliers[live_id]["portal_active"] is True
+    stored.clear()
+    calls["approve"] = 0
+    declined_agent, status = _post("/api/admin/agent-invitations/reject", {
+        "code": live_agent, "note": "Agent application declined",
+    }, token=admin)
+    assert status == 200, declined_agent
+    assert sibling_rows(live_supplier) == []
+    assert rewards.REQUESTS[live_supplier]["status"] == "approved"
+    assert rewards.REQUESTS[live_supplier]["supplier_id"] == live_id
+    assert service.suppliers[live_id]["status"] == "approved"
+    assert service.suppliers[live_id]["portal_active"] is True
+    assert calls == {"approve": 0, "reject": 0}
+    assert "national_id" not in portal.CUSTOMERS[live_customer]
+
+
+def _supplier_ledger(service, supplier_id):
+    rows = []
+    for entry in (getattr(service, "ledger", {}) or {}).values():
+        if isinstance(entry, dict) and entry.get("supplier_id") == supplier_id:
+            rows.append((entry.get("entry_type"), entry.get("amount"), entry.get("commission")))
+    return sorted(rows, key=lambda item: (str(item[0]), str(item[1]), str(item[2])))
+
+
+def test_decline_with_an_approved_role_does_not_rerun_approval(monkeypatch):
+    """A request approval does not make a staged supplier approved."""
+    service = portal.supply_chain_service
+    real_approve = service.approve_supplier
+    real_reject = service.reject_supplier
+    calls = {"approve": 0, "reject": 0}
+
+    def count_approve(*args, **kwargs):
+        calls["approve"] += 1
+        return real_approve(*args, **kwargs)
+
+    def count_reject(*args, **kwargs):
+        calls["reject"] += 1
+        return real_reject(*args, **kwargs)
+
+    monkeypatch.setattr(service, "approve_supplier", count_approve)
+    monkeypatch.setattr(service, "reject_supplier", count_reject)
+    admin, _ = _login("admin", "admin123")
+    from services.agent_ecosystem_service import AGENTS
+
+    email = "no-rerun@example.com"
+    customer_id = _register("No Rerun", email)
+    session, _role = _login(email, "secure123456")
+    supplier_request = _file_professional_chat(session, "supplier", name="No Rerun", company={
+        "company_name": "No Rerun Clinic",
+        "supplier_type": "clinic",
+    })
+    agent_request = _file_professional_chat(session, "agent", name="No Rerun", company={
+        "company_name": "No Rerun Clinic",
+        "supplier_type": "clinic",
+    })
+    opened, status = _post("/api/admin/agent-invitations/approve", {"code": agent_request}, token=admin)
+    assert status == 200, opened
+    supplier_id = opened["request"]["supplier_id"]
+    agent_id = opened["request"]["agent_id"]
+    supplier = service.suppliers[supplier_id]
+    assert supplier["status"] == "pending"
+    assert supplier["portal_active"] is False
+    assert calls == {"approve": 0, "reject": 0}
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[customer_id]))
+    before_ledger = _supplier_ledger(service, supplier_id)
+    before_agents = set(AGENTS)
+    before_expenses = portal.PHINS_BALANCE_SHEET.get("total_expenses")
+    statements = [
+        entry for entry in service.ledger.values()
+        if isinstance(entry, dict) and entry.get("entry_type") == "pipeline_statement"
+    ]
+
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": supplier_request, "decision": "reject", "note": "Supplier application declined",
+    }, token=admin)
+    assert status == 200, declined
+    supplier = service.suppliers[supplier_id]
+    assert calls == {"approve": 0, "reject": 0}
+    assert supplier["status"] == "withdrawn"
+    assert supplier["portal_active"] is False
+    assert "supplier_approval" not in {row[0] for row in _supplier_ledger(service, supplier_id)}
+    assert supplier_request not in (supplier.get("professional_request_ids") or [])
+    assert supplier.get("professional_request_id") != supplier_request
+    assert "agent_id" not in supplier
+    assert rewards.REQUESTS[agent_request].get("supplier_id") != supplier_id
+    assert rewards.REQUESTS[agent_request].get("agent_id") == agent_id
+    desks = rewards.professional_status(customer_id)
+    assert desks["supplier"]["status"] != "approved"
+    assert desks["agent"]["status"] != "approved"
+    assert desks["supplier"].get("supplier_id") in (None, "")
+    assert "via" not in desks["supplier"]
+    assert set(AGENTS) == before_agents
+    assert _supplier_ledger(service, supplier_id) == before_ledger
+    assert [
+        entry for entry in service.ledger.values()
+        if isinstance(entry, dict) and entry.get("entry_type") == "pipeline_statement"
+    ] == statements
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[customer_id]
+    assert "national_id" not in supplier
+    assert portal.PHINS_BALANCE_SHEET.get("total_expenses") == before_expenses
+    assert rewards.REQUESTS[agent_request]["status"] == "approved"
+    assert rewards._supplier_is_closed(supplier) is False
+
+    again = _file_professional_chat(session, "supplier", name="No Rerun", company={
+        "company_name": "No Rerun Clinic",
+        "supplier_type": "clinic",
+    })
+    assert again == supplier_request
+    reused = service.suppliers[supplier_id]
+    assert reused["status"] == "pending"
+    assert reused["portal_active"] is False
+    assert calls == {"approve": 0, "reject": 0}
+    assert "supplier_approval" not in {row[0] for row in _supplier_ledger(service, supplier_id)}
+    assert portal.CUSTOMERS[customer_id] == before_customer
+    assert len([
+        item for item in service.suppliers.values() if item.get("customer_id") == customer_id
+    ]) == 1
+
+    other_email = "no-rerun-agent@example.com"
+    other_customer = _register("No Rerun Agent", other_email)
+    other_session, _role = _login(other_email, "secure123456")
+    other_supplier = _file_professional_chat(other_session, "supplier", name="No Rerun Agent", company={
+        "company_name": "Open Clinic",
+        "supplier_type": "clinic",
+    })
+    other_agent = _file_professional_chat(other_session, "agent", name="No Rerun Agent", company={
+        "company_name": "Open Clinic",
+        "supplier_type": "clinic",
+    })
+    calls["approve"] = 0
+    approved, status = _post("/api/admin/professional-requests/review", {
+        "id": other_supplier, "decision": "approve",
+    }, token=admin)
+    assert status == 200, approved
+    other_id = approved["supplier_id"]
+    assert calls["approve"] == 1
+    assert service.suppliers[other_id]["portal_active"] is True
+    before_customer = json.loads(json.dumps(portal.CUSTOMERS[other_customer]))
+    before_ledger = _supplier_ledger(service, other_id)
+    before_agents = set(AGENTS)
+    calls["approve"] = 0
+    declined_agent, status = _post("/api/admin/professional-requests/review", {
+        "id": other_agent, "decision": "reject", "note": "Agent application declined",
+    }, token=admin)
+    assert status == 200, declined_agent
+    kept = service.suppliers[other_id]
+    assert calls == {"approve": 0, "reject": 0}
+    assert kept["status"] == "approved"
+    assert kept["portal_active"] is True
+    assert other_agent not in (kept.get("professional_request_ids") or [])
+    live_desks = rewards.professional_status(other_customer)
+    assert live_desks["supplier"]["status"] == "approved"
+    assert live_desks["supplier"]["supplier_id"] == other_id
+    assert live_desks["agent"]["status"] != "approved"
+    assert "via" not in live_desks["supplier"]
+    assert set(AGENTS) == before_agents
+    assert _supplier_ledger(service, other_id) == before_ledger
+    assert portal.CUSTOMERS[other_customer] == before_customer
+    assert "national_id" not in portal.CUSTOMERS[other_customer]
+
+
+def test_staging_failure_leaves_the_inquiry_resubmittable(monkeypatch):
+    email = "stage-fail@example.com"
+    _register("Stage Fail", email)
+    session, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=session)
+    assert status == 200, filed
+    link = parse_qs(urlparse(filed["inquiry_path"]).query)["t"][0]
+    _chat(link, "confirm_person", {
+        "personal": {
+            "name": "Stage Fail",
+            "phone": "555-0177",
+            "address": "8 Herzl",
+            "city": "Haifa",
+            "country": "IL",
+        },
+    })
+    _chat(link, "identity", "skip")
+    _chat(link, "company", {"company_name": "Stage Clinic", "supplier_type": "clinic"})
+    _chat(link, "evidence", "skip")
+    real = rewards._stage_staff_application
+    calls = {"n": 0}
+
+    def fail_once(req):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("supplier service unavailable")
+        return real(req)
+
+    monkeypatch.setattr(rewards, "_stage_staff_application", fail_once)
+    failed, status = _post("/api/professional-inquiry/chat", {
+        "token": link, "step": "review", "value": "submit",
+    })
+    assert status == 503, failed
+    assert failed["code"] == "application_not_staged"
+    assert rewards.REQUESTS[filed["id"]]["status"] == "inquiry"
+    assert not rewards.REQUESTS[filed["id"]].get("supplier_id")
+    submitted = _chat(link, "review", "submit")
+    assert submitted.get("status") == "pending"
+    assert rewards.REQUESTS[filed["id"]]["supplier_id"]
+    assert portal.supply_chain_service.suppliers[
+        rewards.REQUESTS[filed["id"]]["supplier_id"]
+    ]["status"] == "pending"
+
+
+def test_professional_review_route_persists_approve_and_decline(monkeypatch):
+    """The review route writes the supplier the desks already write."""
+    saved = []
+
+    def remember(sid, data):
+        saved.append((sid, data.get("status")))
+
+    monkeypatch.setattr(portal, "_persist_supplier", remember)
+    admin, _ = _login("admin", "admin123")
+
+    decline_email = "review-decline@example.com"
+    decline_customer = _register("Review Decline", decline_email)
+    decline_session, _role = _login(decline_email, "secure123456")
+    decline_request = _file_professional_chat(
+        decline_session, "supplier", name="Review Decline",
+        company={"company_name": "Review Clinic", "supplier_type": "clinic"},
+    )
+    decline_supplier = rewards.REQUESTS[decline_request]["supplier_id"]
+    declined, status = _post("/api/admin/professional-requests/review", {
+        "id": decline_request, "decision": "reject", "note": "Not now",
+    }, token=admin)
+    assert status == 200, declined
+    assert saved == [(decline_supplier, "withdrawn")]
+    assert portal.supply_chain_service.suppliers[decline_supplier]["status"] == "withdrawn"
+    assert "supplier_id" not in portal.CUSTOMERS[decline_customer]
+    assert "national_id" not in portal.CUSTOMERS[decline_customer]
+
+    saved.clear()
+    approve_email = "review-approve@example.com"
+    approve_customer = _register("Review Approve", approve_email)
+    approve_session, _role = _login(approve_email, "secure123456")
+    approve_request = _file_professional_chat(
+        approve_session, "supplier", name="Review Approve",
+        company={"company_name": "Approve Clinic", "supplier_type": "clinic"},
+    )
+    approve_supplier = rewards.REQUESTS[approve_request]["supplier_id"]
+    approved, status = _post("/api/admin/professional-requests/review", {
+        "id": approve_request, "decision": "approve",
+    }, token=admin)
+    assert status == 200, approved
+    assert saved == [(approve_supplier, "approved")]
+    assert portal.CUSTOMERS[approve_customer]["supplier_id"] == approve_supplier
+    assert portal.CUSTOMERS[approve_customer]["name"] == "Review Approve"
+    assert "national_id" not in portal.CUSTOMERS[approve_customer]
+
+    saved.clear()
+    closed = portal.supply_chain_service.suppliers[approve_supplier]
+    closed["status"] = "suspended"
+    closed["portal_active"] = False
+    agent_email = approve_email
+    agent_request_filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=approve_session)
+    assert status == 200, agent_request_filed
+    _finish_inquiry(agent_request_filed, name="Review Approve")
+    refused, status = _post("/api/admin/professional-requests/review", {
+        "id": agent_request_filed["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 409, refused
+    assert refused["code"] == "supplier_closed"
+    assert saved == []
+    assert portal.supply_chain_service.suppliers[approve_supplier]["status"] == "suspended"
+
+
+def test_agent_desk_persists_the_staged_supplier(monkeypatch):
+    email = "persist-agent@example.com"
+    _register("Persist Agent", email)
+    session, _role = _login(email, "secure123456")
+    request_id = _file_professional_chat(session, "agent", name="Persist Agent")
+    supplier_id = rewards.REQUESTS[request_id]["supplier_id"]
+    saved = []
+
+    def remember(sid, data):
+        saved.append((sid, data.get("status")))
+
+    monkeypatch.setattr(portal, "_persist_supplier", remember)
+    admin, _ = _login("admin", "admin123")
+    approved, status = _post("/api/admin/agent-invitations/approve", {
+        "code": request_id,
+    }, token=admin)
+    assert status == 200, approved
+    assert saved == [(supplier_id, "approved")]
+    assert portal.supply_chain_service.suppliers[supplier_id]["status"] == "approved"
+
+
+def test_filed_inquiry_link_returns_status_only_and_expires_in_every_status():
+    email = "filed-link@example.com"
+    _register("Filed Link", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    assert status == 200, filed
+    link = filed["inquiry_path"].split("t=", 1)[1]
+    saved = _finish_inquiry(filed, name="Filed Link")
+    view, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, view
+    assert view == {
+        "request_id": saved["id"],
+        "role": "supplier",
+        "status": "pending",
+        "editable": False,
+    }
+    dumped = json.dumps(view)
+    assert email not in dumped
+    assert "555-0100" not in dumped
+    assert "1 Herzl" not in dumped
+    assert "national_id_masked" not in dumped
+    admin, _ = _login("admin", "admin123")
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": saved["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, reviewed
+    approved, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, approved
+    assert approved["status"] == "approved"
+    assert email not in json.dumps(approved)
+    rewards.REQUESTS[saved["id"]]["inquiry"]["expires_at"] = "2000-01-01T00:00:00Z"
+    expired, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 410, expired
+    assert expired["code"] == "inquiry_expired"
+
+
+def test_inquiry_link_exchanges_for_a_cookie_and_leaves_the_token_off_the_body():
+    email = "inquiry-session@example.com"
+    _register("Session Person", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    assert status == 200, filed
+    link = filed["inquiry_path"].split("t=", 1)[1]
+    opened, status, cookies = _open("/api/professional-inquiry/session", {"token": link})
+    assert status == 200, opened
+    cookie_name, secret, cookie_header = _inquiry_set_cookie(cookies)
+    assert secret.startswith("inqs_")
+    assert "HttpOnly" in cookie_header
+    assert secret not in json.dumps(opened)
+    assert "token_sha256" not in json.dumps(opened)
+    cookie = cookie_name + "=" + secret
+    via_cookie, status = _get("/api/professional-inquiry", cookie=cookie)
+    assert status == 200, via_cookie
+    assert via_cookie["known"]["email"] == email
+    missing, status = _get("/api/professional-inquiry")
+    assert status == 400, missing
+    via_link, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, via_link
+    assert via_link["known"]["email"] == email
+    rewards.REQUESTS[filed["id"]]["inquiry"]["browser_session"]["expires_at"] = "2000-01-01T00:00:00Z"
+    stale, status = _get("/api/professional-inquiry", cookie=cookie)
+    assert status == 410, stale
+    assert stale["code"] == "inquiry_session_expired"
+    still, status = _get("/api/professional-inquiry?t=" + link)
+    assert status == 200, still
+
+
+def test_two_open_inquiries_keep_separate_cookies():
+    email = "two-inquiries@example.com"
+    _register("Two Inquiries", email)
+    token, _role = _login(email, "secure123456")
+    supplier, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    assert status == 200, supplier
+    agent, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, agent
+    supplier_link = supplier["inquiry_path"].split("t=", 1)[1]
+    agent_link = agent["inquiry_path"].split("t=", 1)[1]
+    supplier_open, status, supplier_cookies = _open(
+        "/api/professional-inquiry/session", {"token": supplier_link},
+    )
+    assert status == 200, supplier_open
+    agent_open, status, agent_cookies = _open(
+        "/api/professional-inquiry/session", {"token": agent_link},
+    )
+    assert status == 200, agent_open
+    supplier_name, supplier_secret, supplier_header = _inquiry_set_cookie(supplier_cookies)
+    agent_name, agent_secret, agent_header = _inquiry_set_cookie(agent_cookies)
+    assert supplier_name != agent_name
+    assert "HttpOnly" in supplier_header
+    assert "HttpOnly" in agent_header
+    assert supplier_secret not in json.dumps(supplier_open)
+    assert agent_secret not in json.dumps(agent_open)
+    both = f"{supplier_name}={supplier_secret}; {agent_name}={agent_secret}"
+    supplier_view, status = _get(
+        "/api/professional-inquiry?r=" + supplier_open["request_id"], cookie=both,
+    )
+    assert status == 200, supplier_view
+    assert supplier_view["request_id"] == supplier_open["request_id"]
+    assert supplier_view["role"] == "supplier"
+    agent_view, status = _get(
+        "/api/professional-inquiry?r=" + agent_open["request_id"], cookie=both,
+    )
+    assert status == 200, agent_view
+    assert agent_view["request_id"] == agent_open["request_id"]
+    assert agent_view["role"] == "agent"
+    explicit, status = _get(
+        "/api/professional-inquiry?t=" + supplier_link,
+        cookie=f"{agent_name}={agent_secret}",
+    )
+    assert status == 200, explicit
+    assert explicit["request_id"] == supplier_open["request_id"]
+    assert explicit["role"] == "supplier"
+    moved, status, _cookies = _open("/api/professional-inquiry/chat", {
+        "request_id": supplier_open["request_id"],
+        "step": "confirm_person",
+        "value": {"name": "Two Inquiries"},
+    }, cookie=both)
+    assert status == 200, moved
+    assert moved["request_id"] == supplier_open["request_id"]
+    assert moved["role"] == "supplier"
+    assert moved["chat"]["cursor"] == "identity"
+    untouched, status = _get(
+        "/api/professional-inquiry?r=" + agent_open["request_id"], cookie=both,
+    )
+    assert status == 200, untouched
+    assert untouched["chat"]["cursor"] == "confirm_person"
+
+
+def test_access_log_redacts_the_inquiry_token_on_both_pages():
+    secret = "inq_" + "cd" * 16
+    for path in ("/professional-inquiry-chat.html", "/professional-inquiry.html"):
+        line = f"GET {path}?t={secret}&token=tok-live&resume_code=PHINS-CHAT-LIVE&x=1 HTTP/1.1"
+        redacted = portal._redact_access_log_line(line)
+        assert secret not in redacted
+        assert "tok-live" not in redacted
+        assert "PHINS-CHAT-LIVE" not in redacted
+        assert "t=REDACTED" in redacted
+        assert "token=REDACTED" in redacted
+        assert "resume_code=REDACTED" in redacted
+        assert "x=1" in redacted
+    api = portal._redact_access_log_line(
+        f"GET /api/professional-inquiry?t={secret} HTTP/1.1"
+    )
+    assert secret not in api
+    assert "t=REDACTED" in api
+    other = portal._redact_access_log_line(f"GET /dashboard.html?t={secret} HTTP/1.1")
+    assert secret in other
+
+
+def test_identity_code_does_not_open_the_vault_for_the_email_link():
+    email = "otp-session@example.com"
+    customer_id = _register("OTP Session", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "supplier"}, token=token)
+    assert status == 200, filed
+    link = filed["inquiry_path"].split("t=", 1)[1]
+    _chat(link, "confirm_person", {"name": "OTP Session"})
+    opened, status, set_cookies = _open("/api/professional-inquiry/session", {"token": link})
+    assert status == 200, opened
+    cookie_name, secret, cookie_header = _inquiry_set_cookie(set_cookies)
+    assert "HttpOnly" in cookie_header
+    cookie = cookie_name + "=" + secret
+    otp, status = _post("/api/professional-inquiry/otp/request", {
+        "request_id": opened["request_id"],
+    })
+    assert status == 400, otp
+    otp, status, _cookies = _open("/api/professional-inquiry/otp/request", {
+        "request_id": opened["request_id"],
+    }, cookie=cookie)
+    assert status == 200, otp
+    burned, status = _post("/api/professional-inquiry/otp/verify", {
+        "token": link,
+        "verification_id": otp["verification_id"],
+        "otp_code": otp["demo_otp_code"],
+    })
+    assert status == 403, burned
+    assert burned["code"] == "otp_session_required"
+    national_id = "123456782"
+    refused, status = _post("/api/professional-inquiry/chat", {
+        "token": link, "step": "identity",
+        "value": {"nationality": "IL", "national_id": national_id},
+    })
+    assert status == 403, refused
+    assert refused["code"] == "otp_required"
+    assert portal.CUSTOMERS[customer_id].get("national_id_last4") in (None, "")
+    fresh, status, _cookies = _open("/api/professional-inquiry/otp/request", {
+        "request_id": opened["request_id"],
+    }, cookie=cookie)
+    assert status == 200, fresh
+    checked, status, _cookies = _open("/api/professional-inquiry/otp/verify", {
+        "request_id": opened["request_id"],
+        "verification_id": fresh["verification_id"],
+        "otp_code": fresh["demo_otp_code"],
+    }, cookie=cookie)
+    assert status == 200, checked
+    still_refused, status = _post("/api/professional-inquiry/chat", {
+        "token": link, "step": "identity",
+        "value": {"nationality": "IL", "national_id": national_id},
+    })
+    assert status == 403, still_refused
+    assert still_refused["code"] == "otp_required"
+    assert portal.CUSTOMERS[customer_id].get("national_id_last4") in (None, "")
+    recorded, status, _cookies = _open("/api/professional-inquiry/chat", {
+        "request_id": opened["request_id"],
+        "step": "identity",
+        "value": {"nationality": "IL", "national_id": national_id},
+    }, cookie=cookie)
+    assert status == 200, recorded
+    assert national_id not in json.dumps(recorded)
+    assert portal.CUSTOMERS[customer_id]["national_id_last4"] == "6782"
+
+
+def test_one_supplier_login_reconciles_sales_and_the_supplier_desk(monkeypatch):
+    """One desk read matches the referral, commission, and supply-chain books."""
+    from datetime import datetime, timedelta, timezone
+
+    from security.access_hierarchy import surface_decision
+    from services import agent_ecosystem_service as agents
+
+    email = "desk-affiliate@example.com"
+    affiliate = _register("Desk Affiliate", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, filed
+    saved = _finish_inquiry(filed, name="Desk Affiliate")
+    admin, _role = _login("admin", "admin123")
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": saved["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, reviewed
+    supplier_id = reviewed["supplier_id"]
+    agent_id = reviewed["agent_id"]
+    issue, status = _post("/api/customer/invitations/generate", {}, token=token)
+    assert status == 201, issue
+    referee = _register("Desk Referee", "desk-referee@example.com", code=issue["invitation"]["code"])
+    _pay(referee, "BILL-DESK-1")
+    portal.notify_referral_reward_for_paid_customer(referee)
+    reward = rewards.REWARDS[f"RWRD-{referee}-L1"]
+    assert reward["settlement_id"] == f"CACSET-{referee}"
+    assert reward["beneficiary_customer_id"] == affiliate
+
+    issue_waiting, status = _post("/api/customer/invitations/generate", {}, token=token)
+    assert status == 201, issue_waiting
+    _register("Waiting Referee", "desk-waiting@example.com", code=issue_waiting["invitation"]["code"])
+
+    now = datetime.now(timezone.utc).isoformat()
+    old = (datetime.now(timezone.utc) - timedelta(days=400)).isoformat()
+    portal.SUPPLIER_ORDERS["ORD-DESK-1"] = {
+        "id": "ORD-DESK-1",
+        "supplier_id": supplier_id,
+        "status": "completed",
+        "total_amount": 100.0,
+        "supplier_payout": 89.0,
+        "commission": 11.0,
+        "completed_date": now,
+        "created_date": now,
+        "item_name": "Clinic visit",
+        "order_type": "service",
+    }
+    portal.SUPPLIER_ORDERS["ORD-DESK-OLD"] = {
+        "id": "ORD-DESK-OLD",
+        "supplier_id": supplier_id,
+        "status": "completed",
+        "total_amount": 40.0,
+        "supplier_payout": 31.0,
+        "commission": 9.0,
+        "completed_date": old,
+        "created_date": old,
+        "item_name": "Earlier visit",
+        "order_type": "service",
+    }
+    portal.SUPPLIER_OFFERS["OFF-DESK-SVC"] = {
+        "id": "OFF-DESK-SVC",
+        "supplier_id": supplier_id,
+        "item_type": "service",
+        "name": "Clinic visit",
+    }
+    portal.SUPPLIER_OFFERS["OFF-DESK-PRD"] = {
+        "id": "OFF-DESK-PRD",
+        "supplier_id": supplier_id,
+        "item_type": "product",
+        "name": "Brace",
+    }
+    agents.COMMISSIONS["COMM-DESK-1"] = {
+        "id": "COMM-DESK-1",
+        "agent_id": agent_id,
+        "amount": 15.0,
+        "status": "accrued",
+        "period": "initial",
+        "created_at": now,
+        "invitation_code": "AGI-DESK-1",
+    }
+    agents.COMMISSIONS["COMM-DESK-REF"] = {
+        "id": "COMM-DESK-REF",
+        "agent_id": agent_id,
+        "amount": 40.0,
+        "status": "accrued",
+        "period": "initial",
+        "created_at": now,
+        "invitation_code": "REF-NOT-COMMISSION",
+        "code": "REF-NOT-COMMISSION",
+    }
+    agents.COMMISSIONS["COMM-DESK-REF-SOURCE"] = {
+        "id": "COMM-DESK-REF-SOURCE",
+        "agent_id": agent_id,
+        "amount": 25.0,
+        "status": "payable",
+        "period": "initial",
+        "created_at": now,
+        "source_invitation_code": "REF-SOURCE-ONLY",
+    }
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    supplier["national_id"] = "123456782"
+    supplier["national_id_hash"] = "desk-hash"
+    supplier["national_id_last4"] = "6782"
+    customer_before = dict(portal.CUSTOMERS[affiliate])
+    digest, salt = portal.supplier_service.hash_password("DeskPass123!")
+    supplier["password_hash"] = digest
+    supplier["password_salt"] = salt
+
+    switched, status = _post("/api/customer/role-switch", {"role": "supplier"}, token=token)
+    assert status == 200, switched
+    agent_session, status = _post("/api/customer/role-switch", {"role": "agent"}, token=token)
+    assert status == 200, agent_session
+    logged, status = _post("/api/supplier/login", {"email": email, "password": "DeskPass123!"})
+    assert status == 200, logged
+    assert logged["role"] == "supplier"
+    assert logged["supplier_id"] == supplier_id
+
+    writes = {"refresh": 0, "save": 0}
+
+    def _refresh():
+        writes["refresh"] += 1
+
+    def _save():
+        writes["save"] += 1
+
+    monkeypatch.setattr(rewards, "_refresh_all_locked", _refresh)
+    monkeypatch.setattr(rewards, "_save_file", _save)
+    status_before = supplier["status"]
+    active_before = supplier["portal_active"]
+    checksum_before = reward["checksum"]
+    by_switch, status = _get("/api/supplier/desk", token=switched["token"])
+    by_login, login_status = _get("/api/supplier/desk", token=logged["token"])
+    by_agent, agent_status = _get("/api/supplier/desk", token=agent_session["token"])
+    assert status == 200, by_switch
+    assert login_status == 200, by_login
+    assert agent_status == 200, by_agent
+    assert writes == {"refresh": 0, "save": 0}
+    assert supplier["status"] == status_before
+    assert supplier["portal_active"] == active_before
+    assert reward["checksum"] == checksum_before
+    assert portal.CUSTOMERS[affiliate] == customer_before
+    for view in (by_switch, by_login, by_agent):
+        assert view["sections"] == ["affiliation-to-sales", "supplier-desk"]
+        assert view["supplier_id"] == supplier_id
+        dumped = json.dumps(view)
+        assert "123456782" not in dumped
+        assert "national_id" not in dumped
+        assert "desk-hash" not in dumped
+    narrow = portal.supply_chain_service.generate_supplier_pnl(supplier_id)
+    wide = portal.supply_chain_service.generate_supplier_pnl(
+        supplier_id,
+        period_start=old,
+        period_end=datetime.now(timezone.utc).isoformat(),
+    )
+    summary = agents.income_summary(agent_id)
+    paid = reward["amount_cents"] / 100
+    for view in (by_switch, by_login, by_agent):
+        assert view["sales"]["referral"]["rail"] == "referral"
+        assert view["sales"]["referral"]["blocked"] == pytest.approx(paid)
+        assert view["sales"]["referral"]["available"] == pytest.approx(0)
+        assert view["sales"]["referral"]["dispatched"] == pytest.approx(0)
+        booked_rows = [row for row in view["sales"]["referral"]["rows"] if row.get("booked") is not False]
+        waiting_rows = [row for row in view["sales"]["referral"]["rows"] if row.get("booked") is False]
+        assert [row["settlement_id"] for row in booked_rows] == [f"CACSET-{referee}"]
+        assert booked_rows[0]["projected_amount"] is None
+        assert booked_rows[0]["amount"] == pytest.approx(paid)
+        assert len(waiting_rows) == 1
+        assert waiting_rows[0]["amount"] == pytest.approx(0)
+        assert waiting_rows[0]["projected_amount"] > 0
+        assert waiting_rows[0]["blocked_amount"] == pytest.approx(0)
+        assert waiting_rows[0]["available_amount"] == pytest.approx(0)
+        assert waiting_rows[0]["status"] != "dispatched"
+        assert (
+            view["sales"]["referral"]["blocked"]
+            + view["sales"]["referral"]["available"]
+            + view["sales"]["referral"]["dispatched"]
+        ) == pytest.approx(paid)
+        assert view["sales"]["commission"]["rail"] == "commission"
+        listed = view["sales"]["commission"]["rows"]
+        assert [row["commission_id"] for row in listed] == ["COMM-DESK-1"]
+        assert view["sales"]["commission"]["accrued_total"] == pytest.approx(sum(
+            row["amount"] for row in listed if row["status"] == "accrued"
+        ))
+        assert view["sales"]["commission"]["payable_total"] == pytest.approx(sum(
+            row["amount"] for row in listed if row["status"] == "payable"
+        ))
+        assert view["sales"]["commission"]["paid_total"] == pytest.approx(sum(
+            row["amount"] for row in listed if row["status"] == "paid"
+        ))
+        assert view["sales"]["commission"]["lifetime_total"] == pytest.approx(sum(
+            row["amount"] for row in listed
+        ))
+        assert view["sales"]["commission"]["accrued_total"] == pytest.approx(15.0)
+        assert summary["accrued_total"] == pytest.approx(55.0)
+        assert view["sales"]["referral"]["blocked"] != pytest.approx(summary["accrued_total"])
+        assert view["desk"]["products"] == 1
+        assert view["desk"]["services"] == 1
+        invoices = view["desk"]["invoices"]
+        assert {row["order_id"] for row in invoices} == {"ORD-DESK-1", "ORD-DESK-OLD"}
+        assert view["desk"]["delivery"]["orders"] == len(invoices)
+        completed_payout = sum(row["supplier_payout"] for row in invoices if row["status"] == "completed")
+        assert narrow["report"]["net_payout"] == pytest.approx(89.0)
+        assert wide["report"]["net_payout"] == pytest.approx(completed_payout)
+        assert view["desk"]["billing"]["net_payout"] == pytest.approx(wide["report"]["net_payout"])
+        assert view["desk"]["balance"]["net_payout"] == pytest.approx(wide["report"]["net_payout"])
+        assert view["desk"]["balance"]["gross_sales"] == pytest.approx(wide["report"]["gross_sales"])
+        assert view["desk"]["balance"]["net_payout"] != pytest.approx(narrow["report"]["net_payout"])
+        assert "combined_payout" not in view
+    assert by_switch["desk"]["writes_open"] is True
+    assert by_agent["desk"]["writes_open"] is False
+
+    reward["checksum"] = "0" * 64
+    withheld, status = _get("/api/supplier/desk", token=logged["token"])
+    assert status == 200, withheld
+    assert all(row.get("booked") is False for row in withheld["sales"]["referral"]["rows"])
+    assert withheld["sales"]["referral"]["rows"]
+    assert withheld["sales"]["referral"]["rows"][0]["projected_amount"] > 0
+    assert withheld["sales"]["referral"]["rows"][0]["amount"] == pytest.approx(0)
+    assert withheld["sales"]["referral"]["blocked"] == pytest.approx(0)
+    assert withheld["sales"]["referral"]["available"] == pytest.approx(0)
+    assert withheld["sales"]["referral"]["dispatched"] == pytest.approx(0)
+    assert reward["checksum"] == "0" * 64
+    assert writes == {"refresh": 0, "save": 0}
+
+    supplier["status"] = "suspended"
+    supplier["portal_active"] = False
+    closed, status = _get("/api/supplier/desk", token=agent_session["token"])
+    assert status == 200, closed
+    assert closed["desk"]["approval"]["status"] == "suspended"
+    assert closed["desk"]["writes_open"] is False
+    assert supplier["status"] == "suspended"
+    assert supplier["portal_active"] is False
+
+    static = Path(__file__).resolve().parents[1] / "web_portal" / "static"
+    portal_html = (static / "supplier-portal.html").read_text(encoding="utf-8")
+    login_html = (static / "supplier-login.html").read_text(encoding="utf-8")
+    agent_html = (static / "agent-portal.html").read_text(encoding="utf-8")
+    assert 'id="sales-section"' in portal_html
+    assert 'data-section="affiliation-to-sales"' in portal_html
+    assert 'id="desk-section"' in portal_html
+    assert 'data-section="supplier-desk"' in portal_html
+    assert "/api/supplier/desk" in login_html
+    assert 'id="supplier-desk-summary"' in agent_html
+    assert "row.projected_amount" in portal_html
+    assert "function supplierOperationsOpen" in portal_html
+    assert "deskWritesOpen = gate.editsOpen" in portal_html
+    assert "if (!deskWritesOpen)" in portal_html
+    assert 'class="add-offer-btn" style="display:none"' in portal_html
+    assert surface_decision("supplier", "/supplier-portal.html")["allowed"] is True
+    assert surface_decision("agent", "/supplier-portal.html")["allowed"] is False
+    assert surface_decision("customer", "/supplier-login.html")["allowed"] is False
+    assert surface_decision("admin", "/supplier-portal.html")["allowed"] is False
+    owner_page, status = _get("/api/access/surface?path=/supplier-portal.html", token=agent_session["token"])
+    assert status == 200, owner_page
+    assert owner_page["allowed"] is True
+    supplier_page, status = _get("/api/access/surface?path=/supplier-login.html", token=logged["token"])
+    assert status == 200, supplier_page
+    assert supplier_page["allowed"] is True
+    portal.SUPPLIER_ORDERS.pop("ORD-DESK-1", None)
+    portal.SUPPLIER_ORDERS.pop("ORD-DESK-OLD", None)
+    portal.SUPPLIER_OFFERS.pop("OFF-DESK-SVC", None)
+    portal.SUPPLIER_OFFERS.pop("OFF-DESK-PRD", None)
+    agents.COMMISSIONS.pop("COMM-DESK-1", None)
+    agents.COMMISSIONS.pop("COMM-DESK-REF", None)
+    agents.COMMISSIONS.pop("COMM-DESK-REF-SOURCE", None)
+
+
+@pytest.mark.parametrize("closed_status", ["rejected", "suspended", "terminated", "closed"])
+def test_desk_read_leaves_a_closed_supplier_closed_on_the_live_book(closed_status, monkeypatch):
+    """The desk read uses the supply-chain supplier and does not reopen it."""
+    service = portal.supply_chain_service
+    email = f"live-closed-{closed_status}@example.com"
+    _register("Live Closed", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, filed
+    saved = _finish_inquiry(filed, name="Live Closed")
+    admin, _role = _login("admin", "admin123")
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": saved["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, reviewed
+    supplier_id = reviewed["supplier_id"]
+    live = service.suppliers[supplier_id]
+    assert live is portal.supplier_service.suppliers[supplier_id]
+    live["status"] = closed_status
+    live["portal_active"] = False
+    calls = {"approve": 0}
+
+    def _refuse_approve(*_args, **_kwargs):
+        calls["approve"] += 1
+        raise AssertionError("desk read must not approve a supplier")
+
+    monkeypatch.setattr(service, "approve_supplier", _refuse_approve)
+    switched, status = _post("/api/customer/role-switch", {"role": "agent"}, token=token)
+    assert status == 200, switched
+    desk, status = _get("/api/supplier/desk", token=switched["token"])
+    assert status == 200, desk
+    again = service.suppliers[supplier_id]
+    assert again["status"] == closed_status
+    assert again["portal_active"] is False
+    assert portal.supplier_service.suppliers[supplier_id]["status"] == closed_status
+    assert portal.supplier_service.suppliers[supplier_id]["portal_active"] is False
+    assert desk["desk"]["approval"]["status"] == closed_status
+    assert desk["desk"]["approval"]["portal_active"] is False
+    assert desk["desk"]["writes_open"] is False
+    assert calls["approve"] == 0
+
+
+def test_supplier_desk_stays_closed_without_a_supplier_role():
+    anonymous, status = _get("/api/supplier/desk")
+    assert status == 401, anonymous
+    email = "plain-desk@example.com"
+    _register("Plain Desk", email)
+    token, _role = _login(email, "secure123456")
+    denied, status = _get("/api/supplier/desk", token=token)
+    assert status == 403, denied
+    assert denied.get("code") == "role_closed"
+    for page in ("/supplier-portal.html", "/supplier-login.html", "/supplier-dashboard.html"):
+        shell, status = _get("/api/access/surface?path=" + page, token=token)
+        assert status == 200, shell
+        assert shell["allowed"] is False
+        assert shell["redirect"] == "/dashboard.html"
+
+
+def test_supplier_operations_load_when_the_unified_read_fails():
+    """An approved supplier still loads the desk when the unified read fails."""
+    node = shutil.which("node")
+    assert node, "node is required to check the supplier operations gate"
+    script = Path(__file__).resolve().parent / "supplier_desk_operations.test.js"
+    completed = subprocess.run([node, str(script)], check=False, capture_output=True, text=True)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_two_inquiries_in_one_tab_follow_the_new_email_link():
+    node = shutil.which("node")
+    assert node, "node is required to check the inquiry cross-link"
+    script = Path(__file__).resolve().parent / "professional_inquiry_link.test.js"
+    completed = subprocess.run([node, str(script)], check=False, capture_output=True, text=True)
+    assert completed.returncode == 0, completed.stdout + completed.stderr

@@ -3349,7 +3349,7 @@ class ProfessionalRequest(Base):
     customer_id = Column(String(50), index=True, nullable=False)
     login_username = Column(String(254), nullable=True)
     requested_role = Column(String(20), nullable=False)
-    status = Column(String(20), nullable=False, index=True)  # pending|approved|rejected
+    status = Column(String(20), nullable=False, index=True)  # inquiry|pending|approved|rejected
     supplier_type = Column(String(40), nullable=True)
     company_name = Column(String(160), nullable=True)
     note = Column(Text, nullable=True)
@@ -3361,6 +3361,8 @@ class ProfessionalRequest(Base):
     review_note = Column(Text, nullable=True)
     created_at = Column(String(40), nullable=False)
     updated_at = Column(String(40), nullable=True)
+    # Deeper inquiry (personal and optional company). The token itself is not stored.
+    inquiry_json = Column(Text, nullable=True)
 
 
 class ReferralSettlement(Base):
@@ -3392,6 +3394,25 @@ class ReferralSettlement(Base):
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class ReferralInvitation(Base):
+    """One customer referral invitation (``REF-``).
+
+    The same row is what the admin desk, the customer referral tab, and the
+    agent portal read. ``payload_json`` is the canonical record and
+    ``checksum`` is the sha256 of its sealed fields. A mismatch is not
+    served and is not paid. This is a NEW table — it does not modify any
+    existing data.
+    """
+    __tablename__ = 'referral_invitations'
+
+    code = Column(String(80), primary_key=True)
+    creator_customer_id = Column(String(50), index=True, nullable=False)
+    status = Column(String(20), nullable=False, index=True)
+    checksum = Column(String(64), nullable=False)
+    payload_json = Column(Text, nullable=False)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class SignedDocumentBlob(Base):
     """Checksummed bytes for a sealed signature or one use-ledger entry.
 
@@ -3410,6 +3431,27 @@ class SignedDocumentBlob(Base):
     size_bytes = Column(Integer, nullable=False, default=0)
     asset_type = Column(String(40), nullable=False, default='signed_document', index=True)
     payload = Column(LargeBinary, nullable=False)
+    created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+                          nullable=False, index=True)
+
+
+class AddressedLink(Base):
+    """One confidential share link from the pitch-dashboard address book.
+
+    The JSON file under ``database/`` is a cache. This table is what survives
+    a restart when that file is not on a volume. ``share_id`` is the link id.
+    ``sha256`` is the digest of the canonical ``payload_json``. A mismatch is
+    not served and is not overwritten. A change replaces the row only when
+    the caller presents the digest it read. Rows are not deleted.
+
+    This is a NEW table - it does not modify any existing data.
+    """
+    __tablename__ = 'addressed_links'
+
+    share_id = Column(String(80), primary_key=True)
+    sha256 = Column(String(64), nullable=False)
+    payload_json = Column(Text, nullable=False)
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
                           nullable=False, index=True)

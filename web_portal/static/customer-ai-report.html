@@ -33,18 +33,6 @@
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
-
-    .phins-header { background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%); border-bottom: 4px solid #c9a04e; position: sticky; top: 0; z-index: 100; backdrop-filter: blur(20px); box-shadow: 0 4px 24px rgba(6, 13, 31, 0.3); }
-    .phins-header-inner { max-width: 1400px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; }
-    .phins-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
-    .phins-logo-icon { width: 42px; height: 42px; background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; box-shadow: 0 4px 12px rgba(66, 165, 245, 0.3); border: 2px solid rgba(255,255,255,0.3); }
-    .phins-logo-text { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 1.6rem; font-weight: 700; color: white; letter-spacing: 0.08em; }
-    .phins-nav { display: flex; align-items: center; gap: 0.5rem; }
-    .phins-nav a { padding: 0.5rem 1rem; color: rgba(255,255,255,0.85); text-decoration: none; border-radius: 8px; font-size: 0.85rem; font-weight: 500; transition: all 0.2s ease; white-space: nowrap; }
-    .phins-nav a:hover { background: rgba(255,255,255,0.12); color: white; }
-    .phins-nav a.active { background: linear-gradient(135deg, #42a5f5 0%, #64b5f6 100%); color: white; box-shadow: 0 4px 12px rgba(66, 165, 245, 0.3); }
-    .phins-nav .btn-logout { background: linear-gradient(135deg, #ef5350 0%, #e53935 100%); color: white; border-radius: 8px; padding: 0.5rem 1rem; font-weight: 600; }
-    .phins-nav .btn-logout:hover { background: linear-gradient(135deg, #e53935 0%, #c62828 100%); }
     .nav-divider { width: 1px; height: 24px; background: rgba(255,255,255,0.2); margin: 0 0.25rem; }
 
     .report-container { max-width: 1400px; margin: 0 auto; padding: 24px 16px; }
@@ -189,8 +177,9 @@
     }
   </style>
   <link rel="stylesheet" href="/phins-theme.css">
+  <link rel="stylesheet" href="/phins-surface.css">
 </head>
-<body data-phins-return="off">
+<body data-phins-return="off" class="phins-unified">
   <div id="loading" class="loading-overlay">
     <div class="loading-spinner"></div>
     <div class="loading-text">Generating AI Report...</div>
@@ -250,7 +239,7 @@
       </div>
     </div>
 
-    <div class="kpi-grid" id="kpi-grid"></div>
+    <div class="kpi-grid dashboard-stats phins-spectrum-stats" id="kpi-grid"></div>
 
     <div id="net-position-section"></div>
 
@@ -496,9 +485,9 @@
     ];
     const grid = document.getElementById('kpi-grid');
     grid.innerHTML = kpis.map(k => `
-      <div class="kpi-card">
-        <div class="kpi-value">${k.fmt === 'cur' ? formatCurrency(k.value) : k.value}</div>
-        <div class="kpi-label">${k.label}</div>
+      <div class="kpi-card stat-box">
+        <div class="kpi-value stat-value">${k.fmt === 'cur' ? formatCurrency(k.value) : k.value}</div>
+        <div class="kpi-label stat-label">${k.label}</div>
       </div>
     `).join('');
   }
@@ -818,5 +807,6 @@
 })();
 </script>
 <script src="/assessments-nav.js"></script>
+  <script src="/ui-clarity.js"></script>
 </body>
 </html>

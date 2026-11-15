@@ -188,14 +188,31 @@
     ].includes(role);
   }
 
+  // Documents link only. Voice commands stay on role admin.
+  function isDocumentsStaff(role) {
+    return [
+      "admin",
+      "underwriter",
+      "claims",
+      "claims_adjuster",
+      "adjuster",
+      "accountant",
+      "actuary",
+      "compliance",
+      "founder",
+      "media",
+      "manager",
+    ].includes(role);
+  }
+
   function canAccessDocuments(role) {
     const r = String(role || "").toLowerCase();
-    return isAdminRole(r) || r === "customer";
+    return isDocumentsStaff(r) || r === "customer";
   }
 
   function documentsHomeUrl(role) {
     const r = String(role || "").toLowerCase();
-    if (isAdminRole(r)) {
+    if (isDocumentsStaff(r)) {
       return "/documents.html#archive";
     }
     return "/documents.html#durable-objects";
@@ -227,7 +244,7 @@
       link.href = documentsHomeUrl(role);
       link.textContent = "Documents";
       link.setAttribute("data-phins-documents-access", "1");
-      link.title = isAdminRole(role)
+      link.title = isDocumentsStaff(role)
         ? "Platform document archive (process hashtags)"
         : "Your document vault";
       const logout = nav.querySelector(".btn-logout, a[href*='login'], a[href='/']");
@@ -255,23 +272,97 @@
     return p === "" || p === "/index.html" || p === "/login.html";
   }
 
+  // Every STAFF_PAGES key. A new staff page must be added here or the
+  // customer fallback (used only when /api/access/surface throws) misses it.
+  var STAFF_PATHS = [
+    "/accountant-dashboard.html",
+    "/actuary-dashboard.html",
+    "/admin-agents.html",
+    "/admin-ai-report.html",
+    "/admin-desk.html",
+    "/admin-foundations.html",
+    "/admin-media.html",
+    "/admin-portal.html",
+    "/admin-supplier-dashboard.html",
+    "/admin.html",
+    "/agent-portal.html",
+    "/chat-process-review.html",
+    "/claims-adjuster-dashboard.html",
+    "/corporate-legal-dashboard.html",
+    "/customer-management.html",
+    "/cyber-security.html",
+    "/nda-dashboard.html",
+    "/pitch-dashboard.html",
+    "/regulator-dashboard.html",
+    "/risk-dashboard.html",
+    "/risk-reports-dashboard.html",
+    "/settlement-approval.html",
+    "/storyboard-editor.html",
+    "/supplier-dashboard.html",
+    "/supplier-login.html",
+    "/supplier-portal.html",
+    "/supplier-register.html",
+    "/underwriter-dashboard.html",
+    "/unified-workbench.html",
+    "/video-agents.html",
+  ];
+
+  // Same map as ROLE_HOME. Customer and an unknown role keep the href
+  // already in the page, which is the customer home.
+  var ROLE_HOME = {
+    admin: "/admin.html",
+    media: "/admin-media.html",
+    manager: "/admin-ai-report.html",
+    development: "/admin-desk.html",
+    underwriter: "/underwriter-dashboard.html",
+    claims: "/claims-adjuster-dashboard.html",
+    claims_adjuster: "/claims-adjuster-dashboard.html",
+    claims_agent: "/chat-process-review.html",
+    claims_manager: "/chat-process-review.html",
+    adjuster: "/claims-adjuster-dashboard.html",
+    accountant: "/accountant-dashboard.html",
+    actuary: "/actuary-dashboard.html",
+    compliance: "/admin.html",
+    founder: "/admin.html",
+    regulator: "/regulator-dashboard.html",
+    supplier: "/supplier-portal.html",
+    agent: "/agent-portal.html",
+    customer: "/dashboard.html",
+  };
+
   function isStaffPath(pathname) {
-    const p = String(pathname || "").toLowerCase();
-    return [
-      "/admin",
-      "/underwriter-dashboard",
-      "/claims-adjuster-dashboard",
-      "/accountant-dashboard",
-      "/actuary-dashboard",
-      "/admin-supplier-dashboard",
-      "/admin-media",
-      "/admin-foundations",
-      "/unified-workbench",
-      "/risk-dashboard",
-      "/risk-reports-dashboard",
-      "/video-agents",
-      "/pitch-dashboard",
-    ].some((prefix) => p.includes(prefix));
+    var p = String(pathname || "").toLowerCase().split("?")[0].split("#")[0];
+    if (p.length > 1 && p.charAt(p.length - 1) === "/") p = p.slice(0, -1);
+    return STAFF_PATHS.indexOf(p) !== -1;
+  }
+
+  function applyRoleHomeLinks() {
+    var role = getSessionRole();
+    var staffHome = ROLE_HOME[role];
+    var isStaff = !!staffHome && role !== "customer";
+    var nodes = document.querySelectorAll("[data-phins-role-home]");
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      var kind = node.getAttribute("data-phins-role-home") || "";
+      if (kind === "staff-only") {
+        if (isStaff) node.removeAttribute("hidden");
+        else node.setAttribute("hidden", "");
+        continue;
+      }
+      if (kind === "customer-only") {
+        if (isStaff) node.setAttribute("hidden", "");
+        else node.removeAttribute("hidden");
+        continue;
+      }
+      if ((kind === "logo" || kind === "dashboard") && isStaff) {
+        node.setAttribute("href", staffHome);
+      }
+    }
+    if (!isStaff) return;
+    var docs = document.querySelectorAll("[data-phins-documents-role]");
+    for (var j = 0; j < docs.length; j++) {
+      docs[j].setAttribute("href", "/documents.html#archive");
+    }
   }
 
   function detectContext() {
@@ -1115,7 +1206,21 @@
     }
   }
 
+  function isEmbeddedFrame() {
+    try {
+      if (document.documentElement.hasAttribute("data-embed")) return true;
+      var embed = new URLSearchParams(window.location.search).get("embed") || "";
+      return String(embed).trim() !== "";
+    } catch (e) {
+      return false;
+    }
+  }
+
   function ensureFloatingBar() {
+    if (isEmbeddedFrame()) {
+      removeFloatingBar();
+      return;
+    }
     if (!floatingAuthAllowed) {
       removeFloatingBar();
       return;
@@ -1259,6 +1364,7 @@
   async function start() {
     document.body.classList.add("ux-compact-dashboard");
     runCleanup(document);
+    applyRoleHomeLinks();
 
     const onPublicPage = isPublicPage(window.location.pathname);
     const stayOnPage = await enforceSurface();

@@ -2809,7 +2809,7 @@
       }
 
       const normalized = String(format || '').toLowerCase();
-      const exportFormat = normalized === 'excel' ? 'excel' : 'pdf';
+      const exportFormat = normalized === 'excel' ? 'excel' : (normalized === 'letterhead' ? 'html' : 'pdf');
       const token = localStorage.getItem('phins_token') || '';
 
       try {
@@ -2831,6 +2831,15 @@
             }
           } catch (_ignore) {}
           throw new Error(message);
+        }
+
+        if (exportFormat === 'html') {
+          const html = await response.text();
+          const view = new Blob([html], { type: 'text/html' });
+          const viewUrl = URL.createObjectURL(view);
+          const opened = window.open(viewUrl, '_blank');
+          if (!opened) window.location.href = viewUrl;
+          return;
         }
 
         const blob = await response.blob();

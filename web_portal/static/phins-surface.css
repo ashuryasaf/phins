@@ -22,7 +22,15 @@ body.phins-unified .sidebar-logo span {
   letter-spacing: 0.01em;
 }
 
-body.phins-unified .phins-header-inner {
+body.phins-unified .phins-header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+/* Single-row shells only. A two-row header (.phins-header-top + nav)
+   keeps the page's own column layout. */
+body.phins-unified .phins-header-inner:not(:has(.phins-header-top)) {
   max-width: 1600px;
   margin: 0 auto;
   padding: 0.75rem 1.5rem;
@@ -30,6 +38,29 @@ body.phins-unified .phins-header-inner {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
+}
+
+body.phins-unified .phins-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-decoration: none;
+  color: #eaf1ff;
+}
+
+body.phins-unified .phins-logo-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+body.phins-unified .phins-nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
 }
 
 body.phins-unified .phins-logo-icon img,
@@ -67,6 +98,7 @@ body.phins-unified .sidebar-logo {
   color: #eaf1ff;
 }
 
+body.phins-unified .sidebar .nav-item.active,
 body.phins-unified .sidebar-menu a.active,
 body.phins-unified .tab.active {
   background: linear-gradient(180deg, #f7e2a0 0%, #e3bf6f 100%) !important;
@@ -78,7 +110,7 @@ body.phins-unified .page-header h1 {
   color: #0e2f63;
 }
 
-body.phins-unified .stat-card,
+body.phins-unified .stat-card:not(.stat-box),
 body.phins-unified .phins-tile {
   position: relative;
   overflow: hidden;

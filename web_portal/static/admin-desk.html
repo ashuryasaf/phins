@@ -6,6 +6,7 @@
   <title>PHINS Admin Desk</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/phins-theme.css">
   <style>
     :root { --navy:#0e2f63; --ink:#142033; --muted:#5b6b82; --line:#d7e0ee; --gold:#c6a15b; --paper:#f4f7fb; --white:#fff; --bad:#8c2f2f; --ok:#1d6b3a; }
     * { box-sizing: border-box; }
@@ -42,12 +43,20 @@
   </style>
 </head>
 <body>
-  <header>
-    <div>
-      <h1>PHINS Admin Desk</h1>
-      <p>The pipeline of active desks, a direct share to an associate, and the next move from the meeting diary. A mailbox password is saved once for email use. Send stays off.</p>
+  <header class="phins-header">
+    <div class="phins-header-inner">
+      <a href="/admin.html" class="phins-logo">
+        <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
+        <span class="phins-logo-text">PHINS</span>
+      </a>
+      <div>
+        <h1>PHINS Admin Desk</h1>
+        <p>The pipeline of active desks, a direct share to an associate, and the next move from the meeting diary. A mailbox password is saved once for email use. Send stays off.</p>
+      </div>
+      <nav class="phins-nav">
+        <a href="/admin.html">Admin</a>
+      </nav>
     </div>
-    <a href="/admin.html">Admin home</a>
   </header>
   <div id="phases" class="phases"></div>
   <main>
@@ -481,5 +490,6 @@ Letter,Admin,Ready</textarea>
 
     load().catch(function (error) { setStatus(error.message, "bad"); });
   </script>
+  <script src="/ui-clarity.js"></script>
 </body>
 </html>

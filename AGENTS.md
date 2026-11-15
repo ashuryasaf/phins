@@ -223,14 +223,83 @@ PHINS is a Python platform built around:
  investments. Customer `REF-` codes use this
  rail; agent `AGI-` codes stay on the commission rail and are not paid
  twice. A customer can request an agent or supplier role
- (`PRO-{customer}-{role}`); approval opens that profile and a role-switch
- token without rewriting `USERS.role`. An approved agent invitation cap is
+ (`PRO-{customer}-{role}`). The inquiry email
+ (`professional_inquiry_chat`) and the identity code (`otp_email`) both go
+ through `NotificationService.send` (`deliver_notification`), the same
+ sender apply and claims chats use for `otp_email`, including that path's
+ retry onto the next configured provider when the first send fails. Both
+ are recorded in the disclosed Phin chat. The email link is
+ `https://<origin>/professional-inquiry-chat.html?r=<id>&t=<token>` with
+ no slash between `.html` and `?`. The origin is `BASE_URL`, then
+ `WEBHOOK_BASE_URL` (`TEST_BASE_URL` under test). With neither set, the
+ link is `https://www.phins.ai`. A request host is used only when it is
+ exactly `phins.ai` or `www.phins.ai`; any other `Host` is ignored. The
+ token is not logged. A customer record
+ with no email uses the authenticated login for both the inquiry mail and
+ the identity code when that login is an email address. That same address
+ is shown on the classic form and in the Phin chat. The customer does not
+ type it, a form or OTP body cannot replace it, and the customer master is
+ not rewritten. The email opens one disclosed Phin chat
+ (`/professional-inquiry-chat.html`, same request as the classic form):
+ confirm details, identity through `set_identity` on the same customer
+ store the other Phin chats use, including the database-backed store (a new
+ ID needs the email code first; nationality and last four only on the
+ request), optional company,
+ optional document/voice/video sealed by SHA-256, then review. The page
+ exchanges the email token for a short HttpOnly cookie named per request
+ and drops it from the URL. The email also carries `r`, the request id,
+ which is not the secret. A new link writes that id over the previous one
+ before the exchange returns, and the chat/form cross-link uses only `r`.
+ A tab names its own request, so a second open
+ inquiry does not take the first. The access log redacts `t` on both inquiry
+ pages. A new identity code is fresh only for the browser session that
+ verified it. A filed link returns status only, and the 14-day expiry
+ applies in every status. Filing stages one pending supplier for that
+ customer, so Supplier Management lists the same `PRO-{customer}-{role}`
+ request. An agent application is that same supplier plus a pending row on
+ the agents dashboard whose code is the request id. Approving either desk
+ continues that request. Declining that application withdraws the staged
+ row so the same person can file again. A supplier that was already
+ rejected or suspended is not reopened. Filing stays an open inquiry
+ until that desk row exists.
+ Declining a company clears that name before approval. Approval opens that profile and a role-switch
+ token without rewriting `USERS.role`. An agent is a role on that one supplier. `/supplier-login.html` is the one
+ supplier sign-in and opens `/supplier-portal.html`. That dashboard has two
+ sections: affiliation-to-sales (referral `CACSET-{referee}` and, separately,
+ agent commission) and the supplier desk (products, services, delivery,
+ approval, billing, balance, and invoices). Both read the existing books.
+ Opening the desk does not refresh, reverse, promote, or persist them. A
+ customer or agent session opens that shell only when the account owns the
+ supplier or an approved agent grant. A rejected, suspended, terminated, or
+ closed supplier stays closed, and `portal_active` is not turned back on.
+ National ID stays off the desk. Commission totals on the desk omit `REF-`
+ rows. The balance is the supply-chain P&L for the same orders the invoice
+ list shows, so an older completed payout is included. An unbooked referral
+ row shows its estimate and is not counted as paid or settled. Offers,
+ orders, settlements, and the profile still load for a supplier session
+ when that read fails; edits stay closed unless writes are open. An approved agent invitation cap is
  100 (customer cap stays 10). `affiliated_cac_plan()` is the planning view
  (allocated, blocked, releasable, settled, reversed, projected release,
- layer schedule, and one row per reward).
- State is a checksummed JSON book (`PHINS_REFERRAL_REWARDS_PATH`) or the
- referral tables (including `referral_settlements`) when the database is
- on. A checksum mismatch is not paid. Customer and admin invitation links
+ layer schedule, and one row per reward). Those planning totals stay
+ on the global settlement and reward loops. The referral tab reads the
+ stored book and, for customers that person referred, shows the settlement
+ figures beside that viewer's own layer share. Both reconcile to
+ `CACSET-{referee}`. Opening the tab does not refresh or persist the book.
+ The agent network shows acquisition only for customers that agent referred,
+ and only that agent's layer. A customer they did not refer shows no
+ acquisition dollars. Commission stays in accrued commission and is not
+ added to acquisition.
+ A referral invitation is one sealed record in that same book
+ (`referral_invitations` when the database is on). The admin desk, the
+ customer referral tab, and the agent portal read that record's code,
+ status, and checksum. Opening a view does not refresh or persist it. The
+ invitation cap counts those sealed codes for that creator, including a
+ row reloaded from the database or the checksummed file. The same code
+ counts once. A checksum mismatch still occupies its slot. A checksum
+ mismatch is not served and is not paid. State is a checksummed
+ JSON book (`PHINS_REFERRAL_REWARDS_PATH`) or the referral tables
+ (including `referral_settlements`) when the database is on. A checksum
+ mismatch is not paid. Customer and admin invitation links
  open `/join.html?code=` (an older `/register.html?code=` link still
  accepts the code). A customer, including one who has opened the agent or
  supplier desk, sends that same page (`affiliated_join_link`). The code is
@@ -718,11 +787,24 @@ Environment variables commonly used:
  to the full text only when the digest matches. With `USE_DATABASE=true`
  the bytes also live in `signed_document_blobs` (SHA-256 checked on read;
  a different checksum is not written over the row). `document_use_ledger`
- appends `sent` / `signed` / `opened` / `used` (`PHINS_DOCUMENT_USE_LEDGER_PATH`
- or `database/document_use_ledger.json`, hash-chained, idempotent). Staff
- read both from the pitch dashboard **Signed documents** tab and
- `GET /api/confidential/document-ledger` (anonymous 401). A broken chain
- is reported and blocks the next append. Share viewers of a confidential
+ appends `sent` / `signed` / `opened` / `used` / `revoked` / `deleted`
+ (`PHINS_DOCUMENT_USE_LEDGER_PATH` or `database/document_use_ledger.json`,
+ hash-chained, idempotent). Staff read both from the pitch dashboard
+ **Signed documents** desk (plus/minus fold). The address book lists each
+ link's recipient, URL, vaulted open password, status, and use count.
+ `GET /api/confidential/shares` (staff) returns that password; the PBKDF2
+ hash stays the verifier, and the password is absent from unlock responses
+ and the public gate. With `USE_DATABASE=true` each link is a row in
+ `addressed_links` (the JSON file is a cache). `sha256` is the canonical
+ record; a mismatch is not served and is not overwritten. A use, revoke, or
+ delete replaces that row only when the caller presents the digest it read.
+ A link that exists only in the file is inserted once; a durable row is never
+ replaced from the file, and rows are not deleted. `DELETE /api/confidential/shares/{id}` revokes.
+ `POST /api/confidential/shares/{id}/delete` marks the row deleted. Neither
+ call removes the share record, a sealed signature, or a ledger row, and a
+ revoked or deleted link no longer opens. A broken chain
+ is reported and blocks the next append. `GET /api/confidential/document-ledger`
+ is staff-only (anonymous 401). Share viewers of a confidential
  page other than the business plan (which already has its own protected
  view) and the signed-copy HTML get `phins-capture-guard.js`.
 - **Link previews:** `GET /link-preview/<file>.png` (and
@@ -798,13 +880,17 @@ Environment variables commonly used:
  plan…”. A staff-unlock cookie may read the presentation when the bearer
  is absent. It cannot write. Slide video, watermark, and
  chrome seals share `_INVESTOR_DECK_LOCK` with scene seals, because a failed
- seal restores the whole design snapshot. The spoken line is a short
- script (`short_script`): a paragraph with no placeholder is spoken in full,
- and a paragraph that fills a figure is not recited — those figures stay on
- the slide and the generator is not asked to draw them. Hebrew is a second
+ seal restores the whole design snapshot. The spoken line is the paragraph filled from the plan (`short_script`),
+ including its figures. Nothing is added around that paragraph. The
+ generator is not asked to draw charts or numerals. A sealed clip stays in
+ the film only while that spoken line is still the current paragraph; a
+ moved figure leaves the clip out and the library file is not rewritten.
+ Both presentation pages choose which filmed scenes play (`hide` on the
+ page URL, a scene key list). An absent list plays every scene whose seal
+ still matches. The choice is not stored and does not rewrite a seal.
+ Hebrew is a second
  catalog (`?lang=he`, scene keys `he-sNNpNN`, store `investor_deck_scenes_he`).
- The spoken line is the Hebrew deck paragraph; a paragraph that fills a figure
- is a short Hebrew line and the figures stay on the slide. The prompt says to
+ The spoken line is the Hebrew deck paragraph filled the same way. The prompt says to
  speak that line in Hebrew and not to translate it. English seals, campaign
  ids, and checksums are not rewritten. `/investor-deck.html` and
  `/investor-deck.he.html` are one confidential share scope with the read-only
@@ -813,6 +899,19 @@ Environment variables commonly used:
  dashboard **Staff · Share links**. A deck link is always `nda_required` and
  freezes the saved factor set the way a plan link does. A share viewer gets
  `can_assign: false`. The lab and the write routes stay admin or media.
+ The Swiss Re Israel script sheet (`/reinsurer-deck.html?sheet=1`, Hebrew
+ on `/reinsurer-deck.he.html`) films each open scene, or the whole sheet,
+ through that same 15-second send (`POST /api/admin/media/reinsurer-deck/send`)
+ and the same connected engines. The engine receives the filled paragraph
+ only. A client prompt is not sent, a stored theme
+ or library photo is left as sealed, and a viewer scenario is not filmed.
+ Moving a reinsurance factor recomputes the slides and the spoken lines
+ from `compute_plan` under that scenario's own hash; the saved plan factors
+ are not written. The factor panel folds with −/+ and prints open. A filmed
+ scene plays only while its sealed line is still the paragraph on screen, so
+ a scenario whose figures have moved does not play a clip sealed to the plan.
+ A reader who cannot assign sees the sheet as a script. A broken seal is
+ reset on `POST /api/admin/media/reinsurer-deck` before the next send.
  Presenters are 35 or
  older, with red, blonde, brunette, and black hair in varied styles.
  Slideshow chrome is a separate service (`services/investor_deck_slideshow.py`):

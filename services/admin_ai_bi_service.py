@@ -101,6 +101,7 @@ _LABELS: Dict[str, Tuple[str, str]] = {
     "/dashboard.html": ("Customer home", "בית לקוח"),
     "/savings-portfolio.html": ("Investments", "השקעות"),
     "/algo-trading.html": ("Trading", "מסחר"),
+    "/trading-terminal.html": ("Trading terminal", "מסוף מסחר"),
     "/mislaka-report.html": ("Mislaka", "מסלקה"),
     "/file-a-claim.html": ("File a claim", "הגשת תביעה"),
     "/claims-chat.html": ("Claims chat", "שיחת תביעה"),
@@ -172,6 +173,18 @@ def _dashboard_paths() -> List[str]:
     return sorted(paths)
 
 
+# Login, register, and the chat intake forms are not desks. They stay in
+# the catalog so callers that read the path still find the row.
+_INTAKE_PAGES = frozenset({
+    "/supplier-login.html",
+    "/supplier-register.html",
+    "/apply.html",
+    "/apply-chat.html",
+    "/file-a-claim.html",
+    "/claims-chat.html",
+})
+
+
 def _page_access(path: str) -> Tuple[bool, List[str]]:
     if path in CUSTOMER_PRIVATE_PAGES:
         return False, ["customer"]
@@ -192,7 +205,9 @@ def dashboard_catalog() -> List[Dict[str, Any]]:
         admin_open, roles = _page_access(path)
         label_en, label_he = _LABELS.get(path, (_title_from_path(path), _title_from_path(path)))
         group = "staff"
-        if path in CUSTOMER_PRIVATE_PAGES:
+        if path in _INTAKE_PAGES:
+            group = "intake"
+        elif path in CUSTOMER_PRIVATE_PAGES:
             group = "customer"
         elif path in SHARED_OPERATIONAL_PAGES:
             group = "shared"

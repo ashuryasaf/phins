@@ -300,7 +300,8 @@
            topbar/brand so the host dashboard tabs remain the only nav. */
         html[data-embed] body { background: transparent !important; }
         html[data-embed] body .page-shell { padding: 12px !important; max-width: none !important; }
-        html[data-embed] body .topbar { display: none !important; }
+        html[data-embed] body .topbar,
+        html[data-embed] body .phins-header { display: none !important; }
     </style>
     <script>
         (function () {
@@ -319,20 +320,28 @@
 </head>
 <body>
     <div class="page-shell">
-        <div class="topbar">
-            <a href="/admin.html" class="brand">
-                <div class="brand-icon"></div>
-                <div>
-                    <div class="brand-title">PHINS Video Agents</div>
-                    <div class="brand-subtitle">Pipeline-native video generation for intros, regulatory presentations, and insurance process assistance.</div>
-                </div>
-            </a>
-            <div class="top-actions">
-                <a href="/admin.html" class="btn btn-secondary">← Admin</a>
-                <a href="/admin-media.html" class="btn btn-secondary"> Media Dashboard</a>
-                <button class="btn btn-primary" onclick="refreshVideoAgentsDashboard()"> Refresh</button>
+        <header class="phins-header">
+            <div class="phins-header-inner">
+                <a href="/admin.html" class="phins-logo">
+                    <div class="phins-logo-icon"><img src="/phins-logo.svg" alt="PHINS emblem"></div>
+                    <span class="phins-logo-text">PHINS</span>
+                </a>
+                <button class="mobile-menu-btn" type="button" onclick="toggleMobileMenu()">Menu</button>
+                <nav class="phins-nav" id="mobile-nav">
+                    <a href="/admin.html">Admin</a>
+                    <a href="/storyboard-editor.html">Storyboard</a>
+                    <a href="/admin-media.html">Media library</a>
+                    <a href="#" onclick="refreshVideoAgentsDashboard(); return false;">Refresh</a>
+                    <a href="/login.html" class="btn-logout">Logout</a>
+                </nav>
             </div>
-        </div>
+        </header>
+        <script>
+            function toggleMobileMenu() {
+                var nav = document.getElementById('mobile-nav');
+                if (nav) nav.classList.toggle('open');
+            }
+        </script>
 
         <section class="hero-card">
             <div class="hero-title">Dedicated Video Agents Pipeline</div>
@@ -1088,5 +1097,6 @@
             await refreshVideoAgentsDashboard();
         });
     </script>
+  <script src="/ui-clarity.js"></script>
 </body>
 </html>

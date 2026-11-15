@@ -58,6 +58,10 @@ STAFF_PAGES: Dict[str, FrozenSet[str]] = {
     "/admin.html": frozenset(),
     "/admin-portal.html": frozenset(),
     "/admin-agents.html": frozenset(),
+    # SOC is an admin desk. The shell follows the same gate as /admin.html.
+    "/cyber-security.html": frozenset(),
+    # Same audience as /video-agents.html. The embed stays available to media.
+    "/storyboard-editor.html": frozenset({"media"}),
     "/admin-desk.html": frozenset({
         "actuary", "underwriter", "claims", "claims_adjuster", "adjuster",
         "accountant", "compliance", "founder", "development",
@@ -92,6 +96,10 @@ CUSTOMER_PRIVATE_PAGES: FrozenSet[str] = frozenset({
     "/dashboard.html",
     "/savings-portfolio.html",
     "/algo-trading.html",
+    # The trading screen is the customer's own money surface.
+    "/trading-terminal.html",
+    # Member community. Staff community admin stays /admin-foundations.html.
+    "/foundation-dashboard.html",
     # Each customer's own Mislaka tool. Staff stay on the admin assessment
     # surfaces and are not given this personal view.
     "/mislaka-report.html",
@@ -111,18 +119,22 @@ SHARED_OPERATIONAL_PAGES: FrozenSet[str] = frozenset({
 })
 
 ROLE_HOME: Dict[str, str] = {
-    "admin": "/admin-portal.html",
+    "admin": "/admin.html",
     "media": "/admin-media.html",
+    "manager": "/admin-ai-report.html",
+    "development": "/admin-desk.html",
     "underwriter": "/underwriter-dashboard.html",
     "claims": "/claims-adjuster-dashboard.html",
     "claims_adjuster": "/claims-adjuster-dashboard.html",
+    "claims_agent": "/chat-process-review.html",
+    "claims_manager": "/chat-process-review.html",
     "adjuster": "/claims-adjuster-dashboard.html",
     "accountant": "/accountant-dashboard.html",
     "actuary": "/actuary-dashboard.html",
-    "compliance": "/admin-portal.html",
-    "founder": "/admin-portal.html",
+    "compliance": "/admin.html",
+    "founder": "/admin.html",
     "regulator": "/regulator-dashboard.html",
-    "supplier": "/supplier-dashboard.html",
+    "supplier": "/supplier-portal.html",
     "agent": "/agent-portal.html",
     "customer": "/dashboard.html",
 }
@@ -178,6 +190,44 @@ def page_roles(page: str) -> FrozenSet[str]:
     if page in PRIVATE_PORTAL_PAGES:
         return extra
     return extra | frozenset({"admin"})
+
+
+# The supplier shell is not a role-wide page. A customer or agent session
+# reaches it only when that account owns the supplier or an approved agent
+# grant, the same rule as the desk read.
+SUPPLIER_SHELL_PAGES: FrozenSet[str] = frozenset({
+    "/supplier-dashboard.html",
+    "/supplier-portal.html",
+    "/supplier-login.html",
+})
+
+
+def surface_for_session(session: Optional[Dict], role: Optional[str], path: Optional[str]) -> Dict[str, Optional[str]]:
+    """Page gate for a signed-in session.
+
+    Supplier, agent, and customer roles use the role gate first. The supplier
+    shell then follows the desk: a supplier session, or a customer or agent
+    session that owns that supplier or an approved agent grant.
+    """
+    decision = surface_decision(role, path)
+    page = normalize_page(path)
+    normalized_role = normalize_role(role)
+    if page not in SUPPLIER_SHELL_PAGES or normalized_role not in ("customer", "agent"):
+        return decision
+    from services.referral_reward_service import supplier_shell_open
+    if supplier_shell_open(session):
+        return {
+            "allowed": True,
+            "redirect": None,
+            "surface": "staff",
+            "role": normalized_role,
+        }
+    return {
+        "allowed": False,
+        "redirect": home_for_role(normalized_role),
+        "surface": "staff",
+        "role": normalized_role,
+    }
 
 
 def surface_decision(role: Optional[str], path: Optional[str]) -> Dict[str, Optional[str]]:

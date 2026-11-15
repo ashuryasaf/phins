@@ -37,8 +37,11 @@ database is on. A checksum that does not match is quarantined and never paid.
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import hmac
 import json
+import logging
 import os
 import re
 import secrets
@@ -47,6 +50,9 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from urllib.parse import urlencode, urlsplit
+
+logger = logging.getLogger("phins.referral_rewards")
 
 DESTINATIONS: Tuple[str, ...] = ("premium", "health_wallet", "savings", "cash")
 LAYERS = (1, 2, 3)
@@ -58,6 +64,7 @@ LINKS: Dict[str, Dict[str, Any]] = {}          # referee_customer_id -> link
 REWARDS: Dict[str, Dict[str, Any]] = {}        # reward id -> reward
 SETTLEMENTS: Dict[str, Dict[str, Any]] = {}    # referee_customer_id -> one settlement
 REQUESTS: Dict[str, Dict[str, Any]] = {}       # request id -> professional request
+INVITATIONS: Dict[str, Dict[str, Any]] = {}    # referral code -> one sealed invitation
 QUARANTINE: List[Dict[str, Any]] = []
 FLAGS: Dict[str, Any] = {}
 
@@ -74,6 +81,10 @@ _SETTLEMENT_FIELDS = (
     "status", "hold_months", "paying_at", "release_at", "reversed_at",
     "books_tx_id", "reversal_tx_id", "ledger_entry_id",
     "released_ledger_id", "reversal_ledger_id",
+)
+_INVITATION_FIELDS = (
+    "code", "creator_customer_id", "creator_name", "created_at", "expires_at",
+    "max_uses", "used_count", "used_by", "status", "notes", "reward_status",
 )
 
 
@@ -612,6 +623,82 @@ def _settlement_intact(settlement: Dict[str, Any]) -> bool:
     return stated == _settlement_checksum(settlement)
 
 
+def _invitation_checksum(invitation: Dict[str, Any]) -> str:
+    return _sha({key: invitation.get(key) for key in _INVITATION_FIELDS})
+
+
+def _seal_invitation(invitation: Dict[str, Any]) -> Dict[str, Any]:
+    invitation["checksum"] = _invitation_checksum(invitation)
+    invitation.pop("_quarantined", None)
+    return invitation
+
+
+def _invitation_intact(invitation: Dict[str, Any], column_checksum: Optional[str] = None) -> bool:
+    stated = str(invitation.get("checksum") or "")
+    if not stated or invitation.get("_quarantined"):
+        return False
+    if column_checksum is not None and str(column_checksum) != stated:
+        return False
+    return stated == _invitation_checksum(invitation)
+
+
+def _used_by_entries(entries: Any) -> List[Dict[str, str]]:
+    cleaned: List[Dict[str, str]] = []
+    if not isinstance(entries, list):
+        return cleaned
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        cleaned.append({
+            "customer_id": str(entry.get("customer_id") or ""),
+            "used_at": str(entry.get("used_at") or ""),
+        })
+    return cleaned
+
+
+def _invitation_record(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """The sealed fields of one referral invitation. National ID is not a field."""
+    expires = raw.get("expires_at")
+    return {
+        "code": str(raw.get("code") or ""),
+        "creator_customer_id": str(raw.get("creator_customer_id") or ""),
+        "creator_name": str(raw.get("creator_name") or "")[:120],
+        "created_at": str(raw.get("created_at") or ""),
+        "expires_at": None if expires in (None, "") else str(expires),
+        "max_uses": int(raw.get("max_uses") or 1),
+        "used_count": int(raw.get("used_count") or 0),
+        "used_by": _used_by_entries(raw.get("used_by")),
+        "status": str(raw.get("status") or "active"),
+        "notes": str(raw.get("notes") or ""),
+        "reward_status": str(raw.get("reward_status") or "pending"),
+    }
+
+
+def _apply_invitation(invitation: Dict[str, Any], column_checksum: Optional[str] = None) -> None:
+    code = str((invitation or {}).get("code") or "")
+    if not code:
+        return
+    record = _invitation_record(invitation)
+    record["checksum"] = str(invitation.get("checksum") or "")
+    if not _invitation_intact(record, column_checksum):
+        QUARANTINE.append({"id": code, "reason": "invitation_checksum_mismatch"})
+        blocked = dict(record)
+        blocked["_quarantined"] = True
+        INVITATIONS[code] = blocked
+        return
+    INVITATIONS[code] = record
+
+
+def _mirror_invitation(invitation: Dict[str, Any]) -> None:
+    """Keep the process cache on the sealed record. This does not write the book."""
+    portal = _portal()
+    if portal is None or not _invitation_intact(invitation):
+        return
+    bucket = getattr(portal, "CUSTOMER_INVITATIONS", None)
+    if isinstance(bucket, dict):
+        bucket[str(invitation.get("code") or "")] = dict(invitation)
+
+
 def _seal(reward: Dict[str, Any]) -> Dict[str, Any]:
     reward["checksum"] = _reward_checksum(reward)
     return reward
@@ -632,6 +719,7 @@ def _envelope() -> Dict[str, Any]:
         "rewards": list(REWARDS.values()),
         "settlements": list(SETTLEMENTS.values()),
         "requests": list(REQUESTS.values()),
+        "invitations": list(INVITATIONS.values()),
     }
 
 
@@ -667,6 +755,15 @@ def _persist_link(link: Dict[str, Any]) -> None:
     if _db_enabled():
         with _repo() as db:
             db.referral_rewards.upsert_link(link)
+        return
+    _save_file()
+
+
+def _persist_invitation(invitation: Dict[str, Any]) -> None:
+    _seal_invitation(invitation)
+    if _db_enabled():
+        with _repo() as db:
+            db.referral_rewards.upsert_invitation(invitation)
         return
     _save_file()
 
@@ -726,6 +823,9 @@ def _load_file() -> None:
     for req in state.get("requests") or []:
         if isinstance(req, dict) and req.get("id"):
             REQUESTS[str(req["id"])] = req
+    for invitation in state.get("invitations") or []:
+        if isinstance(invitation, dict):
+            _apply_invitation(invitation)
 
 
 def _apply_settlement(settlement: Dict[str, Any]) -> None:
@@ -749,6 +849,7 @@ def _hydrate_db() -> None:
             rewards = db.referral_rewards.list_rewards()
             settlements = db.referral_rewards.list_settlements()
             requests = db.referral_rewards.list_requests()
+            invitations = db.referral_rewards.list_invitations()
     except Exception:
         FLAGS["db_unreadable"] = True
         return
@@ -769,6 +870,8 @@ def _hydrate_db() -> None:
         _apply_settlement(settlement)
     for req in requests:
         REQUESTS[str(req["id"])] = req
+    for invitation in invitations:
+        _apply_invitation(invitation.get("payload") or {}, invitation.get("checksum"))
 
 
 def _ensure_loaded() -> None:
@@ -794,6 +897,7 @@ def reset_referral_rewards() -> None:
         REWARDS.clear()
         SETTLEMENTS.clear()
         REQUESTS.clear()
+        INVITATIONS.clear()
         QUARANTINE.clear()
         FLAGS.clear()
         _loaded = True
@@ -844,6 +948,24 @@ def _first_name(customer_id: str) -> str:
 
 def _customer_record(customer_id: str) -> Optional[Dict[str, Any]]:
     rec = _customers().get(customer_id)
+    return rec if isinstance(rec, dict) else None
+
+
+def _mapped_customer(customer_id: str) -> Optional[Dict[str, Any]]:
+    """One customer row, including the database-backed store.
+
+    ``CUSTOMERS`` is a ``DatabaseDict`` when the database is on. That store
+    has ``get`` and is not a ``dict``. The reward book keeps the dict-only
+    port above; identity and the inquiry address read this one.
+    """
+    portal = _portal()
+    customers = getattr(portal, "CUSTOMERS", None) if portal else None
+    if customers is None or not hasattr(customers, "get"):
+        return None
+    try:
+        rec = customers.get(str(customer_id or ""))
+    except Exception:
+        return None
     return rec if isinstance(rec, dict) else None
 
 
@@ -1204,17 +1326,165 @@ def affiliation_for(customer_id: str) -> Dict[str, Any]:
         }
 
 
+def _invitation_cap_locked(customer_id: str) -> int:
+    cfg = CONFIG or default_config()
+    if _approved_request(customer_id, "agent"):
+        return int(cfg["agent_invitation_cap"])
+    rec = _customer_record(customer_id)
+    if rec and rec.get("agent_id"):
+        return int(cfg["agent_invitation_cap"])
+    return int(cfg["customer_invitation_cap"])
+
+
 def invitation_cap_for(customer_id: str) -> int:
     """Customers share a small book of codes; an approved agent gets the larger one."""
     with _LOCK:
         _ensure_loaded()
-        cfg = CONFIG or default_config()
-        if _approved_request(customer_id, "agent"):
-            return int(cfg["agent_invitation_cap"])
-        rec = _customer_record(customer_id)
-        if rec and rec.get("agent_id"):
-            return int(cfg["agent_invitation_cap"])
-        return int(cfg["customer_invitation_cap"])
+        return _invitation_cap_locked(customer_id)
+
+
+def _invitation_slots_used_locked(creator_customer_id: str) -> int:
+    """Unique sealed codes for this creator, including a checksum mismatch."""
+    creator = str(creator_customer_id or "")
+    if not creator:
+        return 0
+    codes = set()
+    for key, record in INVITATIONS.items():
+        if not isinstance(record, dict):
+            continue
+        if str(record.get("creator_customer_id") or "") != creator:
+            continue
+        code = str(record.get("code") or key or "")
+        if code:
+            codes.add(code)
+    return len(codes)
+
+
+def invitation_slots_used(creator_customer_id: str) -> int:
+    """How many sealed referral codes this creator already holds.
+
+    Rows reloaded from the database or the checksummed file count. A checksum
+    mismatch still occupies its slot. The same code counts once. This read
+    does not persist the book.
+    """
+    with _LOCK:
+        _ensure_loaded()
+        return _invitation_slots_used_locked(creator_customer_id)
+
+
+# ---------------------------------------------------------------------------
+# Referral invitations — one sealed record for every view
+# ---------------------------------------------------------------------------
+def _invitation_withheld_locked(code: str) -> bool:
+    record = INVITATIONS.get(str(code or ""))
+    return bool(record) and not _invitation_intact(record)
+
+
+def invitation_withheld(code: str) -> bool:
+    """True when this referral code is stored and its checksum does not match."""
+    with _LOCK:
+        _ensure_loaded()
+        return _invitation_withheld_locked(code)
+
+
+def referral_invitation(code: str) -> Optional[Dict[str, Any]]:
+    """The intact invitation, or nothing when it is missing or withheld."""
+    with _LOCK:
+        _ensure_loaded()
+        record = INVITATIONS.get(str(code or ""))
+        if not record or not _invitation_intact(record):
+            return None
+        return dict(record)
+
+
+def list_referral_invitations(creator_customer_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Read intact referral invitations. Does not refresh or persist the book."""
+    with _LOCK:
+        _ensure_loaded()
+        creator = str(creator_customer_id or "")
+        rows = []
+        for record in INVITATIONS.values():
+            if not _invitation_intact(record):
+                continue
+            if creator and str(record.get("creator_customer_id") or "") != creator:
+                continue
+            rows.append(dict(record))
+        rows.sort(key=lambda item: (item.get("created_at") or "", item.get("code") or ""), reverse=True)
+        return rows
+
+
+def issue_referral_invitation(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Seal one new referral invitation and store that same record."""
+    record = _invitation_record(raw or {})
+    if not record["code"] or not record["creator_customer_id"]:
+        raise RewardError("A referral invitation needs a code and a customer")
+    with _LOCK:
+        _ensure_loaded()
+        if record["code"] in INVITATIONS:
+            raise RewardError("Invitation code already exists", status=409, code="duplicate")
+        cap = _invitation_cap_locked(record["creator_customer_id"])
+        used = _invitation_slots_used_locked(record["creator_customer_id"])
+        if used >= cap:
+            raise RewardError(
+                f"Maximum referral limit reached ({cap} codes)",
+                status=400,
+                code="invitation_cap",
+            )
+        sealed = _seal_invitation(record)
+        INVITATIONS[sealed["code"]] = sealed
+        _persist_invitation(sealed)
+        _mirror_invitation(sealed)
+        return dict(sealed)
+
+
+def mark_referral_invitation_used(code: str, customer_id: str, used_at: str) -> Dict[str, Any]:
+    """Record one use on the existing invitation. The code itself is not rewritten."""
+    key = str(code or "")
+    with _LOCK:
+        _ensure_loaded()
+        current = INVITATIONS.get(key)
+        if not current or not _invitation_intact(current):
+            raise RewardError(
+                "Invitation checksum does not match; the code is not served",
+                status=409,
+                code="checksum",
+            )
+        updated = _invitation_record(current)
+        updated["used_count"] = int(updated["used_count"]) + 1
+        updated["used_by"] = list(updated["used_by"]) + [{
+            "customer_id": str(customer_id or ""),
+            "used_at": str(used_at or ""),
+        }]
+        if updated["used_count"] >= int(updated["max_uses"] or 1):
+            updated["status"] = "used"
+        updated["reward_status"] = "eligible"
+        sealed = _seal_invitation(updated)
+        INVITATIONS[key] = sealed
+        _persist_invitation(sealed)
+        _mirror_invitation(sealed)
+        return dict(sealed)
+
+
+def adopt_referral_invitations(records: Any) -> None:
+    """Seal referral codes that are not already in the book.
+
+    Startup only. A code the book already holds is left as stored, and a
+    view never calls this.
+    """
+    if not isinstance(records, dict):
+        return
+    with _LOCK:
+        _ensure_loaded()
+        for raw in records.values():
+            if not isinstance(raw, dict):
+                continue
+            code = str(raw.get("code") or "")
+            if not code.startswith("REF-") or code in INVITATIONS:
+                continue
+            sealed = _seal_invitation(_invitation_record(raw))
+            INVITATIONS[code] = sealed
+            _persist_invitation(sealed)
+            _mirror_invitation(sealed)
 
 
 # ---------------------------------------------------------------------------
@@ -1311,6 +1581,9 @@ def on_customer_paying(customer_id: str, billing: Optional[Dict[str, Any]] = Non
         except RewardError:
             raise
         link = LINKS.get(referee)
+        invitation_code = str((link or {}).get("invitation_code") or "")
+        if _invitation_withheld_locked(invitation_code):
+            return []
         paying_at = _now()
         if link is not None and not link.get("paying_at"):
             link["paying_at"] = paying_at
@@ -1828,15 +2101,323 @@ def accept_all(customer_id: str, allocation: Optional[Dict[str, Any]] = None) ->
 
 
 # ---------------------------------------------------------------------------
-# Professional roles (agent / supplier) on the same person
+# Professional roles. An agent is a role on one supplier record.
+# The inquiry form writes onto this same request. It does not open a second book.
 # ---------------------------------------------------------------------------
+INQUIRY_DAYS = 14
+INQUIRY_SESSION_COOKIE = "phins_inquiry"
+INQUIRY_SESSION_SECONDS = 2 * 60 * 60
+INQUIRY_OTP_WINDOW_SECONDS = 15 * 60
+_INQUIRY_TOKEN_RE = re.compile(r"^inq_[0-9a-f]{32}$")
+_INQUIRY_SESSION_RE = re.compile(r"^inqs_[0-9a-f]{32}$")
+_CLOSED_SUPPLIER_STATUSES = ("rejected", "suspended", "terminated")
+_PIPELINE_AUDIENCES = ("supplier", "agent", "customer", "tax", "regulator")
+_INQUIRY_FORBIDDEN = {
+    "national_id", "id_number", "national_id_number", "password", "tax_id", "ssn",
+}
+
+
 def _request_id(customer_id: str, role: str) -> str:
     return f"PRO-{customer_id}-{role}"
 
 
+def _clip_text(value: Any, limit: int) -> str:
+    return str(value or "").replace("\x00", "").strip()[:limit]
+
+
+def _reject_inquiry_secrets(payload: Any) -> None:
+    if not isinstance(payload, dict):
+        return
+    for key in payload:
+        if str(key).strip().lower() in _INQUIRY_FORBIDDEN:
+            raise RewardError(
+                "This form does not collect a personal ID, a tax number, or a password",
+                code="field_not_accepted",
+            )
+    for nested in ("personal", "company"):
+        child = payload.get(nested)
+        if isinstance(child, dict):
+            _reject_inquiry_secrets(child)
+
+
+def _known_customer(customer_id: str) -> Dict[str, Any]:
+    """Details the customer record already holds. The national ID stays in the vault."""
+    rec = _mapped_customer(customer_id) or {}
+    known = {
+        "name": _clip_text(rec.get("name"), 120),
+        "email": _clip_text(rec.get("email"), 254),
+        "phone": _clip_text(rec.get("phone") or rec.get("mobile"), 40),
+        "address": _clip_text(rec.get("address"), 160),
+        "city": _clip_text(rec.get("city"), 80),
+        "country": _clip_text(rec.get("country"), 80),
+    }
+    try:
+        from services.customer_identity_service import identity_reference
+        ref = identity_reference(rec)
+    except Exception:
+        ref = None
+    if isinstance(ref, dict):
+        known["nationality"] = ref.get("nationality")
+        known["national_id_masked"] = ref.get("national_id_masked")
+    return known
+
+
+def _safe_origin(value: str) -> str:
+    """Scheme and host only. A path on the configured origin is not kept.
+
+    ``BASE_URL`` is an origin. Keeping a page path produced a link such as
+    ``professional-inquiry-chat.html/?r=`` that a mail client cannot open.
+    The query is attached later as ``.html?`` with nothing between them.
+    """
+    text = str(value or "").strip()
+    if not text or any(ch in text for ch in ("\r", "\n", " ")):
+        return ""
+    if "://" not in text:
+        text = "https://" + text
+    parts = urlsplit(text)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return ""
+    if parts.username or parts.password:
+        return ""
+    host = parts.hostname
+    if ":" in host:
+        host = f"[{host}]"
+    port = f":{parts.port}" if parts.port else ""
+    return f"{parts.scheme}://{host}{port}"
+
+
+_PUBLIC_INQUIRY_ORIGIN = "https://www.phins.ai"
+_PUBLIC_INQUIRY_HOSTS = frozenset({"phins.ai", "www.phins.ai"})
+
+
+def _configured_origin() -> str:
+    portal = _portal()
+    getter = getattr(portal, "public_portal_base_url", None) if portal else None
+    if not callable(getter):
+        return ""
+    try:
+        return _safe_origin(str(getter() or ""))
+    except Exception:
+        return ""
+
+
+def _trusted_request_origin(value: str) -> str:
+    """The live site, unless the request host is phins.ai or www.phins.ai.
+
+    The inquiry token is emailed. An arbitrary ``Host`` is not an origin:
+    a spoofed header must not receive that link. A custom port is not kept.
+    """
+    origin = _safe_origin(value)
+    if origin:
+        parts = urlsplit(origin)
+        host = str(parts.hostname or "").lower().rstrip(".")
+        if host in _PUBLIC_INQUIRY_HOSTS and parts.port in (None, 443):
+            return f"https://{host}"
+    return _PUBLIC_INQUIRY_ORIGIN
+
+
+def _inquiry_path(token: str, request_id: str, public_origin: str = "") -> str:
+    """Absolute chat link. The token is the query value, never a log line.
+
+    ``r`` is the request id, not a secret. ``t`` stays last. The origin is
+    ``BASE_URL``, then ``WEBHOOK_BASE_URL`` (``TEST_BASE_URL`` under test).
+    With neither set, the link is ``https://www.phins.ai`` unless the
+    request host is exactly ``phins.ai`` or ``www.phins.ai``.
+    """
+    query = urlencode((("r", str(request_id or "")), ("t", token)))
+    page = "/professional-inquiry-chat.html"
+    origin = _configured_origin() or _trusted_request_origin(public_origin)
+    return f"{origin}{page}?{query}"
+
+
+def _arm_inquiry(req: Dict[str, Any], supplier_type: str, company_name: str) -> str:
+    link_prefix = "inq_"
+    token = link_prefix + secrets.token_hex(16)
+    known = _known_customer(req["customer_id"])
+    linked = _inquiry_email_for(req)
+    if linked:
+        known["email"] = linked
+    has_company = bool(company_name and supplier_type)
+    company = None
+    if has_company:
+        company = {
+            "company_name": company_name[:160],
+            "supplier_type": supplier_type,
+            "registration_number": "",
+            "city": known.get("city") or "",
+            "country": known.get("country") or "",
+            "phone": known.get("phone") or "",
+            "address": known.get("address") or "",
+            "description": "",
+        }
+    personal = {
+        "name": known.get("name") or "",
+        "phone": known.get("phone") or "",
+        "address": known.get("address") or "",
+        "city": known.get("city") or "",
+        "country": known.get("country") or "",
+    }
+    previous = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+    req["inquiry"] = {
+        "token_sha256": hashlib.sha256(token.encode("utf-8")).hexdigest(),
+        "expires_at": _add_days(_now(), INQUIRY_DAYS),
+        "sent_at": _now(),
+        "email_sent": False,
+        "submitted_at": None,
+        "has_company": has_company or bool(previous.get("has_company")),
+        "personal": personal,
+        "company": company if has_company else previous.get("company"),
+        "known": known,
+    }
+    if has_company:
+        req["supplier_type"] = supplier_type
+        req["company_name"] = company_name[:160]
+    return token
+
+
+def _add_days(stamp: str, days: int) -> str:
+    moment = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    shifted = moment + timedelta(days=int(days))
+    return shifted.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _inquiry_expired(inquiry: Dict[str, Any]) -> bool:
+    stamp = str(inquiry.get("expires_at") or "")
+    if not stamp:
+        return True
+    try:
+        moment = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        now = datetime.fromisoformat(_now().replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    return now > moment
+
+
+def public_request(req: Dict[str, Any]) -> Dict[str, Any]:
+    """Request fields safe to return. The inquiry token and its hash stay off the wire."""
+    inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+    personal = inquiry.get("personal") if isinstance(inquiry.get("personal"), dict) else {}
+    company = inquiry.get("company") if inquiry.get("has_company") and isinstance(inquiry.get("company"), dict) else None
+    return {
+        "id": req.get("id"),
+        "customer_id": req.get("customer_id"),
+        "requested_role": req.get("requested_role"),
+        "status": req.get("status"),
+        "supplier_type": req.get("supplier_type"),
+        "company_name": req.get("company_name"),
+        "note": req.get("note"),
+        "agent_id": req.get("agent_id"),
+        "supplier_id": req.get("supplier_id"),
+        "invitation_code": req.get("invitation_code"),
+        "reviewed_by": req.get("reviewed_by"),
+        "reviewed_at": req.get("reviewed_at"),
+        "review_note": req.get("review_note"),
+        "created_at": req.get("created_at"),
+        "updated_at": req.get("updated_at"),
+        "inquiry_sent": bool(inquiry.get("sent_at")),
+        "inquiry_submitted": bool(inquiry.get("submitted_at")),
+        "email_sent": bool(inquiry.get("email_sent")),
+        "has_company": bool(inquiry.get("has_company")),
+        "applicant_name": personal.get("name") or None,
+        "company": company,
+        "via": req.get("via"),
+    }
+
+
+def _looks_like_email(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text or " " in text or text.count("@") != 1:
+        return False
+    local, _, domain = text.partition("@")
+    return bool(local and "." in domain)
+
+
+def _inquiry_recipient(customer_id: str, login_username: str = "") -> Tuple[str, str]:
+    """Address and display name for the inquiry email.
+
+    The customer record wins. The login username is used only when that record
+    has no email: it is the authenticated account, not an address from the
+    request body. Without this, a record that omitted email returned before
+    NotificationService.send and the customer received nothing.
+    """
+    rec = _mapped_customer(customer_id) or {}
+    email = str(rec.get("email") or "").strip()
+    if not email:
+        login = str(login_username or "").strip()
+        if _looks_like_email(login):
+            email = login
+    name = _clip_text(rec.get("name") or "PHINS Customer", 80)
+    return email, name
+
+
+def _inquiry_email_for(req: Dict[str, Any]) -> str:
+    """The address already known for this inquiry.
+
+    Same resolution as the inquiry email and the identity code: the customer
+    record, or the login stored when the request was opened. A form or chat
+    body is never a source, and this does not write the customer master.
+    """
+    email, _name = _inquiry_recipient(
+        str((req or {}).get("customer_id") or ""),
+        str((req or {}).get("login_username") or ""),
+    )
+    return _clip_text(email, 254)
+
+
+def _send_inquiry_email(customer_id: str, role: str, path: str,
+                        login_username: str = "") -> Tuple[bool, str]:
+    """Send the chat link through the same NotificationService the chats use for codes.
+
+    ``otp_email`` and ``professional_inquiry_chat`` are templates on that one
+    service. Delivery uses ``deliver_notification``, the same fresh-service
+    plus configured-provider retry the identity code uses. This does not open
+    a second mailer. The raw link stays in the email only; the chat transcript
+    does not repeat it.
+    """
+    email, name = _inquiry_recipient(customer_id, login_username)
+    if not email:
+        return False, ""
+    role_label = "supplier" if str(role or "").strip().lower() == "supplier" else "agent"
+    try:
+        from services.notification_service import (
+            NotificationChannel,
+            NotificationPriority,
+            NotificationRequest,
+            deliver_notification,
+        )
+        result = deliver_notification(NotificationRequest(
+            channel=NotificationChannel.EMAIL,
+            recipient=email,
+            template_id="professional_inquiry_chat",
+            template_vars={
+                "name": name,
+                "role": role_label,
+                "chat_url": path,
+            },
+            priority=NotificationPriority.HIGH,
+            customer_id=str(customer_id),
+            metadata={
+                "purpose": "professional_inquiry",
+                "template": "professional_inquiry_chat",
+                "requested_role": role_label,
+            },
+        ))
+    except Exception:
+        logger.warning("professional inquiry email was not handed to the notification service")
+        return False, ""
+    sent = bool(getattr(result, "success", False))
+    if not sent:
+        logger.warning(
+            "professional inquiry email was not delivered (%s)",
+            getattr(result, "error_code", None) or "SEND_FAILED",
+        )
+    return sent, str(getattr(result, "notification_id", "") or "")
+
+
 def request_professional(customer_id: str, role: str, login_username: str = "",
                          supplier_type: str = "", company_name: str = "",
-                         note: str = "") -> Dict[str, Any]:
+                         note: str = "", public_origin: str = "") -> Dict[str, Any]:
+    """Open or resend the inquiry. Review waits until the form is submitted."""
     role = str(role or "").strip().lower()
     if role not in ("agent", "supplier"):
         raise RewardError("Role must be agent or supplier")
@@ -1845,11 +2426,11 @@ def request_professional(customer_id: str, role: str, login_username: str = "",
         raise RewardError("Customer is required", status=400, code="customer_required")
     supplier_type = str(supplier_type or "").strip().lower()
     company_name = str(company_name or "").strip()
-    if role == "supplier":
+    if company_name or supplier_type:
         if supplier_type not in supplier_type_values():
             raise RewardError("Choose a supplier type such as clinic, pharmacy, or wellness")
         if len(company_name) < 2:
-            raise RewardError("A supplier request needs a practice or company name")
+            raise RewardError("A company on the application needs a practice or company name")
     with _LOCK:
         _ensure_loaded()
         key = _request_id(customer_id, role)
@@ -1863,49 +2444,1247 @@ def request_professional(customer_id: str, role: str, login_username: str = "",
             "customer_id": customer_id,
             "login_username": str(login_username or "")[:254],
             "requested_role": role,
-            "status": "pending",
-            "supplier_type": supplier_type if role == "supplier" else None,
-            "company_name": company_name[:160] if role == "supplier" else None,
-            "note": str(note or "")[:500],
-            "agent_id": None,
-            "supplier_id": None,
-            "invitation_code": None,
+            "status": "inquiry",
+            "supplier_type": supplier_type or (existing or {}).get("supplier_type"),
+            "company_name": (company_name[:160] if company_name else (existing or {}).get("company_name")),
+            "note": str(note or (existing or {}).get("note") or "")[:500],
+            "agent_id": (existing or {}).get("agent_id"),
+            "supplier_id": (existing or {}).get("supplier_id"),
+            "invitation_code": (existing or {}).get("invitation_code"),
             "reviewed_by": None,
             "reviewed_at": None,
             "review_note": None,
             "created_at": (existing or {}).get("created_at") or _now(),
             "updated_at": _now(),
+            "inquiry": (existing or {}).get("inquiry") if isinstance((existing or {}).get("inquiry"), dict) else {},
         }
+        token = _arm_inquiry(req, supplier_type, company_name)
         REQUESTS[key] = req
         _persist_request(req)
-        return dict(req)
-
-
-def _open_agent(req: Dict[str, Any]) -> Dict[str, Any]:
-    from services.agent_ecosystem_service import create_agent
-    rec = _customer_record(req["customer_id"]) or {}
-    username = req.get("login_username") or rec.get("email") or req["customer_id"]
-    agent = create_agent(
-        username=str(username),
-        display_name=str(rec.get("name") or username),
-        email=str(rec.get("email") or ""),
-        default_rate=int(CONFIG.get("agent_default_rate_percent") or 0),
-        created_by="referral_rewards",
+        path = _inquiry_path(token, key, public_origin)
+    sent, notification_id = _send_inquiry_email(
+        customer_id, role, path, login_username,
     )
-    if isinstance(rec, dict):
-        rec["agent_id"] = agent.get("id")
-    return agent
+    with _LOCK:
+        current = REQUESTS.get(key) or req
+        inquiry = current.setdefault("inquiry", {})
+        inquiry["email_sent"] = bool(sent)
+        if notification_id:
+            inquiry["email_notification_id"] = notification_id
+        _seed_chat_notice(current, bool(sent))
+        current["updated_at"] = _now()
+        _persist_request(current)
+        view = public_request(current)
+    view["inquiry_path"] = path
+    return view
 
 
-def _open_supplier(req: Dict[str, Any], admin: str) -> Dict[str, Any]:
+def _digest(token: str) -> str:
+    return hashlib.sha256(str(token).encode("utf-8")).hexdigest()
+
+
+def inquiry_cookie_name(request_id: str) -> str:
+    """One HttpOnly cookie per open inquiry. The name is not the secret."""
+    suffix = hashlib.sha256(str(request_id or "").encode("utf-8")).hexdigest()[:16]
+    return f"{INQUIRY_SESSION_COOKIE}_{suffix}"
+
+
+def _request_for_browser_session(token: str) -> Optional[Dict[str, Any]]:
+    """The short cookie minted from the email link. The raw value is not stored."""
+    if not _INQUIRY_SESSION_RE.fullmatch(str(token or "")):
+        return None
+    digest = _digest(token)
+    found = None
+    for req in REQUESTS.values():
+        inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+        browser = inquiry.get("browser_session") if isinstance(inquiry.get("browser_session"), dict) else {}
+        stored = str(browser.get("token_sha256") or "")
+        if len(stored) == len(digest) and hmac.compare_digest(stored, digest):
+            found = req
+            if _inquiry_expired(browser):
+                raise RewardError(
+                    "This application session has expired. Open the email link again.",
+                    status=410,
+                    code="inquiry_session_expired",
+                )
+    return found
+
+
+def _request_for_inquiry_token(token: str) -> Optional[Dict[str, Any]]:
+    raw = str(token or "")
+    if _INQUIRY_SESSION_RE.fullmatch(raw):
+        return _request_for_browser_session(raw)
+    if not _INQUIRY_TOKEN_RE.fullmatch(raw):
+        return None
+    digest = _digest(raw)
+    found = None
+    for req in REQUESTS.values():
+        inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+        stored = str(inquiry.get("token_sha256") or "")
+        if len(stored) == len(digest) and hmac.compare_digest(stored, digest):
+            found = req
+    return found
+
+
+def open_inquiry_session(token: str) -> Dict[str, Any]:
+    """Exchange the email-link token for a short HttpOnly browser session.
+
+    The email token stays the 14-day capability. Only its SHA-256 is stored,
+    and the same is true of the session secret. Each request gets its own
+    cookie name, so a second open inquiry does not replace the first. The
+    response carries the session secret under ``_inquiry_session`` so the
+    HTTP layer can set that cookie and then drop the field.
+    """
+    raw = str(token or "")
+    if not _INQUIRY_TOKEN_RE.fullmatch(raw):
+        raise RewardError("This inquiry link is not valid", status=404, code="inquiry_not_found")
+    session_prefix = "inqs_"
+    session_secret = session_prefix + secrets.token_hex(16)
+    with _LOCK:
+        _ensure_loaded()
+        req = _request_for_inquiry_token(raw)
+        if req is None:
+            raise RewardError("This inquiry link is not valid", status=404, code="inquiry_not_found")
+        inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+        if _inquiry_expired(inquiry):
+            raise RewardError("This inquiry link has expired", status=410, code="inquiry_expired")
+        link_expiry = str(inquiry.get("expires_at") or "")
+        session_expiry = _add_seconds(_now(), INQUIRY_SESSION_SECONDS)
+        if link_expiry and session_expiry > link_expiry:
+            session_expiry = link_expiry
+        inquiry["browser_session"] = {
+            "token_sha256": _digest(session_secret),
+            "expires_at": session_expiry,
+        }
+        req["inquiry"] = inquiry
+        req["updated_at"] = _now()
+        _persist_request(req)
+    view = inquiry_prefill(raw)
+    view["_inquiry_session"] = session_secret
+    return view
+
+
+def _identity_otp_fresh(req: Dict[str, Any], token: str = "") -> bool:
+    """The code is fresh only for the browser session that verified it.
+
+    The email link stays valid after the cookie is minted. A holder of that
+    link does not inherit the 15-minute window.
+    """
+    inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+    otp = inquiry.get("identity_otp") if isinstance(inquiry.get("identity_otp"), dict) else {}
+    stamp = str(otp.get("verified_at") or "")
+    bound = str(otp.get("session_sha256") or "")
+    raw = str(token or "")
+    if not stamp or not bound or not _INQUIRY_SESSION_RE.fullmatch(raw):
+        return False
+    presented = _digest(raw)
+    if len(bound) != len(presented) or not hmac.compare_digest(bound, presented):
+        return False
+    try:
+        moment = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        now = datetime.fromisoformat(_now().replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return (now - moment).total_seconds() <= INQUIRY_OTP_WINDOW_SECONDS
+
+
+def inquiry_otp_context(token: str) -> Dict[str, Any]:
+    """The address a code may be sent to.
+
+    Same recipient as the inquiry email: the customer record, or the login
+    stored when this request was opened, when that login looks like an email.
+    The OTP request body cannot supply a different address.
+    """
+    with _LOCK:
+        req = _open_chat_request(token)
+        return {
+            "request_id": req.get("id"),
+            "email": _inquiry_email_for(req),
+            "otp_verified": _identity_otp_fresh(req, token),
+        }
+
+
+def remember_identity_otp(token: str, verification_id: str) -> None:
+    with _LOCK:
+        req = _open_chat_request(token)
+        inquiry = req.setdefault("inquiry", {})
+        inquiry["identity_otp"] = {
+            "verification_id": str(verification_id or ""),
+            "verified_at": None,
+        }
+        req["updated_at"] = _now()
+        _persist_request(req)
+
+
+def confirm_identity_otp(token: str, verification_id: str) -> Dict[str, Any]:
+    given = str(verification_id or "")
+    with _LOCK:
+        req = _open_chat_request(token)
+        inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+        otp = inquiry.get("identity_otp") if isinstance(inquiry.get("identity_otp"), dict) else {}
+        stored = str(otp.get("verification_id") or "")
+        if not stored or not given or len(stored) != len(given) or not hmac.compare_digest(stored, given):
+            raise RewardError(
+                "That code does not belong to this application",
+                code="otp_mismatch",
+            )
+        raw = str(token or "")
+        if not _INQUIRY_SESSION_RE.fullmatch(raw):
+            raise RewardError(
+                "Verify the code in the browser that opened this application",
+                status=403,
+                code="otp_session_required",
+            )
+        presented = _digest(raw)
+        browser = inquiry.get("browser_session") if isinstance(inquiry.get("browser_session"), dict) else {}
+        session_digest = str(browser.get("token_sha256") or "")
+        if not session_digest or len(session_digest) != len(presented) or not hmac.compare_digest(session_digest, presented):
+            raise RewardError(
+                "Verify the code in the browser that opened this application",
+                status=403,
+                code="otp_session_required",
+            )
+        otp["verified_at"] = _now()
+        otp["session_sha256"] = presented
+        inquiry["identity_otp"] = otp
+        req["inquiry"] = inquiry
+        chat = _ensure_chat(req)
+        _say(chat, "bot", "Code verified. You can record your identity.")
+        req["updated_at"] = otp["verified_at"]
+        _persist_request(req)
+        return {"otp_verified": True, "chat": _public_chat(req, token)}
+
+
+def _add_seconds(stamp: str, seconds: int) -> str:
+    moment = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    shifted = moment + timedelta(seconds=int(seconds))
+    return shifted.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _inquiry_status_only(req: Dict[str, Any]) -> Dict[str, Any]:
+    """A filed link may say where the request stands. It does not repeat contact details."""
+    return {
+        "request_id": req.get("id"),
+        "role": req.get("requested_role"),
+        "status": req.get("status"),
+        "editable": False,
+    }
+
+
+def inquiry_prefill(token: str) -> Dict[str, Any]:
+    """Form payload for the person who holds the email link. No national ID number.
+
+    Once the request leaves ``inquiry``, the link returns status only. The
+    14-day expiry applies in every status, so a filed link also stops answering
+    after ``INQUIRY_DAYS``.
+    """
+    with _LOCK:
+        _ensure_loaded()
+        req = _request_for_inquiry_token(token)
+        if req is None:
+            raise RewardError("This inquiry link is not valid", status=404, code="inquiry_not_found")
+        inquiry = req.get("inquiry") or {}
+        if _inquiry_expired(inquiry):
+            raise RewardError("This inquiry link has expired", status=410, code="inquiry_expired")
+        if req.get("status") != "inquiry":
+            return _inquiry_status_only(req)
+        stored_known = inquiry.get("known") if isinstance(inquiry.get("known"), dict) else _known_customer(req["customer_id"])
+        known = dict(stored_known)
+        linked = _inquiry_email_for(req)
+        if linked:
+            known["email"] = linked
+        personal = inquiry.get("personal") if isinstance(inquiry.get("personal"), dict) else {}
+        company = inquiry.get("company") if isinstance(inquiry.get("company"), dict) else {}
+        return {
+            "request_id": req["id"],
+            "role": req.get("requested_role"),
+            "status": req.get("status"),
+            "editable": req.get("status") == "inquiry",
+            "agent_is_supplier": True,
+            "known": {
+                "name": known.get("name") or "",
+                "email": known.get("email") or "",
+                "phone": known.get("phone") or "",
+                "address": known.get("address") or "",
+                "city": known.get("city") or "",
+                "country": known.get("country") or "",
+                "nationality": known.get("nationality"),
+                "national_id_masked": known.get("national_id_masked"),
+            },
+            "personal": {
+                "name": personal.get("name") or known.get("name") or "",
+                "phone": personal.get("phone") or known.get("phone") or "",
+                "address": personal.get("address") or known.get("address") or "",
+                "city": personal.get("city") or known.get("city") or "",
+                "country": personal.get("country") or known.get("country") or "",
+            },
+            "has_company": bool(inquiry.get("has_company")),
+            "company": {
+                "company_name": company.get("company_name") or req.get("company_name") or "",
+                "supplier_type": company.get("supplier_type") or req.get("supplier_type") or "",
+                "registration_number": company.get("registration_number") or "",
+                "city": company.get("city") or "",
+                "country": company.get("country") or "",
+                "phone": company.get("phone") or "",
+                "address": company.get("address") or "",
+                "description": company.get("description") or "",
+            },
+            "supplier_types": supplier_type_values(),
+            "process": [dict(item) for item in INQUIRY_PROCESS],
+            "chat": _public_chat(req, token),
+            "agent": "Phin",
+        }
+
+
+def _clean_personal(personal_in: Dict[str, Any]) -> Dict[str, str]:
+    personal = {
+        "name": _clip_text(personal_in.get("name"), 120),
+        "phone": _clip_text(personal_in.get("phone"), 40),
+        "address": _clip_text(personal_in.get("address"), 160),
+        "city": _clip_text(personal_in.get("city"), 80),
+        "country": _clip_text(personal_in.get("country"), 80),
+    }
+    if len(personal["name"]) < 2:
+        raise RewardError("Enter the name for this application")
+    return personal
+
+
+def _clean_company(company_in: Dict[str, Any]) -> Dict[str, str]:
+    supplier_type = _clip_text(company_in.get("supplier_type"), 40).lower()
+    company_name = _clip_text(company_in.get("company_name"), 160)
+    if supplier_type not in supplier_type_values():
+        raise RewardError("Choose a supplier type such as clinic, pharmacy, or wellness")
+    if len(company_name) < 2:
+        raise RewardError("A company on the application needs a practice or company name")
+    return {
+        "company_name": company_name,
+        "supplier_type": supplier_type,
+        "registration_number": _clip_text(company_in.get("registration_number"), 80),
+        "city": _clip_text(company_in.get("city"), 80),
+        "country": _clip_text(company_in.get("country"), 80),
+        "phone": _clip_text(company_in.get("phone"), 40),
+        "address": _clip_text(company_in.get("address"), 160),
+        "description": _clip_text(company_in.get("description"), 500),
+    }
+
+
+def submit_inquiry(token: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Write the form onto the same request and hand it to review."""
+    _reject_inquiry_secrets(body or {})
+    body = body if isinstance(body, dict) else {}
+    personal_in = body.get("personal") if isinstance(body.get("personal"), dict) else {}
+    has_company = body.get("has_company") in (True, "true", "yes", 1, "1")
+    company_in = body.get("company") if isinstance(body.get("company"), dict) else {}
+    with _LOCK:
+        _ensure_loaded()
+        req = _request_for_inquiry_token(token)
+        if req is None:
+            raise RewardError("This inquiry link is not valid", status=404, code="inquiry_not_found")
+        if req.get("status") == "pending":
+            raise RewardError("This form was already submitted", status=409, code="inquiry_submitted")
+        if req.get("status") == "approved":
+            raise RewardError("This role is already open", status=409, code="already_approved")
+        if req.get("status") != "inquiry":
+            raise RewardError(f"Request is already {req.get('status')}", status=409, code="not_inquiry")
+        inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+        if _inquiry_expired(inquiry):
+            raise RewardError("This inquiry link has expired", status=410, code="inquiry_expired")
+        personal = _clean_personal(personal_in)
+        company = _clean_company(company_in) if has_company else None
+        _assert_identity_ready(req)
+        inquiry["personal"] = personal
+        inquiry["has_company"] = has_company
+        inquiry["company"] = company
+        inquiry["submitted_at"] = _now()
+        req["inquiry"] = inquiry
+        req["updated_at"] = inquiry["submitted_at"]
+        if has_company and company:
+            req["company_name"] = company["company_name"]
+            req["supplier_type"] = company["supplier_type"]
+        else:
+            req["company_name"] = None
+            req["supplier_type"] = None
+            inquiry["company"] = None
+        # Stay on inquiry until the desk row exists. A staging error must
+        # leave the form resubmittable instead of a pending request with no row.
+        try:
+            _stage_staff_application(req)
+        except RewardError:
+            req["status"] = "inquiry"
+            raise
+        except Exception as exc:
+            req["status"] = "inquiry"
+            raise RewardError(
+                "The application could not be filed for staff review",
+                status=503,
+                code="application_not_staged",
+            ) from exc
+        req["status"] = "pending"
+        req["updated_at"] = inquiry["submitted_at"]
+        _link_staged_request(req)
+        _persist_request(req)
+        return public_request(req)
+
+
+# The professional application is one disclosed chat. The steps are fixed.
+# Phin does not invent a step, and nothing is filed until review is submitted.
+INQUIRY_PROCESS: Tuple[Dict[str, Any], ...] = (
+    {
+        "id": "confirm_person",
+        "title": "Confirm your details",
+        "optional": False,
+        "detail": (
+            "Name, phone, and address already on your customer record. "
+            "You can correct them on this application. The customer master is not rewritten."
+        ),
+    },
+    {
+        "id": "identity",
+        "title": "Identity",
+        "optional": False,
+        "detail": (
+            "Nationality and personal ID. The number is stored only in the identity vault. "
+            "This application keeps nationality and the last four digits. "
+            "When an identity is already on file, you confirm it instead of typing it again. "
+            "The number is required when the platform requires identity and none is on file."
+        ),
+    },
+    {
+        "id": "company",
+        "title": "Company or practice",
+        "optional": True,
+        "detail": (
+            "Say yes to add a company. That opens the company name, type, registration, and address. "
+            "Say no to apply in your own name. An agent is still one supplier record."
+        ),
+    },
+    {
+        "id": "evidence",
+        "title": "Documents, voice, or video",
+        "optional": True,
+        "detail": (
+            "You may attach a document, a voice note, or a short video. "
+            "Each file is sealed by SHA-256 and filed on this application. You can skip this step."
+        ),
+    },
+    {
+        "id": "review",
+        "title": "Review and submit",
+        "optional": False,
+        "detail": (
+            "You see the full application before it is filed. "
+            "Filing uses this one request. Staff review it on Supplier Management."
+        ),
+    },
+)
+_INQUIRY_STEP_IDS = tuple(item["id"] for item in INQUIRY_PROCESS)
+_INQUIRY_MEDIA_KINDS = ("voice", "video", "document", "image")
+_INQUIRY_MEDIA_LIMIT = 3
+_INQUIRY_MEDIA_BYTES = 4 * 1024 * 1024
+_INQUIRY_OPENING = (
+    "I'm Phin. This application has five steps, and all five are shown before you submit: "
+    "your details, identity, a company only if you add one, optional documents or a voice note "
+    "or a short video, then a review. An agent is a role on one supplier record. "
+    "Nothing is filed until you submit."
+)
+
+
+def _identity_public(req: Dict[str, Any]) -> Dict[str, Any]:
+    rec = _mapped_customer(req.get("customer_id")) or {}
+    try:
+        from services.customer_identity_service import identity_reference, is_complete, strict_mode
+        ref = identity_reference(rec) or {}
+        complete = bool(is_complete(rec))
+        required = bool(strict_mode() and not complete)
+    except Exception:
+        ref, complete, required = {}, False, False
+    return {
+        "required": required,
+        "complete": complete,
+        "nationality": ref.get("nationality"),
+        "national_id_masked": ref.get("national_id_masked"),
+    }
+
+
+def _step_prompt(step_id: str, req: Dict[str, Any], identity: Dict[str, Any]) -> str:
+    inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+    personal = inquiry.get("personal") if isinstance(inquiry.get("personal"), dict) else {}
+    if step_id == "confirm_person":
+        name = personal.get("name") or "there"
+        address = _inquiry_email_for(req)
+        linked = (
+            f" Your email {address} is already linked to this application. You do not type it again."
+            if address else ""
+        )
+        return (
+            f"{name}, confirm the name, phone, and address for this application. "
+            "They are already filled from your customer record. Correct anything that changed."
+            + linked
+        )
+    if step_id == "identity":
+        address = _inquiry_email_for(req) or "the email already linked to this application"
+        if identity.get("complete"):
+            masked = identity.get("national_id_masked") or "on file"
+            nation = identity.get("nationality") or "your nationality"
+            return (
+                f"Your identity is already on file ({nation}, {masked}). "
+                "Confirm it is yours. The number is not shown again and is not copied onto this application."
+            )
+        if identity.get("required"):
+            return (
+                "This application needs your nationality and personal ID before it can continue. "
+                f"First enter the code sent to {address}. "
+                "The number goes to the identity vault only. This application keeps the last four digits."
+            )
+        return (
+            "Add your nationality and personal ID, or skip this step. "
+            f"Recording a new ID needs the code sent to {address}. "
+            "When the platform requires an identity and none is on file, this step cannot be skipped. "
+            "The number goes to the identity vault only."
+        )
+    if step_id == "company":
+        return (
+            "Are you applying with a company or practice? "
+            "Yes opens the company name, type, and registration. No keeps the application in your own name."
+        )
+    if step_id == "evidence":
+        return (
+            "You can add a document, a voice note, or a short video. "
+            "Each file is sealed with SHA-256. This step is optional — skip it, or continue when you are done."
+        )
+    company = inquiry.get("company") if isinstance(inquiry.get("company"), dict) else {}
+    chat = inquiry.get("chat") if isinstance(inquiry.get("chat"), dict) else {}
+    media_count = len(chat.get("media") or [])
+    who = personal.get("name") or "You"
+    practice = company.get("company_name") if inquiry.get("has_company") else "in your own name"
+    ident = identity.get("national_id_masked") or ("not confirmed" if not identity.get("complete") else "on file")
+    return (
+        f"Review before filing. {who}. Practice: {practice}. Identity: {ident}. "
+        f"Files sealed on this application: {media_count}. "
+        "Submit files this one request for staff review. Nothing else is created."
+    )
+
+
+def _step_input(step_id: str, req: Dict[str, Any], identity: Dict[str, Any], presented: str = "") -> Dict[str, Any]:
+    inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+    if step_id == "confirm_person":
+        personal = inquiry.get("personal") if isinstance(inquiry.get("personal"), dict) else {}
+        return {"type": "person", "prefill": personal, "email": _inquiry_email_for(req)}
+    if step_id == "identity":
+        return {
+            "type": "identity",
+            "can_skip": not identity.get("complete") and not identity.get("required"),
+            "can_confirm": bool(identity.get("complete")),
+            "nationality": identity.get("nationality"),
+            "national_id_masked": identity.get("national_id_masked"),
+            "otp_verified": _identity_otp_fresh(req, presented),
+            "email": _inquiry_email_for(req),
+        }
+    if step_id == "company":
+        company = inquiry.get("company") if isinstance(inquiry.get("company"), dict) else {}
+        return {
+            "type": "company",
+            "supplier_types": supplier_type_values(),
+            "prefill": company,
+        }
+    if step_id == "evidence":
+        return {"type": "media", "kinds": list(_INQUIRY_MEDIA_KINDS), "optional": True}
+    return {"type": "confirm", "options": ["submit"]}
+
+
+def _blank_chat() -> Dict[str, Any]:
+    return {
+        "version": 1,
+        "cursor": "confirm_person",
+        "media": [],
+        "transcript": [],
+        "identity_confirmed": False,
+        "identity_deferred": False,
+    }
+
+
+def _ensure_chat(req: Dict[str, Any]) -> Dict[str, Any]:
+    inquiry = req.setdefault("inquiry", {})
+    chat = inquiry.get("chat")
+    if not isinstance(chat, dict):
+        chat = _blank_chat()
+        inquiry["chat"] = chat
+    chat.setdefault("media", [])
+    chat.setdefault("transcript", [])
+    chat.setdefault("cursor", "confirm_person")
+    return chat
+
+
+def _say(chat: Dict[str, Any], role: str, text: str) -> None:
+    chat.setdefault("transcript", []).append({"role": role, "text": _clip_text(text, 500)})
+    chat["transcript"] = chat["transcript"][-40:]
+
+
+_INQUIRY_EMAIL_UNSENT = (
+    "This chat is open. The email could not be sent, so continue here."
+)
+
+
+def _inquiry_mail_line(req: Dict[str, Any], email_sent: bool) -> str:
+    """Name the linked address in the chat. The link token stays out of the line."""
+    if not email_sent:
+        return _INQUIRY_EMAIL_UNSENT
+    email = _inquiry_email_for(req)
+    target = email or "the email on your customer record"
+    return (
+        f"I sent this chat to {target}. "
+        "That address is already on this application, so you do not type it again. "
+        "Open that message to come back to this application. "
+        "A code for a new identity goes to that same email."
+    )
+
+
+def _seed_chat_notice(req: Dict[str, Any], email_sent: bool) -> None:
+    """Open the disclosed chat with the email result. The link token stays out.
+
+    A later successful send still records itself when an earlier attempt left
+    only the failure line. The token is not written into either line.
+    """
+    chat = _ensure_chat(req)
+    line = _inquiry_mail_line(req, email_sent)
+    texts = [
+        str(item.get("text") or "")
+        for item in (chat.get("transcript") or [])
+        if isinstance(item, dict)
+    ]
+    if texts:
+        if email_sent and line not in texts:
+            _say(chat, "bot", line)
+        return
+    _say(chat, "bot", _INQUIRY_OPENING)
+    _say(chat, "bot", line)
+    _say(chat, "bot", _step_prompt("confirm_person", req, _identity_public(req)))
+
+
+def note_inquiry_delivery(token: str, text: str) -> Dict[str, Any]:
+    """Record a notification in the disclosed chat. The text must not carry a secret."""
+    with _LOCK:
+        req = _open_chat_request(token)
+        chat = _ensure_chat(req)
+        _say(chat, "bot", text)
+        req["updated_at"] = _now()
+        _persist_request(req)
+        return _chat_payload(req, token)
+
+
+def _public_media(chat: Dict[str, Any]) -> List[Dict[str, Any]]:
+    shown = []
+    for item in chat.get("media") or []:
+        if not isinstance(item, dict):
+            continue
+        shown.append({
+            "id": item.get("id"),
+            "kind": item.get("kind"),
+            "name": item.get("name"),
+            "sha256": item.get("sha256"),
+            "size": item.get("size"),
+            "document_id": item.get("document_id"),
+        })
+    return shown
+
+
+def _public_chat(req: Dict[str, Any], presented: str = "") -> Dict[str, Any]:
+    inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+    chat = inquiry.get("chat") if isinstance(inquiry.get("chat"), dict) else _blank_chat()
+    cursor = "filed" if req.get("status") != "inquiry" else str(chat.get("cursor") or "confirm_person")
+    identity = _identity_public(req)
+    step = None
+    if cursor in _INQUIRY_STEP_IDS:
+        step = {
+            "id": cursor,
+            "prompt": _step_prompt(cursor, req, identity),
+            "input": _step_input(cursor, req, identity, presented),
+        }
+    messages = [dict(item) for item in (chat.get("transcript") or []) if isinstance(item, dict)]
+    if not messages and step:
+        messages = [
+            {"role": "bot", "text": _INQUIRY_OPENING},
+            {"role": "bot", "text": step["prompt"]},
+        ]
+    email = _inquiry_email_for(req)
+    return {
+        "agent": "Phin",
+        "disclosed": True,
+        "email": email,
+        "process": [dict(item) for item in INQUIRY_PROCESS],
+        "cursor": cursor,
+        "step": step,
+        "messages": messages,
+        "media": _public_media(chat),
+        "identity": identity,
+        "editable": req.get("status") == "inquiry",
+        "notification": {
+            "template": "professional_inquiry_chat",
+            "sent": bool(inquiry.get("email_sent")),
+            "notification_id": inquiry.get("email_notification_id") or None,
+        },
+    }
+
+
+def _chat_payload(req: Dict[str, Any], presented: str = "") -> Dict[str, Any]:
+    return {
+        "request_id": req.get("id"),
+        "role": req.get("requested_role"),
+        "status": req.get("status"),
+        "agent_is_supplier": True,
+        "agent": "Phin",
+        "chat": _public_chat(req, presented),
+    }
+
+
+def _open_chat_request(token: str) -> Dict[str, Any]:
+    _ensure_loaded()
+    req = _request_for_inquiry_token(token)
+    if req is None:
+        raise RewardError("This inquiry link is not valid", status=404, code="inquiry_not_found")
+    if req.get("status") == "pending":
+        raise RewardError("This application was already submitted", status=409, code="inquiry_submitted")
+    if req.get("status") != "inquiry":
+        raise RewardError(f"Request is already {req.get('status')}", status=409, code="not_inquiry")
+    inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+    if _inquiry_expired(inquiry):
+        raise RewardError("This inquiry link has expired", status=410, code="inquiry_expired")
+    req["inquiry"] = inquiry
+    return req
+
+
+def _next_cursor(step_id: str) -> str:
+    index = _INQUIRY_STEP_IDS.index(step_id)
+    if index + 1 >= len(_INQUIRY_STEP_IDS):
+        return "filed"
+    return _INQUIRY_STEP_IDS[index + 1]
+
+
+def _body_from_inquiry(req: Dict[str, Any]) -> Dict[str, Any]:
+    inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+    body = {
+        "personal": dict(inquiry.get("personal") or {}),
+        "has_company": bool(inquiry.get("has_company")),
+    }
+    if body["has_company"] and isinstance(inquiry.get("company"), dict):
+        body["company"] = dict(inquiry["company"])
+    return body
+
+
+def _assert_identity_ready(req: Dict[str, Any]) -> None:
+    identity = _identity_public(req)
+    if identity.get("complete"):
+        return
+    try:
+        from services.customer_identity_service import strict_mode
+        required = bool(strict_mode())
+    except Exception:
+        required = False
+    if required:
+        raise RewardError(
+            "Identity is required before this application can be filed",
+            code="identity_required",
+        )
+
+
+def _advance_saved(req: Dict[str, Any], chat: Dict[str, Any], step_id: str, user_text: str, bot_text: str,
+                   presented: str = "") -> Dict[str, Any]:
+    _say(chat, "user", user_text)
+    if bot_text:
+        _say(chat, "bot", bot_text)
+    chat["cursor"] = _next_cursor(step_id)
+    if chat["cursor"] in _INQUIRY_STEP_IDS:
+        identity = _identity_public(req)
+        _say(chat, "bot", _step_prompt(chat["cursor"], req, identity))
+    req["updated_at"] = _now()
+    _persist_request(req)
+    return _chat_payload(req, presented)
+
+
+def _identity_write_stores():
+    """The same customer store the other Phin chats write identity through.
+
+    In database mode ``CUSTOMERS`` is a ``DatabaseDict``, not a ``dict``.
+    Treating that as a missing vault stopped "Record my identity" after the
+    code had already been verified. A form body is not a store.
+    """
+    portal = _portal()
+    customers = getattr(portal, "CUSTOMERS", None) if portal else None
+    if customers is None or not hasattr(customers, "__getitem__") or not hasattr(customers, "__setitem__"):
+        raise RewardError("Identity vault is unavailable", status=503, code="identity_vault_unavailable")
+    mirrors = []
+    registered = getattr(portal, "REGISTERED_CUSTOMERS", None) if portal else None
+    if isinstance(registered, dict) and registered is not customers:
+        mirrors.append(registered)
+    return (
+        customers,
+        tuple(mirrors),
+        getattr(portal, "audit", None) if portal else None,
+        getattr(portal, "platform_event_ledger", None) if portal else None,
+    )
+
+
+def _advance_identity(token: str, value: Any) -> Dict[str, Any]:
+    action = ""
+    provided: Dict[str, Any] = {}
+    if isinstance(value, str):
+        action = value.strip().lower()
+    elif isinstance(value, dict):
+        action = str(value.get("action") or "").strip().lower()
+        if value.get("national_id"):
+            action = "provide"
+            provided = value
+    if action not in ("confirm", "skip", "provide"):
+        raise RewardError("Confirm your identity, skip it, or provide nationality and a personal ID")
+    with _LOCK:
+        req = _open_chat_request(token)
+        chat = _ensure_chat(req)
+        if chat.get("cursor") != "identity":
+            raise RewardError("Finish the step that is open", status=409, code="step_mismatch")
+        customer_id = str(req.get("customer_id") or "")
+        identity = _identity_public(req)
+    deferred = False
+    if action == "confirm":
+        if not identity.get("complete"):
+            raise RewardError("There is no identity on file to confirm", code="identity_required")
+        note = "Identity confirmed from the record already on file. The number stays in the vault."
+    elif action == "skip":
+        if identity.get("complete"):
+            raise RewardError("Confirm the identity already on file", code="identity_required")
+        if identity.get("required"):
+            raise RewardError(
+                "Identity is required before this application can continue",
+                code="identity_required",
+            )
+        deferred = True
+        note = "Identity was not confirmed on this application."
+    else:
+        nationality = provided.get("nationality")
+        national_id = provided.get("national_id")
+        for key in provided:
+            if str(key).strip().lower() in _INQUIRY_FORBIDDEN and str(key).strip().lower() != "national_id":
+                raise RewardError(
+                    "This application does not collect a tax number or a password",
+                    code="field_not_accepted",
+                )
+        with _LOCK:
+            gate = _open_chat_request(token)
+            if _ensure_chat(gate).get("cursor") != "identity":
+                raise RewardError("Finish the step that is open", status=409, code="step_mismatch")
+            if not _identity_otp_fresh(gate, token):
+                raise RewardError(
+                    "Verify the code sent to your email before recording an identity",
+                    status=403,
+                    code="otp_required",
+                )
+        try:
+            from services.customer_identity_service import set_identity
+            customers, mirrors, audit, ledger = _identity_write_stores()
+            set_identity(
+                customers, customer_id, national_id, nationality,
+                source="chat", actor="professional_inquiry",
+                mirrors=mirrors, audit=audit, ledger=ledger,
+            )
+        except RewardError:
+            raise
+        except Exception as exc:
+            code = getattr(exc, "code", None) or "identity_rejected"
+            status = getattr(exc, "status", None) or 400
+            raise RewardError(str(exc), status=int(status), code=str(code))
+        finally:
+            if isinstance(provided, dict):
+                provided.pop("national_id", None)
+        note = "Identity recorded. This application keeps nationality and the last four digits only."
+    with _LOCK:
+        req = _open_chat_request(token)
+        chat = _ensure_chat(req)
+        if chat.get("cursor") != "identity":
+            raise RewardError("Finish the step that is open", status=409, code="step_mismatch")
+        known = _known_customer(customer_id)
+        linked = _inquiry_email_for(req)
+        if linked:
+            known["email"] = linked
+        req["inquiry"]["known"] = known
+        chat["identity_confirmed"] = not deferred
+        chat["identity_deferred"] = deferred
+        if not deferred:
+            otp = req["inquiry"].get("identity_otp") if isinstance(req["inquiry"].get("identity_otp"), dict) else {}
+            otp["verified_at"] = None
+            otp["session_sha256"] = None
+            req["inquiry"]["identity_otp"] = otp
+        if not chat.get("transcript"):
+            _say(chat, "bot", _INQUIRY_OPENING)
+        return _advance_saved(req, chat, "identity", "Identity step completed", note, token)
+
+
+def advance_inquiry_chat(token: str, step: str, value: Any) -> Dict[str, Any]:
+    """Move one disclosed step. The personal ID never lands on the request."""
+    step = str(step or "").strip()
+    if step not in _INQUIRY_STEP_IDS:
+        raise RewardError("That step is not part of this application", code="step_unknown")
+    if step == "identity":
+        return _advance_identity(token, value)
+    filing_body = None
+    with _LOCK:
+        req = _open_chat_request(token)
+        chat = _ensure_chat(req)
+        if chat.get("cursor") != step:
+            raise RewardError("Finish the step that is open", status=409, code="step_mismatch")
+        if not chat.get("transcript"):
+            _say(chat, "bot", _INQUIRY_OPENING)
+        if step == "confirm_person":
+            incoming = value if isinstance(value, dict) else {}
+            _reject_inquiry_secrets(incoming)
+            personal_in = incoming.get("personal") if isinstance(incoming.get("personal"), dict) else incoming
+            personal = _clean_personal(personal_in)
+            req["inquiry"]["personal"] = personal
+            saved = _advance_saved(req, chat, step, personal["name"], "", token)
+        elif step == "company":
+            has_company = True
+            if isinstance(value, str) and value.strip().lower() in ("no", "skip"):
+                has_company = False
+            elif isinstance(value, dict) and str(value.get("has_company")).strip().lower() in ("false", "no", "0"):
+                has_company = False
+            elif not isinstance(value, dict):
+                raise RewardError("Say no, or send the company name and type")
+            _reject_inquiry_secrets(value if isinstance(value, dict) else {})
+            if has_company:
+                company_in = value.get("company") if isinstance(value.get("company"), dict) else value
+                company = _clean_company(company_in)
+                req["inquiry"]["has_company"] = True
+                req["inquiry"]["company"] = company
+                req["company_name"] = company["company_name"]
+                req["supplier_type"] = company["supplier_type"]
+                user_text = company["company_name"]
+            else:
+                req["inquiry"]["has_company"] = False
+                req["inquiry"]["company"] = None
+                req["company_name"] = None
+                req["supplier_type"] = None
+                user_text = "No company"
+            saved = _advance_saved(req, chat, step, user_text, "", token)
+        elif step == "evidence":
+            choice = str(value or "").strip().lower()
+            if isinstance(value, dict):
+                choice = str(value.get("action") or "").strip().lower()
+            if choice not in ("skip", "done"):
+                raise RewardError("Choose skip or done")
+            count = len(chat.get("media") or [])
+            user_text = "Skip evidence" if choice == "skip" else f"Continue with {count} file(s)"
+            saved = _advance_saved(req, chat, step, user_text, "", token)
+        else:
+            if str(value or "").strip().lower() not in ("submit",):
+                if not (isinstance(value, dict) and str(value.get("action") or "").lower() == "submit"):
+                    raise RewardError("Confirm with submit")
+            _assert_identity_ready(req)
+            filing_body = _body_from_inquiry(req)
+            saved = None
+    if filing_body is None:
+        return saved
+    filed = submit_inquiry(token, filing_body)
+    with _LOCK:
+        req = _request_for_inquiry_token(token)
+        if req is None:
+            return {"request": filed, "agent": "Phin"}
+        chat = _ensure_chat(req)
+        chat["cursor"] = "filed"
+        _say(chat, "user", "Submit this application")
+        _say(chat, "bot", "Filed. This one request is waiting for review on Supplier Management.")
+        req["updated_at"] = _now()
+        _persist_request(req)
+        payload = _chat_payload(req, token)
+    payload["request"] = filed
+    return payload
+
+
+def _safe_media_name(kind: str, name: str) -> str:
+    defaults = {
+        "voice": "voice-note.webm",
+        "video": "video-note.webm",
+        "document": "document.txt",
+        "image": "image.png",
+    }
+    raw = re.sub(r"[^A-Za-z0-9._-]", "", str(name or "").replace("\\", "/").split("/")[-1])[:80]
+    if "." not in raw:
+        return defaults[kind]
+    ext = "." + raw.rsplit(".", 1)[-1].lower()
+    try:
+        from services.document_processing_service import ALLOWED_EXTENSIONS
+        allowed = ALLOWED_EXTENSIONS
+    except Exception:
+        allowed = {".pdf", ".txt", ".png", ".jpg", ".jpeg", ".webm", ".mp4", ".wav", ".mp3"}
+    if ext not in allowed:
+        return defaults[kind]
+    return raw
+
+
+def attach_inquiry_media(token: str, kind: str, name: str, mime_type: str,
+                         data_b64: str) -> Dict[str, Any]:
+    """Seal an optional voice note, video, or document onto the same request."""
+    kind = str(kind or "").strip().lower()
+    if kind not in _INQUIRY_MEDIA_KINDS:
+        raise RewardError("Attachment kind must be voice, video, document, or image")
+    raw_b64 = str(data_b64 or "")
+    if "," in raw_b64 and raw_b64.strip().lower().startswith("data:"):
+        raw_b64 = raw_b64.split(",", 1)[1]
+    try:
+        blob = base64.b64decode(raw_b64, validate=True)
+    except Exception:
+        raise RewardError("The attachment is not valid base64")
+    if not blob:
+        raise RewardError("The attachment is empty")
+    if len(blob) > _INQUIRY_MEDIA_BYTES:
+        raise RewardError("Attachment exceeds 4MB")
+    file_name = _safe_media_name(kind, name)
+    digest = hashlib.sha256(blob).hexdigest()
+    with _LOCK:
+        req = _open_chat_request(token)
+        chat = _ensure_chat(req)
+        if chat.get("cursor") != "evidence":
+            raise RewardError(
+                "Documents, voice, and video are accepted on that step",
+                status=409, code="media_not_open",
+            )
+        if len(chat.get("media") or []) >= _INQUIRY_MEDIA_LIMIT:
+            raise RewardError(f"Maximum {_INQUIRY_MEDIA_LIMIT} attachments")
+        customer_id = str(req.get("customer_id") or "")
+        request_id = str(req.get("id") or "")
+    try:
+        from services.document_processing_service import get_document_service
+        stored = get_document_service().upload_document(
+            file_name=file_name,
+            file_data_b64=base64.b64encode(blob).decode("ascii"),
+            mime_type=str(mime_type or "")[:120] or None,
+            category="professional_inquiry",
+            description="Professional application evidence",
+            entity_type="professional_request",
+            entity_id=request_id,
+            customer_id=customer_id,
+            uploaded_by=customer_id,
+            uploaded_by_role="customer",
+            skip_processing=True,
+        )
+    except ValueError as exc:
+        raise RewardError(str(exc))
+    except RewardError:
+        raise
+    except Exception:
+        raise RewardError(
+            "The attachment could not be sealed",
+            status=503, code="media_not_stored",
+        )
+    item = {
+        "id": "INQMED-" + secrets.token_hex(4).upper(),
+        "kind": kind,
+        "name": file_name,
+        "mime_type": str(getattr(stored, "mime_type", "") or mime_type or "")[:120],
+        "size": len(blob),
+        "sha256": digest,
+        "document_id": getattr(stored, "document_id", None),
+        "uploaded_at": _now(),
+    }
+    if item["sha256"] != getattr(stored, "sha256", item["sha256"]):
+        raise RewardError("The attachment checksum did not match", status=503, code="media_not_stored")
+    label = {"voice": "voice note", "video": "video", "document": "document", "image": "image"}[kind]
+    with _LOCK:
+        req = _open_chat_request(token)
+        chat = _ensure_chat(req)
+        if chat.get("cursor") != "evidence":
+            raise RewardError(
+                "Documents, voice, and video are accepted on that step",
+                status=409, code="media_not_open",
+            )
+        chat.setdefault("media", []).append(item)
+        if not chat.get("transcript"):
+            _say(chat, "bot", _INQUIRY_OPENING)
+        _say(chat, "user", f"Sent a {label}: {file_name}")
+        _say(chat, "bot", f"Sealed that {label}. Fingerprint {digest[:12]}. You can add another or continue.")
+        req["updated_at"] = _now()
+        _persist_request(req)
+        payload = _chat_payload(req, token)
+    payload["media"] = {key: item[key] for key in ("id", "kind", "name", "sha256", "size", "document_id")}
+    return payload
+
+
+def _supply():
     portal = _portal()
     service = getattr(portal, "supply_chain_service", None) if portal else None
     if service is None:
         raise RewardError("Supplier service is unavailable", status=503, code="supplier_unavailable")
+    return service
+
+
+def _find_supplier(customer_id: str) -> Optional[Dict[str, Any]]:
+    service = _supply()
+    suppliers = getattr(service, "suppliers", {}) or {}
+    rec = _customer_record(customer_id) or {}
+    sid = str(rec.get("supplier_id") or "")
+    if sid and isinstance(suppliers.get(sid), dict):
+        return suppliers[sid]
+    for item in REQUESTS.values():
+        if str(item.get("customer_id")) != str(customer_id):
+            continue
+        existing = str(item.get("supplier_id") or "")
+        if existing and isinstance(suppliers.get(existing), dict):
+            return suppliers[existing]
+    for sup in suppliers.values():
+        if isinstance(sup, dict) and str(sup.get("customer_id") or "") == str(customer_id):
+            return sup
+    return None
+
+
+def _company_from_request(req: Dict[str, Any]) -> Tuple[str, str, bool]:
+    inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+    company = inquiry.get("company") if isinstance(inquiry.get("company"), dict) else {}
+    personal = inquiry.get("personal") if isinstance(inquiry.get("personal"), dict) else {}
+    rec = _customer_record(req["customer_id"]) or {}
+    declined = inquiry.get("has_company") is False
+    if not declined and (inquiry.get("has_company") or (req.get("company_name") and req.get("supplier_type"))):
+        name = _clip_text(company.get("company_name") or req.get("company_name"), 160)
+        stype = _clip_text(company.get("supplier_type") or req.get("supplier_type"), 40).lower()
+        if name and stype in supplier_type_values():
+            return name, stype, True
+    placeholder = _clip_text(personal.get("name") or rec.get("name") or "PHINS Professional", 160)
+    return placeholder or "PHINS Professional", "other", False
+
+
+def _stamp_supplier_details(supplier: Dict[str, Any], req: Dict[str, Any],
+                            name: str, stype: str, from_company: bool) -> None:
+    conflict = False
+    source = str(supplier.get("company_name_source") or "")
+    current = str(supplier.get("company_name") or "").strip()
+    if name:
+        if not current or source == "placeholder":
+            supplier["company_name"] = name
+            supplier["company_name_source"] = "inquiry" if from_company else "placeholder"
+        elif current != name:
+            conflict = True
+    current_type = str(supplier.get("supplier_type") or "").strip()
+    if stype and from_company:
+        if not current_type or (current_type == "other" and stype != "other"):
+            supplier["supplier_type"] = stype
+        elif current_type != stype:
+            conflict = True
+    inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+    company = inquiry.get("company") if isinstance(inquiry.get("company"), dict) else {}
+    personal = inquiry.get("personal") if isinstance(inquiry.get("personal"), dict) else {}
+
+    def fill(field: str, value: Any) -> None:
+        nonlocal conflict
+        text = _clip_text(value, 160)
+        if not text:
+            return
+        current_value = str(supplier.get(field) or "").strip()
+        if not current_value:
+            supplier[field] = text
+        elif current_value != text:
+            conflict = True
+
+    if from_company:
+        fill("business_registration_number", company.get("registration_number"))
+        fill("city", company.get("city") or personal.get("city"))
+        fill("country", company.get("country") or personal.get("country"))
+        fill("contact_phone", company.get("phone") or personal.get("phone"))
+        fill("description", company.get("description"))
+        fill("address", company.get("address") or personal.get("address"))
+    else:
+        fill("contact_phone", personal.get("phone"))
+        fill("city", personal.get("city"))
+        fill("country", personal.get("country"))
+        fill("address", personal.get("address"))
+    fill("contact_name", personal.get("name"))
+    rec = _customer_record(req["customer_id"]) or {}
+    email = _clip_text(rec.get("email"), 254).lower()
+    supplier_email = str(supplier.get("contact_email") or "").strip().lower()
+    if email and supplier_email and supplier_email != email:
+        conflict = True
+    elif email and not supplier_email:
+        supplier["contact_email"] = email
+    supplier["customer_id"] = req["customer_id"]
+    roles = {str(item) for item in (supplier.get("roles") or []) if item}
+    roles.add("supplier")
+    supplier["roles"] = sorted(roles)
+    if conflict:
+        supplier["pipeline_detail_conflict"] = True
+
+
+def _supplier_is_closed(supplier: Dict[str, Any]) -> bool:
+    """A supplier staff already closed. A withdrawn application is not one.
+
+    ``withdrawn`` is this application's own pending row after a decline. The
+    same person can file again on that record. ``rejected``, ``suspended``,
+    and ``terminated`` were closed before this application and stay closed.
+    """
+    supplier_status = str(supplier.get("status") or "").strip().lower()
+    if supplier_status == "withdrawn":
+        return False
+    if supplier_status in _CLOSED_SUPPLIER_STATUSES:
+        return True
+    if supplier_status == "approved" and supplier.get("portal_active") is False:
+        return True
+    return supplier_status not in ("approved", "pending", "under_review")
+
+
+def _link_professional_request(supplier: Dict[str, Any], req: Dict[str, Any]) -> None:
+    """Remember this request on the one supplier. The inquiry token is not stored."""
+    ids = [str(item) for item in (supplier.get("professional_request_ids") or []) if item]
+    request_id = str(req.get("id") or "")
+    if request_id and request_id not in ids:
+        ids.append(request_id)
+    supplier["professional_request_ids"] = ids
+    supplier_req = REQUESTS.get(_request_id(req.get("customer_id"), "supplier"))
+    if supplier_req and supplier_req.get("status") == "pending":
+        supplier["professional_request_id"] = supplier_req.get("id")
+    elif request_id:
+        supplier["professional_request_id"] = request_id
+
+
+def _pending_role_request(customer_id: str, role: str) -> Optional[Dict[str, Any]]:
+    req = REQUESTS.get(_request_id(customer_id, role))
+    if req and req.get("status") == "pending":
+        return req
+    return None
+
+
+def _ensure_supplier(req: Dict[str, Any], admin: str, *, approve: bool = True,
+                     write_customer: bool = True) -> Dict[str, Any]:
+    """One supplier for this customer. A second approval reuses it.
+
+    ``approve`` is false while the application is only waiting on the staff
+    desk. That leaves the record pending and does not write the customer master.
+    """
+    name, stype, from_company = _company_from_request(req)
+    existing = _find_supplier(req["customer_id"])
+    service = _supply()
+    if existing:
+        if _supplier_is_closed(existing):
+            raise RewardError(
+                "This supplier is closed and is not reopened from the application",
+                status=409,
+                code="supplier_closed",
+            )
+        _stamp_supplier_details(existing, req, name, stype, from_company)
+        supplier_status = str(existing.get("status") or "").strip().lower()
+        if supplier_status == "withdrawn":
+            existing["status"] = "pending"
+            existing["portal_active"] = False
+            supplier_status = "pending"
+        if approve and supplier_status in ("pending", "under_review"):
+            service.approve_supplier(existing["id"], admin or "admin", notes=f"Approved with {req['id']}")
+        existing["customer_id"] = req["customer_id"]
+        if write_customer:
+            rec = _customer_record(req["customer_id"])
+            if isinstance(rec, dict):
+                rec["supplier_id"] = existing["id"]
+        req["supplier_id"] = existing["id"]
+        if not req.get("invitation_code"):
+            req["invitation_code"] = existing.get("invitation_code")
+        _link_professional_request(existing, req)
+        return existing
     rec = _customer_record(req["customer_id"]) or {}
     issued = service.generate_invitation_code(
         created_by=admin or "admin",
-        supplier_type=req.get("supplier_type"),
+        supplier_type=stype,
         max_uses=1,
         expires_days=90,
         referrer_id=req["customer_id"],
@@ -1914,31 +3693,396 @@ def _open_supplier(req: Dict[str, Any], admin: str) -> Dict[str, Any]:
     code = ((issued or {}).get("invitation") or {}).get("code")
     if not code:
         raise RewardError("Could not issue a supplier invitation", code="supplier_invite_failed")
+    inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+    personal = inquiry.get("personal") if isinstance(inquiry.get("personal"), dict) else {}
+    company = inquiry.get("company") if from_company and isinstance(inquiry.get("company"), dict) else {}
     registered = service.register_supplier({
         "invitation_code": code,
-        "company_name": req.get("company_name") or "PHINS Professional",
+        "company_name": name,
         "contact_email": rec.get("email") or f"{req['customer_id'].lower()}@phins.local",
-        "contact_name": rec.get("name") or "PHINS Customer",
-        "contact_phone": rec.get("phone") or "",
-        "supplier_type": req.get("supplier_type"),
+        "contact_name": personal.get("name") or rec.get("name") or "PHINS Customer",
+        "contact_phone": company.get("phone") or personal.get("phone") or rec.get("phone") or "",
+        "supplier_type": stype,
         "password": secrets.token_urlsafe(24),
-        "description": "Opened from a PHINS customer professional request",
+        "description": company.get("description") or "Opened from a PHINS customer professional request",
+        "city": company.get("city") or personal.get("city") or "",
+        "country": company.get("country") or personal.get("country") or "",
+        "address": company.get("address") or personal.get("address") or "",
+        "business_registration_number": company.get("registration_number") or "",
     })
     supplier_id = (registered or {}).get("supplier_id")
     if not supplier_id:
         raise RewardError("Supplier registration did not return an id", code="supplier_failed")
-    service.approve_supplier(supplier_id, admin or "admin", notes=f"Approved with {req['id']}")
+    if approve:
+        service.approve_supplier(supplier_id, admin or "admin", notes=f"Approved with {req['id']}")
     supplier = service.suppliers.get(supplier_id)
-    if isinstance(supplier, dict):
-        supplier["customer_id"] = req["customer_id"]
+    if not isinstance(supplier, dict):
+        raise RewardError("Supplier registration did not return a record", code="supplier_failed")
+    supplier["customer_id"] = req["customer_id"]
+    if approve:
         supplier["portal_active"] = True
-    if isinstance(rec, dict):
+    supplier["company_name_source"] = "inquiry" if from_company else "placeholder"
+    supplier["roles"] = ["supplier"]
+    _stamp_supplier_details(supplier, req, name, stype, from_company)
+    if write_customer and isinstance(rec, dict):
         rec["supplier_id"] = supplier_id
     req["invitation_code"] = code
-    return {"id": supplier_id}
+    req["supplier_id"] = supplier_id
+    _link_professional_request(supplier, req)
+    return supplier
 
 
-def review_professional(request_id: str, decision: str, admin: str, note: str = "") -> Dict[str, Any]:
+def _stage_staff_application(req: Dict[str, Any]) -> None:
+    """Show this filed request on the staff desks. Do not approve it.
+
+    A closed supplier is left closed. The request stays pending and is not
+    copied onto a second supplier. The customer master is not written.
+    """
+    existing = _find_supplier(req["customer_id"])
+    if existing and _supplier_is_closed(existing):
+        req["supplier_id"] = existing.get("id")
+        req["staff_hold"] = "supplier_closed"
+        return
+    _ensure_supplier(req, "professional_inquiry", approve=False, write_customer=False)
+
+
+def _supplier_application_still_open(req: Dict[str, Any]) -> bool:
+    other = REQUESTS.get(_request_id(req.get("customer_id"), "supplier"))
+    return bool(
+        other
+        and other.get("status") == "pending"
+        and other.get("id") != req.get("id")
+    )
+
+
+def _approved_role_on_supplier(supplier: Dict[str, Any], req: Dict[str, Any]) -> bool:
+    """Another professional role is already approved on this same supplier."""
+    customer_id = str(supplier.get("customer_id") or req.get("customer_id") or "")
+    sid = str(supplier.get("id") or "")
+    for role in ("supplier", "agent"):
+        other = REQUESTS.get(_request_id(customer_id, role))
+        if not other or other.get("id") == req.get("id"):
+            continue
+        if other.get("status") == "approved" and str(other.get("supplier_id") or "") == sid:
+            return True
+    return False
+
+
+def _unlink_professional_request(supplier: Dict[str, Any], request_id: str) -> None:
+    declined = str(request_id or "")
+    ids = [str(item) for item in (supplier.get("professional_request_ids") or []) if item and str(item) != declined]
+    supplier["professional_request_ids"] = ids
+    if str(supplier.get("professional_request_id") or "") == declined:
+        supplier["professional_request_id"] = ids[-1] if ids else None
+
+
+def _link_staged_request(req: Dict[str, Any]) -> None:
+    """Point the staged supplier at this request once it is actually pending.
+
+    A supplier that was already closed is not rewritten. The request only
+    remembers that id.
+    """
+    if req.get("staff_hold") == "supplier_closed":
+        return
+    sid = str(req.get("supplier_id") or "")
+    if not sid:
+        return
+    try:
+        supplier = _supply().suppliers.get(sid)
+    except RewardError:
+        return
+    if isinstance(supplier, dict):
+        _link_professional_request(supplier, req)
+
+
+def _supplier_was_approved(supplier: Dict[str, Any]) -> bool:
+    """The supplier itself was approved, not only a professional request.
+
+    The portal is on, or a ``supplier_approval`` ledger row already exists.
+    A request marked approved while the row is still staged is not enough.
+    """
+    if supplier.get("portal_active") is True:
+        return True
+    sid = str(supplier.get("id") or "")
+    if not sid:
+        return False
+    try:
+        ledger = getattr(_supply(), "ledger", {}) or {}
+    except RewardError:
+        return False
+    for entry in ledger.values():
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("supplier_id") == sid and entry.get("entry_type") == "supplier_approval":
+            return True
+    return False
+
+
+def _usable_agent_id(req: Dict[str, Any]) -> str:
+    """An agent grant role-switch can still open."""
+    if str(req.get("requested_role") or "") != "agent":
+        return ""
+    agent_id = str(req.get("agent_id") or "")
+    if not agent_id:
+        return ""
+    from services.agent_ecosystem_service import get_agent
+    agent = get_agent(agent_id)
+    return agent_id if isinstance(agent, dict) else ""
+
+
+def _agent_still_referenced(customer_id: str, agent_id: str, ignore_request_id: str = "") -> bool:
+    """A real grant or the customer pointer still names this agent.
+
+    The request being reset is not a grant. The customer master is only
+    read. Decline does not clear ``agent_id``.
+    """
+    skipped = str(ignore_request_id or "")
+    for item in REQUESTS.values():
+        if not isinstance(item, dict):
+            continue
+        if skipped and str(item.get("id") or "") == skipped:
+            continue
+        if item.get("status") == "approved" and str(item.get("agent_id") or "") == agent_id:
+            return True
+    rec = _customer_record(customer_id) or {}
+    return str(rec.get("agent_id") or "") == agent_id
+
+
+def _drop_unreachable_agent(customer_id: str, dangling: str, ignore_request_id: str = "") -> None:
+    """Remove the agent id this request just detached, when nothing live names it.
+
+    The id is the only candidate. Login, email, and customer id are not
+    searched. An agent the customer record still points at stays, so the
+    next approval reuses it. A failed delete raises before any request is
+    stored.
+    """
+    aid = str(dangling or "").strip()
+    if not aid or _agent_still_referenced(customer_id, aid, ignore_request_id):
+        return
+    from services.agent_ecosystem_service import discard_agent
+    discard_agent(aid)
+
+
+def _sibling_fields(req: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "status": req.get("status"),
+        "had_supplier_id": "supplier_id" in req,
+        "supplier_id": req.get("supplier_id"),
+        "had_agent_id": "agent_id" in req,
+        "agent_id": req.get("agent_id"),
+    }
+
+
+def _restore_sibling_fields(req: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
+    req["status"] = snapshot.get("status")
+    if snapshot.get("had_supplier_id"):
+        req["supplier_id"] = snapshot.get("supplier_id")
+    else:
+        req.pop("supplier_id", None)
+    if snapshot.get("had_agent_id"):
+        req["agent_id"] = snapshot.get("agent_id")
+    else:
+        req.pop("agent_id", None)
+
+
+def _detach_withdrawn_supplier(supplier: Dict[str, Any]) -> None:
+    """A withdrawn row is not a live supplier.
+
+    A granted agent keeps ``agent_id`` so role-switch still works, and stops
+    pointing ``supplier_id`` at this row. An approved stamp with no usable
+    agent goes back to inquiry. Only that detached agent id is removed, and
+    only when no grant and no customer pointer still name it. The delete
+    runs before either request is stored. A failed delete leaves those
+    requests unchanged. When there is nothing to delete, both requests are
+    stored together. If storing a sibling fails, that sibling is put back
+    before the error returns, and the withdrawn supplier snapshot is restored
+    with it. The direct review route and both desks reach this through
+    ``review_professional``.
+    """
+    sid = str(supplier.get("id") or "")
+    customer_id = str(supplier.get("customer_id") or "")
+    planned: List[Tuple[Dict[str, Any], str]] = []
+    for role in ("supplier", "agent"):
+        other = REQUESTS.get(_request_id(customer_id, role))
+        if not isinstance(other, dict) or other.get("status") != "approved":
+            continue
+        if not (sid and str(other.get("supplier_id") or "") == sid):
+            continue
+        kept = _usable_agent_id(other)
+        if kept:
+            planned.append((other, kept))
+            continue
+        dangling = str(other.get("agent_id") or "")
+        _drop_unreachable_agent(
+            str(other.get("customer_id") or customer_id),
+            dangling,
+            str(other.get("id") or ""),
+        )
+        planned.append((other, ""))
+    snapshots = [(other, _sibling_fields(other)) for other, _kept in planned]
+    try:
+        supplier.pop("agent_id", None)
+        for other, kept in planned:
+            if kept:
+                other.pop("supplier_id", None)
+                other["agent_id"] = kept
+            else:
+                other.pop("supplier_id", None)
+                other.pop("agent_id", None)
+                other["status"] = "inquiry"
+            _persist_request(other)
+    except Exception:
+        for other, snapshot in snapshots:
+            _restore_sibling_fields(other, snapshot)
+        for other, _snapshot in snapshots:
+            try:
+                _persist_request(other)
+            except Exception:
+                continue
+        raise
+
+
+def _restore_supplier_snapshot(supplier: Dict[str, Any], snapshot: Dict[str, Any]) -> None:
+    supplier["status"] = snapshot.get("status")
+    supplier["portal_active"] = snapshot.get("portal_active")
+    supplier["rejection_reason"] = snapshot.get("rejection_reason")
+    supplier["professional_request_ids"] = list(snapshot.get("professional_request_ids") or [])
+    supplier["professional_request_id"] = snapshot.get("professional_request_id")
+    if snapshot.get("had_agent_id"):
+        supplier["agent_id"] = snapshot.get("agent_id")
+    else:
+        supplier.pop("agent_id", None)
+
+
+def _withdraw_staged_supplier(supplier: Dict[str, Any], request_id: str) -> None:
+    snapshot = {
+        "status": supplier.get("status"),
+        "portal_active": supplier.get("portal_active"),
+        "rejection_reason": supplier.get("rejection_reason"),
+        "had_agent_id": "agent_id" in supplier,
+        "agent_id": supplier.get("agent_id"),
+        "professional_request_ids": list(supplier.get("professional_request_ids") or []),
+        "professional_request_id": supplier.get("professional_request_id"),
+    }
+    try:
+        _unlink_professional_request(supplier, request_id)
+        supplier["status"] = "withdrawn"
+        supplier["portal_active"] = False
+        supplier["rejection_reason"] = None
+        _detach_withdrawn_supplier(supplier)
+    except Exception:
+        _restore_supplier_snapshot(supplier, snapshot)
+        raise
+
+
+def _release_staged_supplier(req: Dict[str, Any], _admin: str, _note: str) -> None:
+    """Take a declined application off the desk without closing the person.
+
+    A staged row that was never activated becomes ``withdrawn``. A request
+    that says approved is not an activation, so it is detached from that
+    row. ``approved`` is kept only when this supplier was already approved:
+    the portal is on, or a ``supplier_approval`` ledger row already exists.
+    This does not call ``approve_supplier`` or ``reject_supplier``, and it
+    does not turn the portal on, write a ledger row, or write the customer.
+    A supplier that was already rejected, suspended, or terminated is not
+    touched here.
+    """
+    try:
+        supplier = _find_supplier(req["customer_id"])
+    except RewardError:
+        return
+    if not isinstance(supplier, dict):
+        return
+    request_id = str(req.get("id") or "")
+    status = str(supplier.get("status") or "").strip().lower()
+    if status in _CLOSED_SUPPLIER_STATUSES:
+        return
+    if status == "approved" and supplier.get("portal_active") is False:
+        if _supplier_was_approved(supplier):
+            _unlink_professional_request(supplier, request_id)
+        return
+    for role in ("supplier", "agent"):
+        other = _pending_role_request(req.get("customer_id"), role)
+        if other and other.get("id") != req.get("id"):
+            _unlink_professional_request(supplier, request_id)
+            return
+    if _supplier_was_approved(supplier):
+        if status in ("pending", "under_review"):
+            supplier["status"] = "approved"
+        _unlink_professional_request(supplier, request_id)
+        return
+    if status not in ("pending", "under_review"):
+        return
+    _withdraw_staged_supplier(supplier, request_id)
+
+
+def _ledger_agent_link(service: Any, supplier_id: str, agent_id: str) -> None:
+    if not agent_id:
+        return
+    ledger = getattr(service, "ledger", {}) or {}
+    for entry in ledger.values():
+        if not isinstance(entry, dict):
+            continue
+        meta = entry.get("metadata") or {}
+        if (entry.get("entry_type") == "agent_role_linked"
+                and entry.get("supplier_id") == supplier_id
+                and meta.get("agent_id") == agent_id):
+            return
+    service._record_ledger_entry(
+        entry_type="agent_role_linked",
+        supplier_id=supplier_id,
+        amount=0,
+        commission=0,
+        supplier_payout=0,
+        description="Agent role linked on this supplier",
+        metadata={"agent_id": agent_id, "cash_event": False},
+    )
+
+
+def _attach_agent_role(supplier: Dict[str, Any], agent: Dict[str, Any], req: Dict[str, Any]) -> None:
+    roles = {str(item) for item in (supplier.get("roles") or []) if item}
+    roles.update(("supplier", "agent"))
+    supplier["roles"] = sorted(roles)
+    new_id = str(agent.get("id") or "")
+    current = str(supplier.get("agent_id") or "")
+    if current and new_id and current != new_id:
+        supplier["pipeline_detail_conflict"] = True
+    elif new_id:
+        supplier["agent_id"] = new_id
+    rec = _customer_record(req["customer_id"])
+    if isinstance(rec, dict) and new_id:
+        if rec.get("agent_id") and rec.get("agent_id") != new_id:
+            supplier["pipeline_detail_conflict"] = True
+        else:
+            rec["agent_id"] = new_id
+    _ledger_agent_link(_supply(), supplier.get("id"), new_id)
+    req["agent_id"] = new_id or req.get("agent_id")
+    req["supplier_id"] = supplier.get("id")
+
+
+def _open_agent(req: Dict[str, Any], admin: str, default_rate: Any = None) -> Dict[str, Any]:
+    from services.agent_ecosystem_service import create_agent
+    supplier = _ensure_supplier(
+        req, admin, approve=not _supplier_application_still_open(req),
+    )
+    rec = _customer_record(req["customer_id"]) or {}
+    username = req.get("login_username") or rec.get("email") or req["customer_id"]
+    rate = default_rate
+    if rate is None:
+        rate = int(CONFIG.get("agent_default_rate_percent") or 0)
+    agent = create_agent(
+        username=str(username),
+        display_name=str((req.get("inquiry") or {}).get("personal", {}).get("name") or rec.get("name") or username),
+        email=str(rec.get("email") or ""),
+        default_rate=rate,
+        created_by="referral_rewards",
+    )
+    _attach_agent_role(supplier, agent, req)
+    return agent
+
+
+def review_professional(request_id: str, decision: str, admin: str, note: str = "",
+                        default_rate: Any = None) -> Dict[str, Any]:
     decision = str(decision or "").strip().lower()
     if decision not in ("approve", "reject"):
         raise RewardError("Decision must be approve or reject")
@@ -1947,15 +4091,17 @@ def review_professional(request_id: str, decision: str, admin: str, note: str = 
         req = REQUESTS.get(str(request_id or ""))
         if req is None:
             raise RewardError("Request not found", status=404, code="not_found")
+        if req.get("status") == "inquiry":
+            raise RewardError("The inquiry form has not been submitted", status=409, code="inquiry_open")
         if req.get("status") != "pending":
             raise RewardError(f"Request is already {req.get('status')}", status=409, code="not_pending")
         if decision == "approve":
             try:
                 if req["requested_role"] == "agent":
-                    agent = _open_agent(req)
+                    agent = _open_agent(req, admin, default_rate)
                     req["agent_id"] = agent.get("id")
                 else:
-                    supplier = _open_supplier(req, admin)
+                    supplier = _ensure_supplier(req, admin)
                     req["supplier_id"] = supplier.get("id")
             except RewardError:
                 raise
@@ -1963,6 +4109,7 @@ def review_professional(request_id: str, decision: str, admin: str, note: str = 
                 raise RewardError(str(exc), status=400, code="professional_open_failed") from exc
             req["status"] = "approved"
         else:
+            _release_staged_supplier(req, admin, str(note or ""))
             req["status"] = "rejected"
         req["reviewed_by"] = str(admin or "admin")[:80]
         req["reviewed_at"] = _now()
@@ -1973,7 +4120,182 @@ def review_professional(request_id: str, decision: str, admin: str, note: str = 
             "customer_id": req["customer_id"], "role": req["requested_role"],
             "agent_id": req.get("agent_id"), "supplier_id": req.get("supplier_id"),
         })
-        return dict(req)
+        return public_request(req)
+
+
+def pending_agent_desk_rows() -> List[Dict[str, Any]]:
+    """Agent applications waiting on the agents dashboard.
+
+    The code is the request id ``PRO-{customer}-agent``. That is the same
+    request the desk approves. The inquiry token is not included.
+    """
+    with _LOCK:
+        _ensure_loaded()
+        rate_percent = int((CONFIG or default_config()).get("agent_default_rate_percent") or 0)
+        proposed = round(rate_percent / 100.0, 6)
+        rows = []
+        for req in REQUESTS.values():
+            if req.get("requested_role") != "agent" or req.get("status") != "pending":
+                continue
+            rows.append({
+                "code": req.get("id"),
+                "agent_id": req.get("supplier_id") or req.get("customer_id"),
+                "invitee_type": "agent",
+                "proposed_rate": proposed,
+                "commission_rate": None,
+                "status": "pending_approval",
+                "professional_request_id": req.get("id"),
+                "notes": "Professional application",
+                "created_at": ((req.get("inquiry") or {}).get("submitted_at") if isinstance(req.get("inquiry"), dict) else None)
+                or req.get("updated_at"),
+            })
+        rows.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+        return rows
+
+
+def _desk_supplier_row(req: Dict[str, Any]) -> Dict[str, Any]:
+    name, stype, from_company = _company_from_request(req)
+    inquiry = req.get("inquiry") if isinstance(req.get("inquiry"), dict) else {}
+    personal = inquiry.get("personal") if isinstance(inquiry.get("personal"), dict) else {}
+    return {
+        "id": req.get("id"),
+        "professional_request_id": req.get("id"),
+        "professional_request_ids": [req.get("id")],
+        "customer_id": req.get("customer_id"),
+        "company_name": name if from_company else (personal.get("name") or name),
+        "supplier_type": stype if from_company else "other",
+        "contact_name": personal.get("name") or "",
+        "contact_email": _inquiry_email_for(req),
+        "application_date": inquiry.get("submitted_at") or req.get("updated_at"),
+        "status": "pending",
+        "ai_trust_score": 0,
+        "ai_recommendation": "review",
+        "staff_hold": req.get("staff_hold"),
+    }
+
+
+def pending_supplier_desk_rows(visible_supplier_ids: Iterable[str] = ()) -> List[Dict[str, Any]]:
+    """Filed requests that are not already a pending supplier row.
+
+    A live pending supplier is the application. This adds a request the desk
+    would otherwise miss, including one held because the supplier is closed.
+    """
+    visible = {str(item) for item in visible_supplier_ids if item}
+    with _LOCK:
+        _ensure_loaded()
+        rows = []
+        seen = set()
+        for req in list(REQUESTS.values()):
+            if req.get("status") != "pending":
+                continue
+            if req.get("requested_role") not in ("supplier", "agent"):
+                continue
+            customer_id = str(req.get("customer_id") or "")
+            if customer_id in seen:
+                continue
+            sid = str(req.get("supplier_id") or "")
+            if sid and sid in visible:
+                continue
+            supplier = None
+            if sid:
+                try:
+                    supplier = _supply().suppliers.get(sid)
+                except RewardError:
+                    supplier = None
+            if isinstance(supplier, dict) and str(supplier.get("status") or "").lower() in ("pending", "under_review"):
+                continue
+            chosen = req
+            if req.get("requested_role") != "supplier":
+                supplier_req = _pending_role_request(customer_id, "supplier")
+                if supplier_req:
+                    chosen = supplier_req
+            seen.add(customer_id)
+            rows.append(_desk_supplier_row(chosen))
+        return rows
+
+
+def continue_agent_application(code: str, decision: str, admin: str,
+                               note: str = "") -> Optional[Dict[str, Any]]:
+    """Approve or reject the agent request whose id is the desk code.
+
+    A normal agent-invitation code is not a professional request and returns
+    None so that invitation stays on its own path. The agent's default rate
+    stays the program default. The invitation body's commission rate is not
+    copied onto the agent.
+    """
+    key = str(code or "").strip()
+    with _LOCK:
+        _ensure_loaded()
+        req = REQUESTS.get(key)
+        if req is None or req.get("requested_role") != "agent":
+            return None
+        request_id = req.get("id")
+    return review_professional(request_id, decision, admin, note)
+
+
+def _pending_request_on_supplier(supplier: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Pending professional request staged on this supplier.
+
+    Sharing a customer id is not enough. The request must name this supplier,
+    or this supplier must name that request. The supplier role wins when both
+    roles were staged here, so the agents desk still reviews the agent request.
+    """
+    sid = str(supplier.get("id") or "")
+    if not sid:
+        return None
+    linked = {str(item) for item in (supplier.get("professional_request_ids") or []) if item}
+    primary = str(supplier.get("professional_request_id") or "")
+    if primary:
+        linked.add(primary)
+    customer_id = str(supplier.get("customer_id") or "")
+    chosen = None
+    for role in ("supplier", "agent"):
+        req = _pending_role_request(customer_id, role)
+        if not req:
+            continue
+        request_id = str(req.get("id") or "")
+        staged_here = request_id in linked or str(req.get("supplier_id") or "") == sid
+        if not staged_here:
+            continue
+        if role == "supplier":
+            return req
+        chosen = chosen or req
+    return chosen
+
+
+def continue_supplier_application(supplier_or_request_id: str, decision: str, admin: str,
+                                  note: str = "") -> Optional[Dict[str, Any]]:
+    """Continue the professional request staged on this supplier.
+
+    A request id continues that request (the closed-supplier row uses the
+    request id). Any other supplier stays on approve_supplier / reject_supplier.
+    """
+    key = str(supplier_or_request_id or "").strip()
+    with _LOCK:
+        _ensure_loaded()
+        target_id = ""
+        direct = REQUESTS.get(key)
+        if (
+            direct
+            and direct.get("status") == "pending"
+            and direct.get("requested_role") in ("supplier", "agent")
+        ):
+            target_id = str(direct.get("id") or "")
+        else:
+            supplier = None
+            try:
+                supplier = _supply().suppliers.get(key)
+            except RewardError:
+                supplier = None
+            if not isinstance(supplier, dict):
+                return None
+            target = _pending_request_on_supplier(supplier)
+            if target is None:
+                return None
+            target_id = str(target.get("id") or "")
+    if not target_id:
+        return None
+    return review_professional(target_id, decision, admin, note)
 
 
 def _audit(action: str, entity: str, entity_id: str, details: Dict[str, Any]) -> None:
@@ -1988,13 +4310,379 @@ def _audit(action: str, entity: str, entity_id: str, details: Dict[str, Any]) ->
 
 
 def professional_status(customer_id: str) -> Dict[str, Any]:
+    """Desks follow the supplier record.
+
+    A professional request marked approved is not a supplier approval. The
+    supplier desk is approved only when that supplier was activated. Until
+    then neither desk is reported as approved, and a withdrawn row is not
+    presented as a live ``supplier_id`` or ``agent_id``.
+    """
     with _LOCK:
         _ensure_loaded()
-        out = {}
+        try:
+            supplier = _find_supplier(customer_id)
+        except RewardError:
+            supplier = None
+        live = isinstance(supplier, dict) and _supplier_was_approved(supplier)
+        record_status = str((supplier or {}).get("status") or "").strip().lower()
+        out: Dict[str, Any] = {}
         for role in ("agent", "supplier"):
             req = REQUESTS.get(_request_id(customer_id, role))
-            out[role] = dict(req) if req else {"status": "none", "requested_role": role}
+            view = public_request(req) if req else {"status": "none", "requested_role": role}
+            if not live and view.get("status") == "approved":
+                view = dict(view)
+                view["status"] = record_status or "none"
+                if record_status == "withdrawn":
+                    view["supplier_id"] = None
+                    view["agent_id"] = None
+            out[role] = view
+        if isinstance(supplier, dict):
+            desk = dict(out.get("supplier") or {})
+            desk["requested_role"] = "supplier"
+            desk["customer_id"] = customer_id
+            if live:
+                desk["status"] = "approved"
+                desk["supplier_id"] = supplier.get("id")
+            else:
+                desk["status"] = record_status or desk.get("status") or "none"
+                if record_status == "withdrawn":
+                    desk["supplier_id"] = None
+                    desk["agent_id"] = None
+            desk.pop("via", None)
+            out["supplier"] = desk
         return out
+
+
+def supplier_access(customer_id: str) -> Optional[Dict[str, Any]]:
+    """Supplier desk for this customer. An approved agent already has one."""
+    supplier = (professional_status(customer_id).get("supplier") or {})
+    if supplier.get("status") == "approved" and supplier.get("supplier_id"):
+        return supplier
+    return None
+
+
+def _money(value: Any) -> float:
+    try:
+        return round(float(value or 0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _order_sales_fee(order: Dict[str, Any]) -> float:
+    """One sales fee per order. platform_fee wins when the order carries it."""
+    if order.get("platform_fee") is not None:
+        return _money(order.get("platform_fee"))
+    return _money(order.get("commission"))
+
+
+def _supplier_orders() -> List[Dict[str, Any]]:
+    service = None
+    try:
+        service = _supply()
+    except RewardError:
+        service = None
+    orders = getattr(service, "orders", None) if service else None
+    if not isinstance(orders, dict):
+        portal = _portal()
+        orders = getattr(portal, "SUPPLIER_ORDERS", {}) if portal else {}
+    if not isinstance(orders, dict):
+        return []
+    return [order for order in orders.values() if isinstance(order, dict)]
+
+
+def _acquisition_for(customer_id: str) -> Tuple[float, List[str]]:
+    cents = 0
+    ids: List[str] = []
+    for reward in REWARDS.values():
+        if str(reward.get("beneficiary_customer_id")) != str(customer_id):
+            continue
+        if reward.get("status") == "forfeited" or not _reward_intact(reward):
+            continue
+        cents += int(reward.get("amount_cents") or 0)
+        if reward.get("id"):
+            ids.append(str(reward["id"]))
+    return dollars(cents), ids
+
+
+def _commission_for(agent_id: str) -> Tuple[float, List[str]]:
+    if not agent_id:
+        return 0.0, []
+    try:
+        from services.agent_ecosystem_service import list_commissions
+        rows = list_commissions(agent_id)
+    except Exception:
+        return 0.0, []
+    total = 0.0
+    ids: List[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        total += _money(row.get("amount"))
+        if row.get("id"):
+            ids.append(str(row["id"]))
+    return round(total, 2), ids
+
+
+def _pipeline_rows_locked() -> List[Dict[str, Any]]:
+    orders = _supplier_orders()
+    by_supplier: Dict[str, List[Dict[str, Any]]] = {}
+    for order in orders:
+        sid = str(order.get("supplier_id") or "")
+        if sid:
+            by_supplier.setdefault(sid, []).append(order)
+    try:
+        suppliers = [item for item in (_supply().suppliers or {}).values() if isinstance(item, dict)]
+    except RewardError:
+        suppliers = []
+    rows = []
+    for supplier in suppliers:
+        sid = str(supplier.get("id") or "")
+        customer_id = str(supplier.get("customer_id") or "")
+        agent_id = str(supplier.get("agent_id") or "")
+        roles = [str(role) for role in (supplier.get("roles") or []) if role]
+        is_agent = "agent" in roles or bool(agent_id)
+        mine = by_supplier.get(sid, [])
+        acquisition, reward_ids = _acquisition_for(customer_id) if customer_id else (0.0, [])
+        commissions, commission_ids = _commission_for(agent_id) if is_agent else (0.0, [])
+        sales = round(sum(_order_sales_fee(order) for order in mine), 2)
+        payouts = round(sum(_money(order.get("supplier_payout")) for order in mine), 2)
+        rows.append({
+            "supplier_id": sid,
+            "customer_id": customer_id or None,
+            "company_name": supplier.get("company_name"),
+            "roles": roles or ["supplier"],
+            "is_agent": is_agent,
+            "agent_id": agent_id or None,
+            "sales_fees": sales,
+            "supplier_payouts": payouts,
+            "acquisition_rewards": acquisition,
+            "agent_commissions": commissions,
+            "order_ids": [str(order.get("id")) for order in mine if order.get("id")],
+            "reward_ids": reward_ids,
+            "commission_ids": commission_ids,
+            "pipeline_detail_conflict": bool(supplier.get("pipeline_detail_conflict")),
+            "statement_sha256": None,
+        })
+    rows.sort(key=lambda item: item.get("company_name") or item.get("supplier_id") or "")
+    return rows
+
+
+def _booked_acquisition_expense() -> float:
+    portal = _portal()
+    sheet = getattr(portal, "PHINS_BALANCE_SHEET", {}) if portal else {}
+    if not isinstance(sheet, dict):
+        return 0.0
+    return _money((sheet.get("expense_breakdown") or {}).get("customer_acquisition"))
+
+
+def _ledger_summary() -> Dict[str, Any]:
+    try:
+        service = _supply()
+        report = service.verify_ledger_integrity()
+    except Exception:
+        return {"ok": False, "issue_count": None}
+    issues = report.get("issues") or []
+    return {
+        "ok": not issues and int(report.get("valid_entries") or 0) == int(report.get("total_entries") or 0),
+        "issue_count": len(issues),
+        "total_entries": report.get("total_entries"),
+    }
+
+
+def _sum_rows(rows: List[Dict[str, Any]]) -> Dict[str, float]:
+    return {
+        "sales_fees": round(sum(_money(row.get("sales_fees")) for row in rows), 2),
+        "supplier_payouts": round(sum(_money(row.get("supplier_payouts")) for row in rows), 2),
+        "acquisition_rewards": round(sum(_money(row.get("acquisition_rewards")) for row in rows), 2),
+        "agent_commissions": round(sum(_money(row.get("agent_commissions")) for row in rows), 2),
+    }
+
+
+def pipeline_report(audience: str = "supplier") -> Dict[str, Any]:
+    """Read sales fees, acquisition rewards, and agent commissions. Do not add them."""
+    audience = str(audience or "supplier").strip().lower()
+    if audience not in _PIPELINE_AUDIENCES:
+        raise RewardError("Audience must be supplier, agent, customer, tax, or regulator")
+    with _LOCK:
+        _ensure_loaded()
+        rows = _pipeline_rows_locked()
+        expense = _booked_acquisition_expense()
+        ledger = _ledger_summary()
+        requests = list(REQUESTS.values())
+        customer_rows = _customer_rows_locked(rows)
+    if audience == "tax":
+        return {
+            "audience": "tax",
+            "currency": "USD",
+            "rails_are_separate": True,
+            "personal_data": False,
+            "sales_fees": _sum_rows(rows)["sales_fees"],
+            "supplier_payouts": _sum_rows(rows)["supplier_payouts"],
+            "acquisition_rewards_on_suppliers": _sum_rows(rows)["acquisition_rewards"],
+            "acquisition_expense_booked": expense,
+            "agent_commissions": _sum_rows(rows)["agent_commissions"],
+            "businesses": [
+                {
+                    "supplier_id": row["supplier_id"],
+                    "company_name": row["company_name"],
+                    "sales_fees": row["sales_fees"],
+                    "supplier_payouts": row["supplier_payouts"],
+                    "acquisition_rewards": row["acquisition_rewards"],
+                    "agent_commissions": row["agent_commissions"],
+                }
+                for row in rows
+            ],
+        }
+    if audience == "regulator":
+        return {
+            "audience": "regulator",
+            "currency": "USD",
+            "rails_are_separate": True,
+            "personal_data": False,
+            "suppliers": len(rows),
+            "agents_on_suppliers": sum(1 for row in rows if row.get("is_agent")),
+            "inquiries_open": sum(1 for item in requests if item.get("status") == "inquiry"),
+            "applications_pending": sum(1 for item in requests if item.get("status") == "pending"),
+            "sales_fees": _sum_rows(rows)["sales_fees"],
+            "acquisition_expense_booked": expense,
+            "agent_commissions": _sum_rows(rows)["agent_commissions"],
+            "ledger_integrity_ok": bool(ledger.get("ok")),
+            "ledger_issue_count": ledger.get("issue_count"),
+        }
+    if audience == "customer":
+        return {
+            "audience": "customer",
+            "currency": "USD",
+            "rails_are_separate": True,
+            "rows": customer_rows,
+            "totals": {
+                "acquisition_rewards": round(sum(_money(row.get("acquisition_rewards")) for row in customer_rows), 2),
+                "sales_fees_on_orders": round(sum(_money(row.get("sales_fees_on_orders")) for row in customer_rows), 2),
+            },
+        }
+    shown = [row for row in rows if row.get("is_agent")] if audience == "agent" else rows
+    return {
+        "audience": audience,
+        "currency": "USD",
+        "rails_are_separate": True,
+        "rows": shown,
+        "totals": _sum_rows(shown),
+        "acquisition_expense_booked": expense,
+    }
+
+
+def _customer_rows_locked(supplier_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    by_id: Dict[str, Dict[str, Any]] = {}
+
+    def slot(customer_id: Any) -> Optional[Dict[str, Any]]:
+        cid = str(customer_id or "")
+        if not cid:
+            return None
+        row = by_id.get(cid)
+        if row is None:
+            row = {
+                "customer_id": cid,
+                "name": _first_name(cid),
+                "acquisition_rewards": 0.0,
+                "sales_fees_on_orders": 0.0,
+                "supplier_id": None,
+                "is_agent": False,
+            }
+            by_id[cid] = row
+        return row
+
+    for reward in REWARDS.values():
+        if reward.get("status") == "forfeited" or not _reward_intact(reward):
+            continue
+        row = slot(reward.get("beneficiary_customer_id"))
+        if row is not None:
+            row["acquisition_rewards"] = round(
+                row["acquisition_rewards"] + dollars(int(reward.get("amount_cents") or 0)), 2,
+            )
+    for order in _supplier_orders():
+        row = slot(order.get("customer_id"))
+        if row is not None:
+            row["sales_fees_on_orders"] = round(row["sales_fees_on_orders"] + _order_sales_fee(order), 2)
+    for supplier_row in supplier_rows:
+        row = slot(supplier_row.get("customer_id"))
+        if row is not None:
+            row["supplier_id"] = supplier_row.get("supplier_id")
+            row["is_agent"] = bool(supplier_row.get("is_agent"))
+    return sorted(by_id.values(), key=lambda item: item["customer_id"])
+
+
+def _find_statement(service: Any, supplier_id: str, digest: str) -> Optional[Dict[str, Any]]:
+    ledger = getattr(service, "ledger", {}) or {}
+    for entry in ledger.values():
+        if not isinstance(entry, dict):
+            continue
+        meta = entry.get("metadata") or {}
+        if (entry.get("entry_type") == "pipeline_statement"
+                and entry.get("supplier_id") == supplier_id
+                and meta.get("statement_sha256") == digest):
+            return entry
+    return None
+
+
+def seal_pipeline_statements(supplier_id: str = "") -> Dict[str, Any]:
+    """Anchor the current read of existing fees and rewards. Amount posted is zero."""
+    report = pipeline_report("supplier")
+    service = _supply()
+    wanted = str(supplier_id or "").strip()
+    sealed = []
+    for row in report.get("rows") or []:
+        sid = str(row.get("supplier_id") or "")
+        if not sid or (wanted and sid != wanted):
+            continue
+        snapshot = {
+            "supplier_id": sid,
+            "sales_fees": row.get("sales_fees"),
+            "supplier_payouts": row.get("supplier_payouts"),
+            "acquisition_rewards": row.get("acquisition_rewards"),
+            "agent_commissions": row.get("agent_commissions"),
+            "order_ids": list(row.get("order_ids") or []),
+            "reward_ids": list(row.get("reward_ids") or []),
+            "commission_ids": list(row.get("commission_ids") or []),
+        }
+        digest = _sha(snapshot)
+        existing = _find_statement(service, sid, digest)
+        if existing:
+            sealed.append({
+                "supplier_id": sid,
+                "entry_id": existing.get("entry_id"),
+                "reused": True,
+                "statement_sha256": digest,
+            })
+            continue
+        entry = service._record_ledger_entry(
+            entry_type="pipeline_statement",
+            supplier_id=sid,
+            customer_id=row.get("customer_id"),
+            amount=0,
+            commission=0,
+            supplier_payout=0,
+            description="Supplier pipeline statement from existing fees and rewards",
+            metadata={
+                "statement_sha256": digest,
+                "sales_fees": snapshot["sales_fees"],
+                "supplier_payouts": snapshot["supplier_payouts"],
+                "acquisition_rewards": snapshot["acquisition_rewards"],
+                "agent_commissions": snapshot["agent_commissions"],
+                "order_ids": snapshot["order_ids"],
+                "reward_ids": snapshot["reward_ids"],
+                "commission_ids": snapshot["commission_ids"],
+                "cash_event": False,
+            },
+        )
+        sealed.append({
+            "supplier_id": sid,
+            "entry_id": getattr(entry, "entry_id", None),
+            "reused": False,
+            "statement_sha256": digest,
+        })
+    if wanted and not sealed:
+        raise RewardError("Supplier not found", status=404, code="not_found")
+    return {"sealed": sealed, "cash_event": False}
 
 
 def grant_for(customer_id: str, role: str) -> Optional[Dict[str, Any]]:
@@ -2226,11 +4914,368 @@ def _tools(customer_id: str) -> Dict[str, Any]:
         "links": [
             {"id": "invite", "label": "Invite a customer", "href": "/dashboard.html#referrals", "enabled": True},
             {"id": "agent", "label": "Agent portal", "href": "/agent-portal.html", "enabled": bool(agent)},
-            {"id": "supplier", "label": "Supplier portal", "href": "/supplier-login.html", "enabled": bool(supplier)},
+            {"id": "supplier", "label": "Supplier portal", "href": "/supplier-portal.html", "enabled": bool(supplier)},
             {"id": "supplier_register", "label": "Supplier registration", "href": supplier_href, "enabled": True},
             {"id": "solutions", "label": "Solution theaters", "href": "/solutions.html", "enabled": True},
             {"id": "admin_agents", "label": "Agent administration", "href": "/admin-agents.html", "enabled": False},
         ],
+    }
+
+
+def _supplier_by_id(supplier_id: str) -> Optional[Dict[str, Any]]:
+    if not supplier_id:
+        return None
+    try:
+        service = _supply()
+    except RewardError:
+        return None
+    found = (getattr(service, "suppliers", {}) or {}).get(supplier_id)
+    return found if isinstance(found, dict) else None
+
+
+def _empty_sales_referral() -> Dict[str, Any]:
+    return {
+        "rail": "referral",
+        "affiliated_customers": 0,
+        "blocked": 0.0,
+        "available": 0.0,
+        "dispatched": 0.0,
+        "rows": [],
+    }
+
+
+def _sales_referral_locked(customer_id: str) -> Dict[str, Any]:
+    """Intact referral rows for one affiliate. A bad checksum is left out."""
+    book = _affiliate_book_locked(customer_id)
+    kept: List[Dict[str, Any]] = []
+    for row in book.get("rows") or []:
+        if not isinstance(row, dict):
+            continue
+        referee = str(row.get("referee_customer_id") or "")
+        reward_id = row.get("reward_id")
+        if reward_id:
+            reward = REWARDS.get(reward_id)
+            if not isinstance(reward, dict) or not _reward_intact(reward):
+                continue
+        settlement = SETTLEMENTS.get(referee) if referee else None
+        if isinstance(settlement, dict) and not _settlement_intact(settlement):
+            continue
+        kept.append({
+            "settlement_id": f"CACSET-{referee}" if referee else None,
+            "referee_name": row.get("referee_name"),
+            "layer": row.get("layer"),
+            "amount": row.get("amount") or 0,
+            "projected_amount": row.get("projected_amount") if row.get("booked") is False else None,
+            "blocked_amount": row.get("blocked_amount") or 0,
+            "available_amount": row.get("available_amount") or 0,
+            "status": row.get("status"),
+            "booked": row.get("booked"),
+            "rail": "referral",
+        })
+    booked = [
+        row for row in kept
+        if row.get("booked") is not False and row.get("status") != "forfeited"
+    ]
+
+    def _sum(field: str, status: str) -> float:
+        return round(sum(float(row.get(field) or 0) for row in booked if row.get("status") == status), 2)
+
+    return {
+        "rail": "referral",
+        "affiliated_customers": len(booked),
+        "blocked": _sum("blocked_amount", "held"),
+        "available": _sum("available_amount", "earned"),
+        "dispatched": _sum("amount", "dispatched"),
+        "rows": kept,
+    }
+
+
+def _referral_commission_code(item: Dict[str, Any]) -> str:
+    """A REF- code belongs to the referral book, not the commission rail."""
+    for key in ("invitation_code", "code", "source_invitation_code"):
+        code = str(item.get(key) or "")
+        if code.startswith("REF-"):
+            return code
+    return ""
+
+
+def _sales_commission(agent_id: str) -> Dict[str, Any]:
+    """Commission rows and totals from the agent book, without referral codes.
+
+    The totals are the filtered rows. ``income_summary`` still counts every
+    commission, including a REF- row, and those dollars are not added here.
+    """
+    empty = {
+        "rail": "commission",
+        "agent_id": agent_id or None,
+        "accrued_total": 0.0,
+        "payable_total": 0.0,
+        "paid_total": 0.0,
+        "lifetime_total": 0.0,
+        "rows": [],
+    }
+    if not agent_id:
+        return empty
+    from services.agent_ecosystem_service import list_commissions
+    rows = []
+    for item in list_commissions(agent_id):
+        if not isinstance(item, dict) or _referral_commission_code(item):
+            continue
+        rows.append({
+            "commission_id": item.get("id"),
+            "amount": _money(item.get("amount")),
+            "status": item.get("status"),
+            "rail": "commission",
+        })
+
+    def _total(status: Optional[str] = None) -> float:
+        return round(sum(
+            float(row.get("amount") or 0)
+            for row in rows
+            if status is None or row.get("status") == status
+        ), 2)
+
+    return {
+        "rail": "commission",
+        "agent_id": agent_id,
+        "accrued_total": _total("accrued"),
+        "payable_total": _total("payable"),
+        "paid_total": _total("paid"),
+        "lifetime_total": _total(),
+        "rows": rows,
+    }
+
+
+def supplier_shell_open(session: Optional[Dict[str, Any]]) -> bool:
+    """Whether this session may see the supplier portal shell.
+
+    A supplier session may. A customer or agent session may when it owns
+    that supplier or an approved agent grant. The check does not refresh
+    or write either book, and it does not reopen a closed supplier.
+    """
+    if not isinstance(session, dict):
+        return False
+    role = str(session.get("role") or "").strip().lower()
+    if role == "supplier":
+        return True
+    if role not in ("customer", "agent"):
+        return False
+    customer_id = str(session.get("customer_id") or "")
+    if not customer_id:
+        return False
+    with _LOCK:
+        _ensure_loaded()
+        try:
+            supplier = _find_supplier(customer_id)
+        except RewardError:
+            supplier = None
+        agent_grant = _approved_request(customer_id, "agent")
+    if isinstance(supplier, dict) and supplier.get("id"):
+        return True
+    return bool(isinstance(agent_grant, dict) and agent_grant.get("agent_id"))
+
+
+def _empty_supplier_balance() -> Dict[str, Any]:
+    return {
+        "net_payout": 0.0,
+        "pending_settlement": 0.0,
+        "settled_amount": 0.0,
+        "gross_sales": 0.0,
+        "refunds": 0.0,
+        "platform_commission": 0.0,
+        "awaiting_customer_approval": 0.0,
+        "book": "supply_chain",
+    }
+
+
+def _reporting_stamp(service: Any, order: Dict[str, Any]) -> str:
+    """The same lifecycle date ``generate_supplier_pnl`` uses for its window."""
+    reporter = getattr(service, "_order_reporting_date", None)
+    if callable(reporter):
+        try:
+            return str(reporter(order) or "")
+        except Exception:
+            return ""
+    return str(
+        order.get("completed_date")
+        or order.get("updated_date")
+        or order.get("created_date")
+        or ""
+    )
+
+
+def _pnl_period(service: Any, orders: List[Dict[str, Any]]) -> Tuple[str, str]:
+    """A window that contains every dated order this desk will list."""
+    stamps = [stamp for order in orders if (stamp := _reporting_stamp(service, order))]
+    now = datetime.now(timezone.utc).isoformat()
+    if not stamps:
+        return now, now
+    return min(stamps), max(max(stamps), now)
+
+
+def _orders_in_period(service: Any, orders: List[Dict[str, Any]],
+                      period_start: str, period_end: str) -> List[Dict[str, Any]]:
+    return [
+        order for order in orders
+        if period_start <= _reporting_stamp(service, order) <= period_end
+    ]
+
+
+def _balance_from_pnl(service: Any, supplier_id: Any,
+                      period_start: str, period_end: str) -> Dict[str, Any]:
+    balance = _empty_supplier_balance()
+    if service is None or not supplier_id or not hasattr(service, "generate_supplier_pnl"):
+        return balance
+    pnl = service.generate_supplier_pnl(
+        supplier_id,
+        period_start=period_start,
+        period_end=period_end,
+    )
+    report = (pnl or {}).get("report") or {}
+    balance.update({
+        "net_payout": _money(report.get("net_payout")),
+        "pending_settlement": _money(report.get("pending_settlement")),
+        "settled_amount": _money(report.get("settled_amount")),
+        "gross_sales": _money(report.get("gross_sales")),
+        "refunds": _money(report.get("refunds")),
+        "platform_commission": _money(report.get("platform_commission")),
+        "awaiting_customer_approval": _money(report.get("other_fees")),
+        "book": "supply_chain",
+    })
+    return balance
+
+
+def _operations_desk(supplier: Optional[Dict[str, Any]], writes_open: bool) -> Dict[str, Any]:
+    """Products, delivery, approval, and cash copied from the supplier books."""
+    if not isinstance(supplier, dict):
+        balance = _empty_supplier_balance()
+        return {
+            "present": False,
+            "writes_open": False,
+            "products": 0,
+            "services": 0,
+            "offers": 0,
+            "delivery": {"orders": 0, "by_status": {}},
+            "approval": {"status": "none", "portal_active": False, "writes_open": False},
+            "billing": balance,
+            "balance": dict(balance),
+            "invoices": [],
+        }
+    try:
+        service = _supply()
+    except RewardError:
+        service = None
+    sid = supplier.get("id")
+    offers = []
+    orders = []
+    if service is not None:
+        offers = [
+            offer for offer in (getattr(service, "offers", {}) or {}).values()
+            if isinstance(offer, dict) and offer.get("supplier_id") == sid
+        ]
+        orders = [
+            order for order in (getattr(service, "orders", {}) or {}).values()
+            if isinstance(order, dict) and order.get("supplier_id") == sid
+        ]
+    products = sum(1 for offer in offers if str(offer.get("item_type") or "").lower() == "product")
+    services = sum(1 for offer in offers if str(offer.get("item_type") or "").lower() != "product")
+    period_start, period_end = _pnl_period(service, orders)
+    shown = _orders_in_period(service, orders, period_start, period_end)
+    by_status: Dict[str, int] = {}
+    invoices = []
+    for order in shown:
+        status = str(order.get("status") or "unknown")
+        by_status[status] = by_status.get(status, 0) + 1
+        invoices.append({
+            "invoice_id": order.get("id"),
+            "order_id": order.get("id"),
+            "item_name": order.get("item_name"),
+            "total_amount": _money(order.get("total_amount")),
+            "supplier_payout": _money(order.get("supplier_payout")),
+            "status": status,
+            "settlement_status": order.get("settlement_status"),
+            "book": "supply_chain",
+        })
+    balance = _balance_from_pnl(service, sid, period_start, period_end)
+    return {
+        "present": True,
+        "company_name": supplier.get("company_name"),
+        "supplier_type": supplier.get("supplier_type"),
+        "writes_open": writes_open,
+        "products": products,
+        "services": services,
+        "offers": len(offers),
+        "delivery": {"orders": len(shown), "by_status": by_status},
+        "approval": {
+            "status": supplier.get("status"),
+            "portal_active": bool(supplier.get("portal_active")),
+            "verification_status": supplier.get("verification_status"),
+            "writes_open": writes_open,
+        },
+        "billing": balance,
+        "balance": dict(balance),
+        "invoices": invoices,
+    }
+
+
+def read_unified_desk(session: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """One read of affiliation sales and the supplier desk.
+
+    The referral book, the commission book, and the supply-chain P&L are
+    copied. This does not refresh, reverse, promote, or persist any of them,
+    and it does not change a supplier's status.
+    """
+    if not isinstance(session, dict) or not session:
+        raise RewardError("Authentication required", status=401, code="auth_required")
+    role = str(session.get("role") or "").strip().lower()
+    if role not in ("supplier", "agent", "customer"):
+        raise RewardError("Forbidden", status=403, code="forbidden")
+    customer_id = str(session.get("customer_id") or "")
+    supplier: Optional[Dict[str, Any]] = None
+    with _LOCK:
+        _ensure_loaded()
+        if role == "supplier":
+            supplier = _supplier_by_id(str(session.get("supplier_id") or session.get("username") or ""))
+            if isinstance(supplier, dict) and not customer_id:
+                customer_id = str(supplier.get("customer_id") or "")
+        elif customer_id:
+            try:
+                supplier = _find_supplier(customer_id)
+            except RewardError:
+                supplier = None
+        agent_grant = _approved_request(customer_id, "agent") if customer_id else None
+        referral = _sales_referral_locked(customer_id) if customer_id else _empty_sales_referral()
+    if role == "supplier" and not isinstance(supplier, dict):
+        raise RewardError("Supplier not found", status=404, code="not_found")
+    agent_id = str((agent_grant or {}).get("agent_id") or "")
+    if isinstance(supplier, dict) and not agent_id:
+        agent_id = str(supplier.get("agent_id") or "")
+    if role in ("customer", "agent") and not isinstance(supplier, dict) and not agent_id:
+        raise RewardError(
+            "The supplier desk is not open for this account",
+            status=403,
+            code="role_closed",
+        )
+    status = str((supplier or {}).get("status") or "").strip().lower()
+    closed = status in set(_CLOSED_SUPPLIER_STATUSES) | {"closed"}
+    writes_open = bool(
+        role == "supplier"
+        and isinstance(supplier, dict)
+        and status == "approved"
+        and supplier.get("portal_active")
+        and not closed
+    )
+    return {
+        "opens": True,
+        "role": role,
+        "customer_id": customer_id or None,
+        "supplier_id": supplier.get("id") if isinstance(supplier, dict) else None,
+        "sections": ["affiliation-to-sales", "supplier-desk"],
+        "sales": {
+            "referral": referral,
+            "commission": _sales_commission(agent_id),
+        },
+        "desk": _operations_desk(supplier, writes_open),
     }
 
 
@@ -2354,11 +5399,263 @@ def list_requests(status: Optional[str] = None) -> List[Dict[str, Any]]:
         if status:
             items = [item for item in items if item.get("status") == status]
         items.sort(key=lambda item: item.get("created_at") or "", reverse=True)
-        return [dict(item) for item in items]
+        return [public_request(item) for item in items]
+
+
+def _measure_referee_cents(referee_id: str) -> Dict[str, Any]:
+    """One affiliated customer's settlement, in cents.
+
+    Allocated, blocked, releasable, settled, and reversed use the same
+    rules as the planning view. A reversed settlement is not also allocated.
+    Held rewards are blocked. Earned rewards are releasable. Commission is
+    not read here.
+    """
+    referee_id = str(referee_id or "")
+    allocated = blocked = releasable = settled = reversed_cents = projected = 0
+    settlement = SETTLEMENTS.get(referee_id) if referee_id else None
+    status = "none"
+    settlement_id = None
+    if isinstance(settlement, dict):
+        cents = int(settlement.get("allocated_cents") or 0)
+        status = str(settlement.get("status") or "none")
+        settlement_id = settlement.get("id")
+        if status == "reversed":
+            reversed_cents += cents
+        else:
+            allocated += cents
+            if status == "settled":
+                settled += cents
+    paying = _is_paying(referee_id) if referee_id else False
+    for reward in REWARDS.values():
+        if str(reward.get("referee_customer_id") or "") != referee_id:
+            continue
+        cents = int(reward.get("amount_cents") or 0)
+        reward_status = reward.get("status")
+        if reward_status == "held":
+            blocked += cents
+            if paying:
+                projected += cents
+        elif reward_status == "earned":
+            releasable += cents
+    return {
+        "settlement_id": settlement_id,
+        "status": status,
+        "allocated_cents": allocated,
+        "blocked_cents": blocked,
+        "releasable_cents": releasable,
+        "settled_cents": settled,
+        "reversed_cents": reversed_cents,
+        "projected_cents": projected,
+    }
+
+
+def _public_acquisition(raw: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "settlement_id": raw.get("settlement_id"),
+        "status": raw.get("status") or "none",
+        "allocated": dollars(raw.get("allocated_cents") or 0),
+        "blocked": dollars(raw.get("blocked_cents") or 0),
+        "releasable": dollars(raw.get("releasable_cents") or 0),
+        "settled": dollars(raw.get("settled_cents") or 0),
+        "reversed": dollars(raw.get("reversed_cents") or 0),
+    }
+
+
+def _empty_acquisition() -> Dict[str, Any]:
+    return _public_acquisition({
+        "settlement_id": None,
+        "status": "none",
+        "allocated_cents": 0,
+        "blocked_cents": 0,
+        "releasable_cents": 0,
+        "settled_cents": 0,
+        "reversed_cents": 0,
+    })
+
+
+def _acquisition_totals(rows: Iterable[Dict[str, Any]]) -> Dict[str, float]:
+    keys = ("allocated", "blocked", "releasable", "settled", "reversed")
+    return {
+        key: round(sum(_money((row.get("acquisition") or {}).get(key)) for row in rows), 2)
+        for key in keys
+    }
+
+
+def _viewer_share_cents(viewer_id: str, referee_id: str) -> Dict[str, Any]:
+    """This viewer's own layer on one settlement. Other layers are not included."""
+    viewer_id = str(viewer_id or "")
+    referee_id = str(referee_id or "")
+    allocated = blocked = releasable = settled = reversed_cents = 0
+    layer = None
+    settlement_id = None
+    status = "none"
+    for reward in REWARDS.values():
+        if str(reward.get("referee_customer_id") or "") != referee_id:
+            continue
+        if str(reward.get("beneficiary_customer_id") or "") != viewer_id:
+            continue
+        cents = int(reward.get("amount_cents") or 0)
+        layer = int(reward.get("layer") or 0) or layer
+        settlement_id = reward.get("settlement_id") or settlement_id
+        reward_status = str(reward.get("status") or "none")
+        status = reward_status
+        if reward_status == "forfeited":
+            reversed_cents += cents
+        elif reward_status == "held":
+            allocated += cents
+            blocked += cents
+        elif reward_status == "earned":
+            allocated += cents
+            releasable += cents
+        elif reward_status == "dispatched":
+            allocated += cents
+            settled += cents
+    return {
+        "settlement_id": settlement_id,
+        "status": status,
+        "layer": layer,
+        "allocated_cents": allocated,
+        "blocked_cents": blocked,
+        "releasable_cents": releasable,
+        "settled_cents": settled,
+        "reversed_cents": reversed_cents,
+    }
+
+
+def _public_share(raw: Dict[str, Any]) -> Dict[str, Any]:
+    share = _public_acquisition(raw)
+    share["layer"] = raw.get("layer")
+    return share
+
+
+def _viewer_referred(viewer_id: str, referee_id: str) -> bool:
+    viewer_id = str(viewer_id or "")
+    referee_id = str(referee_id or "")
+    if not viewer_id or not referee_id:
+        return False
+    link = LINKS.get(referee_id)
+    if isinstance(link, dict) and str(link.get("referrer_customer_id") or "") == viewer_id:
+        return True
+    rec = _customers().get(referee_id)
+    return isinstance(rec, dict) and str(rec.get("referred_by") or "") == viewer_id
+
+
+def _referred_row(customer_id: str, name: Any, referred_at: Any, code_used: Any,
+                  viewer_id: str) -> Dict[str, Any]:
+    measure = _public_acquisition(_measure_referee_cents(customer_id))
+    share = _public_share(_viewer_share_cents(viewer_id, customer_id))
+    return {
+        "customer_id": customer_id,
+        "name": name or _first_name(customer_id) or "PHINS Customer",
+        "referred_at": referred_at,
+        "code_used": str(code_used or ""),
+        "reward_status": measure["status"],
+        "acquisition": measure,
+        "viewer_share": share,
+    }
+
+
+def _referred_acquisition_locked(referrer_customer_id: str, listed: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    """Direct referrals with the settlement the book actually holds.
+
+    The stored invitation stats are not rewritten. Email and national ID
+    are not copied onto the report.
+    """
+    referrer = str(referrer_customer_id or "")
+    rows: List[Dict[str, Any]] = []
+    seen = set()
+    for entry in listed or []:
+        if not isinstance(entry, dict):
+            continue
+        cid = str(entry.get("customer_id") or "")
+        if not cid or cid in seen:
+            continue
+        seen.add(cid)
+        rows.append(_referred_row(
+            cid, entry.get("name"), entry.get("referred_at"), entry.get("code_used"), referrer,
+        ))
+    for referee, link in LINKS.items():
+        if not isinstance(link, dict):
+            continue
+        if str(link.get("referrer_customer_id") or "") != referrer:
+            continue
+        cid = str(referee or "")
+        if not cid or cid in seen:
+            continue
+        seen.add(cid)
+        rows.append(_referred_row(
+            cid, link.get("referee_name"), link.get("joined_at"), link.get("invitation_code"), referrer,
+        ))
+    for cid, rec in _customers().items():
+        if not isinstance(rec, dict):
+            continue
+        if str(rec.get("referred_by") or "") != referrer:
+            continue
+        key = str(cid or "")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        rows.append(_referred_row(key, rec.get("name"), None, "", referrer))
+    share_rows = [{"acquisition": row.get("viewer_share") or {}} for row in rows]
+    return {
+        "referred_customers": rows,
+        "acquisition_totals": _acquisition_totals(rows),
+        "viewer_share_totals": _acquisition_totals(share_rows),
+    }
+
+
+def referred_acquisition(referrer_customer_id: str, listed: Optional[Iterable[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """Read acquisition for the customers this person referred.
+
+    Does not refresh or persist the book. Callers that already hold the
+    reward lock use ``_referred_acquisition_locked``.
+    """
+    with _LOCK:
+        _ensure_loaded()
+        return _referred_acquisition_locked(referrer_customer_id, listed or [])
+
+
+def acquisition_for_customers(customer_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
+    """Read each customer's stored settlement. Do not refresh or persist it."""
+    with _LOCK:
+        _ensure_loaded()
+        found: Dict[str, Dict[str, Any]] = {}
+        for customer_id in customer_ids:
+            key = str(customer_id or "")
+            if not key or key in found:
+                continue
+            found[key] = _public_acquisition(_measure_referee_cents(key))
+        return found
+
+
+def network_acquisition(viewer_customer_id: str, customer_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
+    """The agent's own layer, and only for customers that agent referred.
+
+    A customer this agent did not refer contributes no acquisition dollars.
+    The full multi-layer settlement is not attached. This read does not
+    refresh or persist the book.
+    """
+    with _LOCK:
+        _ensure_loaded()
+        viewer = str(viewer_customer_id or "")
+        found: Dict[str, Dict[str, Any]] = {}
+        for customer_id in customer_ids:
+            key = str(customer_id or "")
+            if not key or key in found:
+                continue
+            if viewer and _viewer_referred(viewer, key):
+                found[key] = _public_share(_viewer_share_cents(viewer, key))
+            else:
+                found[key] = _empty_acquisition()
+        return found
 
 
 def _plan_locked() -> Dict[str, Any]:
-    """Affiliated-customer CAC plan: what is booked, blocked, and still conditional."""
+    """Affiliated-customer CAC plan: what is booked, blocked, and still conditional.
+
+    Totals stay on the global settlement and reward loops. A per-customer
+    report does not replace them.
+    """
     allocated = blocked = releasable = settled = reversed_cents = projected = 0
     referees = set(LINKS) | set(SETTLEMENTS)
     paying = sum(1 for referee in referees if _is_paying(referee))
@@ -2379,10 +5676,6 @@ def _plan_locked() -> Dict[str, Any]:
                 projected += cents
         elif reward.get("status") == "earned":
             releasable += cents
-        elif reward.get("status") == "dispatched":
-            pass
-        elif reward.get("status") == "forfeited":
-            pass
     cfg = CONFIG or default_config()
     fee = int(cfg.get("fee_cents") or 0)
     program = config_to_admin(cfg)
@@ -2504,6 +5797,7 @@ def book_summary() -> Dict[str, Any]:
                 "by_destination": {key: dollars(val) for key, val in by_dest.items()},
             },
             "professional_requests": {
+                "inquiry": sum(1 for item in requests if item.get("status") == "inquiry"),
                 "pending": sum(1 for item in requests if item.get("status") == "pending"),
                 "approved": sum(1 for item in requests if item.get("status") == "approved"),
                 "rejected": sum(1 for item in requests if item.get("status") == "rejected"),

@@ -1100,6 +1100,41 @@
             </span>
           </button>
         </div>
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('legal')">
+          <img src="/marketplace/legal-consult.jpg" alt="Legal consultation">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Services</span>
+            <span class="phins-wallet-action-title">Legal Services</span>
+          </span>
+        </button>
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('wellness')">
+          <img src="/marketplace/mental-health.jpg" alt="Wellness session">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Services</span>
+            <span class="phins-wallet-action-title">Wellness</span>
+          </span>
+        </button>
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('laboratory')">
+          <img src="/marketplace/specialist-consult.jpg" alt="Clinical laboratory">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Services</span>
+            <span class="phins-wallet-action-title">Laboratory</span>
+          </span>
+        </button>
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('imaging')">
+          <img src="/marketplace/bp-monitor.jpg" alt="Monitoring equipment used for imaging visits">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Services</span>
+            <span class="phins-wallet-action-title">Imaging</span>
+          </span>
+        </button>
+        <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showMedicalCategory('other')">
+          <img src="/marketplace/ai-search.jpg" alt="Additional supplier offers">
+          <span class="phins-wallet-action-copy">
+            <span class="phins-wallet-action-kicker">Suppliers</span>
+            <span class="phins-wallet-action-title">Other offers</span>
+          </span>
+        </button>
         <button type="button" class="phins-wallet-action wallet-quick-btn" onclick="showTransferModal()">
           <img src="/marketplace/medical-alert.jpg" alt="Personal medical alert device">
           <span class="phins-wallet-action-copy">
@@ -1124,12 +1159,24 @@
           <h2 id="marketplace-title"><span class="tab-brand-mark"><img src="/phins-logo.svg" alt=""></span>Medical Products & Services</h2>
           <p id="marketplace-subtitle" class="phins-market-sub"></p>
         </div>
-        <button type="button" class="phins-text-btn" onclick="closeMarketplace()" aria-label="Close marketplace">Close</button>
+        <button type="button" class="phins-text-btn" onclick="returnToHealthWallet()" aria-label="Back to wallet">Back to wallet</button>
       </div>
       
       <div id="product-grid" class="phins-market-grid">
         <!-- Products loaded dynamically -->
       </div>
+    </section>
+
+    <!-- Delivery handoff for the purchase just made. Uses the existing bidding API. -->
+    <section id="purchase-delivery" class="section-content customer-tab" data-collapsible="true" data-collapsed="true" data-tone="light" style="display: none;">
+      <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+        <div>
+          <h2 id="purchase-delivery-title"><span class="tab-brand-mark"><img src="/phins-logo.svg" alt=""></span>Delivery</h2>
+          <p id="purchase-delivery-lead" class="phins-market-sub">Status, bidding window, and handoff for this purchase.</p>
+        </div>
+        <button type="button" class="phins-text-btn" onclick="closePurchaseDelivery()">Back to wallet</button>
+      </div>
+      <div id="purchase-delivery-body" class="phins-market-grid"></div>
     </section>
 
     <!-- AI Supplier Offer Search -->
@@ -1141,7 +1188,7 @@
             Search all available offers from registered suppliers and purchase through the same wallet, billing, ledger, and marketplace integrity pipeline.
           </p>
         </div>
-        <button type="button" class="phins-text-btn" onclick="closeHealthWalletAISearch()">Close</button>
+        <button type="button" class="phins-text-btn" onclick="closeHealthWalletAISearch()">Back to wallet</button>
       </div>
 
       <div class="phins-search-suggest">
@@ -1167,6 +1214,8 @@
           <option value="hospital">Hospital</option>
           <option value="equipment">Equipment</option>
           <option value="wellness">Wellness</option>
+          <option value="laboratory">Laboratory</option>
+          <option value="legal_service">Legal</option>
           <option value="delivery">Delivery</option>
         </select>
         <button type="button" onclick="runHealthWalletAISearch()">Search</button>
@@ -2017,11 +2066,12 @@
                 <th style="padding: 12px 16px; text-align: left; color: #333; font-weight: 600;">Created</th>
                 <th style="padding: 12px 16px; text-align: left; color: #333; font-weight: 600;">Expires</th>
                 <th style="padding: 12px 16px; text-align: center; color: #333; font-weight: 600;">Status</th>
+                <th style="padding: 12px 16px; text-align: left; color: #333; font-weight: 600;">Checksum</th>
                 <th style="padding: 12px 16px; text-align: center; color: #333; font-weight: 600;">Actions</th>
               </tr>
             </thead>
             <tbody id="referral-codes-table">
-              <tr><td colspan="5" style="padding: 24px; text-align: center; color: #666;">Loading referral codes...</td></tr>
+              <tr><td colspan="6" style="padding: 24px; text-align: center; color: #666;">Loading referral codes...</td></tr>
             </tbody>
           </table>
         </div>
@@ -2031,6 +2081,7 @@
       <div style="background: rgba(255,255,255,0.95); border-radius: 12px; overflow: hidden; margin-top: 20px;">
         <div style="padding: 16px 20px; background: rgba(255,255,255,1); border-bottom: 1px solid #eee;">
           <h3 style="margin: 0; color: #333; font-size: 1.1rem;"> Friends You've Referred</h3>
+          <p id="referred-acquisition-summary" style="margin: 8px 0 0 0; color: #555; font-size: 0.9rem;">Acquisition is measured from the settlement of each referred customer.</p>
         </div>
         <div style="overflow-x: auto;">
           <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
@@ -2039,11 +2090,16 @@
                 <th style="padding: 12px 16px; text-align: left; color: #333; font-weight: 600;">Name</th>
                 <th style="padding: 12px 16px; text-align: left; color: #333; font-weight: 600;">Joined</th>
                 <th style="padding: 12px 16px; text-align: left; color: #333; font-weight: 600;">Code Used</th>
-                <th style="padding: 12px 16px; text-align: center; color: #333; font-weight: 600;">Reward Status</th>
+                <th style="padding: 12px 16px; text-align: right; color: #333; font-weight: 600;">Allocated</th>
+                <th style="padding: 12px 16px; text-align: right; color: #333; font-weight: 600;">Blocked</th>
+                <th style="padding: 12px 16px; text-align: right; color: #333; font-weight: 600;">Releasable</th>
+                <th style="padding: 12px 16px; text-align: right; color: #333; font-weight: 600;">Settled</th>
+                <th style="padding: 12px 16px; text-align: right; color: #333; font-weight: 600;">Reversed</th>
+                <th style="padding: 12px 16px; text-align: right; color: #333; font-weight: 600;">Your share</th>
               </tr>
             </thead>
             <tbody id="referred-customers-table">
-              <tr><td colspan="4" style="padding: 24px; text-align: center; color: #666;">No referrals yet. Share your code to invite friends!</td></tr>
+              <tr><td colspan="9" style="padding: 24px; text-align: center; color: #666;">No referrals yet. Share your code to invite friends!</td></tr>
             </tbody>
           </table>
         </div>
@@ -2085,25 +2141,15 @@
 
       <div id="professional-panel" style="background: rgba(255,255,255,0.95); color: #333; border-radius: 12px; padding: 20px; margin-top: 20px;">
         <h3 style="margin: 0 0 8px 0; color: #0d47a1;">Open a professional role</h3>
-        <p style="margin: 0 0 12px 0; color: #555;">Stay a customer and ask to open the agent view, or a supplier practice. Approval keeps both sides on this same person.</p>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
-          <div>
-            <label style="display:block; font-size: 0.85rem; color: #666;">Role</label>
-            <select id="pro-role" style="width:100%; padding: 8px; border-radius: 6px; border: 1px solid #ddd;">
-              <option value="agent">Agent</option>
-              <option value="supplier">Supplier</option>
-            </select>
-          </div>
-          <div>
-            <label style="display:block; font-size: 0.85rem; color: #666;">Supplier type</label>
-            <select id="pro-supplier-type" style="width:100%; padding: 8px; border-radius: 6px; border: 1px solid #ddd;"></select>
-          </div>
-          <div>
-            <label style="display:block; font-size: 0.85rem; color: #666;">Practice or company</label>
-            <input id="pro-company" type="text" style="width:100%; padding: 8px; border-radius: 6px; border: 1px solid #ddd;">
-          </div>
+        <p style="margin: 0 0 12px 0; color: #555;">Stay a customer and ask to open an agent or supplier desk. An agent is a supplier, so both use the same application. We email a chat with Phin. Every step is shown first, including identity and optional documents, voice, or video.</p>
+        <div style="max-width: 280px;">
+          <label style="display:block; font-size: 0.85rem; color: #666;">Role</label>
+          <select id="pro-role" style="width:100%; padding: 8px; border-radius: 6px; border: 1px solid #ddd;">
+            <option value="agent">Agent</option>
+            <option value="supplier">Supplier</option>
+          </select>
         </div>
-        <button type="button" onclick="submitProfessionalRequest()" style="margin-top: 12px; background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%); color: #071022; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Request this role</button>
+        <button type="button" onclick="submitProfessionalRequest()" style="margin-top: 12px; background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%); color: #071022; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Email me the application chat</button>
         <div id="pro-status" style="margin-top: 12px; color: #333;"></div>
         <div id="referral-tools" style="margin-top: 12px;"></div>
       </div>
@@ -6163,7 +6209,11 @@
       pharmacy: 'Pharmacy & Medications',
       homecare: 'Home Care Services',
       residential: 'Health Care Residential Solutions',
-      legal: 'Legal Services'
+      legal: 'Legal Services',
+      wellness: 'Wellness',
+      laboratory: 'Laboratory',
+      imaging: 'Imaging',
+      other: 'Other offers'
     };
     
     // ========== SHOPPING CART SYSTEM ==========
@@ -6171,18 +6221,19 @@
     let marketplaceOfferIndex = {};
     let healthWalletAISearchResults = [];
     
-    // HTML escape helper function
+    // HTML escape helper. Quotes are encoded so the result is safe in an attribute.
     function escapeHtml(text) {
       if (!text) return '';
       const div = document.createElement('div');
       div.textContent = text;
-      return div.innerHTML;
+      return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     function openHealthWalletAISearch() {
       const section = document.getElementById('health-wallet-ai-search');
       if (!section) return;
       section.style.display = 'block';
+      if (typeof setSectionCollapsed === 'function') setSectionCollapsed(section, false);
       section.scrollIntoView({ behavior: 'smooth' });
       const queryInput = document.getElementById('health-ai-search-query');
       if (queryInput) queryInput.focus();
@@ -6191,6 +6242,7 @@
     function closeHealthWalletAISearch() {
       const section = document.getElementById('health-wallet-ai-search');
       if (section) section.style.display = 'none';
+      returnToHealthWallet();
     }
 
     function scoreHealthWalletOffer(offer, queryTerms) {
@@ -6247,7 +6299,17 @@
       medical_services: '/marketplace/gp-consult.jpg',
       medical_equipment: '/marketplace/wheelchair.jpg',
       medications: '/marketplace/prescription.jpg',
-      wellness: '/marketplace/mental-health.jpg'
+      wellness: '/marketplace/mental-health.jpg',
+      laboratory: '/marketplace/specialist-consult.jpg',
+      imaging: '/marketplace/bp-monitor.jpg',
+      prosthetics: '/marketplace/wheelchair.jpg',
+      mobility_devices: '/marketplace/walker.jpg',
+      monitoring_devices: '/marketplace/bp-monitor.jpg',
+      respiratory: '/marketplace/hospital-bed.jpg',
+      daily_supplies: '/marketplace/wound-care.jpg',
+      wound_care: '/marketplace/wound-care.jpg',
+      medication: '/marketplace/prescription.jpg',
+      other: '/marketplace/ai-search.jpg'
     };
 
     function marketplaceDomId(value) {
@@ -6515,7 +6577,7 @@
               <div class="phins-product-actions">
                 <button type="button" class="phins-btn phins-btn-gold" onclick="addIndexedToCart('${safeId}', '${safeCategory}')">Add to cart</button>
                 <button type="button" class="phins-btn phins-btn-navy" onclick="${isResidentialCatalog(product) ? `buyResidentialProduct('${safeId}', '${safeCategory}')` : `buyIndexedProduct('${safeId}', '${safeCategory}')`}">Buy now</button>
-                ${product.isSupplierOffer ? `<button type="button" class="phins-btn phins-btn-quiet" onclick="showMedicalCategory('${safeCategory}')">Open category</button>` : ''}
+                ${product.isSupplierOffer && safeCategory && safeCategory !== currentMarketplaceCategory ? `<button type="button" class="phins-btn phins-btn-quiet" onclick="showMedicalCategory('${safeCategory}')">Open category</button>` : `<button type="button" class="phins-btn phins-btn-quiet" onclick="returnToHealthWallet()">Back to wallet</button>`}
               </div>
             </div>
           </div>
@@ -6958,6 +7020,7 @@
         }
 
         // Process each item in cart
+        const completedPurchases = [];
         for (const item of shoppingCart) {
           const lineQuote = cartLineQuote(item);
           const itemTotal = lineQuote ? lineQuote.catalog_amount : item.price * item.quantity;
@@ -6984,21 +7047,25 @@
             })
           });
           
+          const purchaseResult = await response.json();
           if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Purchase failed');
+            throw new Error(purchaseResult.error || 'Purchase failed');
           }
+          if (purchaseResult.purchase) completedPurchases.push(rememberPurchase(purchaseResult.purchase, item.product_details || item));
         }
         
         // Success - clear cart and refresh
         showNotification(` Order complete! ${getCartItemCount()} item(s) purchased for $${total.toFixed(2)}`, 'success');
         clearCart();
         hideCartPanel();
+        const shippablePurchases = completedPurchases.filter(purchaseCanBeDelivered);
+        if (shippablePurchases.length) openPurchaseDelivery(shippablePurchases[shippablePurchases.length - 1].id);
         
         // Refresh balances
         setTimeout(() => {
           loadWalletBalance();
           loadActivityLog();
+          loadPurchaseHistory();
         }, 1000);
         
       } catch (error) {
@@ -7069,7 +7136,11 @@
       pharmacy: 'pharmacy',
       homecare: 'healthcare_provider',
       residential: 'healthcare_provider',
-      legal: 'legal_service'
+      legal: 'legal_service',
+      wellness: 'healthcare_provider',
+      laboratory: 'healthcare_provider',
+      imaging: '',
+      other: ''
     };
     
     const categoryToItemType = {
@@ -7079,8 +7150,27 @@
       pharmacy: 'product',
       homecare: 'service',
       residential: 'service',
-      legal: 'service'
+      legal: 'service',
+      wellness: 'service',
+      laboratory: 'service'
     };
+
+    // Priced rows from POST /api/marketplace/products. Ids are the catalog's
+    // own product_id values. Prices are displayed as that API returns them.
+    const linkedProductCatalog = {
+      devices: ['prosthetics', 'mobility_devices', 'monitoring_devices', 'respiratory'],
+      supplies: ['daily_supplies', 'wound_care'],
+      pharmacy: ['medication']
+    };
+
+    // Provider search categories have a pricing tier and no catalog price.
+    // The purchase path is the priced wallet category named here.
+    const unpricedServicePurchase = {
+      laboratory: 'consultation',
+      imaging: 'consultation'
+    };
+
+    let currentMarketplaceCategory = '';
     
     function setMarketplaceHeading(title, subtitle) {
       const heading = document.getElementById('marketplace-title');
@@ -7091,10 +7181,126 @@
       if (sub) sub.textContent = subtitle || '';
     }
 
+    function revealCustomerSection(section) {
+      if (!section) return;
+      section.style.display = 'block';
+      if (typeof setSectionCollapsed === 'function') setSectionCollapsed(section, false);
+    }
+
+    function marketplaceEmptyState(title, message) {
+      return `<div class="phins-market-empty"><h3>${escapeHtml(title)}</h3><p>${escapeHtml(message)}</p><div class="phins-product-actions" style="justify-content:center;margin-top:12px;"><button type="button" class="phins-btn phins-btn-navy" onclick="returnToHealthWallet()">Back to wallet</button><button type="button" class="phins-btn phins-btn-quiet" onclick="openHealthWalletAISearch()">Search supplier offers</button></div></div>`;
+    }
+
+    async function linkedCatalogProducts(category) {
+      const keys = linkedProductCatalog[category] || [];
+      const items = [];
+      for (const key of keys) {
+        try {
+          const response = await fetch('/api/marketplace/products', {
+            method: 'POST',
+            headers: bookAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ category: key })
+          });
+          const data = await response.json();
+          (data.products || []).forEach(product => {
+            if (!product || !product.product_id) return;
+            const price = Number(product.price);
+            if (!Number.isFinite(price)) return;
+            items.push({
+              id: product.product_id,
+              name: product.name,
+              price: price,
+              description: product.description || '',
+              category: product.category || key,
+              normalized_category: product.category || key,
+              browse_bucket: category,
+              provider: product.manufacturer || 'PHINS Marketplace',
+              image_url: (Array.isArray(product.images) && product.images[0]) || '',
+              unit: product.subcategory || '',
+              delivery_days: product.delivery_days,
+              isSupplierOffer: false,
+              catalog_source: 'marketplace_products'
+            });
+          });
+        } catch (err) {
+          console.error('Marketplace catalog unavailable', key, err);
+        }
+      }
+      return items;
+    }
+
+    async function fetchMarketplaceProviders(category) {
+      try {
+        const here = await getBrowserLocationPayload();
+        const body = { category: category, limit: 12, radius_km: 25 };
+        if (here) {
+          body.latitude = here.latitude;
+          body.longitude = here.longitude;
+        }
+        const response = await fetch('/api/marketplace/providers/search', {
+          method: 'POST',
+          headers: bookAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(body)
+        });
+        const data = await response.json();
+        const providers = Array.isArray(data.providers) ? data.providers : [];
+        providers.locationShared = !!here;
+        return providers;
+      } catch (err) {
+        console.error('Provider search unavailable', err);
+        return [];
+      }
+    }
+
+    function renderProviderPathCard(provider, category) {
+      const purchaseCategory = unpricedServicePurchase[category] || 'consultation';
+      const purchaseTitle = categoryTitles[purchaseCategory] || 'Book Consultation';
+      const name = provider.name || 'Provider';
+      const specs = Array.isArray(provider.specializations) ? provider.specializations.join(', ') : '';
+      const where = provider.location && (provider.location.city || provider.location.address) ? [provider.location.city, provider.location.country].filter(Boolean).join(', ') : '';
+      return `
+        <article class="phins-product-card product-card">
+          <div class="phins-product-media">
+            <img src="${escapeHtml(catalogIllustrationByCategory[category] || '/marketplace/gp-consult.jpg')}" alt="${escapeHtml(name)}" loading="lazy">
+            <span class="phins-product-badge">Provider</span>
+          </div>
+          <div class="phins-product-body">
+            <div class="phins-product-kicker">service</div>
+            <h3>${escapeHtml(name)}</h3>
+            <p>${escapeHtml(specs || 'Listed provider. This record has a pricing tier and no catalog price.')}</p>
+            <div class="phins-chip-row">
+              <span class="phins-chip">${escapeHtml(provider.pricing_tier || 'standard')}</span>
+              ${provider.rating ? `<span class="phins-chip">${Number(provider.rating).toFixed(1)} · ${provider.reviews_count || 0} reviews</span>` : ''}
+            </div>
+            ${where ? `<div class="phins-product-meta">${escapeHtml(where)}</div>` : ''}
+            <div class="phins-product-meta">No catalog price is published for this provider. Continue in ${escapeHtml(purchaseTitle)}, where the visit has a price.</div>
+            <div class="phins-product-foot">
+              <span class="phins-product-price">Priced in ${escapeHtml(purchaseTitle)}</span>
+              <div class="phins-product-actions">
+                <button type="button" class="phins-btn phins-btn-navy" onclick="showMedicalCategory('${marketplaceDomId(purchaseCategory)}')">Open ${escapeHtml(purchaseTitle)}</button>
+                <button type="button" class="phins-btn phins-btn-quiet" onclick="returnToHealthWallet()">Back to wallet</button>
+              </div>
+            </div>
+          </div>
+        </article>`;
+    }
+
+    function appendUniqueProducts(products, extras) {
+      const seen = new Set((products || []).map(item => item && item.id).filter(Boolean));
+      (extras || []).forEach(item => {
+        if (!item || !item.id || seen.has(item.id)) return;
+        seen.add(item.id);
+        products.push(item);
+      });
+      return products;
+    }
+
     async function showMedicalCategory(category) {
       const title = categoryTitles[category] || 'Products';
+      currentMarketplaceCategory = category;
       setMarketplaceHeading(title, 'Loading approved supplier offers...');
-      document.getElementById('medical-marketplace').style.display = 'block';
+      const market = document.getElementById('medical-marketplace');
+      revealCustomerSection(market);
       
       const grid = document.getElementById('product-grid');
       grid.innerHTML = '<div class="phins-market-empty">Loading offerings from approved suppliers...</div>';
@@ -7137,12 +7343,13 @@
           }));
         }
         
+        const demoItems = (medicalProducts[category] || []).map(product => ({
+          ...product,
+          isSupplierOffer: false,
+          browse_bucket: category
+        }));
         if (products.length === 0) {
-          products = (medicalProducts[category] || []).map(product => ({
-            ...product,
-            isSupplierOffer: false,
-            browse_bucket: category
-          }));
+          products = demoItems;
           usingDemoCatalog = products.length > 0;
         }
 
@@ -7180,22 +7387,38 @@
           });
           usingDemoCatalog = false;
         }
+
+        if (category !== 'residential') {
+          appendUniqueProducts(products, await linkedCatalogProducts(category));
+        }
+
+        const providers = unpricedServicePurchase[category]
+          ? await fetchMarketplaceProviders(category)
+          : [];
         
-        if (products.length === 0) {
+        if (products.length === 0 && providers.length === 0) {
           setMarketplaceHeading(title, 'Approved suppliers have not listed this category yet.');
-          grid.innerHTML = '<div class="phins-market-empty"><h3>No offerings available yet</h3><p>Approved suppliers will add products and services in this category.</p></div>';
+          grid.innerHTML = marketplaceEmptyState('No offerings available yet', 'Approved suppliers will add products and services in this category. Search offers, or return to the wallet.');
+          market.scrollIntoView({ behavior: 'smooth' });
           return;
         }
 
         const hasResidentialCatalog = products.some(item => item && (item.catalog_locked || item.price_source === 'residential_catalog'));
         const hasSupplierOffers = products.some(item => item && item.isSupplierOffer);
+        const hasLinkedCatalog = products.some(item => item && item.catalog_source === 'marketplace_products');
         let marketplaceSubtitle;
         if (hasResidentialCatalog && hasSupplierOffers) {
           marketplaceSubtitle = 'Platform bundles post the discounted card price to the health-wallet ledger. Approved supplier offers settle through the supply-chain order at the offer price.';
         } else if (hasResidentialCatalog) {
           marketplaceSubtitle = 'Platform care bundles. Six months or longer is 20% off automatically. Annual accommodation is 30% off. The card price is the amount posted to the health-wallet ledger.';
-        } else if (usingDemoCatalog) {
-          marketplaceSubtitle = 'Demo catalog. These illustrations are placeholders. A purchase is a wallet catalog charge, not a supplier order, until an approved supplier lists the item.';
+        } else if (hasSupplierOffers && (usingDemoCatalog || hasLinkedCatalog)) {
+          marketplaceSubtitle = 'Supplier offers stay at the offer price. Catalog items stay on the wallet purchase. Every listed price is the price already published for that item.';
+        } else if (usingDemoCatalog || hasLinkedCatalog) {
+          marketplaceSubtitle = 'Demo catalog and published marketplace prices. These illustrations are placeholders where a supplier has not listed the item. A purchase is a wallet catalog charge, not a supplier order, until an approved supplier lists the item.';
+        } else if (providers.length && products.length === 0) {
+          marketplaceSubtitle = providers.locationShared
+            ? 'These providers have no catalog price. Continue in the priced visit category to buy.'
+            : 'These providers have no catalog price. The browser did not share a location, so this list uses the directory default area. Continue in the priced visit category to buy.';
         } else {
           marketplaceSubtitle = 'Approved supplier offers. Checkout uses the offer price on the supply-chain order and ledger. Supplier photos and videos replace the illustration when the listing includes them.';
         }
@@ -7206,17 +7429,367 @@
           marketplaceOfferIndex[product.id] = product;
         });
         
-        grid.innerHTML = products.map(product => renderMarketplaceCard(product, category)).join('');
-        document.getElementById('medical-marketplace').scrollIntoView({ behavior: 'smooth' });
+        grid.innerHTML = products.map(product => renderMarketplaceCard(product, category)).join('')
+          + providers.map(provider => renderProviderPathCard(provider, category)).join('');
+        market.scrollIntoView({ behavior: 'smooth' });
       } catch (err) {
         console.error('Error loading marketplace:', err);
         setMarketplaceHeading(title, 'The marketplace could not be loaded.');
-        grid.innerHTML = '<div class="phins-market-empty"><h3>Unable to load products</h3><p>Please try again later.</p></div>';
+        grid.innerHTML = marketplaceEmptyState('Unable to load products', 'Please try again later.');
       }
     }
     
+    function returnToHealthWallet() {
+      const market = document.getElementById('medical-marketplace');
+      if (market) market.style.display = 'none';
+      const search = document.getElementById('health-wallet-ai-search');
+      if (search) search.style.display = 'none';
+      const delivery = document.getElementById('purchase-delivery');
+      if (delivery) delivery.style.display = 'none';
+      const wallet = document.getElementById('health-wallet');
+      if (!wallet) return;
+      revealCustomerSection(wallet);
+      wallet.scrollIntoView({ behavior: 'smooth' });
+    }
+
     function closeMarketplace() {
-      document.getElementById('medical-marketplace').style.display = 'none';
+      returnToHealthWallet();
+    }
+
+    const PURCHASE_DELIVERY_SLOT = 'phins.purchase.delivery.v1';
+
+    function readDeliveryLinks() {
+      try {
+        const parsed = JSON.parse(sessionStorage.getItem(PURCHASE_DELIVERY_SLOT) || '{}');
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function writeDeliveryLink(orderKey, requestId) {
+      if (!orderKey || !requestId) return;
+      const links = readDeliveryLinks();
+      links[orderKey] = requestId;
+      try { sessionStorage.setItem(PURCHASE_DELIVERY_SLOT, JSON.stringify(links)); } catch (_) { /* session only */ }
+    }
+
+    const purchaseById = {};
+
+    function rememberPurchase(purchase, source) {
+      if (!purchase || !purchase.id) return purchase;
+      const stored = Object.assign({}, purchaseById[purchase.id] || {}, purchase);
+      if (source && typeof source === 'object') {
+        if (source.browse_bucket) stored.browse_bucket = source.browse_bucket;
+        if (source.item_type) stored.item_type = source.item_type;
+        if (source.catalog_source) stored.catalog_source = source.catalog_source;
+        const sourceLat = Number(source.latitude);
+        const sourceLng = Number(source.longitude);
+        if (Number.isFinite(sourceLat) && Number.isFinite(sourceLng)) {
+          stored.latitude = sourceLat;
+          stored.longitude = sourceLng;
+        }
+      }
+      purchaseById[purchase.id] = stored;
+      const list = Array.isArray(medicalPurchases) ? medicalPurchases.slice() : [];
+      const index = list.findIndex(item => item && item.id === purchase.id);
+      if (index >= 0) list[index] = purchaseById[purchase.id];
+      else list.push(purchaseById[purchase.id]);
+      medicalPurchases = list;
+      return purchaseById[purchase.id];
+    }
+
+    const SERVICE_PURCHASE_CATEGORIES = new Set([
+      'consultation', 'consult', 'telehealth', 'gp', 'homecare', 'home_care', 'home_health', 'homehealth',
+      'medical_services', 'medical_service', 'service', 'services',
+      'legal', 'legal_service', 'legal_services', 'law',
+      'residential', 'residential_care', 'health_care_residential', 'home_bundle', 'extra_bundle', 'full_accommodation',
+      'wellness', 'laboratory', 'imaging', 'mental_health'
+    ]);
+    const SHIPPABLE_PURCHASE_CATEGORIES = new Set([
+      'devices', 'device', 'supplies', 'supply', 'pharmacy', 'medication', 'medications',
+      'medical_equipment', 'equipment', 'product',
+      'prosthetics', 'mobility_devices', 'monitoring_devices', 'respiratory',
+      'daily_supplies', 'wound_care',
+      'mobility', 'monitoring', 'bathroom_safety', 'safety'
+    ]);
+
+    function purchaseCanBeDelivered(purchase) {
+      if (!purchase) return false;
+      const itemType = String(purchase.item_type || '').toLowerCase();
+      if (itemType === 'service') return false;
+      const labels = [purchase.browse_bucket, purchase.category, purchase.normalized_category]
+        .map(value => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_'))
+        .filter(Boolean);
+      if (labels.some(label => SERVICE_PURCHASE_CATEGORIES.has(label))) return false;
+      if (itemType === 'product' || purchase.catalog_source === 'marketplace_products') return true;
+      return labels.some(label => SHIPPABLE_PURCHASE_CATEGORIES.has(label));
+    }
+
+    function findRememberedPurchase(purchaseId) {
+      return purchaseById[purchaseId] || (medicalPurchases || []).find(item => item && item.id === purchaseId) || null;
+    }
+
+    function purchaseOrderKey(purchase) {
+      return String((purchase && (purchase.order_id || purchase.id)) || '');
+    }
+
+    function closePurchaseDelivery() {
+      const section = document.getElementById('purchase-delivery');
+      if (section) section.style.display = 'none';
+      returnToHealthWallet();
+    }
+
+    function deliveryStopPrefix(prefix) {
+      return prefix === 'delivery' ? 'delivery' : 'pickup';
+    }
+
+    function deliveryLocationFields(prefix) {
+      const stop = deliveryStopPrefix(prefix);
+      const label = stop === 'pickup' ? 'Pickup address' : 'Delivery address';
+      return `
+        <label>${label}
+          <input id="delivery-${stop}-address" type="text" autocomplete="street-address">
+        </label>
+        <label>City
+          <input id="delivery-${stop}-city" type="text" autocomplete="address-level2">
+        </label>
+        <label>Country
+          <input id="delivery-${stop}-country" type="text" autocomplete="country-name">
+        </label>
+        <label>Latitude
+          <input id="delivery-${stop}-latitude" type="number" step="0.000001" inputmode="decimal">
+        </label>
+        <label>Longitude
+          <input id="delivery-${stop}-longitude" type="number" step="0.000001" inputmode="decimal">
+        </label>
+        <button type="button" class="phins-btn phins-btn-quiet" onclick="fillDeliveryCoordinates('${stop}')">Use my location</button>`;
+    }
+
+    function applyDeliveryLocationSeed(prefix, seed) {
+      const stop = deliveryStopPrefix(prefix);
+      const source = seed || {};
+      const textFields = {
+        address: source.address || '',
+        city: source.city || '',
+        country: source.country || ''
+      };
+      Object.keys(textFields).forEach(name => {
+        const input = document.getElementById(`delivery-${stop}-${name}`);
+        if (input) input.value = String(textFields[name]);
+      });
+      const lat = Number(source.latitude);
+      const lng = Number(source.longitude);
+      const latInput = document.getElementById(`delivery-${stop}-latitude`);
+      const lngInput = document.getElementById(`delivery-${stop}-longitude`);
+      if (latInput && Number.isFinite(lat)) latInput.value = String(lat);
+      if (lngInput && Number.isFinite(lng)) lngInput.value = String(lng);
+    }
+
+    async function fillDeliveryCoordinates(prefix) {
+      const stop = deliveryStopPrefix(prefix);
+      const position = await getBrowserLocationPayload();
+      if (!position) {
+        showNotification('Location was not shared. Enter the map coordinates for this stop.', 'error');
+        return;
+      }
+      const lat = document.getElementById(`delivery-${stop}-latitude`);
+      const lng = document.getElementById(`delivery-${stop}-longitude`);
+      if (lat) lat.value = String(position.latitude);
+      if (lng) lng.value = String(position.longitude);
+    }
+
+    function readDeliveryLocation(prefix) {
+      const stop = deliveryStopPrefix(prefix);
+      const address = (document.getElementById(`delivery-${stop}-address`)?.value || '').trim();
+      const city = (document.getElementById(`delivery-${stop}-city`)?.value || '').trim();
+      const country = (document.getElementById(`delivery-${stop}-country`)?.value || '').trim();
+      const latitude = Number(document.getElementById(`delivery-${stop}-latitude`)?.value);
+      const longitude = Number(document.getElementById(`delivery-${stop}-longitude`)?.value);
+      if (!address || !city || !country) return null;
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+      if (latitude === 0 && longitude === 0) return null;
+      if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+      return { address, city, country, latitude, longitude, contact: {} };
+    }
+
+    function renderDeliveryStatus(track, bids, purchase) {
+      const request = (bids && bids.request_status) || (track && track.current_status) || '';
+      const events = (track && track.tracking_events) || [];
+      const bidRows = (bids && bids.bids) || [];
+      const windowOpen = request === 'bidding_open';
+      const canAccept = request === 'bidding_open' || request === 'bidding_closed';
+      const eventHtml = events.map(event => `<li>${escapeHtml(event.status || '')}${event.notes ? ` — ${escapeHtml(event.notes)}` : ''}</li>`).join('');
+      const bidHtml = bidRows.length ? bidRows.map(bid => {
+        const safeBid = marketplaceDomId(bid.bid_id);
+        const pending = String(bid.status || '') === 'pending' && canAccept;
+        return `<article class="phins-product-card product-card"><div class="phins-product-body"><h3>${escapeHtml(bid.supplier_name || bid.supplier_id || 'Supplier')}</h3><p>Bid ${escapeHtml(String(bid.bid_price))} ${escapeHtml(bid.currency || 'USD')} · ${escapeHtml(bid.status || '')}</p><div class="phins-product-meta">Pickup ${escapeHtml(bid.estimated_pickup_time || '')}<br>Delivery ${escapeHtml(bid.estimated_delivery_time || '')}</div>${pending ? `<div class="phins-product-actions"><button type="button" class="phins-btn phins-btn-navy" onclick="acceptPurchaseDeliveryBid('${marketplaceDomId(bids.request_id)}', '${safeBid}')">Accept this bid</button></div>` : ''}</div></article>`;
+      }).join('') : '<div class="phins-market-empty">No bids yet. The bidding window stays open until it elapses.</div>';
+      return `
+        <div class="phins-market-empty" style="text-align:left;">
+          <h3>${escapeHtml((purchase && purchase.product_name) || 'Delivery')}</h3>
+          <p>Status: ${escapeHtml(request || 'unknown')}</p>
+          <p>Bidding window ends: ${escapeHtml((bids && bids.bidding_ends_at) || '—')}${windowOpen ? ' · open' : ''}</p>
+          ${bids && bids.bidding_closed_at ? `<p>Window closed: ${escapeHtml(bids.bidding_closed_at)}${bids.closed_reason ? ` · ${escapeHtml(String(bids.closed_reason).replace(/_/g, ' '))}` : ''}</p>` : ''}
+          <ul>${eventHtml || '<li>Tracking will appear here.</li>'}</ul>
+          <div class="phins-product-actions">
+            <button type="button" class="phins-btn phins-btn-quiet" onclick="refreshPurchaseDelivery('${marketplaceDomId(purchase && purchase.id)}')">Refresh status</button>
+            <button type="button" class="phins-btn phins-btn-quiet" onclick="returnToHealthWallet()">Back to wallet</button>
+          </div>
+        </div>
+        ${bidHtml}`;
+    }
+
+    async function refreshPurchaseDelivery(purchaseId) {
+      const purchase = findRememberedPurchase(purchaseId);
+      if (!purchase) return;
+      const requestId = readDeliveryLinks()[purchaseOrderKey(purchase)];
+      const body = document.getElementById('purchase-delivery-body');
+      if (!requestId || !body) return;
+      const headers = bookAuthHeaders();
+      const [trackResponse, bidsResponse] = await Promise.all([
+        fetch(`/api/delivery/track/${encodeURIComponent(requestId)}`, { headers }),
+        fetch(`/api/delivery/bids/${encodeURIComponent(requestId)}`, { headers })
+      ]);
+      const track = await trackResponse.json();
+      const bids = await bidsResponse.json();
+      if (!trackResponse.ok || track.error) {
+        body.innerHTML = marketplaceEmptyState('Delivery status unavailable', track.error || 'The delivery request could not be read.');
+        return;
+      }
+      body.innerHTML = renderDeliveryStatus(track, bidsResponse.ok ? bids : { request_id: requestId, bids: [], error: bids.error }, purchase);
+    }
+
+    function openPurchaseDelivery(purchaseId) {
+      const purchase = findRememberedPurchase(purchaseId);
+      const section = document.getElementById('purchase-delivery');
+      const body = document.getElementById('purchase-delivery-body');
+      const lead = document.getElementById('purchase-delivery-lead');
+      if (!purchase || !section || !body) {
+        showNotification('Open a purchase before arranging delivery', 'error');
+        return;
+      }
+      const existingRequest = readDeliveryLinks()[purchaseOrderKey(purchase)];
+      if (!purchaseCanBeDelivered(purchase) && !existingRequest) {
+        showNotification('Delivery bidding is for a product that ships. This purchase is a service.', 'info');
+        return;
+      }
+      revealCustomerSection(section);
+      if (lead) lead.textContent = `${purchase.product_name || 'Purchase'} · status, bidding window, and handoff use the existing delivery bidding service.`;
+      const requestId = existingRequest;
+      if (requestId) {
+        body.innerHTML = '<div class="phins-market-empty">Loading delivery status...</div>';
+        section.scrollIntoView({ behavior: 'smooth' });
+        refreshPurchaseDelivery(purchase.id);
+        return;
+      }
+      const pickupSeed = {
+        address: purchase.provider_name || purchase.provider || '',
+        city: purchase.supplier_city || '',
+        country: purchase.supplier_country || '',
+        latitude: purchase.latitude,
+        longitude: purchase.longitude
+      };
+      body.innerHTML = `
+        <form class="phins-market-empty" style="text-align:left;" onsubmit="submitPurchaseDelivery(event, '${marketplaceDomId(purchase.id)}')">
+          <h3>Arrange delivery</h3>
+          <p>This opens a bidding window on the purchase you just made. Pickup and delivery need map coordinates so a courier can be matched. The bid you accept is the delivery handoff. The product price is unchanged.</p>
+          <div class="phins-search-filters">${deliveryLocationFields('pickup')}</div>
+          <div class="phins-search-filters">${deliveryLocationFields('delivery')}</div>
+          <label>Priority
+            <select id="delivery-priority">
+              <option value="standard">Standard</option>
+              <option value="express">Express</option>
+              <option value="same_day">Same day</option>
+              <option value="urgent">Urgent</option>
+              <option value="medical_critical">Medical critical</option>
+            </select>
+          </label>
+          <div class="phins-product-actions" style="margin-top:12px;">
+            <button type="submit" class="phins-btn phins-btn-navy">Open bidding window</button>
+            <button type="button" class="phins-btn phins-btn-quiet" onclick="returnToHealthWallet()">Back to wallet</button>
+          </div>
+        </form>`;
+      applyDeliveryLocationSeed('pickup', pickupSeed);
+      applyDeliveryLocationSeed('delivery', {});
+      section.scrollIntoView({ behavior: 'smooth' });
+      getBrowserLocationPayload().then(position => {
+        if (!position) return;
+        const lat = document.getElementById('delivery-delivery-latitude');
+        const lng = document.getElementById('delivery-delivery-longitude');
+        if (lat && lat.value === '') lat.value = String(position.latitude);
+        if (lng && lng.value === '') lng.value = String(position.longitude);
+      });
+    }
+
+    async function submitPurchaseDelivery(event, purchaseId) {
+      event.preventDefault();
+      const purchase = findRememberedPurchase(purchaseId);
+      if (!purchase) return;
+      const pickup = readDeliveryLocation('pickup');
+      const delivery = readDeliveryLocation('delivery');
+      if (!pickup || !delivery) {
+        showNotification('Enter an address, city, country, and map coordinates for pickup and delivery', 'error');
+        return;
+      }
+      const orderId = purchaseOrderKey(purchase);
+      const priority = document.getElementById('delivery-priority')?.value || 'standard';
+      try {
+        const response = await fetch('/api/delivery/request', {
+          method: 'POST',
+          headers: bookAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            customer_id: customerId || sessionStorage.getItem('customer_id') || '',
+            order_id: orderId,
+            pickup_location: pickup,
+            delivery_location: delivery,
+            package_info: {
+              description: purchase.product_name || purchase.product_id || 'Health wallet purchase',
+              medical_item: true
+            },
+            priority: priority
+          })
+        });
+        const data = await response.json();
+        if (!response.ok || data.error) throw new Error(data.error || 'Delivery request was not opened');
+        writeDeliveryLink(orderId, data.request_id);
+        showNotification(`Bidding window open until ${data.bidding_ends_at || 'the delivery deadline'}`, 'success');
+        refreshPurchaseDelivery(purchase.id);
+      } catch (err) {
+        showNotification(err.message || 'Delivery request failed', 'error');
+      }
+    }
+
+    async function acceptPurchaseDeliveryBid(requestId, bidId) {
+      const bidsResponse = await fetch(`/api/delivery/bids/${encodeURIComponent(requestId)}`, { headers: bookAuthHeaders() });
+      const bids = await bidsResponse.json();
+      const bid = (bids.bids || []).find(item => item && item.bid_id === bidId);
+      const price = bid ? Number(bid.bid_price) : null;
+      const name = (bid && bid.supplier_name) || 'this supplier';
+      const confirmed = window.confirm(price == null
+        ? `Accept the bid from ${name}? Accepting posts that bid to your health wallet.`
+        : `Accept ${name} for $${price.toFixed(2)}? Accepting posts that bid to your health wallet.`);
+      if (!confirmed) return;
+      try {
+        const response = await fetch('/api/delivery/accept-bid', {
+          method: 'POST',
+          headers: bookAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ request_id: requestId, bid_id: bidId })
+        });
+        const data = await response.json();
+        if (!response.ok || data.error) throw new Error(data.error || 'Bid was not accepted');
+        if (typeof data.new_wallet_balance === 'number') {
+          walletBalance = data.new_wallet_balance;
+          updateWalletDisplay();
+        }
+        showNotification(`Handoff accepted. Status: ${data.status || 'bid_selected'}`, 'success');
+        const purchase = Object.keys(purchaseById).map(id => purchaseById[id]).find(item => readDeliveryLinks()[purchaseOrderKey(item)] === requestId)
+          || (medicalPurchases || []).find(item => readDeliveryLinks()[purchaseOrderKey(item)] === requestId);
+        if (purchase) refreshPurchaseDelivery(purchase.id);
+        loadWalletBalance();
+      } catch (err) {
+        showNotification(err.message || 'Handoff failed', 'error');
+      }
     }
     
     async function ensureResidentialCatalog() {
@@ -7660,6 +8233,10 @@
           
           // Confirmation uses the ledger amount, which is the card price for catalog bundles.
           showNotification(` Purchased ${shownName} for $${shownAmount.toFixed(2)}!\n NFT: ${purchaseResult.nft_token_id?.substring(0, 12)}...`, 'success');
+          if (purchaseResult.purchase) {
+            const storedPurchase = rememberPurchase(purchaseResult.purchase, details);
+            if (purchaseCanBeDelivered(storedPurchase)) openPurchaseDelivery(storedPurchase.id);
+          }
           
           // Refresh data
           loadPurchaseHistory();
@@ -8372,6 +8949,7 @@
     function renderPurchaseHistory(purchases) {
       const tbody = document.getElementById('purchase-history-table');
       medicalPurchases = purchases || []; // Store for validation
+      medicalPurchases.forEach(rememberPurchase);
       
       if (!purchases || purchases.length === 0) {
         tbody.innerHTML = `
@@ -8442,10 +9020,10 @@
             </td>
             <td>
               <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                ${purchaseCanBeDelivered(p) ? `<button type="button" onclick="openPurchaseDelivery('${marketplaceDomId(p.id)}')" class="btn" style="background:#0d47a1;color:white;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">Delivery</button>` : ''}
                 ${qrButton}
                 ${canCancel ? `<button onclick="cancelMarketplacePurchase('${p.id}')" class="btn" style="background:#ef5350;color:white;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">Cancel</button>` : ''}
                 ${canRefund ? `<button onclick="refundMarketplacePurchase('${p.id}')" class="btn" style="background:#43a047;color:white;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">Refund</button>` : ''}
-                ${!canCancel && !canRefund ? '<span style="font-size:0.8rem;color:#78909c;">No actions</span>' : ''}
               </div>
             </td>
           </tr>
@@ -10292,7 +10870,8 @@
         const codesGenerated = referralData.codes.length;
         const successfulReferrals = referralData.stats.successful_referrals || 0;
         const maxAllowed = data.max_allowed || 10;
-        const remaining = maxAllowed - codesGenerated;
+        const slotsUsed = (typeof data.slots_used === 'number') ? data.slots_used : codesGenerated;
+        const remaining = Math.max(0, maxAllowed - slotsUsed);
         const rewardsEarned = referralData.stats.total_reward_value || 0;
         
         document.getElementById('referral-codes-generated').textContent = codesGenerated;
@@ -10342,7 +10921,7 @@
       const tbody = document.getElementById('referral-codes-table');
       
       if (!referralData.codes || referralData.codes.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="padding: 24px; text-align: center; color: #666;">No join links yet. Generate one to invite a customer, an agent, or a supplier.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="padding: 24px; text-align: center; color: #666;">No join links yet. Generate one to invite a customer, an agent, or a supplier.</td></tr>';
         return;
       }
       
@@ -10359,8 +10938,9 @@
             <td style="padding: 12px 16px; color: #666;">${createdDate}</td>
             <td style="padding: 12px 16px; color: #666;">${expiresDate}</td>
             <td style="padding: 12px 16px; text-align: center;">
-              <span style="background: ${statusColor}15; color: ${statusColor}; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">${statusText}</span>
+              <span style="background: ${statusColor}15; color: ${statusColor}; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">${escReferral(statusText)}</span>
             </td>
+            <td style="padding: 12px 16px; color: #666; font-family: monospace; font-size: 0.75rem;">${escReferral(code.checksum || '')}</td>
             <td style="padding: 12px 16px; text-align: center;">
               ${code.status === 'active' ? `
                 <button onclick="copyCodeToClipboard('${escReferral(joinLink)}')" style="background: #0d47a1; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; margin-right: 4px;">Copy join link</button>
@@ -10373,29 +10953,46 @@
     }
     
     // Render the referred customers table
+    function acquisitionMoney(measure, key) {
+      const value = measure && measure[key];
+      return formatCurrency(value || 0, 2);
+    }
+
     function renderReferredCustomersTable() {
       const tbody = document.getElementById('referred-customers-table');
+      const summary = document.getElementById('referred-acquisition-summary');
       const referredCustomers = referralData.stats.referred_customers || [];
+      const totals = referralData.stats.acquisition_totals || {};
+      if (summary) {
+        const shareTotals = referralData.stats.viewer_share_totals || {};
+        summary.textContent = 'Settlement on these referrals: allocated ' + formatCurrency(totals.allocated || 0, 2) +
+          ', blocked ' + formatCurrency(totals.blocked || 0, 2) +
+          ', releasable ' + formatCurrency(totals.releasable || 0, 2) +
+          ', settled ' + formatCurrency(totals.settled || 0, 2) +
+          ', reversed ' + formatCurrency(totals.reversed || 0, 2) +
+          '. Your share: ' + formatCurrency(shareTotals.allocated || 0, 2) + '.';
+      }
       
       if (!referredCustomers || referredCustomers.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="padding: 24px; text-align: center; color: #666;">No referrals yet. Share your code to invite friends!</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="padding: 24px; text-align: center; color: #666;">No referrals yet. Share your code to invite friends!</td></tr>';
         return;
       }
       
       tbody.innerHTML = referredCustomers.map(customer => {
-        const joinedDate = new Date(customer.referred_at).toLocaleDateString();
-        const rewardLabel = customer.reward_status || (customer.reward_claimed ? 'dispatched' : 'pending');
-        const rewardStatus = String(rewardLabel).replace(/_/g, ' ');
-        const statusColor = (rewardLabel === 'dispatched' || customer.reward_claimed) ? '#28a745' : '#ffc107';
-        
+        const joinedDate = customer.referred_at ? new Date(customer.referred_at).toLocaleDateString() : '';
+        const measure = customer.acquisition || {};
+        const share = customer.viewer_share || {};
         return `
           <tr style="border-bottom: 1px solid #eee;">
-            <td style="padding: 12px 16px; color: #333; font-weight: 500;">${customer.name || 'PHINS Customer'}</td>
-            <td style="padding: 12px 16px; color: #666;">${joinedDate}</td>
-            <td style="padding: 12px 16px; color: #666; font-family: monospace;">${customer.code_used}</td>
-            <td style="padding: 12px 16px; text-align: center;">
-              <span style="background: ${statusColor}15; color: ${statusColor}; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;">${rewardStatus}</span>
-            </td>
+            <td style="padding: 12px 16px; color: #333; font-weight: 500;">${escReferral(customer.name || 'PHINS Customer')}</td>
+            <td style="padding: 12px 16px; color: #666;">${escReferral(joinedDate)}</td>
+            <td style="padding: 12px 16px; color: #666; font-family: monospace;">${escReferral(customer.code_used || '')}</td>
+            <td style="padding: 12px 16px; text-align: right;">${acquisitionMoney(measure, 'allocated')}</td>
+            <td style="padding: 12px 16px; text-align: right;">${acquisitionMoney(measure, 'blocked')}</td>
+            <td style="padding: 12px 16px; text-align: right;">${acquisitionMoney(measure, 'releasable')}</td>
+            <td style="padding: 12px 16px; text-align: right;">${acquisitionMoney(measure, 'settled')}</td>
+            <td style="padding: 12px 16px; text-align: right;">${acquisitionMoney(measure, 'reversed')}</td>
+            <td style="padding: 12px 16px; text-align: right;">${acquisitionMoney(share, 'allocated')}</td>
           </tr>
         `;
       }).join('');
@@ -10518,15 +11115,6 @@
               '</div>';
           }).join('');
         }
-        const types = document.getElementById('pro-supplier-type');
-        if (types && !types.options.length) {
-          (data.supplier_types || []).forEach(function(value) {
-            const option = document.createElement('option');
-            option.value = value;
-            option.textContent = value;
-            types.appendChild(option);
-          });
-        }
         const professional = data.professional || {};
         const status = document.getElementById('pro-status');
         if (status) {
@@ -10535,7 +11123,11 @@
             const open = item.status === 'approved'
               ? ' <button type="button" onclick="switchPortalRole(\'' + role + '\')" style="margin-left:8px;background:#0d47a1;color:white;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;">Open ' + role + ' view</button>'
               : '';
-            return '<div style="margin-top:6px;">' + escReferral(role) + ': <strong>' + escReferral(item.status || 'none') + '</strong>' + open + '</div>';
+            const again = item.status === 'inquiry'
+              ? ' <button type="button" onclick="submitProfessionalRequest(\'' + role + '\')" style="margin-left:8px;background:#fff;color:#0d47a1;border:1px solid #0d47a1;padding:4px 10px;border-radius:6px;cursor:pointer;">Send the form again</button>'
+              : '';
+            const label = item.via === 'agent' ? 'approved with the agent role' : (item.status || 'none');
+            return '<div style="margin-top:6px;">' + escReferral(role) + ': <strong>' + escReferral(label) + '</strong>' + open + again + '</div>';
           }).join('') +
             '<div style="margin-top:6px;"><button type="button" onclick="switchPortalRole(\'customer\')" style="background:#fff;color:#0d47a1;border:1px solid #0d47a1;padding:4px 10px;border-radius:6px;cursor:pointer;">Stay on the customer view</button></div>';
         }
@@ -10587,24 +11179,31 @@
       loadReferralData();
     }
 
-    async function submitProfessionalRequest() {
-      const role = document.getElementById('pro-role').value;
+    async function submitProfessionalRequest(role) {
+      const chosen = role || document.getElementById('pro-role').value;
       const response = await fetch('/api/customer/professional-requests', {
         method: 'POST',
         headers: referralAuthHeaders(),
-        body: JSON.stringify({
-          role: role,
-          supplier_type: document.getElementById('pro-supplier-type').value,
-          company_name: document.getElementById('pro-company').value
-        })
+        body: JSON.stringify({ role: chosen })
       });
       const body = await response.json().catch(function() { return {}; });
       if (!response.ok) {
         showNotification(body.error || 'Request was not filed', 'error');
         return;
       }
-      showNotification('Request filed for review', 'success');
-      loadRewardProgram();
+      showNotification(body.email_sent ? 'Application chat sent to your email' : 'Application chat is ready', 'success');
+      await loadRewardProgram();
+      const status = document.getElementById('pro-status');
+      if (status && body.inquiry_path) {
+        const link = document.createElement('div');
+        link.style.marginTop = '8px';
+        const anchor = document.createElement('a');
+        anchor.href = body.inquiry_path;
+        anchor.textContent = 'Open the application chat';
+        anchor.style.color = '#0d47a1';
+        link.appendChild(anchor);
+        status.appendChild(link);
+      }
     }
 
     async function switchPortalRole(role) {
@@ -10622,7 +11221,7 @@
       localStorage.setItem('phins_token', body.token);
       sessionStorage.setItem('phins_token', body.token);
       if (role === 'agent') window.location.href = '/agent-portal.html';
-      else if (role === 'supplier') window.location.href = '/supplier-login.html';
+      else if (role === 'supplier') window.location.href = '/supplier-portal.html';
       else window.location.href = '/dashboard.html#referrals';
     }
     
@@ -10676,8 +11275,13 @@
         console.error('Error generating referral code:', err);
         showNotification(' ' + (err.message || 'Failed to generate referral code'), 'error');
       } finally {
-        genBtn.disabled = false;
+        const remainingText = document.getElementById('referral-remaining');
+        const slotsLeft = remainingText ? parseInt(remainingText.textContent, 10) : NaN;
+        const atCap = slotsLeft === 0;
+        genBtn.disabled = atCap;
         genBtn.textContent = 'Generate join link';
+        genBtn.style.opacity = atCap ? '0.5' : '1';
+        genBtn.style.cursor = atCap ? 'not-allowed' : 'pointer';
       }
     }
     
