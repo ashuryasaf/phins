@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+
+logger = logging.getLogger("phins.chat_process_review")
 
 POLICY_CATEGORIES = {
     "name": "identity",
@@ -854,16 +857,27 @@ def review_from_seal(seal: Mapping[str, Any], books: Optional[Mapping[str, Any]]
     return review
 
 
+def _sequence_no(entry: Mapping[str, Any]) -> Optional[int]:
+    try:
+        return int(entry.get("sequence_no"))
+    except (TypeError, ValueError):
+        return None
+
+
 def latest_seal(entries: Iterable[Mapping[str, Any]], application_id: str,
                 event_type: str) -> Optional[Dict[str, Any]]:
     """Return the newest process seal for one chat.
 
     ``append_event`` stores the event payload as the ledger row itself, so the
     seal usually sits on the entry. A nested ``payload.seal`` is accepted too.
+    A higher ``sequence_no`` wins. Rows without one keep the previous last-match
+    order. The entries are not modified.
     """
     found = None
+    found_seq: Optional[int] = None
+    found_pos = -1
     wanted = str(application_id or "")
-    for entry in entries or []:
+    for pos, entry in enumerate(entries or []):
         if not isinstance(entry, Mapping):
             continue
         if str(entry.get("event_type") or entry.get("type") or "") != event_type:
@@ -877,8 +891,27 @@ def latest_seal(entries: Iterable[Mapping[str, Any]], application_id: str,
         if wanted not in linked:
             continue
         seal = payload.get("seal") if isinstance(payload.get("seal"), dict) else entry.get("seal")
-        if isinstance(seal, dict):
+        if not isinstance(seal, dict):
+            continue
+        seq = _sequence_no(entry)
+        if seq is None and payload:
+            seq = _sequence_no(payload)
+        if found is None:
+            newer = True
+        elif seq is None and found_seq is None:
+            newer = pos >= found_pos
+        elif seq is None:
+            newer = False
+        elif found_seq is None or seq > found_seq:
+            newer = True
+        elif seq == found_seq:
+            newer = pos >= found_pos
+        else:
+            newer = False
+        if newer:
             found = seal
+            found_seq = seq
+            found_pos = pos
     return found
 
 
@@ -904,3 +937,482 @@ def load_books() -> Dict[str, Dict[str, Any]]:
         "claims": _copy("CLAIMS"),
         "customers": _copy("CUSTOMERS"),
     }
+
+
+# ---------------------------------------------------------------------------
+# Staff review presentation. Controls and the AI note are response-only.
+# ---------------------------------------------------------------------------
+
+REVIEW_VIEWS = ("quick", "full", "both")
+QUICK_REVIEW_SECTIONS = ("identity", "health", "billing", "coverage", "edits", "prior")
+FULL_REVIEW_SECTIONS = ("intention", "revisions", "contradictions", "rejected", "prior")
+ALL_REVIEW_SECTIONS = (
+    "identity", "health", "billing", "coverage", "edits", "prior",
+    "intention", "revisions", "contradictions", "rejected", "ai",
+)
+_QUICK_FIELDS = {
+    "identity": "personal",
+    "health": "health",
+    "billing": "billing",
+    "coverage": "coverage",
+    "edits": "edits",
+    "prior": "prior",
+}
+_FULL_FIELDS = {
+    "intention": "intention",
+    "revisions": "revisions",
+    "contradictions": "contradictions",
+    "rejected": "rejected_edits",
+    "prior": "prior",
+}
+_HIDDEN_REVIEW_KEYS = frozenset({
+    "card_number", "cvv", "id_number", "national_id", "signature_data", "data_b64",
+})
+_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+_LONG_DIGITS = re.compile(r"\d{13,}")
+_AI_DISCLAIMER = (
+    "Advisory explanation of the sealed chat record. It does not underwrite, "
+    "decide a claim, change billing, or pay a reward."
+)
+
+
+def _query_value(query: Optional[Mapping[str, Any]], name: str) -> Optional[str]:
+    if not query:
+        return None
+    value = query.get(name)
+    if isinstance(value, list):
+        value = value[0] if value else None
+    if value is None:
+        return None
+    return str(value)
+
+
+def _sections_for_view(view: str) -> List[str]:
+    if view == "quick":
+        return list(QUICK_REVIEW_SECTIONS) + ["ai"]
+    if view == "full":
+        return list(FULL_REVIEW_SECTIONS) + ["ai"]
+    return list(ALL_REVIEW_SECTIONS)
+
+
+def parse_review_controls(query: Optional[Mapping[str, Any]]) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, str]]]:
+    """Read view, sections, ask, and narrate. Nothing here is stored."""
+    view = (_query_value(query, "view") or "both").strip().lower()
+    if view not in REVIEW_VIEWS:
+        return None, {"error": "view must be quick, full, or both"}
+    raw = _query_value(query, "sections")
+    if raw is None or not raw.strip():
+        sections = _sections_for_view(view)
+    else:
+        sections = []
+        for piece in raw.split(","):
+            name = piece.strip().lower()
+            if name and name not in sections:
+                sections.append(name)
+        if not sections:
+            sections = _sections_for_view(view)
+        else:
+            unknown = [name for name in sections if name not in ALL_REVIEW_SECTIONS]
+            if unknown:
+                return None, {"error": "Unknown review section"}
+    ask = (_query_value(query, "ask") or "").strip()
+    if len(ask) > 500:
+        return None, {"error": "ask is too long"}
+    narrate = (_query_value(query, "narrate") or "").strip().lower() in {"1", "true", "yes", "on"}
+    return {"view": view, "sections": sections, "ask": ask, "narrate": narrate}, None
+
+
+def _plain(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            str(key): _plain(item)
+            for key, item in value.items()
+            if str(key) not in _HIDDEN_REVIEW_KEYS
+        }
+    if isinstance(value, list):
+        return [_plain(item) for item in value]
+    return value
+
+
+def _project_review(review: Mapping[str, Any], sections: Sequence[str],
+                    integrity: Mapping[str, Any], view: str = "both") -> Dict[str, Any]:
+    selected = set(sections)
+    # ``prior`` is the one section on both panes. A quick or full view keeps
+    # it on that pane, so the shared name does not open the other one.
+    quick_selected = selected - {"prior"} if view == "full" else selected
+    full_selected = selected - {"prior"} if view == "quick" else selected
+    quick_src = review.get("quick") if isinstance(review.get("quick"), Mapping) else {}
+    full_src = review.get("full") if isinstance(review.get("full"), Mapping) else {}
+    quick: Dict[str, Any] = {}
+    for section, key in _QUICK_FIELDS.items():
+        if section in quick_selected and key in quick_src:
+            quick[key] = _plain(quick_src.get(key))
+    full: Dict[str, Any] = {}
+    for section, key in _FULL_FIELDS.items():
+        if section in full_selected and key in full_src:
+            full[key] = _plain(full_src.get(key))
+    if full:
+        full["integrity"] = {
+            "ok": bool(integrity.get("ok")),
+            "reason": integrity.get("reason") or "",
+            "head": integrity.get("head"),
+            "revision_count": integrity.get("revision_count"),
+        }
+    shown: Dict[str, Any] = {}
+    if quick:
+        shown["quick"] = quick
+    if full:
+        shown["full"] = full
+    return shown
+
+
+def _norm_num(token: str) -> str:
+    text = str(token).replace(",", "")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text or "0"
+
+
+def _numbers_in(value: Any) -> set:
+    if isinstance(value, str):
+        blob = value
+    else:
+        blob = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    return {_norm_num(token) for token in _NUMBER.findall(blob)}
+
+
+def _narrative_template():
+    import os
+
+    from prompts import get_prompt
+
+    pinned = os.environ.get("PHINS_ASSESSMENT_NARRATIVE_PROMPT_VERSION", "").strip()
+    version = int(pinned) if pinned.isdigit() else None
+    return get_prompt("narrative", version=version)
+
+
+def _add_evidence(lines: List[Dict[str, str]], label: str, value: Any) -> None:
+    if value is None or value == "" or value == [] or value == {}:
+        return
+    if isinstance(value, bool):
+        text = "yes" if value else "no"
+    else:
+        text = str(value).strip()
+    if not text:
+        return
+    if len(re.sub(r"\D", "", text)) >= 13:
+        return
+    lines.append({"label": label, "value": text[:500]})
+
+
+def sealed_evidence(review: Mapping[str, Any]) -> List[Dict[str, str]]:
+    """Facts the note may repeat. Last4 and nationality only; no full ID or PAN."""
+    quick = review.get("quick") if isinstance(review.get("quick"), Mapping) else {}
+    full = review.get("full") if isinstance(review.get("full"), Mapping) else {}
+    lines: List[Dict[str, str]] = []
+    _add_evidence(lines, "kind", review.get("kind"))
+    _add_evidence(lines, "application", review.get("application_id"))
+    _add_evidence(lines, "status", review.get("status"))
+    integrity = review.get("integrity") if isinstance(review.get("integrity"), Mapping) else {}
+    _add_evidence(lines, "answer chain", "intact" if integrity.get("ok") else "failed")
+    personal = quick.get("personal") if isinstance(quick.get("personal"), Mapping) else {}
+    for key in (
+        "name", "email", "phone", "dob", "gender", "occupation", "city", "country",
+        "nationality", "national_id_last4",
+    ):
+        _add_evidence(lines, key.replace("_", " "), personal.get(key))
+    health = quick.get("health") if isinstance(quick.get("health"), Mapping) else {}
+    for key, value in health.items():
+        _add_evidence(lines, str(key).replace("_", " "), value)
+    billing = quick.get("billing") if isinstance(quick.get("billing"), Mapping) else {}
+    for key in (
+        "billing_frequency", "auto_pay", "card_last4", "cardholder_name",
+        "expiry_month", "expiry_year", "policy_id", "claimed_amount",
+    ):
+        _add_evidence(lines, str(key).replace("_", " "), billing.get(key))
+    coverage = quick.get("coverage") if isinstance(quick.get("coverage"), Mapping) else {}
+    for key, value in coverage.items():
+        _add_evidence(lines, str(key).replace("_", " "), value)
+    edits = quick.get("edits") if isinstance(quick.get("edits"), Mapping) else {}
+    for key in ("identity", "health", "billing", "coverage", "other", "total"):
+        if key in edits:
+            label = "edit total" if key == "total" else f"{key} edits"
+            _add_evidence(lines, label, edits.get(key))
+    _add_evidence(lines, "last edit", edits.get("last_edited_at"))
+    for row in full.get("intention") or []:
+        if not isinstance(row, Mapping):
+            continue
+        label = row.get("label") or row.get("step_id") or "answer"
+        if row.get("withdrawn"):
+            _add_evidence(lines, f"intention {label}", f"from {row.get('from') or 'empty'} withdrawn")
+        else:
+            _add_evidence(
+                lines, f"intention {label}",
+                f"from {row.get('from') or 'empty'} to {row.get('to') or 'empty'}",
+            )
+    return lines[:40]
+
+
+def _deterministic_explanation(evidence: Sequence[Mapping[str, str]], ask_received: bool) -> str:
+    if evidence:
+        body = " ".join(f"{item['label']}: {item['value']}." for item in evidence)
+    else:
+        body = "No sealed facts were available for this review."
+    focus = ""
+    if ask_received:
+        focus = (
+            " A staff question was applied as focus only; figures in that "
+            "question are not treated as facts."
+        )
+    return (
+        body + focus + " This note explains the sealed record. It does not "
+        "underwrite, decide a claim, change billing, or pay a reward."
+    ).strip()
+
+
+def _ai_base(template) -> Dict[str, Any]:
+    schema = template.response_schema or {}
+    return {
+        "source": "assessment_ai",
+        "mode": "deterministic",
+        "advisory": True,
+        "needs_review": True,
+        "decides": False,
+        "summary_text": "",
+        "key_points": [],
+        "review_flags": [],
+        "evidence": [],
+        **template.provenance(),
+        "schema_id": schema.get("$id"),
+        "disclaimer": _AI_DISCLAIMER,
+    }
+
+
+def explain_sealed_review(review: Mapping[str, Any], *, ask: str = "",
+                          narrate: bool = False, provider: Any = None) -> Dict[str, Any]:
+    """Explain the sealed facts. Does not persist a narrative or a decision.
+
+    The live model is used only when ``narrate`` is set. A schema failure, an
+    unavailable model, or a figure that is not on the seal keeps the
+    deterministic note.
+    """
+    template = _narrative_template()
+    report = _ai_base(template)
+    integrity = review.get("integrity") if isinstance(review.get("integrity"), Mapping) else {}
+    if review.get("withheld") or not integrity.get("ok"):
+        report["source"] = "withheld"
+        report["fallback_reason"] = "checksum_failed"
+        return report
+    evidence = sealed_evidence(review)
+    report["evidence"] = evidence
+    report["summary_text"] = _deterministic_explanation(evidence, bool(str(ask or "").strip()))
+    if not narrate:
+        return report
+    schema = template.response_schema
+    try:
+        from services.llm_providers import (
+            LLMUnavailableError,
+            LLMValidationError,
+            get_llm_provider,
+            validate_json_schema,
+        )
+    except Exception:
+        report["fallback_reason"] = "llm_unavailable"
+        return report
+    if provider is None:
+        provider = get_llm_provider()
+    user = json.dumps({
+        "instruction": (
+            "Explain only the evidence. Do not invent a number, an identifier, "
+            "or a condition. Do not decide underwriting, a claim, billing, or a "
+            "reward. needs_review must be true. A staff question is focus, not a fact."
+        ),
+        "staff_question": str(ask or "").strip() or None,
+        "evidence": evidence,
+    }, ensure_ascii=False)
+    try:
+        if schema is None:
+            text = provider.completion(template.system_prompt, user)
+            result = {
+                "summary_text": str(text or "").strip(),
+                "key_points": [],
+                "review_flags": [],
+                "needs_review": True,
+            }
+            if not result["summary_text"]:
+                raise ValueError("empty")
+        else:
+            result = provider.structured_completion(template.system_prompt, user, schema)
+    except LLMUnavailableError:
+        report["fallback_reason"] = "llm_unavailable"
+        return report
+    except LLMValidationError:
+        report["fallback_reason"] = "schema_invalid"
+        return report
+    except Exception:
+        report["fallback_reason"] = "llm_failed"
+        return report
+    if not isinstance(result, dict):
+        report["fallback_reason"] = "schema_invalid"
+        return report
+    if schema is not None:
+        errors = validate_json_schema(result, schema)
+        if errors or result.get("needs_review") is not True:
+            report["fallback_reason"] = "schema_invalid"
+            return report
+    points = list(result.get("key_points") or [])
+    for point in points:
+        if not isinstance(point, Mapping):
+            report["fallback_reason"] = "schema_invalid"
+            return report
+        index = point.get("evidence_index")
+        if index is None:
+            continue
+        if isinstance(index, bool) or not isinstance(index, int) or not (0 <= index < len(evidence)):
+            report["fallback_reason"] = "schema_invalid"
+            return report
+    model_text = " ".join([
+        str(result.get("summary_text") or ""),
+        " ".join(str((point or {}).get("point") or "") for point in points),
+        " ".join(str(flag) for flag in (result.get("review_flags") or [])),
+    ])
+    extra = _numbers_in(model_text) - _numbers_in(evidence)
+    if extra or _LONG_DIGITS.search(model_text):
+        report["fallback_reason"] = "narrative_introduced_numbers"
+        short = sorted(token for token in extra if len(token) <= 6)
+        if short and len(short) == len(extra):
+            report["rejected_numbers"] = short
+        return report
+    report["mode"] = "llm"
+    report["summary_text"] = str(result.get("summary_text") or "").strip()
+    report["key_points"] = [dict(point) for point in points]
+    report["review_flags"] = [str(flag) for flag in (result.get("review_flags") or [])]
+    return report
+
+
+def present_process_review(review: Mapping[str, Any], *, view: str = "both",
+                           sections: Optional[Sequence[str]] = None, ask: str = "",
+                           narrate: bool = False, provider: Any = None) -> Dict[str, Any]:
+    """Copy the review down to the requested sections. The source is not written."""
+    view_name = str(view or "both").strip().lower()
+    if view_name not in REVIEW_VIEWS:
+        view_name = "both"
+    selected = list(sections) if sections is not None else _sections_for_view(view_name)
+    integrity = review.get("integrity") if isinstance(review.get("integrity"), Mapping) else {}
+    withheld = not bool(integrity.get("ok"))
+    shown: Dict[str, Any] = {
+        "kind": review.get("kind"),
+        "application_id": review.get("application_id"),
+        "status": review.get("status"),
+        "secret": True,
+        "source": review.get("source"),
+        "integrity": {
+            "ok": bool(integrity.get("ok")),
+            "reason": integrity.get("reason") or "",
+            "withheld": withheld,
+            "head": None if withheld else integrity.get("head"),
+            "revision_count": integrity.get("revision_count"),
+        },
+        "controls": {
+            "view": view_name,
+            "sections": list(selected),
+            "ask": str(ask or "").strip() or None,
+            "narrate": bool(narrate),
+        },
+    }
+    if withheld:
+        shown["withheld"] = True
+        if "ai" in selected:
+            shown["ai_report"] = explain_sealed_review(
+                {"withheld": True, "integrity": {"ok": False}},
+                ask=ask, narrate=False,
+            )
+        return shown
+    shown.update(_project_review(review, selected, integrity, view_name))
+    if "ai" in selected:
+        shown["ai_report"] = explain_sealed_review(
+            review, ask=ask, narrate=narrate, provider=provider,
+        )
+    return shown
+
+
+def memory_ledger_entries() -> List[Dict[str, Any]]:
+    try:
+        try:
+            from web_portal import server as portal
+        except ImportError:
+            import server as portal  # type: ignore
+        raw = getattr(portal, "TRANSACTION_LEDGER", {}) or {}
+        return [entry for entry in raw.values() if isinstance(entry, dict)]
+    except Exception as exc:
+        logger.warning("Process review ledger scan failed: %s", type(exc).__name__)
+        return []
+
+
+def database_seal_entries(application_id: str, event_type: str) -> List[Dict[str, Any]]:
+    """Read one chat's seal rows. Does not copy them into the memory ledger."""
+    try:
+        try:
+            from web_portal import server as portal
+        except ImportError:
+            import server as portal  # type: ignore
+    except Exception:
+        return []
+    if not (getattr(portal, "USE_DATABASE", False) and getattr(portal, "database_enabled", False)):
+        return []
+    try:
+        from database.manager import DatabaseManager
+
+        with DatabaseManager() as db:
+            rows = db.platform_ledger.get_by_entity_event(application_id, event_type, limit=5)
+            copied = [row.to_dict() for row in rows or [] if row is not None]
+            db.rollback()
+            return copied
+    except Exception as exc:
+        logger.warning(
+            "Process review database seal read failed for %s: %s",
+            application_id, type(exc).__name__,
+        )
+        return []
+
+
+def serve_process_review(session_review: Mapping[str, Any], application_id: str,
+                         event_type: str, query: Optional[Mapping[str, Any]] = None, *,
+                         provider: Any = None,
+                         memory_entries: Optional[Sequence[Mapping[str, Any]]] = None,
+                         db_entries: Optional[Sequence[Mapping[str, Any]]] = None,
+                         ) -> Tuple[int, Dict[str, Any]]:
+    """One staff read of a policy chat or a claim chat.
+
+    The in-memory session wins while it exists. After it is gone the seal is
+    read from the memory ledger, then from the database row. A bad checksum is
+    withheld. This function does not write either store.
+    """
+    controls, error = parse_review_controls(query)
+    if error:
+        return 400, error
+    assert controls is not None
+    if session_review.get("ok"):
+        review: Mapping[str, Any] = session_review
+    else:
+        memory = list(memory_entries) if memory_entries is not None else memory_ledger_entries()
+        seal = latest_seal(memory, application_id, event_type)
+        if seal is None:
+            rows = list(db_entries) if db_entries is not None else database_seal_entries(
+                application_id, event_type,
+            )
+            seal = latest_seal(rows, application_id, event_type)
+        if seal is None:
+            return int(session_review.get("status_code") or 404), {
+                "error": session_review.get("error") or "Application not found",
+            }
+        review = review_from_seal(seal, load_books())
+    shown = present_process_review(
+        review,
+        view=controls["view"],
+        sections=controls["sections"],
+        ask=controls["ask"],
+        narrate=controls["narrate"],
+        provider=provider,
+    )
+    return 200, shown

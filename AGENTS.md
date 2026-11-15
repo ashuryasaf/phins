@@ -173,13 +173,21 @@ PHINS is a Python platform built around:
   edited until filing. Edits are an append-only checksum chain
   (`services/chat_answer_revisions.py`); card numbers and full national IDs
   are not stored. `POST .../edit` needs the resume code (a staff session
-  cannot rewrite the answer). `GET .../process-review` is the staff-only
-  quick and full review (admin, underwriter, claims) of identity, health,
-  billing last4, edit times, and prior files matched by email, name, or
-  identity hash. Filing seals that chain on the ledger
+  cannot rewrite the answer).   `GET .../process-review` is the staff-only
+  review (admin, underwriter, claims) of identity, health, billing last4,
+  edit times, and prior files matched by email, name, or identity hash.
+  `view` (`quick`, `full`, `both`), `sections`, `ask`, and `narrate=1`
+  change only that response. Opening the page does not write the application,
+  the seal, the ledger, the customer master, or the identity vault. A broken
+  answer checksum is withheld and is not repaired. The AI note uses the
+  assessment narrative prompt (provenance, schema check, deterministic
+  fallback) and is dropped when it introduces a figure that is not on the
+  seal. It does not decide underwriting, claims, billing, or rewards.
+  Filing seals the chain on the ledger
   (`chat.process_sealed` / `claims_chat.process_sealed`; the seal sits on
   the ledger row) and refuses a broken chain. After the session is gone the
-  same review is rebuilt from that seal. The page is
+  same review is rebuilt from that seal, including the database row when the
+  in-memory ledger does not have it. The page is
   `/chat-process-review.html`.
   `services/chat_application_service.py` (+ `chat_application_i18n.py`) runs
  the conversational state machine, `web_portal/api_chat_application.py`
