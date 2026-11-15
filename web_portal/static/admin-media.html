@@ -2577,7 +2577,7 @@ Notes:
             var frame = document.getElementById('investor-deck-frame');
             if (frame) {
                 frame.setAttribute('data-src', page + '?embed=1&edit=1');
-                frame.setAttribute('src', page + '?embed=1&edit=1');
+                loadInvestorDeckFrame(frame);
             }
             var present = document.getElementById('investor-deck-present');
             if (present) present.setAttribute('href', page + '?edit=1');
@@ -2640,11 +2640,51 @@ Notes:
         // Video Agents) are only fetched when the operator actually opens
         // those tabs.  Preserves data integrity because each sub-page keeps
         // its own state machine and API session.
+        function investorDeckFrameMessage(text) {
+            return '<!DOCTYPE html><html><body style="margin:0;background:#060d1f;color:#f7e2a0;font:600 15px Inter,Segoe UI,sans-serif;padding:28px;line-height:1.45">' +
+                text + '</body></html>';
+        }
+
+        // The deck document is confidential. A plain iframe navigation does
+        // not send the staff bearer, so production answers with the unlock
+        // gate and the slide page stays on "Loading the plan…". Fetch the
+        // document with the bearer and place that HTML in the frame. The
+        // library, the plan, and the seals are not written.
+        function loadInvestorDeckFrame(frame) {
+            if (!frame) return;
+            var desired = frame.getAttribute('data-src');
+            if (!desired) return;
+            var headers = {};
+            var auth = getToken();
+            if (auth) headers.Authorization = 'Bearer ' + auth;
+            frame.removeAttribute('src');
+            fetch(desired, { headers: headers, credentials: 'same-origin', cache: 'no-store' })
+                .then(function (response) {
+                    return response.text().then(function (text) {
+                        return { ok: response.ok, text: text };
+                    });
+                })
+                .then(function (result) {
+                    if (!result.ok || result.text.indexOf('id="deck-count"') === -1) {
+                        frame.srcdoc = investorDeckFrameMessage('The investor deck could not be opened. Sign in as staff and open this tab again.');
+                        return;
+                    }
+                    frame.srcdoc = result.text;
+                })
+                .catch(function () {
+                    frame.srcdoc = investorDeckFrameMessage('The investor deck could not be opened. Sign in as staff and open this tab again.');
+                });
+        }
+
         function hydrateEmbeddedFrame(panel) {
             const frames = panel ? panel.querySelectorAll('iframe.embed-frame, iframe.storyboard-embed') : [];
             frames.forEach(frame => {
                 const desired = frame.getAttribute('data-src');
                 if (!desired) return;
+                if (frame.id === 'investor-deck-frame') {
+                    loadInvestorDeckFrame(frame);
+                    return;
+                }
                 const current = frame.getAttribute('src') || '';
                 if (!current) frame.setAttribute('src', desired);
             });

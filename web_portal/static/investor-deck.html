@@ -261,8 +261,24 @@
 <script src="/phins-doc-return.js"></script>
 <script>
 (function () {
+  function frameAddress() {
+    try {
+      if (window.frameElement) {
+        return window.frameElement.getAttribute('data-src') || window.frameElement.getAttribute('src') || '';
+      }
+    } catch (e) { /* a sandboxed frame cannot read its element */ }
+    return '';
+  }
+  var framed = frameAddress();
   var params = new URLSearchParams(window.location.search);
-  var deckLang = /investor-deck\.he\.html$/i.test(location.pathname) ? 'he' : 'en';
+  if (framed && (location.protocol === 'about:' || !/investor-deck/i.test(location.pathname || ''))) {
+    params = new URLSearchParams((framed.split('?')[1] || '').split('#')[0]);
+  }
+  var deckLang = (
+    /investor-deck\.he\.html$/i.test(location.pathname || '') ||
+    /investor-deck\.he\.html/i.test(framed) ||
+    params.get('lang') === 'he'
+  ) ? 'he' : 'en';
   if (deckLang === 'he') {
     document.documentElement.lang = 'he';
     document.documentElement.dir = 'rtl';
@@ -286,7 +302,7 @@
     langLink.setAttribute('href', other + location.search + location.hash);
     langLink.setAttribute('lang', deckLang === 'he' ? 'en' : 'he');
   }
-  if (params.get('embed') === '1') document.body.classList.add('is-embed');
+  if (params.get('embed') === '1' || framed.indexOf('embed=1') !== -1) document.body.classList.add('is-embed');
   var wantEdit = params.get('edit') === '1';
   var state = { slides: [], index: 0, data: null, mode: 'auto', videos: [], images: [], chromeSlide: null };
 
@@ -307,6 +323,15 @@
     if (/^https?:\/\//i.test(text)) return text;
     if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(text)) return text;
     return '';
+  }
+  function videoSrc(url) {
+    var text = safeSrc(url);
+    if (!text || text.indexOf('data:') === 0) return '';
+    return text;
+  }
+  function markPlan(text) {
+    var count = document.getElementById('deck-count');
+    if (count) count.textContent = text || '';
   }
   function headers(json) {
     var h = { 'Authorization': 'Bearer ' + token() };
@@ -359,14 +384,21 @@
       if (embedded.name) parts.push('<p class="deck-caption">Library · ' + esc(embedded.name) + '</p>');
     }
     var mode = showMode(current);
+    var playable = [];
     if (mode === 'library') {
-      parts.push('<video controls playsinline src="' + esc(current.media.playback_url) + '"></video>');
-      if (current.media.name) parts.push('<p class="deck-caption">Library · ' + esc(current.media.name) + '</p>');
+      var librarySrc = videoSrc(current.media.playback_url);
+      if (librarySrc) {
+        parts.push('<video controls playsinline preload="metadata" src="' + esc(librarySrc) + '"></video>');
+        if (current.media.name) parts.push('<p class="deck-caption">Library · ' + esc(current.media.name) + '</p>');
+      }
     } else if (mode === 'filmed') {
-      var first = current.filmed[0];
-      parts.push('<video controls playsinline data-filmed="0" src="' + esc(first.playback_url) + '"></video>');
-      parts.push('<p class="deck-caption" data-filmed-caption>Paragraph ' + esc(first.paragraph_no) +
-        (first.presenter_label ? ' · ' + esc(first.presenter_label) : '') + '</p>');
+      playable = (current.filmed || []).filter(function (clip) { return clip && videoSrc(clip.playback_url); });
+      if (playable.length) {
+        var first = playable[0];
+        parts.push('<video controls playsinline preload="metadata" data-filmed="0" src="' + esc(videoSrc(first.playback_url)) + '"></video>');
+        parts.push('<p class="deck-caption" data-filmed-caption>Paragraph ' + esc(first.paragraph_no) +
+          (first.presenter_label ? ' · ' + esc(first.presenter_label) : '') + '</p>');
+      }
     }
     side.innerHTML = parts.join('');
     document.getElementById('deck-body').classList.toggle('solo', side.innerHTML === '');
@@ -376,10 +408,10 @@
     if (video) {
       video.addEventListener('ended', function () {
         var at = parseInt(video.getAttribute('data-filmed') || '0', 10) + 1;
-        var clip = current.filmed[at];
+        var clip = playable[at];
         if (!clip) return;
         video.setAttribute('data-filmed', String(at));
-        video.src = clip.playback_url;
+        video.src = videoSrc(clip.playback_url);
         var caption = side.querySelector('[data-filmed-caption]');
         if (caption) {
           caption.textContent = 'Paragraph ' + clip.paragraph_no +
@@ -529,12 +561,20 @@
     var requestHeaders = token() ? headers(false) : {};
     var response = await fetch('/api/admin/media/investor-deck/presentation?lang=' + encodeURIComponent(deckLang), {
       headers: requestHeaders,
-      credentials: 'same-origin'
+      credentials: 'same-origin',
+      cache: 'no-store'
     });
-    var data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'The investor deck could not be loaded');
+    var text = await response.text();
+    var data = null;
+    try { data = JSON.parse(text); } catch (e) { data = null; }
+    if (!data || !response.ok) {
+      throw new Error((data && data.error) || (deckLang === 'he' ? 'המצגת לא נטענה' : 'The plan could not be loaded'));
+    }
     applyPayload(data);
-    if (data.can_assign) await loadLibrary();
+    if (data.can_assign) {
+      try { await loadLibrary(); }
+      catch (err) { setStatus((err && err.message) || 'The media library could not be loaded'); }
+    }
   }
   async function loadLibrary() {
     var response = await fetch('/api/media?brief=1', { headers: headers(false) });
@@ -763,7 +803,9 @@
     else if (event.key === 'End') go(state.slides.length - 1);
   });
   load().catch(function (err) {
-    setStatus(err.message || 'The investor deck could not be loaded');
+    var message = (err && err.message) || (deckLang === 'he' ? 'המצגת לא נטענה' : 'The plan could not be loaded');
+    markPlan(deckLang === 'he' ? 'המצגת לא נטענה' : 'The plan could not be loaded');
+    setStatus(message);
   });
 })();
 </script>

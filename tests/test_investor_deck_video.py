@@ -291,7 +291,7 @@ class _Server(threading.Thread):
         self.httpd.server_close()
 
 
-def _json_request(url, method="GET", payload=None, token=None):
+def _json_request(url, method="GET", payload=None, token=None, cookie=None):
     headers = {}
     data = None
     if payload is not None:
@@ -299,6 +299,8 @@ def _json_request(url, method="GET", payload=None, token=None):
         headers["Content-Type"] = "application/json"
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    if cookie:
+        headers["Cookie"] = cookie
     req = Request(url, data=data, headers=headers, method=method)
     try:
         with urlopen(req) as resp:
@@ -461,13 +463,16 @@ def test_send_stores_one_scene_and_leaves_the_plan_and_placements_alone():
             if scene.get("in_stream"):
                 break
         assert scene["in_stream"] is True
-        assert scene["playback_url"].startswith("data:video/mp4")
+        asset = portal.MEDIA_ASSETS[scene["last_asset_id"]]
+        assert not str(asset.get("url") or "").strip()
+        assert str(asset.get("data") or "").startswith("data:video/mp4")
+        assert scene["playback_url"].startswith(f"/media-files/{scene['last_asset_id']}/")
+        assert "data:video" not in scene["playback_url"]
         assert scene["figures_current"] is True
         assert scene["presenter_id"]
         assert again["stream_count"] == 1
         assert again["stream"][0]["scene_key"] == "s06p01"
         assert all(row["scene_key"] == "s06p01" or not row["in_stream"] for row in again["scenes"])
-        asset = portal.MEDIA_ASSETS[scene["last_asset_id"]]
         assert asset["metadata"]["generated_from"] == "investor_deck_scene"
         assert asset["metadata"]["plan_content_hash"] == plan_before
         assert asset["checksum"]
@@ -704,6 +709,89 @@ def test_presentation_page_is_wired_and_does_not_bake_figures():
     assert "/api/media?brief=1" in page
     assert "Save this slide's look" in page
     assert "phins-media-library-updated" in media
+    assert "The plan could not be loaded" in page
+    assert "frameElement" in page
+    assert "videoSrc" in page
+    assert "loadInvestorDeckFrame" in media
+    assert "srcdoc" in media
+
+
+def test_presentation_streams_a_data_url_and_a_staff_cookie_without_rewriting_the_library():
+    from security import confidential_access
+
+    srv = _Server()
+    srv.start()
+    time.sleep(0.2)
+    portal = srv.portal
+    base = f"http://127.0.0.1:{srv.port}"
+    try:
+        _json_request(base + "/api/health")
+    except Exception:
+        pass
+    admin = "phins_test_deck_stream_admin"
+    portal.SESSIONS[admin] = {
+        "username": "deck-stream-admin",
+        "role": "admin",
+        "customer_id": "",
+        "expires": (datetime.now() + timedelta(hours=1)).isoformat(),
+    }
+    asset_id = "vid-deck-inline"
+    inline = "data:video/mp4;base64,AAAA"
+    portal.MEDIA_ASSETS[asset_id] = {
+        "id": asset_id,
+        "type": "video",
+        "name": "Inline clip.mp4",
+        "checksum": "d" * 64,
+        "url": inline,
+        "data": inline,
+    }
+    library_before = copy.deepcopy(portal.MEDIA_ASSETS[asset_id])
+    plan_before = compute_plan()["content_hash"]
+    scenes_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_scenes"))
+    media_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_slide_media"))
+    path = base + "/api/admin/media/investor-deck/presentation"
+    cookie = (
+        confidential_access.STAFF_UNLOCK_COOKIE_NAME
+        + "="
+        + confidential_access.mint_staff_unlock_cookie(
+            username="deck-cookie-reader", role="actuary",
+        )
+    )
+    try:
+        status, saved = _json_request(
+            path, method="POST", token=admin,
+            payload={"slide_no": 2, "asset_id": asset_id},
+        )
+        assert status == 200, saved
+        media = saved["presentation"]["slides"][1]["media"]
+        assert media["intact"] is True
+        assert media["playback_url"].startswith(f"/media-files/{asset_id}/")
+        assert inline not in json.dumps(saved["presentation"])
+        assert "charts" not in saved["presentation"]
+        assert any(str(slide.get("chart_svg") or "").startswith("<svg") for slide in saved["presentation"]["slides"])
+        assert portal.MEDIA_ASSETS[asset_id] == library_before
+        assert compute_plan()["content_hash"] == plan_before
+        assert portal.DESIGN_SETTINGS.get("investor_deck_scenes") == scenes_before
+
+        status, watched = _json_request(path, cookie=cookie)
+        assert status == 200, watched
+        assert watched["can_assign"] is False
+        assert watched["slides"][1]["media"]["playback_url"].startswith(f"/media-files/{asset_id}/")
+        assert inline not in json.dumps(watched)
+        assert portal.MEDIA_ASSETS[asset_id] == library_before
+        assert portal.DESIGN_SETTINGS["investor_deck_slide_media"]["2"]["asset_checksum"] == "d" * 64
+    finally:
+        portal.MEDIA_ASSETS.pop(asset_id, None)
+        if media_before is None:
+            portal.DESIGN_SETTINGS.pop("investor_deck_slide_media", None)
+        else:
+            portal.DESIGN_SETTINGS["investor_deck_slide_media"] = media_before
+        if scenes_before is None:
+            portal.DESIGN_SETTINGS.pop("investor_deck_scenes", None)
+        else:
+            portal.DESIGN_SETTINGS["investor_deck_scenes"] = scenes_before
+        portal.SESSIONS.pop(admin, None)
+        srv.stop()
 
 
 def test_combine_video_stores_a_pointer_and_leaves_the_library_and_plan_alone():

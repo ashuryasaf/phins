@@ -66,6 +66,14 @@
         return headers;
     }
 
+    function playableUrl(url) {
+        var text = String(url || '').trim();
+        if (!text || text.indexOf('data:') === 0) return '';
+        if (text.indexOf('/') === 0 && text.indexOf('//') !== 0 && text.indexOf('\\') === -1) return text;
+        if (/^https?:\/\//i.test(text)) return text;
+        return '';
+    }
+
     function chartSvg(data, chartId) {
         if (!chartId || !data.charts || !data.charts[chartId]) return '';
         var svg = String(data.charts[chartId].svg || '');
@@ -101,7 +109,9 @@
     function renderStream(root, data, state) {
         var host = root.querySelector('[data-idl-stream]');
         if (!host) return;
-        var stream = Array.isArray(data.stream) ? data.stream : [];
+        var stream = (Array.isArray(data.stream) ? data.stream : []).filter(function (scene) {
+            return playableUrl(scene && scene.playback_url);
+        });
         if (!stream.length) {
             host.innerHTML = '<p class="idl-note">No filmed scenes for this plan yet. A paragraph joins the film only after its 15-second clip is stored and its spoken line still matches the plan. A paragraph without a clip is skipped.</p>';
             state.clips = [];
@@ -110,12 +120,15 @@
         host.innerHTML = stream.map(function (scene, index) {
             var chart = chartSvg(data, scene.chart_id);
             var photo = scene.photo_url ? '<img alt="Founder portrait" src="' + esc(scene.photo_url) + '" data-idl-photo>' : '';
-            var reference = scene.reference_url ? '<img alt="Scene photo" src="' + esc(scene.reference_url) + '">' : '';
+            var reference = playableUrl(scene.reference_url)
+                ? '<img alt="Scene photo" src="' + esc(playableUrl(scene.reference_url)) + '">'
+                : '';
             var aside = chart || photo || reference
                 ? '<div class="idl-side">' + chart + photo + reference + '</div>'
                 : '';
+            var src = playableUrl(scene.playback_url);
             return '<article class="idl-clip" data-stream-index="' + index + '">' +
-                '<video playsinline webkit-playsinline preload="' + (index === 0 ? 'auto' : 'metadata') + '" src="' + esc(scene.playback_url) + '"></video>' +
+                '<video playsinline webkit-playsinline preload="' + (index === 0 ? 'auto' : 'metadata') + '" src="' + esc(src) + '"></video>' +
                 aside +
                 '<div class="idl-caption"><strong>Slide ' + esc(scene.slide_no) + ' · ' + esc(scene.slide_title) +
                 '</strong><br>Paragraph ' + esc(scene.paragraph_no) + ' of ' + esc(scene.paragraph_count) +
@@ -130,11 +143,14 @@
         state.clips = Array.prototype.slice.call(host.querySelectorAll('.idl-clip'));
         state.clips.forEach(function (clip, index) {
             var video = clip.querySelector('video');
+            if (!video) return;
             video.addEventListener('ended', function () {
                 if (state.cursor === index && index + 1 < state.clips.length) playAt(state, index + 1);
             });
             video.addEventListener('error', function () {
-                if (state.cursor === index && index + 1 < state.clips.length) playAt(state, index + 1);
+                if (state.cursor === index && state.root) {
+                    setStatus(state.root, 'A clip could not be played. The library file was not changed.');
+                }
             });
         });
     }

@@ -6534,7 +6534,7 @@ def _investor_deck_reference_url(asset_id: str) -> str:
         return ''
     if not str(asset.get('checksum') or '').strip():
         return ''
-    return media_asset_url(asset)
+    return _deck_playback_url(asset)
 
 
 def _persist_investor_deck_scene_unlocked(record: Dict[str, Any]) -> bool:
@@ -6601,13 +6601,7 @@ def investor_deck_lab_view(lang: str = 'en') -> Dict[str, Any]:
         record = stored if isinstance(stored, dict) else None
         asset_id = str((record or {}).get('last_asset_id') or '')
         asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
-        brief = None
-        if isinstance(asset, dict):
-            brief = {
-                'type': str(asset.get('type') or ''),
-                'checksum': str(asset.get('checksum') or ''),
-                'playback_url': media_asset_url(asset) if str(asset.get('checksum') or '') else '',
-            }
+        brief = _investor_deck_asset_brief(asset) if isinstance(asset, dict) else None
         reference_id = str((record or {}).get('reference_image_asset_id') or '')
         scenes.append(scene_view(
             spec,
@@ -6675,12 +6669,40 @@ def _investor_deck_media_store() -> Dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
+def _deck_playback_url(media: Dict[str, Any]) -> str:
+    """A short playable address for a deck response.
+
+    A stored ``/…`` or http(s) address is returned as stored. A ``data:``
+    address is not copied into the JSON: the same library id is named on
+    ``/media-files/``, which streams the checksummed file. This function
+    does not read or write the library record.
+    """
+    if not isinstance(media, dict):
+        return ''
+    url = str(media.get('url') or '').strip()
+    if url.startswith('/') and not url.startswith('//') and '\\' not in url:
+        return url
+    if url.startswith('http://') or url.startswith('https://'):
+        return url
+    asset_id = str(media.get('id') or '').strip()
+    if (
+        not asset_id
+        or '/' in asset_id
+        or '\\' in asset_id
+        or asset_id.startswith('.')
+        or any(ch.isspace() for ch in asset_id)
+    ):
+        return ''
+    name = str(media.get('name') or media.get('filename') or asset_id)
+    return build_internal_media_file_url(asset_id, name)
+
+
 def _investor_deck_asset_brief(media: Dict[str, Any]) -> Dict[str, Any]:
     checksum = str(media.get('checksum') or '')
     return {
         'type': str(media.get('type') or ''),
         'checksum': checksum,
-        'playback_url': media_asset_url(media) if checksum else '',
+        'playback_url': _deck_playback_url(media) if checksum else '',
         'name': str(media.get('name') or ''),
     }
 
@@ -6763,13 +6785,7 @@ def investor_deck_presentation_view(
         record = stored if isinstance(stored, dict) else None
         asset_id = str((record or {}).get('last_asset_id') or '')
         asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
-        brief = None
-        if isinstance(asset, dict):
-            brief = {
-                'type': str(asset.get('type') or ''),
-                'checksum': str(asset.get('checksum') or ''),
-                'playback_url': media_asset_url(asset) if str(asset.get('checksum') or '') else '',
-            }
+        brief = _investor_deck_asset_brief(asset) if isinstance(asset, dict) else None
         scenes.append(scene_view(spec, record, plan, brief, photo_url=photo_url))
     charts = _investor_deck_charts(plan, language)
     assignments = _investor_deck_media_store()
@@ -6807,7 +6823,6 @@ def investor_deck_presentation_view(
     body['success'] = True
     body['plan'] = meta
     body['can_assign'] = bool(can_assign)
-    body['charts'] = charts
     body['photo_url'] = photo_url
     body['lang'] = language
     return body
@@ -21448,6 +21463,35 @@ class PortalHandler(BaseHTTPRequestHandler):
         token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
         return validate_session(token) if token else None
 
+    def _investor_deck_reader(self, session: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Who may read the deck presentation. Nothing is written.
+
+        The bearer session wins. A staff-unlock cookie is enough when the
+        deck document was opened from the confidential gate and this fetch
+        has no Authorization header. Share viewers are decided before this
+        is called.
+        """
+        if session and require_role(session, _INVESTOR_DECK_READ_ROLES):
+            return session
+        if not _confidential_access_enabled or confidential_access is None:
+            return None
+        try:
+            jar = confidential_access.parse_cookies(self.headers.get('Cookie', ''))
+            claims = confidential_access.verify_staff_unlock_cookie(
+                jar.get(confidential_access.STAFF_UNLOCK_COOKIE_NAME)
+            )
+        except Exception:
+            return None
+        if not claims:
+            return None
+        opened = {
+            'username': str(claims.get('u') or ''),
+            'role': str(claims.get('r') or ''),
+        }
+        if require_role(opened, _INVESTOR_DECK_READ_ROLES):
+            return opened
+        return None
+
     def _autopilot_control_actor(self, body_data: Optional[Dict[str, Any]] = None,
                                  qs: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Who may operate the AutoPilot safety controls (halt/resume/promote).
@@ -24570,13 +24614,14 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
             else:
-                if not require_role(session, _INVESTOR_DECK_READ_ROLES):
+                reader = self._investor_deck_reader(session)
+                if not reader:
                     self._set_json_headers(403)
                     self.wfile.write(json.dumps({'error': 'Staff access required'}).encode('utf-8'))
                     return
                 try:
                     payload = investor_deck_presentation_view(
-                        can_assign=require_role(session, ['admin', 'media']),
+                        can_assign=require_role(reader, ['admin', 'media']),
                         lang=deck_lang,
                     )
                 except Exception as exc:
