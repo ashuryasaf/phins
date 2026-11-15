@@ -558,6 +558,39 @@ def test_health_billing_and_identity_edits_reach_the_staff_review():
     assert _PAN not in seal_blob
     assert _NATIONAL_ID not in seal_blob
 
+    seal_copy = json.dumps(seal, sort_keys=True, default=str)
+    revisions_copy = json.dumps(_session(app_id)["revisions"], sort_keys=True, default=str)
+    ledger_n = len(portal.TRANSACTION_LEDGER)
+    customer_id = filed["customer"]["id"]
+    customer_copy = json.dumps(portal.CUSTOMERS[customer_id], sort_keys=True, default=str)
+    status, narrowed = _get(
+        f"/api/chat-application/{app_id}/process-review"
+        "?view=quick&sections=identity,health,ai&ask=Explain%20the%20name%20edit&narrate=1",
+        underwriter,
+    )
+    assert status == 200, narrowed
+    assert narrowed["controls"]["view"] == "quick"
+    assert narrowed["controls"]["narrate"] is True
+    assert narrowed["quick"]["personal"]["name"] == "Nora Quillstone"
+    assert "billing" not in narrowed["quick"]
+    assert "full" not in narrowed
+    report = narrowed["ai_report"]
+    assert report["decides"] is False
+    assert report["advisory"] is True
+    assert report["needs_review"] is True
+    assert report["mode"] == "deterministic"
+    assert report["fallback_reason"] == "llm_unavailable"
+    assert report["prompt_id"]
+    assert report["prompt_sha256"]
+    assert report["schema_id"]
+    narrowed_blob = json.dumps(narrowed)
+    assert _PAN not in narrowed_blob
+    assert _NATIONAL_ID not in narrowed_blob
+    assert json.dumps(seal, sort_keys=True, default=str) == seal_copy
+    assert json.dumps(_session(app_id)["revisions"], sort_keys=True, default=str) == revisions_copy
+    assert len(portal.TRANSACTION_LEDGER) == ledger_n
+    assert json.dumps(portal.CUSTOMERS[customer_id], sort_keys=True, default=str) == customer_copy
+
     del get_sessions()[app_id]
     status, recovered = _get(f"/api/chat-application/{app_id}/process-review", underwriter)
     assert status == 200, recovered
@@ -727,6 +760,10 @@ def test_chat_pages_expose_the_edit_control():
     status, review_page = _request_text("/chat-process-review.html")
     assert status == 200
     assert "Chat process review" in review_page
+    assert 'id="ask"' in review_page
+    assert 'id="narrate"' in review_page
+    assert 'name="section"' in review_page
+    assert "Opening it does not change the file." in review_page
 
 
 def _request_text(path):
@@ -737,3 +774,366 @@ def _request_text(path):
             return resp.status, resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read().decode("utf-8", errors="replace")
+
+
+# ---------------------------------------------------------------------------
+# Controls, AI note, withheld chain, memory and database seals
+# ---------------------------------------------------------------------------
+
+
+def test_broken_chain_is_withheld_and_not_repaired():
+    _get("/api/health")
+    app_id, resume = _start()
+    _answer(app_id, "Nora Quill", resume)
+    session = _session(app_id)
+    intact = json.dumps(session["revisions"], sort_keys=True)
+    session["revisions"][-1]["checksum"] = "a" * 64
+    broken = json.dumps(session["revisions"], sort_keys=True)
+    assert broken != intact
+    admin = _login("admin", "admin123")
+    status, review = _get(f"/api/chat-application/{app_id}/process-review", admin)
+    assert status == 200, review
+    assert review["withheld"] is True
+    assert review["integrity"]["ok"] is False
+    assert review["integrity"]["reason"] == "Answer history failed its integrity check."
+    assert "quick" not in review
+    assert "full" not in review
+    assert "Nora Quill" not in json.dumps(review)
+    assert json.dumps(session["revisions"], sort_keys=True) == broken
+    status, edited = _edit(app_id, "name", "Nora Other", resume)
+    assert status == 409, edited
+    assert json.dumps(session["revisions"], sort_keys=True) == broken
+
+
+def test_ai_report_drops_invented_figures_and_invalid_schema():
+    from services.chat_answer_revisions import (
+        append_revision,
+        build_review,
+        explain_sealed_review,
+    )
+    from services.llm_providers import LLMUnavailableError
+
+    revisions = []
+    append_revision(
+        revisions, step_id="name", action="set", at="2026-01-01T00:00:00Z",
+        current="Nora Quill", current_display="Nora Quill",
+    )
+    review = build_review(
+        kind="policy_application",
+        application_id="CHAPP-AI",
+        status="submitted",
+        subject={"name": "Nora Quill", "email": "nora.ai@example.com", "health": {}, "billing": {}, "coverage": {}},
+        revisions=revisions,
+        books={"applications": {}, "policies": {}, "claims": {}, "customers": {}},
+    )
+    name_before = review["quick"]["personal"]["name"]
+
+    class Recorder:
+        def __init__(self, result):
+            self.result = result
+            self.calls = 0
+
+        def structured_completion(self, system, user, schema):
+            self.calls += 1
+            if isinstance(self.result, Exception):
+                raise self.result
+            return self.result
+
+    silent = Recorder({"summary_text": "Coverage is 99999."})
+    quiet = explain_sealed_review(review, ask="What about 99999?", narrate=False, provider=silent)
+    assert silent.calls == 0
+    assert quiet["mode"] == "deterministic"
+    assert quiet["decides"] is False
+    assert "99999" not in quiet["summary_text"]
+    assert quiet["prompt_id"]
+    assert quiet["prompt_sha256"]
+    assert quiet["schema_id"]
+
+    invented = Recorder({
+        "summary_text": "The premium is 99999.",
+        "key_points": [{"point": "Nothing else"}],
+        "review_flags": [],
+        "needs_review": True,
+    })
+    dropped = explain_sealed_review(review, narrate=True, provider=invented)
+    assert invented.calls == 1
+    assert dropped["fallback_reason"] == "narrative_introduced_numbers"
+    assert dropped["mode"] == "deterministic"
+    assert dropped["rejected_numbers"] == ["99999"]
+    assert "99999" not in dropped["summary_text"]
+    assert dropped["decides"] is False
+
+    pan = Recorder({
+        "summary_text": "Card 5555555555554444 was used.",
+        "key_points": [],
+        "review_flags": [],
+        "needs_review": True,
+    })
+    hidden = explain_sealed_review(review, narrate=True, provider=pan)
+    assert hidden["fallback_reason"] == "narrative_introduced_numbers"
+    assert "5555555555554444" not in json.dumps(hidden)
+    assert "rejected_numbers" not in hidden
+
+    invalid = Recorder({"summary_text": "Hello"})
+    rejected = explain_sealed_review(review, narrate=True, provider=invalid)
+    assert rejected["fallback_reason"] == "schema_invalid"
+    assert rejected["mode"] == "deterministic"
+    assert rejected["summary_text"]
+
+    offline = Recorder(LLMUnavailableError("down"))
+    fallback = explain_sealed_review(review, narrate=True, provider=offline)
+    assert fallback["fallback_reason"] == "llm_unavailable"
+    assert fallback["mode"] == "deterministic"
+
+    accepted = Recorder({
+        "summary_text": "The sealed file is on record.",
+        "key_points": [{"point": "The chain is intact.", "evidence_index": 0}],
+        "review_flags": ["Human review required"],
+        "needs_review": True,
+    })
+    used = explain_sealed_review(review, narrate=True, provider=accepted)
+    assert used["mode"] == "llm"
+    assert used["summary_text"] == "The sealed file is on record."
+    assert used["decides"] is False
+    assert used["needs_review"] is True
+    assert review["quick"]["personal"]["name"] == name_before
+
+
+def test_database_seal_is_read_without_writing_memory():
+    from services.chat_answer_revisions import append_revision, build_seal, serve_process_review
+
+    revisions = []
+    append_revision(
+        revisions, step_id="name", action="set", at="2026-01-01T00:00:00Z",
+        current="Nora Quill", current_display="Nora Quill",
+    )
+    session = {
+        "id": "CHAPP-DB-1",
+        "status": "submitted",
+        "contact": {"name": "Nora Quill", "email": "nora.db@example.com"},
+        "answers": {"name": "Nora Quill"},
+        "revisions": revisions,
+        "rejected_edits": [],
+    }
+    seal = build_seal(session, kind="policy_application")
+    seal_blob = json.dumps(seal, sort_keys=True)
+    memory = [{
+        "event_type": "chat.process_sealed",
+        "entity_id": "CHAPP-DB-1",
+        "application_id": "CHAPP-DB-1",
+        "sequence_no": 3,
+        "seal": json.loads(seal_blob),
+    }]
+    memory[0]["seal"]["revisions"][-1]["checksum"] = "b" * 64
+    memory_blob = json.dumps(memory, sort_keys=True)
+    good = json.loads(seal_blob)
+    db_rows = [{
+        "event_type": "chat.process_sealed",
+        "entity_id": "CHAPP-DB-1",
+        "sequence_no": 9,
+        "payload": {"application_id": "CHAPP-DB-1", "seal": good},
+    }]
+    db_blob = json.dumps(db_rows, sort_keys=True)
+    missing = {"ok": False, "status_code": 404, "error": "Application not found"}
+    status, withheld = serve_process_review(
+        missing, "CHAPP-DB-1", "chat.process_sealed", None,
+        memory_entries=memory, db_entries=db_rows,
+    )
+    assert status == 200, withheld
+    assert withheld["withheld"] is True
+    assert withheld["source"] == "ledger"
+    assert "Nora Quill" not in json.dumps(withheld)
+    assert json.dumps(memory, sort_keys=True) == memory_blob
+    assert json.dumps(db_rows, sort_keys=True) == db_blob
+
+    empty_memory = []
+    status, recovered = serve_process_review(
+        missing, "CHAPP-DB-1", "chat.process_sealed",
+        {"view": "both", "sections": "identity,ai"},
+        memory_entries=empty_memory, db_entries=db_rows,
+    )
+    assert status == 200, recovered
+    assert recovered["source"] == "ledger"
+    assert recovered["quick"]["personal"]["name"] == "Nora Quill"
+    assert recovered["ai_report"]["decides"] is False
+    assert "full" not in recovered
+    assert empty_memory == []
+    assert json.dumps(db_rows, sort_keys=True) == db_blob
+    assert json.dumps(good, sort_keys=True) == seal_blob
+
+    claim_revisions = []
+    append_revision(
+        claim_revisions, step_id="profile", action="set", at="2026-02-01T00:00:00Z",
+        current={"name": "Dana Levi", "email": "dana.db@example.com", "phone": "+1-555-0100"},
+        current_display="Dana Levi · dana.db@example.com",
+    )
+    claim_session = {
+        "id": "CLCHAT-DB-1",
+        "status": "submitted",
+        "contact": {"name": "Dana Levi", "email": "dana.db@example.com", "phone": "+1-555-0100"},
+        "answers": {"claimed_amount": 2500, "claim_type": "accident"},
+        "revisions": claim_revisions,
+        "rejected_edits": [],
+    }
+    claim_seal = build_seal(claim_session, kind="claim")
+    claim_blob = json.dumps(claim_seal, sort_keys=True)
+    claim_rows = [{
+        "event_type": "claims_chat.process_sealed",
+        "entity_id": "CLCHAT-DB-1",
+        "sequence_no": 4,
+        "payload": {"application_id": "CLCHAT-DB-1", "seal": json.loads(claim_blob)},
+    }]
+    status, claim_review = serve_process_review(
+        {"ok": False, "status_code": 404, "error": "Claim chat not found"},
+        "CLCHAT-DB-1", "claims_chat.process_sealed",
+        {"sections": "identity,billing,ai"},
+        memory_entries=[], db_entries=claim_rows,
+    )
+    assert status == 200, claim_review
+    assert claim_review["kind"] == "claim"
+    assert claim_review["source"] == "ledger"
+    assert claim_review["quick"]["personal"]["name"] == "Dana Levi"
+    assert claim_review["quick"]["billing"]["claimed_amount"] == 2500
+    assert claim_review["ai_report"]["decides"] is False
+    assert json.dumps(claim_rows[0]["payload"]["seal"], sort_keys=True) == claim_blob
+
+
+def test_filed_claim_review_reads_the_seal_and_does_not_write():
+    import base64
+
+    _get("/api/health")
+    email = "dana.review.filed@example.com"
+    customer_id = "CUST-REVIEW-FILED"
+    policy_id = _seed_customer(customer_id, email)
+    token = _customer_token(customer_id, email)
+    status, started = _post("/api/claims-chat/start", {"channel": "web_chat"}, token)
+    assert status == 201, started
+    app_id = started["application_id"]
+    resume = started["resume_code"]
+
+    def answer(value, expect=200):
+        status_code, body = _post(
+            f"/api/claims-chat/{app_id}/message",
+            {"value": value, "resume_code": resume},
+            token,
+        )
+        assert status_code == expect, body
+        return body
+
+    profile = answer({"name": "Dana Levi", "email": email, "phone": "+1-555-0100"})
+    assert profile.get("otp_required") is True
+    status, otp = _post(
+        f"/api/claims-chat/{app_id}/otp/request",
+        {"resume_code": resume, "delivery_channel": "email"},
+        token,
+    )
+    assert status == 200, otp
+    status, verified = _post(
+        f"/api/claims-chat/{app_id}/otp/verify",
+        {
+            "verification_id": otp["verification_id"],
+            "otp_code": otp["demo_otp_code"],
+            "resume_code": resume,
+        },
+        token,
+    )
+    assert status == 200, verified
+    answer(policy_id)
+    answer("accident")
+    answer("2024-06-15")
+    answer("Tel Aviv, Rothschild 12")
+    answer("I slipped on a wet stair at the clinic entrance and injured my wrist.")
+    answer(2500)
+    answer("Ichilov")
+    answer("done", expect=400)
+    evidence = base64.b64encode(b"clinic invoice dana levi wrist").decode("ascii")
+    status, uploaded = _post(
+        f"/api/claims-chat/{app_id}/media",
+        {
+            "resume_code": resume,
+            "kind": "document",
+            "name": "invoice.txt",
+            "mime_type": "text/plain",
+            "data_b64": evidence,
+        },
+        token,
+    )
+    assert status == 200, uploaded
+    answer("done")
+    answer("agree")
+    signed = answer({
+        "name": "Dana Levi",
+        "nationality": "Israel",
+        "id_number": _NATIONAL_ID,
+        "signature_data": _SIG_PNG,
+        "method": "drawn_canvas",
+    })
+    assert signed.get("ready_to_finalize") is True
+    status, filed = _post(
+        f"/api/claims-chat/{app_id}/finalize",
+        {"resume_code": resume},
+        token,
+    )
+    assert status == 201, filed
+    claim_id = filed["claim"]["id"]
+
+    import web_portal.server as portal
+
+    adjuster = _login("claims_adjuster", "claims123")
+    status, review = _get(f"/api/claims-chat/{app_id}/process-review", adjuster)
+    assert status == 200, review
+    assert review["kind"] == "claim"
+    assert review["source"] == "session"
+    assert review["quick"]["personal"]["name"] == "Dana Levi"
+    assert review["quick"]["billing"]["claimed_amount"] == 2500
+    assert review["ai_report"]["decides"] is False
+    assert review["ai_report"]["mode"] == "deterministic"
+    assert review["full"]["integrity"]["ok"] is True
+    review_blob = json.dumps(review)
+    assert _NATIONAL_ID not in review_blob
+    assert "national_id_hash" not in review["quick"]["personal"]
+
+    seals = _ledger(app_id, "claims_chat.process_sealed")
+    assert seals
+    seal = seals[-1].get("seal") or (seals[-1].get("payload") or {}).get("seal")
+    seal_copy = json.dumps(seal, sort_keys=True, default=str)
+    ledger_n = len(portal.TRANSACTION_LEDGER)
+    customer_copy = json.dumps(portal.CUSTOMERS[customer_id], sort_keys=True, default=str)
+    claim_copy = json.dumps(portal.CLAIMS[claim_id], sort_keys=True, default=str)
+    status, narrowed = _get(
+        f"/api/claims-chat/{app_id}/process-review"
+        "?view=full&sections=billing,ai&ask=Explain%20the%20amount&narrate=1",
+        adjuster,
+    )
+    assert status == 200, narrowed
+    assert narrowed["controls"]["sections"] == ["billing", "ai"]
+    assert "personal" not in narrowed.get("quick", {})
+    assert narrowed["quick"]["billing"]["claimed_amount"] == 2500
+    assert narrowed["ai_report"]["fallback_reason"] == "llm_unavailable"
+    assert narrowed["ai_report"]["decides"] is False
+    assert _NATIONAL_ID not in json.dumps(narrowed)
+    assert json.dumps(seal, sort_keys=True, default=str) == seal_copy
+    assert len(portal.TRANSACTION_LEDGER) == ledger_n
+    assert json.dumps(portal.CUSTOMERS[customer_id], sort_keys=True, default=str) == customer_copy
+    assert json.dumps(portal.CLAIMS[claim_id], sort_keys=True, default=str) == claim_copy
+
+    from services.claims_chat_service import get_claims_chat_service
+
+    del get_claims_chat_service()._sessions[app_id]
+    status, recovered = _get(f"/api/claims-chat/{app_id}/process-review", adjuster)
+    assert status == 200, recovered
+    assert recovered["source"] == "ledger"
+    assert recovered["quick"]["personal"]["name"] == "Dana Levi"
+    assert recovered["quick"]["billing"]["claimed_amount"] == 2500
+    assert json.dumps(seal, sort_keys=True, default=str) == seal_copy
+
+    seal["revisions"][-1]["checksum"] = "c" * 64
+    broken = json.dumps(seal, sort_keys=True, default=str)
+    status, hidden = _get(f"/api/claims-chat/{app_id}/process-review", adjuster)
+    assert status == 200, hidden
+    assert hidden["withheld"] is True
+    assert "Dana Levi" not in json.dumps(hidden)
+    assert json.dumps(seal, sort_keys=True, default=str) == broken
+    assert json.dumps(portal.CLAIMS[claim_id], sort_keys=True, default=str) == claim_copy
+    status, applicant = _get(f"/api/claims-chat/{app_id}/process-review", token)
+    assert status == 403, applicant

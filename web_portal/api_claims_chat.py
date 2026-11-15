@@ -526,33 +526,18 @@ def _can_read_process_review(session: Optional[Dict[str, Any]]) -> bool:
     return bool(session) and str(session.get("role") or "").lower() in PROCESS_REVIEW_ROLES
 
 
-def _review_from_ledger(application_id: str) -> Optional[Dict[str, Any]]:
-    from services.chat_answer_revisions import latest_seal, load_books, review_from_seal
-
-    try:
-        entries = list(_portal().TRANSACTION_LEDGER.values())
-    except Exception as exc:
-        logger.warning("Claims process review ledger scan failed: %s", exc)
-        return None
-    seal = latest_seal(entries, application_id, "claims_chat.process_sealed")
-    if not seal:
-        return None
-    review = review_from_seal(seal, load_books())
-    review.pop("ok", None)
-    return review
-
-
-def _handle_process_review(application_id: str, session: Optional[Dict[str, Any]]) -> Tuple[int, Dict[str, Any]]:
+def _handle_process_review(application_id: str, session: Optional[Dict[str, Any]],
+                           query: Optional[Dict[str, Any]] = None) -> Tuple[int, Dict[str, Any]]:
     if not _can_read_process_review(session):
         return 403, {"error": "Staff access required"}
-    review = _service().process_review(application_id)
-    if review.get("ok"):
-        review.pop("ok", None)
-        return 200, review
-    sealed = _review_from_ledger(application_id)
-    if sealed:
-        return 200, sealed
-    return review.get("status_code", 404), {"error": review.get("error") or "Claim chat not found"}
+    from services.chat_answer_revisions import serve_process_review
+
+    return serve_process_review(
+        _service().process_review(application_id),
+        application_id,
+        "claims_chat.process_sealed",
+        query,
+    )
 
 
 def dispatch_get(path: str, session: Optional[Dict[str, Any]],
@@ -564,7 +549,7 @@ def dispatch_get(path: str, session: Optional[Dict[str, Any]],
         return 404, {"error": "Not found"}
     application_id, tail = match.group(1), (match.group(2) or "")
     if tail == "/process-review":
-        return _handle_process_review(application_id, session)
+        return _handle_process_review(application_id, session, query)
     resume = ""
     raw = (query or {}).get("resume_code") or ""
     if isinstance(raw, list):

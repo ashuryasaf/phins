@@ -128,6 +128,23 @@ class PlatformLedgerRepository(BaseRepository[PlatformLedgerEntry]):
         except Exception:
             return []
 
+    def get_by_entity_event(self, entity_id: str, event_type: str,
+                            limit: int = 5) -> List[PlatformLedgerEntry]:
+        """Newest rows for one entity and event. Read-only; never inserts."""
+        try:
+            return (
+                self.session.query(PlatformLedgerEntry)
+                .filter(
+                    PlatformLedgerEntry.entity_id == entity_id,
+                    PlatformLedgerEntry.event_type == event_type,
+                )
+                .order_by(PlatformLedgerEntry.sequence_no.desc())
+                .limit(limit)
+                .all()
+            )
+        except Exception:
+            return []
+
     def record_event(self, **kwargs: Any) -> Optional[PlatformLedgerEntry]:
         payload = kwargs.get("payload")
         if payload is not None and not isinstance(payload, str):

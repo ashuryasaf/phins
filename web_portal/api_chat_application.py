@@ -939,41 +939,19 @@ def _can_read_process_review(session: Optional[Dict[str, Any]]) -> bool:
     return bool(session) and str(session.get("role") or "").lower() in PROCESS_REVIEW_ROLES
 
 
-def _ledger_values() -> list:
-    try:
-        try:
-            from web_portal import server as portal
-        except ImportError:
-            import server as portal  # type: ignore
-        return list(getattr(portal, "TRANSACTION_LEDGER", {}).values())
-    except Exception as exc:
-        logger.warning("Process review ledger scan failed: %s", exc)
-        return []
-
-
-def _review_from_ledger(application_id: str, event_type: str) -> Optional[Dict[str, Any]]:
-    from services.chat_answer_revisions import latest_seal, load_books, review_from_seal
-
-    seal = latest_seal(_ledger_values(), application_id, event_type)
-    if not seal:
-        return None
-    review = review_from_seal(seal, load_books())
-    review.pop("ok", None)
-    return review
-
-
 def _handle_process_review(application_id: str, session: Optional[Dict[str, Any]],
-                           event_type: str) -> Tuple[int, Dict[str, Any]]:
+                           event_type: str, query: Optional[Dict[str, Any]] = None,
+                           ) -> Tuple[int, Dict[str, Any]]:
     if not _can_read_process_review(session):
         return 403, {"error": "Staff access required"}
-    review = _service().process_review(application_id)
-    if review.get("ok"):
-        review.pop("ok", None)
-        return 200, review
-    sealed = _review_from_ledger(application_id, event_type)
-    if sealed:
-        return 200, sealed
-    return review.get("status_code", 404), {"error": review.get("error") or "Application not found"}
+    from services.chat_answer_revisions import serve_process_review
+
+    return serve_process_review(
+        _service().process_review(application_id),
+        application_id,
+        event_type,
+        query,
+    )
 
 
 def _stamp_process_head(underwriting_id: str, application_id: str,
@@ -1099,7 +1077,9 @@ def dispatch_get(path: str, session: Optional[Dict[str, Any]],
 
     svc = _service()
     if tail == "/process-review":
-        return _handle_process_review(application_id, session, "chat.process_sealed")
+        return _handle_process_review(
+            application_id, session, "chat.process_sealed", query_params,
+        )
     staff = _is_staff(session)
     if not svc.authorize_access(application_id, _qp("resume_code"), staff):
         return 403, {"error": "A valid resume code (or staff session) is required"}

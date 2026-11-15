@@ -16,10 +16,15 @@
         .process-review a { color: #0e2f63; }
         .process-review main { max-width: 1080px; margin: 0 auto; padding: 8px 0 24px; }
         .process-review .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-        .process-review input, .process-review button { font: inherit; }
-        .process-review input { background: #fff; color: #12284c; border: 1px solid #d5deea; border-radius: 10px; padding: 10px 12px; min-width: 280px; }
+        .process-review input, .process-review button, .process-review textarea { font: inherit; }
+        .process-review input[type="text"], .process-review textarea { background: #fff; color: #12284c; border: 1px solid #d5deea; border-radius: 10px; padding: 10px 12px; }
+        .process-review input[type="text"] { min-width: 280px; }
+        .process-review textarea { width: 100%; min-height: 64px; resize: vertical; }
         .process-review button, .process-review .tab { background: #fff; color: #0e2f63; border: 1px solid #c9a04e; border-radius: 999px; padding: 8px 14px; cursor: pointer; }
         .process-review button.active, .process-review .tab.active { background: #0e2f63; color: #f7e2a0; }
+        .process-review .sections { display: flex; gap: 8px 14px; flex-wrap: wrap; margin-top: 12px; }
+        .process-review .sections label { display: flex; gap: 6px; align-items: center; font-size: 0.88rem; color: #0e2f63; }
+        .process-review .ask { margin-top: 12px; }
         .process-review .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 18px; }
         .process-review .card { background: #f3f7fd; border: 1px solid #d5deea; border-radius: 16px; padding: 16px; color: #12284c; }
         .process-review .card h2 { margin: 0 0 10px; font-size: 0.95rem; letter-spacing: 0.06em; text-transform: uppercase; color: #0e2f63; }
@@ -29,6 +34,7 @@
         .process-review .ok { color: #0f6b45; } .process-review .bad { color: #9b2c2c; }
         .process-review .error { color: #9b2c2c; }
         .process-review code { font-family: "Space Grotesk", monospace; font-size: 0.82rem; color: #123f82; }
+        .process-review .summary { white-space: pre-wrap; margin: 0 0 8px; }
     </style>
 </head>
 <body>
@@ -39,21 +45,43 @@
     </header>
     <main>
         <form class="row" id="lookup">
-            <input id="file-id" placeholder="CHAPP-… or CLCHAT-…" autocomplete="off" spellcheck="false">
+            <input id="file-id" type="text" placeholder="CHAPP-… or CLCHAT-…" autocomplete="off" spellcheck="false">
             <button type="submit">Open</button>
-            <button type="button" class="tab active" id="tab-quick">Quick</button>
+            <button type="button" class="tab active" id="tab-both">Both</button>
+            <button type="button" class="tab" id="tab-quick">Quick</button>
             <button type="button" class="tab" id="tab-full">Full</button>
         </form>
-        <p class="muted" id="status-line">For underwriting and claims staff. Applicants do not see this view.</p>
+        <div class="sections" id="sections">
+            <label><input type="checkbox" name="section" value="identity" checked> Identity</label>
+            <label><input type="checkbox" name="section" value="health" checked> Health</label>
+            <label><input type="checkbox" name="section" value="billing" checked> Billing</label>
+            <label><input type="checkbox" name="section" value="coverage" checked> Coverage</label>
+            <label><input type="checkbox" name="section" value="edits" checked> Edits</label>
+            <label><input type="checkbox" name="section" value="prior" checked> Prior files</label>
+            <label><input type="checkbox" name="section" value="intention" checked> Intention</label>
+            <label><input type="checkbox" name="section" value="revisions" checked> Answers</label>
+            <label><input type="checkbox" name="section" value="contradictions" checked> Contradictions</label>
+            <label><input type="checkbox" name="section" value="rejected" checked> Rejected edits</label>
+            <label><input type="checkbox" name="section" value="ai" checked> AI report</label>
+        </div>
+        <div class="ask">
+            <label class="muted" for="ask">How to ask the AI report</label>
+            <textarea id="ask" maxlength="500" placeholder="Optional focus. Figures here are not treated as facts." spellcheck="false"></textarea>
+            <label class="muted"><input type="checkbox" id="narrate"> Ask the assessment model</label>
+        </div>
+        <p class="muted" id="status-line">For underwriting and claims staff. Applicants do not see this view. Opening it does not change the file.</p>
         <div id="quick"></div>
+        <div id="ai"></div>
         <div id="full" hidden></div>
     </main>
     </div>
     <script>
         const $ = (id) => document.getElementById(id);
         const token = localStorage.getItem('phins_token') || '';
+        const QUICK = ["identity", "health", "billing", "coverage", "edits", "prior", "ai"];
+        const FULL = ["intention", "revisions", "contradictions", "rejected", "prior", "ai"];
         let review = null;
-        let mode = 'quick';
+        let mode = "both";
 
         function esc(value) {
             return String(value == null || value === '' ? '—' : value)
@@ -64,62 +92,125 @@
             return pairs.map(([label, value]) => '<div><span class="muted">' + esc(label) + '</span><br>' + esc(value) + '</div>').join('');
         }
 
+        function sectionBoxes() {
+            return Array.from(document.querySelectorAll('input[name="section"]'));
+        }
+
+        function selectedSections() {
+            return sectionBoxes().filter((box) => box.checked).map((box) => box.value);
+        }
+
+        function setSections(names) {
+            const wanted = new Set(names);
+            sectionBoxes().forEach((box) => { box.checked = wanted.has(box.value); });
+        }
+
+        function setMode(next) {
+            mode = next;
+            $('tab-both').classList.toggle('active', next === 'both');
+            $('tab-quick').classList.toggle('active', next === 'quick');
+            $('tab-full').classList.toggle('active', next === 'full');
+        }
+
         function render() {
             if (!review) return;
-            const quick = review.quick || {};
-            const personal = quick.personal || {};
-            const health = quick.health || {};
-            const billing = quick.billing || {};
-            const edits = quick.edits || {};
-            const prior = quick.prior || {};
             const integrity = review.integrity || {};
             $('status-line').innerHTML = esc(review.application_id) + ' · ' + esc(review.status)
                 + ' · <span class="' + (integrity.ok ? 'ok' : 'bad') + '">'
                 + (integrity.ok ? 'Answer chain intact' : 'Answer chain failed') + '</span>'
-                + (integrity.head ? ' · <code>' + esc(String(integrity.head).slice(0, 16)) + '…</code>' : '');
-            $('quick').innerHTML = '<div class="grid">'
-                + '<section class="card"><h2>Identity</h2>' + lines([
-                    ['Name', personal.name], ['Email', personal.email], ['Mobile', personal.phone],
-                    ['Date of birth', personal.dob], ['Nationality', personal.nationality],
-                    ['ID last 4', personal.national_id_last4], ['City', personal.city], ['Country', personal.country]
-                ]) + '</section>'
-                + '<section class="card"><h2>Health</h2>' + lines([
-                    ['Main problems', health.main_problems || health.what_happened],
-                    ['Conditions', health.medical_conditions], ['Surgery', health.surgery_detail || health.surgery],
-                    ['Medications', health.medications], ['Tobacco', health.tobacco],
-                    ['Daily function', health.daily_function], ['Claim type', health.claim_type],
-                    ['Disclosure', health.disclosure]
-                ]) + '</section>'
-                + '<section class="card"><h2>Billing</h2>' + lines([
+                + (integrity.head ? ' · <code>' + esc(String(integrity.head).slice(0, 16)) + '…</code>' : '')
+                + ' · read only';
+            if (review.withheld) {
+                $('quick').hidden = false;
+                $('full').hidden = true;
+                $('quick').innerHTML = '<section class="card"><h2>Withheld</h2><p class="bad">'
+                    + esc(integrity.reason || 'Answer history failed its integrity check.')
+                    + '</p><p class="muted">The checksum was not repaired. Nothing on the file was rewritten.</p></section>';
+                $('full').innerHTML = '';
+                renderAi(review.ai_report);
+                return;
+            }
+            const quick = review.quick || {};
+            const cards = [];
+            if (quick.personal) cards.push('<section class="card"><h2>Identity</h2>' + lines([
+                ['Name', quick.personal.name], ['Email', quick.personal.email], ['Mobile', quick.personal.phone],
+                ['Date of birth', quick.personal.dob], ['Nationality', quick.personal.nationality],
+                ['ID last 4', quick.personal.national_id_last4], ['City', quick.personal.city], ['Country', quick.personal.country]
+            ]) + '</section>');
+            if (quick.health) cards.push('<section class="card"><h2>Health</h2>' + lines([
+                ['Main problems', quick.health.main_problems || quick.health.what_happened],
+                ['Conditions', quick.health.medical_conditions], ['Surgery', quick.health.surgery_detail || quick.health.surgery],
+                ['Medications', quick.health.medications], ['Tobacco', quick.health.tobacco],
+                ['Daily function', quick.health.daily_function], ['Claim type', quick.health.claim_type],
+                ['Disclosure', quick.health.disclosure]
+            ]) + '</section>');
+            if (quick.billing) {
+                const billing = quick.billing;
+                cards.push('<section class="card"><h2>Billing</h2>' + lines([
                     ['Frequency', billing.billing_frequency], ['Auto-pay', billing.auto_pay],
                     ['Card last 4', billing.card_last4], ['Cardholder', billing.cardholder_name],
                     ['Expiry', [billing.expiry_month, billing.expiry_year].filter(Boolean).join('/') || null],
                     ['Policy', billing.policy_id], ['Claimed', billing.claimed_amount]
-                ]) + '</section>'
-                + '<section class="card"><h2>Edits</h2>' + lines([
+                ]) + '</section>');
+            }
+            if (quick.coverage) cards.push('<section class="card"><h2>Coverage</h2>' + lines([
+                ['Amount', quick.coverage.coverage_amount], ['Years', quick.coverage.coverage_years],
+                ['Savings', quick.coverage.savings_addon]
+            ]) + '</section>');
+            if (quick.edits) {
+                const edits = quick.edits;
+                cards.push('<section class="card"><h2>Edits</h2>' + lines([
                     ['Identity', edits.identity], ['Health', edits.health], ['Billing', edits.billing],
                     ['Total', edits.total], ['Last edit', edits.last_edited_at]
-                ]) + '<p class="muted">Prior files: ' + esc(prior.count) + ' · triggered by '
-                + esc((prior.triggered_by || []).join(', ') || 'none') + '</p></section>'
-                + '</div>'
-                + priorTable(prior.items || []);
+                ]) + '</section>');
+            }
+            if (quick.prior) {
+                cards.push('<section class="card"><h2>Prior files</h2><p class="muted">Prior files: '
+                    + esc(quick.prior.count) + ' · triggered by '
+                    + esc((quick.prior.triggered_by || []).join(', ') || 'none') + '</p></section>');
+            }
+            $('quick').innerHTML = cards.length ? '<div class="grid">' + cards.join('') + '</div>' : '';
+            if (quick.prior) $('quick').innerHTML += priorTable(quick.prior.items || []);
             const full = review.full || {};
-            $('full').innerHTML = '<section class="card" style="margin-top:18px"><h2>Intention</h2>'
-                + table(['When', 'What', 'From', 'To'], (full.intention || []).map((row) => [
+            const blocks = [];
+            if (full.intention) blocks.push('<section class="card" style="margin-top:18px"><h2>Intention</h2>'
+                + table(['When', 'What', 'From', 'To'], full.intention.map((row) => [
                     row.edited_at, row.label, row.from, row.withdrawn ? 'withdrawn' : row.to
-                ]))
-                + '</section><section class="card" style="margin-top:14px"><h2>Every recorded answer</h2>'
-                + table(['When', 'Action', 'Step', 'Earlier', 'Current'], (full.revisions || []).map((row) => [
+                ])) + '</section>');
+            if (full.revisions) blocks.push('<section class="card" style="margin-top:14px"><h2>Every recorded answer</h2>'
+                + table(['When', 'Action', 'Step', 'Earlier', 'Current'], full.revisions.map((row) => [
                     row.at, row.action, row.step_id, row.previous_display, row.current_display
-                ]))
-                + '</section><section class="card" style="margin-top:14px"><h2>Earlier files and contradictions</h2>'
-                + priorTable(full.prior || [])
+                ])) + '</section>');
+            if (full.rejected_edits) blocks.push('<section class="card" style="margin-top:14px"><h2>Rejected edits</h2>'
+                + table(['When', 'Step', 'Reason'], full.rejected_edits.map((row) => [
+                    row.at, row.label || row.step_id, row.reason
+                ])) + '</section>');
+            if (full.prior || full.contradictions) blocks.push('<section class="card" style="margin-top:14px"><h2>Earlier files and contradictions</h2>'
+                + (full.prior ? priorTable(full.prior) : '')
                 + table(['Field', 'Now', 'Earlier file'], (full.contradictions || []).map((row) => [
                     row.label || row.field, row.current, row.previous
-                ]))
-                + '</section>';
-            $('quick').hidden = mode !== 'quick';
-            $('full').hidden = mode !== 'full';
+                ])) + '</section>');
+            $('full').innerHTML = blocks.join('');
+            $('quick').hidden = !cards.length && !quick.prior;
+            $('full').hidden = !blocks.length;
+            renderAi(review.ai_report);
+        }
+
+        function renderAi(report) {
+            if (!report) {
+                $('ai').innerHTML = '';
+                return;
+            }
+            const flags = (report.review_flags || []).map((flag) => '<li>' + esc(flag) + '</li>').join('');
+            const points = (report.key_points || []).map((point) => '<li>' + esc(point.point || point) + '</li>').join('');
+            $('ai').innerHTML = '<section class="card" style="margin-top:18px"><h2>AI report</h2>'
+                + '<p class="summary">' + esc(report.summary_text || 'No explanation.') + '</p>'
+                + (points ? '<ul>' + points + '</ul>' : '')
+                + (flags ? '<p class="muted">Review flags</p><ul>' + flags + '</ul>' : '')
+                + '<p class="muted">' + esc(report.mode) + ' · ' + esc(report.prompt_id || report.prompt_version)
+                + (report.fallback_reason ? ' · ' + esc(report.fallback_reason) : '')
+                + (report.rejected_numbers ? ' · dropped ' + esc(report.rejected_numbers.join(', ')) : '')
+                + '</p><p class="muted">' + esc(report.disclaimer) + '</p></section>';
         }
 
         function table(headers, rows) {
@@ -137,12 +228,25 @@
                 ])) + '</section>';
         }
 
+        function reviewPath(fileId) {
+            const root = fileId.startsWith('CLCHAT-') ? '/api/claims-chat/' : '/api/chat-application/';
+            const params = new URLSearchParams();
+            if (mode !== 'both') params.set('view', mode);
+            const sections = selectedSections();
+            const all = sectionBoxes().map((box) => box.value);
+            if (sections.length !== all.length) params.set('sections', sections.join(','));
+            const ask = $('ask').value.trim();
+            if (ask) params.set('ask', ask);
+            if ($('narrate').checked) params.set('narrate', '1');
+            const qs = params.toString();
+            return root + encodeURIComponent(fileId) + '/process-review' + (qs ? '?' + qs : '');
+        }
+
         async function load(id) {
             const fileId = String(id || '').trim().toUpperCase();
             if (!fileId) return;
-            const root = fileId.startsWith('CLCHAT-') ? '/api/claims-chat/' : '/api/chat-application/';
             $('status-line').textContent = 'Loading ' + fileId + '…';
-            const response = await fetch(root + encodeURIComponent(fileId) + '/process-review', {
+            const response = await fetch(reviewPath(fileId), {
                 headers: token ? { 'Authorization': 'Bearer ' + token } : {}
             });
             const data = await response.json().catch(() => ({}));
@@ -154,11 +258,16 @@
                 review = null;
                 $('quick').innerHTML = '';
                 $('full').innerHTML = '';
+                $('ai').innerHTML = '';
                 $('status-line').innerHTML = '<span class="error">' + esc(data.error || 'Could not open this review') + '</span>';
                 return;
             }
             review = data;
-            history.replaceState(null, '', '?id=' + encodeURIComponent(fileId));
+            const page = new URLSearchParams();
+            page.set('id', fileId);
+            const tail = reviewPath(fileId).split('?')[1];
+            if (tail) new URLSearchParams(tail).forEach((value, key) => page.set(key, value));
+            history.replaceState(null, '', '?' + page.toString());
             render();
         }
 
@@ -166,22 +275,39 @@
             event.preventDefault();
             load($('file-id').value);
         });
+        $('tab-both').addEventListener('click', () => {
+            setMode('both');
+            setSections(sectionBoxes().map((box) => box.value));
+            if ($('file-id').value.trim()) load($('file-id').value);
+        });
         $('tab-quick').addEventListener('click', () => {
-            mode = 'quick';
-            $('tab-quick').classList.add('active');
-            $('tab-full').classList.remove('active');
-            render();
+            setMode('quick');
+            setSections(QUICK);
+            if ($('file-id').value.trim()) load($('file-id').value);
         });
         $('tab-full').addEventListener('click', () => {
-            mode = 'full';
-            $('tab-full').classList.add('active');
-            $('tab-quick').classList.remove('active');
-            render();
+            setMode('full');
+            setSections(FULL);
+            if ($('file-id').value.trim()) load($('file-id').value);
         });
-        const initial = new URLSearchParams(location.search).get('id');
-        if (initial) {
-            $('file-id').value = initial;
-            load(initial);
+        sectionBoxes().forEach((box) => box.addEventListener('change', () => {
+            if ($('file-id').value.trim()) load($('file-id').value);
+        }));
+        $('narrate').addEventListener('change', () => {
+            if ($('file-id').value.trim()) load($('file-id').value);
+        });
+        const initial = new URLSearchParams(location.search);
+        const initialView = (initial.get('view') || 'both').toLowerCase();
+        if (initialView === 'quick' || initialView === 'full' || initialView === 'both') setMode(initialView);
+        if (initial.get('sections')) setSections(initial.get('sections').split(','));
+        else if (initialView === 'quick') setSections(QUICK);
+        else if (initialView === 'full') setSections(FULL);
+        if (initial.get('ask')) $('ask').value = initial.get('ask');
+        $('narrate').checked = initial.get('narrate') === '1';
+        const initialId = initial.get('id');
+        if (initialId) {
+            $('file-id').value = initialId;
+            load(initialId);
         }
     </script>
     <script src="/ui-clarity.js"></script>
