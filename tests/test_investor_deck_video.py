@@ -6,7 +6,7 @@ import json
 import random
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from http.server import HTTPServer
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -745,7 +745,8 @@ def test_presentation_page_is_wired_and_does_not_bake_figures():
     assert "openDeckMedia" in lab
     assert "data-deck-src" in lab and "warmDeckMedia" in lab
     arm = lab.split("function armClip", 1)[1].split("function armOtherClips", 1)[0]
-    assert "dataset.armed = '1'" in arm and ".then(" not in arm
+    assert "if (hasSrc) video.dataset.armed = '1'" in arm and ".then(" not in arm
+    assert "if (currentVideo && !currentVideo.getAttribute('src')) armClip(currentVideo);" in lab
     assert 'id="deck-scenes"' in page and "data-scene-show" in page
     assert "figures stay on the slide" not in page.lower()
 
@@ -782,6 +783,7 @@ def test_presentation_streams_a_data_url_and_a_staff_cookie_without_rewriting_th
     library_before = copy.deepcopy(portal.MEDIA_ASSETS[asset_id])
     plan_before = compute_plan()["content_hash"]
     scenes_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_scenes"))
+    reinsurer_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("reinsurer_deck_scenes"))
     media_before = copy.deepcopy(portal.DESIGN_SETTINGS.get("investor_deck_slide_media"))
     path = base + "/api/admin/media/investor-deck/presentation"
     cookie = (
@@ -898,7 +900,96 @@ def test_presentation_streams_a_data_url_and_a_staff_cookie_without_rewriting_th
             headers={"Cookie": cookie},
         )) as resp:
             assert resp.status == 200
+            assert "no-store" in (resp.headers.get("Cache-Control") or "")
+            assert "private" in (resp.headers.get("Cache-Control") or "")
             assert resp.read() == matched_bytes
+        assert portal.MEDIA_ASSETS[matched_id] == matched_before
+
+        from services.confidential_share_service import get_confidential_share_service
+
+        share_svc = get_confidential_share_service()
+        share_exp = (datetime.now(timezone.utc) + timedelta(hours=2)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        investor_share = share_svc.create_share(
+            path="/investor-deck.html",
+            password="deck-share-pass",
+            max_uses=None,
+            expires_at=share_exp,
+            label="Investor reader",
+            nda_required=False,
+        )
+        reinsurer_share = share_svc.create_share(
+            path="/reinsurer-deck.html",
+            password="deck-share-pass",
+            max_uses=None,
+            expires_at=share_exp,
+            label="Swiss Re reader",
+            nda_required=False,
+        )
+        investor_cookie = (
+            confidential_access.SHARE_COOKIE_NAME
+            + "="
+            + confidential_access.mint_share_cookie(
+                share_id=investor_share["id"], path="/investor-deck.html",
+            )
+        )
+        reinsurer_cookie = (
+            confidential_access.SHARE_COOKIE_NAME
+            + "="
+            + confidential_access.mint_share_cookie(
+                share_id=reinsurer_share["id"], path="/reinsurer-deck.html",
+            )
+        )
+        re_only = "vid-deck-re-only"
+        portal.MEDIA_ASSETS[re_only] = {
+            "id": re_only,
+            "type": "video",
+            "name": "Swiss Re clip.mp4",
+            "checksum": portal.compute_media_checksum(matched_bytes),
+            "url": matched_inline,
+            "data": matched_inline,
+        }
+        re_only_before = copy.deepcopy(portal.MEDIA_ASSETS[re_only])
+        re_store = portal.DESIGN_SETTINGS.get("reinsurer_deck_scenes")
+        if not isinstance(re_store, dict):
+            re_store = {}
+            portal.DESIGN_SETTINGS["reinsurer_deck_scenes"] = re_store
+        re_store["re-s01p01"] = {"last_asset_id": re_only}
+        with urlopen(Request(
+            base + f"/deck-media/{matched_id}",
+            headers={"Cookie": investor_cookie},
+        )) as resp:
+            assert resp.status == 200
+            assert resp.read() == matched_bytes
+        try:
+            urlopen(Request(
+                base + f"/deck-media/{re_only}",
+                headers={"Cookie": investor_cookie},
+            ))
+            raise AssertionError("an investor share must not stream a Swiss Re clip")
+        except HTTPError as exc:
+            assert exc.code == 404
+        try:
+            urlopen(Request(
+                base + f"/deck-media/{matched_id}",
+                headers={"Cookie": reinsurer_cookie},
+            ))
+            raise AssertionError("a Swiss Re share must not stream an investor clip")
+        except HTTPError as exc:
+            assert exc.code == 404
+        with urlopen(Request(
+            base + f"/deck-media/{re_only}",
+            headers={"Cookie": reinsurer_cookie},
+        )) as resp:
+            assert resp.status == 200
+            assert "no-store" in (resp.headers.get("Cache-Control") or "")
+            assert resp.read() == matched_bytes
+        with urlopen(Request(
+            base + f"/deck-media/{re_only}",
+            headers={"Authorization": "Bearer " + admin},
+        )) as resp:
+            assert resp.status == 200
+            assert resp.read() == matched_bytes
+        assert portal.MEDIA_ASSETS[re_only] == re_only_before
         assert portal.MEDIA_ASSETS[matched_id] == matched_before
 
         url_only = "vid-deck-url-only"
@@ -956,6 +1047,17 @@ def test_presentation_streams_a_data_url_and_a_staff_cookie_without_rewriting_th
         portal.MEDIA_ASSETS.pop(asset_id, None)
         portal.MEDIA_ASSETS.pop("vid-deck-inline-match", None)
         portal.MEDIA_ASSETS.pop("vid-deck-url-only", None)
+        portal.MEDIA_ASSETS.pop("vid-deck-re-only", None)
+        try:
+            from services.confidential_share_service import get_confidential_share_service
+            share_svc = get_confidential_share_service()
+            with share_svc._exclusive_store():
+                for record in list(share_svc._shares.values()):
+                    if str(record.get("label") or "") in ("Investor reader", "Swiss Re reader"):
+                        share_svc._shares.pop(record.get("id"), None)
+                share_svc._persist()
+        except Exception:
+            pass
         if media_before is None:
             portal.DESIGN_SETTINGS.pop("investor_deck_slide_media", None)
         else:
@@ -964,6 +1066,10 @@ def test_presentation_streams_a_data_url_and_a_staff_cookie_without_rewriting_th
             portal.DESIGN_SETTINGS.pop("investor_deck_scenes", None)
         else:
             portal.DESIGN_SETTINGS["investor_deck_scenes"] = scenes_before
+        if reinsurer_before is None:
+            portal.DESIGN_SETTINGS.pop("reinsurer_deck_scenes", None)
+        else:
+            portal.DESIGN_SETTINGS["reinsurer_deck_scenes"] = reinsurer_before
         portal.SESSIONS.pop(admin, None)
         srv.stop()
 
