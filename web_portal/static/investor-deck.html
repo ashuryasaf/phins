@@ -366,6 +366,22 @@
     if (!text || text.indexOf('data:') === 0) return '';
     return text;
   }
+  function openDeckMedia(node) {
+    if (!node) return;
+    var src = node.getAttribute('src') || '';
+    if (src.indexOf('/deck-media/') !== 0 || !token()) return;
+    fetch(src, { headers: { Authorization: 'Bearer ' + token() }, credentials: 'same-origin' })
+      .then(function (response) {
+        if (!response.ok) throw new Error('closed');
+        return response.blob();
+      })
+      .then(function (blob) { node.src = URL.createObjectURL(blob); })
+      .catch(function () { node.removeAttribute('src'); });
+  }
+  function openDeckMediaIn(root) {
+    if (!root) return;
+    root.querySelectorAll('video[src^="/deck-media/"], img[src^="/deck-media/"]').forEach(openDeckMedia);
+  }
   function markPlan(text) {
     var count = document.getElementById('deck-count');
     if (count) count.textContent = text || '';
@@ -475,6 +491,7 @@
         (first.presenter_label ? ' · ' + esc(first.presenter_label) : '') + '</p>');
     }
     side.innerHTML = parts.join('');
+    openDeckMediaIn(side);
     document.getElementById('deck-body').classList.toggle('solo', side.innerHTML === '');
     applyChrome(current);
     paintWatermark();
@@ -486,6 +503,7 @@
         if (!clip) return;
         video.setAttribute('data-filmed', String(at));
         video.src = videoSrc(clip.playback_url);
+        openDeckMedia(video);
         var caption = side.querySelector('[data-filmed-caption]');
         if (caption) {
           caption.textContent = 'Paragraph ' + clip.paragraph_no +

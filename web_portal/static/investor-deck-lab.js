@@ -66,6 +66,19 @@
         return headers;
     }
 
+    function openDeckMedia(node) {
+        if (!node) return;
+        var src = node.getAttribute('src') || '';
+        if (src.indexOf('/deck-media/') !== 0 || !token()) return;
+        fetch(src, { headers: { Authorization: 'Bearer ' + token() }, credentials: 'same-origin' })
+            .then(function (response) {
+                if (!response.ok) throw new Error('closed');
+                return response.blob();
+            })
+            .then(function (blob) { node.src = URL.createObjectURL(blob); })
+            .catch(function () { node.removeAttribute('src'); });
+    }
+
     function playableUrl(url) {
         var text = String(url || '').trim();
         if (!text || text.indexOf('data:') === 0) return '';
@@ -139,6 +152,7 @@
                 '<br>Spoken · ' + esc(scene.script || scene.sealed_narration || '') +
                 '<br>On the slide · ' + esc(scene.narration) + '</div></article>';
         }).join('');
+        host.querySelectorAll('video[src^="/deck-media/"], img[src^="/deck-media/"]').forEach(openDeckMedia);
         host.querySelectorAll('[data-idl-photo]').forEach(function (img) {
             img.addEventListener('error', function () { img.remove(); });
         });

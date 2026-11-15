@@ -6744,8 +6744,9 @@ def _deck_playback_url(media: Dict[str, Any]) -> str:
     if not asset_id:
         return ''
     data_url = str(media.get('data') or '').strip()
+    raw_url = str(media.get('url') or '').strip()
     file_path = str(media.get('file_path') or '').strip()
-    has_inline = data_url.startswith('data:')
+    has_inline = data_url.startswith('data:') or raw_url.startswith('data:')
     has_file = bool(file_path and os.path.isfile(file_path) and _media_path_within_storage(file_path))
     if not has_inline and not has_file:
         return ''
@@ -21804,6 +21805,40 @@ class PortalHandler(BaseHTTPRequestHandler):
         if require_role(opened, _INVESTOR_DECK_READ_ROLES):
             return opened
         return None
+
+    def _deck_media_allowed(self) -> bool:
+        """Who may stream ``/deck-media/``. The library record is not written.
+
+        A bearer reader or a staff-unlock cookie is enough. A share cookie
+        for the investor deck or the Swiss Re deck is enough while that
+        opening is still active. An anonymous request is refused.
+        """
+        if self._investor_deck_reader(self._get_session()):
+            return True
+        if not _confidential_access_enabled or confidential_access is None:
+            return False
+        try:
+            jar = confidential_access.parse_cookies(self.headers.get('Cookie', ''))
+            cookie = jar.get(confidential_access.SHARE_COOKIE_NAME)
+        except Exception:
+            return False
+        for root in (
+            confidential_access.INVESTOR_DECK_SCOPE_ROOT,
+            confidential_access.REINSURER_DECK_SCOPE_ROOT,
+        ):
+            try:
+                claims = confidential_access.verify_share_cookie(cookie, root)
+            except Exception:
+                claims = None
+            if not claims:
+                continue
+            if self._confidential_share_active(
+                str(claims.get('sid') or ''),
+                root,
+                str(claims.get('sk') or ''),
+            ):
+                return True
+        return False
 
     def _autopilot_control_actor(self, body_data: Optional[Dict[str, Any]] = None,
                                  qs: Optional[Dict[str, Any]] = None) -> Optional[str]:
@@ -40772,6 +40807,9 @@ For claims or questions, please contact:
             return
 
         if path.startswith('/deck-media/'):
+            if not self._deck_media_allowed():
+                self.send_error(401, 'Authentication required')
+                return
             asset_id = _deck_media_id(path[len('/deck-media/'):])
             asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
             served = read_deck_media_bytes(asset) if isinstance(asset, dict) else {'error': 'missing'}

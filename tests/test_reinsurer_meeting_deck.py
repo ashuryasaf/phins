@@ -866,6 +866,7 @@ def test_presentation_page_and_lab_are_wired_for_the_reinsurer_deck():
     assert "reinsurer-deck\\.he\\.html" in page
     assert "frameElement" in page
     assert "phins-deck-lang" in page
+    assert "openDeckMedia" in page
     assert 'id="deck-lang"' in page and "is-he" in page
     assert "Swiss Re ישראל · מצגת הפגישה · 8 בדצמבר 2026" in page
     assert "dir=\"rtl\"" in page or "dir='rtl'" in page or "direction: rtl" in page or "dir = 'rtl'" in page

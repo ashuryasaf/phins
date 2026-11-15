@@ -480,7 +480,11 @@ def test_send_stores_one_scene_and_leaves_the_plan_and_placements_alone():
         assert scene["playback_url"] == f"/deck-media/{scene['last_asset_id']}"
         assert "data:video" not in scene["playback_url"]
         sealed = copy.deepcopy(asset)
-        with urlopen(base + scene["playback_url"]) as played:
+        play = Request(
+            base + scene["playback_url"],
+            headers={"Authorization": "Bearer " + token},
+        )
+        with urlopen(play) as played:
             assert played.status == 200
             assert played.read()
         assert portal.MEDIA_ASSETS[scene["last_asset_id"]] == sealed
@@ -734,6 +738,9 @@ def test_presentation_page_is_wired_and_does_not_bake_figures():
     assert "data-loaded" in media
     assert "phins-deck-lang" in page
     assert "phins-deck-lang" in media
+    assert "openDeckMedia" in page
+    lab = (root / "web_portal" / "static" / "investor-deck-lab.js").read_text(encoding="utf-8")
+    assert "openDeckMedia" in lab
     assert 'id="deck-scenes"' in page and "data-scene-show" in page
     assert "figures stay on the slide" not in page.lower()
 
@@ -791,6 +798,14 @@ def test_presentation_streams_a_data_url_and_a_staff_cookie_without_rewriting_th
         assert inline not in json.dumps(saved["presentation"])
         try:
             urlopen(base + media["playback_url"])
+            raise AssertionError("deck media requires a reader")
+        except HTTPError as exc:
+            assert exc.code == 401
+        try:
+            urlopen(Request(
+                base + media["playback_url"],
+                headers={"Authorization": "Bearer " + admin},
+            ))
             raise AssertionError("a checksum that does not match the bytes must not stream")
         except HTTPError as exc:
             assert exc.code == 409
@@ -855,6 +870,37 @@ def test_presentation_streams_a_data_url_and_a_staff_cookie_without_rewriting_th
         assert portal.MEDIA_ASSETS[matched_id]["url"] == matched_inline
         assert portal.MEDIA_ASSETS[matched_id]["data"] == matched_inline
         assert not portal.MEDIA_ASSETS[matched_id].get("file_path")
+        try:
+            urlopen(base + f"/deck-media/{matched_id}")
+            raise AssertionError("deck media requires a reader")
+        except HTTPError as exc:
+            assert exc.code == 401
+        with urlopen(Request(
+            base + f"/deck-media/{matched_id}",
+            headers={"Cookie": cookie},
+        )) as resp:
+            assert resp.status == 200
+            assert resp.read() == matched_bytes
+        assert portal.MEDIA_ASSETS[matched_id] == matched_before
+
+        url_only = "vid-deck-url-only"
+        portal.MEDIA_ASSETS[url_only] = {
+            "id": url_only,
+            "type": "video",
+            "name": "Url only.mp4",
+            "checksum": portal.compute_media_checksum(matched_bytes),
+            "url": matched_inline,
+            "data": "",
+        }
+        url_before = copy.deepcopy(portal.MEDIA_ASSETS[url_only])
+        assert portal._deck_playback_url(portal.MEDIA_ASSETS[url_only]) == f"/deck-media/{url_only}"
+        with urlopen(Request(
+            base + f"/deck-media/{url_only}",
+            headers={"Authorization": "Bearer " + admin},
+        )) as resp:
+            assert resp.status == 200
+            assert resp.read() == matched_bytes
+        assert portal.MEDIA_ASSETS[url_only] == url_before
 
         demoted = "deck-cookie-demoted"
         previous_user = portal.USERS.get(demoted)
@@ -878,6 +924,7 @@ def test_presentation_streams_a_data_url_and_a_staff_cookie_without_rewriting_th
     finally:
         portal.MEDIA_ASSETS.pop(asset_id, None)
         portal.MEDIA_ASSETS.pop("vid-deck-inline-match", None)
+        portal.MEDIA_ASSETS.pop("vid-deck-url-only", None)
         if media_before is None:
             portal.DESIGN_SETTINGS.pop("investor_deck_slide_media", None)
         else:
