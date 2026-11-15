@@ -991,6 +991,13 @@ def test_presentation_streams_a_data_url_and_a_staff_cookie_without_rewriting_th
             assert resp.read() == matched_bytes
         assert portal.MEDIA_ASSETS[re_only] == re_only_before
         assert portal.MEDIA_ASSETS[matched_id] == matched_before
+        assert matched_id in portal._deck_referenced_media_ids("staff")
+        assert re_only in portal._deck_referenced_media_ids("staff")
+        assert matched_id in portal._deck_referenced_media_ids("investor")
+        assert re_only not in portal._deck_referenced_media_ids("investor")
+        assert re_only in portal._deck_referenced_media_ids("reinsurer")
+        assert matched_id not in portal._deck_referenced_media_ids("reinsurer")
+        assert portal._deck_referenced_media_ids("other") == set()
 
         url_only = "vid-deck-url-only"
         portal.MEDIA_ASSETS[url_only] = {

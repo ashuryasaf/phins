@@ -6776,13 +6776,15 @@ def _deck_referenced_media_ids(scope: str = 'staff') -> set:
     """Ids ``/deck-media/`` may stream for this reader.
 
     ``staff`` is both decks. ``investor`` and ``reinsurer`` stay on the deck
-    that share opened. Nothing else is streamed.
+    that share opened. Any other scope is empty.
     """
     if scope == 'investor':
         return _investor_deck_media_ids()
     if scope == 'reinsurer':
         return _reinsurer_deck_media_ids()
-    return _investor_deck_media_ids() | _reinsurer_deck_media_ids()
+    if scope == 'staff':
+        return _investor_deck_media_ids() | _reinsurer_deck_media_ids()
+    return set()
 
 
 def _deck_playback_url(media: Dict[str, Any]) -> str:
