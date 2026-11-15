@@ -4965,6 +4965,7 @@ def _sales_referral_locked(customer_id: str) -> Dict[str, Any]:
             "referee_name": row.get("referee_name"),
             "layer": row.get("layer"),
             "amount": row.get("amount") or 0,
+            "projected_amount": row.get("projected_amount") or 0,
             "blocked_amount": row.get("blocked_amount") or 0,
             "available_amount": row.get("available_amount") or 0,
             "status": row.get("status"),
@@ -5087,11 +5088,49 @@ def _empty_supplier_balance() -> Dict[str, Any]:
     }
 
 
-def _balance_from_pnl(service: Any, supplier_id: Any) -> Dict[str, Any]:
+def _reporting_stamp(service: Any, order: Dict[str, Any]) -> str:
+    """The same lifecycle date ``generate_supplier_pnl`` uses for its window."""
+    reporter = getattr(service, "_order_reporting_date", None)
+    if callable(reporter):
+        try:
+            return str(reporter(order) or "")
+        except Exception:
+            return ""
+    return str(
+        order.get("completed_date")
+        or order.get("updated_date")
+        or order.get("created_date")
+        or ""
+    )
+
+
+def _pnl_period(service: Any, orders: List[Dict[str, Any]]) -> Tuple[str, str]:
+    """A window that contains every dated order this desk will list."""
+    stamps = [stamp for order in orders if (stamp := _reporting_stamp(service, order))]
+    now = datetime.now(timezone.utc).isoformat()
+    if not stamps:
+        return now, now
+    return min(stamps), max(max(stamps), now)
+
+
+def _orders_in_period(service: Any, orders: List[Dict[str, Any]],
+                      period_start: str, period_end: str) -> List[Dict[str, Any]]:
+    return [
+        order for order in orders
+        if period_start <= _reporting_stamp(service, order) <= period_end
+    ]
+
+
+def _balance_from_pnl(service: Any, supplier_id: Any,
+                      period_start: str, period_end: str) -> Dict[str, Any]:
     balance = _empty_supplier_balance()
     if service is None or not supplier_id or not hasattr(service, "generate_supplier_pnl"):
         return balance
-    pnl = service.generate_supplier_pnl(supplier_id)
+    pnl = service.generate_supplier_pnl(
+        supplier_id,
+        period_start=period_start,
+        period_end=period_end,
+    )
     report = (pnl or {}).get("report") or {}
     balance.update({
         "net_payout": _money(report.get("net_payout")),
@@ -5140,9 +5179,11 @@ def _operations_desk(supplier: Optional[Dict[str, Any]], writes_open: bool) -> D
         ]
     products = sum(1 for offer in offers if str(offer.get("item_type") or "").lower() == "product")
     services = sum(1 for offer in offers if str(offer.get("item_type") or "").lower() != "product")
+    period_start, period_end = _pnl_period(service, orders)
+    shown = _orders_in_period(service, orders, period_start, period_end)
     by_status: Dict[str, int] = {}
     invoices = []
-    for order in orders:
+    for order in shown:
         status = str(order.get("status") or "unknown")
         by_status[status] = by_status.get(status, 0) + 1
         invoices.append({
@@ -5155,7 +5196,7 @@ def _operations_desk(supplier: Optional[Dict[str, Any]], writes_open: bool) -> D
             "settlement_status": order.get("settlement_status"),
             "book": "supply_chain",
         })
-    balance = _balance_from_pnl(service, sid)
+    balance = _balance_from_pnl(service, sid, period_start, period_end)
     return {
         "present": True,
         "company_name": supplier.get("company_name"),
@@ -5164,7 +5205,7 @@ def _operations_desk(supplier: Optional[Dict[str, Any]], writes_open: bool) -> D
         "products": products,
         "services": services,
         "offers": len(offers),
-        "delivery": {"orders": len(orders), "by_status": by_status},
+        "delivery": {"orders": len(shown), "by_status": by_status},
         "approval": {
             "status": supplier.get("status"),
             "portal_active": bool(supplier.get("portal_active")),

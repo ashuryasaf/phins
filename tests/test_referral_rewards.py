@@ -3775,7 +3775,7 @@ def test_identity_code_does_not_open_the_vault_for_the_email_link():
 
 def test_one_supplier_login_reconciles_sales_and_the_supplier_desk(monkeypatch):
     """One desk read matches the referral, commission, and supply-chain books."""
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
 
     from security.access_hierarchy import surface_decision
     from services import agent_ecosystem_service as agents
@@ -3802,7 +3802,12 @@ def test_one_supplier_login_reconciles_sales_and_the_supplier_desk(monkeypatch):
     assert reward["settlement_id"] == f"CACSET-{referee}"
     assert reward["beneficiary_customer_id"] == affiliate
 
+    issue_waiting, status = _post("/api/customer/invitations/generate", {}, token=token)
+    assert status == 201, issue_waiting
+    _register("Waiting Referee", "desk-waiting@example.com", code=issue_waiting["invitation"]["code"])
+
     now = datetime.now(timezone.utc).isoformat()
+    old = (datetime.now(timezone.utc) - timedelta(days=400)).isoformat()
     portal.SUPPLIER_ORDERS["ORD-DESK-1"] = {
         "id": "ORD-DESK-1",
         "supplier_id": supplier_id,
@@ -3813,6 +3818,18 @@ def test_one_supplier_login_reconciles_sales_and_the_supplier_desk(monkeypatch):
         "completed_date": now,
         "created_date": now,
         "item_name": "Clinic visit",
+        "order_type": "service",
+    }
+    portal.SUPPLIER_ORDERS["ORD-DESK-OLD"] = {
+        "id": "ORD-DESK-OLD",
+        "supplier_id": supplier_id,
+        "status": "completed",
+        "total_amount": 40.0,
+        "supplier_payout": 31.0,
+        "commission": 9.0,
+        "completed_date": old,
+        "created_date": old,
+        "item_name": "Earlier visit",
         "order_type": "service",
     }
     portal.SUPPLIER_OFFERS["OFF-DESK-SVC"] = {
@@ -3904,13 +3921,33 @@ def test_one_supplier_login_reconciles_sales_and_the_supplier_desk(monkeypatch):
         assert "123456782" not in dumped
         assert "national_id" not in dumped
         assert "desk-hash" not in dumped
-    pnl = portal.supply_chain_service.generate_supplier_pnl(supplier_id)
+    narrow = portal.supply_chain_service.generate_supplier_pnl(supplier_id)
+    wide = portal.supply_chain_service.generate_supplier_pnl(
+        supplier_id,
+        period_start=old,
+        period_end=datetime.now(timezone.utc).isoformat(),
+    )
     summary = agents.income_summary(agent_id)
+    paid = reward["amount_cents"] / 100
     for view in (by_switch, by_login, by_agent):
         assert view["sales"]["referral"]["rail"] == "referral"
-        assert view["sales"]["referral"]["blocked"] == pytest.approx(reward["amount_cents"] / 100)
+        assert view["sales"]["referral"]["blocked"] == pytest.approx(paid)
         assert view["sales"]["referral"]["available"] == pytest.approx(0)
-        assert view["sales"]["referral"]["rows"][0]["settlement_id"] == f"CACSET-{referee}"
+        assert view["sales"]["referral"]["dispatched"] == pytest.approx(0)
+        booked_rows = [row for row in view["sales"]["referral"]["rows"] if row.get("booked") is not False]
+        waiting_rows = [row for row in view["sales"]["referral"]["rows"] if row.get("booked") is False]
+        assert [row["settlement_id"] for row in booked_rows] == [f"CACSET-{referee}"]
+        assert len(waiting_rows) == 1
+        assert waiting_rows[0]["amount"] == pytest.approx(0)
+        assert waiting_rows[0]["projected_amount"] > 0
+        assert waiting_rows[0]["blocked_amount"] == pytest.approx(0)
+        assert waiting_rows[0]["available_amount"] == pytest.approx(0)
+        assert waiting_rows[0]["status"] != "dispatched"
+        assert (
+            view["sales"]["referral"]["blocked"]
+            + view["sales"]["referral"]["available"]
+            + view["sales"]["referral"]["dispatched"]
+        ) == pytest.approx(paid)
         assert view["sales"]["commission"]["rail"] == "commission"
         listed = view["sales"]["commission"]["rows"]
         assert [row["commission_id"] for row in listed] == ["COMM-DESK-1"]
@@ -3931,11 +3968,16 @@ def test_one_supplier_login_reconciles_sales_and_the_supplier_desk(monkeypatch):
         assert view["sales"]["referral"]["blocked"] != pytest.approx(summary["accrued_total"])
         assert view["desk"]["products"] == 1
         assert view["desk"]["services"] == 1
-        assert view["desk"]["delivery"]["orders"] == 1
-        assert view["desk"]["invoices"][0]["supplier_payout"] == pytest.approx(89.0)
-        assert view["desk"]["billing"]["net_payout"] == pytest.approx(pnl["report"]["net_payout"])
-        assert view["desk"]["balance"]["net_payout"] == pytest.approx(89.0)
-        assert view["desk"]["balance"]["gross_sales"] == pytest.approx(pnl["report"]["gross_sales"])
+        invoices = view["desk"]["invoices"]
+        assert {row["order_id"] for row in invoices} == {"ORD-DESK-1", "ORD-DESK-OLD"}
+        assert view["desk"]["delivery"]["orders"] == len(invoices)
+        completed_payout = sum(row["supplier_payout"] for row in invoices if row["status"] == "completed")
+        assert narrow["report"]["net_payout"] == pytest.approx(89.0)
+        assert wide["report"]["net_payout"] == pytest.approx(completed_payout)
+        assert view["desk"]["billing"]["net_payout"] == pytest.approx(wide["report"]["net_payout"])
+        assert view["desk"]["balance"]["net_payout"] == pytest.approx(wide["report"]["net_payout"])
+        assert view["desk"]["balance"]["gross_sales"] == pytest.approx(wide["report"]["gross_sales"])
+        assert view["desk"]["balance"]["net_payout"] != pytest.approx(narrow["report"]["net_payout"])
         assert "combined_payout" not in view
     assert by_switch["desk"]["writes_open"] is True
     assert by_agent["desk"]["writes_open"] is False
@@ -3943,8 +3985,13 @@ def test_one_supplier_login_reconciles_sales_and_the_supplier_desk(monkeypatch):
     reward["checksum"] = "0" * 64
     withheld, status = _get("/api/supplier/desk", token=logged["token"])
     assert status == 200, withheld
-    assert withheld["sales"]["referral"]["rows"] == []
+    assert all(row.get("booked") is False for row in withheld["sales"]["referral"]["rows"])
+    assert withheld["sales"]["referral"]["rows"]
+    assert withheld["sales"]["referral"]["rows"][0]["projected_amount"] > 0
+    assert withheld["sales"]["referral"]["rows"][0]["amount"] == pytest.approx(0)
     assert withheld["sales"]["referral"]["blocked"] == pytest.approx(0)
+    assert withheld["sales"]["referral"]["available"] == pytest.approx(0)
+    assert withheld["sales"]["referral"]["dispatched"] == pytest.approx(0)
     assert reward["checksum"] == "0" * 64
     assert writes == {"refresh": 0, "save": 0}
 
@@ -3967,6 +4014,11 @@ def test_one_supplier_login_reconciles_sales_and_the_supplier_desk(monkeypatch):
     assert 'data-section="supplier-desk"' in portal_html
     assert "/api/supplier/desk" in login_html
     assert 'id="supplier-desk-summary"' in agent_html
+    assert "row.projected_amount" in portal_html
+    assert "function supplierOperationsOpen" in portal_html
+    assert "deskWritesOpen = gate.editsOpen" in portal_html
+    assert "if (!deskWritesOpen)" in portal_html
+    assert 'class="add-offer-btn" style="display:none"' in portal_html
     assert surface_decision("supplier", "/supplier-portal.html")["allowed"] is True
     assert surface_decision("agent", "/supplier-portal.html")["allowed"] is False
     assert surface_decision("customer", "/supplier-login.html")["allowed"] is False
@@ -3978,6 +4030,7 @@ def test_one_supplier_login_reconciles_sales_and_the_supplier_desk(monkeypatch):
     assert status == 200, supplier_page
     assert supplier_page["allowed"] is True
     portal.SUPPLIER_ORDERS.pop("ORD-DESK-1", None)
+    portal.SUPPLIER_ORDERS.pop("ORD-DESK-OLD", None)
     portal.SUPPLIER_OFFERS.pop("OFF-DESK-SVC", None)
     portal.SUPPLIER_OFFERS.pop("OFF-DESK-PRD", None)
     agents.COMMISSIONS.pop("COMM-DESK-1", None)
@@ -4041,6 +4094,15 @@ def test_supplier_desk_stays_closed_without_a_supplier_role():
         assert status == 200, shell
         assert shell["allowed"] is False
         assert shell["redirect"] == "/dashboard.html"
+
+
+def test_supplier_operations_load_when_the_unified_read_fails():
+    """An approved supplier still loads the desk when the unified read fails."""
+    node = shutil.which("node")
+    assert node, "node is required to check the supplier operations gate"
+    script = Path(__file__).resolve().parent / "supplier_desk_operations.test.js"
+    completed = subprocess.run([node, str(script)], check=False, capture_output=True, text=True)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
 def test_two_inquiries_in_one_tab_follow_the_new_email_link():

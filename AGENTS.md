@@ -273,7 +273,11 @@ PHINS is a Python platform built around:
  supplier or an approved agent grant. A rejected, suspended, terminated, or
  closed supplier stays closed, and `portal_active` is not turned back on.
  National ID stays off the desk. Commission totals on the desk omit `REF-`
- rows. An approved agent invitation cap is
+ rows. The balance is the supply-chain P&L for the same orders the invoice
+ list shows, so an older completed payout is included. An unbooked referral
+ row shows its estimate and is not counted as paid or settled. Offers,
+ orders, settlements, and the profile still load for a supplier session
+ when that read fails; edits stay closed unless writes are open. An approved agent invitation cap is
  100 (customer cap stays 10). `affiliated_cac_plan()` is the planning view
  (allocated, blocked, releasable, settled, reversed, projected release,
  layer schedule, and one row per reward). Those planning totals stay

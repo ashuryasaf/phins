@@ -420,7 +420,7 @@
         <h2 id="company-name">Your Company</h2>
         <div class="muted-text" id="supplier-type">Supplier Type</div>
       </div>
-      <button class="add-offer-btn" onclick="openOfferModal()">
+      <button class="add-offer-btn" style="display:none" onclick="openOfferModal()">
         + Add New Offer
       </button>
     </div>
@@ -808,6 +808,7 @@
 
   <script>
     let currentSupplier = null;
+    let deskWritesOpen = false;
 
     // Utility Functions
     function getToken() {
@@ -878,6 +879,9 @@
     }
 
     function getOrderActions(order) {
+      if (!deskWritesOpen) {
+        return `${settlementBadge(order)}<div class="muted-text" style="margin-top:6px;">No actions</div>`;
+      }
       const status = String(order.status || '').toLowerCase();
       const settlementStatus = String(order.settlement_status || '').toLowerCase();
       const orderId = esc(order.id);
@@ -1200,12 +1204,12 @@
                 <span>Orders: ${offer.total_orders || 0}</span>
                 <span>Revenue: ${formatCurrency(offer.total_revenue)}</span>
               </div>
-              <div class="actions">
+              ${deskWritesOpen ? `<div class="actions">
                 <button class="btn-sm btn-edit" onclick="editOffer('${esc(offer.id)}')">Edit</button>
                 <button class="btn-sm btn-toggle" onclick="toggleOffer('${esc(offer.id)}', ${!offer.active})">
                   ${offer.active ? 'Deactivate' : 'Activate'}
                 </button>
-              </div>
+              </div>` : ''}
             </div>
           `;
         }).join('');
@@ -1735,7 +1739,16 @@
       window.location.href = href;
     }
 
+    function supplierOperationsOpen(session, desk) {
+      const writesOpen = !!(desk && desk.desk && desk.desk.writes_open);
+      return {
+        loadOperations: !!(writesOpen || (session && session.role === 'supplier')),
+        editsOpen: writesOpen
+      };
+    }
+
     function renderUnifiedDesk(desk) {
+      deskWritesOpen = !!(desk && desk.desk && desk.desk.writes_open);
       const sales = (desk && desk.sales) || {};
       const referral = sales.referral || {};
       const commission = sales.commission || {};
@@ -1757,7 +1770,7 @@
       const rows = referral.rows || [];
       if (table) {
         table.querySelector('tbody').innerHTML = rows.length ? rows.map(function(row) {
-          const amount = row.booked === false ? ('Projected ' + money(row.amount || 0)) : money(row.amount || 0);
+          const amount = row.booked === false ? ('Projected ' + money(row.projected_amount || 0)) : money(row.amount || 0);
           return '<tr><td>' + escAffiliation(row.referee_name || '') + '</td><td>' + escAffiliation(row.layer) +
             '</td><td>' + amount + '</td><td>' + money(row.blocked_amount || 0) + '</td><td>' +
             money(row.available_amount || 0) + '</td><td>' + escAffiliation(row.settlement_id || '') + ' ' +
@@ -1881,9 +1894,15 @@
       selectSupplierPortalTab(getSupplierPortalRequestedTab());
       const session = await loadSession();
       if (session) {
-        const desk = await loadUnifiedDesk();
-        const writesOpen = desk && desk.desk && desk.desk.writes_open;
-        if (writesOpen) {
+        let desk = null;
+        try {
+          desk = await loadUnifiedDesk();
+        } catch (e) {
+          desk = null;
+        }
+        const gate = supplierOperationsOpen(session, desk);
+        deskWritesOpen = gate.editsOpen;
+        if (gate.loadOperations) {
           await Promise.all([
             loadSupplierInfo(),
             loadOffers(),
