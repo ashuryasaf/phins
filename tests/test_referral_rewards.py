@@ -3773,6 +3773,338 @@ def test_identity_code_does_not_open_the_vault_for_the_email_link():
     assert portal.CUSTOMERS[customer_id]["national_id_last4"] == "6782"
 
 
+def test_one_supplier_login_reconciles_sales_and_the_supplier_desk(monkeypatch):
+    """One desk read matches the referral, commission, and supply-chain books."""
+    from datetime import datetime, timedelta, timezone
+
+    from security.access_hierarchy import surface_decision
+    from services import agent_ecosystem_service as agents
+
+    email = "desk-affiliate@example.com"
+    affiliate = _register("Desk Affiliate", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, filed
+    saved = _finish_inquiry(filed, name="Desk Affiliate")
+    admin, _role = _login("admin", "admin123")
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": saved["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, reviewed
+    supplier_id = reviewed["supplier_id"]
+    agent_id = reviewed["agent_id"]
+    issue, status = _post("/api/customer/invitations/generate", {}, token=token)
+    assert status == 201, issue
+    referee = _register("Desk Referee", "desk-referee@example.com", code=issue["invitation"]["code"])
+    _pay(referee, "BILL-DESK-1")
+    portal.notify_referral_reward_for_paid_customer(referee)
+    reward = rewards.REWARDS[f"RWRD-{referee}-L1"]
+    assert reward["settlement_id"] == f"CACSET-{referee}"
+    assert reward["beneficiary_customer_id"] == affiliate
+
+    issue_waiting, status = _post("/api/customer/invitations/generate", {}, token=token)
+    assert status == 201, issue_waiting
+    _register("Waiting Referee", "desk-waiting@example.com", code=issue_waiting["invitation"]["code"])
+
+    now = datetime.now(timezone.utc).isoformat()
+    old = (datetime.now(timezone.utc) - timedelta(days=400)).isoformat()
+    portal.SUPPLIER_ORDERS["ORD-DESK-1"] = {
+        "id": "ORD-DESK-1",
+        "supplier_id": supplier_id,
+        "status": "completed",
+        "total_amount": 100.0,
+        "supplier_payout": 89.0,
+        "commission": 11.0,
+        "completed_date": now,
+        "created_date": now,
+        "item_name": "Clinic visit",
+        "order_type": "service",
+    }
+    portal.SUPPLIER_ORDERS["ORD-DESK-OLD"] = {
+        "id": "ORD-DESK-OLD",
+        "supplier_id": supplier_id,
+        "status": "completed",
+        "total_amount": 40.0,
+        "supplier_payout": 31.0,
+        "commission": 9.0,
+        "completed_date": old,
+        "created_date": old,
+        "item_name": "Earlier visit",
+        "order_type": "service",
+    }
+    portal.SUPPLIER_OFFERS["OFF-DESK-SVC"] = {
+        "id": "OFF-DESK-SVC",
+        "supplier_id": supplier_id,
+        "item_type": "service",
+        "name": "Clinic visit",
+    }
+    portal.SUPPLIER_OFFERS["OFF-DESK-PRD"] = {
+        "id": "OFF-DESK-PRD",
+        "supplier_id": supplier_id,
+        "item_type": "product",
+        "name": "Brace",
+    }
+    agents.COMMISSIONS["COMM-DESK-1"] = {
+        "id": "COMM-DESK-1",
+        "agent_id": agent_id,
+        "amount": 15.0,
+        "status": "accrued",
+        "period": "initial",
+        "created_at": now,
+        "invitation_code": "AGI-DESK-1",
+    }
+    agents.COMMISSIONS["COMM-DESK-REF"] = {
+        "id": "COMM-DESK-REF",
+        "agent_id": agent_id,
+        "amount": 40.0,
+        "status": "accrued",
+        "period": "initial",
+        "created_at": now,
+        "invitation_code": "REF-NOT-COMMISSION",
+        "code": "REF-NOT-COMMISSION",
+    }
+    agents.COMMISSIONS["COMM-DESK-REF-SOURCE"] = {
+        "id": "COMM-DESK-REF-SOURCE",
+        "agent_id": agent_id,
+        "amount": 25.0,
+        "status": "payable",
+        "period": "initial",
+        "created_at": now,
+        "source_invitation_code": "REF-SOURCE-ONLY",
+    }
+    supplier = portal.supply_chain_service.suppliers[supplier_id]
+    supplier["national_id"] = "123456782"
+    supplier["national_id_hash"] = "desk-hash"
+    supplier["national_id_last4"] = "6782"
+    customer_before = dict(portal.CUSTOMERS[affiliate])
+    digest, salt = portal.supplier_service.hash_password("DeskPass123!")
+    supplier["password_hash"] = digest
+    supplier["password_salt"] = salt
+
+    switched, status = _post("/api/customer/role-switch", {"role": "supplier"}, token=token)
+    assert status == 200, switched
+    agent_session, status = _post("/api/customer/role-switch", {"role": "agent"}, token=token)
+    assert status == 200, agent_session
+    logged, status = _post("/api/supplier/login", {"email": email, "password": "DeskPass123!"})
+    assert status == 200, logged
+    assert logged["role"] == "supplier"
+    assert logged["supplier_id"] == supplier_id
+
+    writes = {"refresh": 0, "save": 0}
+
+    def _refresh():
+        writes["refresh"] += 1
+
+    def _save():
+        writes["save"] += 1
+
+    monkeypatch.setattr(rewards, "_refresh_all_locked", _refresh)
+    monkeypatch.setattr(rewards, "_save_file", _save)
+    status_before = supplier["status"]
+    active_before = supplier["portal_active"]
+    checksum_before = reward["checksum"]
+    by_switch, status = _get("/api/supplier/desk", token=switched["token"])
+    by_login, login_status = _get("/api/supplier/desk", token=logged["token"])
+    by_agent, agent_status = _get("/api/supplier/desk", token=agent_session["token"])
+    assert status == 200, by_switch
+    assert login_status == 200, by_login
+    assert agent_status == 200, by_agent
+    assert writes == {"refresh": 0, "save": 0}
+    assert supplier["status"] == status_before
+    assert supplier["portal_active"] == active_before
+    assert reward["checksum"] == checksum_before
+    assert portal.CUSTOMERS[affiliate] == customer_before
+    for view in (by_switch, by_login, by_agent):
+        assert view["sections"] == ["affiliation-to-sales", "supplier-desk"]
+        assert view["supplier_id"] == supplier_id
+        dumped = json.dumps(view)
+        assert "123456782" not in dumped
+        assert "national_id" not in dumped
+        assert "desk-hash" not in dumped
+    narrow = portal.supply_chain_service.generate_supplier_pnl(supplier_id)
+    wide = portal.supply_chain_service.generate_supplier_pnl(
+        supplier_id,
+        period_start=old,
+        period_end=datetime.now(timezone.utc).isoformat(),
+    )
+    summary = agents.income_summary(agent_id)
+    paid = reward["amount_cents"] / 100
+    for view in (by_switch, by_login, by_agent):
+        assert view["sales"]["referral"]["rail"] == "referral"
+        assert view["sales"]["referral"]["blocked"] == pytest.approx(paid)
+        assert view["sales"]["referral"]["available"] == pytest.approx(0)
+        assert view["sales"]["referral"]["dispatched"] == pytest.approx(0)
+        booked_rows = [row for row in view["sales"]["referral"]["rows"] if row.get("booked") is not False]
+        waiting_rows = [row for row in view["sales"]["referral"]["rows"] if row.get("booked") is False]
+        assert [row["settlement_id"] for row in booked_rows] == [f"CACSET-{referee}"]
+        assert len(waiting_rows) == 1
+        assert waiting_rows[0]["amount"] == pytest.approx(0)
+        assert waiting_rows[0]["projected_amount"] > 0
+        assert waiting_rows[0]["blocked_amount"] == pytest.approx(0)
+        assert waiting_rows[0]["available_amount"] == pytest.approx(0)
+        assert waiting_rows[0]["status"] != "dispatched"
+        assert (
+            view["sales"]["referral"]["blocked"]
+            + view["sales"]["referral"]["available"]
+            + view["sales"]["referral"]["dispatched"]
+        ) == pytest.approx(paid)
+        assert view["sales"]["commission"]["rail"] == "commission"
+        listed = view["sales"]["commission"]["rows"]
+        assert [row["commission_id"] for row in listed] == ["COMM-DESK-1"]
+        assert view["sales"]["commission"]["accrued_total"] == pytest.approx(sum(
+            row["amount"] for row in listed if row["status"] == "accrued"
+        ))
+        assert view["sales"]["commission"]["payable_total"] == pytest.approx(sum(
+            row["amount"] for row in listed if row["status"] == "payable"
+        ))
+        assert view["sales"]["commission"]["paid_total"] == pytest.approx(sum(
+            row["amount"] for row in listed if row["status"] == "paid"
+        ))
+        assert view["sales"]["commission"]["lifetime_total"] == pytest.approx(sum(
+            row["amount"] for row in listed
+        ))
+        assert view["sales"]["commission"]["accrued_total"] == pytest.approx(15.0)
+        assert summary["accrued_total"] == pytest.approx(55.0)
+        assert view["sales"]["referral"]["blocked"] != pytest.approx(summary["accrued_total"])
+        assert view["desk"]["products"] == 1
+        assert view["desk"]["services"] == 1
+        invoices = view["desk"]["invoices"]
+        assert {row["order_id"] for row in invoices} == {"ORD-DESK-1", "ORD-DESK-OLD"}
+        assert view["desk"]["delivery"]["orders"] == len(invoices)
+        completed_payout = sum(row["supplier_payout"] for row in invoices if row["status"] == "completed")
+        assert narrow["report"]["net_payout"] == pytest.approx(89.0)
+        assert wide["report"]["net_payout"] == pytest.approx(completed_payout)
+        assert view["desk"]["billing"]["net_payout"] == pytest.approx(wide["report"]["net_payout"])
+        assert view["desk"]["balance"]["net_payout"] == pytest.approx(wide["report"]["net_payout"])
+        assert view["desk"]["balance"]["gross_sales"] == pytest.approx(wide["report"]["gross_sales"])
+        assert view["desk"]["balance"]["net_payout"] != pytest.approx(narrow["report"]["net_payout"])
+        assert "combined_payout" not in view
+    assert by_switch["desk"]["writes_open"] is True
+    assert by_agent["desk"]["writes_open"] is False
+
+    reward["checksum"] = "0" * 64
+    withheld, status = _get("/api/supplier/desk", token=logged["token"])
+    assert status == 200, withheld
+    assert all(row.get("booked") is False for row in withheld["sales"]["referral"]["rows"])
+    assert withheld["sales"]["referral"]["rows"]
+    assert withheld["sales"]["referral"]["rows"][0]["projected_amount"] > 0
+    assert withheld["sales"]["referral"]["rows"][0]["amount"] == pytest.approx(0)
+    assert withheld["sales"]["referral"]["blocked"] == pytest.approx(0)
+    assert withheld["sales"]["referral"]["available"] == pytest.approx(0)
+    assert withheld["sales"]["referral"]["dispatched"] == pytest.approx(0)
+    assert reward["checksum"] == "0" * 64
+    assert writes == {"refresh": 0, "save": 0}
+
+    supplier["status"] = "suspended"
+    supplier["portal_active"] = False
+    closed, status = _get("/api/supplier/desk", token=agent_session["token"])
+    assert status == 200, closed
+    assert closed["desk"]["approval"]["status"] == "suspended"
+    assert closed["desk"]["writes_open"] is False
+    assert supplier["status"] == "suspended"
+    assert supplier["portal_active"] is False
+
+    static = Path(__file__).resolve().parents[1] / "web_portal" / "static"
+    portal_html = (static / "supplier-portal.html").read_text(encoding="utf-8")
+    login_html = (static / "supplier-login.html").read_text(encoding="utf-8")
+    agent_html = (static / "agent-portal.html").read_text(encoding="utf-8")
+    assert 'id="sales-section"' in portal_html
+    assert 'data-section="affiliation-to-sales"' in portal_html
+    assert 'id="desk-section"' in portal_html
+    assert 'data-section="supplier-desk"' in portal_html
+    assert "/api/supplier/desk" in login_html
+    assert 'id="supplier-desk-summary"' in agent_html
+    assert "row.projected_amount" in portal_html
+    assert "function supplierOperationsOpen" in portal_html
+    assert "deskWritesOpen = gate.editsOpen" in portal_html
+    assert "if (!deskWritesOpen)" in portal_html
+    assert 'class="add-offer-btn" style="display:none"' in portal_html
+    assert surface_decision("supplier", "/supplier-portal.html")["allowed"] is True
+    assert surface_decision("agent", "/supplier-portal.html")["allowed"] is False
+    assert surface_decision("customer", "/supplier-login.html")["allowed"] is False
+    assert surface_decision("admin", "/supplier-portal.html")["allowed"] is False
+    owner_page, status = _get("/api/access/surface?path=/supplier-portal.html", token=agent_session["token"])
+    assert status == 200, owner_page
+    assert owner_page["allowed"] is True
+    supplier_page, status = _get("/api/access/surface?path=/supplier-login.html", token=logged["token"])
+    assert status == 200, supplier_page
+    assert supplier_page["allowed"] is True
+    portal.SUPPLIER_ORDERS.pop("ORD-DESK-1", None)
+    portal.SUPPLIER_ORDERS.pop("ORD-DESK-OLD", None)
+    portal.SUPPLIER_OFFERS.pop("OFF-DESK-SVC", None)
+    portal.SUPPLIER_OFFERS.pop("OFF-DESK-PRD", None)
+    agents.COMMISSIONS.pop("COMM-DESK-1", None)
+    agents.COMMISSIONS.pop("COMM-DESK-REF", None)
+    agents.COMMISSIONS.pop("COMM-DESK-REF-SOURCE", None)
+
+
+@pytest.mark.parametrize("closed_status", ["rejected", "suspended", "terminated", "closed"])
+def test_desk_read_leaves_a_closed_supplier_closed_on_the_live_book(closed_status, monkeypatch):
+    """The desk read uses the supply-chain supplier and does not reopen it."""
+    service = portal.supply_chain_service
+    email = f"live-closed-{closed_status}@example.com"
+    _register("Live Closed", email)
+    token, _role = _login(email, "secure123456")
+    filed, status = _post("/api/customer/professional-requests", {"role": "agent"}, token=token)
+    assert status == 200, filed
+    saved = _finish_inquiry(filed, name="Live Closed")
+    admin, _role = _login("admin", "admin123")
+    reviewed, status = _post("/api/admin/professional-requests/review", {
+        "id": saved["id"], "decision": "approve",
+    }, token=admin)
+    assert status == 200, reviewed
+    supplier_id = reviewed["supplier_id"]
+    live = service.suppliers[supplier_id]
+    assert live is portal.supplier_service.suppliers[supplier_id]
+    live["status"] = closed_status
+    live["portal_active"] = False
+    calls = {"approve": 0}
+
+    def _refuse_approve(*_args, **_kwargs):
+        calls["approve"] += 1
+        raise AssertionError("desk read must not approve a supplier")
+
+    monkeypatch.setattr(service, "approve_supplier", _refuse_approve)
+    switched, status = _post("/api/customer/role-switch", {"role": "agent"}, token=token)
+    assert status == 200, switched
+    desk, status = _get("/api/supplier/desk", token=switched["token"])
+    assert status == 200, desk
+    again = service.suppliers[supplier_id]
+    assert again["status"] == closed_status
+    assert again["portal_active"] is False
+    assert portal.supplier_service.suppliers[supplier_id]["status"] == closed_status
+    assert portal.supplier_service.suppliers[supplier_id]["portal_active"] is False
+    assert desk["desk"]["approval"]["status"] == closed_status
+    assert desk["desk"]["approval"]["portal_active"] is False
+    assert desk["desk"]["writes_open"] is False
+    assert calls["approve"] == 0
+
+
+def test_supplier_desk_stays_closed_without_a_supplier_role():
+    anonymous, status = _get("/api/supplier/desk")
+    assert status == 401, anonymous
+    email = "plain-desk@example.com"
+    _register("Plain Desk", email)
+    token, _role = _login(email, "secure123456")
+    denied, status = _get("/api/supplier/desk", token=token)
+    assert status == 403, denied
+    assert denied.get("code") == "role_closed"
+    for page in ("/supplier-portal.html", "/supplier-login.html", "/supplier-dashboard.html"):
+        shell, status = _get("/api/access/surface?path=" + page, token=token)
+        assert status == 200, shell
+        assert shell["allowed"] is False
+        assert shell["redirect"] == "/dashboard.html"
+
+
+def test_supplier_operations_load_when_the_unified_read_fails():
+    """An approved supplier still loads the desk when the unified read fails."""
+    node = shutil.which("node")
+    assert node, "node is required to check the supplier operations gate"
+    script = Path(__file__).resolve().parent / "supplier_desk_operations.test.js"
+    completed = subprocess.run([node, str(script)], check=False, capture_output=True, text=True)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
 def test_two_inquiries_in_one_tab_follow_the_new_email_link():
     node = shutil.which("node")
     assert node, "node is required to check the inquiry cross-link"

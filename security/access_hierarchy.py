@@ -192,6 +192,44 @@ def page_roles(page: str) -> FrozenSet[str]:
     return extra | frozenset({"admin"})
 
 
+# The supplier shell is not a role-wide page. A customer or agent session
+# reaches it only when that account owns the supplier or an approved agent
+# grant, the same rule as the desk read.
+SUPPLIER_SHELL_PAGES: FrozenSet[str] = frozenset({
+    "/supplier-dashboard.html",
+    "/supplier-portal.html",
+    "/supplier-login.html",
+})
+
+
+def surface_for_session(session: Optional[Dict], role: Optional[str], path: Optional[str]) -> Dict[str, Optional[str]]:
+    """Page gate for a signed-in session.
+
+    Supplier, agent, and customer roles use the role gate first. The supplier
+    shell then follows the desk: a supplier session, or a customer or agent
+    session that owns that supplier or an approved agent grant.
+    """
+    decision = surface_decision(role, path)
+    page = normalize_page(path)
+    normalized_role = normalize_role(role)
+    if page not in SUPPLIER_SHELL_PAGES or normalized_role not in ("customer", "agent"):
+        return decision
+    from services.referral_reward_service import supplier_shell_open
+    if supplier_shell_open(session):
+        return {
+            "allowed": True,
+            "redirect": None,
+            "surface": "staff",
+            "role": normalized_role,
+        }
+    return {
+        "allowed": False,
+        "redirect": home_for_role(normalized_role),
+        "surface": "staff",
+        "role": normalized_role,
+    }
+
+
 def surface_decision(role: Optional[str], path: Optional[str]) -> Dict[str, Optional[str]]:
     """Decide whether this role may render ``path``.
 

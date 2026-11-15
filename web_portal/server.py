@@ -24036,9 +24036,9 @@ For claims or questions, please contact:
                 self._set_json_headers(401)
                 self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
                 return
-            from security.access_hierarchy import surface_decision
+            from security.access_hierarchy import surface_for_session
             requested = (qs.get('path', ['/'])[0] or '/')
-            decision = surface_decision(get_effective_role(session), requested)
+            decision = surface_for_session(session, get_effective_role(session), requested)
             self._set_json_headers(200)
             self.wfile.write(json.dumps({
                 'allowed': bool(decision.get('allowed')),
@@ -28996,6 +28996,28 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
         
+        # One read of affiliation-to-sales and the supplier desk.
+        # Opening this does not refresh, reverse, promote, or persist a book.
+        if path == '/api/supplier/desk':
+            if not session:
+                self._set_json_headers(401)
+                self.wfile.write(json.dumps({'error': 'Authentication required'}).encode('utf-8'))
+                return
+            try:
+                from services.referral_reward_service import RewardError, read_unified_desk
+                payload = read_unified_desk(session)
+            except RewardError as exc:
+                self._set_json_headers(exc.status)
+                self.wfile.write(json.dumps(exc.to_dict()).encode('utf-8'))
+                return
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps(payload, default=str).encode('utf-8'))
+            return
+
         # Supplier: Get own profile
         if path == '/api/supplier/profile':
             if not require_role(session, ['supplier']):

@@ -191,7 +191,7 @@
       <div class="login-header">
         <div class="icon"></div>
         <h2>Supplier Login</h2>
-        <p>Access your supplier dashboard</p>
+        <p>One sign-in for affiliation sales and the supplier desk</p>
       </div>
 
       <div id="alert-container"></div>
@@ -598,8 +598,11 @@
             headers: { 'Authorization': `Bearer ${token}` }
           });
           const data = await response.json();
-          if (response.ok && data.role === 'supplier') {
-            window.location.href = '/supplier-portal.html';
+          if (response.ok && ['supplier', 'agent', 'customer'].includes(data.role)) {
+            const desk = await fetch('/api/supplier/desk', {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (desk.ok) window.location.href = '/supplier-portal.html';
           }
         } catch (e) {
           // Token invalid, stay on login page
