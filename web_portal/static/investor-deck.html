@@ -366,21 +366,84 @@
     if (!text || text.indexOf('data:') === 0) return '';
     return text;
   }
-  function openDeckMedia(node) {
-    if (!node) return;
-    var src = node.getAttribute('src') || '';
-    if (src.indexOf('/deck-media/') !== 0 || !token()) return;
-    fetch(src, { headers: { Authorization: 'Bearer ' + token() }, credentials: 'same-origin' })
+  var deckBlobs = {};
+  function warmDeckMedia(src) {
+    if (!src || src.indexOf('/deck-media/') !== 0 || !token()) return Promise.resolve('');
+    var slot = deckBlobs[src];
+    if (slot && slot.url) return Promise.resolve(slot.url);
+    if (slot && slot.pending) return slot.pending;
+    slot = {};
+    deckBlobs[src] = slot;
+    slot.pending = fetch(src, { headers: { Authorization: 'Bearer ' + token() }, credentials: 'same-origin' })
       .then(function (response) {
         if (!response.ok) throw new Error('closed');
         return response.blob();
       })
-      .then(function (blob) { node.src = URL.createObjectURL(blob); })
-      .catch(function () { node.removeAttribute('src'); });
+      .then(function (blob) {
+        slot.url = URL.createObjectURL(blob);
+        return slot.url;
+      })
+      .catch(function (err) {
+        delete deckBlobs[src];
+        throw err;
+      });
+    return slot.pending;
+  }
+  function resolvedDeckUrl(src) {
+    var slot = src && deckBlobs[src];
+    return slot && slot.url ? slot.url : '';
+  }
+  function mediaSrcAttr(src) {
+    if (!src) return '';
+    var ready = resolvedDeckUrl(src);
+    if (ready) return 'src="' + esc(ready) + '"';
+    if (src.indexOf('/deck-media/') === 0 && token()) return 'data-deck-src="' + esc(src) + '"';
+    return 'src="' + esc(src) + '"';
+  }
+  function openDeckMedia(node) {
+    if (!node) return Promise.resolve();
+    var src = node.getAttribute('data-deck-src') || '';
+    if (!src) {
+      var live = node.getAttribute('src') || '';
+      if (live.indexOf('/deck-media/') === 0) src = live;
+    }
+    if (!src || src.indexOf('/deck-media/') !== 0 || !token()) return Promise.resolve();
+    node.removeAttribute('src');
+    node.setAttribute('data-deck-src', src);
+    if (typeof node.load === 'function') node.load();
+    return warmDeckMedia(src).then(function (url) {
+      if (!url || node.getAttribute('data-deck-src') !== src) return;
+      node.removeAttribute('data-deck-src');
+      node.src = url;
+    });
   }
   function openDeckMediaIn(root) {
     if (!root) return;
-    root.querySelectorAll('video[src^="/deck-media/"], img[src^="/deck-media/"]').forEach(openDeckMedia);
+    root.querySelectorAll('[data-deck-src], video[src^="/deck-media/"], img[src^="/deck-media/"]').forEach(function (node) {
+      openDeckMedia(node);
+    });
+  }
+  function playAssigned(node, src) {
+    if (!node) return;
+    var ready = resolvedDeckUrl(src);
+    if (ready) {
+      node.removeAttribute('data-deck-src');
+      node.src = ready;
+    } else if (!src || src.indexOf('/deck-media/') !== 0 || !token()) {
+      node.removeAttribute('data-deck-src');
+      node.src = src || '';
+    } else {
+      node.removeAttribute('src');
+      node.setAttribute('data-deck-src', src);
+      if (typeof node.load === 'function') node.load();
+    }
+    var start = function () {
+      if (!node.getAttribute('src')) return;
+      var played = node.play();
+      if (played && played.catch) played.catch(function () {});
+    };
+    if (node.getAttribute('src')) start();
+    else openDeckMedia(node).then(start).catch(function () {});
   }
   function markPlan(text) {
     var count = document.getElementById('deck-count');
@@ -473,7 +536,8 @@
     }
     var embedded = current.chrome && current.chrome.image;
     if (embedded && embedded.intact && safeSrc(embedded.playback_url)) {
-      parts.push('<img class="embed-still" alt="" src="' + esc(safeSrc(embedded.playback_url)) + '">');
+      warmDeckMedia(safeSrc(embedded.playback_url));
+      parts.push('<img class="embed-still" alt="" ' + mediaSrcAttr(safeSrc(embedded.playback_url)) + '>');
       if (embedded.name) parts.push('<p class="deck-caption">Library · ' + esc(embedded.name) + '</p>');
     }
     var mode = showMode(current);
@@ -481,12 +545,14 @@
     if (mode === 'library') {
       var librarySrc = videoSrc(current.media && current.media.playback_url);
       if (librarySrc) {
-        parts.push('<video controls playsinline preload="metadata" src="' + esc(librarySrc) + '"></video>');
+        warmDeckMedia(librarySrc);
+        parts.push('<video controls playsinline preload="metadata" ' + mediaSrcAttr(librarySrc) + '></video>');
         if (current.media.name) parts.push('<p class="deck-caption">Library · ' + esc(current.media.name) + '</p>');
       }
     } else if (filmed.length) {
+      filmed.forEach(function (clip) { warmDeckMedia(videoSrc(clip.playback_url)); });
       var first = filmed[0];
-      parts.push('<video controls playsinline preload="metadata" data-filmed="0" src="' + esc(videoSrc(first.playback_url)) + '"></video>');
+      parts.push('<video controls playsinline preload="metadata" data-filmed="0" ' + mediaSrcAttr(videoSrc(first.playback_url)) + '></video>');
       parts.push('<p class="deck-caption" data-filmed-caption>Paragraph ' + esc(first.paragraph_no) +
         (first.presenter_label ? ' · ' + esc(first.presenter_label) : '') + '</p>');
     }
@@ -502,15 +568,12 @@
         var clip = filmed[at];
         if (!clip) return;
         video.setAttribute('data-filmed', String(at));
-        video.src = videoSrc(clip.playback_url);
-        openDeckMedia(video);
         var caption = side.querySelector('[data-filmed-caption]');
         if (caption) {
           caption.textContent = 'Paragraph ' + clip.paragraph_no +
             (clip.presenter_label ? ' · ' + clip.presenter_label : '');
         }
-        var played = video.play();
-        if (played && played.catch) played.catch(function () {});
+        playAssigned(video, videoSrc(clip.playback_url));
       });
     }
     var portrait = side.querySelector('img.portrait');
@@ -582,9 +645,11 @@
     var cols = images.length === 1 ? 1 : (images.length <= 4 ? 2 : 3);
     node.hidden = false;
     node.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+    images.forEach(function (item) { warmDeckMedia(safeSrc(item.playback_url)); });
     node.innerHTML = images.map(function (item) {
-      return '<img alt="" src="' + esc(safeSrc(item.playback_url)) + '">';
+      return '<img alt="" ' + mediaSrcAttr(safeSrc(item.playback_url)) + '>';
     }).join('');
+    openDeckMediaIn(node);
   }
   function applyChrome(current) {
     var chrome = current && current.chrome ? current.chrome : {};

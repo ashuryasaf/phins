@@ -739,8 +739,11 @@ def test_presentation_page_is_wired_and_does_not_bake_figures():
     assert "phins-deck-lang" in page
     assert "phins-deck-lang" in media
     assert "openDeckMedia" in page
+    assert "data-deck-src" in page and "playAssigned" in page
+    assert "openDeckMediaIn(node)" in page
     lab = (root / "web_portal" / "static" / "investor-deck-lab.js").read_text(encoding="utf-8")
     assert "openDeckMedia" in lab
+    assert "data-deck-src" in lab and "warmDeckMedia" in lab
     assert 'id="deck-scenes"' in page and "data-scene-show" in page
     assert "figures stay on the slide" not in page.lower()
 
