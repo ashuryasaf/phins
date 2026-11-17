@@ -13,7 +13,9 @@ from services.process_pipeline_orchestrator import ProcessPipelineOrchestrator
 from services.savings_pipeline_service import (
     AllocationStrategy,
     SavingsPipelineService,
+    apply_investment_withdrawal,
     bounded_distribution,
+    investment_books,
     mark_unallocated_cash,
 )
 from services.unified_balance_service import UnifiedBalanceService
@@ -607,3 +609,61 @@ def test_orchestrator_algo_credit_lands_in_the_injected_store():
     invested = row["index_balance"] + row["bonds_balance"] + row["crypto_balance"]
     assert row["balance_is_unallocated_cash"] is True
     assert abs((row["balance"] + invested) - 1065.0) < 0.05
+
+
+def test_flagged_position_keeps_holdings_when_cash_is_zero():
+    books = investment_books({
+        "balance": 0.0,
+        "index_balance": 390.0,
+        "bonds_balance": 195.0,
+        "crypto_balance": 65.0,
+        "balance_is_unallocated_cash": True,
+    })
+    assert books["cash"] == 0.0
+    assert books["invested"] == 650.0
+    assert books["position"] == 650.0
+
+
+def test_legacy_total_is_not_added_to_its_own_breakdown():
+    books = investment_books({
+        "balance": 1000.0,
+        "index_balance": 600.0,
+        "bonds_balance": 300.0,
+        "crypto_balance": 100.0,
+    })
+    assert books["position"] == 1000.0
+    assert books["cash"] == 0.0
+    assert books["unallocated_cash"] is False
+
+
+def test_withdrawal_takes_flagged_cash_before_holdings():
+    account = {
+        "balance": 100.0,
+        "index_balance": 390.0,
+        "bonds_balance": 195.0,
+        "crypto_balance": 65.0,
+        "balance_is_unallocated_cash": True,
+    }
+    moved = apply_investment_withdrawal(account, 150.0)
+    assert moved["applied"] == 150.0
+    assert moved["cash_taken"] == 100.0
+    assert account["balance"] == 0.0
+    remaining = account["index_balance"] + account["bonds_balance"] + account["crypto_balance"]
+    assert abs(remaining - 600.0) < 0.05
+    assert investment_books(account)["position"] == 600.0
+
+
+def test_withdrawal_cannot_mint_past_the_position():
+    account = {
+        "balance": 0.0,
+        "index_balance": 60.0,
+        "bonds_balance": 30.0,
+        "crypto_balance": 10.0,
+        "balance_is_unallocated_cash": True,
+    }
+    moved = apply_investment_withdrawal(account, 500.0)
+    assert moved["applied"] == 100.0
+    assert account["balance"] == 0.0
+    assert account["index_balance"] == 0.0
+    assert account["bonds_balance"] == 0.0
+    assert account["crypto_balance"] == 0.0

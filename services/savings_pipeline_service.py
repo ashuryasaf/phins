@@ -128,6 +128,80 @@ def _balance_includes_holdings(account: Dict[str, Any], cash: float, invested: f
     return True
 
 
+def investment_books(account: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Read an investment row without writing it.
+
+    A flagged row stores unallocated cash in ``balance`` and the holdings
+    beside it. The position is those two added. An older row stores the
+    position in ``balance`` and the sub-balances are the breakdown already
+    inside that total, so they are not added again.
+    """
+    account = account if isinstance(account, dict) else {}
+    cash_field = _safe_amount(account.get('balance'))
+    index = _safe_amount(account.get('index_balance'))
+    bonds = _safe_amount(account.get('bonds_balance'))
+    crypto = _safe_amount(account.get('crypto_balance'))
+    invested = index + bonds + crypto
+    flagged = bool(account.get('balance_is_unallocated_cash'))
+    if flagged:
+        cash = cash_field
+        position = cash + invested
+    else:
+        position = cash_field
+        cash = max(0.0, cash_field - invested)
+    return {
+        'cash': round(cash, 2),
+        'invested': round(invested, 2),
+        'position': round(position, 2),
+        'index': round(index, 2),
+        'bonds': round(bonds, 2),
+        'crypto': round(crypto, 2),
+        'unallocated_cash': flagged,
+    }
+
+
+def apply_investment_withdrawal(account: Dict[str, Any], amount: float) -> Dict[str, Any]:
+    """Move cash, then holdings, out of an investment row.
+
+    The amount cannot exceed the position, and neither cash nor a
+    sub-balance is taken below zero. A flagged row's ``balance`` stays
+    unallocated cash. An older row's ``balance`` stays the position.
+    """
+    if not isinstance(account, dict):
+        return {'applied': 0.0, 'cash_taken': 0.0, 'invested_taken': 0.0}
+    books = investment_books(account)
+    requested = _safe_amount(amount)
+    applied = min(requested, books['position'])
+    if applied <= 0:
+        return {'applied': 0.0, 'cash_taken': 0.0, 'invested_taken': 0.0}
+    cash_take = min(books['cash'], applied)
+    remaining = round(applied - cash_take, 2)
+    index = books['index']
+    bonds = books['bonds']
+    crypto = books['crypto']
+    invested = books['invested']
+    if remaining > 0 and invested > 0:
+        ratio = remaining / invested
+        index_take = round(index * ratio, 2)
+        bonds_take = round(bonds * ratio, 2)
+        crypto_take = round(remaining - index_take - bonds_take, 2)
+        if crypto_take < -0.001:
+            crypto_take = 0.0
+            bonds_take = round(remaining - index_take, 2)
+        account['index_balance'] = round(max(0.0, index - index_take), 2)
+        account['bonds_balance'] = round(max(0.0, bonds - bonds_take), 2)
+        account['crypto_balance'] = round(max(0.0, crypto - max(0.0, crypto_take)), 2)
+    if account.get('balance_is_unallocated_cash'):
+        account['balance'] = round(max(0.0, books['cash'] - cash_take), 2)
+    else:
+        account['balance'] = round(max(0.0, books['position'] - applied), 2)
+    return {
+        'applied': round(applied, 2),
+        'cash_taken': round(cash_take, 2),
+        'invested_taken': round(remaining, 2),
+    }
+
+
 def mark_unallocated_cash(account: Dict[str, Any]) -> None:
     """Make a later sub-balance credit show up on an older investment row.
 

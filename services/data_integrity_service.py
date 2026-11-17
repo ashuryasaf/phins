@@ -317,16 +317,8 @@ class DataIntegrityService:
     
     def _investment_position(self, inv_data: Dict) -> float:
         """Cash plus invested sub-balances when balance is unallocated cash."""
-        inv_data = inv_data or {}
-        cash = float(inv_data.get('balance', 0) or 0)
-        allocated = (
-            float(inv_data.get('index_balance', 0) or 0)
-            + float(inv_data.get('bonds_balance', 0) or 0)
-            + float(inv_data.get('crypto_balance', 0) or 0)
-        )
-        if inv_data.get('balance_is_unallocated_cash'):
-            return cash + allocated
-        return cash
+        from services.savings_pipeline_service import investment_books
+        return float(investment_books(inv_data)['position'])
 
     def _attempt_auto_correction(self, customer_id: str, discrepancy: float,
                                    cash_balance: float, wallet_balance: float,

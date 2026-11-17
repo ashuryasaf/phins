@@ -95,21 +95,12 @@ class UnifiedBalanceService:
         
         # 2. Investment Account (Savings) Balance
         inv_account = self.investment_accounts.get(customer_id, {})
-        inv_balance = float(inv_account.get('balance', 0) or 0)
-        invested = (
-            float(inv_account.get('index_balance', 0) or 0)
-            + float(inv_account.get('bonds_balance', 0) or 0)
-            + float(inv_account.get('crypto_balance', 0) or 0)
-        )
-        # balance is not rewritten. When the writer marked it as unallocated
-        # cash, the position is that cash plus the invested sub-balances.
-        if inv_account.get('balance_is_unallocated_cash'):
-            investment_position = inv_balance + invested
-        else:
-            investment_position = inv_balance
+        from services.savings_pipeline_service import investment_books
+        books = investment_books(inv_account)
+        investment_position = books['position']
         result['balances']['investment_account'] = {
             'total_balance': investment_position,
-            'unallocated_cash': inv_balance if inv_account.get('balance_is_unallocated_cash') else None,
+            'unallocated_cash': books['cash'] if books['unallocated_cash'] else None,
             'index_balance': inv_account.get('index_balance', 0),
             'bonds_balance': inv_account.get('bonds_balance', 0),
             'crypto_balance': inv_account.get('crypto_balance', 0),
