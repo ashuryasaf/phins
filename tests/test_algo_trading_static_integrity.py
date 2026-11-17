@@ -227,12 +227,12 @@ def test_algo_trading_preserves_transfer_and_strategy_values():
 
 def test_algo_trading_preserves_pipeline_allocation_defaults():
     html = _html()
-    assert 'id="pipelineWalletPct">15%</div>' in html
-    assert 'id="pipelineInvestPct">60%</div>' in html
-    assert 'id="pipelineAlgoPct">25%</div>' in html
+    assert 'id="pipelineWalletPct">30%</div>' in html
+    assert 'id="pipelineInvestPct">65%</div>' in html
+    assert 'id="pipelineAlgoPct">5%</div>' in html
     assert 'id="actuarialRiskPct"' in html and ">50%</div>" in html
     assert 'id="actuarialSavingsPct"' in html and ">50%</div>" in html
-    assert "(analytics.allocation.wallet || 15)" in html
+    assert "(analytics.allocation.wallet || 30)" in html
     assert "alloc.savings_pct != null ? alloc.savings_pct : 50" in html
     assert "if (!unified || unified.error || (!unified.monthly_distribution && !unified.customer_id))" in html
     assert "if (unifiedRes.ok)" in html

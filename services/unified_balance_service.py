@@ -95,15 +95,27 @@ class UnifiedBalanceService:
         
         # 2. Investment Account (Savings) Balance
         inv_account = self.investment_accounts.get(customer_id, {})
-        inv_balance = float(inv_account.get('balance', 0))
+        inv_balance = float(inv_account.get('balance', 0) or 0)
+        invested = (
+            float(inv_account.get('index_balance', 0) or 0)
+            + float(inv_account.get('bonds_balance', 0) or 0)
+            + float(inv_account.get('crypto_balance', 0) or 0)
+        )
+        # balance is not rewritten. When the writer marked it as unallocated
+        # cash, the position is that cash plus the invested sub-balances.
+        if inv_account.get('balance_is_unallocated_cash'):
+            investment_position = inv_balance + invested
+        else:
+            investment_position = inv_balance
         result['balances']['investment_account'] = {
-            'total_balance': inv_balance,
+            'total_balance': investment_position,
+            'unallocated_cash': inv_balance if inv_account.get('balance_is_unallocated_cash') else None,
             'index_balance': inv_account.get('index_balance', 0),
             'bonds_balance': inv_account.get('bonds_balance', 0),
             'crypto_balance': inv_account.get('crypto_balance', 0),
             'deposits_count': len(inv_account.get('deposits', []))
         }
-        result['total_assets'] += inv_balance
+        result['total_assets'] += investment_position
         
         # 3. Algo Trading Balance
         algo_balance = self.algo_trading_balances.get(customer_id, {})
@@ -138,7 +150,7 @@ class UnifiedBalanceService:
         result['summary'] = {
             'total_liquid_assets': result['total_assets'],
             'health_wallet_pct': (wallet_balance / result['total_assets'] * 100) if result['total_assets'] > 0 else 0,
-            'investment_pct': (inv_balance / result['total_assets'] * 100) if result['total_assets'] > 0 else 0,
+            'investment_pct': (investment_position / result['total_assets'] * 100) if result['total_assets'] > 0 else 0,
             'algo_trading_pct': (algo_total / result['total_assets'] * 100) if result['total_assets'] > 0 else 0
         }
         

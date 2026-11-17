@@ -1,0 +1,300 @@
+"""Writer alignment for the testing-phase savings path.
+
+Premium cash is split by the kernel pin. Only the savings component is
+addressed to savings. A missing pin is the 50/50 default. That savings
+figure is 30% health wallet, 65% investments, 5% algo, and the investment
+piece is 60/30/10. ``balance`` stays unallocated cash.
+"""
+
+from services.data_integrity_service import DataIntegrityService
+from services.financial_unification_service import resolve_premium_split
+from services.nft_ledger import mint_token
+from services.process_pipeline_orchestrator import ProcessPipelineOrchestrator
+from services.savings_pipeline_service import AllocationStrategy, SavingsPipelineService
+
+
+def test_kernel_savings_excludes_expense_and_profit():
+    policy = {
+        "id": "POL-SPLIT",
+        "annual_premium": 181.50,
+        "risk_premium_annual": 100.0,
+        "savings_premium_annual": 50.0,
+        "expense_loading_annual": 15.0,
+        "profit_margin_annual": 16.50,
+        "pricing_source": "pricing_kernel",
+        "integrity_hash": "pin-unchanged",
+    }
+    split = resolve_premium_split(181.50, policy, fallback_risk_pct=0)
+    assert split["risk_amount"] == 100.0
+    assert split["savings_amount"] == 50.0
+    assert split["expense_amount"] == 15.0
+    assert split["profit_amount"] == 16.50
+    assert split["company_remainder"] == 0.0
+    assert split["split_label"] == "kernel"
+    assert split["integrity_hash"] == "pin-unchanged"
+    assert policy["integrity_hash"] == "pin-unchanged"
+
+
+def test_missing_pin_is_labeled_default_not_history():
+    split = resolve_premium_split(
+        200.0,
+        {"id": "POL-OPEN", "annual_premium": 2400.0},
+        fallback_risk_pct=100,
+    )
+    assert split["risk_amount"] == 100.0
+    assert split["savings_amount"] == 100.0
+    assert split["split_source"] == "default"
+    assert split["split_label"] == "default"
+    assert split["expense_amount"] == 0.0
+    assert split["profit_amount"] == 0.0
+
+
+def test_explicit_zero_savings_pin_is_not_the_default():
+    split = resolve_premium_split(
+        80.0,
+        {
+            "annual_premium": 1200.0,
+            "risk_premium_annual": 1200.0,
+            "savings_premium_annual": 0.0,
+            "pricing_source": "pricing_kernel",
+        },
+    )
+    assert split["savings_amount"] == 0.0
+    assert split["risk_amount"] == 80.0
+    assert split["split_label"] == "kernel"
+
+
+def _pipeline(customer_id="CUST-PIPE"):
+    wallets = {}
+    investments = {}
+    algo = {}
+
+    class _Balance:
+        def __init__(self):
+            self.health_wallets = wallets
+            self.investment_accounts = investments
+            self.algo_trading_balances = algo
+
+    service = SavingsPipelineService(
+        unified_balance_service=_Balance(),
+        health_wallets=wallets,
+        investment_accounts=investments,
+    )
+    return service, wallets, investments, algo
+
+
+def test_fresh_pipeline_deposit_uses_canonical_split_and_unallocated_cash():
+    service, wallets, investments, algo = _pipeline("CUST-FRESH")
+    result = service.deposit_to_pipeline(
+        "CUST-FRESH", 100.0, source="premium_payment", auto_allocate=True
+    )
+    assert result["success"] is True
+    account = service.accounts["CUST-FRESH"]
+    assert account.allocation_strategy != AllocationStrategy.CUSTOM
+    assert account.wallet_balance == 30.0
+    assert account.investment_balance == 65.0
+    assert account.algo_trading_balance == 5.0
+    assert wallets["CUST-FRESH"]["balance"] == 30.0
+    row = investments["CUST-FRESH"]
+    assert row["balance_is_unallocated_cash"] is True
+    assert row["balance"] == 0.0
+    assert round(row["index_balance"], 2) == 39.0
+    assert round(row["bonds_balance"], 2) == 19.5
+    assert round(row["crypto_balance"], 2) == 6.5
+    assert algo["CUST-FRESH"]["available"] == 5.0
+
+
+def test_existing_custom_allocation_is_kept():
+    service, wallets, investments, algo = _pipeline("CUST-CUSTOM")
+    account = service.get_or_create_account("CUST-CUSTOM")
+    account.allocation_strategy = AllocationStrategy.CUSTOM
+    account.allocation_config.wallet_pct = 10.0
+    account.allocation_config.investment_pct = 80.0
+    account.allocation_config.algo_trading_pct = 10.0
+    result = service.deposit_to_pipeline("CUST-CUSTOM", 100.0, auto_allocate=True)
+    assert result["success"] is True
+    assert account.wallet_balance == 10.0
+    assert account.investment_balance == 80.0
+    assert account.algo_trading_balance == 10.0
+    assert wallets["CUST-CUSTOM"]["balance"] == 10.0
+    assert investments["CUST-CUSTOM"]["balance"] == 0.0
+    assert algo["CUST-CUSTOM"]["available"] == 10.0
+
+
+def test_orchestrator_credits_thirty_percent_of_savings_and_appends_seals():
+    wallets = {"CUST-ORCH": {"balance": 100.0, "transactions": []}}
+    investments = {}
+    ledger = {}
+    nft = {}
+    existing = mint_token(
+        nft,
+        owner_id="CUST-ORCH",
+        transaction_type="record",
+        transaction_id="TX-EXISTING",
+        amount=1.0,
+        description="already sealed",
+        metadata={"note": "do not edit"},
+    )
+    sealed_hash = existing["verification_hash"]
+    orchestrator = ProcessPipelineOrchestrator(
+        policies={
+            "POL-ORCH": {
+                "id": "POL-ORCH",
+                "customer_id": "CUST-ORCH",
+                "status": "active",
+                "monthly_premium": 200.0,
+                "annual_premium": 2400.0,
+                "health_wallet": {"allocation_percentage": 25},
+            }
+        },
+        health_wallets=wallets,
+        investment_accounts=investments,
+        transaction_ledger=ledger,
+        nft_ledger=nft,
+    )
+    generated = orchestrator.automate_billing_cycle("POL-ORCH")
+    breakdown = generated["premium_breakdown"]
+    assert breakdown["savings_amount"] == 100.0
+    assert breakdown["split_label"] == "default"
+    assert breakdown["health_wallet_amount"] == 30.0
+    assert breakdown["investment_amount"] == 65.0
+    assert breakdown["algo_amount"] == 5.0
+    paid = orchestrator.process_billing_payment(generated["bill_id"], 200.0)
+    assert paid["wallet_credit"]["amount"] == 30.0
+    assert wallets["CUST-ORCH"]["balance"] == 130.0
+    row = investments["CUST-ORCH"]
+    assert row["balance"] == 0.0
+    assert row["balance_is_unallocated_cash"] is True
+    assert round(row["index_balance"] + row["bonds_balance"] + row["crypto_balance"], 2) == 65.0
+    assert orchestrator.algo_balances["CUST-ORCH"]["available"] == 5.0
+    assert nft[existing["token_id"]]["verification_hash"] == sealed_hash
+    assert len(nft) > 1
+    assert any(tx.get("type") == "premium_payment" for tx in ledger.values())
+
+
+def test_auto_correct_does_not_add_a_gap_to_balance():
+    customer_id = "CUST-GAP"
+    investments = {
+        customer_id: {
+            "balance": 0.0,
+            "index_balance": 40.0,
+            "bonds_balance": 20.0,
+            "crypto_balance": 10.0,
+            "balance_is_unallocated_cash": True,
+        }
+    }
+    wallets = {customer_id: {"balance": 30.0}}
+    ledger = {
+        "TX-DEP": {
+            "id": "TX-DEP",
+            "customer_id": customer_id,
+            "type": "pipeline_deposit",
+            "amount": 120.0,
+        }
+    }
+    service = DataIntegrityService(
+        health_wallets=wallets,
+        investment_accounts=investments,
+        transaction_ledger=ledger,
+    )
+    report = service.validate_customer_integrity(customer_id, auto_correct=True)
+    assert report.discrepancy < -10
+    assert investments[customer_id]["balance"] == 0.0
+    assert report.corrections_applied
+    assert report.corrections_applied[0]["action"] == "gap_left_in_place"
+    historical = {
+        "balance": 5000.0,
+        "index_balance": 3000.0,
+        "bonds_balance": 1500.0,
+        "crypto_balance": 500.0,
+    }
+    assert service._investment_position(historical) == 5000.0
+
+
+def test_checkout_payment_uses_kernel_savings_not_the_complement_of_risk():
+    import web_portal.server as portal
+
+    customer_id = "CUST-WRITER-ALIGN"
+    policy_id = "POL-WRITER-ALIGN"
+    portal.CUSTOMERS[customer_id] = {"id": customer_id, "name": "Writer Align"}
+    portal.POLICIES[policy_id] = {
+        "id": policy_id,
+        "customer_id": customer_id,
+        "status": "active",
+        "annual_premium": 181.50,
+        "monthly_premium": 181.50,
+        "risk_premium_annual": 100.0,
+        "savings_premium_annual": 50.0,
+        "expense_loading_annual": 15.0,
+        "profit_margin_annual": 16.50,
+        "pricing_source": "pricing_kernel",
+        "integrity_hash": "issued-pin",
+    }
+    portal.CUSTOMER_ALLOCATIONS.pop(customer_id, None)
+    portal.HEALTH_WALLETS.pop(customer_id, None)
+    portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+    existing = mint_token(
+        portal.NFT_LEDGER,
+        owner_id=customer_id,
+        transaction_type="record",
+        transaction_id="TX-WRITER-EXISTING",
+        amount=1.0,
+        description="existing seal",
+    )
+    sealed_hash = existing["verification_hash"]
+    before_txs = set(portal.TRANSACTION_LEDGER.keys())
+    before_nft = set(portal.NFT_LEDGER.keys())
+    try:
+        result = portal.process_customer_premium_payment(
+            customer_id=customer_id,
+            amount=181.50,
+            policy_id=policy_id,
+            allocate_to_investments=True,
+            notify_customer=False,
+        )
+        assert result["success"] is True
+        assert result["savings_allocated"] == 50.0
+        assert result["risk_allocated"] == 100.0
+        assert result["expense_amount"] == 15.0
+        assert result["profit_amount"] == 16.50
+        assert result["split_label"] == "kernel"
+        assert result["allocation_source"] == "pipeline"
+        assert portal.POLICIES[policy_id]["integrity_hash"] == "issued-pin"
+        row = portal.INVESTMENT_ACCOUNTS[customer_id]
+        assert row.get("balance_is_unallocated_cash") is True
+        assert abs(float(row.get("balance") or 0)) < 0.02
+        invested = (
+            float(row.get("index_balance") or 0)
+            + float(row.get("bonds_balance") or 0)
+            + float(row.get("crypto_balance") or 0)
+        )
+        assert abs(invested - 32.50) < 0.05
+        assert abs(float(portal.HEALTH_WALLETS[customer_id]["balance"]) - 15.0) < 0.05
+        assert portal.NFT_LEDGER[existing["token_id"]]["verification_hash"] == sealed_hash
+        new_txs = [
+            tx for tx_id, tx in portal.TRANSACTION_LEDGER.items()
+            if tx_id not in before_txs and tx.get("customer_id") == customer_id
+        ]
+        assert any(tx.get("type") == "premium_payment" for tx in new_txs)
+    finally:
+        portal.CUSTOMERS.pop(customer_id, None)
+        portal.POLICIES.pop(policy_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.CUSTOMER_ALLOCATIONS.pop(customer_id, None)
+        for token_id in list(portal.NFT_LEDGER.keys()):
+            if token_id not in before_nft:
+                portal.NFT_LEDGER.pop(token_id, None)
+        for tx_id in list(portal.TRANSACTION_LEDGER.keys()):
+            if tx_id not in before_txs:
+                portal.TRANSACTION_LEDGER.pop(tx_id, None)
+        pipeline = getattr(portal, "savings_pipeline_service", None)
+        if pipeline is not None and hasattr(pipeline, "accounts"):
+            pipeline.accounts.pop(customer_id, None)
+            pipeline.transactions = [
+                row for row in pipeline.transactions
+                if getattr(row, "customer_id", None) != customer_id
+            ]
+        unified = getattr(portal, "unified_balance_service", None)
+        if unified is not None and hasattr(unified, "algo_trading_balances"):
+            unified.algo_trading_balances.pop(customer_id, None)

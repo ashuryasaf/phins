@@ -1094,7 +1094,7 @@
                             <div style="font-size: 0.7rem; color: var(--text-secondary);">Emergency Fund</div>
                         </div>
                         <div style="text-align: right;">
-                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineWalletPct">15%</div>
+                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineWalletPct">30%</div>
                             <div style="font-size: 0.7rem; color: var(--success);" id="pipelineWalletBal">$0</div>
                         </div>
                     </div>
@@ -1106,7 +1106,7 @@
                             <div style="font-size: 0.7rem; color: var(--text-secondary);">Index • Bonds • Crypto</div>
                         </div>
                         <div style="text-align: right;">
-                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineInvestPct">60%</div>
+                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineInvestPct">65%</div>
                             <div style="font-size: 0.7rem; color: var(--info);" id="pipelineInvestBal">$0</div>
                         </div>
                     </div>
@@ -1118,7 +1118,7 @@
                             <div style="font-size: 0.7rem; color: var(--text-secondary);">Automated Strategies</div>
                         </div>
                         <div style="text-align: right;">
-                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineAlgoPct">25%</div>
+                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineAlgoPct">5%</div>
                             <div style="font-size: 0.7rem; color: var(--secondary);" id="pipelineAlgoBal">$0</div>
                         </div>
                     </div>
@@ -3344,9 +3344,9 @@
                 
                 // Update allocation percentages
                 if (analytics.allocation) {
-                    setPipelineText('pipelineWalletPct', `${(analytics.allocation.wallet || 15).toFixed(0)}%`);
-                    setPipelineText('pipelineInvestPct', `${(analytics.allocation.investment || 60).toFixed(0)}%`);
-                    setPipelineText('pipelineAlgoPct', `${(analytics.allocation.algo_trading || 25).toFixed(0)}%`);
+                    setPipelineText('pipelineWalletPct', `${(analytics.allocation.wallet || 30).toFixed(0)}%`);
+                    setPipelineText('pipelineInvestPct', `${(analytics.allocation.investment || 65).toFixed(0)}%`);
+                    setPipelineText('pipelineAlgoPct', `${(analytics.allocation.algo_trading || 5).toFixed(0)}%`);
                 }
                 
                 // Update health indicator

@@ -125,19 +125,13 @@ class DataIntegrityService:
         wallet_balance = float(wallet_data.get('balance', 0) or 0)
         
         # 2. Investment Account Balance
-        # The 'balance' field is the TOTAL investment balance
-        # Sub-balances (index, bonds, crypto) are the breakdown of where the money is invested
-        # Cash is any unallocated portion: balance - (index + bonds + crypto)
+        # New writes set balance_is_unallocated_cash: balance is cash only and
+        # the sub-balances are invested money. Those two are added for the
+        # check and are never written back into balance.
+        # Older rows keep balance as the stored total so a breakdown that
+        # already sits inside balance is not counted twice.
         inv_data = self.investment_accounts.get(customer_id, {})
-        inv_total = float(inv_data.get('balance', 0) or 0)  # Total investment balance
-        inv_index = float(inv_data.get('index_balance', 0) or 0)  # Invested in indexes
-        inv_bonds = float(inv_data.get('bonds_balance', 0) or 0)  # Invested in bonds
-        inv_crypto = float(inv_data.get('crypto_balance', 0) or 0)  # Invested in crypto
-        # Calculate actual invested amount
-        inv_allocated = inv_index + inv_bonds + inv_crypto
-        # Investment balance is the total from the balance field (not sum of sub-balances)
-        # The sub-balances are just the allocation breakdown
-        investment_balance = inv_total
+        investment_balance = self._investment_position(inv_data)
         
         # 3. Algo Trading Balance (from unified balance service)
         algo_balance = 0.0
@@ -293,7 +287,7 @@ class DataIntegrityService:
                 wallet_data = self.health_wallets.get(customer_id, {})
                 wallet_balance = float(wallet_data.get('balance', 0) or 0)
                 inv_data = self.investment_accounts.get(customer_id, {})
-                investment_balance = float(inv_data.get('balance', 0) or 0)
+                investment_balance = self._investment_position(inv_data)
                 calculated_total = cash_balance + wallet_balance + investment_balance + algo_balance
                 discrepancy = calculated_total - expected_total
                 if abs(discrepancy) <= 0.01:
@@ -321,6 +315,19 @@ class DataIntegrityService:
         self.last_check[customer_id] = report
         return report
     
+    def _investment_position(self, inv_data: Dict) -> float:
+        """Cash plus invested sub-balances when balance is unallocated cash."""
+        inv_data = inv_data or {}
+        cash = float(inv_data.get('balance', 0) or 0)
+        allocated = (
+            float(inv_data.get('index_balance', 0) or 0)
+            + float(inv_data.get('bonds_balance', 0) or 0)
+            + float(inv_data.get('crypto_balance', 0) or 0)
+        )
+        if inv_data.get('balance_is_unallocated_cash'):
+            return cash + allocated
+        return cash
+
     def _attempt_auto_correction(self, customer_id: str, discrepancy: float,
                                    cash_balance: float, wallet_balance: float,
                                    investment_balance: float, algo_balance: float,
@@ -365,46 +372,16 @@ class DataIntegrityService:
                     }
                 )
         else:
-            # We have less than expected - add missing amount to investment
+            # A shortfall is reported and left in place. Adding it to
+            # balance would treat unallocated cash as the place to stuff
+            # a missing wallet or investment slice.
             missing_amount = abs(discrepancy)
-            correction['action'] = 'add_missing_balance'
+            correction['action'] = 'gap_left_in_place'
             correction['details'] = {
                 'missing_amount': missing_amount,
-                'added_to': 'investment_account'
+                'added_to': None,
+                'note': 'balance is unallocated cash and was not increased',
             }
-            
-            # Add to investment account
-            if customer_id not in self.investment_accounts:
-                self.investment_accounts[customer_id] = {
-                    'balance': 0,
-                    'deposits': [],
-                    'created_at': datetime.now().isoformat()
-                }
-            
-            self.investment_accounts[customer_id]['balance'] = \
-                float(self.investment_accounts[customer_id].get('balance', 0) or 0) + missing_amount
-            
-            self.investment_accounts[customer_id].setdefault('deposits', []).append({
-                'id': f"CORR-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
-                'type': 'balance_correction',
-                'amount': missing_amount,
-                'timestamp': datetime.now().isoformat(),
-                'note': 'Auto-correction for balance discrepancy'
-            })
-            
-            # Record adjustment transaction
-            if self.record_transaction:
-                self.record_transaction(
-                    customer_id=customer_id,
-                    tx_type='balance_correction',
-                    amount=missing_amount,
-                    description=f'Balance reconciliation correction',
-                    metadata={
-                        'correction_type': 'missing_balance',
-                        'original_discrepancy': discrepancy,
-                        'added_to': 'investment_account'
-                    }
-                )
         
         return correction
     

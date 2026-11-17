@@ -155,16 +155,38 @@ def sum_paid_claim_records(claims: Iterable[Dict[str, Any]]) -> Decimal:
     return total
 
 
+def _component_present(mapping: Any, *keys: str) -> bool:
+    """True when a mapping carries a non-null value for one of ``keys``."""
+    if not isinstance(mapping, dict):
+        return False
+    return any(key in mapping and mapping.get(key) is not None for key in keys)
+
+
 def kernel_components_from_policy(policy: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Read pinned kernel components from a policy or its latest snapshot."""
+    """Read pinned kernel components from a policy or its latest snapshot.
+
+    Reads the pin. Does not reprice the life and does not invent expense or
+    profit from the product registry.
+    """
     policy = policy or {}
     risk = policy.get("risk_premium_annual")
     savings = policy.get("savings_premium_annual")
+    if savings is None and _component_present(policy, "savings_premium"):
+        savings = policy.get("savings_premium")
     annual = policy.get("annual_premium")
     source = "policy"
     integrity_hash = policy.get("integrity_hash")
     product_id = policy.get("product_id")
     pricing_source = policy.get("pricing_source")
+    savings_pin_present = _component_present(
+        policy, "savings_premium_annual", "savings_premium"
+    )
+    expense = policy.get("expense_loading_annual") if _component_present(
+        policy, "expense_loading_annual"
+    ) else None
+    profit = policy.get("profit_margin_annual") if _component_present(
+        policy, "profit_margin_annual"
+    ) else None
 
     if risk is None or (money(annual) > 0 and money(risk) == 0 and money(savings or 0) == 0):
         try:
@@ -175,8 +197,16 @@ def kernel_components_from_policy(policy: Optional[Dict[str, Any]]) -> Dict[str,
                 latest = snaps[-1]
                 components = latest.get("components") or {}
                 risk = components.get("risk_premium_annual", latest.get("kernel_annual"))
-                savings = components.get("savings_premium_annual", 0)
+                if _component_present(components, "savings_premium_annual"):
+                    savings = components.get("savings_premium_annual")
+                    savings_pin_present = True
+                elif savings is None:
+                    savings = 0
                 annual = latest.get("kernel_annual") or annual
+                if _component_present(components, "expense_loading_annual"):
+                    expense = components.get("expense_loading_annual")
+                if _component_present(components, "profit_margin_annual"):
+                    profit = components.get("profit_margin_annual")
                 integrity_hash = latest.get("integrity_hash") or integrity_hash
                 product_id = latest.get("product_id") or product_id
                 source = "premium_snapshot"
@@ -187,7 +217,10 @@ def kernel_components_from_policy(policy: Optional[Dict[str, Any]]) -> Dict[str,
     return {
         "risk_premium_annual": money_float(risk, 0.0),
         "savings_premium_annual": money_float(savings, 0.0),
+        "expense_loading_annual": None if expense is None else money_float(expense, 0.0),
+        "profit_margin_annual": None if profit is None else money_float(profit, 0.0),
         "annual_premium": money_float(annual, 0.0),
+        "savings_pin_present": savings_pin_present,
         "integrity_hash": integrity_hash,
         "product_id": product_id,
         "pricing_source": pricing_source or source,
@@ -200,40 +233,72 @@ def resolve_premium_split(
     policy: Optional[Dict[str, Any]] = None,
     fallback_risk_pct: Any = 100,
 ) -> Dict[str, Any]:
-    """Split a collected premium into risk vs savings.
+    """Split a collected premium into risk, savings, expense, and profit.
 
-    Prefers the actuarial kernel pin on the policy (or its snapshot). Falls
-    back to the caller-supplied portfolio risk percentage only when no kernel
-    identity exists.
+    When the policy pin has ``savings_premium`` / ``savings_premium_annual``,
+    only that component is savings. Expense and profit stay on the company
+    book and are not the complement of risk.
+
+    When the pin is missing, the split is the 50/50 cash default. That label
+    is ``default``. ``fallback_risk_pct`` is not applied: a caller preference
+    is not a recorded historical split.
     """
+    del fallback_risk_pct  # retained so existing callers keep working
     collected = money(amount)
     kernel = kernel_components_from_policy(policy)
     risk_ann = money(kernel["risk_premium_annual"])
     sav_ann = money(kernel["savings_premium_annual"])
     annual = money(kernel["annual_premium"])
-    if annual > 0 and (risk_ann > 0 or sav_ann > 0):
-        risk_pct = (risk_ann / annual * Decimal("100")).quantize(Decimal("0.01"))
+    expense_amount = Decimal("0.00")
+    profit_amount = Decimal("0.00")
+    if kernel.get("savings_pin_present") and annual > 0:
+        risk_amount = (collected * risk_ann / annual).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        savings_amount = (collected * sav_ann / annual).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        if kernel.get("expense_loading_annual") is not None:
+            expense_amount = (
+                collected * money(kernel["expense_loading_annual"]) / annual
+            ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if kernel.get("profit_margin_annual") is not None:
+            profit_amount = (
+                collected * money(kernel["profit_margin_annual"]) / annual
+            ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         source = f"kernel:{kernel['source']}"
+        split_label = "kernel"
     else:
-        try:
-            risk_pct = Decimal(str(fallback_risk_pct or 100))
-        except Exception:
-            risk_pct = Decimal("100")
-        if risk_pct < 0:
-            risk_pct = Decimal("0")
-        if risk_pct > 100:
-            risk_pct = Decimal("100")
-        source = "allocation_prefs"
-    savings_pct = Decimal("100") - risk_pct
-    risk_amount = (collected * risk_pct / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    savings_amount = (collected - risk_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        risk_amount = (collected * Decimal("0.50")).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        savings_amount = (collected - risk_amount).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        source = "default"
+        split_label = "default"
+    if collected > 0:
+        risk_pct = (risk_amount / collected * Decimal("100")).quantize(Decimal("0.01"))
+        savings_pct = (savings_amount / collected * Decimal("100")).quantize(Decimal("0.01"))
+    else:
+        risk_pct = Decimal("0.00")
+        savings_pct = Decimal("0.00")
+    company_remainder = (
+        collected - risk_amount - savings_amount - expense_amount - profit_amount
+    ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if company_remainder < 0:
+        company_remainder = Decimal("0.00")
     return {
         "amount": float(collected),
         "risk_percentage": float(risk_pct),
         "savings_percentage": float(savings_pct),
         "risk_amount": float(risk_amount),
         "savings_amount": float(savings_amount),
+        "expense_amount": float(expense_amount),
+        "profit_amount": float(profit_amount),
+        "company_remainder": float(company_remainder),
         "split_source": source,
+        "split_label": split_label,
         "integrity_hash": kernel.get("integrity_hash"),
         "product_id": kernel.get("product_id"),
         "pricing_source": kernel.get("pricing_source"),
@@ -276,6 +341,7 @@ def post_premium_to_accounting_book(
     customer_id: str,
     amount: Any,
     risk_percentage: Any,
+    savings_percentage: Any = None,
     posted_by: str = "billing_system",
     source_tx_id: Optional[str] = None,
     notes: str = "",
@@ -293,6 +359,9 @@ def post_premium_to_accounting_book(
         if _allocation_already_posted(engine, bill_id, source_tx_id):
             return {"posted": False, "reason": "already_posted", "bill_id": bill_id}
         note_bits = [n for n in (notes, f"ledger_tx={source_tx_id}" if source_tx_id else "") if n]
+        savings_arg = None
+        if savings_percentage is not None:
+            savings_arg = Decimal(str(savings_percentage))
         allocation = engine.create_allocation(
             bill_id=bill_id or source_tx_id or "UNBILLED",
             policy_id=policy_id or "UNKNOWN",
@@ -300,6 +369,7 @@ def post_premium_to_accounting_book(
             total_premium=collected,
             risk_percentage=Decimal(str(risk_percentage)),
             allocation_notes="; ".join(note_bits),
+            savings_percentage=savings_arg,
         )
         ok, message = engine.post_allocation(allocation.allocation_id, posted_by)
         return {
@@ -361,6 +431,7 @@ def post_collected_premiums_to_accounting(
                 customer_id=customer_id,
                 amount=bill_amount,
                 risk_percentage=bill_split["risk_percentage"],
+                savings_percentage=bill_split["savings_percentage"],
                 source_tx_id=source_tx_id,
                 notes=f"kernel_split={bill_split['split_source']}",
                 engine=engine,
@@ -381,6 +452,7 @@ def post_collected_premiums_to_accounting(
                 customer_id=customer_id,
                 amount=leftover,
                 risk_percentage=leftover_split["risk_percentage"],
+                savings_percentage=leftover_split["savings_percentage"],
                 source_tx_id=source_tx_id,
                 notes=f"unbilled kernel_split={leftover_split['split_source']}",
                 engine=engine,
@@ -1276,6 +1348,7 @@ def reconstruct_accounting_book_from_ledger(
             customer_id=cid,
             amount=amount,
             risk_percentage=split["risk_percentage"],
+            savings_percentage=split["savings_percentage"],
             posted_by=actor,
             source_tx_id=source_tx_id or None,
             notes=f"reconstruct kernel_split={split['split_source']}",
