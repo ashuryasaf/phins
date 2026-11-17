@@ -145,6 +145,7 @@ class ProcessPipelineOrchestrator:
                  billing_service=None,
                  data_integrity_service=None,
                  savings_pipeline_service=None,
+                 algo_balances: Dict = None,
                  claim_payout_fn=None):
 
         self.policies = {} if policies is None else policies
@@ -159,7 +160,14 @@ class ProcessPipelineOrchestrator:
         self.supplier_orders = {} if supplier_orders is None else supplier_orders
         self.supply_chain_ledger = {} if supply_chain_ledger is None else supply_chain_ledger
         self.nft_ledger = {} if nft_ledger is None else nft_ledger
-        self.algo_balances: Dict[str, Dict[str, Any]] = {}
+        if algo_balances is not None:
+            self.algo_balances = algo_balances
+        else:
+            shared_algo = None
+            unified = getattr(savings_pipeline_service, 'unified_balance', None)
+            if unified is not None:
+                shared_algo = getattr(unified, 'algo_trading_balances', None)
+            self.algo_balances = shared_algo if isinstance(shared_algo, dict) else {}
         self.underwriting_apps = underwriting_apps or {}
 
         self.pipeline_integrity = pipeline_integrity_service
@@ -853,6 +861,9 @@ class ProcessPipelineOrchestrator:
                 'balance_is_unallocated_cash': True,
             }
         account = self.investment_accounts[customer_id]
+        if not created:
+            from services.savings_pipeline_service import mark_unallocated_cash
+            mark_unallocated_cash(account)
         account['index_balance'] = float(account.get('index_balance', 0) or 0) + fanout['index']
         account['bonds_balance'] = float(account.get('bonds_balance', 0) or 0) + fanout['bonds']
         account['crypto_balance'] = float(account.get('crypto_balance', 0) or 0) + fanout['crypto']

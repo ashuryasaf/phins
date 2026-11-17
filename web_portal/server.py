@@ -10256,6 +10256,9 @@ def _apply_direct_savings_distribution(
             'balance_is_unallocated_cash': True,
         }
     inv_account = INVESTMENT_ACCOUNTS[customer_id]
+    if not created:
+        from services.savings_pipeline_service import mark_unallocated_cash
+        mark_unallocated_cash(inv_account)
     inv_account['index_balance'] = float(inv_account.get('index_balance', 0.0) or 0) + index_amount
     inv_account['bonds_balance'] = float(inv_account.get('bonds_balance', 0.0) or 0) + bonds_amount
     inv_account['crypto_balance'] = float(inv_account.get('crypto_balance', 0.0) or 0) + crypto_amount
@@ -11503,8 +11506,13 @@ def process_customer_premium_payment(
     profit_amount = float(premium_split.get('profit_amount') or 0.0)
     company_remainder = float(premium_split.get('company_remainder') or 0.0)
 
+    pipeline_ready = bool(savings_pipeline_enabled and savings_pipeline_service)
     if use_pipeline is None:
-        use_pipeline = bool(savings_pipeline_enabled and savings_pipeline_service)
+        use_pipeline = pipeline_ready
+    elif use_pipeline and not pipeline_ready:
+        # Checkout and auto-pay ask for the pipeline. When that service is
+        # absent the direct writer still lands the savings slice.
+        use_pipeline = False
     allocation_source = 'pipeline' if use_pipeline else 'direct_investment'
 
     pipeline_configured = False

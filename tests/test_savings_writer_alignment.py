@@ -10,7 +10,12 @@ from services.data_integrity_service import DataIntegrityService
 from services.financial_unification_service import resolve_premium_split
 from services.nft_ledger import mint_token
 from services.process_pipeline_orchestrator import ProcessPipelineOrchestrator
-from services.savings_pipeline_service import AllocationStrategy, SavingsPipelineService
+from services.savings_pipeline_service import (
+    AllocationStrategy,
+    SavingsPipelineService,
+    mark_unallocated_cash,
+)
+from services.unified_balance_service import UnifiedBalanceService
 
 
 def test_kernel_savings_excludes_expense_and_profit():
@@ -298,3 +303,129 @@ def test_checkout_payment_uses_kernel_savings_not_the_complement_of_risk():
         unified = getattr(portal, "unified_balance_service", None)
         if unified is not None and hasattr(unified, "algo_trading_balances"):
             unified.algo_trading_balances.pop(customer_id, None)
+
+
+def test_existing_breakdown_stays_visible_after_the_next_credit():
+    """An older row stores the total in balance. The next slice must show up."""
+    service, wallets, investments, algo = _pipeline("CUST-OLD")
+    investments["CUST-OLD"] = {
+        "balance": 1000.0,
+        "index_balance": 600.0,
+        "bonds_balance": 300.0,
+        "crypto_balance": 100.0,
+    }
+    result = service.deposit_to_pipeline("CUST-OLD", 100.0, auto_allocate=True)
+    assert result["success"] is True
+    row = investments["CUST-OLD"]
+    assert row["balance_is_unallocated_cash"] is True
+    invested = row["index_balance"] + row["bonds_balance"] + row["crypto_balance"]
+    assert abs((row["balance"] + invested) - 1065.0) < 0.05
+    assert abs(wallets["CUST-OLD"]["balance"] - 30.0) < 0.05
+    assert abs(algo["CUST-OLD"]["available"] - 5.0) < 0.05
+    reader = UnifiedBalanceService(
+        health_wallets=wallets,
+        investment_accounts=investments,
+        transaction_ledger={},
+        nft_ledger={},
+        record_transaction_func=lambda **kwargs: {},
+        generate_nft_token_func=lambda **kwargs: {},
+    )
+    reader.algo_trading_balances = algo
+    view = reader.get_unified_balance("CUST-OLD")
+    assert abs(view["balances"]["investment_account"]["total_balance"] - (row["balance"] + invested)) < 0.05
+
+
+def test_side_by_side_subs_are_not_peeled_out_of_cash():
+    account = {
+        "balance": 0.0,
+        "index_balance": 39.0,
+        "bonds_balance": 19.5,
+        "crypto_balance": 6.5,
+    }
+    mark_unallocated_cash(account)
+    assert account["balance"] == 0.0
+    assert account["balance_is_unallocated_cash"] is True
+    assert account["index_balance"] == 39.0
+
+
+def test_checkout_without_pipeline_service_still_credits_savings():
+    import web_portal.server as portal
+
+    customer_id = "CUST-NO-PIPE"
+    policy_id = "POL-NO-PIPE"
+    portal.CUSTOMERS[customer_id] = {"id": customer_id, "name": "No Pipe"}
+    portal.POLICIES[policy_id] = {
+        "id": policy_id,
+        "customer_id": customer_id,
+        "status": "active",
+        "annual_premium": 200.0,
+        "monthly_premium": 200.0,
+    }
+    portal.CUSTOMER_ALLOCATIONS.pop(customer_id, None)
+    portal.HEALTH_WALLETS.pop(customer_id, None)
+    portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+    saved_enabled = portal.savings_pipeline_enabled
+    saved_service = portal.savings_pipeline_service
+    portal.savings_pipeline_enabled = False
+    portal.savings_pipeline_service = None
+    try:
+        result = portal.process_customer_premium_payment(
+            customer_id=customer_id,
+            amount=200.0,
+            policy_id=policy_id,
+            use_pipeline=True,
+            notify_customer=False,
+        )
+        assert result["success"] is True
+        assert result["allocation_source"] == "direct_investment"
+        assert result["savings_allocated"] == 100.0
+        assert abs(float(portal.HEALTH_WALLETS[customer_id]["balance"]) - 30.0) < 0.05
+        row = portal.INVESTMENT_ACCOUNTS[customer_id]
+        invested = (
+            float(row["index_balance"]) + float(row["bonds_balance"]) + float(row["crypto_balance"])
+        )
+        assert abs(invested - 65.0) < 0.05
+        assert abs(float(row["balance"])) < 0.02
+    finally:
+        portal.savings_pipeline_enabled = saved_enabled
+        portal.savings_pipeline_service = saved_service
+        portal.CUSTOMERS.pop(customer_id, None)
+        portal.POLICIES.pop(policy_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_orchestrator_algo_credit_lands_in_the_injected_store():
+    shared = {}
+    investments = {
+        "CUST-OLD": {
+            "balance": 1000.0,
+            "index_balance": 600.0,
+            "bonds_balance": 300.0,
+            "crypto_balance": 100.0,
+        }
+    }
+    wallets = {"CUST-OLD": {"balance": 0.0, "transactions": []}}
+    orchestrator = ProcessPipelineOrchestrator(
+        policies={
+            "POL-OLD": {
+                "id": "POL-OLD",
+                "customer_id": "CUST-OLD",
+                "status": "active",
+                "monthly_premium": 200.0,
+                "annual_premium": 2400.0,
+            }
+        },
+        health_wallets=wallets,
+        investment_accounts=investments,
+        algo_balances=shared,
+    )
+    generated = orchestrator.automate_billing_cycle("POL-OLD")
+    paid = orchestrator.process_billing_payment(generated["bill_id"], 200.0)
+    assert paid["success"] is True
+    assert shared["CUST-OLD"]["available"] == 5.0
+    assert orchestrator.algo_balances is shared
+    row = investments["CUST-OLD"]
+    invested = row["index_balance"] + row["bonds_balance"] + row["crypto_balance"]
+    assert row["balance_is_unallocated_cash"] is True
+    assert abs((row["balance"] + invested) - 1065.0) < 0.05

@@ -77,11 +77,34 @@ class AllocationConfig:
     index_pct: float = 60.0           # Index funds (of investment)
     bonds_pct: float = 30.0           # Bonds (of investment)
     crypto_pct: float = 10.0          # Crypto (of investment)
-    
+
     # Algo trading strategy preferences
     algo_momentum_pct: float = 40.0
     algo_mean_reversion_pct: float = 30.0
     algo_dca_pct: float = 30.0
+
+
+def mark_unallocated_cash(account: Dict[str, Any]) -> None:
+    """Make a later sub-balance credit show up on an older investment row.
+
+    Readers add the index, bond, and crypto balances only when
+    ``balance_is_unallocated_cash`` is set. An older row stores the total in
+    ``balance`` and keeps those sub-balances as its breakdown. Peel that
+    breakdown out once so ``balance`` is the unallocated cash and the
+    reported position does not change. When the sub-balances already exceed
+    ``balance``, they already sit beside the cash and are left there.
+    """
+    if not isinstance(account, dict) or account.get('balance_is_unallocated_cash'):
+        return
+    cash = float(account.get('balance', 0) or 0)
+    invested = (
+        float(account.get('index_balance', 0) or 0)
+        + float(account.get('bonds_balance', 0) or 0)
+        + float(account.get('crypto_balance', 0) or 0)
+    )
+    if invested > 0 and invested <= cash + 0.01:
+        account['balance'] = round(cash - invested, 2)
+    account['balance_is_unallocated_cash'] = True
 
 
 @dataclass
@@ -277,6 +300,9 @@ class SavingsPipelineService:
                 'created_at': datetime.now().isoformat(),
                 'balance_is_unallocated_cash': True,
             }
+        else:
+            # Peel a stored-total breakdown before this deposit is added as cash.
+            mark_unallocated_cash(self.investment_accounts[customer_id])
         
         # Update investment account balance (cash portion)
         self.investment_accounts[customer_id]['balance'] = \
