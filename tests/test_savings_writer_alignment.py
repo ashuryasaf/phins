@@ -368,6 +368,95 @@ def test_side_by_side_subs_are_not_peeled_out_of_cash():
     assert account["index_balance"] == 39.0
 
 
+def test_leftover_pipeline_cash_is_not_reduced_by_invested_subs():
+    """Cash that already sits beside invested sub-balances stays put."""
+    account = {
+        "balance": 600.0,
+        "index_balance": 156.0,
+        "bonds_balance": 78.0,
+        "crypto_balance": 26.0,
+        "allocations": [{
+            "type": "pipeline_allocation",
+            "total_amount": 260.0,
+        }],
+    }
+    mark_unallocated_cash(account)
+    assert account["balance"] == 600.0
+    assert account["balance_is_unallocated_cash"] is True
+    assert account["index_balance"] == 156.0
+
+
+def test_contained_breakdown_with_internal_cash_still_peels_once():
+    account = {
+        "balance": 1100.0,
+        "index_balance": 600.0,
+        "bonds_balance": 300.0,
+        "crypto_balance": 100.0,
+    }
+    mark_unallocated_cash(account)
+    assert account["balance"] == 100.0
+    assert account["balance_is_unallocated_cash"] is True
+    assert account["index_balance"] == 600.0
+
+
+def test_later_deposit_keeps_pipeline_cash_beside_invested_subs():
+    service, wallets, investments, algo = _pipeline("CUST-BESIDE")
+    investments["CUST-BESIDE"] = {
+        "balance": 600.0,
+        "index_balance": 156.0,
+        "bonds_balance": 78.0,
+        "crypto_balance": 26.0,
+        "deposits": [],
+        "allocations": [{
+            "type": "pipeline_allocation",
+            "total_amount": 260.0,
+        }],
+    }
+    result = service.deposit_to_pipeline("CUST-BESIDE", 100.0, auto_allocate=True)
+    assert result["success"] is True
+    row = investments["CUST-BESIDE"]
+    invested = row["index_balance"] + row["bonds_balance"] + row["crypto_balance"]
+    assert row["balance_is_unallocated_cash"] is True
+    assert abs(row["balance"] - 600.0) < 0.05
+    assert abs(invested - 325.0) < 0.05
+    assert abs(wallets["CUST-BESIDE"]["balance"] - 30.0) < 0.05
+    assert abs(algo["CUST-BESIDE"]["available"] - 5.0) < 0.05
+
+
+def test_allocate_marks_cash_so_the_new_slice_is_visible():
+    service, wallets, investments, algo = _pipeline("CUST-ALLOC")
+    account = service.get_or_create_account("CUST-ALLOC")
+    account.cash_balance = 100.0
+    investments["CUST-ALLOC"] = {
+        "balance": 600.0,
+        "index_balance": 156.0,
+        "bonds_balance": 78.0,
+        "crypto_balance": 26.0,
+        "allocations": [{
+            "type": "pipeline_allocation",
+            "total_amount": 260.0,
+        }],
+    }
+    result = service.allocate_cash_balance("CUST-ALLOC")
+    assert result["success"] is True
+    row = investments["CUST-ALLOC"]
+    invested = row["index_balance"] + row["bonds_balance"] + row["crypto_balance"]
+    assert row["balance_is_unallocated_cash"] is True
+    assert abs(row["balance"] - 500.0) < 0.05
+    assert abs(invested - 325.0) < 0.05
+    reader = UnifiedBalanceService(
+        health_wallets=wallets,
+        investment_accounts=investments,
+        transaction_ledger={},
+        nft_ledger={},
+        record_transaction_func=lambda **kwargs: {},
+        generate_nft_token_func=lambda **kwargs: {},
+    )
+    reader.algo_trading_balances = algo
+    view = reader.get_unified_balance("CUST-ALLOC")
+    assert abs(view["balances"]["investment_account"]["total_balance"] - 825.0) < 0.05
+
+
 def test_checkout_without_pipeline_service_still_credits_savings():
     import web_portal.server as portal
 

@@ -84,15 +84,61 @@ class AllocationConfig:
     algo_dca_pct: float = 30.0
 
 
+# Credits that add index/bonds/crypto without folding that money into balance.
+_BESIDE_CASH_ALLOCATIONS = frozenset({
+    'pipeline_allocation',
+    'premium_allocation',
+    'premium_savings',
+})
+
+
+def _beside_cash_invested(account: Dict[str, Any]) -> float:
+    """Invested amount already booked beside ``balance``.
+
+    Zero means the row has no beside-cash credit, so the sub-balances can
+    still be a breakdown stored inside ``balance``. A credit whose amount
+    cannot be read returns -1, and the caller leaves the cash untouched.
+    """
+    rows = account.get('allocations') or []
+    if not isinstance(rows, list):
+        return 0.0
+    found = False
+    total = 0.0
+    readable = True
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get('type') or '') not in _BESIDE_CASH_ALLOCATIONS:
+            continue
+        found = True
+        amount = row.get('total_amount', row.get('amount'))
+        try:
+            total += float(amount or 0)
+        except (TypeError, ValueError):
+            readable = False
+    if not found:
+        return 0.0
+    if not readable:
+        return -1.0
+    return total
+
+
 def mark_unallocated_cash(account: Dict[str, Any]) -> None:
     """Make a later sub-balance credit show up on an older investment row.
 
     Readers add the index, bond, and crypto balances only when
     ``balance_is_unallocated_cash`` is set. An older row stores the total in
     ``balance`` and keeps those sub-balances as its breakdown. Peel that
-    breakdown out once so ``balance`` is the unallocated cash and the
-    reported position does not change. When the sub-balances already exceed
-    ``balance``, they already sit beside the cash and are left there.
+    contained breakdown out once so ``balance`` is the unallocated cash and
+    the reported position does not change.
+
+    Pipeline cash is different. ``balance`` is the leftover cash and the
+    sub-balances sit beside it, including when that cash is larger than the
+    invested amount. A ``pipeline_allocation``, ``premium_allocation``, or
+    ``premium_savings`` credit records that booking. Those amounts stay in
+    the sub-balances. Only a breakdown that is still fully inside ``balance``
+    is peeled. When the sub-balances already exceed ``balance``, they already
+    sit beside the cash and are left there.
     """
     if not isinstance(account, dict) or account.get('balance_is_unallocated_cash'):
         return
@@ -102,8 +148,13 @@ def mark_unallocated_cash(account: Dict[str, Any]) -> None:
         + float(account.get('bonds_balance', 0) or 0)
         + float(account.get('crypto_balance', 0) or 0)
     )
-    if invested > 0 and invested <= cash + 0.01:
-        account['balance'] = round(cash - invested, 2)
+    beside = _beside_cash_invested(account)
+    if beside < 0:
+        contained = 0.0
+    else:
+        contained = invested if beside <= 0 else max(0.0, invested - beside)
+    if contained > 0.01 and contained <= cash + 0.01:
+        account['balance'] = round(cash - contained, 2)
     account['balance_is_unallocated_cash'] = True
 
 
@@ -504,8 +555,13 @@ class SavingsPipelineService:
         algo_balances = self.unified_balance.algo_trading_balances if self.unified_balance else {}
         
         # CRITICAL: Deduct total allocation from INVESTMENT_ACCOUNTS cash balance
-        # Since deposit added to this balance, allocation must deduct from it
+        # Since deposit added to this balance, allocation must deduct from it.
+        # Mark the row first so a contained breakdown becomes unallocated cash
+        # and a pipeline row that already keeps invested money beside cash is
+        # not peeled. The new sub-balance credit then shows up for flag-aware
+        # readers.
         if customer_id in investments:
+            mark_unallocated_cash(investments[customer_id])
             old_balance = float(investments[customer_id].get('balance', 0) or 0)
             # Deduct full allocation (we'll add back investment portion to sub-balances)
             investments[customer_id]['balance'] = max(0, old_balance - allocate_amount)
