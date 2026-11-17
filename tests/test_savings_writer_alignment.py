@@ -13,6 +13,7 @@ from services.process_pipeline_orchestrator import ProcessPipelineOrchestrator
 from services.savings_pipeline_service import (
     AllocationStrategy,
     SavingsPipelineService,
+    bounded_distribution,
     mark_unallocated_cash,
 )
 from services.unified_balance_service import UnifiedBalanceService
@@ -333,6 +334,25 @@ def test_existing_breakdown_stays_visible_after_the_next_credit():
     reader.algo_trading_balances = algo
     view = reader.get_unified_balance("CUST-OLD")
     assert abs(view["balances"]["investment_account"]["total_balance"] - (row["balance"] + invested)) < 0.05
+
+
+def test_unbounded_custom_split_cannot_mint_more_than_collected_cash():
+    assert bounded_distribution(10000, 0, 0) is None
+    assert bounded_distribution(40, 50, 10) == (40.0, 50.0, 10.0)
+    service, wallets, investments, algo = _pipeline("CUST-WILD")
+    account = service.get_or_create_account("CUST-WILD")
+    account.allocation_strategy = AllocationStrategy.CUSTOM
+    account.allocation_config.wallet_pct = 10000.0
+    account.allocation_config.investment_pct = 10000.0
+    account.allocation_config.algo_trading_pct = 10000.0
+    result = service.deposit_to_pipeline("CUST-WILD", 100.0, auto_allocate=True)
+    assert result["success"] is True
+    assert account.wallet_balance == 30.0
+    assert account.investment_balance == 65.0
+    assert account.algo_trading_balance == 5.0
+    assert wallets["CUST-WILD"]["balance"] == 30.0
+    assert investments["CUST-WILD"]["balance"] == 0.0
+    assert algo["CUST-WILD"]["available"] == 5.0
 
 
 def test_side_by_side_subs_are_not_peeled_out_of_cash():

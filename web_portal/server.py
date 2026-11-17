@@ -10190,31 +10190,49 @@ def savings_distribution_percents(customer_id: str, pipeline_account=None) -> Di
     that itself stores wallet, investment, and algo percents is next.
     Otherwise the canonical 30/65/5 and 60/30/10 default.
     """
+    from services.savings_pipeline_service import bounded_distribution
+
     default = DEFAULT_CUSTOMER_ALLOCATION
+    canonical_detail = (
+        default['index_pct'], default['bonds_pct'], default['crypto_pct']
+    )
+
+    def _row(wallet, investment, algo, index, bonds, crypto):
+        split = bounded_distribution(wallet, investment, algo)
+        if split is None:
+            return None
+        detail = bounded_distribution(index, bonds, crypto) or canonical_detail
+        return {
+            'wallet_pct': split[0],
+            'investment_pct': split[1],
+            'algo_pct': split[2],
+            'index_pct': detail[0],
+            'bonds_pct': detail[1],
+            'crypto_pct': detail[2],
+        }
+
     if pipeline_account is not None:
         strategy = getattr(pipeline_account, 'allocation_strategy', None)
         strategy_value = getattr(strategy, 'value', strategy)
         if str(strategy_value or '').lower() == 'custom':
             config = pipeline_account.allocation_config
-            return {
-                'wallet_pct': float(config.wallet_pct),
-                'investment_pct': float(config.investment_pct),
-                'algo_pct': float(config.algo_trading_pct),
-                'index_pct': float(config.index_pct),
-                'bonds_pct': float(config.bonds_pct),
-                'crypto_pct': float(config.crypto_pct),
-            }
+            custom = _row(
+                config.wallet_pct, config.investment_pct, config.algo_trading_pct,
+                config.index_pct, config.bonds_pct, config.crypto_pct,
+            )
+            if custom is not None:
+                return custom
     saved = CUSTOMER_ALLOCATIONS.get(customer_id) or {}
     if all(saved.get(key) is not None for key in ('wallet_pct', 'investment_pct', 'algo_pct')):
         prefs = get_customer_allocation(customer_id)
-        return {
-            'wallet_pct': float(prefs['wallet_pct']),
-            'investment_pct': float(prefs['investment_pct']),
-            'algo_pct': float(prefs['algo_pct']),
-            'index_pct': float(prefs.get('index_pct', default['index_pct'])),
-            'bonds_pct': float(prefs.get('bonds_pct', default['bonds_pct'])),
-            'crypto_pct': float(prefs.get('crypto_pct', default['crypto_pct'])),
-        }
+        saved_row = _row(
+            prefs['wallet_pct'], prefs['investment_pct'], prefs['algo_pct'],
+            prefs.get('index_pct', default['index_pct']),
+            prefs.get('bonds_pct', default['bonds_pct']),
+            prefs.get('crypto_pct', default['crypto_pct']),
+        )
+        if saved_row is not None:
+            return saved_row
     return {
         'wallet_pct': default['wallet_pct'],
         'investment_pct': default['investment_pct'],
@@ -11524,7 +11542,7 @@ def process_customer_premium_payment(
 
     if use_pipeline and savings_pipeline_service:
         try:
-            from services.savings_pipeline_service import AllocationStrategy
+            from services.savings_pipeline_service import AllocationStrategy, bounded_distribution
 
             pipeline_account = savings_pipeline_service.get_or_create_account(customer_id)
             saved = CUSTOMER_ALLOCATIONS.get(customer_id) or {}
@@ -11533,20 +11551,28 @@ def process_customer_premium_payment(
                 for key in ('wallet_pct', 'investment_pct', 'algo_pct')
             )
             # A default 30/65/5 is not labeled CUSTOM. An existing CUSTOM
-            # allocation is left as the customer set it. A saved row that
-            # stores its own percents is applied once.
+            # allocation is left as the customer set it. A saved row is
+            # applied once, and only when it is a 0–100 split that sums to 100.
             if (
                 pipeline_account.allocation_strategy != AllocationStrategy.CUSTOM
                 and saved_split
             ):
                 prefs = get_customer_allocation(customer_id)
-                pipeline_account.allocation_strategy = AllocationStrategy.CUSTOM
-                pipeline_account.allocation_config.wallet_pct = prefs['wallet_pct']
-                pipeline_account.allocation_config.investment_pct = prefs['investment_pct']
-                pipeline_account.allocation_config.algo_trading_pct = prefs['algo_pct']
-                pipeline_account.allocation_config.index_pct = prefs['index_pct']
-                pipeline_account.allocation_config.bonds_pct = prefs['bonds_pct']
-                pipeline_account.allocation_config.crypto_pct = prefs['crypto_pct']
+                bounded = bounded_distribution(
+                    prefs['wallet_pct'], prefs['investment_pct'], prefs['algo_pct']
+                )
+                if bounded is not None:
+                    pipeline_account.allocation_strategy = AllocationStrategy.CUSTOM
+                    pipeline_account.allocation_config.wallet_pct = bounded[0]
+                    pipeline_account.allocation_config.investment_pct = bounded[1]
+                    pipeline_account.allocation_config.algo_trading_pct = bounded[2]
+                    detail = bounded_distribution(
+                        prefs['index_pct'], prefs['bonds_pct'], prefs['crypto_pct']
+                    )
+                    if detail is not None:
+                        pipeline_account.allocation_config.index_pct = detail[0]
+                        pipeline_account.allocation_config.bonds_pct = detail[1]
+                        pipeline_account.allocation_config.crypto_pct = detail[2]
             pipeline_configured = True
         except Exception as config_err:
             pipeline_config_error = str(config_err)
@@ -54270,22 +54296,28 @@ For claims or questions, please contact:
                             # Create pipeline account
                             account = savings_pipeline_service.get_or_create_account(customer_id)
                             account.risk_level = risk_level
-                            wallet_pct = float(dist.get('wallet_pct', 30) or 30)
-                            investment_pct = float(dist.get('investment_pct', 65) or 65)
-                            algo_pct = float(dist.get('algo_trading_pct', 5) or 5)
+                            from services.savings_pipeline_service import bounded_distribution
+                            bounded = bounded_distribution(
+                                dist.get('wallet_pct', 30),
+                                dist.get('investment_pct', 65),
+                                dist.get('algo_trading_pct', 5),
+                            )
                             explicit_distribution = (
-                                abs(wallet_pct - 30.0) > 0.01
-                                or abs(investment_pct - 65.0) > 0.01
-                                or abs(algo_pct - 5.0) > 0.01
+                                bounded is not None
+                                and (
+                                    abs(bounded[0] - 30.0) > 0.01
+                                    or abs(bounded[1] - 65.0) > 0.01
+                                    or abs(bounded[2] - 5.0) > 0.01
+                                )
                             )
                             if (
                                 explicit_distribution
                                 and account.allocation_strategy != AllocationStrategy.CUSTOM
                             ):
                                 account.allocation_strategy = AllocationStrategy.CUSTOM
-                                account.allocation_config.wallet_pct = wallet_pct
-                                account.allocation_config.investment_pct = investment_pct
-                                account.allocation_config.algo_trading_pct = algo_pct
+                                account.allocation_config.wallet_pct = bounded[0]
+                                account.allocation_config.investment_pct = bounded[1]
+                                account.allocation_config.algo_trading_pct = bounded[2]
                             
                             # One sealed customer row. record_transaction mints the NFT;
                             # a separate mint with the wrong signature used to
@@ -55609,7 +55641,9 @@ For claims or questions, please contact:
                         # Check if customer has allocation preferences from application
                         phins_allocation = app.get('phins_allocation') or CUSTOMER_ALLOCATIONS.get(customer_id)
                         if phins_allocation:
-                            from services.savings_pipeline_service import AllocationStrategy, RiskLevel
+                            from services.savings_pipeline_service import (
+                                AllocationStrategy, RiskLevel, bounded_distribution,
+                            )
                             
                             protection_pct = phins_allocation.get('protection_pct', 50)
                             if protection_pct >= 40:
@@ -55625,22 +55659,27 @@ For claims or questions, please contact:
                             pipeline_account.risk_level = risk_level
                             
                             dist = phins_allocation.get('distribution') or {}
-                            wallet_pct = float(dist.get('wallet_pct', 30) or 30)
-                            investment_pct = float(dist.get('investment_pct', 65) or 65)
-                            algo_pct = float(dist.get('algo_trading_pct', 5) or 5)
+                            bounded = bounded_distribution(
+                                dist.get('wallet_pct', 30),
+                                dist.get('investment_pct', 65),
+                                dist.get('algo_trading_pct', 5),
+                            )
                             explicit_distribution = (
-                                abs(wallet_pct - 30.0) > 0.01
-                                or abs(investment_pct - 65.0) > 0.01
-                                or abs(algo_pct - 5.0) > 0.01
+                                bounded is not None
+                                and (
+                                    abs(bounded[0] - 30.0) > 0.01
+                                    or abs(bounded[1] - 65.0) > 0.01
+                                    or abs(bounded[2] - 5.0) > 0.01
+                                )
                             )
                             if (
                                 explicit_distribution
                                 and pipeline_account.allocation_strategy != AllocationStrategy.CUSTOM
                             ):
                                 pipeline_account.allocation_strategy = AllocationStrategy.CUSTOM
-                                pipeline_account.allocation_config.wallet_pct = wallet_pct
-                                pipeline_account.allocation_config.investment_pct = investment_pct
-                                pipeline_account.allocation_config.algo_trading_pct = algo_pct
+                                pipeline_account.allocation_config.wallet_pct = bounded[0]
+                                pipeline_account.allocation_config.investment_pct = bounded[1]
+                                pipeline_account.allocation_config.algo_trading_pct = bounded[2]
                             
                             # Record pipeline initialization
                             record_transaction(

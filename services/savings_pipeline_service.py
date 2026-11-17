@@ -107,6 +107,25 @@ def mark_unallocated_cash(account: Dict[str, Any]) -> None:
     account['balance_is_unallocated_cash'] = True
 
 
+def bounded_distribution(wallet_pct: Any, investment_pct: Any, algo_pct: Any):
+    """Return a split only when it cannot mint more than the cash collected.
+
+    Each percent must be finite and between 0 and 100, and the three must
+    sum to 100. A caller value such as 10000 is refused.
+    """
+    try:
+        parts = (float(wallet_pct), float(investment_pct), float(algo_pct))
+    except (TypeError, ValueError):
+        return None
+    if any(part != part or part == float('inf') or part == float('-inf') for part in parts):
+        return None
+    if any(part < 0.0 or part > 100.0 for part in parts):
+        return None
+    if abs((parts[0] + parts[1] + parts[2]) - 100.0) > 0.05:
+        return None
+    return parts
+
+
 @dataclass
 class SavingsPipelineAccount:
     """Customer's savings pipeline account"""
@@ -413,10 +432,15 @@ class SavingsPipelineService:
         # Cash moves on the canonical 30/65/5 split unless the customer
         # already has an explicit CUSTOM allocation. The AI mix stays on
         # the recommendation path and does not move this deposit.
+        config = AllocationConfig()
         if account.allocation_strategy == AllocationStrategy.CUSTOM:
-            config = account.allocation_config
-        else:
-            config = AllocationConfig()
+            custom = bounded_distribution(
+                account.allocation_config.wallet_pct,
+                account.allocation_config.investment_pct,
+                account.allocation_config.algo_trading_pct,
+            )
+            if custom is not None:
+                config = account.allocation_config
         use_ai = False
         
         # Calculate allocations
@@ -424,10 +448,15 @@ class SavingsPipelineService:
         investment_amount = allocate_amount * (config.investment_pct / 100)
         algo_amount = allocate_amount * (config.algo_trading_pct / 100)
         
-        # Investment breakdown
-        index_amount = investment_amount * (config.index_pct / 100)
-        bonds_amount = investment_amount * (config.bonds_pct / 100)
-        crypto_amount = investment_amount * (config.crypto_pct / 100)
+        # Investment breakdown. An unbounded sub-split cannot enlarge the slice.
+        detail = bounded_distribution(config.index_pct, config.bonds_pct, config.crypto_pct)
+        if detail is None:
+            index_pct, bonds_pct, crypto_pct = 60.0, 30.0, 10.0
+        else:
+            index_pct, bonds_pct, crypto_pct = detail
+        index_amount = investment_amount * (index_pct / 100)
+        bonds_amount = investment_amount * (bonds_pct / 100)
+        crypto_amount = investment_amount * (crypto_pct / 100)
         
         # Deduct from cash balance
         account.cash_balance -= allocate_amount
