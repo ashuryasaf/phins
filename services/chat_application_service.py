@@ -2696,8 +2696,8 @@ class ChatPolicyApplicationService:
             "phins_allocation": {
                 "protection_pct": int(round(100 / (1 + savings_rate))) if savings_rate else 100,
                 "savings_pct": 100 - (int(round(100 / (1 + savings_rate))) if savings_rate else 100),
-                "distribution": {"wallet_pct": 15, "investment_pct": 60,
-                                 "algo_trading_pct": 25},
+                "distribution": {"wallet_pct": 30, "investment_pct": 65,
+                                 "algo_trading_pct": 5},
             },
             "payment": {
                 "card_number": card.get("card_number") or "",

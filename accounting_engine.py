@@ -156,6 +156,9 @@ class PremiumAllocation:
     notes: str = ""
     created_date: datetime = field(default_factory=datetime.now)
     disclaimers_acknowledged: List[DisclaimerType] = field(default_factory=lambda: cast(List[DisclaimerType], []))
+    # When set, savings is the kernel savings component. The remainder
+    # (expense and profit) is not folded back into savings.
+    preserve_savings_percentage: bool = False
     
     def __post_init__(self):
         """Calculate risk and savings amounts, validate percentages, set interest rate"""
@@ -166,8 +169,13 @@ class PremiumAllocation:
         if self.savings_percentage < Decimal('0') or self.savings_percentage > Decimal('100'):
             raise ValueError(f"Savings percentage must be between 0 and 100, got {self.savings_percentage}")
 
-        # Auto-calculate if savings_percentage is not set correctly (tolerance 0.01)
-        if (self.risk_percentage + self.savings_percentage - Decimal('100')).copy_abs() > Decimal('0.01'):
+        # Callers that only pass a risk percentage still get savings as the
+        # complement. An explicit kernel savings percentage is kept, so
+        # expense and profit are not booked as savings.
+        if (
+            not self.preserve_savings_percentage
+            and (self.risk_percentage + self.savings_percentage - Decimal('100')).copy_abs() > Decimal('0.01')
+        ):
             self.savings_percentage = Decimal('100') - self.risk_percentage
         
         # Calculate premium amounts
@@ -510,7 +518,8 @@ By selecting an investment route, you confirm you understand the risks and benef
     def create_allocation(self, bill_id: str, policy_id: str, customer_id: str,
                          total_premium: Decimal, risk_percentage: Decimal,
                          investment_route: InvestmentRoute = InvestmentRoute.BASIC_SAVINGS,
-                         allocation_notes: str = "") -> PremiumAllocation:
+                         allocation_notes: str = "",
+                         savings_percentage: Optional[Decimal] = None) -> PremiumAllocation:
         """
         Create premium allocation with risk/savings split and investment route choice
         
@@ -522,12 +531,17 @@ By selecting an investment route, you confirm you understand the risks and benef
             risk_percentage: Percentage allocated to risk (0-100)
             investment_route: Client's chosen investment route (Savings, Bonds, Equities, Mixed)
             allocation_notes: Optional notes
+            savings_percentage: Kernel savings share. When omitted, savings is
+                the complement of risk. When supplied, expense and profit are
+                not folded into savings.
         
         Returns:
             Created PremiumAllocation object
         """
         allocation_id = f"ALLOC-{len(self.allocations) + 1:06d}"
-        savings_percentage = Decimal(100) - Decimal(str(risk_percentage))
+        preserve_savings = savings_percentage is not None
+        if savings_percentage is None:
+            savings_percentage = Decimal(100) - Decimal(str(risk_percentage))
         
         allocation = PremiumAllocation(
             allocation_id=allocation_id,
@@ -537,9 +551,10 @@ By selecting an investment route, you confirm you understand the risks and benef
             allocation_date=date.today(),
             total_premium=Decimal(str(total_premium)),
             risk_percentage=Decimal(str(risk_percentage)),
-            savings_percentage=savings_percentage,
+            savings_percentage=Decimal(str(savings_percentage)),
             investment_route=investment_route,
-            notes=allocation_notes
+            notes=allocation_notes,
+            preserve_savings_percentage=preserve_savings,
         )
         
         self.allocations[allocation_id] = allocation

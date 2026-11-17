@@ -63,20 +63,113 @@ class RiskLevel(str, Enum):
 
 @dataclass
 class AllocationConfig:
-    """Configuration for fund allocation"""
-    wallet_pct: float = 15.0          # Emergency fund
-    investment_pct: float = 60.0       # Long-term investments
-    algo_trading_pct: float = 25.0     # Automated trading
+    """Configuration for fund allocation.
+
+    Defaults are the canonical savings distribution (30/65/5, then 60/30/10).
+    The moderate AI mix (15/60/25) is a recommendation only and is not applied
+    to a fresh deposit.
+    """
+    wallet_pct: float = 30.0          # Health wallet
+    investment_pct: float = 65.0      # Investment portfolio
+    algo_trading_pct: float = 5.0     # Algo trading
     
     # Investment breakdown
-    index_pct: float = 50.0           # Index funds (of investment)
+    index_pct: float = 60.0           # Index funds (of investment)
     bonds_pct: float = 30.0           # Bonds (of investment)
-    crypto_pct: float = 20.0          # Crypto (of investment)
-    
+    crypto_pct: float = 10.0          # Crypto (of investment)
+
     # Algo trading strategy preferences
     algo_momentum_pct: float = 40.0
     algo_mean_reversion_pct: float = 30.0
     algo_dca_pct: float = 30.0
+
+
+def _safe_amount(value: Any) -> float:
+    try:
+        amount = float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if amount != amount or amount == float('inf') or amount == float('-inf'):
+        return 0.0
+    return amount
+
+
+def _balance_includes_holdings(account: Dict[str, Any], cash: float, invested: float) -> bool:
+    """True when the sub-balances are already counted inside ``balance``."""
+    if invested <= 0 or invested > cash + 0.01:
+        return False
+    deposit_breakdown = 0.0
+    deposits = account.get('deposits') or []
+    if isinstance(deposits, list):
+        for row in deposits:
+            if not isinstance(row, dict):
+                continue
+            deposit_breakdown += (
+                _safe_amount(row.get('index_amount'))
+                + _safe_amount(row.get('bonds_amount'))
+                + _safe_amount(row.get('crypto_amount'))
+            )
+    if deposit_breakdown > 0 and abs(deposit_breakdown - invested) <= 0.01:
+        return True
+    if abs(invested - cash) > 0.01:
+        return False
+    allocated = 0.0
+    allocations = account.get('allocations') or []
+    if isinstance(allocations, list):
+        for row in allocations:
+            if not isinstance(row, dict):
+                continue
+            if row.get('total_amount') is not None:
+                allocated += _safe_amount(row.get('total_amount'))
+            elif row.get('index') is not None or row.get('index_amount') is not None:
+                allocated += _safe_amount(row.get('amount'))
+    if allocated > 0 and allocated + 0.01 >= invested:
+        return False
+    return True
+
+
+def mark_unallocated_cash(account: Dict[str, Any]) -> None:
+    """Make a later sub-balance credit show up on an older investment row.
+
+    Readers add the index, bond, and crypto balances only when
+    ``balance_is_unallocated_cash`` is set. Peel a stored total once, so
+    ``balance`` becomes the unallocated cash and the reported position does
+    not change. A stored total repeats itself as the sub-balances, or repeats
+    the index, bond, and crypto amounts already on its deposits. Leftover
+    cash that already sits beside holdings is not part of that total, so it
+    is not subtracted. Holdings larger than ``balance`` are that same
+    side-by-side shape and are left there.
+    """
+    if not isinstance(account, dict) or account.get('balance_is_unallocated_cash'):
+        return
+    cash = float(account.get('balance', 0) or 0)
+    invested = (
+        float(account.get('index_balance', 0) or 0)
+        + float(account.get('bonds_balance', 0) or 0)
+        + float(account.get('crypto_balance', 0) or 0)
+    )
+    if _balance_includes_holdings(account, cash, invested):
+        account['balance'] = round(max(0.0, cash - invested), 2)
+    account['balance_is_unallocated_cash'] = True
+
+
+def bounded_distribution(wallet_pct: Any, investment_pct: Any, algo_pct: Any):
+    """Return a split only when it cannot mint more than the cash collected.
+
+    Each percent must be finite and between 0 and 100, and the three must
+    sum to 100. A caller value such as 10000 is refused.
+    """
+    try:
+        parts = (float(wallet_pct), float(investment_pct), float(algo_pct))
+    except (TypeError, ValueError):
+        return None
+    if any(part != part or part == float('inf') or part == float('-inf') for part in parts):
+        return None
+    if any(part < 0.0 or part > 100.0 for part in parts):
+        return None
+    if abs((parts[0] + parts[1] + parts[2]) - 100.0) > 0.05:
+        return None
+    return parts
 
 
 @dataclass
@@ -201,8 +294,9 @@ class SavingsPipelineService:
         """Create a new savings pipeline account for a customer."""
         account_id = f"PIPE-{customer_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         
-        # Get AI-recommended allocation based on risk level
-        config = self._get_ai_allocation_config(risk_level, strategy)
+        # Fresh accounts take the canonical 30/65/5 split. An explicit CUSTOM
+        # allocation is the only one a later deposit will keep.
+        config = AllocationConfig()
         
         account = SavingsPipelineAccount(
             customer_id=customer_id,
@@ -268,8 +362,12 @@ class SavingsPipelineService:
                 'bonds_balance': 0,
                 'crypto_balance': 0,
                 'deposits': [],
-                'created_at': datetime.now().isoformat()
+                'created_at': datetime.now().isoformat(),
+                'balance_is_unallocated_cash': True,
             }
+        else:
+            # Peel a stored-total breakdown before this deposit is added as cash.
+            mark_unallocated_cash(self.investment_accounts[customer_id])
         
         # Update investment account balance (cash portion)
         self.investment_accounts[customer_id]['balance'] = \
@@ -377,21 +475,34 @@ class SavingsPipelineService:
         if allocate_amount > account.cash_balance:
             return {'success': False, 'error': 'Insufficient cash balance'}
         
-        # Get allocation config (AI-optimized or user-defined)
-        if use_ai and account.allocation_strategy == AllocationStrategy.AI_OPTIMIZED:
-            config = self._get_ai_allocation_config(account.risk_level, account.allocation_strategy)
-        else:
-            config = account.allocation_config
+        # Cash moves on the canonical 30/65/5 split unless the customer
+        # already has an explicit CUSTOM allocation. The AI mix stays on
+        # the recommendation path and does not move this deposit.
+        config = AllocationConfig()
+        if account.allocation_strategy == AllocationStrategy.CUSTOM:
+            custom = bounded_distribution(
+                account.allocation_config.wallet_pct,
+                account.allocation_config.investment_pct,
+                account.allocation_config.algo_trading_pct,
+            )
+            if custom is not None:
+                config = account.allocation_config
+        use_ai = False
         
         # Calculate allocations
         wallet_amount = allocate_amount * (config.wallet_pct / 100)
         investment_amount = allocate_amount * (config.investment_pct / 100)
         algo_amount = allocate_amount * (config.algo_trading_pct / 100)
         
-        # Investment breakdown
-        index_amount = investment_amount * (config.index_pct / 100)
-        bonds_amount = investment_amount * (config.bonds_pct / 100)
-        crypto_amount = investment_amount * (config.crypto_pct / 100)
+        # Investment breakdown. An unbounded sub-split cannot enlarge the slice.
+        detail = bounded_distribution(config.index_pct, config.bonds_pct, config.crypto_pct)
+        if detail is None:
+            index_pct, bonds_pct, crypto_pct = 60.0, 30.0, 10.0
+        else:
+            index_pct, bonds_pct, crypto_pct = detail
+        index_amount = investment_amount * (index_pct / 100)
+        bonds_amount = investment_amount * (bonds_pct / 100)
+        crypto_amount = investment_amount * (crypto_pct / 100)
         
         # Deduct from cash balance
         account.cash_balance -= allocate_amount
@@ -423,8 +534,8 @@ class SavingsPipelineService:
             amount=allocate_amount,
             source="cash_balance",
             destination="multi",
-            description=f"AI-optimized allocation: ${allocate_amount:.2f}",
-            ai_recommended=use_ai,
+            description=f"Savings allocation: ${allocate_amount:.2f}",
+            ai_recommended=account.allocation_strategy == AllocationStrategy.CUSTOM and use_ai,
             allocation_breakdown=allocation_breakdown
         )
         self.transactions.append(tx)
@@ -439,8 +550,13 @@ class SavingsPipelineService:
         algo_balances = self.unified_balance.algo_trading_balances if self.unified_balance else {}
         
         # CRITICAL: Deduct total allocation from INVESTMENT_ACCOUNTS cash balance
-        # Since deposit added to this balance, allocation must deduct from it
+        # Since deposit added to this balance, allocation must deduct from it.
+        # Mark the row first so a contained breakdown becomes unallocated cash
+        # and a pipeline row that already keeps invested money beside cash is
+        # not peeled. The new sub-balance credit then shows up for flag-aware
+        # readers.
         if customer_id in investments:
+            mark_unallocated_cash(investments[customer_id])
             old_balance = float(investments[customer_id].get('balance', 0) or 0)
             # Deduct full allocation (we'll add back investment portion to sub-balances)
             investments[customer_id]['balance'] = max(0, old_balance - allocate_amount)
@@ -487,7 +603,8 @@ class SavingsPipelineService:
                         'crypto_balance': 0,  # Invested in crypto
                         'deposits': [],
                         'allocations': [],
-                        'created_at': datetime.now().isoformat()
+                        'created_at': datetime.now().isoformat(),
+                        'balance_is_unallocated_cash': True,
                     }
                 inv_acc = investments[customer_id]
                 # NOTE: Don't add to 'balance' - that's cash. Add to sub-balances only.

@@ -409,7 +409,9 @@ class TestBillingAutomation:
         result = orchestrator.automate_billing_cycle('POL-001')
         assert result['success'] is True
         assert result['bill']['amount_due'] == 500.0
-        assert result['premium_breakdown']['savings_percentage'] == 25.0
+        assert result['premium_breakdown']['savings_percentage'] == 50.0
+        assert result['premium_breakdown']['split_label'] == 'default'
+        assert result['premium_breakdown']['health_wallet_amount'] == 75.0
 
     def test_billing_inactive_policy(self, orchestrator):
         orchestrator.policies['POL-INACTIVE'] = {'status': 'cancelled'}

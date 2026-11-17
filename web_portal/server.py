@@ -8963,6 +8963,7 @@ def record_premium_cash_books(
     source_tx_id: Optional[str] = None,
     unbilled_amount: float = 0.0,
     bill_payments: Optional[Dict[str, float]] = None,
+    policy: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Post collected premium cash into the shared accounting book.
 
@@ -8973,7 +8974,8 @@ def record_premium_cash_books(
     """
     try:
         from services.financial_unification_service import post_collected_premiums_to_accounting
-        policy = POLICIES.get(policy_id) if policy_id else None
+        if policy is None and policy_id:
+            policy = POLICIES.get(policy_id)
         fallback = 100.0
         try:
             fallback = float(get_customer_allocation(customer_id).get('risk_pct', 100))
@@ -10140,13 +10142,16 @@ def get_real_time_status() -> Dict[str, Any]:
 # ========== END REAL-TIME CONNECTIONS CONFIG ==========
 
 
-# Canonical customer premium split — matches the actuarial kernel default
-# (savings_rate=0.5 under RISK_PREMIUM_MARKUP / get_customer_allocation).
+# Cash default when a policy has no savings pin. This is not the kernel
+# savings_rate: under RISK_PREMIUM_MARKUP that rate is a share of the risk
+# premium, and expense and profit sit on top. A missing pin is labeled
+# "default", not a recorded historical split. The savings component, once
+# known, is distributed 30/65/5 and the investment piece 60/30/10.
 # The old dashboard assumption of 25% savings / 75% risk is retired.
 DEFAULT_CUSTOMER_ALLOCATION: Dict[str, float] = {
-    # Premium split
-    'savings_pct': 50.0,      # % of premium to savings (kernel default)
-    'risk_pct': 50.0,         # % of premium to risk coverage (kernel default)
+    # Premium split used only when the policy has no savings pin
+    'savings_pct': 50.0,      # % of premium addressed to savings (default)
+    'risk_pct': 50.0,         # % of premium labeled risk (default)
 
     # Savings distribution (must sum to 100%)
     'wallet_pct': 30.0,       # % of savings to Health Wallet
@@ -10176,6 +10181,154 @@ def get_customer_allocation(customer_id: str) -> Dict[str, float]:
     if customer_id in CUSTOMER_ALLOCATIONS:
         return {**default_allocation, **CUSTOMER_ALLOCATIONS[customer_id]}
     return default_allocation
+
+
+def savings_distribution_percents(customer_id: str, pipeline_account=None) -> Dict[str, float]:
+    """Percents applied to a savings component, not to the whole premium.
+
+    An explicit pipeline CUSTOM allocation is kept. A saved customer row
+    that itself stores wallet, investment, and algo percents is next.
+    Otherwise the canonical 30/65/5 and 60/30/10 default.
+    """
+    from services.savings_pipeline_service import bounded_distribution
+
+    default = DEFAULT_CUSTOMER_ALLOCATION
+    canonical_detail = (
+        default['index_pct'], default['bonds_pct'], default['crypto_pct']
+    )
+
+    def _row(wallet, investment, algo, index, bonds, crypto):
+        split = bounded_distribution(wallet, investment, algo)
+        if split is None:
+            return None
+        detail = bounded_distribution(index, bonds, crypto) or canonical_detail
+        return {
+            'wallet_pct': split[0],
+            'investment_pct': split[1],
+            'algo_pct': split[2],
+            'index_pct': detail[0],
+            'bonds_pct': detail[1],
+            'crypto_pct': detail[2],
+        }
+
+    if pipeline_account is not None:
+        strategy = getattr(pipeline_account, 'allocation_strategy', None)
+        strategy_value = getattr(strategy, 'value', strategy)
+        if str(strategy_value or '').lower() == 'custom':
+            config = pipeline_account.allocation_config
+            custom = _row(
+                config.wallet_pct, config.investment_pct, config.algo_trading_pct,
+                config.index_pct, config.bonds_pct, config.crypto_pct,
+            )
+            if custom is not None:
+                return custom
+    saved = CUSTOMER_ALLOCATIONS.get(customer_id) or {}
+    if all(saved.get(key) is not None for key in ('wallet_pct', 'investment_pct', 'algo_pct')):
+        prefs = get_customer_allocation(customer_id)
+        saved_row = _row(
+            prefs['wallet_pct'], prefs['investment_pct'], prefs['algo_pct'],
+            prefs.get('index_pct', default['index_pct']),
+            prefs.get('bonds_pct', default['bonds_pct']),
+            prefs.get('crypto_pct', default['crypto_pct']),
+        )
+        if saved_row is not None:
+            return saved_row
+    return {
+        'wallet_pct': default['wallet_pct'],
+        'investment_pct': default['investment_pct'],
+        'algo_pct': default['algo_pct'],
+        'index_pct': default['index_pct'],
+        'bonds_pct': default['bonds_pct'],
+        'crypto_pct': default['crypto_pct'],
+    }
+
+
+def _apply_direct_savings_distribution(
+    customer_id: str,
+    savings_amount: float,
+    percents: Dict[str, float],
+    now: datetime,
+) -> Dict[str, float]:
+    """Land a savings component when the pipeline service is not used.
+
+    ``balance`` stays unallocated cash. The investment slice is written only
+    to the sub-balances. Wallet and algo take their shares.
+    """
+    wallet_amount = round(savings_amount * percents['wallet_pct'] / 100.0, 2)
+    investment_amount = round(savings_amount * percents['investment_pct'] / 100.0, 2)
+    algo_amount = round(savings_amount - wallet_amount - investment_amount, 2)
+    index_amount = round(investment_amount * percents['index_pct'] / 100.0, 2)
+    bonds_amount = round(investment_amount * percents['bonds_pct'] / 100.0, 2)
+    crypto_amount = round(investment_amount - index_amount - bonds_amount, 2)
+
+    created = customer_id not in INVESTMENT_ACCOUNTS
+    if created:
+        INVESTMENT_ACCOUNTS[customer_id] = {
+            'balance': 0.0,
+            'index_balance': 0.0,
+            'bonds_balance': 0.0,
+            'crypto_balance': 0.0,
+            'deposits': [],
+            'allocations': [],
+            'created_at': now.isoformat(),
+            'balance_is_unallocated_cash': True,
+        }
+    inv_account = INVESTMENT_ACCOUNTS[customer_id]
+    if not created:
+        from services.savings_pipeline_service import mark_unallocated_cash
+        mark_unallocated_cash(inv_account)
+    inv_account['index_balance'] = float(inv_account.get('index_balance', 0.0) or 0) + index_amount
+    inv_account['bonds_balance'] = float(inv_account.get('bonds_balance', 0.0) or 0) + bonds_amount
+    inv_account['crypto_balance'] = float(inv_account.get('crypto_balance', 0.0) or 0) + crypto_amount
+    inv_account.setdefault('allocations', []).append({
+        'id': f"PAY-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
+        'type': 'premium_allocation',
+        'amount': investment_amount,
+        'index_amount': index_amount,
+        'bonds_amount': bonds_amount,
+        'crypto_amount': crypto_amount,
+        'timestamp': now.isoformat(),
+    })
+
+    if wallet_amount > 0:
+        wallet = HEALTH_WALLETS.get(customer_id)
+        if not isinstance(wallet, dict):
+            wallet = {
+                'customer_id': customer_id,
+                'balance': 0.0,
+                'transactions': [],
+                'created_at': now.isoformat(),
+            }
+            HEALTH_WALLETS[customer_id] = wallet
+        wallet['balance'] = float(wallet.get('balance', 0.0) or 0) + wallet_amount
+        wallet.setdefault('transactions', []).append({
+            'type': 'pipeline_allocation',
+            'amount': wallet_amount,
+            'timestamp': now.isoformat(),
+        })
+
+    algo_store = None
+    if unified_balance_service is not None:
+        algo_store = getattr(unified_balance_service, 'algo_trading_balances', None)
+    if algo_amount > 0 and isinstance(algo_store, dict):
+        row = algo_store.get(customer_id)
+        if not isinstance(row, dict):
+            row = {'available': 0.0, 'in_positions': 0.0, 'total_pnl': 0.0, 'transfers': []}
+            algo_store[customer_id] = row
+        row['available'] = float(row.get('available', 0.0) or 0) + algo_amount
+        row.setdefault('transfers', []).append({
+            'type': 'pipeline_allocation',
+            'amount': algo_amount,
+            'timestamp': now.isoformat(),
+        })
+    return {
+        'wallet_amount': wallet_amount,
+        'investment_amount': investment_amount,
+        'algo_amount': algo_amount,
+        'index_amount': index_amount,
+        'bonds_amount': bonds_amount,
+        'crypto_amount': crypto_amount,
+    }
 
 
 def update_customer_allocation(customer_id: str, allocations: Dict[str, float]) -> Dict[str, Any]:
@@ -11354,70 +11507,96 @@ def process_customer_premium_payment(
     if integrity_service_enabled:
         pre_integrity = integrity_service.validate_customer_integrity(customer_id)
 
-    allocation_prefs = get_customer_allocation(customer_id)
-    savings_pct = allocation_prefs['savings_pct'] / 100.0
-    risk_pct = allocation_prefs['risk_pct'] / 100.0
-    savings_amount = amount * savings_pct
-    risk_amount = amount * risk_pct
+    from services.financial_unification_service import resolve_premium_split
 
+    policy = POLICIES.get(policy_id) if policy_id else None
+    if policy is None:
+        owned = [
+            row for row in POLICIES.values()
+            if isinstance(row, dict) and row.get('customer_id') == customer_id
+        ]
+        if len(owned) == 1:
+            policy = owned[0]
+    premium_split = resolve_premium_split(amount, policy)
+    savings_amount = float(premium_split['savings_amount'])
+    risk_amount = float(premium_split['risk_amount'])
+    expense_amount = float(premium_split.get('expense_amount') or 0.0)
+    profit_amount = float(premium_split.get('profit_amount') or 0.0)
+    company_remainder = float(premium_split.get('company_remainder') or 0.0)
+
+    pipeline_ready = bool(savings_pipeline_enabled and savings_pipeline_service)
     if use_pipeline is None:
-        use_pipeline = bool(savings_pipeline_enabled and savings_pipeline_service and not allocate_to_investments)
+        use_pipeline = pipeline_ready
+    elif use_pipeline and not pipeline_ready:
+        # Checkout and auto-pay ask for the pipeline. When that service is
+        # absent the direct writer still lands the savings slice.
+        use_pipeline = False
     allocation_source = 'pipeline' if use_pipeline else 'direct_investment'
-    investment_base = savings_amount
-    if use_pipeline:
-        investment_base = savings_amount * (allocation_prefs['investment_pct'] / 100.0)
-
-    index_amount = investment_base * (allocation_prefs['index_pct'] / 100.0)
-    bonds_amount = investment_base * (allocation_prefs['bonds_pct'] / 100.0)
-    crypto_amount = investment_base * (allocation_prefs['crypto_pct'] / 100.0)
 
     pipeline_configured = False
     pipeline_config_error = None
     pipeline_result = None
+    pipeline_account = None
     inv_account = None
+    direct_distribution = None
 
-    if not use_pipeline:
-        if customer_id not in INVESTMENT_ACCOUNTS:
-            INVESTMENT_ACCOUNTS[customer_id] = {
-                'balance': 0.0,
-                'index_balance': 0.0,
-                'bonds_balance': 0.0,
-                'crypto_balance': 0.0,
-                'deposits': [],
-                'allocations': [],
-                'created_at': now.isoformat()
-            }
-
-        inv_account = INVESTMENT_ACCOUNTS[customer_id]
-        inv_account['balance'] += savings_amount
-        inv_account['index_balance'] = inv_account.get('index_balance', 0.0) + index_amount
-        inv_account['bonds_balance'] = inv_account.get('bonds_balance', 0.0) + bonds_amount
-        inv_account['crypto_balance'] = inv_account.get('crypto_balance', 0.0) + crypto_amount
-        inv_account.setdefault('deposits', []).append({
-            'id': f"PAY-{now.strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
-            'type': 'premium_allocation',
-            'amount': savings_amount,
-            'index_amount': index_amount,
-            'bonds_amount': bonds_amount,
-            'crypto_amount': crypto_amount,
-            'timestamp': now.isoformat()
-        })
-        INVESTMENT_ACCOUNTS[customer_id] = inv_account
-    else:
+    if use_pipeline and savings_pipeline_service:
         try:
-            from services.savings_pipeline_service import AllocationStrategy
+            from services.savings_pipeline_service import AllocationStrategy, bounded_distribution
 
-            account = savings_pipeline_service.get_or_create_account(customer_id)
-            account.allocation_strategy = AllocationStrategy.CUSTOM
-            account.allocation_config.wallet_pct = allocation_prefs['wallet_pct']
-            account.allocation_config.investment_pct = allocation_prefs['investment_pct']
-            account.allocation_config.algo_trading_pct = allocation_prefs['algo_pct']
-            account.allocation_config.index_pct = allocation_prefs['index_pct']
-            account.allocation_config.bonds_pct = allocation_prefs['bonds_pct']
-            account.allocation_config.crypto_pct = allocation_prefs['crypto_pct']
+            pipeline_account = savings_pipeline_service.get_or_create_account(customer_id)
+            saved = CUSTOMER_ALLOCATIONS.get(customer_id) or {}
+            saved_split = all(
+                saved.get(key) is not None
+                for key in ('wallet_pct', 'investment_pct', 'algo_pct')
+            )
+            # A default 30/65/5 is not labeled CUSTOM. An existing CUSTOM
+            # allocation is left as the customer set it. A saved row is
+            # applied once, and only when it is a 0–100 split that sums to 100.
+            if (
+                pipeline_account.allocation_strategy != AllocationStrategy.CUSTOM
+                and saved_split
+            ):
+                prefs = get_customer_allocation(customer_id)
+                bounded = bounded_distribution(
+                    prefs['wallet_pct'], prefs['investment_pct'], prefs['algo_pct']
+                )
+                if bounded is not None:
+                    pipeline_account.allocation_strategy = AllocationStrategy.CUSTOM
+                    pipeline_account.allocation_config.wallet_pct = bounded[0]
+                    pipeline_account.allocation_config.investment_pct = bounded[1]
+                    pipeline_account.allocation_config.algo_trading_pct = bounded[2]
+                    detail = bounded_distribution(
+                        prefs['index_pct'], prefs['bonds_pct'], prefs['crypto_pct']
+                    )
+                    if detail is not None:
+                        pipeline_account.allocation_config.index_pct = detail[0]
+                        pipeline_account.allocation_config.bonds_pct = detail[1]
+                        pipeline_account.allocation_config.crypto_pct = detail[2]
             pipeline_configured = True
         except Exception as config_err:
             pipeline_config_error = str(config_err)
+            pipeline_account = None
+
+    percents = savings_distribution_percents(customer_id, pipeline_account)
+    investment_base = savings_amount * (percents['investment_pct'] / 100.0)
+    index_amount = investment_base * (percents['index_pct'] / 100.0)
+    bonds_amount = investment_base * (percents['bonds_pct'] / 100.0)
+    crypto_amount = investment_base * (percents['crypto_pct'] / 100.0)
+    wallet_amount = savings_amount * (percents['wallet_pct'] / 100.0)
+    algo_amount = savings_amount * (percents['algo_pct'] / 100.0)
+
+    if not use_pipeline:
+        direct_distribution = _apply_direct_savings_distribution(
+            customer_id, savings_amount, percents, now
+        )
+        index_amount = direct_distribution['index_amount']
+        bonds_amount = direct_distribution['bonds_amount']
+        crypto_amount = direct_distribution['crypto_amount']
+        wallet_amount = direct_distribution['wallet_amount']
+        algo_amount = direct_distribution['algo_amount']
+        investment_base = direct_distribution['investment_amount']
+        inv_account = INVESTMENT_ACCOUNTS.get(customer_id)
 
     bills_paid = []
     bill_payment_increments: Dict[str, float] = {}
@@ -11475,8 +11654,15 @@ def process_customer_premium_payment(
         'payment_method': normalized_payment_method,
         'savings_allocation': savings_amount,
         'risk_allocation': risk_amount,
-        'savings_pct': allocation_prefs['savings_pct'],
-        'risk_pct': allocation_prefs['risk_pct'],
+        'expense_amount': expense_amount,
+        'profit_amount': profit_amount,
+        'company_remainder': company_remainder,
+        'savings_pct': premium_split['savings_percentage'],
+        'risk_pct': premium_split['risk_percentage'],
+        'split_source': premium_split['split_source'],
+        'split_label': premium_split['split_label'],
+        'wallet_amount': wallet_amount,
+        'algo_amount': algo_amount,
         'index_amount': index_amount,
         'bonds_amount': bonds_amount,
         'crypto_amount': crypto_amount,
@@ -11500,7 +11686,7 @@ def process_customer_premium_payment(
         amount=amount,
         description=(
             f"Premium payment via {normalized_payment_method}. "
-            f"Savings: ${savings_amount:.2f} ({allocation_prefs['savings_pct']}%)"
+            f"Savings: ${savings_amount:.2f} ({premium_split['savings_percentage']}%, {premium_split['split_label']})"
         ),
         metadata=ledger_metadata
     )
@@ -11513,6 +11699,7 @@ def process_customer_premium_payment(
         source_tx_id=str(tx.get('id') or ''),
         unbilled_amount=unbilled_premium_amount,
         bill_payments=bill_payment_increments,
+        policy=policy,
     )
 
     generated_documents = []
@@ -11567,6 +11754,30 @@ def process_customer_premium_payment(
         tx['document_ids'] = sorted(set(
             list(tx.get('document_ids', [])) + related_document_ids
         ))
+    if not use_pipeline and savings_amount > 0:
+        record_transaction(
+            customer_id=customer_id,
+            tx_type='pipeline_allocation',
+            amount=savings_amount,
+            description=(
+                f"Savings allocation ${savings_amount:.2f} "
+                f"({premium_split['split_label']})"
+            ),
+            metadata={
+                'internal': True,
+                'cash_event': False,
+                'split_label': premium_split['split_label'],
+                'split_source': premium_split['split_source'],
+                'wallet_amount': wallet_amount,
+                'investment_amount': investment_base,
+                'algo_amount': algo_amount,
+                'index_amount': index_amount,
+                'bonds_amount': bonds_amount,
+                'crypto_amount': crypto_amount,
+                'premium_payment_tx_id': tx.get('id'),
+            },
+        )
+
     if use_pipeline and savings_amount > 0:
         try:
             pipeline_result = savings_pipeline_service.deposit_to_pipeline(
@@ -11582,7 +11793,9 @@ def process_customer_premium_payment(
         inv_account = INVESTMENT_ACCOUNTS.get(customer_id, {})
 
     allocation_checks = {
-        'savings_risk_sum_ok': abs((savings_amount + risk_amount) - amount) < 0.01,
+        'savings_risk_sum_ok': abs(
+            (savings_amount + risk_amount + expense_amount + profit_amount + company_remainder) - amount
+        ) < 0.05,
         'investment_breakdown_sum_ok': abs((index_amount + bonds_amount + crypto_amount) - investment_base) < 0.01,
         'investment_base': investment_base,
         'allocation_source': allocation_source,
@@ -11591,7 +11804,9 @@ def process_customer_premium_payment(
 
     post_integrity = None
     if integrity_service_enabled:
-        post_integrity = integrity_service.validate_customer_integrity(customer_id, auto_correct=True)
+        # Do not auto-correct here. A gap used to be added back into
+        # INVESTMENT_ACCOUNTS.balance, which undoes an unallocated-cash balance.
+        post_integrity = integrity_service.validate_customer_integrity(customer_id, auto_correct=False)
 
     notification_result = None
     # A receipt only when cash actually settled a bill. Configuration
@@ -11615,8 +11830,9 @@ def process_customer_premium_payment(
         'amount': amount,
         'savings_allocated': savings_amount,
         'risk_allocated': risk_amount,
-        'savings_pct': allocation_prefs['savings_pct'],
-        'risk_pct': allocation_prefs['risk_pct'],
+        'savings_pct': premium_split['savings_percentage'],
+        'risk_pct': premium_split['risk_percentage'],
+        'split_label': premium_split['split_label'],
         'index_amount': index_amount,
         'bonds_amount': bonds_amount,
         'crypto_amount': crypto_amount,
@@ -11652,8 +11868,13 @@ def process_customer_premium_payment(
         'nft_token_id': tx.get('nft_token_id'),
         'savings_allocated': savings_amount,
         'risk_allocated': risk_amount,
-        'savings_pct': allocation_prefs['savings_pct'],
-        'risk_pct': allocation_prefs['risk_pct'],
+        'savings_pct': premium_split['savings_percentage'],
+        'risk_pct': premium_split['risk_percentage'],
+        'split_label': premium_split['split_label'],
+        'split_source': premium_split['split_source'],
+        'expense_amount': expense_amount,
+        'profit_amount': profit_amount,
+        'company_remainder': company_remainder,
         'investment_breakdown': {
             'index': index_amount,
             'bonds': bonds_amount,
@@ -12402,7 +12623,7 @@ def repair_billing_pending_pipeline(
                     notify_users=notify_users,
                     dry_run=False,
                     report_id=report_id,
-                    use_pipeline=False,
+                    use_pipeline=True,
                 )
                 if result.get('error'):
                     raise RuntimeError(result['error'])
@@ -20688,7 +20909,7 @@ def run_pipeline_for_customer(customer_id: str, auto_advance: bool = True) -> Di
                         allocation = CUSTOMER_ALLOCATIONS.get(customer_id, {})
                         if allocation:
                             from services.savings_pipeline_service import RiskLevel
-                            protection_pct = allocation.get('protection_pct', 25)
+                            protection_pct = allocation.get('protection_pct', 50)
                             if protection_pct >= 40:
                                 pipeline_account.risk_level = RiskLevel.LOW
                             elif protection_pct >= 30:
@@ -54045,12 +54266,12 @@ For claims or questions, please contact:
                     # Store customer allocation preferences
                     CUSTOMER_ALLOCATIONS[customer_id] = {
                         'customer_id': customer_id,
-                        'protection_pct': phins_allocation.get('protection_pct', 25),
-                        'savings_pct': phins_allocation.get('savings_pct', 75),
+                        'protection_pct': phins_allocation.get('protection_pct', 50),
+                        'savings_pct': phins_allocation.get('savings_pct', 50),
                         'distribution': phins_allocation.get('distribution', {
-                            'wallet_pct': 15,
-                            'investment_pct': 60,
-                            'algo_trading_pct': 25
+                            'wallet_pct': 30,
+                            'investment_pct': 65,
+                            'algo_trading_pct': 5
                         }),
                         'coverage_years': coverage_years,
                         'created_at': datetime.now().isoformat()
@@ -54064,7 +54285,7 @@ For claims or questions, please contact:
                             from services.savings_pipeline_service import AllocationStrategy, RiskLevel
                             
                             # Determine risk level based on allocation
-                            protection_pct = phins_allocation.get('protection_pct', 25)
+                            protection_pct = phins_allocation.get('protection_pct', 50)
                             if protection_pct >= 40:
                                 risk_level = RiskLevel.CONSERVATIVE
                             elif protection_pct >= 30:
@@ -54075,9 +54296,28 @@ For claims or questions, please contact:
                             # Create pipeline account
                             account = savings_pipeline_service.get_or_create_account(customer_id)
                             account.risk_level = risk_level
-                            account.allocation_config.wallet_pct = dist.get('wallet_pct', 15)
-                            account.allocation_config.investment_pct = dist.get('investment_pct', 60)
-                            account.allocation_config.algo_trading_pct = dist.get('algo_trading_pct', 25)
+                            from services.savings_pipeline_service import bounded_distribution
+                            bounded = bounded_distribution(
+                                dist.get('wallet_pct', 30),
+                                dist.get('investment_pct', 65),
+                                dist.get('algo_trading_pct', 5),
+                            )
+                            explicit_distribution = (
+                                bounded is not None
+                                and (
+                                    abs(bounded[0] - 30.0) > 0.01
+                                    or abs(bounded[1] - 65.0) > 0.01
+                                    or abs(bounded[2] - 5.0) > 0.01
+                                )
+                            )
+                            if (
+                                explicit_distribution
+                                and account.allocation_strategy != AllocationStrategy.CUSTOM
+                            ):
+                                account.allocation_strategy = AllocationStrategy.CUSTOM
+                                account.allocation_config.wallet_pct = bounded[0]
+                                account.allocation_config.investment_pct = bounded[1]
+                                account.allocation_config.algo_trading_pct = bounded[2]
                             
                             # One sealed customer row. record_transaction mints the NFT;
                             # a separate mint with the wrong signature used to
@@ -55401,9 +55641,11 @@ For claims or questions, please contact:
                         # Check if customer has allocation preferences from application
                         phins_allocation = app.get('phins_allocation') or CUSTOMER_ALLOCATIONS.get(customer_id)
                         if phins_allocation:
-                            from services.savings_pipeline_service import RiskLevel
+                            from services.savings_pipeline_service import (
+                                AllocationStrategy, RiskLevel, bounded_distribution,
+                            )
                             
-                            protection_pct = phins_allocation.get('protection_pct', 25)
+                            protection_pct = phins_allocation.get('protection_pct', 50)
                             if protection_pct >= 40:
                                 risk_level = RiskLevel.CONSERVATIVE
                             elif protection_pct >= 30:
@@ -55411,14 +55653,33 @@ For claims or questions, please contact:
                             else:
                                 risk_level = RiskLevel.AGGRESSIVE
                             
-                            # Initialize pipeline account
+                            # Initialize pipeline account. A missing distribution
+                            # keeps the canonical 30/65/5. An explicit one is CUSTOM.
                             pipeline_account = savings_pipeline_service.get_or_create_account(customer_id)
                             pipeline_account.risk_level = risk_level
                             
-                            dist = phins_allocation.get('distribution', {})
-                            pipeline_account.allocation_config.wallet_pct = dist.get('wallet_pct', 15)
-                            pipeline_account.allocation_config.investment_pct = dist.get('investment_pct', 60)
-                            pipeline_account.allocation_config.algo_trading_pct = dist.get('algo_trading_pct', 25)
+                            dist = phins_allocation.get('distribution') or {}
+                            bounded = bounded_distribution(
+                                dist.get('wallet_pct', 30),
+                                dist.get('investment_pct', 65),
+                                dist.get('algo_trading_pct', 5),
+                            )
+                            explicit_distribution = (
+                                bounded is not None
+                                and (
+                                    abs(bounded[0] - 30.0) > 0.01
+                                    or abs(bounded[1] - 65.0) > 0.01
+                                    or abs(bounded[2] - 5.0) > 0.01
+                                )
+                            )
+                            if (
+                                explicit_distribution
+                                and pipeline_account.allocation_strategy != AllocationStrategy.CUSTOM
+                            ):
+                                pipeline_account.allocation_strategy = AllocationStrategy.CUSTOM
+                                pipeline_account.allocation_config.wallet_pct = bounded[0]
+                                pipeline_account.allocation_config.investment_pct = bounded[1]
+                                pipeline_account.allocation_config.algo_trading_pct = bounded[2]
                             
                             # Record pipeline initialization
                             record_transaction(
@@ -64330,7 +64591,13 @@ For claims or questions, please contact:
                 requested_customer_id = data.get('customer_id')
                 amount = safe_float(data.get('amount', 0), 0.0)
                 payment_method = data.get('payment_method', 'card')
-                allocate_to_investments = data.get('allocate_to_investments', True)
+                # Checkout uses the same pipeline path as auto-pay. An explicit
+                # use_pipeline=false is the only way off that path.
+                if 'use_pipeline' in data:
+                    use_pipeline = bool(data.get('use_pipeline'))
+                else:
+                    use_pipeline = True
+                allocate_to_investments = not use_pipeline
                 debug = bool(data.get('debug') or data.get('integrity_debug'))
 
                 # SECURITY: Enforce customer data isolation
@@ -64352,6 +64619,7 @@ For claims or questions, please contact:
                     amount=amount,
                     payment_method=payment_method,
                     allocate_to_investments=allocate_to_investments,
+                    use_pipeline=use_pipeline,
                     debug=debug,
                 )
                 self._set_json_headers(200)
