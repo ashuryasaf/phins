@@ -84,61 +84,61 @@ class AllocationConfig:
     algo_dca_pct: float = 30.0
 
 
-# Credits that add index/bonds/crypto without folding that money into balance.
-_BESIDE_CASH_ALLOCATIONS = frozenset({
-    'pipeline_allocation',
-    'premium_allocation',
-    'premium_savings',
-})
-
-
-def _beside_cash_invested(account: Dict[str, Any]) -> float:
-    """Invested amount already booked beside ``balance``.
-
-    Zero means the row has no beside-cash credit, so the sub-balances can
-    still be a breakdown stored inside ``balance``. A credit whose amount
-    cannot be read returns -1, and the caller leaves the cash untouched.
-    """
-    rows = account.get('allocations') or []
-    if not isinstance(rows, list):
+def _safe_amount(value: Any) -> float:
+    try:
+        amount = float(value or 0)
+    except (TypeError, ValueError):
         return 0.0
-    found = False
-    total = 0.0
-    readable = True
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        if str(row.get('type') or '') not in _BESIDE_CASH_ALLOCATIONS:
-            continue
-        found = True
-        amount = row.get('total_amount', row.get('amount'))
-        try:
-            total += float(amount or 0)
-        except (TypeError, ValueError):
-            readable = False
-    if not found:
+    if amount != amount or amount == float('inf') or amount == float('-inf'):
         return 0.0
-    if not readable:
-        return -1.0
-    return total
+    return amount
+
+
+def _balance_includes_holdings(account: Dict[str, Any], cash: float, invested: float) -> bool:
+    """True when the sub-balances are already counted inside ``balance``."""
+    if invested <= 0 or invested > cash + 0.01:
+        return False
+    deposit_breakdown = 0.0
+    deposits = account.get('deposits') or []
+    if isinstance(deposits, list):
+        for row in deposits:
+            if not isinstance(row, dict):
+                continue
+            deposit_breakdown += (
+                _safe_amount(row.get('index_amount'))
+                + _safe_amount(row.get('bonds_amount'))
+                + _safe_amount(row.get('crypto_amount'))
+            )
+    if deposit_breakdown > 0 and abs(deposit_breakdown - invested) <= 0.01:
+        return True
+    if abs(invested - cash) > 0.01:
+        return False
+    allocated = 0.0
+    allocations = account.get('allocations') or []
+    if isinstance(allocations, list):
+        for row in allocations:
+            if not isinstance(row, dict):
+                continue
+            if row.get('total_amount') is not None:
+                allocated += _safe_amount(row.get('total_amount'))
+            elif row.get('index') is not None or row.get('index_amount') is not None:
+                allocated += _safe_amount(row.get('amount'))
+    if allocated > 0 and allocated + 0.01 >= invested:
+        return False
+    return True
 
 
 def mark_unallocated_cash(account: Dict[str, Any]) -> None:
     """Make a later sub-balance credit show up on an older investment row.
 
     Readers add the index, bond, and crypto balances only when
-    ``balance_is_unallocated_cash`` is set. An older row stores the total in
-    ``balance`` and keeps those sub-balances as its breakdown. Peel that
-    contained breakdown out once so ``balance`` is the unallocated cash and
-    the reported position does not change.
-
-    Pipeline cash is different. ``balance`` is the leftover cash and the
-    sub-balances sit beside it, including when that cash is larger than the
-    invested amount. A ``pipeline_allocation``, ``premium_allocation``, or
-    ``premium_savings`` credit records that booking. Those amounts stay in
-    the sub-balances. Only a breakdown that is still fully inside ``balance``
-    is peeled. When the sub-balances already exceed ``balance``, they already
-    sit beside the cash and are left there.
+    ``balance_is_unallocated_cash`` is set. Peel a stored total once, so
+    ``balance`` becomes the unallocated cash and the reported position does
+    not change. A stored total repeats itself as the sub-balances, or repeats
+    the index, bond, and crypto amounts already on its deposits. Leftover
+    cash that already sits beside holdings is not part of that total, so it
+    is not subtracted. Holdings larger than ``balance`` are that same
+    side-by-side shape and are left there.
     """
     if not isinstance(account, dict) or account.get('balance_is_unallocated_cash'):
         return
@@ -148,13 +148,8 @@ def mark_unallocated_cash(account: Dict[str, Any]) -> None:
         + float(account.get('bonds_balance', 0) or 0)
         + float(account.get('crypto_balance', 0) or 0)
     )
-    beside = _beside_cash_invested(account)
-    if beside < 0:
-        contained = 0.0
-    else:
-        contained = invested if beside <= 0 else max(0.0, invested - beside)
-    if contained > 0.01 and contained <= cash + 0.01:
-        account['balance'] = round(cash - contained, 2)
+    if _balance_includes_holdings(account, cash, invested):
+        account['balance'] = round(max(0.0, cash - invested), 2)
     account['balance_is_unallocated_cash'] = True
 
 

@@ -417,15 +417,53 @@ def test_leftover_pipeline_cash_is_not_reduced_by_invested_subs():
     assert account["index_balance"] == 156.0
 
 
-def test_contained_breakdown_with_internal_cash_still_peels_once():
+def test_bare_leftover_cash_beside_holdings_is_not_peeled():
     account = {
-        "balance": 1100.0,
+        "balance": 600.0,
+        "index_balance": 240.0,
+        "bonds_balance": 120.0,
+        "crypto_balance": 40.0,
+    }
+    mark_unallocated_cash(account)
+    assert account["balance"] == 600.0
+    assert account["balance_is_unallocated_cash"] is True
+    assert account["index_balance"] == 240.0
+
+
+def test_matching_cash_funded_by_an_allocation_stays_beside_holdings():
+    account = {
+        "balance": 65.0,
+        "index_balance": 39.0,
+        "bonds_balance": 19.5,
+        "crypto_balance": 6.5,
+        "allocations": [{
+            "total_amount": 65.0,
+            "index": 39.0,
+            "bonds": 19.5,
+            "crypto": 6.5,
+        }],
+    }
+    mark_unallocated_cash(account)
+    assert account["balance"] == 65.0
+    assert account["balance_is_unallocated_cash"] is True
+    assert account["index_balance"] == 39.0
+
+
+def test_deposit_breakdown_inside_the_total_is_still_peeled():
+    account = {
+        "balance": 1200.0,
         "index_balance": 600.0,
         "bonds_balance": 300.0,
         "crypto_balance": 100.0,
+        "deposits": [{
+            "amount": 1000.0,
+            "index_amount": 600.0,
+            "bonds_amount": 300.0,
+            "crypto_amount": 100.0,
+        }],
     }
     mark_unallocated_cash(account)
-    assert account["balance"] == 100.0
+    assert account["balance"] == 200.0
     assert account["balance_is_unallocated_cash"] is True
     assert account["index_balance"] == 600.0
 
