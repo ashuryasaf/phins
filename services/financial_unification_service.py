@@ -228,6 +228,40 @@ def kernel_components_from_policy(policy: Optional[Dict[str, Any]]) -> Dict[str,
     }
 
 
+def _cap_credits_to_collected(
+    collected: Decimal, credits: Sequence[Decimal]
+) -> List[Decimal]:
+    """Keep risk, savings, expense, and profit inside the cash just collected.
+
+    A kernel pin is scaled by ``collected / annual_premium``. When that
+    annual figure is smaller than the pinned components, the raw credits
+    sum to more than the cash. Scale those credits back in the same
+    proportion so their sum is the cash collected. A consistent pin, whose
+    components already fit the annual premium, is returned unchanged.
+    """
+    fitted = [money(credit) for credit in credits]
+    total = sum(fitted, Decimal("0.00"))
+    if total <= collected or collected <= 0:
+        return fitted
+    scaled = [
+        (credit * collected / total).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        for credit in fitted
+    ]
+    overflow = (sum(scaled, Decimal("0.00")) - collected).quantize(Decimal("0.01"))
+    if overflow > 0:
+        order = sorted(range(len(scaled)), key=lambda index: (scaled[index], index), reverse=True)
+        for index in order:
+            if overflow <= 0:
+                break
+            take = min(scaled[index], overflow)
+            scaled[index] = (scaled[index] - take).quantize(Decimal("0.01"))
+            overflow -= take
+    elif overflow < 0:
+        index = max(range(len(fitted)), key=lambda i: (fitted[i], -i))
+        scaled[index] = (scaled[index] - overflow).quantize(Decimal("0.01"))
+    return scaled
+
+
 def resolve_premium_split(
     amount: Any,
     policy: Optional[Dict[str, Any]] = None,
@@ -242,6 +276,10 @@ def resolve_premium_split(
     When the pin is missing, the split is the 50/50 cash default. That label
     is ``default``. ``fallback_risk_pct`` is not applied: a caller preference
     is not a recorded historical split.
+
+    The four credits together never exceed the cash collected. A smaller
+    ``annual_premium`` than the pinned components scales those credits back
+    onto the cash instead of minting savings.
     """
     del fallback_risk_pct  # retained so existing callers keep working
     collected = money(amount)
@@ -268,6 +306,10 @@ def resolve_premium_split(
             ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         source = f"kernel:{kernel['source']}"
         split_label = "kernel"
+        risk_amount, savings_amount, expense_amount, profit_amount = _cap_credits_to_collected(
+            collected,
+            (risk_amount, savings_amount, expense_amount, profit_amount),
+        )
     else:
         risk_amount = (collected * Decimal("0.50")).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP

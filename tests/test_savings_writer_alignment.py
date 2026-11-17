@@ -41,6 +41,37 @@ def test_kernel_savings_excludes_expense_and_profit():
     assert policy["integrity_hash"] == "pin-unchanged"
 
 
+def test_shrunk_annual_cannot_credit_more_than_the_cash_collected():
+    """A rewritten annual premium must not mint savings above the payment."""
+    policy = {
+        "id": "POL-SHRUNK",
+        "annual_premium": 12.0,
+        "risk_premium_annual": 100.0,
+        "savings_premium_annual": 50.0,
+        "expense_loading_annual": 15.0,
+        "profit_margin_annual": 16.50,
+        "pricing_source": "pricing_kernel",
+        "integrity_hash": "pin-unchanged",
+    }
+    split = resolve_premium_split(10.0, policy)
+    credited = (
+        split["risk_amount"]
+        + split["savings_amount"]
+        + split["expense_amount"]
+        + split["profit_amount"]
+    )
+    assert abs(credited - 10.0) < 0.001
+    assert split["savings_amount"] <= 10.0
+    assert split["risk_percentage"] <= 100.0
+    assert split["savings_percentage"] <= 100.0
+    assert split["company_remainder"] == 0.0
+    assert split["split_label"] == "kernel"
+    assert split["integrity_hash"] == "pin-unchanged"
+    assert policy["integrity_hash"] == "pin-unchanged"
+    assert policy["savings_premium_annual"] == 50.0
+    assert abs((split["savings_amount"] / split["risk_amount"]) - 0.5) < 0.02
+
+
 def test_missing_pin_is_labeled_default_not_history():
     split = resolve_premium_split(
         200.0,
