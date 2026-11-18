@@ -66,8 +66,8 @@ class BillingService:
             amount_due: Total amount due
             due_days: Days until due
             customer_id: Customer ID (will be looked up from policy if not provided)
-            risk_pct: Risk allocation percentage (default 50%)
-            savings_pct: Savings allocation percentage (default 50%)
+            risk_pct: Risk allocation percentage. Omit both sides for the kernel waterfall.
+            savings_pct: Savings allocation percentage. Omit both sides for the kernel waterfall.
             description: Bill description
         
         Returns:
@@ -89,13 +89,15 @@ class BillingService:
             savings_pct = split["savings_percentage"]
             risk_amount = split["risk_amount"]
             savings_amount = split["savings_amount"]
+            split_source = split["split_source"]
         else:
             risk_pct = risk_pct if risk_pct is not None else self.default_risk_pct
             savings_pct = savings_pct if savings_pct is not None else self.default_savings_pct
             if risk_pct + savings_pct != 100:
                 savings_pct = 100 - risk_pct
-            risk_amount = round(amount * risk_pct / 100, 2)
             savings_amount = round(amount * savings_pct / 100, 2)
+            risk_amount = round(amount - savings_amount, 2)
+            split_source = "explicit"
         
         bill = {
             'bill_id': bill_id,
@@ -115,6 +117,7 @@ class BillingService:
                 'savings_amount_due': savings_amount,
                 'risk_amount_paid': 0.0,
                 'savings_amount_paid': 0.0,
+                'split_source': split_source,
                 'allocated': False,
                 'allocation_id': None
             },
@@ -128,16 +131,37 @@ class BillingService:
         
         return bill
 
-    def _split_pcts(self, bill: Dict[str, Any], amount: float, allocation: Dict[str, Any]):
-        """Stored percentages win. A missing split is the kernel waterfall."""
-        if allocation.get('risk_percentage') is None and allocation.get('savings_percentage') is None:
+    def _layers_for_amount(self, bill: Dict[str, Any], amount: float, allocation: Dict[str, Any]):
+        """Dollar layers for this cash slice.
+
+        An explicit caller split stays proportional, and the remainder stays
+        on risk. A kernel bill uses the waterfall amounts. Rebuilding those
+        amounts from rounded percentages puts a dollar over a finished month
+        onto savings.
+        """
+        amount = round(float(amount), 2)
+        source = allocation.get('split_source')
+        percentages_missing = (
+            allocation.get('risk_percentage') is None
+            and allocation.get('savings_percentage') is None
+        )
+        if source != 'explicit' and (source or percentages_missing):
             from services.financial_unification_service import resolve_premium_split
             policy = self._policies.get(bill.get('policy_id') or '', {}) if bill.get('policy_id') else None
             split = resolve_premium_split(amount, policy or None)
-            return split['risk_percentage'], split['savings_percentage']
+            return (
+                split['risk_amount'],
+                split['savings_amount'],
+                split['risk_percentage'],
+                split['savings_percentage'],
+            )
         risk_pct = allocation.get('risk_percentage', self.default_risk_pct)
         savings_pct = allocation.get('savings_percentage', self.default_savings_pct)
-        return risk_pct, savings_pct
+        if risk_pct + savings_pct != 100:
+            savings_pct = 100 - risk_pct
+        payment_savings = round(amount * float(savings_pct) / 100, 2)
+        payment_risk = round(amount - payment_savings, 2)
+        return payment_risk, payment_savings, risk_pct, savings_pct
 
     def record_payment(self, 
                        bill_id: str, 
@@ -214,12 +238,11 @@ class BillingService:
         
         b['updated_at'] = datetime.now().isoformat()
         
-        # A stored split is kept. A bill with no split is not a 50/50 election.
+        # A stored explicit split is kept. A kernel bill waterfalls this slice.
         allocation = b.get('premium_allocation', {})
-        risk_pct, savings_pct = self._split_pcts(b, float(amount), allocation)
-        
-        payment_risk = round(float(amount) * risk_pct / 100, 2)
-        payment_savings = round(float(amount) * savings_pct / 100, 2)
+        payment_risk, payment_savings, risk_pct, savings_pct = self._layers_for_amount(
+            b, float(amount), allocation
+        )
         
         # Update allocation tracking on the bill
         allocation['risk_amount_paid'] = round(
@@ -232,14 +255,19 @@ class BillingService:
         # Record in premium allocation tracker if available and bill is fully paid
         if auto_allocate and self._allocation_tracker and b['status'] == 'paid':
             try:
+                paid_total = float(b['amount_paid'])
+                risk_paid = float(allocation['risk_amount_paid'])
+                savings_paid = float(allocation['savings_amount_paid'])
                 alloc_record = self._allocation_tracker.record_bill_allocation(
                     bill_id=bill_id,
                     policy_id=b.get('policy_id', ''),
                     customer_id=b.get('customer_id', ''),
-                    bill_amount=b['amount_paid'],
+                    bill_amount=paid_total,
                     payment_date=datetime.now().isoformat(),
-                    risk_percentage=risk_pct,
-                    savings_percentage=savings_pct,
+                    risk_percentage=(round(risk_paid / paid_total * 100, 2) if paid_total else risk_pct),
+                    savings_percentage=(round(savings_paid / paid_total * 100, 2) if paid_total else savings_pct),
+                    risk_amount=risk_paid,
+                    savings_amount=savings_paid,
                     auto_allocate_savings=True
                 )
                 allocation['allocated'] = True
@@ -279,11 +307,16 @@ class BillingService:
             b['status'] = 'overdue'
             b['updated_at'] = datetime.now().isoformat()
             
-            # Recalculate allocation amounts from the stored split, or the waterfall.
+            # The fee is more cash on the same split. A kernel bill waterfalls
+            # the new total so the fee is not turned into savings.
             allocation = b.get('premium_allocation', {})
-            risk_pct, savings_pct = self._split_pcts(b, b['amount_due'], allocation)
-            allocation['risk_amount_due'] = round(b['amount_due'] * risk_pct / 100, 2)
-            allocation['savings_amount_due'] = round(b['amount_due'] * savings_pct / 100, 2)
+            risk_due, savings_due, risk_pct, savings_pct = self._layers_for_amount(
+                b, b['amount_due'], allocation
+            )
+            allocation['risk_percentage'] = risk_pct
+            allocation['savings_percentage'] = savings_pct
+            allocation['risk_amount_due'] = risk_due
+            allocation['savings_amount_due'] = savings_due
             b['premium_allocation'] = allocation
             
             # Track fee applied

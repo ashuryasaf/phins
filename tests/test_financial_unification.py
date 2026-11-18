@@ -683,6 +683,35 @@ def test_accountant_frs_uses_ledger_claim_cash_not_approved_records():
     assert empty_summary["claims_paid"] == 0.0
 
 
+def test_payment_over_a_finished_month_keeps_the_extra_dollar_on_risk():
+    """Rounded bill percentages must not move the next month's first dollar."""
+    from services.billing_service import BillingService
+
+    policies = {
+        "POL-OVER": {
+            "id": "POL-OVER",
+            "customer_id": "CUST-OVER",
+            "annual_premium": 2400.0,
+            "risk_premium_annual": 2400.0,
+            "savings_addon": "growth",
+            "pricing_source": "pricing_kernel",
+        }
+    }
+    billing = BillingService(bills={}, policies=policies)
+    one_shot = billing.create_bill("POL-OVER", 401.0, customer_id="CUST-OVER")
+    assert one_shot["premium_allocation"]["risk_amount_due"] == 201.0
+    assert one_shot["premium_allocation"]["savings_amount_due"] == 200.0
+    paid_once = billing.record_payment(one_shot["bill_id"], 401.0, auto_allocate=False)
+    assert paid_once["premium_allocation"]["risk_amount_paid"] == 201.0
+    assert paid_once["premium_allocation"]["savings_amount_paid"] == 200.0
+
+    stepped = billing.create_bill("POL-OVER", 401.0, customer_id="CUST-OVER")
+    billing.record_payment(stepped["bill_id"], 400.0, auto_allocate=False)
+    paid_step = billing.record_payment(stepped["bill_id"], 1.0, auto_allocate=False)
+    assert paid_step["premium_allocation"]["savings_amount_paid"] == 200.0
+    assert paid_step["premium_allocation"]["risk_amount_paid"] == 201.0
+
+
 def test_unstamped_bill_payment_does_not_send_half_the_premium_to_savings():
     from services.billing_service import BillingService
 
