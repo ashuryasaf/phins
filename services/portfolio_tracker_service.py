@@ -260,17 +260,23 @@ class PortfolioTrackerService:
         return self.cash_balances.get(customer_id, inv_bal + algo_bal)
     
     def deposit_to_algo(self, customer_id: str, amount: float, source: str = 'investment',
-                        debit_source: bool = True) -> Dict:
+                        debit_source: bool = True,
+                        source_balance_after: Optional[float] = None) -> Dict:
         """Deposit funds to algo trading from source account.
 
         ``debit_source`` is false when the caller settles the investment row
         itself. The tracker often is that row, so a second debit here would
-        spend the same money twice.
+        spend the same money twice. ``source_balance_after`` is the position
+        left on that row. A flagged ``balance`` is only the unallocated cash,
+        so it is not used as the post-transfer total.
         """
         # Validate source and check balance
         if source == 'investment' and not debit_source:
-            inv_acc = self.investment_accounts.get(customer_id) or {}
-            source_balance = inv_acc.get('balance', 0)
+            if source_balance_after is not None:
+                source_balance = round(float(source_balance_after), 2)
+            else:
+                inv_acc = self.investment_accounts.get(customer_id) or {}
+                source_balance = inv_acc.get('balance', 0)
         elif source == 'investment':
             # Initialize investment account if not exists
             if customer_id not in self.investment_accounts:

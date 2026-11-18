@@ -765,22 +765,34 @@ def test_shared_tracker_deposit_keeps_the_canonical_row():
             "algo_trading_profits": 0.0,
         }
     }
+    recorded = []
+
+    def _record(**kwargs):
+        recorded.append(kwargs)
+        return {"id": "TX-1", "nft_token_id": "NFT-1"}
+
     tracker = PortfolioTrackerService(
         investment_accounts=accounts,
-        record_transaction_func=lambda **kwargs: {"id": "TX-1", "nft_token_id": "NFT-1"},
+        record_transaction_func=_record,
     )
     assert tracker.investment_accounts is accounts
-    result = tracker.deposit_to_algo("CUST-1", 50.0, "investment", debit_source=False)
-    assert result["success"] is True
     row = accounts["CUST-1"]
+    settled = settle_investment_to_algo(row, 50.0)
+    remaining = investment_books(row)["position"]
+    result = tracker.deposit_to_algo(
+        "CUST-1",
+        settled["applied"],
+        "investment",
+        debit_source=False,
+        source_balance_after=remaining,
+    )
+    assert result["success"] is True
+    assert settled["applied"] == 50.0
+    assert remaining == 90.0
+    assert result["source_balance"] == 90.0
+    assert recorded[0]["metadata"]["source_balance_after"] == 90.0
     assert row["deposits"][0]["id"] == "DEP-1"
     assert row["balance_is_unallocated_cash"] is True
-    assert row["balance"] == 40.0
-    assert row["index_balance"] == 60.0
-    settled = settle_investment_to_algo(row, 50.0, tracker.algo_balances["CUST-1"])
-    assert settled["applied"] == 50.0
-    assert settled["shortfall"] == 0.0
-    assert row["deposits"][0]["id"] == "DEP-1"
     assert row["balance"] == 0.0
     assert investment_books(row)["position"] == 90.0
     assert tracker.algo_balances["CUST-1"]["available"] == 50.0

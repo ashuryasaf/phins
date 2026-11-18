@@ -62225,12 +62225,19 @@ For claims or questions, please contact:
                 
                 # The tracker dict is the canonical book. Do not put a spend
                 # stub in it: that assignment deletes holdings and deposits.
-                # The position check below is the spend limit, and the row is
-                # settled once after the algo credit.
+                # The row is settled before the ledger seal, so the sealed
+                # balance is the position that remains.
                 debit_investment = True
+                credit_amount = amount
+                reported_source_balance = None
+                investment_prior = None
                 if source == 'investment' and customer_id in INVESTMENT_ACCOUNTS:
-                    from services.savings_pipeline_service import investment_books
-                    position = investment_books(INVESTMENT_ACCOUNTS[customer_id])['position']
+                    from services.savings_pipeline_service import (
+                        investment_books,
+                        settle_investment_to_algo,
+                    )
+                    row = INVESTMENT_ACCOUNTS[customer_id]
+                    position = investment_books(row)['position']
                     if float(amount) > position + 1e-9:
                         self._set_json_headers(400)
                         self.wfile.write(json.dumps({
@@ -62242,6 +62249,31 @@ For claims or questions, please contact:
                             'available_balance': position,
                         }).encode('utf-8'))
                         return
+                    investment_prior = {
+                        'balance': row.get('balance'),
+                        'index_balance': row.get('index_balance'),
+                        'bonds_balance': row.get('bonds_balance'),
+                        'crypto_balance': row.get('crypto_balance'),
+                        'algo_trading_profits': row.get('algo_trading_profits', 0),
+                    }
+                    # Settle before the ledger seal. The sealed
+                    # source_balance_after has to be the position that remains,
+                    # not the unallocated cash from before the move.
+                    settled = settle_investment_to_algo(row, amount)
+                    credit_amount = settled['applied']
+                    if credit_amount <= 0:
+                        row.update(investment_prior)
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'success': False,
+                            'error': (
+                                f'Insufficient investment balance. '
+                                f'Available: ${position:.2f}, Requested: ${amount:.2f}'
+                            ),
+                            'available_balance': position,
+                        }).encode('utf-8'))
+                        return
+                    reported_source_balance = investment_books(row)['position']
                     debit_investment = False
                 elif customer_id in INVESTMENT_ACCOUNTS and portfolio_tracker_service.investment_accounts is not INVESTMENT_ACCOUNTS:
                     inv_bal = INVESTMENT_ACCOUNTS[customer_id].get('balance', 0)
@@ -62257,8 +62289,14 @@ For claims or questions, please contact:
                 # ========== END SYNC ==========
                 
                 result = portfolio_tracker_service.deposit_to_algo(
-                    customer_id, amount, source, debit_source=debit_investment
+                    customer_id,
+                    credit_amount,
+                    source,
+                    debit_source=debit_investment,
+                    source_balance_after=reported_source_balance,
                 )
+                if investment_prior is not None and not result.get('success'):
+                    INVESTMENT_ACCOUNTS[customer_id].update(investment_prior)
                 
                 # ========== SYNC BACK AFTER TRANSFER ==========
                 if result.get('success'):
@@ -62269,15 +62307,8 @@ For claims or questions, please contact:
                     # Sync investment accounts back to global store and portfolio service
                     if source == 'investment' and customer_id in INVESTMENT_ACCOUNTS:
                         inv_account = INVESTMENT_ACCOUNTS[customer_id]
-                        from services.savings_pipeline_service import settle_investment_to_algo
-                        # Cash first, then holdings. Profits grow by the amount
-                        # the row gave up. A credit already posted for more
-                        # than that is removed from the algo available balance.
-                        algo_bucket = portfolio_tracker_service.algo_balances.get(customer_id)
-                        settle_investment_to_algo(inv_account, amount, algo_bucket)
-                        # The row is the book. Do not replace it with the
-                        # remaining position.
-                        
+                        # The row was settled before the credit. Do not
+                        # withdraw it again.
                         # Update portfolio service accounts
                         if portfolio_enabled and portfolio_service:
                             try:
