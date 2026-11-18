@@ -54,13 +54,13 @@ def test_kernel_split_prefers_policy_pin_over_allocation_prefs():
     assert split["integrity_hash"] == "abc123"
 
 
-def test_split_falls_back_to_allocation_when_no_kernel_pin():
+def test_split_without_a_savings_election_is_pure_risk():
     split = resolve_premium_split(200.0, {"annual_premium": 2400.0}, fallback_risk_pct=75)
-    assert split["risk_percentage"] == 50.0
-    assert split["risk_amount"] == 100.0
-    assert split["savings_amount"] == 100.0
-    assert split["split_source"] == "default"
-    assert split["split_label"] == "default"
+    assert split["risk_percentage"] == 100.0
+    assert split["risk_amount"] == 200.0
+    assert split["savings_amount"] == 0.0
+    assert split["split_source"] == "no_savings_election"
+    assert split["split_label"] == "no_savings_election"
 
 
 def test_premium_and_claim_cash_post_to_same_accounting_book():
@@ -683,6 +683,102 @@ def test_accountant_frs_uses_ledger_claim_cash_not_approved_records():
     assert empty_summary["claims_paid"] == 0.0
 
 
+def test_two_halves_of_a_growth_bill_still_credit_the_add_on():
+    """Each installment is the change in the running waterfall, not a new stack."""
+    from services.billing_service import BillingService
+    from services.premium_allocation_tracker import PremiumAllocationTracker
+
+    policies = {
+        "POL-HALF": {
+            "id": "POL-HALF",
+            "customer_id": "CUST-HALF",
+            "annual_premium": 2400.0,
+            "risk_premium_annual": 2400.0,
+            "savings_addon": "growth",
+            "pricing_source": "pricing_kernel",
+        }
+    }
+    bills = {}
+    tracker = PremiumAllocationTracker(bills=bills, policies=policies)
+    billing = BillingService(bills=bills, policies=policies, premium_allocation_tracker=tracker)
+    bill = billing.create_bill("POL-HALF", 400.0, customer_id="CUST-HALF")
+    assert bill["premium_allocation"]["risk_amount_due"] == 200.0
+    assert bill["premium_allocation"]["savings_amount_due"] == 200.0
+
+    first = billing.record_payment(bill["bill_id"], 200.0)
+    assert first["premium_allocation"]["risk_amount_paid"] == 200.0
+    assert first["premium_allocation"]["savings_amount_paid"] == 0.0
+
+    second = billing.record_payment(bill["bill_id"], 200.0)
+    assert second["status"] == "paid"
+    assert second["premium_allocation"]["risk_amount_paid"] == 200.0
+    assert second["premium_allocation"]["savings_amount_paid"] == 200.0
+    recorded = next(iter(tracker.allocations.values()))
+    assert float(recorded.risk_amount) == 200.0
+    assert float(recorded.savings_amount) == 200.0
+
+
+def test_payment_over_a_finished_month_keeps_the_extra_dollar_on_risk():
+    """Rounded bill percentages must not move the next month's first dollar."""
+    from services.billing_service import BillingService
+
+    policies = {
+        "POL-OVER": {
+            "id": "POL-OVER",
+            "customer_id": "CUST-OVER",
+            "annual_premium": 2400.0,
+            "risk_premium_annual": 2400.0,
+            "savings_addon": "growth",
+            "pricing_source": "pricing_kernel",
+        }
+    }
+    billing = BillingService(bills={}, policies=policies)
+    one_shot = billing.create_bill("POL-OVER", 401.0, customer_id="CUST-OVER")
+    assert one_shot["premium_allocation"]["risk_amount_due"] == 201.0
+    assert one_shot["premium_allocation"]["savings_amount_due"] == 200.0
+    paid_once = billing.record_payment(one_shot["bill_id"], 401.0, auto_allocate=False)
+    assert paid_once["premium_allocation"]["risk_amount_paid"] == 201.0
+    assert paid_once["premium_allocation"]["savings_amount_paid"] == 200.0
+
+    stepped = billing.create_bill("POL-OVER", 401.0, customer_id="CUST-OVER")
+    billing.record_payment(stepped["bill_id"], 400.0, auto_allocate=False)
+    paid_step = billing.record_payment(stepped["bill_id"], 1.0, auto_allocate=False)
+    assert paid_step["premium_allocation"]["savings_amount_paid"] == 200.0
+    assert paid_step["premium_allocation"]["risk_amount_paid"] == 201.0
+
+
+def test_unstamped_bill_payment_does_not_send_half_the_premium_to_savings():
+    from services.billing_service import BillingService
+
+    policies = {
+        "POL-NOSPLIT": {
+            "id": "POL-NOSPLIT",
+            "customer_id": "CUST-NOSPLIT",
+            "annual_premium": 1200.0,
+            "monthly_premium": 100.0,
+            "risk_premium_annual": 1200.0,
+            "savings_premium_annual": 0.0,
+            "pricing_source": "pricing_kernel",
+        }
+    }
+    bills = {
+        "BILL-NOSPLIT": {
+            "bill_id": "BILL-NOSPLIT",
+            "policy_id": "POL-NOSPLIT",
+            "customer_id": "CUST-NOSPLIT",
+            "amount_due": 100.0,
+            "amount_paid": 0.0,
+            "status": "outstanding",
+        }
+    }
+    updated = BillingService(bills=bills, policies=policies).record_payment(
+        "BILL-NOSPLIT", 100.0, auto_allocate=False
+    )
+    paid = updated["premium_allocation"]
+    assert paid["savings_amount_paid"] == 0.0
+    assert paid["risk_amount_paid"] == 100.0
+
+
 def test_billing_service_payment_writes_ledger_and_accounting_book():
     from services.billing_service import BillingService
     from web_portal.server import POLICIES, TRANSACTION_LEDGER
@@ -1004,9 +1100,9 @@ def test_kernel_split_never_borrows_another_policy_of_the_same_customer():
     }
     untagged = {"type": "premium_payment", "amount": 100.0, "customer_id": "CUST-M"}
     ambiguous = kernel_savings_cash_from_ledger([untagged], policies)
-    # No pin can be chosen, so the cash is the 50/50 default, not POL-SAVE's 80%.
-    assert ambiguous["savings_amount"] == 50.0
-    assert ambiguous["risk_amount"] == 50.0
+    # No single pin can be chosen, so the cash stays risk and is not POL-SAVE's 80%.
+    assert ambiguous["savings_amount"] == 0.0
+    assert ambiguous["risk_amount"] == 100.0
 
     tagged = dict(untagged, metadata={"policy_id": "POL-SAVE"})
     own_split = kernel_savings_cash_from_ledger([tagged], policies)

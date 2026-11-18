@@ -503,8 +503,8 @@ class TestActuarialDistributionIntegrity:
         assert dist['actuarial_data']['total_savings_premium'] == 3000.0
 
         alloc = dist['allocation']
-        assert alloc['savings_pct'] == 50.0
-        assert alloc['risk_pct'] == 50.0
+        assert alloc['savings_pct'] == 25.0
+        assert alloc['risk_pct'] == 75.0
         assert alloc['wallet_pct'] == 30.0
         assert alloc['investment_pct'] == 65.0
         assert alloc['algo_pct'] == 5.0
@@ -512,10 +512,10 @@ class TestActuarialDistributionIntegrity:
         cash = dist['distribution']
         assert abs(cash['risk_coverage'] + cash['total_savings'] - 1000.0) < 0.01
         assert abs(cash['health_wallet'] + cash['investment'] + cash['algo_trading'] - cash['total_savings']) < 0.01
-        assert abs(cash['total_savings'] - 500.0) < 0.01
-        assert abs(cash['health_wallet'] - 150.0) < 0.01
-        assert abs(cash['investment'] - 325.0) < 0.01
-        assert abs(cash['algo_trading'] - 25.0) < 0.01
+        assert abs(cash['total_savings'] - 250.0) < 0.01
+        assert abs(cash['health_wallet'] - 75.0) < 0.01
+        assert abs(cash['investment'] - 162.5) < 0.01
+        assert abs(cash['algo_trading'] - 12.5) < 0.01
 
     def test_unified_monthly_distribution_forwards_actuarial_fields(self):
         source = Path(__file__).resolve().parents[1] / "web_portal" / "server.py"

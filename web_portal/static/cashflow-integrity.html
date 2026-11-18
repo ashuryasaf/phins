@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en" data-phins-letterhead="off">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PHINS cash flow integrity</title>
+    <link rel="stylesheet" href="/phins-theme.css">
+    <link rel="stylesheet" href="/phins-surface.css">
+    <style>
+        body { margin: 0; background: #0b1f3a; color: #f4efe4; font-family: Inter, system-ui, sans-serif; }
+        header { display: flex; justify-content: space-between; align-items: center; padding: 18px 28px; border-bottom: 1px solid rgba(196,163,90,.35); }
+        header a { color: #e8d7a8; text-decoration: none; margin-left: 16px; }
+        h1 { font-family: "Space Grotesk", Inter, sans-serif; font-weight: 500; margin: 0; letter-spacing: .02em; }
+        main { padding: 24px 28px 64px; max-width: 1180px; }
+        .rules { color: #d9c89a; font-size: 14px; line-height: 1.5; }
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 18px 0; }
+        .card { background: #13284a; border: 1px solid rgba(196,163,90,.4); border-radius: 12px; padding: 14px 16px; }
+        .card span { display: block; color: #b7c3d6; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+        .card strong { font-size: 22px; color: #f3e6c0; }
+        .roster-wrap { overflow-x: auto; border-radius: 12px; }
+        table { width: 100%; border-collapse: collapse; background: #102443; }
+        th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,.08); font-size: 14px; color: #f4efe4; white-space: nowrap; }
+        th { color: #e8d7a8; font-weight: 600; }
+        td.who { white-space: normal; min-width: 220px; }
+        td.who strong { display: block; color: #f4efe4; font-weight: 650; }
+        tr.row { cursor: pointer; }
+        tr.row:hover { background: rgba(196,163,90,.12); }
+        .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+        .attention { background: #8c3a2f; color: #fff; }
+        .watch { background: #8a6a22; color: #fff; }
+        .clear { background: #1f6b4a; color: #fff; }
+        button { background: #c4a35a; color: #0b1f3a; border: 0; border-radius: 8px; padding: 10px 14px; font-weight: 650; cursor: pointer; }
+        button:disabled { opacity: .5; cursor: wait; }
+        pre { white-space: pre-wrap; background: #0e1c33; padding: 14px; border-radius: 12px; color: #efe6d2; }
+        .note { color: #b7c3d6; font-size: 13px; }
+        h2 { font-weight: 500; margin-top: 28px; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Cash flow integrity</h1>
+        <nav>
+            <a href="/accountant-dashboard.html">Accounting</a>
+            <a href="/admin.html">Admin</a>
+            <a href="/login.html">Login</a>
+        </nav>
+    </header>
+    <main>
+        <p class="rules" id="rules">Kernel risk stays on the risk book. Only an add-on or a growth add is saved. Paid claims stay on the claims book and move from the reserve to the health wallet.</p>
+        <div class="cards" id="funds"></div>
+        <h2>Customers to monitor</h2>
+        <p class="note">Asaf Assurance, Efrat PHINS, Asi PHINS, and Shosh PHINS are the standing list. Anyone else with a ledger, bill, claim, wallet, or NFT seal is added from the books.</p>
+        <div class="roster-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Customer</th>
+                    <th>Priority</th>
+                    <th>Premiums</th>
+                    <th>Risk landed</th>
+                    <th>Savings add-on</th>
+                    <th>Wallet</th>
+                    <th>Investments</th>
+                    <th>Algo</th>
+                    <th>Unposted claims</th>
+                </tr>
+            </thead>
+            <tbody id="roster"></tbody>
+        </table>
+        </div>
+        <p style="margin-top:16px"><button id="post-claims" type="button">Post unposted claims from reserve to health wallets</button></p>
+        <p class="note" id="post-result"></p>
+        <h2 id="detail-title">Customer picture</h2>
+        <pre id="detail">Select a customer.</pre>
+        <h2>Worked assessment from sealed ledgers</h2>
+        <p class="note">CUST-X is the specimen from the premium-flow check. It is not written into a customer book.</p>
+        <pre id="specimen">Loading…</pre>
+    </main>
+    <script src="/phins-doc-return.js"></script>
+    <script>
+        const money = (value) => '$' + Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const token = localStorage.getItem('phins_token') || '';
+        const headers = token ? { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+
+        function tag(priority) {
+            return '<span class="tag ' + priority + '">' + priority + '</span>';
+        }
+
+        function text(value) {
+            return String(value || '').replace(/[&<>"']/g, (ch) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[ch]));
+        }
+
+        async function load() {
+            const response = await fetch('/api/admin/cashflow/monitoring', { headers });
+            const body = await response.json();
+            if (!response.ok) {
+                document.getElementById('detail').textContent = body.error || 'Sign in as admin, accountant, actuary, or claims to read this book.';
+                return;
+            }
+            const report = body.monitoring;
+            document.getElementById('rules').textContent = (report.rules || []).join(' ');
+            const funds = report.accumulated_funds || {};
+            document.getElementById('funds').innerHTML = [
+                ['Health wallets', funds.health_wallet],
+                ['Investments', funds.investments],
+                ['Algo', funds.algo],
+                ['Learned savings', funds.learned_savings],
+                ['Sealed claim credits', funds.sealed_claim_credits],
+                ['Unposted claims', funds.unposted_claim_transfers],
+                ['Claims reserve', report.claims_reserve]
+            ].map(([label, value]) => '<div class="card"><span>' + label + '</span><strong>' + money(value) + '</strong></div>').join('');
+            const rows = report.customers || [];
+            document.getElementById('roster').innerHTML = rows.map((row) => {
+                const picture = row.picture || {};
+                const live = row.live || {};
+                return '<tr class="row" data-id="' + row.customer_id + '">'
+                    + '<td class="who"><strong>' + text(row.name || row.customer_id) + '</strong><span class="note">' + text(row.customer_id) + '</span></td>'
+                    + '<td>' + tag(row.priority) + '</td>'
+                    + '<td>' + money(picture.premiums_collected) + '</td>'
+                    + '<td>' + money(picture.landed_risk) + '</td>'
+                    + '<td>' + money(picture.landed_savings) + ' <span class="note">' + (picture.savings_kind || '') + '</span></td>'
+                    + '<td>' + money(live.health_wallet) + '</td>'
+                    + '<td>' + money(live.investments) + '</td>'
+                    + '<td>' + money(live.algo) + '</td>'
+                    + '<td>' + money(picture.unposted_claim_transfers) + '</td>'
+                    + '</tr>';
+            }).join('');
+            document.querySelectorAll('tr.row').forEach((tr) => {
+                tr.addEventListener('click', () => openCustomer(tr.getAttribute('data-id')));
+            });
+            const specimen = report.specimen || {};
+            document.getElementById('specimen').textContent = JSON.stringify({
+                customer_id: specimen.customer_id,
+                picture: specimen.picture,
+                months: specimen.months,
+                claims: specimen.claims,
+                writes: specimen.writes
+            }, null, 2);
+            const first = rows.find((row) => row.priority === 'attention') || rows[0];
+            if (first) openCustomer(first.customer_id);
+        }
+
+        async function openCustomer(customerId) {
+            document.getElementById('detail-title').textContent = 'Customer picture · ' + customerId;
+            const response = await fetch('/api/admin/cashflow/customers/' + encodeURIComponent(customerId), { headers });
+            const body = await response.json();
+            document.getElementById('detail').textContent = JSON.stringify(body.picture || body, null, 2);
+        }
+
+        document.getElementById('post-claims').addEventListener('click', async () => {
+            const button = document.getElementById('post-claims');
+            button.disabled = true;
+            const response = await fetch('/api/admin/cashflow/post-claim-transfers', { method: 'POST', headers, body: '{}' });
+            const body = await response.json();
+            const transfers = body.transfers || {};
+            document.getElementById('post-result').textContent = response.ok
+                ? ('Posted ' + (transfers.posted_count || 0) + ' claim transfer(s). Claims stay on the book. Reserve left ' + money(transfers.claims_reserve) + '.')
+                : (body.error || 'Could not post.');
+            button.disabled = false;
+            load();
+        });
+
+        load();
+    </script>
+</body>
+</html>

@@ -1043,12 +1043,12 @@
                 </div>
                 <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
                     <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Risk Coverage</div>
-                    <div id="actuarialRiskPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">50%</div>
+                    <div id="actuarialRiskPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">100%</div>
                     <div id="actuarialRiskAmt" style="font-size: 0.75rem; color: var(--text-secondary);">$0.00</div>
                 </div>
                 <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
                     <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Savings Portion</div>
-                    <div id="actuarialSavingsPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">50%</div>
+                    <div id="actuarialSavingsPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">0%</div>
                     <div id="actuarialSavingsAmt" style="font-size: 0.75rem; color: var(--text-secondary);">$0.00</div>
                 </div>
                 <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
@@ -3305,8 +3305,8 @@
             const dist = unified.monthly_distribution || {};
             const alloc = dist.allocation_pct || {};
             const actuarial = dist.actuarial_data || {};
-            const savingsPct = Number(alloc.savings_pct != null ? alloc.savings_pct : 50);
-            const riskPct = Number(alloc.risk_pct != null ? alloc.risk_pct : 50);
+            const savingsPct = Number(alloc.savings_pct != null ? alloc.savings_pct : 0);
+            const riskPct = Number(alloc.risk_pct != null ? alloc.risk_pct : 100);
             const premium = Number(dist.total_premium || 0);
             const riskAmt = Number(dist.risk_coverage != null ? dist.risk_coverage : premium * riskPct / 100);
             const savingsAmt = Number(

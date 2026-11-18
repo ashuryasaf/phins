@@ -16,7 +16,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from services.aspire_scale_identity import PHINS_TAKE
-from services.nft_ledger import verify_token
+from services.nft_ledger import mint_token, verify_token
 
 # Plan factors, used only as weights on the expense loading. They are
 # renormalized so the three shares sum to the loading. Risk premium is
@@ -34,6 +34,15 @@ _SAVINGS_SPLIT: Tuple[Tuple[str, Decimal], ...] = (
     ("investments", Decimal("65")),
     ("algo", Decimal("5")),
 )
+
+# Same multiples the cash writer uses. A named add-on is savings even when
+# the policy has no savings_premium pin.
+_ADDON_RATES = {
+    "none": Decimal("0"),
+    "light": Decimal("0.25"),
+    "balanced": Decimal("0.50"),
+    "growth": Decimal("1"),
+}
 
 _PREMIUM_TYPES = frozenset({
     "premium_payment",
@@ -167,10 +176,19 @@ def _kernel_month(policy: Mapping[str, Any]) -> Dict[str, Any]:
     """
     risk_value = _first_present(policy, "risk_premium_annual", "risk_premium")
     risk = _monthly(risk_value) if risk_value is not None else Decimal("0.00")
+    addon = str(policy.get("savings_addon") or "").strip().lower()
     savings_value = _first_present(policy, "savings_premium_annual", "savings_premium")
     if savings_value is not None:
         savings = _monthly(savings_value)
         savings_source = "kernel_pin"
+    elif addon in _ADDON_RATES:
+        addon_rate = _ADDON_RATES[addon]
+        if addon_rate > 0 and risk_value is not None:
+            savings = _monthly(_money(risk_value) * addon_rate)
+            savings_source = "growth" if addon == "growth" else "addon"
+        else:
+            savings = Decimal("0.00")
+            savings_source = "no_savings_election"
     else:
         rate = policy.get("savings_rate")
         if rate is None:
@@ -179,6 +197,10 @@ def _kernel_month(policy: Mapping[str, Any]) -> Dict[str, Any]:
         else:
             savings = (risk * _money(rate)).quantize(_CENT, rounding=ROUND_HALF_UP)
             savings_source = "addon_rate"
+    if savings > 0 and addon == "growth" and savings_source != "growth":
+        savings_source = "growth"
+    elif savings > 0 and addon in ("light", "balanced") and savings_source == "kernel_pin":
+        savings_source = "addon"
     expense_value = _first_present(policy, "expense_loading_annual", "expense_loading")
     profit_value = _first_present(policy, "profit_margin_annual", "profit_margin")
     expense_pinned = expense_value is not None
@@ -349,6 +371,58 @@ def _flags(
     return flags
 
 
+def _picture(
+    rows: Sequence[Mapping[str, Any]],
+    claim_rows: Sequence[Mapping[str, Any]],
+    withheld: Sequence[Mapping[str, Any]],
+) -> Dict[str, Any]:
+    """One customer's premiums: kernel risk stays out of savings."""
+    collected = landed_risk = landed_savings = Decimal("0.00")
+    kernel_risk = kernel_savings = Decimal("0.00")
+    expense = profit = Decimal("0.00")
+    flags: List[str] = []
+    sources = set()
+    for row in rows:
+        collected += _money(row.get("collected"))
+        landed_risk += _money(row.get("landed_risk"))
+        landed_savings += _money(row.get("landed_savings"))
+        kernel_risk += _money(row.get("kernel_risk"))
+        kernel_savings += _money(row.get("savings_addon"))
+        expense += _money(row.get("expense_loading"))
+        profit += _money(row.get("profit"))
+        sources.add(str(row.get("savings_source") or ""))
+        for flag in row.get("flags") or []:
+            if flag not in flags:
+                flags.append(str(flag))
+    unposted = sum((_money(row.get("unposted_reserve_transfer")) for row in claim_rows), Decimal("0.00"))
+    sealed = sum((_money(row.get("sealed_wallet_credit")) for row in claim_rows), Decimal("0.00"))
+    if unposted > 0 and "unposted_claim" not in flags:
+        flags.append("unposted_claim")
+    if withheld and "withheld_seal" not in flags:
+        flags.append("withheld_seal")
+    if "growth" in sources:
+        savings_kind = "growth"
+    elif "addon" in sources or "addon_rate" in sources or "kernel_pin" in sources:
+        savings_kind = "addon"
+    else:
+        savings_kind = "none"
+    return {
+        "premiums_collected": float(collected.quantize(_CENT)),
+        "kernel_risk": float(kernel_risk.quantize(_CENT)),
+        "landed_risk": float(landed_risk.quantize(_CENT)),
+        "expense_loading": float(expense.quantize(_CENT)),
+        "profit": float(profit.quantize(_CENT)),
+        "savings_addon": float(kernel_savings.quantize(_CENT)),
+        "landed_savings": float(landed_savings.quantize(_CENT)),
+        "savings_kind": savings_kind,
+        "risk_sent_to_savings": 0.0,
+        "sealed_claim_credits": float(sealed.quantize(_CENT)),
+        "unposted_claim_transfers": float(unposted.quantize(_CENT)),
+        "withheld_seal_count": len(withheld),
+        "flags": flags,
+    }
+
+
 def _customer_tokens(nft_ledger: Mapping[str, Any], customer_id: str) -> List[Dict[str, Any]]:
     rows = []
     for token in nft_ledger.values():
@@ -394,9 +468,16 @@ def reconcile_customer(
     for token in tokens:
         check = verify_token(token)
         if not check.get("valid"):
+            metadata = token.get("metadata") if isinstance(token.get("metadata"), dict) else {}
+            tx_type = str(token.get("transaction_type") or "")
             withheld.append({
                 "token_id": str(token.get("token_id") or ""),
                 "reason": str(check.get("reason") or "invalid"),
+                "claim_id": (
+                    str(metadata.get("claim_id") or token.get("transaction_id") or "")
+                    if tx_type in _CLAIM_CREDIT_TYPES
+                    else ""
+                ),
             })
             continue
         month = _token_month(token)
@@ -502,6 +583,7 @@ def reconcile_customer(
         (_money(row["unposted_reserve_transfer"]) for row in claim_rows),
         Decimal("0.00"),
     )
+    picture = _picture(rows, claim_rows, withheld)
     return {
         "customer_id": customer_id,
         "writes": False,
@@ -509,6 +591,7 @@ def reconcile_customer(
         "months": rows,
         "withheld_seals": withheld,
         "claims": claim_rows,
+        "picture": picture,
         "admin_balances_from_landed_savings": {
             "health_wallet_savings": float(landed_wallet.quantize(_CENT)),
             "investments": float(landed_investments.quantize(_CENT)),
@@ -580,3 +663,292 @@ def reconcile_customers(
         "customers": reports,
         "customer_count": len(reports),
     }
+
+
+# Named platform customers. The roster still learns every other id that
+# appears on a policy, bill, claim, wallet, investment, algo book, or NFT.
+PLATFORM_WATCH: Tuple[Dict[str, str], ...] = (
+    {"customer_id": "CUST-ASAF-001", "name": "Asaf Assurance", "role": "primary"},
+    {"customer_id": "CUST-EFRAT-001", "name": "Efrat PHINS", "role": "platform"},
+    {"customer_id": "CUST-ASI-001", "name": "Asi PHINS", "role": "platform"},
+    {"customer_id": "CUST-SHOSH-001", "name": "Shosh PHINS", "role": "platform"},
+)
+
+_WATCH_FLAGS = frozenset({
+    "risk_cut",
+    "savings_carved_from_premium",
+    "unposted_claim",
+    "withheld_seal",
+    "balance_differs",
+})
+_PLATFORM_IDS = frozenset({"PHINS-CORPORATE", "PHINS", "SYSTEM"})
+
+
+def _ids_from(rows: Iterable[Any], *keys: str) -> List[str]:
+    found: List[str] = []
+    seen = set()
+    for row in rows or ():
+        if not isinstance(row, Mapping):
+            continue
+        for key in keys:
+            value = str(row.get(key) or "").strip()
+            if value and value not in seen:
+                seen.add(value)
+                found.append(value)
+            break
+    return found
+
+
+def _live_money(balances: Optional[Mapping[str, Any]], customer_id: str, *keys: str) -> float:
+    row = (balances or {}).get(customer_id)
+    if not isinstance(row, Mapping):
+        return 0.0
+    for key in keys:
+        if row.get(key) is not None:
+            return float(_money(row.get(key)))
+    return 0.0
+
+
+def claim_postings_due(report: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """Paid claims with no intact wallet seal. A broken seal is not posted."""
+    broken = {
+        str(row.get("claim_id") or "")
+        for row in report.get("withheld_seals") or []
+        if str(row.get("claim_id") or "")
+    }
+    due = []
+    for row in report.get("claims") or []:
+        amount = _money(row.get("unposted_reserve_transfer"))
+        claim_id = str(row.get("claim_id") or "")
+        if amount <= 0 or not claim_id or claim_id in broken:
+            continue
+        due.append({
+            "customer_id": str(report.get("customer_id") or ""),
+            "claim_id": claim_id,
+            "amount": float(amount),
+            "stays_on_books": True,
+            "destination": "health_wallet",
+            "source": "claims_reserve",
+        })
+    return due
+
+
+def monitoring_report(
+    *,
+    customers: Optional[Mapping[str, Any]] = None,
+    policies: Iterable[Mapping[str, Any]] = (),
+    bills: Iterable[Mapping[str, Any]] = (),
+    claims: Iterable[Mapping[str, Any]] = (),
+    nft_ledger: Optional[Mapping[str, Any]] = None,
+    wallets: Optional[Mapping[str, Any]] = None,
+    investments: Optional[Mapping[str, Any]] = None,
+    algo: Optional[Mapping[str, Any]] = None,
+    watch: Sequence[Mapping[str, str]] = PLATFORM_WATCH,
+) -> Dict[str, Any]:
+    """Customer monitoring list learned from ledgers, NFTs, and live balances.
+
+    Reads only. Live wallet, investment, and algo figures are compared with
+    the savings add-on that the waterfall says landed, plus sealed claim
+    credits on the health wallet. A difference is flagged and not repaired.
+    """
+    policy_rows = [row for row in policies if isinstance(row, Mapping)]
+    bill_rows = [row for row in bills if isinstance(row, Mapping)]
+    claim_rows = [row for row in claims if isinstance(row, Mapping)]
+    ledger = nft_ledger or {}
+    names = {
+        str(row.get("customer_id") or ""): str(row.get("name") or "")
+        for row in watch
+    }
+    roles = {
+        str(row.get("customer_id") or ""): str(row.get("role") or "watch")
+        for row in watch
+    }
+    ordered: List[str] = []
+    seen = set()
+
+    def _add(customer_id: str) -> None:
+        if not customer_id or customer_id in _PLATFORM_IDS or customer_id in seen:
+            return
+        seen.add(customer_id)
+        ordered.append(customer_id)
+
+    for row in watch:
+        _add(str(row.get("customer_id") or ""))
+    for customer_id in _ids_from(policy_rows, "customer_id"):
+        _add(customer_id)
+    for customer_id in _ids_from(bill_rows, "customer_id"):
+        _add(customer_id)
+    for customer_id in _ids_from(claim_rows, "customer_id"):
+        _add(customer_id)
+    for token in ledger.values():
+        if isinstance(token, Mapping):
+            _add(_owner(token))
+    for store in (wallets, investments, algo, customers):
+        if isinstance(store, Mapping):
+            for customer_id in store.keys():
+                _add(str(customer_id))
+
+    customer_rows = []
+    funds = {
+        "health_wallet": Decimal("0.00"),
+        "investments": Decimal("0.00"),
+        "algo": Decimal("0.00"),
+        "learned_savings": Decimal("0.00"),
+        "sealed_claim_credits": Decimal("0.00"),
+        "unposted_claim_transfers": Decimal("0.00"),
+    }
+    attention = 0
+    for customer_id in ordered:
+        record = customers.get(customer_id) if isinstance(customers, Mapping) else None
+        name = ""
+        if isinstance(record, Mapping):
+            name = str(record.get("name") or record.get("full_name") or "")
+        if not name:
+            name = names.get(customer_id, "")
+        report = reconcile_customer(
+            customer_id,
+            policies=policy_rows,
+            bills=bill_rows,
+            claims=claim_rows,
+            nft_ledger=ledger,
+        )
+        wallet = _money(_live_money(wallets, customer_id, "balance"))
+        investment = _money(_live_money(investments, customer_id, "position", "balance"))
+        algo_balance = _money(_live_money(algo, customer_id, "available", "balance"))
+        learned = report["admin_balances_from_landed_savings"]
+        learned_wallet = _money(learned["health_wallet_savings"]) + _money(learned["sealed_claim_credits"])
+        gap = (wallet - learned_wallet).copy_abs()
+        invest_gap = (investment - _money(learned["investments"])).copy_abs()
+        algo_gap = (algo_balance - _money(learned["algo"])).copy_abs()
+        flags = list(report["picture"]["flags"])
+        if gap > _CENT or invest_gap > _CENT or algo_gap > _CENT:
+            flags.append("balance_differs")
+        priority = "attention" if any(flag in _WATCH_FLAGS for flag in flags) else "clear"
+        if customer_id in roles and priority == "clear" and not report["months"]:
+            priority = "watch"
+        if priority == "attention":
+            attention += 1
+        funds["health_wallet"] += wallet
+        funds["investments"] += investment
+        funds["algo"] += algo_balance
+        funds["learned_savings"] += _money(learned["savings_landed"])
+        funds["sealed_claim_credits"] += _money(learned["sealed_claim_credits"])
+        funds["unposted_claim_transfers"] += _money(learned["unposted_claim_transfers"])
+        customer_rows.append({
+            "customer_id": customer_id,
+            "name": name,
+            "role": roles.get(customer_id, "learned"),
+            "on_watch_list": customer_id in roles,
+            "priority": priority,
+            "picture": report["picture"],
+            "live": {
+                "health_wallet": float(wallet),
+                "investments": float(investment),
+                "algo": float(algo_balance),
+            },
+            "learned": learned,
+            "claim_postings_due": claim_postings_due(report),
+            "flags": flags,
+            "month_count": len(report["months"]),
+        })
+    customer_rows.sort(key=lambda row: (
+        0 if row["priority"] == "attention" else 1 if row["priority"] == "watch" else 2,
+        row["name"] or row["customer_id"],
+    ))
+    return {
+        "writes": False,
+        "customers": customer_rows,
+        "customer_count": len(customer_rows),
+        "attention_count": attention,
+        "accumulated_funds": {key: float(value.quantize(_CENT)) for key, value in funds.items()},
+        "rules": [
+            "Kernel risk premium is filled first and is never credited to savings.",
+            "Only a savings add-on or a growth add lands in the health wallet, investments, and algo, and it stays there.",
+            "A paid claim stays on the claims book. Unposted cash moves from the claims reserve to the health wallet once, and only when the seal is intact or absent.",
+            "A broken NFT seal is withheld and is not repaired.",
+        ],
+    }
+
+
+def worked_specimen() -> Dict[str, Any]:
+    """CUST-X cash-flow assessment. The sealed example is not written to a book."""
+    policy = {
+        "id": "POL-X",
+        "customer_id": "CUST-X",
+        "name": "Worked assessment",
+        "start_date": "2026-01-01",
+        "risk_premium_annual": 2400.00,
+        "savings_premium_annual": 2400.00,
+        "savings_addon": "growth",
+        "expense_loading_annual": 360.00,
+        "profit_margin_annual": 516.00,
+        "annual_premium": 5676.00,
+    }
+    bills = [
+        {
+            "id": "BILL-X-01",
+            "customer_id": "CUST-X",
+            "payment_period": "2026-01",
+            "amount_paid": 200.00,
+            "premium_allocation": {"risk_amount": 100.00, "savings_amount": 100.00},
+        },
+        {
+            "id": "BILL-X-02",
+            "customer_id": "CUST-X",
+            "payment_period": "2026-02",
+            "amount_paid": 350.00,
+            "premium_allocation": {"risk_amount": 262.50, "savings_amount": 87.50},
+        },
+        {
+            "id": "BILL-X-03",
+            "customer_id": "CUST-X",
+            "payment_period": "2026-03",
+            "amount_paid": 500.00,
+            "premium_allocation": {"risk_amount": 250.00, "savings_amount": 250.00},
+        },
+    ]
+    claims = [
+        {"id": "CLM-X-1", "customer_id": "CUST-X", "status": "paid", "paid_amount": 800.00},
+        {"id": "CLM-X-2", "customer_id": "CUST-X", "status": "paid", "paid_amount": 120.00},
+        {"id": "CLM-X-3", "customer_id": "CUST-X", "status": "pending", "amount": 50.00},
+    ]
+    ledger: Dict[str, Any] = {}
+    for month, amount, risk, savings, bill_id in (
+        ("2026-01", 200.00, 100.00, 100.00, "BILL-X-01"),
+        ("2026-02", 350.00, 262.50, 87.50, "BILL-X-02"),
+        ("2026-03", 500.00, 250.00, 250.00, "BILL-X-03"),
+    ):
+        mint_token(
+            ledger,
+            owner_id="CUST-X",
+            transaction_type="bill_payment",
+            transaction_id=bill_id,
+            amount=amount,
+            description=f"Premium {month}",
+            created_at=f"{month}-02T00:00:00+00:00",
+            metadata={
+                "payment_period": month,
+                "premium_allocation": {"risk_amount": risk, "savings_amount": savings},
+            },
+        )
+    mint_token(
+        ledger,
+        owner_id="CUST-X",
+        transaction_type="claim_payment_received",
+        transaction_id="CLM-X-2",
+        amount=120.00,
+        description="Claim CLM-X-2",
+        created_at="2026-02-15T00:00:00+00:00",
+        metadata={"claim_id": "CLM-X-2"},
+    )
+    report = reconcile_customer(
+        "CUST-X",
+        policies=[policy],
+        bills=bills,
+        claims=claims,
+        nft_ledger=ledger,
+    )
+    report["specimen"] = True
+    report["name"] = "Worked assessment"
+    report["writes"] = False
+    return report

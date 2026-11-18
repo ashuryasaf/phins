@@ -826,7 +826,7 @@ class ProcessPipelineOrchestrator:
         }
 
     def _premium_split(self, policy: Dict[str, Any], amount: float) -> Dict[str, Any]:
-        """Kernel savings pin, or the 50/50 cash default when the pin is missing."""
+        """Kernel risk first. Only a savings add-on or growth add is savings."""
         from services.financial_unification_service import resolve_premium_split
         return resolve_premium_split(amount, policy)
 
