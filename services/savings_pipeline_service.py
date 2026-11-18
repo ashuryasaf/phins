@@ -239,18 +239,29 @@ _INVESTMENT_TRANSFER_FIELDS = (
     'crypto_balance',
     'algo_trading_profits',
 )
-_investment_transfer_locks: Dict[int, threading.Lock] = {}
+_investment_transfer_locks: Dict[int, threading.RLock] = {}
 _investment_transfer_guard = threading.Lock()
 
 
-def _investment_row_lock(account: Dict[str, Any]) -> threading.Lock:
+def account_book_lock(account: Dict[str, Any]) -> threading.RLock:
+    """Lock for one live balance row.
+
+    Investment transfers and health-wallet debits that touch the same row
+    object take this lock, so one path cannot restore a snapshot over a
+    withdrawal the other path already credited. Re-entrant so a caller that
+    already holds the row can record the ledger.
+    """
     key = id(account)
     with _investment_transfer_guard:
         lock = _investment_transfer_locks.get(key)
         if lock is None:
-            lock = threading.Lock()
+            lock = threading.RLock()
             _investment_transfer_locks[key] = lock
         return lock
+
+
+def _investment_row_lock(account: Dict[str, Any]) -> threading.RLock:
+    return account_book_lock(account)
 
 
 def _snapshot_investment_transfer(account: Dict[str, Any]) -> Dict[str, Any]:

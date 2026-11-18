@@ -162,94 +162,109 @@ class UnifiedBalanceService:
         Returns:
             Transfer result with transaction details and NFT token
         """
-        # Validate source and get balance
         if source == 'health_wallet':
             wallet = self.health_wallets.get(customer_id)
-            if not wallet:
+            if not isinstance(wallet, dict):
                 return {'success': False, 'error': 'Health wallet not found'}
-            if wallet.get('balance', 0) < amount:
-                return {'success': False, 'error': 'Insufficient health wallet balance'}
-            source_balance = wallet['balance']
+            book = wallet
         elif source == 'investment_account':
             inv_acc = self.investment_accounts.get(customer_id)
-            if not inv_acc:
+            if not isinstance(inv_acc, dict):
                 return {'success': False, 'error': 'Investment account not found'}
-            from services.savings_pipeline_service import investment_books
-            source_balance = investment_books(inv_acc)['position']
-            if float(amount) > source_balance + 1e-9:
-                return {
-                    'success': False,
-                    'error': 'Insufficient investment balance',
-                    'available_balance': source_balance,
-                }
+            book = inv_acc
         else:
             return {'success': False, 'error': f'Invalid source: {source}'}
-        
-        # Initialize algo trading balance if needed
-        if customer_id not in self.algo_trading_balances:
-            self.algo_trading_balances[customer_id] = {
-                'available': 0.0,
-                'in_positions': 0.0,
-                'total_pnl': 0.0,
-                'active_bots': 0,
-                'transfers': [],
-                'created_at': datetime.now().isoformat()
-            }
-        
-        # Perform transfer
-        transfer_id = f"TRF-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
-        
-        # Deduct from source
-        if source == 'health_wallet':
-            self.health_wallets[customer_id]['balance'] -= amount
-            # Record wallet transaction
-            self.health_wallets[customer_id].setdefault('transactions', []).append({
+
+        from services.savings_pipeline_service import (
+            account_book_lock,
+            apply_investment_withdrawal,
+            investment_books,
+            _restore_investment_transfer,
+            _snapshot_investment_transfer,
+        )
+
+        # Same row lock as the portfolio deposit path. The check, the
+        # withdrawal, the seal, and the algo credit stay inside it.
+        with account_book_lock(book):
+            if source == 'health_wallet':
+                source_balance = float(book.get('balance', 0) or 0)
+                if source_balance + 1e-9 < float(amount):
+                    return {'success': False, 'error': 'Insufficient health wallet balance'}
+            else:
+                source_balance = investment_books(book)['position']
+                if float(amount) > source_balance + 1e-9:
+                    return {
+                        'success': False,
+                        'error': 'Insufficient investment balance',
+                        'available_balance': source_balance,
+                    }
+
+            if customer_id not in self.algo_trading_balances:
+                self.algo_trading_balances[customer_id] = {
+                    'available': 0.0,
+                    'in_positions': 0.0,
+                    'total_pnl': 0.0,
+                    'active_bots': 0,
+                    'transfers': [],
+                    'created_at': datetime.now().isoformat()
+                }
+
+            transfer_id = f"TRF-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+            prior = None
+            if source != 'health_wallet':
+                prior = _snapshot_investment_transfer(book)
+                moved = apply_investment_withdrawal(book, amount)
+                applied = round(float(moved.get('applied') or 0), 2)
+                if applied <= 0:
+                    _restore_investment_transfer(book, prior)
+                    return {
+                        'success': False,
+                        'error': 'Insufficient investment balance',
+                        'available_balance': investment_books(book)['position'],
+                    }
+                amount = applied
+                source_balance = investment_books(book)['position'] + amount
+
+            algo_after = float(self.algo_trading_balances[customer_id].get('available', 0) or 0) + amount
+            try:
+                tx = self.record_transaction(
+                    customer_id=customer_id,
+                    tx_type='algo_trading_deposit',
+                    amount=amount,
+                    description=f'Transfer ${amount:.2f} from {source} to Algo Trading',
+                    metadata={
+                        'transfer_id': transfer_id,
+                        'source': source,
+                        'source_balance_before': source_balance,
+                        'source_balance_after': source_balance - amount,
+                        'algo_balance_after': algo_after,
+                        'bot_id': bot_id
+                    }
+                )
+            except Exception:
+                if prior is not None:
+                    _restore_investment_transfer(book, prior)
+                raise
+
+            if source == 'health_wallet':
+                book['balance'] = round(source_balance - amount, 2)
+                book.setdefault('transactions', []).append({
+                    'id': transfer_id,
+                    'type': 'transfer_out',
+                    'amount': -amount,
+                    'description': 'Transfer to Algo Trading',
+                    'timestamp': datetime.now().isoformat()
+                })
+
+            self.algo_trading_balances[customer_id]['available'] = algo_after
+            self.algo_trading_balances[customer_id]['transfers'].append({
                 'id': transfer_id,
-                'type': 'transfer_out',
-                'amount': -amount,
-                'description': f'Transfer to Algo Trading',
+                'type': 'deposit',
+                'source': source,
+                'amount': amount,
+                'bot_id': bot_id,
                 'timestamp': datetime.now().isoformat()
             })
-        else:  # investment_account
-            from services.savings_pipeline_service import (
-                apply_investment_withdrawal,
-                investment_books,
-            )
-            # Cash first, then holdings, and never more than the position.
-            # A proportional cut of the sub-balances would shrink holdings
-            # that were not part of this transfer.
-            moved = apply_investment_withdrawal(self.investment_accounts[customer_id], amount)
-            amount = round(float(moved.get('applied') or 0), 2)
-            source_balance = investment_books(
-                self.investment_accounts[customer_id]
-            )['position'] + amount
-
-        # Add to algo trading
-        self.algo_trading_balances[customer_id]['available'] += amount
-        self.algo_trading_balances[customer_id]['transfers'].append({
-            'id': transfer_id,
-            'type': 'deposit',
-            'source': source,
-            'amount': amount,
-            'bot_id': bot_id,
-            'timestamp': datetime.now().isoformat()
-        })
-        
-        # Record in transaction ledger
-        tx = self.record_transaction(
-            customer_id=customer_id,
-            tx_type='algo_trading_deposit',
-            amount=amount,
-            description=f'Transfer ${amount:.2f} from {source} to Algo Trading',
-            metadata={
-                'transfer_id': transfer_id,
-                'source': source,
-                'source_balance_before': source_balance,
-                'source_balance_after': source_balance - amount,
-                'algo_balance_after': self.algo_trading_balances[customer_id]['available'],
-                'bot_id': bot_id
-            }
-        )
         
         return {
             'success': True,

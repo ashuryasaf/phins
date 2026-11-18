@@ -890,6 +890,73 @@ def test_failed_seal_restores_the_row_and_a_retry_moves_the_funds_once():
     assert account["algo_trading_profits"] == 57.0
 
 
+def test_portfolio_transfer_cannot_duplicate_a_settled_withdrawal():
+    account = _flagged_row()
+    service, _recorded = _balance_service({"CUST-1": account})
+    moved = []
+    ready = threading.Barrier(2)
+
+    def credit(applied, _remaining):
+        moved.append(applied)
+        return {"success": True}
+
+    def settle():
+        ready.wait(timeout=5)
+        credit_settled_investment(account, 140.0, credit)
+
+    def transfer():
+        ready.wait(timeout=5)
+        result = service.transfer_to_algo_trading("CUST-1", 140.0, "investment_account")
+        if result.get("success"):
+            moved.append(result["amount"])
+
+    threads = [threading.Thread(target=settle), threading.Thread(target=transfer)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+    assert sum(moved) == 140.0
+    assert investment_books(account)["position"] == 0.0
+    assert account["deposits"][0]["id"] == "DEP-1"
+    assert account["balance_is_unallocated_cash"] is True
+
+
+def test_overlapping_wallet_deposits_credit_algo_once():
+    wallet = {"balance": 100.0, "transactions": []}
+    wallets = {"CUST-1": wallet}
+    tracker = PortfolioTrackerService(
+        health_wallets=wallets,
+        record_transaction_func=lambda **_kwargs: {"id": "TX", "nft_token_id": "NFT"},
+    )
+    service, _recorded = _balance_service({})
+    service.health_wallets = wallets
+    results = []
+    ready = threading.Barrier(2)
+
+    def deposit():
+        ready.wait(timeout=5)
+        results.append(tracker.deposit_to_algo("CUST-1", 80.0, "health_wallet"))
+
+    def transfer():
+        ready.wait(timeout=5)
+        results.append(service.transfer_to_algo_trading("CUST-1", 80.0, "health_wallet"))
+
+    threads = [threading.Thread(target=deposit), threading.Thread(target=transfer)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+    assert sum(1 for row in results if row.get("success")) == 1
+    assert wallet["balance"] == 20.0
+    algo = float(tracker.algo_balances.get("CUST-1", {}).get("available", 0) or 0)
+    algo += float(service.algo_trading_balances.get("CUST-1", {}).get("available", 0) or 0)
+    assert algo == 80.0
+
+
 def test_refused_credit_puts_the_withdrawal_back():
     account = _flagged_row()
 

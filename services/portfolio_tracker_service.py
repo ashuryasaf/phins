@@ -270,120 +270,128 @@ class PortfolioTrackerService:
         left on that row. A flagged ``balance`` is only the unallocated cash,
         so it is not used as the post-transfer total.
         """
-        # Validate source and check balance. The books move only after the
-        # ledger call returns, so a failed seal does not leave a credit behind.
+        # The books move only after the ledger call returns, so a failed
+        # seal does not leave a credit behind. A debiting call holds the
+        # source row lock across the check, the seal, and the credit.
         if source == 'investment' and not debit_source:
-            if source_balance_after is not None:
-                source_balance = round(float(source_balance_after), 2)
-            else:
-                inv_acc = self.investment_accounts.get(customer_id) or {}
-                source_balance = inv_acc.get('balance', 0)
+            book = None
         elif source == 'investment':
-            # Initialize investment account if not exists
             if customer_id not in self.investment_accounts:
                 self.investment_accounts[customer_id] = {
                     'balance': 0,
                     'deposits': [],
                     'created_at': datetime.now().isoformat()
                 }
-            
-            inv_acc = self.investment_accounts[customer_id]
-            current_balance = inv_acc.get('balance', 0)
-            
-            if current_balance < amount:
-                return {
-                    'success': False, 
-                    'error': f'Insufficient investment balance. Available: ${current_balance:.2f}, Requested: ${amount:.2f}'
-                }
-            
-            source_balance = current_balance - amount
-            
+            book = self.investment_accounts[customer_id]
         elif source == 'health_wallet':
-            # Initialize wallet if not exists
             if customer_id not in self.health_wallets:
                 self.health_wallets[customer_id] = {
                     'balance': 0,
                     'transactions': [],
                     'created_at': datetime.now().isoformat()
                 }
-            
-            wallet = self.health_wallets[customer_id]
-            current_balance = wallet.get('balance', 0)
-            
-            if current_balance < amount:
-                return {
-                    'success': False, 
-                    'error': f'Insufficient wallet balance. Available: ${current_balance:.2f}, Requested: ${amount:.2f}'
-                }
-            
-            source_balance = current_balance - amount
+            book = self.health_wallets[customer_id]
         else:
             return {'success': False, 'error': f'Invalid source account: {source}'}
 
-        current_algo = 0.0
-        if customer_id in self.algo_balances:
-            current_algo = float(self.algo_balances[customer_id].get('available', 0) or 0)
-        algo_after = current_algo + amount
-        
-        # Record trade
-        trade = Trade(
-            trade_id=f"TRD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
-            customer_id=customer_id,
-            symbol='CASH',
-            trade_type=TradeType.TRANSFER_IN,
-            quantity=amount,
-            price=1.0,
-            amount=amount,
-            portfolio_type=PortfolioType.ALGO_TRADING,
-            timestamp=datetime.now().isoformat(),
-            source=source,
-            destination='algo_trading'
-        )
-        
-        # Record on ledger before either balance changes.
-        tx = {}
-        if self.record_transaction:
-            tx = self.record_transaction(
+        def _perform() -> Dict:
+            if source == 'investment' and not debit_source:
+                if source_balance_after is not None:
+                    source_balance = round(float(source_balance_after), 2)
+                else:
+                    inv_acc = self.investment_accounts.get(customer_id) or {}
+                    source_balance = inv_acc.get('balance', 0)
+            elif source == 'investment':
+                current_balance = float(book.get('balance', 0) or 0)
+                if current_balance < amount:
+                    return {
+                        'success': False,
+                        'error': (
+                            f'Insufficient investment balance. '
+                            f'Available: ${current_balance:.2f}, Requested: ${amount:.2f}'
+                        ),
+                    }
+                source_balance = current_balance - amount
+            else:
+                current_balance = float(book.get('balance', 0) or 0)
+                if current_balance < amount:
+                    return {
+                        'success': False,
+                        'error': (
+                            f'Insufficient wallet balance. '
+                            f'Available: ${current_balance:.2f}, Requested: ${amount:.2f}'
+                        ),
+                    }
+                source_balance = current_balance - amount
+
+            current_algo = 0.0
+            if customer_id in self.algo_balances:
+                current_algo = float(self.algo_balances[customer_id].get('available', 0) or 0)
+            algo_after = current_algo + amount
+
+            trade = Trade(
+                trade_id=f"TRD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
                 customer_id=customer_id,
-                tx_type='algo_trading_deposit',
+                symbol='CASH',
+                trade_type=TradeType.TRANSFER_IN,
+                quantity=amount,
+                price=1.0,
                 amount=amount,
-                description=f'Transfer ${amount:.2f} from {source} to Algo Trading',
-                metadata={
-                    'trade_id': trade.trade_id,
-                    'source': source,
-                    'source_balance_after': source_balance,
-                    'algo_balance_after': algo_after
-                }
-            ) or {}
-            if not isinstance(tx, dict):
-                tx = {}
+                portfolio_type=PortfolioType.ALGO_TRADING,
+                timestamp=datetime.now().isoformat(),
+                source=source,
+                destination='algo_trading'
+            )
 
-        if source == 'investment' and debit_source:
-            self.investment_accounts[customer_id]['balance'] = source_balance
-        elif source == 'health_wallet':
-            self.health_wallets[customer_id]['balance'] = source_balance
+            tx = {}
+            if self.record_transaction:
+                tx = self.record_transaction(
+                    customer_id=customer_id,
+                    tx_type='algo_trading_deposit',
+                    amount=amount,
+                    description=f'Transfer ${amount:.2f} from {source} to Algo Trading',
+                    metadata={
+                        'trade_id': trade.trade_id,
+                        'source': source,
+                        'source_balance_after': source_balance,
+                        'algo_balance_after': algo_after
+                    }
+                ) or {}
+                if not isinstance(tx, dict):
+                    tx = {}
 
-        if customer_id not in self.algo_balances:
-            self.algo_balances[customer_id] = {'available': 0, 'in_positions': 0, 'total_pnl': 0}
-        self.algo_balances[customer_id]['available'] = (
-            float(self.algo_balances[customer_id].get('available', 0) or 0) + amount
-        )
-        trade.nft_token_id = tx.get('nft_token_id')
-        trade.ledger_tx_id = tx.get('id')
-        
-        if customer_id not in self.trades:
-            self.trades[customer_id] = []
-        self.trades[customer_id].append(trade)
-        
-        return {
-            'success': True,
-            'trade_id': trade.trade_id,
-            'amount': amount,
-            'algo_balance': self.algo_balances[customer_id]['available'],
-            'source_balance': source_balance,
-            'nft_token_id': trade.nft_token_id,
-            'ledger_tx_id': trade.ledger_tx_id
-        }
+            if source == 'investment' and debit_source:
+                book['balance'] = source_balance
+            elif source == 'health_wallet':
+                book['balance'] = source_balance
+
+            if customer_id not in self.algo_balances:
+                self.algo_balances[customer_id] = {'available': 0, 'in_positions': 0, 'total_pnl': 0}
+            self.algo_balances[customer_id]['available'] = (
+                float(self.algo_balances[customer_id].get('available', 0) or 0) + amount
+            )
+            trade.nft_token_id = tx.get('nft_token_id')
+            trade.ledger_tx_id = tx.get('id')
+
+            if customer_id not in self.trades:
+                self.trades[customer_id] = []
+            self.trades[customer_id].append(trade)
+
+            return {
+                'success': True,
+                'trade_id': trade.trade_id,
+                'amount': amount,
+                'algo_balance': self.algo_balances[customer_id]['available'],
+                'source_balance': source_balance,
+                'nft_token_id': trade.nft_token_id,
+                'ledger_tx_id': trade.ledger_tx_id
+            }
+
+        if book is None:
+            return _perform()
+        from services.savings_pipeline_service import account_book_lock
+        with account_book_lock(book):
+            return _perform()
     
     def execute_trade(self, customer_id: str, symbol: str, trade_type: TradeType, 
                       amount: float, portfolio_type: PortfolioType = PortfolioType.ALGO_TRADING,
