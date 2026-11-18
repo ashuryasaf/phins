@@ -60650,98 +60650,104 @@ For claims or questions, please contact:
                 if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account', allow_staff=False):
                     return
                 
-                # Reserve live investment cash and wallet cash before the trade
-                # is booked. A short row is refused. It is not clamped to zero.
-                account = portfolio_service.accounts.get(account_id)
+                # One savings-account lock covers the cash decision and the
+                # trade. Store cash is reserved before the trade. A stale
+                # portfolio balance is not spent while those store rows exist.
+                from services.savings_pipeline_service import (
+                    account_book_lock,
+                    credit_account_balance,
+                    debit_account_balance,
+                    named_row_lock,
+                )
+                account_lock = named_row_lock(f"savings:{account_id}")
+                account_lock.acquire()
                 reserved_inv = 0.0
                 reserved_wallet = 0.0
                 inv_row = None
                 wallet_row = None
-                prior_cash = None
-                short = False
-                if account:
-                    from services.savings_pipeline_service import (
-                        account_book_lock,
-                        credit_account_balance,
-                        debit_account_balance,
-                    )
-                    customer_id = account.customer_id
-                    candidate_inv = INVESTMENT_ACCOUNTS.get(customer_id)
-                    candidate_wallet = HEALTH_WALLETS.get(customer_id)
-                    inv_row = candidate_inv if isinstance(candidate_inv, dict) else None
-                    wallet_row = candidate_wallet if isinstance(candidate_wallet, dict) else None
-                    rows = []
-                    for row in (inv_row, wallet_row):
-                        if row is not None and row not in rows:
-                            rows.append(row)
-                    rows.sort(key=id)
-                    held = [account_book_lock(row) for row in rows]
-                    for lock in held:
-                        lock.acquire()
-                    try:
-                        inv_live = round(float(inv_row.get('balance', 0) or 0), 2) if inv_row else 0.0
-                        wallet_live = round(float(wallet_row.get('balance', 0) or 0), 2) if wallet_row else 0.0
-                        store_cover = round(inv_live + wallet_live, 2)
-                        if store_cover + 1e-9 >= amount:
-                            take_inv = min(amount, inv_live)
-                            take_wallet = round(amount - take_inv, 2)
-                            if take_inv > 0:
-                                inv_row['balance'] = round(inv_live - take_inv, 2)
-                                reserved_inv = take_inv
-                            if take_wallet > 0:
-                                if debit_account_balance(wallet_row, take_wallet) is None:
-                                    if reserved_inv:
-                                        inv_row['balance'] = round(
-                                            float(inv_row.get('balance', 0) or 0) + reserved_inv, 2
-                                        )
-                                        reserved_inv = 0.0
+                funded_from_stores = False
+                try:
+                    account = portfolio_service.accounts.get(account_id)
+                    short = False
+                    if account:
+                        customer_id = account.customer_id
+                        candidate_inv = INVESTMENT_ACCOUNTS.get(customer_id)
+                        candidate_wallet = HEALTH_WALLETS.get(customer_id)
+                        inv_row = candidate_inv if isinstance(candidate_inv, dict) else None
+                        wallet_row = candidate_wallet if isinstance(candidate_wallet, dict) else None
+                        rows = []
+                        for row in (inv_row, wallet_row):
+                            if row is not None and row not in rows:
+                                rows.append(row)
+                        rows.sort(key=id)
+                        held = [account_book_lock(row) for row in rows]
+                        for lock in held:
+                            lock.acquire()
+                        try:
+                            inv_live = round(float(inv_row.get('balance', 0) or 0), 2) if inv_row else 0.0
+                            wallet_live = round(float(wallet_row.get('balance', 0) or 0), 2) if wallet_row else 0.0
+                            if rows:
+                                store_cover = round(inv_live + wallet_live, 2)
+                                if store_cover + 1e-9 < amount:
                                     short = True
                                 else:
-                                    reserved_wallet = take_wallet
-                            if not short and account.balance < amount:
-                                prior_cash = account.balance
-                                account.balance = amount
-                        elif account.balance + 1e-9 < amount:
-                            short = True
-                    finally:
-                        for lock in reversed(held):
-                            lock.release()
+                                    take_inv = min(amount, inv_live)
+                                    take_wallet = round(amount - take_inv, 2)
+                                    if take_inv > 0:
+                                        inv_row['balance'] = round(inv_live - take_inv, 2)
+                                        reserved_inv = take_inv
+                                    if take_wallet > 0:
+                                        if debit_account_balance(wallet_row, take_wallet) is None:
+                                            if reserved_inv:
+                                                inv_row['balance'] = round(
+                                                    float(inv_row.get('balance', 0) or 0) + reserved_inv, 2
+                                                )
+                                                reserved_inv = 0.0
+                                            short = True
+                                        else:
+                                            reserved_wallet = take_wallet
+                                    if not short:
+                                        funded_from_stores = True
+                                        account.balance = round(float(account.balance or 0) + amount, 2)
+                        finally:
+                            for lock in reversed(held):
+                                lock.release()
 
-                def _return_invest_reserve():
-                    if reserved_inv <= 0 and reserved_wallet <= 0:
-                        return
-                    refund_rows = [row for row in (inv_row, wallet_row) if row is not None]
-                    refund_rows.sort(key=id)
-                    refund_locks = [account_book_lock(row) for row in refund_rows]
-                    for lock in refund_locks:
-                        lock.acquire()
-                    try:
-                        if reserved_inv > 0 and inv_row is not None:
-                            inv_row['balance'] = round(
-                                float(inv_row.get('balance', 0) or 0) + reserved_inv, 2
-                            )
-                        if reserved_wallet > 0 and wallet_row is not None:
-                            credit_account_balance(wallet_row, reserved_wallet)
-                    finally:
-                        for lock in reversed(refund_locks):
-                            lock.release()
+                    def _return_invest_reserve():
+                        if reserved_inv <= 0 and reserved_wallet <= 0:
+                            return
+                        refund_rows = [row for row in (inv_row, wallet_row) if row is not None]
+                        refund_rows.sort(key=id)
+                        refund_locks = [account_book_lock(row) for row in refund_rows]
+                        for lock in refund_locks:
+                            lock.acquire()
+                        try:
+                            if reserved_inv > 0 and inv_row is not None:
+                                inv_row['balance'] = round(
+                                    float(inv_row.get('balance', 0) or 0) + reserved_inv, 2
+                                )
+                            if reserved_wallet > 0 and wallet_row is not None:
+                                credit_account_balance(wallet_row, reserved_wallet)
+                        finally:
+                            for lock in reversed(refund_locks):
+                                lock.release()
 
-                if not account:
-                    result = portfolio_service.invest(account_id, symbol, amount)
-                elif short:
-                    result = {'success': False, 'error': 'Insufficient funds'}
-                else:
-                    try:
-                        result = portfolio_service.invest(account_id, symbol, amount)
-                    except Exception:
-                        _return_invest_reserve()
-                        if prior_cash is not None:
-                            account.balance = prior_cash
-                        raise
-                    if not result.get('success'):
-                        _return_invest_reserve()
-                        if prior_cash is not None:
-                            account.balance = prior_cash
+                    if short:
+                        result = {'success': False, 'error': 'Insufficient funds'}
+                    else:
+                        try:
+                            result = portfolio_service.invest(account_id, symbol, amount)
+                        except Exception:
+                            if funded_from_stores and account is not None:
+                                account.balance = round(float(account.balance or 0) - amount, 2)
+                            _return_invest_reserve()
+                            raise
+                        if not result.get('success'):
+                            if funded_from_stores and account is not None:
+                                account.balance = round(float(account.balance or 0) - amount, 2)
+                            _return_invest_reserve()
+                finally:
+                    account_lock.release()
                 
                 if result.get('success') and audit:
                     try:
@@ -63376,218 +63382,218 @@ For claims or questions, please contact:
                 customer_id = bill.get('customer_id', 'unknown')
                 policy_id = bill.get('policy_id')
                 
-                # Handle health_wallet payment method
-                wallet_deduction_info = None
-                if payment_method == 'health_wallet':
-                    # Check and debit under the same row lock an algo
-                    # transfer holds, so the two cannot spend one balance.
-                    from services.savings_pipeline_service import debit_account_balance
-                    wallet = HEALTH_WALLETS.get(customer_id)
-                    new_wallet_balance = (
-                        debit_account_balance(wallet, amount)
-                        if isinstance(wallet, dict) else None
-                    )
-                    if new_wallet_balance is None:
-                        wallet_balance = float(wallet.get('balance', 0) or 0) if isinstance(wallet, dict) else 0.0
-                        self._set_json_headers(400)
-                        self.wfile.write(json.dumps({
-                            'error': 'Insufficient health wallet balance',
-                            'wallet_balance': wallet_balance,
-                            'amount_required': amount,
-                            'shortfall': amount - wallet_balance
-                        }).encode('utf-8'))
-                        return
-                    
-                    prev_wallet_balance = round(new_wallet_balance + float(amount), 2)
-                    _wallet_hold = (wallet, float(amount), None)
-                    
-                    # Record wallet withdrawal transaction
-                    wallet_tx = {
-                        'id': f"WAL-PAY-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
-                        'type': 'premium_payment',
-                        'amount': -amount,
-                        'bill_id': bill_id,
-                        'policy_id': policy_id,
-                        'description': f"Premium payment for bill {bill_id}",
-                        'previous_balance': prev_wallet_balance,
-                        'balance_after': new_wallet_balance,
-                        'timestamp': datetime.now().isoformat()
-                    }
-                    HEALTH_WALLETS[customer_id].setdefault('transactions', []).append(wallet_tx)
-                    _wallet_hold = (wallet, float(amount), wallet_tx['id'])
-                    
-                    wallet_deduction_info = {
-                        'previous_balance': prev_wallet_balance,
-                        'amount_deducted': amount,
-                        'new_balance': new_wallet_balance,
-                        'wallet_tx_id': wallet_tx['id']
-                    }
-                
-                prev_paid = bill.get('amount_paid', 0.0)
-                _bill_before = {
-                    'amount_paid': bill.get('amount_paid', 0.0),
-                    'status': bill.get('status'),
-                    'paid_date': bill.get('paid_date'),
-                    'payment_method': bill.get('payment_method'),
-                }
-                bill['amount_paid'] = prev_paid + amount
-                # Support both 'amount' and 'amount_due' field names for compatibility
-                amount_due = bill.get('amount', bill.get('amount_due', 0))
-                if bill['amount_paid'] >= amount_due:
-                    bill['status'] = 'paid'
-                    bill['paid_date'] = datetime.now().isoformat()
-                else:
-                    bill['status'] = 'partial'
-                
-                bill['payment_method'] = payment_method
-                
-                # EXPLICIT: Re-assign to ensure BILLING is updated
-                BILLING[bill_id] = bill
-                if status_eq(bill, 'paid'):
-                    notify_referral_reward_for_paid_customer(customer_id)
-                
-                # Record premium revenue on PHINS Balance Sheet
+                # The bill lock covers the field update and the seal. A failed
+                # seal restores this request's snapshot before another pay of
+                # the same bill can commit.
+                from services.savings_pipeline_service import named_row_lock
+                _bill_lock = named_row_lock(f"bill:{bill_id}")
+                _bill_lock.acquire()
                 try:
-                    record_premium_revenue(
+                    bill = BILLING.get(bill_id) or bill
+                    wallet_deduction_info = None
+                    if payment_method == 'health_wallet':
+                        # Check and debit under the same row lock an algo
+                        # transfer holds, so the two cannot spend one balance.
+                        from services.savings_pipeline_service import debit_account_balance
+                        wallet = HEALTH_WALLETS.get(customer_id)
+                        new_wallet_balance = (
+                            debit_account_balance(wallet, amount)
+                            if isinstance(wallet, dict) else None
+                        )
+                        if new_wallet_balance is None:
+                            wallet_balance = float(wallet.get('balance', 0) or 0) if isinstance(wallet, dict) else 0.0
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({
+                                'error': 'Insufficient health wallet balance',
+                                'wallet_balance': wallet_balance,
+                                'amount_required': amount,
+                                'shortfall': amount - wallet_balance
+                            }).encode('utf-8'))
+                            return
+
+                        prev_wallet_balance = round(new_wallet_balance + float(amount), 2)
+                        _wallet_hold = (wallet, float(amount), None)
+
+                        wallet_tx = {
+                            'id': f"WAL-PAY-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
+                            'type': 'premium_payment',
+                            'amount': -amount,
+                            'bill_id': bill_id,
+                            'policy_id': policy_id,
+                            'description': f"Premium payment for bill {bill_id}",
+                            'previous_balance': prev_wallet_balance,
+                            'balance_after': new_wallet_balance,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                        HEALTH_WALLETS[customer_id].setdefault('transactions', []).append(wallet_tx)
+                        _wallet_hold = (wallet, float(amount), wallet_tx['id'])
+
+                        wallet_deduction_info = {
+                            'previous_balance': prev_wallet_balance,
+                            'amount_deducted': amount,
+                            'new_balance': new_wallet_balance,
+                            'wallet_tx_id': wallet_tx['id']
+                        }
+
+                    prev_paid = bill.get('amount_paid', 0.0)
+                    _bill_before = {
+                        'amount_paid': bill.get('amount_paid', 0.0),
+                        'status': bill.get('status'),
+                        'paid_date': bill.get('paid_date'),
+                        'payment_method': bill.get('payment_method'),
+                    }
+                    bill['amount_paid'] = prev_paid + amount
+                    amount_due = bill.get('amount', bill.get('amount_due', 0))
+                    if bill['amount_paid'] >= amount_due:
+                        bill['status'] = 'paid'
+                        bill['paid_date'] = datetime.now().isoformat()
+                    else:
+                        bill['status'] = 'partial'
+                    bill['payment_method'] = payment_method
+                    BILLING[bill_id] = bill
+
+                    payment_tx = record_transaction(
+                        customer_id=customer_id,
+                        tx_type='premium_payment' if payment_method == 'health_wallet' else 'bill_payment',
+                        amount=amount,
+                        description=f"Bill payment of ${amount:.2f} for bill {bill_id} via {payment_method}",
+                        metadata={
+                            'bill_id': bill_id,
+                            'policy_id': policy_id,
+                            'payment_method': payment_method,
+                            'amount_due': amount_due,
+                            'amount_paid_total': bill['amount_paid'],
+                            'bill_status': bill['status'],
+                            'prev_paid': prev_paid,
+                            'wallet_deduction': wallet_deduction_info
+                        }
+                    )
+                    # The ledger row is the seal. Revenue is recorded only
+                    # after it returns, so a failed seal does not book income.
+                    _wallet_hold = None
+                    _bill_before = None
+                    if status_eq(bill, 'paid'):
+                        try:
+                            notify_referral_reward_for_paid_customer(customer_id)
+                        except Exception as notify_err:
+                            print(f"[REFERRAL] Error notifying paid customer: {notify_err}")
+                    try:
+                        record_premium_revenue(
+                            customer_id=customer_id,
+                            policy_id=policy_id,
+                            amount=amount,
+                            description=f"Premium payment for {bill_id} via {payment_method}"
+                        )
+                    except Exception as bs_err:
+                        print(f"[BALANCE_SHEET] Error recording premium revenue: {bs_err}")
+                    save_ledger_data()
+                    record_premium_cash_books(
                         customer_id=customer_id,
                         policy_id=policy_id,
                         amount=amount,
-                        description=f"Premium payment for {bill_id} via {payment_method}"
+                        bills_paid=[str(bill_id)],
+                        source_tx_id=str(payment_tx.get('id') or ''),
+                        bill_payments={str(bill_id): float(amount)},
                     )
-                except Exception as bs_err:
-                    print(f"[BALANCE_SHEET] Error recording premium revenue: {bs_err}")
-                
-                # Record payment on TRANSACTION_LEDGER and NFT_LEDGER
-                payment_tx = record_transaction(
-                    customer_id=customer_id,
-                    tx_type='premium_payment' if payment_method == 'health_wallet' else 'bill_payment',
-                    amount=amount,
-                    description=f"Bill payment of ${amount:.2f} for bill {bill_id} via {payment_method}",
-                    metadata={
-                        'bill_id': bill_id,
-                        'policy_id': policy_id,
+
+                    doc_bundle = generate_action_accounting_documents(
+                        action_type='bill_payment' if payment_method != 'health_wallet' else 'premium_payment',
+                        entity_type='billing',
+                        entity_id=str(bill_id),
+                        customer_id=customer_id,
+                        amount=amount,
+                        description=f"Bill payment for {bill_id}",
+                        tx=payment_tx,
+                        metadata={
+                            'policy_id': policy_id,
+                            'payment_method': payment_method,
+                            'amount_due': amount_due,
+                            'amount_paid_total': bill['amount_paid'],
+                            'bill_status': bill['status'],
+                        },
+                        uploaded_by='billing_system',
+                    )
+
+                    if savings_pipeline_enabled and savings_pipeline_service and policy_id:
+                        try:
+                            customer_alloc = get_customer_allocation(customer_id)
+                            savings_pct = customer_alloc.get('savings_pct', DEFAULT_CUSTOMER_ALLOCATION['savings_pct'])
+                            savings_amount = amount * (savings_pct / 100)
+                            if savings_amount > 0:
+                                savings_pipeline_service.deposit_to_pipeline(
+                                    customer_id=customer_id,
+                                    amount=savings_amount,
+                                    source='premium_payment',
+                                    auto_allocate=True
+                                )
+                        except Exception as pipe_err:
+                            print(f"Pipeline allocation note: {pipe_err}")
+
+                    if audit:
+                        try:
+                            audit.log('system', 'update', 'bill', bill_id, {'paid': amount, 'status': bill['status'], 'method': payment_method})
+                        except Exception:
+                            pass
+
+                    bill_doc_bundle = generate_action_accounting_documents(
+                        action_type='bill_payment',
+                        entity_type='billing',
+                        entity_id=str(bill_id),
+                        customer_id=customer_id,
+                        amount=amount,
+                        description=f"Bill payment for {bill_id}",
+                        tx=payment_tx,
+                        metadata={
+                            'policy_id': policy_id,
+                            'payment_method': payment_method,
+                            'bill_status': bill.get('status'),
+                            'amount_due': amount_due,
+                            'amount_paid_total': bill.get('amount_paid'),
+                        },
+                        uploaded_by='billing_system',
+                    )
+                    generated_bill_documents = bill_doc_bundle.get('documents', [])
+
+                    response_data = {
+                        'success': True,
+                        'bill': bill,
+                        'transaction_recorded': True,
+                        'nft_token_id': payment_tx.get('nft_token_id'),
                         'payment_method': payment_method,
-                        'amount_due': amount_due,
-                        'amount_paid_total': bill['amount_paid'],
-                        'bill_status': bill['status'],
-                        'prev_paid': prev_paid,
-                        'wallet_deduction': wallet_deduction_info
+                        'amount_paid': amount,
+                        'revenue_recorded': True
                     }
-                )
-                # The ledger row is the seal. A failure before this returns
-                # the wallet cash and the bill fields.
-                _wallet_hold = None
-                _bill_before = None
-                save_ledger_data()
-                record_premium_cash_books(
-                    customer_id=customer_id,
-                    policy_id=policy_id,
-                    amount=amount,
-                    bills_paid=[str(bill_id)],
-                    source_tx_id=str(payment_tx.get('id') or ''),
-                    bill_payments={str(bill_id): float(amount)},
-                )
+                    if doc_bundle.get('documents'):
+                        response_data['documents_generated'] = doc_bundle['documents']
+                    if wallet_deduction_info:
+                        response_data['wallet_deduction'] = wallet_deduction_info
+                        response_data['message'] = f'Bill paid from health wallet. New wallet balance: ${wallet_deduction_info["new_balance"]:,.2f}'
+                    if generated_bill_documents:
+                        response_data['documents_generated'] = generated_bill_documents
 
-                doc_bundle = generate_action_accounting_documents(
-                    action_type='bill_payment' if payment_method != 'health_wallet' else 'premium_payment',
-                    entity_type='billing',
-                    entity_id=str(bill_id),
-                    customer_id=customer_id,
-                    amount=amount,
-                    description=f"Bill payment for {bill_id}",
-                    tx=payment_tx,
-                    metadata={
-                        'policy_id': policy_id,
-                        'payment_method': payment_method,
-                        'amount_due': amount_due,
-                        'amount_paid_total': bill['amount_paid'],
-                        'bill_status': bill['status'],
-                    },
-                    uploaded_by='billing_system',
-                )
-                
-                # If payment allocates to savings (for premium payments), route through pipeline
-                if savings_pipeline_enabled and savings_pipeline_service and policy_id:
-                    try:
-                        # Get customer's allocation preferences
-                        customer_alloc = get_customer_allocation(customer_id)
-                        savings_pct = customer_alloc.get('savings_pct', DEFAULT_CUSTOMER_ALLOCATION['savings_pct'])
-                        savings_amount = amount * (savings_pct / 100)
-                        
-                        if savings_amount > 0:
-                            # Deposit to pipeline for AI allocation
-                            savings_pipeline_service.deposit_to_pipeline(
-                                customer_id=customer_id,
-                                amount=savings_amount,
-                                source='premium_payment',
-                                auto_allocate=True
-                            )
-                    except Exception as pipe_err:
-                        print(f"Pipeline allocation note: {pipe_err}")
-                
-                if audit:
-                    try:
-                        audit.log('system', 'update', 'bill', bill_id, {'paid': amount, 'status': bill['status'], 'method': payment_method})
-                    except Exception:
-                        pass
-                
-                bill_doc_bundle = generate_action_accounting_documents(
-                    action_type='bill_payment',
-                    entity_type='billing',
-                    entity_id=str(bill_id),
-                    customer_id=customer_id,
-                    amount=amount,
-                    description=f"Bill payment for {bill_id}",
-                    tx=payment_tx,
-                    metadata={
-                        'policy_id': policy_id,
-                        'payment_method': payment_method,
-                        'bill_status': bill.get('status'),
-                        'amount_due': amount_due,
-                        'amount_paid_total': bill.get('amount_paid'),
-                    },
-                    uploaded_by='billing_system',
-                )
-                generated_bill_documents = bill_doc_bundle.get('documents', [])
-
-                response_data = {
-                    'success': True,
-                    'bill': bill,
-                    'transaction_recorded': True,
-                    'nft_token_id': payment_tx.get('nft_token_id'),
-                    'payment_method': payment_method,
-                    'amount_paid': amount,
-                    'revenue_recorded': True
-                }
-                if doc_bundle.get('documents'):
-                    response_data['documents_generated'] = doc_bundle['documents']
-                
-                # Include wallet deduction info if paid from health wallet
-                if wallet_deduction_info:
-                    response_data['wallet_deduction'] = wallet_deduction_info
-                    response_data['message'] = f'Bill paid from health wallet. New wallet balance: ${wallet_deduction_info["new_balance"]:,.2f}'
-                if generated_bill_documents:
-                    response_data['documents_generated'] = generated_bill_documents
-                
-                self._set_json_headers(200)
-                self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                finally:
+                    if _wallet_hold is not None:
+                        from services.savings_pipeline_service import credit_account_balance
+                        held_wallet, held_amount, held_tx = _wallet_hold
+                        credit_account_balance(held_wallet, held_amount)
+                        if held_tx and isinstance(held_wallet.get('transactions'), list):
+                            held_wallet['transactions'] = [
+                                tx for tx in held_wallet['transactions']
+                                if tx.get('id') != held_tx
+                            ]
+                        _wallet_hold = None
+                    if _bill_before is not None:
+                        for key, value in _bill_before.items():
+                            if value is None:
+                                bill.pop(key, None)
+                            else:
+                                bill[key] = value
+                        BILLING[bill_id] = bill
+                        _bill_before = None
+                    _bill_lock.release()
             except Exception as e:
-                if _wallet_hold is not None:
-                    from services.savings_pipeline_service import credit_account_balance
-                    held_wallet, held_amount, held_tx = _wallet_hold
-                    credit_account_balance(held_wallet, held_amount)
-                    if held_tx and isinstance(held_wallet.get('transactions'), list):
-                        held_wallet['transactions'] = [
-                            tx for tx in held_wallet['transactions']
-                            if tx.get('id') != held_tx
-                        ]
-                if _bill_before is not None:
-                    for key, value in _bill_before.items():
-                        if value is None:
-                            bill.pop(key, None)
-                        else:
-                            bill[key] = value
-                    BILLING[bill_id] = bill
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
             return
@@ -63624,189 +63630,206 @@ For claims or questions, please contact:
                     }).encode('utf-8'))
                     return
 
-                customer_bills = [
-                    (bid, b) for bid, b in BILLING.items()
-                    if b.get('customer_id') == customer_id and status_in(b, ['outstanding', 'partial', 'overdue'])
-                ]
-                wallet_balance = float(wallet.get('balance', 0) or 0)
-                if not customer_bills:
+                from services.savings_pipeline_service import named_row_lock
+                _bulk_lock_ids = sorted(
+                    bid for bid, b in BILLING.items()
+                    if isinstance(b, dict) and b.get('customer_id') == customer_id
+                    and status_in(b, ['outstanding', 'partial', 'overdue'])
+                )
+                _bulk_locks = [named_row_lock(f"bill:{bid}") for bid in _bulk_lock_ids]
+                for _bulk_lock in _bulk_locks:
+                    _bulk_lock.acquire()
+                try:
+                    customer_bills = [
+                        (bid, b) for bid, b in BILLING.items()
+                        if b.get('customer_id') == customer_id and status_in(b, ['outstanding', 'partial', 'overdue'])
+                    ]
+                    wallet_balance = float(wallet.get('balance', 0) or 0)
+                    if not customer_bills:
+                        self._set_json_headers(200)
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'message': 'No outstanding bills to pay',
+                            'bills_paid': 0,
+                            'wallet_balance': wallet_balance
+                        }).encode('utf-8'))
+                        return
+
+                    total_outstanding = sum(
+                        (b.get('amount', b.get('amount_due', 0)) - b.get('amount_paid', 0))
+                        for _, b in customer_bills
+                    )
+                    amount_to_pay = min(wallet_balance, total_outstanding)
+                    if amount_to_pay <= 0:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Insufficient wallet balance or no amount due',
+                            'wallet_balance': wallet_balance,
+                            'total_outstanding': total_outstanding
+                        }).encode('utf-8'))
+                        return
+
+                    from services.savings_pipeline_service import (
+                        credit_account_balance,
+                        debit_account_balance,
+                    )
+                    new_wallet_balance = debit_account_balance(wallet, amount_to_pay)
+                    if new_wallet_balance is None:
+                        live_balance = float(wallet.get('balance', 0) or 0)
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Insufficient wallet balance or no amount due',
+                            'wallet_balance': live_balance,
+                            'total_outstanding': total_outstanding
+                        }).encode('utf-8'))
+                        return
+                    _bulk_hold = (wallet, float(amount_to_pay))
+                    prev_wallet_balance = round(new_wallet_balance + float(amount_to_pay), 2)
+
+                    payments_made = []
+                    remaining_to_pay = amount_to_pay
+
+                    for bill_id, bill in customer_bills:
+                        if remaining_to_pay <= 0:
+                            break
+
+                        amount_due = bill.get('amount', bill.get('amount_due', 0))
+                        amount_paid = bill.get('amount_paid', 0)
+                        bill_remaining = amount_due - amount_paid
+
+                        if bill_remaining <= 0:
+                            continue
+
+                        payment_amount = min(remaining_to_pay, bill_remaining)
+                        _bulk_snapshots.append((bill_id, {
+                            'amount_paid': bill.get('amount_paid', 0),
+                            'status': bill.get('status'),
+                            'paid_date': bill.get('paid_date'),
+                            'payment_method': bill.get('payment_method'),
+                        }))
+                        bill['amount_paid'] = amount_paid + payment_amount
+                        if bill['amount_paid'] >= amount_due:
+                            bill['status'] = 'paid'
+                            bill['paid_date'] = datetime.now().isoformat()
+                        else:
+                            bill['status'] = 'partial'
+                        bill['payment_method'] = 'health_wallet'
+                        BILLING[bill_id] = bill
+
+                        payments_made.append({
+                            'bill_id': bill_id,
+                            'policy_id': bill.get('policy_id'),
+                            'amount_paid': payment_amount,
+                            'bill_status': bill['status'],
+                            'amount_due': amount_due,
+                            'total_paid': bill['amount_paid']
+                        })
+                        remaining_to_pay -= payment_amount
+
+                    total_paid = round(float(amount_to_pay) - float(remaining_to_pay), 2)
+                    unused = round(float(amount_to_pay) - total_paid, 2)
+                    if unused > 0:
+                        credit_account_balance(wallet, unused)
+                    _bulk_hold = (wallet, total_paid) if total_paid > 0 else None
+                    new_wallet_balance = round(float(wallet.get('balance', 0) or 0), 2)
+
+                    wallet_tx = {
+                        'id': f"WAL-BULK-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
+                        'type': 'bulk_premium_payment',
+                        'amount': -total_paid,
+                        'bills_paid': len(payments_made),
+                        'description': f"Bulk premium payment for {len(payments_made)} bills",
+                        'previous_balance': prev_wallet_balance,
+                        'balance_after': new_wallet_balance,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    HEALTH_WALLETS[customer_id].setdefault('transactions', []).append(wallet_tx)
+                    _bulk_tx_id = wallet_tx['id']
+
+                    payment_tx = record_transaction(
+                        customer_id=customer_id,
+                        tx_type='bulk_premium_payment',
+                        amount=total_paid,
+                        description=f"Bulk premium payment of ${total_paid:.2f} for {len(payments_made)} bills from health wallet",
+                        metadata={
+                            'bills_paid': payments_made,
+                            'total_paid': total_paid,
+                            'wallet_previous_balance': prev_wallet_balance,
+                            'wallet_new_balance': new_wallet_balance,
+                            'remaining_outstanding': total_outstanding - total_paid,
+                            'wallet_debit': True,
+                        }
+                    )
+                    _bulk_hold = None
+                    _bulk_snapshots = []
+                    _bulk_tx_id = None
+                    for paid in payments_made:
+                        try:
+                            record_premium_revenue(
+                                customer_id=customer_id,
+                                policy_id=paid.get('policy_id'),
+                                amount=paid.get('amount_paid'),
+                                description=f"Premium payment for {paid.get('bill_id')} from health wallet"
+                            )
+                        except Exception as bs_err:
+                            print(f"[BALANCE_SHEET] Error: {bs_err}")
+                    if any(str(item.get('bill_status') or '').lower() == 'paid' for item in payments_made):
+                        try:
+                            notify_referral_reward_for_paid_customer(customer_id)
+                        except Exception as notify_err:
+                            print(f"[REFERRAL] Error notifying paid customer: {notify_err}")
+                    for paid in payments_made:
+                        record_premium_cash_books(
+                            customer_id=customer_id,
+                            policy_id=paid.get('policy_id'),
+                            amount=paid.get('amount_paid'),
+                            bills_paid=[str(paid.get('bill_id') or '')],
+                            source_tx_id=str(payment_tx.get('id') or ''),
+                            bill_payments={
+                                str(paid.get('bill_id') or ''): float(paid.get('amount_paid') or 0)
+                            },
+                        )
+                
+                    save_ledger_data()
+                
                     self._set_json_headers(200)
                     self.wfile.write(json.dumps({
                         'success': True,
-                        'message': 'No outstanding bills to pay',
-                        'bills_paid': 0,
-                        'wallet_balance': wallet_balance
-                    }).encode('utf-8'))
-                    return
-
-                total_outstanding = sum(
-                    (b.get('amount', b.get('amount_due', 0)) - b.get('amount_paid', 0))
-                    for _, b in customer_bills
-                )
-                amount_to_pay = min(wallet_balance, total_outstanding)
-                if amount_to_pay <= 0:
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({
-                        'error': 'Insufficient wallet balance or no amount due',
-                        'wallet_balance': wallet_balance,
-                        'total_outstanding': total_outstanding
-                    }).encode('utf-8'))
-                    return
-
-                from services.savings_pipeline_service import (
-                    credit_account_balance,
-                    debit_account_balance,
-                )
-                new_wallet_balance = debit_account_balance(wallet, amount_to_pay)
-                if new_wallet_balance is None:
-                    live_balance = float(wallet.get('balance', 0) or 0)
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({
-                        'error': 'Insufficient wallet balance or no amount due',
-                        'wallet_balance': live_balance,
-                        'total_outstanding': total_outstanding
-                    }).encode('utf-8'))
-                    return
-                _bulk_hold = (wallet, float(amount_to_pay))
-                prev_wallet_balance = round(new_wallet_balance + float(amount_to_pay), 2)
-
-                payments_made = []
-                remaining_to_pay = amount_to_pay
-
-                for bill_id, bill in customer_bills:
-                    if remaining_to_pay <= 0:
-                        break
-
-                    amount_due = bill.get('amount', bill.get('amount_due', 0))
-                    amount_paid = bill.get('amount_paid', 0)
-                    bill_remaining = amount_due - amount_paid
-
-                    if bill_remaining <= 0:
-                        continue
-
-                    payment_amount = min(remaining_to_pay, bill_remaining)
-                    _bulk_snapshots.append((bill_id, {
-                        'amount_paid': bill.get('amount_paid', 0),
-                        'status': bill.get('status'),
-                        'paid_date': bill.get('paid_date'),
-                        'payment_method': bill.get('payment_method'),
-                    }))
-                    bill['amount_paid'] = amount_paid + payment_amount
-                    if bill['amount_paid'] >= amount_due:
-                        bill['status'] = 'paid'
-                        bill['paid_date'] = datetime.now().isoformat()
-                    else:
-                        bill['status'] = 'partial'
-                    bill['payment_method'] = 'health_wallet'
-                    BILLING[bill_id] = bill
-
-                    try:
-                        record_premium_revenue(
-                            customer_id=customer_id,
-                            policy_id=bill.get('policy_id'),
-                            amount=payment_amount,
-                            description=f"Premium payment for {bill_id} from health wallet"
-                        )
-                    except Exception as bs_err:
-                        print(f"[BALANCE_SHEET] Error: {bs_err}")
-
-                    payments_made.append({
-                        'bill_id': bill_id,
-                        'policy_id': bill.get('policy_id'),
-                        'amount_paid': payment_amount,
-                        'bill_status': bill['status'],
-                        'amount_due': amount_due,
-                        'total_paid': bill['amount_paid']
-                    })
-                    remaining_to_pay -= payment_amount
-
-                if any(str(item.get('bill_status') or '').lower() == 'paid' for item in payments_made):
-                    notify_referral_reward_for_paid_customer(customer_id)
-
-                total_paid = round(float(amount_to_pay) - float(remaining_to_pay), 2)
-                unused = round(float(amount_to_pay) - total_paid, 2)
-                if unused > 0:
-                    credit_account_balance(wallet, unused)
-                _bulk_hold = (wallet, total_paid) if total_paid > 0 else None
-                new_wallet_balance = round(float(wallet.get('balance', 0) or 0), 2)
-
-                wallet_tx = {
-                    'id': f"WAL-BULK-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
-                    'type': 'bulk_premium_payment',
-                    'amount': -total_paid,
-                    'bills_paid': len(payments_made),
-                    'description': f"Bulk premium payment for {len(payments_made)} bills",
-                    'previous_balance': prev_wallet_balance,
-                    'balance_after': new_wallet_balance,
-                    'timestamp': datetime.now().isoformat()
-                }
-                HEALTH_WALLETS[customer_id].setdefault('transactions', []).append(wallet_tx)
-                _bulk_tx_id = wallet_tx['id']
-
-                payment_tx = record_transaction(
-                    customer_id=customer_id,
-                    tx_type='bulk_premium_payment',
-                    amount=total_paid,
-                    description=f"Bulk premium payment of ${total_paid:.2f} for {len(payments_made)} bills from health wallet",
-                    metadata={
-                        'bills_paid': payments_made,
+                        'message': f'Paid {len(payments_made)} bills totaling ${total_paid:,.2f} from health wallet',
                         'total_paid': total_paid,
+                        'bills_paid': len(payments_made),
+                        'payment_details': payments_made,
                         'wallet_previous_balance': prev_wallet_balance,
                         'wallet_new_balance': new_wallet_balance,
                         'remaining_outstanding': total_outstanding - total_paid,
-                        'wallet_debit': True,
-                    }
-                )
-                _bulk_hold = None
-                _bulk_snapshots = []
-                _bulk_tx_id = None
-                for paid in payments_made:
-                    record_premium_cash_books(
-                        customer_id=customer_id,
-                        policy_id=paid.get('policy_id'),
-                        amount=paid.get('amount_paid'),
-                        bills_paid=[str(paid.get('bill_id') or '')],
-                        source_tx_id=str(payment_tx.get('id') or ''),
-                        bill_payments={
-                            str(paid.get('bill_id') or ''): float(paid.get('amount_paid') or 0)
-                        },
-                    )
-                
-                save_ledger_data()
-                
-                self._set_json_headers(200)
-                self.wfile.write(json.dumps({
-                    'success': True,
-                    'message': f'Paid {len(payments_made)} bills totaling ${total_paid:,.2f} from health wallet',
-                    'total_paid': total_paid,
-                    'bills_paid': len(payments_made),
-                    'payment_details': payments_made,
-                    'wallet_previous_balance': prev_wallet_balance,
-                    'wallet_new_balance': new_wallet_balance,
-                    'remaining_outstanding': total_outstanding - total_paid,
-                    'nft_token_id': payment_tx.get('nft_token_id'),
-                    'wallet_tx_id': wallet_tx['id']
-                }, default=str).encode('utf-8'))
+                        'nft_token_id': payment_tx.get('nft_token_id'),
+                        'wallet_tx_id': wallet_tx['id']
+                    }, default=str).encode('utf-8'))
+                finally:
+                    if _bulk_hold is not None:
+                        from services.savings_pipeline_service import credit_account_balance
+                        held_wallet, held_amount = _bulk_hold
+                        credit_account_balance(held_wallet, held_amount)
+                        if _bulk_tx_id and isinstance(held_wallet.get('transactions'), list):
+                            held_wallet['transactions'] = [
+                                tx for tx in held_wallet['transactions']
+                                if tx.get('id') != _bulk_tx_id
+                            ]
+                        _bulk_hold = None
+                    for snap_id, fields in _bulk_snapshots:
+                        snap_bill = BILLING.get(snap_id)
+                        if not isinstance(snap_bill, dict):
+                            continue
+                        for key, value in fields.items():
+                            if value is None:
+                                snap_bill.pop(key, None)
+                            else:
+                                snap_bill[key] = value
+                        BILLING[snap_id] = snap_bill
+                    _bulk_snapshots = []
+                    for _bulk_lock in reversed(_bulk_locks):
+                        _bulk_lock.release()
             except Exception as e:
-                if _bulk_hold is not None:
-                    from services.savings_pipeline_service import credit_account_balance
-                    held_wallet, held_amount = _bulk_hold
-                    credit_account_balance(held_wallet, held_amount)
-                    if _bulk_tx_id and isinstance(held_wallet.get('transactions'), list):
-                        held_wallet['transactions'] = [
-                            tx for tx in held_wallet['transactions']
-                            if tx.get('id') != _bulk_tx_id
-                        ]
-                for snap_id, fields in _bulk_snapshots:
-                    snap_bill = BILLING.get(snap_id)
-                    if not isinstance(snap_bill, dict):
-                        continue
-                    for key, value in fields.items():
-                        if value is None:
-                            snap_bill.pop(key, None)
-                        else:
-                            snap_bill[key] = value
-                    BILLING[snap_id] = snap_bill
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return

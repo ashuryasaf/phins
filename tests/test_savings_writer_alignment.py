@@ -1298,6 +1298,126 @@ def test_invest_returns_reserved_cash_when_the_trade_is_not_booked():
         portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
 
 
+def test_invest_does_not_spend_a_stale_portfolio_balance():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-4"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 40.0, "transactions": []}
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 0.0, "balance_is_unallocated_cash": True}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-4", 0.0)
+    account.balance = 100.0
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 100.0,
+        })
+        assert status == 400, body
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 40.0
+        assert account.balance == 100.0
+        assert account.assets == []
+    finally:
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_second_invest_waits_and_does_not_book_the_reserved_cash():
+    import threading
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-5"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 0.0, "balance_is_unallocated_cash": True}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-5", 0.0)
+    original = portal.portfolio_service.invest
+    seen = {"n": 0}
+
+    def _spy(account_id, symbol, amount):
+        seen["n"] += 1
+        if seen["n"] == 1:
+            def _second():
+                seen["second"] = _post_json("/api/savings/invest", {
+                    "account_id": account.account_id,
+                    "symbol": "USDC",
+                    "amount": 100.0,
+                })
+            worker = threading.Thread(target=_second)
+            worker.start()
+            worker.join(0.2)
+            seen["blocked"] = worker.is_alive()
+            seen["worker"] = worker
+        return original(account_id, symbol, amount)
+
+    portal.portfolio_service.invest = _spy
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 100.0,
+        })
+        seen["worker"].join(2)
+        assert status == 200, body
+        assert seen["blocked"] is True
+        assert seen["second"][0] == 400
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 0.0
+        assert len(account.assets) == 1
+    finally:
+        portal.portfolio_service.invest = original
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(2)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_failed_bill_pay_does_not_book_premium_revenue():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-HOLD-4"
+    bill_id = "BILL-HOLD-4"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.BILLING[bill_id] = {
+        "bill_id": bill_id,
+        "customer_id": customer_id,
+        "amount": 40.0,
+        "amount_paid": 0.0,
+        "status": "outstanding",
+    }
+    original_tx = portal.record_transaction
+    original_revenue = portal.record_premium_revenue
+    revenue_calls = {"n": 0}
+
+    def _boom(**_kwargs):
+        raise RuntimeError("seal failed")
+
+    def _revenue(*_args, **_kwargs):
+        revenue_calls["n"] += 1
+
+    portal.record_transaction = _boom
+    portal.record_premium_revenue = _revenue
+    try:
+        status, body = _post_json("/api/billing/pay", {
+            "bill_id": bill_id,
+            "amount": 40.0,
+            "payment_method": "health_wallet",
+        })
+        assert status == 400, body
+        assert revenue_calls["n"] == 0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 100.0
+        assert portal.BILLING[bill_id]["status"] == "outstanding"
+        assert portal.BILLING[bill_id]["amount_paid"] == 0.0
+    finally:
+        portal.record_transaction = original_tx
+        portal.record_premium_revenue = original_revenue
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.BILLING.pop(bill_id, None)
+
+
 def test_debit_account_balance_refuses_to_go_negative():
     from services.savings_pipeline_service import credit_account_balance, debit_account_balance
 

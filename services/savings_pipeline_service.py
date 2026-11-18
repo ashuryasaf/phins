@@ -264,6 +264,25 @@ def _investment_row_lock(account: Dict[str, Any]) -> threading.RLock:
     return account_book_lock(account)
 
 
+_named_row_locks: Dict[str, threading.RLock] = {}
+_named_row_guard = threading.Lock()
+
+
+def named_row_lock(name: str) -> threading.RLock:
+    """Lock for one bill or one savings account, keyed by name.
+
+    Callers that take several of these locks acquire them in sorted name
+    order. The lock is re-entrant.
+    """
+    key = str(name or "")
+    with _named_row_guard:
+        lock = _named_row_locks.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _named_row_locks[key] = lock
+        return lock
+
+
 def debit_account_balance(account: Dict[str, Any], amount: float) -> Optional[float]:
     """Subtract ``amount`` from a row under its lock.
 
