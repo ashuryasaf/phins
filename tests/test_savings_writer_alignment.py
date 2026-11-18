@@ -957,6 +957,82 @@ def test_overlapping_wallet_deposits_credit_algo_once():
     assert algo == 80.0
 
 
+def test_wallet_is_reserved_before_the_seal_and_a_bill_cannot_take_it():
+    from services.savings_pipeline_service import debit_account_balance
+
+    wallet = {"balance": 100.0, "transactions": []}
+    service, _recorded = _balance_service({})
+    service.health_wallets = {"CUST-1": wallet}
+    in_seal = threading.Event()
+    release = threading.Event()
+
+    def _record(**_kwargs):
+        in_seal.set()
+        assert release.wait(timeout=5)
+        return {"id": "TX-1", "nft_token_id": "NFT-1"}
+
+    service.record_transaction = _record
+    result = {}
+
+    def _transfer():
+        result["row"] = service.transfer_to_algo_trading("CUST-1", 80.0, "health_wallet")
+
+    transfer = threading.Thread(target=_transfer)
+    transfer.start()
+    assert in_seal.wait(timeout=5)
+    assert wallet["balance"] == 20.0
+
+    bill = {}
+
+    def _pay_bill():
+        bill["left"] = debit_account_balance(wallet, 80.0)
+
+    payer = threading.Thread(target=_pay_bill)
+    payer.start()
+    payer.join(timeout=0.2)
+    assert payer.is_alive()
+    release.set()
+    transfer.join(timeout=5)
+    payer.join(timeout=5)
+    assert not transfer.is_alive()
+    assert not payer.is_alive()
+    assert result["row"]["success"] is True
+    assert bill["left"] is None
+    assert wallet["balance"] == 20.0
+    assert service.algo_trading_balances["CUST-1"]["available"] == 80.0
+
+
+def test_failed_wallet_seal_returns_the_reservation():
+    wallet = {"balance": 100.0, "transactions": []}
+    service, _recorded = _balance_service({})
+    service.health_wallets = {"CUST-1": wallet}
+
+    def _record(**_kwargs):
+        wallet["balance"] += 15.0
+        raise RuntimeError("seal failed")
+
+    service.record_transaction = _record
+    try:
+        service.transfer_to_algo_trading("CUST-1", 40.0, "health_wallet")
+        raised = False
+    except RuntimeError:
+        raised = True
+    assert raised is True
+    assert wallet["balance"] == 115.0
+    assert wallet["transactions"] == []
+    assert float(service.algo_trading_balances.get("CUST-1", {}).get("available", 0) or 0) == 0.0
+
+
+def test_debit_account_balance_refuses_to_go_negative():
+    from services.savings_pipeline_service import debit_account_balance
+
+    wallet = {"balance": 25.0}
+    assert debit_account_balance(wallet, 40.0) is None
+    assert wallet["balance"] == 25.0
+    assert debit_account_balance(wallet, 10.0) == 15.0
+    assert wallet["balance"] == 15.0
+
+
 def test_wallet_credit_during_the_seal_is_not_replaced():
     wallet = {"balance": 100.0, "transactions": []}
     service, _recorded = _balance_service({})

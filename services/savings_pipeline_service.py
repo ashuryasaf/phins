@@ -264,6 +264,26 @@ def _investment_row_lock(account: Dict[str, Any]) -> threading.RLock:
     return account_book_lock(account)
 
 
+def debit_account_balance(account: Dict[str, Any], amount: float) -> Optional[float]:
+    """Subtract ``amount`` from a row under its lock.
+
+    Returns the new balance. Returns None when the row is missing or the
+    live balance cannot cover the debit, and leaves that row unchanged.
+    The balance is not taken below zero.
+    """
+    if not isinstance(account, dict):
+        return None
+    needed = round(float(amount or 0), 2)
+    if needed <= 0:
+        return None
+    with account_book_lock(account):
+        live = round(float(account.get('balance', 0) or 0), 2)
+        if live + 1e-9 < needed:
+            return None
+        account['balance'] = round(live - needed, 2)
+        return account['balance']
+
+
 _algo_credit_locks: Dict[str, threading.RLock] = {}
 _algo_credit_guard = threading.Lock()
 

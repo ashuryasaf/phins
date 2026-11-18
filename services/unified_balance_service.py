@@ -187,10 +187,15 @@ class UnifiedBalanceService:
         # Same row lock as the portfolio deposit path. The check, the
         # withdrawal, the seal, and the algo credit stay inside it.
         with account_book_lock(book):
+            wallet_reserved = False
             if source == 'health_wallet':
                 source_balance = float(book.get('balance', 0) or 0)
                 if source_balance + 1e-9 < float(amount):
                     return {'success': False, 'error': 'Insufficient health wallet balance'}
+                # Reserve the cash before the seal. A bill that waits on this
+                # row then sees the reduced balance and cannot spend it too.
+                book['balance'] = round(source_balance - float(amount), 2)
+                wallet_reserved = True
             else:
                 source_balance = investment_books(book)['position']
                 if float(amount) > source_balance + 1e-9:
@@ -248,14 +253,17 @@ class UnifiedBalanceService:
                         }
                     )
                 except Exception:
+                    if wallet_reserved:
+                        book['balance'] = round(
+                            float(book.get('balance', 0) or 0) + amount, 2,
+                        )
                     if prior is not None:
                         _restore_investment_transfer(book, prior)
                     raise
 
                 if source == 'health_wallet':
-                    # Subtract from the live balance. A credit that arrived
-                    # during the seal is not replaced by the pre-seal figure.
-                    book['balance'] = round(float(book.get('balance', 0) or 0) - amount, 2)
+                    # The reservation already left. A credit that arrived
+                    # during the seal stays on the row.
                     book.setdefault('transactions', []).append({
                         'id': transfer_id,
                         'type': 'transfer_out',
@@ -263,7 +271,7 @@ class UnifiedBalanceService:
                         'description': 'Transfer to Algo Trading',
                         'timestamp': datetime.now().isoformat()
                     })
-                    reported_source = book['balance']
+                    reported_source = round(float(book.get('balance', 0) or 0), 2)
                 else:
                     reported_source = round(source_balance - amount, 2)
 

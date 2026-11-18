@@ -58443,11 +58443,29 @@ For claims or questions, please contact:
                         self.wfile.write(json.dumps({'error': 'Source and destination cannot be the same'}).encode('utf-8'))
                         return
                     
-                    # Get source balance
+                    # Get source balance. A health-wallet debit is the check
+                    # and the subtraction together, on the same row lock the
+                    # algo transfer holds.
                     source_balance = 0
+                    health_debited = False
                     if source_account == 'health_wallet':
-                        wallet = HEALTH_WALLETS.get(customer_id, {})
-                        source_balance = wallet.get('balance', 0)
+                        from services.savings_pipeline_service import debit_account_balance
+                        wallet = HEALTH_WALLETS.get(customer_id)
+                        new_balance = (
+                            debit_account_balance(wallet, amount)
+                            if isinstance(wallet, dict) else None
+                        )
+                        if new_balance is None:
+                            live = float(wallet.get('balance', 0) or 0) if isinstance(wallet, dict) else 0.0
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({
+                                'error': 'Insufficient funds',
+                                'source_balance': live,
+                                'required': amount
+                            }).encode('utf-8'))
+                            return
+                        source_balance = round(new_balance + float(amount), 2)
+                        health_debited = True
                     elif source_account == 'investment':
                         inv_acc = INVESTMENT_ACCOUNTS.get(customer_id, {})
                         source_balance = inv_acc.get('balance', 0)
@@ -58456,7 +58474,7 @@ For claims or questions, please contact:
                             algo_bal = unified_balance_service.get_algo_trading_balance(customer_id)
                             source_balance = algo_bal.get('available', 0)
                     
-                    if source_balance < amount:
+                    if not health_debited and source_balance < amount:
                         self._set_json_headers(400)
                         self.wfile.write(json.dumps({
                             'error': 'Insufficient funds',
@@ -58467,7 +58485,7 @@ For claims or questions, please contact:
                     
                     # Deduct from source
                     if source_account == 'health_wallet':
-                        HEALTH_WALLETS[customer_id]['balance'] -= amount
+                        pass
                     elif source_account == 'investment':
                         INVESTMENT_ACCOUNTS[customer_id]['balance'] -= amount
                     elif source_account == 'algo_trading' and unified_balance_enabled:
@@ -59345,17 +59363,20 @@ For claims or questions, please contact:
                 external_payment_method = None
 
                 if payment_method == 'health_wallet':
-                    if wallet['balance'] < final_amount:
+                    from services.savings_pipeline_service import debit_account_balance
+                    new_balance = debit_account_balance(wallet, final_amount)
+                    if new_balance is None:
+                        live = float(wallet.get('balance', 0) or 0)
                         self._set_json_headers(400)
                         self.wfile.write(json.dumps({
                             'error': 'Insufficient balance',
-                            'balance': wallet['balance'],
+                            'balance': live,
                             'required': final_amount,
-                            'shortfall': final_amount - wallet['balance'],
+                            'shortfall': final_amount - live,
                             'pricing_plan': pricing_plan
                         }).encode('utf-8'))
                         return
-                    wallet['balance'] = round(wallet['balance'] - final_amount, 2)
+                    prev_balance = round(new_balance + float(final_amount), 2)
                     wallet_deduction = final_amount
                 else:
                     external_payment_method = payment_method
@@ -60652,8 +60673,11 @@ For claims or questions, please contact:
                             remaining = amount - inv_bal
                             INVESTMENT_ACCOUNTS[customer_id]['balance'] = 0
                             if customer_id in HEALTH_WALLETS:
-                                hw_bal = float(HEALTH_WALLETS[customer_id].get('balance', 0))
-                                HEALTH_WALLETS[customer_id]['balance'] = max(0, hw_bal - remaining)
+                                from services.savings_pipeline_service import account_book_lock
+                                hw_wallet = HEALTH_WALLETS[customer_id]
+                                with account_book_lock(hw_wallet):
+                                    hw_bal = float(hw_wallet.get('balance', 0) or 0)
+                                    hw_wallet['balance'] = round(max(0.0, hw_bal - remaining), 2)
                 
                 if result.get('success') and audit:
                     try:
@@ -63289,11 +63313,16 @@ For claims or questions, please contact:
                 # Handle health_wallet payment method
                 wallet_deduction_info = None
                 if payment_method == 'health_wallet':
-                    # Check if customer has sufficient health wallet balance
-                    wallet = HEALTH_WALLETS.get(customer_id, {})
-                    wallet_balance = wallet.get('balance', 0)
-                    
-                    if wallet_balance < amount:
+                    # Check and debit under the same row lock an algo
+                    # transfer holds, so the two cannot spend one balance.
+                    from services.savings_pipeline_service import debit_account_balance
+                    wallet = HEALTH_WALLETS.get(customer_id)
+                    new_wallet_balance = (
+                        debit_account_balance(wallet, amount)
+                        if isinstance(wallet, dict) else None
+                    )
+                    if new_wallet_balance is None:
+                        wallet_balance = float(wallet.get('balance', 0) or 0) if isinstance(wallet, dict) else 0.0
                         self._set_json_headers(400)
                         self.wfile.write(json.dumps({
                             'error': 'Insufficient health wallet balance',
@@ -63303,10 +63332,7 @@ For claims or questions, please contact:
                         }).encode('utf-8'))
                         return
                     
-                    # Deduct from health wallet
-                    prev_wallet_balance = wallet_balance
-                    HEALTH_WALLETS[customer_id]['balance'] -= amount
-                    new_wallet_balance = HEALTH_WALLETS[customer_id]['balance']
+                    prev_wallet_balance = round(new_wallet_balance + float(amount), 2)
                     
                     # Record wallet withdrawal transaction
                     wallet_tx = {
@@ -63491,115 +63517,131 @@ For claims or questions, please contact:
                 if not self._enforce_customer_write(customer_id, 'wallet', allow_staff=False):
                     return
                 
-                # Get customer's health wallet
-                wallet = HEALTH_WALLETS.get(customer_id, {})
-                wallet_balance = wallet.get('balance', 0)
+                # The balance read, the bill marks, and the debit stay on the
+                # same row lock an algo transfer holds. A return below still
+                # releases it.
+                wallet = HEALTH_WALLETS.get(customer_id)
+                _wallet_lock = None
+                if isinstance(wallet, dict):
+                    from services.savings_pipeline_service import account_book_lock
+                    _wallet_lock = account_book_lock(wallet)
+                    _wallet_lock.acquire()
+                else:
+                    wallet = {}
+                try:
+                    wallet_balance = float(wallet.get('balance', 0) or 0)
                 
-                # Get all outstanding bills for this customer (case-insensitive)
-                customer_bills = [
-                    (bid, b) for bid, b in BILLING.items() 
-                    if b.get('customer_id') == customer_id and status_in(b, ['outstanding', 'partial', 'overdue'])
-                ]
+                    # Get all outstanding bills for this customer (case-insensitive)
+                    customer_bills = [
+                        (bid, b) for bid, b in BILLING.items() 
+                        if b.get('customer_id') == customer_id and status_in(b, ['outstanding', 'partial', 'overdue'])
+                    ]
                 
-                if not customer_bills:
-                    self._set_json_headers(200)
-                    self.wfile.write(json.dumps({
-                        'success': True,
-                        'message': 'No outstanding bills to pay',
-                        'bills_paid': 0,
-                        'wallet_balance': wallet_balance
-                    }).encode('utf-8'))
-                    return
+                    if not customer_bills:
+                        self._set_json_headers(200)
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'message': 'No outstanding bills to pay',
+                            'bills_paid': 0,
+                            'wallet_balance': wallet_balance
+                        }).encode('utf-8'))
+                        return
                 
-                # Calculate total outstanding
-                total_outstanding = sum(
-                    (b.get('amount', b.get('amount_due', 0)) - b.get('amount_paid', 0))
-                    for _, b in customer_bills
-                )
+                    # Calculate total outstanding
+                    total_outstanding = sum(
+                        (b.get('amount', b.get('amount_due', 0)) - b.get('amount_paid', 0))
+                        for _, b in customer_bills
+                    )
                 
-                # Determine how much can be paid
-                amount_to_pay = min(wallet_balance, total_outstanding)
+                    # Determine how much can be paid
+                    amount_to_pay = min(wallet_balance, total_outstanding)
                 
-                if amount_to_pay <= 0:
-                    self._set_json_headers(400)
-                    self.wfile.write(json.dumps({
-                        'error': 'Insufficient wallet balance or no amount due',
-                        'wallet_balance': wallet_balance,
-                        'total_outstanding': total_outstanding
-                    }).encode('utf-8'))
-                    return
+                    if amount_to_pay <= 0:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Insufficient wallet balance or no amount due',
+                            'wallet_balance': wallet_balance,
+                            'total_outstanding': total_outstanding
+                        }).encode('utf-8'))
+                        return
                 
-                # Process payments for each bill
-                payments_made = []
-                remaining_to_pay = amount_to_pay
-                prev_wallet_balance = wallet_balance
+                    # Process payments for each bill
+                    payments_made = []
+                    remaining_to_pay = amount_to_pay
+                    prev_wallet_balance = wallet_balance
                 
-                for bill_id, bill in customer_bills:
-                    if remaining_to_pay <= 0:
-                        break
+                    for bill_id, bill in customer_bills:
+                        if remaining_to_pay <= 0:
+                            break
                     
-                    amount_due = bill.get('amount', bill.get('amount_due', 0))
-                    amount_paid = bill.get('amount_paid', 0)
-                    bill_remaining = amount_due - amount_paid
+                        amount_due = bill.get('amount', bill.get('amount_due', 0))
+                        amount_paid = bill.get('amount_paid', 0)
+                        bill_remaining = amount_due - amount_paid
                     
-                    if bill_remaining <= 0:
-                        continue
+                        if bill_remaining <= 0:
+                            continue
                     
-                    # Pay this bill (full or partial)
-                    payment_amount = min(remaining_to_pay, bill_remaining)
+                        # Pay this bill (full or partial)
+                        payment_amount = min(remaining_to_pay, bill_remaining)
                     
-                    bill['amount_paid'] = amount_paid + payment_amount
-                    if bill['amount_paid'] >= amount_due:
-                        bill['status'] = 'paid'
-                        bill['paid_date'] = datetime.now().isoformat()
-                    else:
-                        bill['status'] = 'partial'
-                    bill['payment_method'] = 'health_wallet'
-                    BILLING[bill_id] = bill
+                        bill['amount_paid'] = amount_paid + payment_amount
+                        if bill['amount_paid'] >= amount_due:
+                            bill['status'] = 'paid'
+                            bill['paid_date'] = datetime.now().isoformat()
+                        else:
+                            bill['status'] = 'partial'
+                        bill['payment_method'] = 'health_wallet'
+                        BILLING[bill_id] = bill
                     
-                    # Record premium revenue on balance sheet
-                    try:
-                        record_premium_revenue(
-                            customer_id=customer_id,
-                            policy_id=bill.get('policy_id'),
-                            amount=payment_amount,
-                            description=f"Premium payment for {bill_id} from health wallet"
-                        )
-                    except Exception as bs_err:
-                        print(f"[BALANCE_SHEET] Error: {bs_err}")
+                        # Record premium revenue on balance sheet
+                        try:
+                            record_premium_revenue(
+                                customer_id=customer_id,
+                                policy_id=bill.get('policy_id'),
+                                amount=payment_amount,
+                                description=f"Premium payment for {bill_id} from health wallet"
+                            )
+                        except Exception as bs_err:
+                            print(f"[BALANCE_SHEET] Error: {bs_err}")
                     
-                    payments_made.append({
-                        'bill_id': bill_id,
-                        'policy_id': bill.get('policy_id'),
-                        'amount_paid': payment_amount,
-                        'bill_status': bill['status'],
-                        'amount_due': amount_due,
-                        'total_paid': bill['amount_paid']
-                    })
+                        payments_made.append({
+                            'bill_id': bill_id,
+                            'policy_id': bill.get('policy_id'),
+                            'amount_paid': payment_amount,
+                            'bill_status': bill['status'],
+                            'amount_due': amount_due,
+                            'total_paid': bill['amount_paid']
+                        })
                     
-                    remaining_to_pay -= payment_amount
+                        remaining_to_pay -= payment_amount
 
-                if any(str(item.get('bill_status') or '').lower() == 'paid' for item in payments_made):
-                    notify_referral_reward_for_paid_customer(customer_id)
+                    if any(str(item.get('bill_status') or '').lower() == 'paid' for item in payments_made):
+                        notify_referral_reward_for_paid_customer(customer_id)
                 
-                # Deduct total from health wallet
-                total_paid = amount_to_pay - remaining_to_pay
-                HEALTH_WALLETS[customer_id]['balance'] -= total_paid
-                new_wallet_balance = HEALTH_WALLETS[customer_id]['balance']
+                    # Debit only what is still on the row. The lock has been held
+                    # since the balance was read, so this is that same cash.
+                    total_paid = amount_to_pay - remaining_to_pay
+                    live_wallet = round(float(wallet.get('balance', 0) or 0), 2)
+                    total_paid = min(total_paid, live_wallet)
+                    wallet['balance'] = round(live_wallet - total_paid, 2)
+                    new_wallet_balance = wallet['balance']
                 
-                # Record wallet transaction
-                wallet_tx = {
-                    'id': f"WAL-BULK-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
-                    'type': 'bulk_premium_payment',
-                    'amount': -total_paid,
-                    'bills_paid': len(payments_made),
-                    'description': f"Bulk premium payment for {len(payments_made)} bills",
-                    'previous_balance': prev_wallet_balance,
-                    'balance_after': new_wallet_balance,
-                    'timestamp': datetime.now().isoformat()
-                }
-                HEALTH_WALLETS[customer_id]['transactions'].append(wallet_tx)
-                
+                    # Record wallet transaction
+                    wallet_tx = {
+                        'id': f"WAL-BULK-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
+                        'type': 'bulk_premium_payment',
+                        'amount': -total_paid,
+                        'bills_paid': len(payments_made),
+                        'description': f"Bulk premium payment for {len(payments_made)} bills",
+                        'previous_balance': prev_wallet_balance,
+                        'balance_after': new_wallet_balance,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    HEALTH_WALLETS[customer_id].setdefault('transactions', []).append(wallet_tx)
+                finally:
+                    if _wallet_lock is not None:
+                        _wallet_lock.release()
+
                 # Record on transaction ledger
                 payment_tx = record_transaction(
                     customer_id=customer_id,
