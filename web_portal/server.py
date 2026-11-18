@@ -60650,47 +60650,98 @@ For claims or questions, please contact:
                 if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account', allow_staff=False):
                     return
                 
-                # SYNC: Get the account and sync its balance with INVESTMENT_ACCOUNTS
+                # Reserve live investment cash and wallet cash before the trade
+                # is booked. A short row is refused. It is not clamped to zero.
                 account = portfolio_service.accounts.get(account_id)
+                reserved_inv = 0.0
+                reserved_wallet = 0.0
+                inv_row = None
+                wallet_row = None
+                prior_cash = None
+                short = False
                 if account:
+                    from services.savings_pipeline_service import (
+                        account_book_lock,
+                        credit_account_balance,
+                        debit_account_balance,
+                    )
                     customer_id = account.customer_id
-                    
-                    # Get actual balance from INVESTMENT_ACCOUNTS
-                    inv_account = INVESTMENT_ACCOUNTS.get(customer_id, {})
-                    actual_balance = float(inv_account.get('balance', 0))
-                    
-                    # Also include Health Wallet as available for investment
-                    health_wallet = HEALTH_WALLETS.get(customer_id, {})
-                    wallet_balance = float(health_wallet.get('balance', 0))
-                    
-                    # Total available = Investment balance + Health Wallet
-                    total_available = actual_balance + wallet_balance
-                    
-                    # Sync the portfolio_service account balance
-                    if total_available > account.balance:
-                        account.balance = total_available
-                        print(f"Synced portfolio balance for {customer_id}: ${total_available:,.2f}")
-                
-                result = portfolio_service.invest(account_id, symbol, amount)
-                
-                # If successful, also update INVESTMENT_ACCOUNTS
-                if result.get('success'):
-                    customer_id = account.customer_id if account else None
-                    if customer_id and customer_id in INVESTMENT_ACCOUNTS:
-                        # Deduct from investment balance first, then health wallet if needed
-                        inv_bal = float(INVESTMENT_ACCOUNTS[customer_id].get('balance', 0))
-                        if amount <= inv_bal:
-                            INVESTMENT_ACCOUNTS[customer_id]['balance'] = inv_bal - amount
-                        else:
-                            # Use investment balance first, then health wallet
-                            remaining = amount - inv_bal
-                            INVESTMENT_ACCOUNTS[customer_id]['balance'] = 0
-                            if customer_id in HEALTH_WALLETS:
-                                from services.savings_pipeline_service import account_book_lock
-                                hw_wallet = HEALTH_WALLETS[customer_id]
-                                with account_book_lock(hw_wallet):
-                                    hw_bal = float(hw_wallet.get('balance', 0) or 0)
-                                    hw_wallet['balance'] = round(max(0.0, hw_bal - remaining), 2)
+                    candidate_inv = INVESTMENT_ACCOUNTS.get(customer_id)
+                    candidate_wallet = HEALTH_WALLETS.get(customer_id)
+                    inv_row = candidate_inv if isinstance(candidate_inv, dict) else None
+                    wallet_row = candidate_wallet if isinstance(candidate_wallet, dict) else None
+                    rows = []
+                    for row in (inv_row, wallet_row):
+                        if row is not None and row not in rows:
+                            rows.append(row)
+                    rows.sort(key=id)
+                    held = [account_book_lock(row) for row in rows]
+                    for lock in held:
+                        lock.acquire()
+                    try:
+                        inv_live = round(float(inv_row.get('balance', 0) or 0), 2) if inv_row else 0.0
+                        wallet_live = round(float(wallet_row.get('balance', 0) or 0), 2) if wallet_row else 0.0
+                        store_cover = round(inv_live + wallet_live, 2)
+                        if store_cover + 1e-9 >= amount:
+                            take_inv = min(amount, inv_live)
+                            take_wallet = round(amount - take_inv, 2)
+                            if take_inv > 0:
+                                inv_row['balance'] = round(inv_live - take_inv, 2)
+                                reserved_inv = take_inv
+                            if take_wallet > 0:
+                                if debit_account_balance(wallet_row, take_wallet) is None:
+                                    if reserved_inv:
+                                        inv_row['balance'] = round(
+                                            float(inv_row.get('balance', 0) or 0) + reserved_inv, 2
+                                        )
+                                        reserved_inv = 0.0
+                                    short = True
+                                else:
+                                    reserved_wallet = take_wallet
+                            if not short and account.balance < amount:
+                                prior_cash = account.balance
+                                account.balance = amount
+                        elif account.balance + 1e-9 < amount:
+                            short = True
+                    finally:
+                        for lock in reversed(held):
+                            lock.release()
+
+                def _return_invest_reserve():
+                    if reserved_inv <= 0 and reserved_wallet <= 0:
+                        return
+                    refund_rows = [row for row in (inv_row, wallet_row) if row is not None]
+                    refund_rows.sort(key=id)
+                    refund_locks = [account_book_lock(row) for row in refund_rows]
+                    for lock in refund_locks:
+                        lock.acquire()
+                    try:
+                        if reserved_inv > 0 and inv_row is not None:
+                            inv_row['balance'] = round(
+                                float(inv_row.get('balance', 0) or 0) + reserved_inv, 2
+                            )
+                        if reserved_wallet > 0 and wallet_row is not None:
+                            credit_account_balance(wallet_row, reserved_wallet)
+                    finally:
+                        for lock in reversed(refund_locks):
+                            lock.release()
+
+                if not account:
+                    result = portfolio_service.invest(account_id, symbol, amount)
+                elif short:
+                    result = {'success': False, 'error': 'Insufficient funds'}
+                else:
+                    try:
+                        result = portfolio_service.invest(account_id, symbol, amount)
+                    except Exception:
+                        _return_invest_reserve()
+                        if prior_cash is not None:
+                            account.balance = prior_cash
+                        raise
+                    if not result.get('success'):
+                        _return_invest_reserve()
+                        if prior_cash is not None:
+                            account.balance = prior_cash
                 
                 if result.get('success') and audit:
                     try:

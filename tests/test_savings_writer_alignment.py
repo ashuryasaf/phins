@@ -1181,6 +1181,123 @@ def test_failed_bulk_pay_returns_the_wallet_debit_and_the_bill():
         portal.BILLING.pop(bill_id, None)
 
 
+def _post_json(path, payload):
+    import json
+    import os
+    from urllib.error import HTTPError
+    from urllib.request import Request, urlopen
+
+    request = Request(
+        os.environ["TEST_BASE_URL"] + path,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urlopen(request) as response:
+            return response.status, json.loads(response.read().decode())
+    except HTTPError as exc:
+        raw = exc.read().decode()
+        try:
+            body = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            body = {"error": raw}
+        return exc.code, body
+
+
+def test_invest_reserves_wallet_cash_before_the_trade_is_booked():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-1"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 60.0, "balance_is_unallocated_cash": True}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-1", 0.0)
+    seen = {}
+    original = portal.portfolio_service.invest
+
+    def _spy(account_id, symbol, amount):
+        seen["wallet"] = portal.HEALTH_WALLETS[customer_id]["balance"]
+        seen["investment"] = portal.INVESTMENT_ACCOUNTS[customer_id]["balance"]
+        return original(account_id, symbol, amount)
+
+    portal.portfolio_service.invest = _spy
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 100.0,
+        })
+        assert status == 200, body
+        assert body.get("success") is True
+        assert seen["wallet"] == 60.0
+        assert seen["investment"] == 0.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 60.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert account.assets and account.assets[-1].symbol == "USDC"
+    finally:
+        portal.portfolio_service.invest = original
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_invest_refuses_a_short_wallet_and_does_not_book_the_trade():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-2"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 40.0, "transactions": []}
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 0.0, "balance_is_unallocated_cash": True}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-2", 0.0)
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 100.0,
+        })
+        assert status == 400, body
+        assert body.get("success") is False
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 40.0
+        assert account.assets == []
+        assert account.balance == 0.0
+    finally:
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_invest_returns_reserved_cash_when_the_trade_is_not_booked():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-3"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 25.0, "balance_is_unallocated_cash": True}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-3", 0.0)
+    original = portal.portfolio_service.invest
+
+    def _reject(account_id, symbol, amount):
+        return {"success": False, "error": "rejected"}
+
+    portal.portfolio_service.invest = _reject
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 80.0,
+        })
+        assert status == 400, body
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 100.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 25.0
+        assert account.balance == 0.0
+        assert account.assets == []
+    finally:
+        portal.portfolio_service.invest = original
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
 def test_debit_account_balance_refuses_to_go_negative():
     from services.savings_pipeline_service import credit_account_balance, debit_account_balance
 
