@@ -173,65 +173,120 @@ def test_broken_premium_seal_is_withheld_and_not_repaired():
     assert january["cash_source"] == "bill"
 
 
-def test_issued_quote_field_names_and_closed_claims_stay_in_bounds():
+def test_issued_quote_field_names_pin_risk_expense_and_profit():
+    """Quotes store the kernel's annual amounts without an ``_annual`` suffix."""
     policy = {
-        "id": "POL-SHORT",
-        "customer_id": "CUST-SHORT",
-        "start_date": "2026-13-01",
+        "id": "POL-Q",
+        "customer_id": "CUST-Q",
+        "start_date": "2026-01-01",
         "risk_premium": 2400.00,
         "savings_premium": 2400.00,
         "expense_loading": 360.00,
         "profit_margin": 516.00,
     }
-    ledger = {}
+    bills = [{
+        "id": "BILL-Q",
+        "customer_id": "CUST-Q",
+        "payment_period": "2026-01",
+        "amount_paid": 200.00,
+        "premium_allocation": {"risk_amount": 100.00, "savings_amount": 100.00},
+    }]
+    report = reconcile_customer("CUST-Q", policies=[policy], bills=bills)
+    row = report["months"][0]
+    assert row["kernel_risk"] == 200.00
+    assert row["expense_loading"] == 30.00
+    assert row["profit"] == 43.00
+    assert row["savings_addon"] == 200.00
+    assert row["expense_pinned"] is True
+    assert row["profit_pinned"] is True
+    assert row["landed_risk"] == 200.00
+    assert row["landed_savings"] == 0.00
+    assert "risk_cut" in row["flags"]
+    assert "underbooked" in row["flags"]
+
+    preferred = {
+        "customer_id": "CUST-Q",
+        "start_date": "2026-04-01",
+        "risk_premium_annual": 1200.00,
+        "risk_premium": 2400.00,
+        "expense_loading_annual": 120.00,
+        "expense_loading": 360.00,
+        "profit_margin_annual": 60.00,
+        "profit_margin": 516.00,
+        "savings_premium_annual": 0,
+        "savings_premium": 2400.00,
+    }
+    pinned = reconcile_customer("CUST-Q", policies=[preferred])["months"][0]
+    assert pinned["kernel_risk"] == 100.00
+    assert pinned["expense_loading"] == 10.00
+    assert pinned["profit"] == 5.00
+    assert pinned["savings_addon"] == 0.00
+
+
+def test_non_premium_tokens_do_not_stretch_the_month_range():
+    policy, bills, claims, ledger, _seals = _customer_x_books()
     mint_token(
         ledger,
-        owner_id="CUST-SHORT",
-        transaction_type="wallet_deposit",
-        transaction_id="DEP-1",
-        amount=50.00,
-        description="Earlier wallet deposit",
+        owner_id="CUST-X",
+        transaction_type="claim_payment_received",
+        transaction_id="CLM-OLD",
+        amount=10.00,
+        description="Older claim",
         created_at="2025-06-01T00:00:00+00:00",
+        metadata={"claim_id": "CLM-OLD", "period": "2025-06"},
     )
     mint_token(
         ledger,
-        owner_id="CUST-SHORT",
-        transaction_type="bill_payment",
-        transaction_id="BILL-SHORT",
-        amount=473.00,
-        description="Premium",
-        created_at="2026-02-02T00:00:00+00:00",
-        metadata={"payment_period": "2026-02"},
+        owner_id="CUST-X",
+        transaction_type="wallet_purchase",
+        transaction_id="PUR-1",
+        amount=15.00,
+        description="Purchase",
+        created_at="2025-11-02T00:00:00+00:00",
     )
     report = reconcile_customer(
-        "CUST-SHORT",
+        "CUST-X",
         policies=[policy],
-        bills=[{
-            "id": "BILL-OK",
-            "customer_id": "CUST-SHORT",
-            "payment_period": "2026-13",
-            "amount_paid": 999.00,
-        }, {
-            "id": "BILL-FEB",
-            "customer_id": "CUST-SHORT",
-            "payment_period": "2026-02",
-            "amount_paid": 473.00,
-        }],
-        claims=[
-            {"id": "CLM-CLOSED", "customer_id": "CUST-SHORT", "status": "closed", "paid_amount": 40.00},
-            {"id": "CLM-APPROVED", "customer_id": "CUST-SHORT", "status": "approved", "approved_amount": 70.00},
-        ],
+        bills=bills,
+        claims=claims,
         nft_ledger=ledger,
     )
-    assert report["months"] and report["months"][0]["month"] == "2026-02"
-    assert all(row["month"] >= "2026-01" for row in report["months"])
-    assert report["months"][0]["kernel_risk"] == 200.00
-    assert report["months"][0]["expense_loading"] == 30.00
-    assert report["months"][0]["profit"] == 43.00
-    assert report["months"][0]["savings_addon"] == 200.00
+    assert report["first_month"] == "2026-01"
+    assert [row["month"] for row in report["months"]] == ["2026-01", "2026-02", "2026-03"]
+
+
+def test_closed_claim_without_a_seal_is_an_unposted_transfer():
+    report = reconcile_customer(
+        "CUST-C",
+        claims=[
+            {"id": "CLM-C", "customer_id": "CUST-C", "status": "closed", "paid_amount": 250.00},
+            {"id": "CLM-A", "customer_id": "CUST-C", "status": "approved", "approved_amount": 80.00},
+            {"id": "CLM-R", "customer_id": "CUST-C", "status": "rejected", "amount": 40.00},
+        ],
+    )
     by_claim = {row["claim_id"]: row for row in report["claims"]}
-    assert by_claim["CLM-CLOSED"]["unposted_reserve_transfer"] == 40.00
-    assert "CLM-APPROVED" not in by_claim
+    assert set(by_claim) == {"CLM-C"}
+    assert by_claim["CLM-C"]["unposted_reserve_transfer"] == 250.00
+    assert by_claim["CLM-C"]["posted"] is False
+    assert report["admin_balances_from_landed_savings"]["unposted_claim_transfers"] == 250.00
+
+
+def test_invalid_month_does_not_hang_or_enter_the_range():
+    report = reconcile_customer(
+        "CUST-M",
+        policies=[{
+            "customer_id": "CUST-M",
+            "start_date": "2026-11-01",
+            "risk_premium_annual": 1200.00,
+        }],
+        bills=[
+            {"customer_id": "CUST-M", "payment_period": "2026-14", "amount_paid": 10.00},
+            {"customer_id": "CUST-M", "payment_period": "2026-99", "due_date": "2026-00-01", "amount_paid": 10.00},
+            {"customer_id": "CUST-M", "payment_period": "2027-01", "amount_paid": 40.00},
+        ],
+    )
+    assert [row["month"] for row in report["months"]] == ["2026-11", "2026-12", "2027-01"]
+    assert report["months"][-1]["collected"] == 40.00
 
 
 def test_supplier_bid_is_charged_commission_without_markup():
