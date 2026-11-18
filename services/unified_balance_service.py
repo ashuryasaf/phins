@@ -415,14 +415,60 @@ class UnifiedBalanceService:
                 float(self.health_wallets[customer_id].get('balance', 0) or 0), 2,
             )
         else:
-            self.investment_accounts[customer_id]['balance'] += amount
-            self.investment_accounts[customer_id].setdefault('deposits', []).append({
+            # Add to the live row under the same lock an invest holds.
+            # A captured balance plus this amount would put back cash the
+            # invest already reserved. Savings locks come first so the new
+            # cash can be mirrored without inverting that order.
+            from services.savings_pipeline_service import (
+                credit_account_balance,
+                named_row_lock,
+            )
+            row = self.investment_accounts[customer_id]
+            portfolio_accounts = []
+            if self.portfolio_service is not None:
+                try:
+                    portfolio_accounts = list(
+                        self.portfolio_service.get_customer_accounts(customer_id) or []
+                    )
+                except Exception:
+                    portfolio_accounts = []
+            savings_locks = []
+            ordered_accounts = []
+            for portfolio_account in sorted(
+                portfolio_accounts,
+                key=lambda item: str(getattr(item, 'account_id', '')),
+            ):
+                savings_id = getattr(portfolio_account, 'account_id', None)
+                if not savings_id:
+                    continue
+                savings_lock = named_row_lock(f"savings:{savings_id}")
+                if savings_lock not in savings_locks:
+                    savings_locks.append(savings_lock)
+                    ordered_accounts.append(portfolio_account)
+            acquired_savings = 0
+            try:
+                for savings_lock in savings_locks:
+                    savings_lock.acquire()
+                    acquired_savings += 1
+                credited = credit_account_balance(row, amount)
+                if ordered_accounts and credited is not None:
+                    target = ordered_accounts[0]
+                    target.balance = round(
+                        float(getattr(target, 'balance', 0) or 0) + float(amount),
+                        2,
+                    )
+            finally:
+                for savings_lock in reversed(savings_locks[:acquired_savings]):
+                    savings_lock.release()
+            row.setdefault('deposits', []).append({
                 'id': withdrawal_id,
                 'type': 'algo_trading_withdrawal',
                 'amount': amount,
                 'timestamp': datetime.now().isoformat()
             })
-            new_dest_balance = self.investment_accounts[customer_id]['balance']
+            new_dest_balance = credited if credited is not None else round(
+                float(row.get('balance', 0) or 0), 2,
+            )
         
         # Record transaction
         tx = self.record_transaction(

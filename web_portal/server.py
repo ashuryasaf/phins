@@ -62532,30 +62532,11 @@ For claims or questions, please contact:
                     # ========== POST-WITHDRAWAL SYNC ==========
                     # Sync destination balance back to global stores
                     
-                    if destination == 'investment_account':
-                        new_inv_balance = unified_balance_service.investment_accounts.get(customer_id, {}).get('balance', 0)
-                        if customer_id in INVESTMENT_ACCOUNTS:
-                            INVESTMENT_ACCOUNTS[customer_id]['balance'] = new_inv_balance
-                        else:
-                            INVESTMENT_ACCOUNTS[customer_id] = {'balance': new_inv_balance, 'deposits': []}
-                        
-                        # Update portfolio_service
-                        if portfolio_enabled and portfolio_service:
-                            try:
-                                accounts = portfolio_service.get_customer_accounts(customer_id)
-                                if accounts:
-                                    accounts[0].balance = new_inv_balance
-                            except Exception:
-                                pass
-                        
-                        # Update portfolio_tracker_service
-                        if portfolio_tracker_enabled:
-                            if customer_id not in portfolio_tracker_service.investment_accounts:
-                                portfolio_tracker_service.investment_accounts[customer_id] = {'balance': new_inv_balance}
-                            else:
-                                portfolio_tracker_service.investment_accounts[customer_id]['balance'] = new_inv_balance
-                    
-                    elif destination == 'health_wallet':
+                    # An investment destination is already credited on the
+                    # shared row, and that cash is mirrored onto a savings
+                    # account. A captured balance written back here would
+                    # restore cash an invest already reserved.
+                    if destination == 'health_wallet':
                         HEALTH_WALLETS[customer_id] = unified_balance_service.health_wallets.get(customer_id, HEALTH_WALLETS.get(customer_id, {}))
                         if portfolio_tracker_enabled:
                             portfolio_tracker_service.health_wallets[customer_id] = HEALTH_WALLETS[customer_id]
