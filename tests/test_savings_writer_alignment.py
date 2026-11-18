@@ -115,6 +115,10 @@ def test_a_dollar_over_a_finished_month_keeps_the_add_on():
     short = resolve_premium_split(200.0, policy)
     assert short["risk_amount"] == 200.0
     assert short["savings_amount"] == 0.0
+    many = resolve_premium_split(400.0 * 40 + 1, policy)
+    assert many["savings_amount"] == 8000.0
+    assert many["risk_amount"] == 8001.0
+    assert many["company_remainder"] == 0.0
 
 
 def test_growth_add_is_the_only_savings_on_top_of_risk():

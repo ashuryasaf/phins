@@ -21,7 +21,7 @@ founding ``seed_claims_reserve``.
 from __future__ import annotations
 
 import logging
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 logger = logging.getLogger("phins.financial_unification")
@@ -289,13 +289,12 @@ def _land_unfitted(collected: Decimal, annual_layers: Mapping[str, Decimal]) -> 
         )
     landed = {name: Decimal("0.00") for name in (*_LAYER_ORDER, "excess")}
     left = collected
-    guard = 0
-    while left + Decimal("0.01") >= month_stack and guard < 36:
+    whole = (left / month_stack).to_integral_value(rounding=ROUND_DOWN)
+    if whole > 0:
         step = _waterfall_cash(month_stack, monthly)
         for name in _LAYER_ORDER:
-            landed[name] = (landed[name] + step[name]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        left = (left - month_stack).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        guard += 1
+            landed[name] = (step[name] * whole).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        left = (left - month_stack * whole).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     rest = _waterfall_cash(left, monthly)
     for name in (*_LAYER_ORDER, "excess"):
         landed[name] = (landed[name] + rest[name]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
