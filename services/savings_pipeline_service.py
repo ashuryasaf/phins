@@ -37,7 +37,8 @@ import math
 import random
 import hashlib
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Tuple
+import threading
+from typing import Callable, Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 import json
@@ -229,6 +230,108 @@ def settle_investment_to_algo(
         2,
     )
     return {'applied': applied, 'shortfall': max(0.0, shortfall)}
+
+
+_INVESTMENT_TRANSFER_FIELDS = (
+    'balance',
+    'index_balance',
+    'bonds_balance',
+    'crypto_balance',
+    'algo_trading_profits',
+)
+_investment_transfer_locks: Dict[int, threading.Lock] = {}
+_investment_transfer_guard = threading.Lock()
+
+
+def _investment_row_lock(account: Dict[str, Any]) -> threading.Lock:
+    key = id(account)
+    with _investment_transfer_guard:
+        lock = _investment_transfer_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _investment_transfer_locks[key] = lock
+        return lock
+
+
+def _snapshot_investment_transfer(account: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        field: account[field]
+        for field in _INVESTMENT_TRANSFER_FIELDS
+        if field in account
+    }
+
+
+def _restore_investment_transfer(account: Dict[str, Any], prior: Dict[str, Any]) -> None:
+    for field in _INVESTMENT_TRANSFER_FIELDS:
+        if field in prior:
+            account[field] = prior[field]
+        else:
+            account.pop(field, None)
+
+
+def credit_settled_investment(
+    account: Dict[str, Any],
+    amount: float,
+    credit: Callable[[float, float], Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Withdraw from one investment row, then credit algo for that amount.
+
+    The row lock covers the pre-image, the withdrawal, ``credit``, and any
+    restore. A second caller waits, so it cannot write an older snapshot
+    over a withdrawal that already stuck. ``credit(applied, remaining)``
+    runs after the withdrawal. If it raises, or returns a result that did
+    not succeed, this withdrawal is put back. A request that moves nothing
+    puts back only the state it observed while holding the lock.
+    """
+    if not isinstance(account, dict):
+        return {
+            'success': False,
+            'applied': 0.0,
+            'available_balance': 0.0,
+            'error': 'insufficient',
+        }
+    with _investment_row_lock(account):
+        position = investment_books(account)['position']
+        requested = float(amount)
+        if requested > position + 1e-9:
+            return {
+                'success': False,
+                'applied': 0.0,
+                'available_balance': position,
+                'error': 'insufficient',
+            }
+        prior = _snapshot_investment_transfer(account)
+        settled = settle_investment_to_algo(account, requested)
+        applied = round(_safe_amount(settled.get('applied')), 2)
+        if applied <= 0:
+            _restore_investment_transfer(account, prior)
+            return {
+                'success': False,
+                'applied': 0.0,
+                'available_balance': investment_books(account)['position'],
+                'error': 'insufficient',
+            }
+        remaining = investment_books(account)['position']
+        try:
+            result = credit(applied, remaining)
+        except Exception:
+            _restore_investment_transfer(account, prior)
+            raise
+        if not isinstance(result, dict) or not result.get('success'):
+            _restore_investment_transfer(account, prior)
+            available = investment_books(account)['position']
+            if isinstance(result, dict):
+                result = dict(result)
+                result['success'] = False
+                result.setdefault('available_balance', available)
+                return result
+            return {
+                'success': False,
+                'applied': 0.0,
+                'available_balance': available,
+                'error': 'insufficient',
+            }
+        return result
 
 
 def mark_unallocated_cash(account: Dict[str, Any]) -> None:

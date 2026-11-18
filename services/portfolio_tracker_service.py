@@ -270,7 +270,8 @@ class PortfolioTrackerService:
         left on that row. A flagged ``balance`` is only the unallocated cash,
         so it is not used as the post-transfer total.
         """
-        # Validate source and check balance
+        # Validate source and check balance. The books move only after the
+        # ledger call returns, so a failed seal does not leave a credit behind.
         if source == 'investment' and not debit_source:
             if source_balance_after is not None:
                 source_balance = round(float(source_balance_after), 2)
@@ -295,9 +296,7 @@ class PortfolioTrackerService:
                     'error': f'Insufficient investment balance. Available: ${current_balance:.2f}, Requested: ${amount:.2f}'
                 }
             
-            # Deduct from investment
-            self.investment_accounts[customer_id]['balance'] = current_balance - amount
-            source_balance = self.investment_accounts[customer_id]['balance']
+            source_balance = current_balance - amount
             
         elif source == 'health_wallet':
             # Initialize wallet if not exists
@@ -317,17 +316,14 @@ class PortfolioTrackerService:
                     'error': f'Insufficient wallet balance. Available: ${current_balance:.2f}, Requested: ${amount:.2f}'
                 }
             
-            # Deduct from wallet
-            self.health_wallets[customer_id]['balance'] = current_balance - amount
-            source_balance = self.health_wallets[customer_id]['balance']
+            source_balance = current_balance - amount
         else:
             return {'success': False, 'error': f'Invalid source account: {source}'}
-        
-        # Add to algo trading
-        if customer_id not in self.algo_balances:
-            self.algo_balances[customer_id] = {'available': 0, 'in_positions': 0, 'total_pnl': 0}
-        
-        self.algo_balances[customer_id]['available'] += amount
+
+        current_algo = 0.0
+        if customer_id in self.algo_balances:
+            current_algo = float(self.algo_balances[customer_id].get('available', 0) or 0)
+        algo_after = current_algo + amount
         
         # Record trade
         trade = Trade(
@@ -344,7 +340,8 @@ class PortfolioTrackerService:
             destination='algo_trading'
         )
         
-        # Record on ledger
+        # Record on ledger before either balance changes.
+        tx = {}
         if self.record_transaction:
             tx = self.record_transaction(
                 customer_id=customer_id,
@@ -355,11 +352,24 @@ class PortfolioTrackerService:
                     'trade_id': trade.trade_id,
                     'source': source,
                     'source_balance_after': source_balance,
-                    'algo_balance_after': self.algo_balances[customer_id]['available']
+                    'algo_balance_after': algo_after
                 }
-            )
-            trade.nft_token_id = tx.get('nft_token_id')
-            trade.ledger_tx_id = tx.get('id')
+            ) or {}
+            if not isinstance(tx, dict):
+                tx = {}
+
+        if source == 'investment' and debit_source:
+            self.investment_accounts[customer_id]['balance'] = source_balance
+        elif source == 'health_wallet':
+            self.health_wallets[customer_id]['balance'] = source_balance
+
+        if customer_id not in self.algo_balances:
+            self.algo_balances[customer_id] = {'available': 0, 'in_positions': 0, 'total_pnl': 0}
+        self.algo_balances[customer_id]['available'] = (
+            float(self.algo_balances[customer_id].get('available', 0) or 0) + amount
+        )
+        trade.nft_token_id = tx.get('nft_token_id')
+        trade.ledger_tx_id = tx.get('id')
         
         if customer_id not in self.trades:
             self.trades[customer_id] = []

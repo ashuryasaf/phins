@@ -62226,57 +62226,13 @@ For claims or questions, please contact:
                 
                 # The tracker dict is the canonical book. Do not put a spend
                 # stub in it: that assignment deletes holdings and deposits.
-                # The row is settled before the ledger seal, so the sealed
-                # balance is the position that remains.
-                debit_investment = True
-                credit_amount = amount
-                reported_source_balance = None
-                investment_prior = None
-                if source == 'investment' and customer_id in INVESTMENT_ACCOUNTS:
-                    from services.savings_pipeline_service import (
-                        investment_books,
-                        settle_investment_to_algo,
-                    )
-                    row = INVESTMENT_ACCOUNTS[customer_id]
-                    position = investment_books(row)['position']
-                    if float(amount) > position + 1e-9:
-                        self._set_json_headers(400)
-                        self.wfile.write(json.dumps({
-                            'success': False,
-                            'error': (
-                                f'Insufficient investment balance. '
-                                f'Available: ${position:.2f}, Requested: ${amount:.2f}'
-                            ),
-                            'available_balance': position,
-                        }).encode('utf-8'))
-                        return
-                    investment_prior = {
-                        'balance': row.get('balance'),
-                        'index_balance': row.get('index_balance'),
-                        'bonds_balance': row.get('bonds_balance'),
-                        'crypto_balance': row.get('crypto_balance'),
-                        'algo_trading_profits': row.get('algo_trading_profits', 0),
-                    }
-                    # Settle before the ledger seal. The sealed
-                    # source_balance_after has to be the position that remains,
-                    # not the unallocated cash from before the move.
-                    settled = settle_investment_to_algo(row, amount)
-                    credit_amount = settled['applied']
-                    if credit_amount <= 0:
-                        row.update(investment_prior)
-                        self._set_json_headers(400)
-                        self.wfile.write(json.dumps({
-                            'success': False,
-                            'error': (
-                                f'Insufficient investment balance. '
-                                f'Available: ${position:.2f}, Requested: ${amount:.2f}'
-                            ),
-                            'available_balance': position,
-                        }).encode('utf-8'))
-                        return
-                    reported_source_balance = investment_books(row)['position']
-                    debit_investment = False
-                elif customer_id in INVESTMENT_ACCOUNTS and portfolio_tracker_service.investment_accounts is not INVESTMENT_ACCOUNTS:
+                # Investment transfers settle and credit under one row lock.
+                # A second request waits, and a credit that does not stick
+                # puts back only the withdrawal from this request.
+                use_settled_credit = (
+                    source == 'investment' and customer_id in INVESTMENT_ACCOUNTS
+                )
+                if not use_settled_credit and customer_id in INVESTMENT_ACCOUNTS and portfolio_tracker_service.investment_accounts is not INVESTMENT_ACCOUNTS:
                     inv_bal = INVESTMENT_ACCOUNTS[customer_id].get('balance', 0)
                     if customer_id not in portfolio_tracker_service.investment_accounts:
                         portfolio_tracker_service.investment_accounts[customer_id] = INVESTMENT_ACCOUNTS[customer_id].copy()
@@ -62288,16 +62244,37 @@ For claims or questions, please contact:
                 if customer_id in HEALTH_WALLETS:
                     portfolio_tracker_service.health_wallets[customer_id] = HEALTH_WALLETS[customer_id]
                 # ========== END SYNC ==========
-                
-                result = portfolio_tracker_service.deposit_to_algo(
-                    customer_id,
-                    credit_amount,
-                    source,
-                    debit_source=debit_investment,
-                    source_balance_after=reported_source_balance,
-                )
-                if investment_prior is not None and not result.get('success'):
-                    INVESTMENT_ACCOUNTS[customer_id].update(investment_prior)
+
+                if use_settled_credit:
+                    from services.savings_pipeline_service import credit_settled_investment
+                    row = INVESTMENT_ACCOUNTS[customer_id]
+
+                    def _credit_algo(applied, remaining):
+                        return portfolio_tracker_service.deposit_to_algo(
+                            customer_id,
+                            applied,
+                            source,
+                            debit_source=False,
+                            source_balance_after=remaining,
+                        )
+
+                    result = credit_settled_investment(row, amount, _credit_algo)
+                    if not result.get('success') and result.get('error') == 'insufficient':
+                        available = float(result.get('available_balance') or 0)
+                        result = {
+                            'success': False,
+                            'error': (
+                                f'Insufficient investment balance. '
+                                f'Available: ${available:.2f}, Requested: ${amount:.2f}'
+                            ),
+                            'available_balance': available,
+                        }
+                else:
+                    result = portfolio_tracker_service.deposit_to_algo(
+                        customer_id,
+                        amount,
+                        source,
+                    )
                 
                 # ========== SYNC BACK AFTER TRANSFER ==========
                 if result.get('success'):

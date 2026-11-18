@@ -11,11 +11,14 @@ from services.financial_unification_service import resolve_premium_split
 from services.nft_ledger import mint_token
 from services.portfolio_tracker_service import PortfolioTrackerService
 from services.process_pipeline_orchestrator import ProcessPipelineOrchestrator
+import threading
+
 from services.savings_pipeline_service import (
     AllocationStrategy,
     SavingsPipelineService,
     apply_investment_withdrawal,
     bounded_distribution,
+    credit_settled_investment,
     investment_books,
     mark_unallocated_cash,
     settle_investment_to_algo,
@@ -797,3 +800,106 @@ def test_shared_tracker_deposit_keeps_the_canonical_row():
     assert investment_books(row)["position"] == 90.0
     assert tracker.algo_balances["CUST-1"]["available"] == 50.0
     assert row["algo_trading_profits"] == 50.0
+
+
+def _flagged_row():
+    return {
+        "balance": 40.0,
+        "index_balance": 60.0,
+        "bonds_balance": 30.0,
+        "crypto_balance": 10.0,
+        "balance_is_unallocated_cash": True,
+        "deposits": [{"id": "DEP-1", "amount": 100.0}],
+        "algo_trading_profits": 7.0,
+    }
+
+
+def test_overlapping_transfers_credit_the_position_once():
+    account = _flagged_row()
+    credited = []
+    ready = threading.Barrier(4)
+
+    def credit(applied, remaining):
+        credited.append((applied, remaining))
+        return {"success": True}
+
+    def worker():
+        ready.wait(timeout=5)
+        credit_settled_investment(account, 140.0, credit)
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+    assert sum(item[0] for item in credited) == 140.0
+    assert credited[0][1] == 0.0
+    assert investment_books(account)["position"] == 0.0
+    assert account["deposits"][0]["id"] == "DEP-1"
+    assert account["balance_is_unallocated_cash"] is True
+
+
+def test_failed_seal_restores_the_row_and_a_retry_moves_the_funds_once():
+    account = _flagged_row()
+    accounts = {"CUST-1": account}
+    calls = {"raised": False}
+    recorded = []
+
+    def _record(**kwargs):
+        if not calls["raised"]:
+            calls["raised"] = True
+            raise RuntimeError("seal failed")
+        recorded.append(kwargs)
+        return {"id": "TX-1", "nft_token_id": "NFT-1"}
+
+    tracker = PortfolioTrackerService(
+        investment_accounts=accounts,
+        record_transaction_func=_record,
+    )
+
+    def credit(applied, remaining):
+        return tracker.deposit_to_algo(
+            "CUST-1",
+            applied,
+            "investment",
+            debit_source=False,
+            source_balance_after=remaining,
+        )
+
+    try:
+        credit_settled_investment(account, 50.0, credit)
+        raised = False
+    except RuntimeError:
+        raised = True
+    assert raised is True
+    assert investment_books(account)["position"] == 140.0
+    assert account["balance"] == 40.0
+    assert account["index_balance"] == 60.0
+    assert account["algo_trading_profits"] == 7.0
+    assert account["deposits"][0]["id"] == "DEP-1"
+    assert tracker.algo_balances.get("CUST-1", {}).get("available", 0) == 0
+
+    result = credit_settled_investment(account, 50.0, credit)
+    assert result["success"] is True
+    assert result["source_balance"] == 90.0
+    assert recorded[0]["metadata"]["source_balance_after"] == 90.0
+    assert tracker.algo_balances["CUST-1"]["available"] == 50.0
+    assert investment_books(account)["position"] == 90.0
+    assert account["algo_trading_profits"] == 57.0
+
+
+def test_refused_credit_puts_the_withdrawal_back():
+    account = _flagged_row()
+
+    def credit(applied, remaining):
+        return {"success": False, "error": "declined"}
+
+    result = credit_settled_investment(account, 50.0, credit)
+    assert result["success"] is False
+    assert result["error"] == "declined"
+    assert result["available_balance"] == 140.0
+    assert investment_books(account)["position"] == 140.0
+    assert account["algo_trading_profits"] == 7.0
+    assert account["deposits"][0]["id"] == "DEP-1"
