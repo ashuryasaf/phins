@@ -179,6 +179,33 @@ def test_broken_premium_seal_is_withheld_and_not_repaired():
     assert january["cash_source"] == "bill"
 
 
+def test_named_addon_is_priced_when_the_savings_pin_is_absent():
+    policy = {
+        "id": "POL-ADD",
+        "customer_id": "CUST-ADD",
+        "start_date": "2026-01-01",
+        "annual_premium": 2400.00,
+        "risk_premium_annual": 2400.00,
+        "savings_addon": "growth",
+    }
+    bills = [{
+        "id": "BILL-ADD",
+        "customer_id": "CUST-ADD",
+        "payment_period": "2026-01",
+        "amount_paid": 400.00,
+    }]
+    row = reconcile_customer("CUST-ADD", policies=[policy], bills=bills)["months"][0]
+    assert row["kernel_risk"] == 200.00
+    assert row["savings_addon"] == 200.00
+    assert row["savings_source"] == "growth"
+    assert row["landed_risk"] == 200.00
+    assert row["landed_savings"] == 200.00
+    light = dict(policy, savings_addon="light")
+    light_row = reconcile_customer("CUST-ADD", policies=[light], bills=bills)["months"][0]
+    assert light_row["savings_addon"] == 50.00
+    assert light_row["savings_source"] == "addon"
+
+
 def test_issued_quote_field_names_pin_risk_expense_and_profit():
     """Quotes store the kernel's annual amounts without an ``_annual`` suffix."""
     policy = {

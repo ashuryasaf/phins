@@ -267,14 +267,39 @@ def _scale_layers(layers: Mapping[str, Decimal], numerator: Decimal, denominator
     }
 
 
-def _period_layers(annual_layers: Mapping[str, Decimal], collected: Decimal) -> Dict[str, Decimal]:
-    """Installment stack that can hold this payment. A short month stays monthly."""
+def _land_unfitted(collected: Decimal, annual_layers: Mapping[str, Decimal]) -> Dict[str, Decimal]:
+    """Land cash when the annual pins do not fit the annual premium.
+
+    A payment that matches a monthly, quarterly, or annual stack uses that
+    stack. Any other amount fills whole months first, then waterfalls the
+    remainder against one more month. A dollar over a finished month stays
+    on the next month's risk and does not erase the add-on already earned.
+    """
     for divisor in (12, 4, 1):
         scaled = _scale_layers(annual_layers, Decimal(1), Decimal(divisor))
-        stack = sum(scaled.values(), Decimal("0.00"))
-        if collected <= stack + Decimal("0.01"):
-            return scaled
-    return {name: money(annual_layers.get(name) or 0) for name in _LAYER_ORDER}
+        stack = sum((scaled[name] for name in _LAYER_ORDER), Decimal("0.00"))
+        if abs(collected - stack) <= Decimal("0.01"):
+            return _waterfall_cash(collected, scaled)
+    monthly = _scale_layers(annual_layers, Decimal(1), Decimal(12))
+    month_stack = sum((monthly[name] for name in _LAYER_ORDER), Decimal("0.00"))
+    if month_stack <= 0:
+        return _waterfall_cash(
+            collected,
+            {name: money(annual_layers.get(name) or 0) for name in _LAYER_ORDER},
+        )
+    landed = {name: Decimal("0.00") for name in (*_LAYER_ORDER, "excess")}
+    left = collected
+    guard = 0
+    while left + Decimal("0.01") >= month_stack and guard < 36:
+        step = _waterfall_cash(month_stack, monthly)
+        for name in _LAYER_ORDER:
+            landed[name] = (landed[name] + step[name]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        left = (left - month_stack).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        guard += 1
+    rest = _waterfall_cash(left, monthly)
+    for name in (*_LAYER_ORDER, "excess"):
+        landed[name] = (landed[name] + rest[name]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return landed
 
 
 def _elected_savings(policy: Optional[Dict[str, Any]], kernel: Mapping[str, Any]) -> Tuple[Decimal, str, str]:
@@ -372,7 +397,7 @@ def resolve_premium_split(
         targets = _scale_layers(annual_layers, collected, annual)
         landed = _waterfall_cash(collected, targets)
     else:
-        landed = _waterfall_cash(collected, _period_layers(annual_layers, collected))
+        landed = _land_unfitted(collected, annual_layers)
     risk_amount = landed["risk"]
     savings_amount = landed["savings"]
     expense_amount = landed["expense"]

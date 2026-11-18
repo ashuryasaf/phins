@@ -93,6 +93,30 @@ def test_missing_pin_is_pure_risk():
     assert split["profit_amount"] == 0.0
 
 
+def test_a_dollar_over_a_finished_month_keeps_the_add_on():
+    """Pins that do not fit the annual premium must not drop the add-on.
+
+    Monthly risk 200 plus a growth add of 200 is a 400 stack. The annual
+    premium is only the risk, so the pins do not fit. 401 is one finished
+    month plus a dollar of the next month's risk, not a quarterly risk
+    bucket that swallows the add-on.
+    """
+    policy = {
+        "annual_premium": 2400.0,
+        "risk_premium_annual": 2400.0,
+        "savings_addon": "growth",
+    }
+    exact = resolve_premium_split(400.0, policy)
+    assert exact["risk_amount"] == 200.0
+    assert exact["savings_amount"] == 200.0
+    over = resolve_premium_split(401.0, policy)
+    assert over["savings_amount"] == 200.0
+    assert over["risk_amount"] == 201.0
+    short = resolve_premium_split(200.0, policy)
+    assert short["risk_amount"] == 200.0
+    assert short["savings_amount"] == 0.0
+
+
 def test_growth_add_is_the_only_savings_on_top_of_risk():
     split = resolve_premium_split(
         400.0,

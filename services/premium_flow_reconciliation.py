@@ -35,6 +35,15 @@ _SAVINGS_SPLIT: Tuple[Tuple[str, Decimal], ...] = (
     ("algo", Decimal("5")),
 )
 
+# Same multiples the cash writer uses. A named add-on is savings even when
+# the policy has no savings_premium pin.
+_ADDON_RATES = {
+    "none": Decimal("0"),
+    "light": Decimal("0.25"),
+    "balanced": Decimal("0.50"),
+    "growth": Decimal("1"),
+}
+
 _PREMIUM_TYPES = frozenset({
     "premium_payment",
     "bill_payment",
@@ -167,10 +176,19 @@ def _kernel_month(policy: Mapping[str, Any]) -> Dict[str, Any]:
     """
     risk_value = _first_present(policy, "risk_premium_annual", "risk_premium")
     risk = _monthly(risk_value) if risk_value is not None else Decimal("0.00")
+    addon = str(policy.get("savings_addon") or "").strip().lower()
     savings_value = _first_present(policy, "savings_premium_annual", "savings_premium")
     if savings_value is not None:
         savings = _monthly(savings_value)
         savings_source = "kernel_pin"
+    elif addon in _ADDON_RATES:
+        addon_rate = _ADDON_RATES[addon]
+        if addon_rate > 0 and risk_value is not None:
+            savings = _monthly(_money(risk_value) * addon_rate)
+            savings_source = "growth" if addon == "growth" else "addon"
+        else:
+            savings = Decimal("0.00")
+            savings_source = "no_savings_election"
     else:
         rate = policy.get("savings_rate")
         if rate is None:
@@ -179,8 +197,7 @@ def _kernel_month(policy: Mapping[str, Any]) -> Dict[str, Any]:
         else:
             savings = (risk * _money(rate)).quantize(_CENT, rounding=ROUND_HALF_UP)
             savings_source = "addon_rate"
-    addon = str(policy.get("savings_addon") or "").strip().lower()
-    if savings > 0 and addon == "growth":
+    if savings > 0 and addon == "growth" and savings_source != "growth":
         savings_source = "growth"
     elif savings > 0 and addon in ("light", "balanced") and savings_source == "kernel_pin":
         savings_source = "addon"
