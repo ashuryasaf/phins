@@ -60953,18 +60953,35 @@ For claims or questions, please contact:
                             if not result.get('success'):
                                 _return_invest_reserve()
                             elif reserved_inv > 0:
-                                # The row was reserved above. The same dollars
-                                # were also written onto portfolio cash, and
-                                # that mirror can sit on another savings account.
-                                # Peel it from every account, this one first.
+                                # The row was reserved above. An algo withdrawal
+                                # mirrors that cash onto the lowest account id,
+                                # while this buying account may already hold
+                                # cash that was never on the row. Peel the other
+                                # accounts first. Leave the buying account's
+                                # surplus, the portfolio cash above the pre-debit
+                                # row, where it is.
                                 left = round(reserved_inv, 2)
-                                peel_accounts = []
-                                if account is not None:
-                                    peel_accounts.append(account)
+                                others = []
                                 for sibling in sibling_accounts:
-                                    if sibling is not None and sibling not in peel_accounts:
-                                        peel_accounts.append(sibling)
-                                for portfolio_account in peel_accounts:
+                                    if sibling is not None and sibling is not account and sibling not in others:
+                                        others.append(sibling)
+                                others.sort(key=lambda item: str(getattr(item, 'account_id', '')))
+                                portfolio_sum = 0.0
+                                for portfolio_account in others:
+                                    portfolio_sum = round(
+                                        portfolio_sum + float(getattr(portfolio_account, 'balance', 0) or 0),
+                                        2,
+                                    )
+                                buyer_balance = 0.0
+                                if account is not None:
+                                    buyer_balance = round(float(getattr(account, 'balance', 0) or 0), 2)
+                                    portfolio_sum = round(portfolio_sum + buyer_balance, 2)
+                                post_row = round(float(inv_row.get('balance', 0) or 0), 2) if isinstance(inv_row, dict) else 0.0
+                                pre_row = round(post_row + reserved_inv, 2)
+                                excess = max(0.0, round(portfolio_sum - pre_row, 2))
+                                buyer_keep = min(buyer_balance, excess)
+                                buyer_peelable = round(buyer_balance - buyer_keep, 2)
+                                for portfolio_account in others:
                                     if left <= 0:
                                         break
                                     live_cash = round(
@@ -60974,6 +60991,10 @@ For claims or questions, please contact:
                                     if spend > 0:
                                         portfolio_account.balance = round(live_cash - spend, 2)
                                         left = round(left - spend, 2)
+                                if left > 0 and account is not None and buyer_peelable > 0:
+                                    spend = min(buyer_peelable, left)
+                                    account.balance = round(buyer_balance - spend, 2)
+                                    left = round(left - spend, 2)
                                 if account is not None:
                                     txn = result.get('transaction')
                                     if isinstance(txn, dict):

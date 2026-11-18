@@ -1634,6 +1634,65 @@ def test_algo_withdrawal_credits_the_live_investment_balance():
         portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
 
 
+def test_invest_peels_the_algo_mirror_before_the_buying_accounts_other_cash():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-16"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 0.0,
+        "balance_is_unallocated_cash": True,
+    }
+    portal.unified_balance_service.algo_trading_balances[customer_id] = {
+        "available": 40.0,
+        "in_positions": 0.0,
+        "total_pnl": 0.0,
+        "transfers": [],
+    }
+    earlier = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-16A", 0.0)
+    later = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-16B", 0.0)
+    if str(later.account_id) < str(earlier.account_id):
+        earlier, later = later, earlier
+    earlier.balance = 0.0
+    later.balance = 50.0
+    try:
+        status, body = _post_json("/api/balance/withdraw-from-algo", {
+            "customer_id": customer_id,
+            "amount": 40.0,
+            "destination": "investment_account",
+        })
+        assert status == 200, body
+        assert earlier.balance == 40.0
+        assert later.balance == 50.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 40.0
+        invested, invest_body = _post_json("/api/savings/invest", {
+            "account_id": later.account_id,
+            "symbol": "USDC",
+            "amount": 40.0,
+        })
+        assert invested == 200, invest_body
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert earlier.balance == 0.0
+        assert later.balance == 50.0
+        assert len(later.assets) == 1
+        refused, refused_body = _post_json("/api/savings/withdraw", {
+            "account_id": earlier.account_id,
+            "amount": 40.0,
+        })
+        assert refused == 400, refused_body
+        kept, kept_body = _post_json("/api/savings/withdraw", {
+            "account_id": later.account_id,
+            "amount": 50.0,
+        })
+        assert kept == 200, kept_body
+        assert later.balance == 0.0
+    finally:
+        portal.portfolio_service.accounts.pop(earlier.account_id, None)
+        portal.portfolio_service.accounts.pop(later.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
+
+
 def test_internal_transfer_peels_mirrored_portfolio_cash():
     import web_portal.server as portal
 
