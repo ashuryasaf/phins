@@ -9,6 +9,7 @@ piece is 60/30/10. ``balance`` stays unallocated cash.
 from services.data_integrity_service import DataIntegrityService
 from services.financial_unification_service import resolve_premium_split
 from services.nft_ledger import mint_token
+from services.portfolio_tracker_service import PortfolioTrackerService
 from services.process_pipeline_orchestrator import ProcessPipelineOrchestrator
 from services.savings_pipeline_service import (
     AllocationStrategy,
@@ -749,3 +750,38 @@ def test_transfer_to_algo_keeps_holdings_when_cash_covers_it():
     assert service.algo_trading_balances["CUST-1"]["available"] == 100.0
     assert recorded[0]["amount"] == 100.0
     assert investment_books(accounts["CUST-1"])["position"] == 750.0
+
+
+def test_shared_tracker_deposit_keeps_the_canonical_row():
+    """The tracker book is the customer row. Crediting algo must not replace it."""
+    accounts = {
+        "CUST-1": {
+            "balance": 40.0,
+            "index_balance": 60.0,
+            "bonds_balance": 30.0,
+            "crypto_balance": 10.0,
+            "balance_is_unallocated_cash": True,
+            "deposits": [{"id": "DEP-1", "amount": 100.0}],
+            "algo_trading_profits": 0.0,
+        }
+    }
+    tracker = PortfolioTrackerService(
+        investment_accounts=accounts,
+        record_transaction_func=lambda **kwargs: {"id": "TX-1", "nft_token_id": "NFT-1"},
+    )
+    assert tracker.investment_accounts is accounts
+    result = tracker.deposit_to_algo("CUST-1", 50.0, "investment", debit_source=False)
+    assert result["success"] is True
+    row = accounts["CUST-1"]
+    assert row["deposits"][0]["id"] == "DEP-1"
+    assert row["balance_is_unallocated_cash"] is True
+    assert row["balance"] == 40.0
+    assert row["index_balance"] == 60.0
+    settled = settle_investment_to_algo(row, 50.0, tracker.algo_balances["CUST-1"])
+    assert settled["applied"] == 50.0
+    assert settled["shortfall"] == 0.0
+    assert row["deposits"][0]["id"] == "DEP-1"
+    assert row["balance"] == 0.0
+    assert investment_books(row)["position"] == 90.0
+    assert tracker.algo_balances["CUST-1"]["available"] == 50.0
+    assert row["algo_trading_profits"] == 50.0

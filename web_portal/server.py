@@ -62203,8 +62203,10 @@ For claims or questions, please contact:
                 if unified_balance_enabled:
                     portfolio_tracker_service.algo_balances = unified_balance_service.algo_trading_balances
                 
-                # Sync investment_accounts from investment_portfolio_service
-                if portfolio_enabled and portfolio_service:
+                # Sync investment_accounts from investment_portfolio_service.
+                # The tracker dict is INVESTMENT_ACCOUNTS. Writing a portfolio
+                # total into it would replace the live cash figure.
+                if portfolio_enabled and portfolio_service and portfolio_tracker_service.investment_accounts is not INVESTMENT_ACCOUNTS:
                     try:
                         # Get customer's savings accounts from portfolio service
                         accounts = portfolio_service.get_customer_accounts(customer_id)
@@ -62221,10 +62223,11 @@ For claims or questions, please contact:
                     except Exception as sync_err:
                         print(f"Investment sync note: {sync_err}")
                 
-                # Also sync from global INVESTMENT_ACCOUNTS.
-                # deposit_to_algo spends the tracker balance. For an investment
-                # source that authority is the position, so a stale higher
-                # tracker balance cannot fund a credit the row does not have.
+                # The tracker dict is the canonical book. Do not put a spend
+                # stub in it: that assignment deletes holdings and deposits.
+                # The position check below is the spend limit, and the row is
+                # settled once after the algo credit.
+                debit_investment = True
                 if source == 'investment' and customer_id in INVESTMENT_ACCOUNTS:
                     from services.savings_pipeline_service import investment_books
                     position = investment_books(INVESTMENT_ACCOUNTS[customer_id])['position']
@@ -62239,20 +62242,8 @@ For claims or questions, please contact:
                             'available_balance': position,
                         }).encode('utf-8'))
                         return
-                    canonical = INVESTMENT_ACCOUNTS[customer_id]
-                    tracker = portfolio_tracker_service.investment_accounts.get(customer_id)
-                    # The tracker is only a spend authority. It must not be the
-                    # canonical row, or writing the position into balance would
-                    # count holdings twice on a flagged account.
-                    if tracker is canonical or not isinstance(tracker, dict):
-                        portfolio_tracker_service.investment_accounts[customer_id] = {
-                            'balance': position,
-                            'deposits': [],
-                            'created_at': datetime.now().isoformat(),
-                        }
-                    else:
-                        tracker['balance'] = position
-                elif customer_id in INVESTMENT_ACCOUNTS:
+                    debit_investment = False
+                elif customer_id in INVESTMENT_ACCOUNTS and portfolio_tracker_service.investment_accounts is not INVESTMENT_ACCOUNTS:
                     inv_bal = INVESTMENT_ACCOUNTS[customer_id].get('balance', 0)
                     if customer_id not in portfolio_tracker_service.investment_accounts:
                         portfolio_tracker_service.investment_accounts[customer_id] = INVESTMENT_ACCOUNTS[customer_id].copy()
@@ -62265,7 +62256,9 @@ For claims or questions, please contact:
                     portfolio_tracker_service.health_wallets[customer_id] = HEALTH_WALLETS[customer_id]
                 # ========== END SYNC ==========
                 
-                result = portfolio_tracker_service.deposit_to_algo(customer_id, amount, source)
+                result = portfolio_tracker_service.deposit_to_algo(
+                    customer_id, amount, source, debit_source=debit_investment
+                )
                 
                 # ========== SYNC BACK AFTER TRANSFER ==========
                 if result.get('success'):
@@ -62276,21 +62269,14 @@ For claims or questions, please contact:
                     # Sync investment accounts back to global store and portfolio service
                     if source == 'investment' and customer_id in INVESTMENT_ACCOUNTS:
                         inv_account = INVESTMENT_ACCOUNTS[customer_id]
-                        from services.savings_pipeline_service import (
-                            investment_books,
-                            settle_investment_to_algo,
-                        )
+                        from services.savings_pipeline_service import settle_investment_to_algo
                         # Cash first, then holdings. Profits grow by the amount
                         # the row gave up. A credit already posted for more
                         # than that is removed from the algo available balance.
                         algo_bucket = portfolio_tracker_service.algo_balances.get(customer_id)
                         settle_investment_to_algo(inv_account, amount, algo_bucket)
-                        remaining = investment_books(inv_account)['position']
-                        tracker = portfolio_tracker_service.investment_accounts.get(customer_id)
-                        if isinstance(tracker, dict):
-                            tracker['balance'] = remaining
-                        
-                        INVESTMENT_ACCOUNTS[customer_id] = inv_account
+                        # The row is the book. Do not replace it with the
+                        # remaining position.
                         
                         # Update portfolio service accounts
                         if portfolio_enabled and portfolio_service:

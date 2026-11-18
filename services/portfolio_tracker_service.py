@@ -259,10 +259,19 @@ class PortfolioTrackerService:
         # Return combined or just trading cash
         return self.cash_balances.get(customer_id, inv_bal + algo_bal)
     
-    def deposit_to_algo(self, customer_id: str, amount: float, source: str = 'investment') -> Dict:
-        """Deposit funds to algo trading from source account"""
+    def deposit_to_algo(self, customer_id: str, amount: float, source: str = 'investment',
+                        debit_source: bool = True) -> Dict:
+        """Deposit funds to algo trading from source account.
+
+        ``debit_source`` is false when the caller settles the investment row
+        itself. The tracker often is that row, so a second debit here would
+        spend the same money twice.
+        """
         # Validate source and check balance
-        if source == 'investment':
+        if source == 'investment' and not debit_source:
+            inv_acc = self.investment_accounts.get(customer_id) or {}
+            source_balance = inv_acc.get('balance', 0)
+        elif source == 'investment':
             # Initialize investment account if not exists
             if customer_id not in self.investment_accounts:
                 self.investment_accounts[customer_id] = {
