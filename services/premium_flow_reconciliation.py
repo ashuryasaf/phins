@@ -443,6 +443,8 @@ def _picture(
         savings_kind = "growth"
     elif "addon" in sources or "addon_rate" in sources or "kernel_pin" in sources:
         savings_kind = "addon"
+    elif "historical" in sources:
+        savings_kind = "historical"
     else:
         savings_kind = "none"
     return {

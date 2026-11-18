@@ -224,7 +224,10 @@ def test_earlier_allocation_and_underwriting_fee_are_reported_as_booked():
         "amount_paid": 135.00,
         "premium_allocation": {"risk_amount": 60.0, "savings_amount": 40.0},
     }]
-    row = reconcile_customer("CUST-OLD", policies=[policy], bills=bills)["months"][0]
+    report = reconcile_customer("CUST-OLD", policies=[policy], bills=bills)
+    assert report["picture"]["savings_kind"] == "historical"
+    assert report["picture"]["landed_savings"] == 40.00
+    row = report["months"][0]
     assert row["savings_source"] == "historical"
     assert row["kernel_risk"] == 60.00
     assert row["underwriting_fee"] == 35.00
