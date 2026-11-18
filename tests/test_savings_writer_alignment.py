@@ -1372,6 +1372,63 @@ def test_store_funded_invest_spends_the_mirrored_portfolio_cash():
         portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
 
 
+def test_unflagged_invest_blocks_an_algo_transfer_of_the_reserved_cash():
+    import threading
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-11"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 100.0}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-11", 0.0)
+    account.balance = 100.0
+    original = portal.portfolio_service.invest
+    seen = {}
+
+    def _spy(account_id, symbol, amount, spend_cash=True):
+        def _transfer():
+            seen["transfer"] = _post_json("/api/balance/transfer-to-algo", {
+                "customer_id": customer_id,
+                "amount": 100.0,
+                "source": "investment_account",
+            })
+
+        worker = threading.Thread(target=_transfer)
+        worker.start()
+        worker.join(0.4)
+        seen["blocked"] = worker.is_alive()
+        seen["row_during"] = portal.INVESTMENT_ACCOUNTS[customer_id]["balance"]
+        seen["worker"] = worker
+        return original(account_id, symbol, amount, spend_cash=spend_cash)
+
+    portal.portfolio_service.invest = _spy
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 100.0,
+        })
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        assert status == 200, body
+        assert seen.get("blocked") is True
+        assert seen["row_during"] == 0.0
+        assert account.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert len(account.assets) == 1
+        assert seen["transfer"][0] == 400, seen["transfer"]
+        algo = portal.unified_balance_service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 0.0
+    finally:
+        portal.portfolio_service.invest = original
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
+
+
 def test_withdraw_removes_the_same_cash_from_the_investment_row():
     import web_portal.server as portal
 

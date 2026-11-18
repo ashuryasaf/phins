@@ -60736,6 +60736,7 @@ For claims or questions, please contact:
                 try:
                     account = portfolio_service.accounts.get(account_id)
                     short = False
+                    held = []
                     if account:
                         customer_id = account.customer_id
                         candidate_inv = INVESTMENT_ACCOUNTS.get(customer_id)
@@ -60748,81 +60749,78 @@ For claims or questions, please contact:
                                 rows.append(row)
                         rows.sort(key=id)
                         held = [account_book_lock(row) for row in rows]
+                    acquired_books = 0
+                    try:
                         for lock in held:
                             lock.acquire()
-                        try:
+                            acquired_books += 1
+                        if account and held:
                             inv_live = round(float(inv_row.get('balance', 0) or 0), 2) if inv_row else 0.0
                             wallet_live = round(float(wallet_row.get('balance', 0) or 0), 2) if wallet_row else 0.0
-                            if rows:
-                                store_cover = round(inv_live + wallet_live, 2)
-                                if store_cover + 1e-9 < amount:
-                                    short = True
-                                else:
-                                    take_inv = min(amount, inv_live)
-                                    take_wallet = round(amount - take_inv, 2)
-                                    if take_inv > 0:
-                                        inv_row['balance'] = round(inv_live - take_inv, 2)
-                                        reserved_inv = take_inv
-                                    if take_wallet > 0:
-                                        if debit_account_balance(wallet_row, take_wallet) is None:
-                                            if reserved_inv:
-                                                inv_row['balance'] = round(
-                                                    float(inv_row.get('balance', 0) or 0) + reserved_inv, 2
-                                                )
-                                                reserved_inv = 0.0
-                                            short = True
-                                        else:
-                                            reserved_wallet = take_wallet
-                                    if not short:
-                                        funded_from_stores = True
-                        finally:
-                            for lock in reversed(held):
-                                lock.release()
+                            store_cover = round(inv_live + wallet_live, 2)
+                            if store_cover + 1e-9 < amount:
+                                short = True
+                            else:
+                                take_inv = min(amount, inv_live)
+                                take_wallet = round(amount - take_inv, 2)
+                                if take_inv > 0:
+                                    inv_row['balance'] = round(inv_live - take_inv, 2)
+                                    reserved_inv = take_inv
+                                if take_wallet > 0:
+                                    if debit_account_balance(wallet_row, take_wallet) is None:
+                                        if reserved_inv:
+                                            inv_row['balance'] = round(
+                                                float(inv_row.get('balance', 0) or 0) + reserved_inv, 2
+                                            )
+                                            reserved_inv = 0.0
+                                        short = True
+                                    else:
+                                        reserved_wallet = take_wallet
+                                if not short:
+                                    funded_from_stores = True
 
-                    def _return_invest_reserve():
-                        if reserved_inv <= 0 and reserved_wallet <= 0:
-                            return
-                        refund_rows = [row for row in (inv_row, wallet_row) if row is not None]
-                        refund_rows.sort(key=id)
-                        refund_locks = [account_book_lock(row) for row in refund_rows]
-                        for lock in refund_locks:
-                            lock.acquire()
-                        try:
+                        def _return_invest_reserve():
+                            nonlocal reserved_inv, reserved_wallet
                             if reserved_inv > 0 and inv_row is not None:
                                 inv_row['balance'] = round(
                                     float(inv_row.get('balance', 0) or 0) + reserved_inv, 2
                                 )
+                                reserved_inv = 0.0
                             if reserved_wallet > 0 and wallet_row is not None:
                                 credit_account_balance(wallet_row, reserved_wallet)
-                        finally:
-                            for lock in reversed(refund_locks):
-                                lock.release()
+                                reserved_wallet = 0.0
 
-                    if short:
-                        result = {'success': False, 'error': 'Insufficient funds'}
-                    else:
-                        try:
-                            result = portfolio_service.invest(
-                                account_id, symbol, amount, spend_cash=not funded_from_stores,
-                            )
-                        except Exception:
-                            _return_invest_reserve()
-                            raise
-                        if not result.get('success'):
-                            _return_invest_reserve()
-                        elif reserved_inv > 0 and account is not None:
-                            # Deposit wrote these dollars onto the portfolio
-                            # cash figure as well as the investment row.
-                            # The row was reserved above. The portfolio cash
-                            # leaves with it, capped at the cash actually there.
-                            live_cash = round(float(account.balance or 0), 2)
-                            spend = min(live_cash, round(reserved_inv, 2))
-                            if spend > 0:
-                                account.balance = round(live_cash - spend, 2)
-                                txn = result.get('transaction')
-                                if isinstance(txn, dict):
-                                    txn['balance_after'] = account.balance
-                                result['cash_balance'] = account.balance
+                        if short:
+                            result = {'success': False, 'error': 'Insufficient funds'}
+                        else:
+                            try:
+                                result = portfolio_service.invest(
+                                    account_id, symbol, amount, spend_cash=not funded_from_stores,
+                                )
+                            except Exception:
+                                _return_invest_reserve()
+                                raise
+                            if not result.get('success'):
+                                _return_invest_reserve()
+                            elif reserved_inv > 0 and account is not None:
+                                # Deposit wrote these dollars onto the portfolio
+                                # cash figure as well as the investment row.
+                                # The row was reserved above. The portfolio cash
+                                # leaves with it, capped at the cash actually there.
+                                # Both stay under the row lock so a transfer
+                                # cannot write the unpeeled portfolio cash back
+                                # onto the row and spend it again.
+                                live_cash = round(float(account.balance or 0), 2)
+                                spend = min(live_cash, round(reserved_inv, 2))
+                                if spend > 0:
+                                    account.balance = round(live_cash - spend, 2)
+                                    txn = result.get('transaction')
+                                    if isinstance(txn, dict):
+                                        txn['balance_after'] = account.balance
+                                    result['cash_balance'] = account.balance
+                    finally:
+                        for lock in reversed(held[:acquired_books]):
+                            lock.release()
                 finally:
                     account_lock.release()
                 
@@ -62092,21 +62090,47 @@ For claims or questions, please contact:
                 # 1. Sync investment balance from portfolio_service
                 if portfolio_enabled and portfolio_service:
                     try:
-                        from services.savings_pipeline_service import account_book_lock
-                        existing = INVESTMENT_ACCOUNTS.get(customer_id)
-                        unified_existing = unified_balance_service.investment_accounts.get(customer_id)
-                        sync_rows = []
-                        for sync_row in (existing, unified_existing):
-                            if isinstance(sync_row, dict) and sync_row not in sync_rows:
-                                sync_rows.append(sync_row)
-                        sync_rows.sort(key=id)
-                        sync_locks = [account_book_lock(sync_row) for sync_row in sync_rows]
-                        for sync_lock in sync_locks:
-                            sync_lock.acquire()
+                        from services.savings_pipeline_service import (
+                            account_book_lock,
+                            named_row_lock,
+                        )
                         try:
-                            accounts = portfolio_service.get_customer_accounts(customer_id)
-                            if accounts:
-                                portfolio_cash = sum(acc.balance for acc in accounts)
+                            sync_accounts = list(
+                                portfolio_service.get_customer_accounts(customer_id) or []
+                            )
+                        except Exception:
+                            sync_accounts = []
+                        sync_savings = []
+                        for sync_account in sorted(
+                            sync_accounts,
+                            key=lambda item: str(getattr(item, 'account_id', '')),
+                        ):
+                            sync_savings_id = getattr(sync_account, 'account_id', None)
+                            if not sync_savings_id:
+                                continue
+                            sync_savings_lock = named_row_lock(f"savings:{sync_savings_id}")
+                            if sync_savings_lock not in sync_savings:
+                                sync_savings.append(sync_savings_lock)
+                        acquired_savings = 0
+                        acquired_books = 0
+                        sync_locks = []
+                        try:
+                            for sync_savings_lock in sync_savings:
+                                sync_savings_lock.acquire()
+                                acquired_savings += 1
+                            existing = INVESTMENT_ACCOUNTS.get(customer_id)
+                            unified_existing = unified_balance_service.investment_accounts.get(customer_id)
+                            sync_rows = []
+                            for sync_row in (existing, unified_existing):
+                                if isinstance(sync_row, dict) and sync_row not in sync_rows:
+                                    sync_rows.append(sync_row)
+                            sync_rows.sort(key=id)
+                            sync_locks = [account_book_lock(sync_row) for sync_row in sync_rows]
+                            for sync_lock in sync_locks:
+                                sync_lock.acquire()
+                                acquired_books += 1
+                            if sync_accounts:
+                                portfolio_cash = sum(acc.balance for acc in sync_accounts)
                                 # A flagged row stores unallocated cash in balance.
                                 # Replacing that cash with a portfolio total would
                                 # count the holdings a second time.
@@ -62135,8 +62159,10 @@ For claims or questions, please contact:
                                 else:
                                     INVESTMENT_ACCOUNTS[customer_id]['balance'] = best_balance
                         finally:
-                            for sync_lock in reversed(sync_locks):
+                            for sync_lock in reversed(sync_locks[:acquired_books]):
                                 sync_lock.release()
+                            for sync_savings_lock in reversed(sync_savings[:acquired_savings]):
+                                sync_savings_lock.release()
                     except Exception as sync_err:
                         print(f"Pre-transfer investment sync note: {sync_err}")
                 
