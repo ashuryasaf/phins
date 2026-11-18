@@ -62069,6 +62069,7 @@ For claims or questions, please contact:
                 return
             
             try:
+                carried_savings = []
                 data = json.loads(body)
                 customer_id = data.get('customer_id')
                 amount = float(data.get('amount', 0))
@@ -62086,7 +62087,10 @@ For claims or questions, please contact:
                 
                 # ========== PRE-TRANSFER SYNC ==========
                 # Sync balances from all sources to unified_balance_service before transfer
-                
+                # Savings locks taken here stay held through the debit and the
+                # portfolio publish. Releasing them in between lets a withdraw
+                # pay the pre-transfer portfolio cash after the row is gone.
+
                 # 1. Sync investment balance from portfolio_service
                 if portfolio_enabled and portfolio_service:
                     try:
@@ -62161,8 +62165,7 @@ For claims or questions, please contact:
                         finally:
                             for sync_lock in reversed(sync_locks[:acquired_books]):
                                 sync_lock.release()
-                            for sync_savings_lock in reversed(sync_savings[:acquired_savings]):
-                                sync_savings_lock.release()
+                            carried_savings.extend(sync_savings[:acquired_savings])
                     except Exception as sync_err:
                         print(f"Pre-transfer investment sync note: {sync_err}")
                 
@@ -62304,8 +62307,14 @@ For claims or questions, please contact:
                         result['available_balance'] = wallet_bal
                         result['requested_amount'] = amount
                 
+                for carried_lock in reversed(carried_savings):
+                    carried_lock.release()
+                carried_savings.clear()
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except Exception as e:
+                for carried_lock in reversed(carried_savings):
+                    carried_lock.release()
+                carried_savings.clear()
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e), 'type': type(e).__name__}).encode('utf-8'))
             return

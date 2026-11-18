@@ -1663,6 +1663,7 @@ def test_withdraw_blocks_an_algo_transfer_of_the_same_cash():
 
 
 def test_transfer_publish_does_not_restore_cash_a_withdraw_already_took():
+    import threading
     import web_portal.server as portal
 
     _keep_injected_portal_state()
@@ -1682,19 +1683,26 @@ def test_transfer_publish_does_not_restore_cash_a_withdraw_already_took():
             return accounts
         state["calls"] += 1
         # The first read is the pre-transfer sync. The next read is the
-        # publish, before it takes the row locks. A withdraw in that gap
-        # must not be overwritten by a balance captured earlier.
+        # publish, while the savings lock from the debit is still held.
+        # A withdraw started here has to wait, then take the published cash.
         if state["calls"] == 2 and not state["fired"]:
             state["fired"] = True
             state["before"] = (
                 account.balance,
                 portal.INVESTMENT_ACCOUNTS[customer_id]["balance"],
             )
-            status, body = _post_json("/api/savings/withdraw", {
-                "account_id": account.account_id,
-                "amount": 60.0,
-            })
-            state["withdraw"] = (status, body)
+
+            def _withdraw():
+                state["withdraw"] = _post_json("/api/savings/withdraw", {
+                    "account_id": account.account_id,
+                    "amount": 60.0,
+                })
+
+            worker = threading.Thread(target=_withdraw)
+            worker.start()
+            worker.join(0.4)
+            state["blocked"] = worker.is_alive()
+            state["worker"] = worker
         return accounts
 
     portal.portfolio_service.get_customer_accounts = _accounts
@@ -1704,8 +1712,12 @@ def test_transfer_publish_does_not_restore_cash_a_withdraw_already_took():
             "amount": 40.0,
             "source": "investment_account",
         })
+        worker = state.get("worker")
+        if worker is not None:
+            worker.join(3)
         assert status == 200, body
         assert state["fired"] is True
+        assert state.get("blocked") is True
         assert state["withdraw"][0] == 200, state["withdraw"]
         assert state["before"] == (100.0, 60.0)
         assert account.balance == 0.0
@@ -1714,6 +1726,9 @@ def test_transfer_publish_does_not_restore_cash_a_withdraw_already_took():
         assert float(algo.get("available", 0) or 0) == 40.0
     finally:
         portal.portfolio_service.get_customer_accounts = original
+        worker = state.get("worker")
+        if worker is not None:
+            worker.join(3)
         portal.portfolio_service.accounts.pop(account.account_id, None)
         portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
         portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
@@ -1765,8 +1780,10 @@ def test_transfer_publish_does_not_restore_the_tracker_book_after_a_withdraw():
         if state["inflight"] or state["fired"]:
             return
         state["releases"] += 1
-        # The first release is the pre-transfer sync. The next one is the
-        # publish, after the debited balance is on the book.
+        # The publish releases its re-entrant hold first. The outer hold,
+        # taken before the debit, is the later release. The withdraw runs
+        # only once that outer hold is gone and the published balance is
+        # already on the book.
         if state["releases"] != 2:
             return
         state["fired"] = True
@@ -1800,6 +1817,69 @@ def test_transfer_publish_does_not_restore_the_tracker_book_after_a_withdraw():
         portal.portfolio_service.accounts.pop(account.account_id, None)
         portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
         portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_withdraw_cannot_spend_portfolio_cash_an_algo_transfer_already_took():
+    import threading
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-XFER-5"
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-XFER-5", 0.0)
+    account.balance = 100.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    service = portal.unified_balance_service
+    original = service.transfer_to_algo_trading
+    seen = {}
+
+    def _transfer(*args, **kwargs):
+        result = original(*args, **kwargs)
+
+        def _withdraw():
+            seen["withdraw"] = _post_json("/api/savings/withdraw", {
+                "account_id": account.account_id,
+                "amount": 100.0,
+            })
+
+        worker = threading.Thread(target=_withdraw)
+        worker.start()
+        worker.join(0.4)
+        seen["blocked"] = worker.is_alive()
+        seen["portfolio_during"] = account.balance
+        seen["row_during"] = portal.INVESTMENT_ACCOUNTS[customer_id]["balance"]
+        seen["worker"] = worker
+        return result
+
+    service.transfer_to_algo_trading = _transfer
+    try:
+        status, body = _post_json("/api/balance/transfer-to-algo", {
+            "customer_id": customer_id,
+            "amount": 100.0,
+            "source": "investment_account",
+        })
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        assert status == 200, body
+        assert seen.get("blocked") is True
+        assert seen["row_during"] == 0.0
+        assert seen["portfolio_during"] == 100.0
+        assert seen["withdraw"][0] == 400, seen["withdraw"]
+        assert account.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        algo = service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 100.0
+    finally:
+        service.transfer_to_algo_trading = original
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        service.algo_trading_balances.pop(customer_id, None)
 
 
 def test_transfer_publish_waits_for_a_deposit_holding_the_savings_lock():
