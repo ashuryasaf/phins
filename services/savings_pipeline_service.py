@@ -37,7 +37,8 @@ import math
 import random
 import hashlib
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Tuple
+import threading
+from typing import Callable, Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 import json
@@ -126,6 +127,242 @@ def _balance_includes_holdings(account: Dict[str, Any], cash: float, invested: f
     if allocated > 0 and allocated + 0.01 >= invested:
         return False
     return True
+
+
+def investment_books(account: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Read an investment row without writing it.
+
+    A flagged row stores unallocated cash in ``balance`` and the holdings
+    beside it. The position is those two added. An older row stores the
+    position in ``balance`` and the sub-balances are the breakdown already
+    inside that total, so they are not added again.
+    """
+    account = account if isinstance(account, dict) else {}
+    cash_field = _safe_amount(account.get('balance'))
+    index = _safe_amount(account.get('index_balance'))
+    bonds = _safe_amount(account.get('bonds_balance'))
+    crypto = _safe_amount(account.get('crypto_balance'))
+    invested = index + bonds + crypto
+    flagged = bool(account.get('balance_is_unallocated_cash'))
+    if flagged:
+        cash = cash_field
+        position = cash + invested
+    else:
+        position = cash_field
+        cash = max(0.0, cash_field - invested)
+    return {
+        'cash': round(cash, 2),
+        'invested': round(invested, 2),
+        'position': round(position, 2),
+        'index': round(index, 2),
+        'bonds': round(bonds, 2),
+        'crypto': round(crypto, 2),
+        'unallocated_cash': flagged,
+    }
+
+
+def apply_investment_withdrawal(account: Dict[str, Any], amount: float) -> Dict[str, Any]:
+    """Move cash, then holdings, out of an investment row.
+
+    The amount cannot exceed the position, and neither cash nor a
+    sub-balance is taken below zero. A flagged row's ``balance`` stays
+    unallocated cash. An older row's ``balance`` stays the position.
+    """
+    if not isinstance(account, dict):
+        return {'applied': 0.0, 'cash_taken': 0.0, 'invested_taken': 0.0}
+    books = investment_books(account)
+    requested = _safe_amount(amount)
+    applied = min(requested, books['position'])
+    if applied <= 0:
+        return {'applied': 0.0, 'cash_taken': 0.0, 'invested_taken': 0.0}
+    cash_take = min(books['cash'], applied)
+    remaining = round(applied - cash_take, 2)
+    index = books['index']
+    bonds = books['bonds']
+    crypto = books['crypto']
+    invested = books['invested']
+    if remaining > 0 and invested > 0:
+        ratio = remaining / invested
+        index_take = round(index * ratio, 2)
+        bonds_take = round(bonds * ratio, 2)
+        crypto_take = round(remaining - index_take - bonds_take, 2)
+        if crypto_take < -0.001:
+            crypto_take = 0.0
+            bonds_take = round(remaining - index_take, 2)
+        account['index_balance'] = round(max(0.0, index - index_take), 2)
+        account['bonds_balance'] = round(max(0.0, bonds - bonds_take), 2)
+        account['crypto_balance'] = round(max(0.0, crypto - max(0.0, crypto_take)), 2)
+    if account.get('balance_is_unallocated_cash'):
+        account['balance'] = round(max(0.0, books['cash'] - cash_take), 2)
+    else:
+        account['balance'] = round(max(0.0, books['position'] - applied), 2)
+    return {
+        'applied': round(applied, 2),
+        'cash_taken': round(cash_take, 2),
+        'invested_taken': round(remaining, 2),
+    }
+
+
+def settle_investment_to_algo(
+    account: Dict[str, Any],
+    credited: float,
+    algo_bucket: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Keep an algo credit equal to the cash and holdings that actually moved.
+
+    ``credited`` is the amount already added to the algo available balance.
+    The investment row gives up at most its position. Any excess already
+    sitting in ``algo_bucket['available']`` is removed, and
+    ``algo_trading_profits`` grows only by the amount that left the row.
+    """
+    if not isinstance(account, dict):
+        return {'applied': 0.0, 'shortfall': round(_safe_amount(credited), 2)}
+    moved = apply_investment_withdrawal(account, credited)
+    applied = round(_safe_amount(moved.get('applied')), 2)
+    shortfall = round(_safe_amount(credited) - applied, 2)
+    if shortfall > 0 and isinstance(algo_bucket, dict):
+        algo_bucket['available'] = round(
+            max(0.0, _safe_amount(algo_bucket.get('available')) - shortfall),
+            2,
+        )
+    account['algo_trading_profits'] = round(
+        _safe_amount(account.get('algo_trading_profits')) + applied,
+        2,
+    )
+    return {'applied': applied, 'shortfall': max(0.0, shortfall)}
+
+
+_INVESTMENT_TRANSFER_FIELDS = (
+    'balance',
+    'index_balance',
+    'bonds_balance',
+    'crypto_balance',
+    'algo_trading_profits',
+)
+_investment_transfer_locks: Dict[int, threading.RLock] = {}
+_investment_transfer_guard = threading.Lock()
+
+
+def account_book_lock(account: Dict[str, Any]) -> threading.RLock:
+    """Lock for one live balance row.
+
+    Investment transfers and health-wallet debits that touch the same row
+    object take this lock, so one path cannot restore a snapshot over a
+    withdrawal the other path already credited. Re-entrant so a caller that
+    already holds the row can record the ledger.
+    """
+    key = id(account)
+    with _investment_transfer_guard:
+        lock = _investment_transfer_locks.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _investment_transfer_locks[key] = lock
+        return lock
+
+
+def _investment_row_lock(account: Dict[str, Any]) -> threading.RLock:
+    return account_book_lock(account)
+
+
+_algo_credit_locks: Dict[str, threading.RLock] = {}
+_algo_credit_guard = threading.Lock()
+
+
+def algo_credit_lock(customer_id: str) -> threading.RLock:
+    """Lock for one customer's algo available balance.
+
+    The source-row lock does not cover this bucket. A transfer from the
+    wallet and a transfer from investments can both seal while the other
+    has already read ``available``. Both must add to the live figure.
+    """
+    key = str(customer_id)
+    with _algo_credit_guard:
+        lock = _algo_credit_locks.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _algo_credit_locks[key] = lock
+        return lock
+
+
+def _snapshot_investment_transfer(account: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        field: account[field]
+        for field in _INVESTMENT_TRANSFER_FIELDS
+        if field in account
+    }
+
+
+def _restore_investment_transfer(account: Dict[str, Any], prior: Dict[str, Any]) -> None:
+    for field in _INVESTMENT_TRANSFER_FIELDS:
+        if field in prior:
+            account[field] = prior[field]
+        else:
+            account.pop(field, None)
+
+
+def credit_settled_investment(
+    account: Dict[str, Any],
+    amount: float,
+    credit: Callable[[float, float], Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Withdraw from one investment row, then credit algo for that amount.
+
+    The row lock covers the pre-image, the withdrawal, ``credit``, and any
+    restore. A second caller waits, so it cannot write an older snapshot
+    over a withdrawal that already stuck. ``credit(applied, remaining)``
+    runs after the withdrawal. If it raises, or returns a result that did
+    not succeed, this withdrawal is put back. A request that moves nothing
+    puts back only the state it observed while holding the lock.
+    """
+    if not isinstance(account, dict):
+        return {
+            'success': False,
+            'applied': 0.0,
+            'available_balance': 0.0,
+            'error': 'insufficient',
+        }
+    with _investment_row_lock(account):
+        position = investment_books(account)['position']
+        requested = float(amount)
+        if requested > position + 1e-9:
+            return {
+                'success': False,
+                'applied': 0.0,
+                'available_balance': position,
+                'error': 'insufficient',
+            }
+        prior = _snapshot_investment_transfer(account)
+        settled = settle_investment_to_algo(account, requested)
+        applied = round(_safe_amount(settled.get('applied')), 2)
+        if applied <= 0:
+            _restore_investment_transfer(account, prior)
+            return {
+                'success': False,
+                'applied': 0.0,
+                'available_balance': investment_books(account)['position'],
+                'error': 'insufficient',
+            }
+        remaining = investment_books(account)['position']
+        try:
+            result = credit(applied, remaining)
+        except Exception:
+            _restore_investment_transfer(account, prior)
+            raise
+        if not isinstance(result, dict) or not result.get('success'):
+            _restore_investment_transfer(account, prior)
+            available = investment_books(account)['position']
+            if isinstance(result, dict):
+                result = dict(result)
+                result['success'] = False
+                result.setdefault('available_balance', available)
+                return result
+            return {
+                'success': False,
+                'applied': 0.0,
+                'available_balance': available,
+                'error': 'insufficient',
+            }
+        return result
 
 
 def mark_unallocated_cash(account: Dict[str, Any]) -> None:

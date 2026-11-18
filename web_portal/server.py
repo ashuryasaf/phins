@@ -732,7 +732,7 @@ def compute_unified_financial_metrics(
         account for customer_id, account in INVESTMENT_ACCOUNTS.items()
         if isinstance(account, dict) and _in_book(account.get('customer_id') or customer_id)
     ]
-    total_investment_balance = round(sum(safe_float(acc.get('balance', 0), 0.0) for acc in investment_rows), 2)
+    total_investment_balance = round(sum(_investment_books(acc)['position'] for acc in investment_rows), 2)
 
     # --- Algo trading ---
     total_algo_balance = 0.0
@@ -10243,6 +10243,12 @@ def savings_distribution_percents(customer_id: str, pipeline_account=None) -> Di
     }
 
 
+def _investment_books(account):
+    """Customer-facing investment position. Does not write the row."""
+    from services.savings_pipeline_service import investment_books
+    return investment_books(account if isinstance(account, dict) else {})
+
+
 def _apply_direct_savings_distribution(
     customer_id: str,
     savings_amount: float,
@@ -18536,7 +18542,7 @@ def _build_tax_year_premium_report(
     wallet = HEALTH_WALLETS.get(customer_id, {})
     balance_block = {
         'wallet_balance': _round_money(wallet.get('balance', 0.0)),
-        'investment_balance': _round_money(investment_account.get('balance', 0.0)),
+        'investment_balance': _round_money(_investment_books(investment_account)['position']),
         'index_balance': _round_money(investment_account.get('index_balance', 0.0)),
         'bonds_balance': _round_money(investment_account.get('bonds_balance', 0.0)),
         'crypto_balance': _round_money(investment_account.get('crypto_balance', 0.0)),
@@ -26862,7 +26868,7 @@ For claims or questions, please contact:
                 # ========== UNIFIED WALLET CALCULATION FOR AI BI ==========
                 # Calculate all wallet types
                 total_health = sum(float(w.get('balance', 0) or 0) for w in HEALTH_WALLETS.values())
-                total_invest = sum(float(a.get('balance', 0) or 0) for a in INVESTMENT_ACCOUNTS.values())
+                total_invest = sum(_investment_books(a)['position'] for a in INVESTMENT_ACCOUNTS.values() if isinstance(a, dict))
                 total_algo = 0
                 try:
                     if unified_balance_enabled and unified_balance_service:
@@ -27845,7 +27851,7 @@ For claims or questions, please contact:
                 # Get investment data
                 investment_summary = {'status': 'available', 'data': {}}
                 try:
-                    total_balance = sum(a.get('balance', 0) for a in INVESTMENT_ACCOUNTS.values())
+                    total_balance = sum(_investment_books(a)['position'] for a in INVESTMENT_ACCOUNTS.values() if isinstance(a, dict))
                     investment_summary['data'] = {
                         'total_accounts': len(INVESTMENT_ACCOUNTS),
                         'total_balance': total_balance
@@ -34063,7 +34069,7 @@ For claims or questions, please contact:
                 
                 # Investment Account
                 investment_account = INVESTMENT_ACCOUNTS.get(cust_id, {})
-                investment_balance = float(investment_account.get('balance', 0) or 0)
+                investment_balance = _investment_books(investment_account)['position']
                 
                 # Customer Allocations (used for unified balance)
                 allocation = CUSTOMER_ALLOCATIONS.get(cust_id, {})
@@ -35065,6 +35071,19 @@ For claims or questions, please contact:
             
             purchases = [p for p in MEDICAL_PURCHASES.values() if p.get('customer_id') == customer_id]
             purchases = _enrich_medical_purchase_rows(purchases)
+            from services.nft_ledger import nft_purchase_rows
+            known_purchase_ids = []
+            for purchase in purchases:
+                known_purchase_ids.append(str(purchase.get('id') or ''))
+                known_purchase_ids.append(str(purchase.get('nft_token_id') or ''))
+                known_purchase_ids.append(str(purchase.get('ledger_tx_id') or ''))
+            owner_tokens = [
+                token for token in NFT_LEDGER.values()
+                if isinstance(token, dict) and (token.get('owner_id') or token.get('customer_id')) == customer_id
+            ]
+            for row in nft_purchase_rows(owner_tokens, known_purchase_ids):
+                row['customer_id'] = customer_id
+                purchases.append(row)
             purchases.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
             
             self._set_json_headers()
@@ -36739,19 +36758,15 @@ For claims or questions, please contact:
             try:
                 # Get INVESTMENT_ACCOUNTS data (master record)
                 inv_account = INVESTMENT_ACCOUNTS.get(customer_id, {})
-                
-                # Total balance (all deposits)
-                total_balance = float(inv_account.get('balance', 0))
-                
-                # Invested assets breakdown (allocated to investments)
-                index_balance = float(inv_account.get('index_balance', 0))
-                bonds_balance = float(inv_account.get('bonds_balance', 0))
-                crypto_balance = float(inv_account.get('crypto_balance', 0))
-                invested_assets = index_balance + bonds_balance + crypto_balance
-                
-                # Cash balance = Total deposits - Invested assets
-                # This represents uninvested funds available for new investments
-                cash_balance = total_balance - invested_assets
+                books = _investment_books(inv_account)
+                # Flagged rows keep unallocated cash in balance and the
+                # holdings beside it. Older rows keep the position in balance.
+                total_balance = books['position']
+                index_balance = books['index']
+                bonds_balance = books['bonds']
+                crypto_balance = books['crypto']
+                invested_assets = books['invested']
+                cash_balance = books['cash']
                 
                 # Get monthly premium contribution using the new allocation system
                 distribution = calculate_monthly_distribution(customer_id)
@@ -38364,11 +38379,13 @@ For claims or questions, please contact:
             
             # 5. Investment account
             inv_acc = INVESTMENT_ACCOUNTS.get(customer_id, {})
+            inv_books = _investment_books(inv_acc)
             result['investment_account'] = {
-                'balance': inv_acc.get('balance', 0),
-                'index_balance': inv_acc.get('index_balance', 0),
-                'bonds_balance': inv_acc.get('bonds_balance', 0),
-                'crypto_balance': inv_acc.get('crypto_balance', 0),
+                'balance': inv_books['position'],
+                'cash_balance': inv_books['cash'],
+                'index_balance': inv_books['index'],
+                'bonds_balance': inv_books['bonds'],
+                'crypto_balance': inv_books['crypto'],
                 'deposits_count': len(inv_acc.get('deposits', []))
             }
             
@@ -38406,7 +38423,7 @@ For claims or questions, please contact:
             # 10. Total assets
             total_assets = (
                 wallet.get('balance', 0) +
-                inv_acc.get('balance', 0) +
+                inv_books['position'] +
                 result.get('algo_trading', {}).get('available', 0) +
                 result.get('algo_trading', {}).get('in_positions', 0)
             )
@@ -38667,12 +38684,14 @@ For claims or questions, please contact:
             }
 
             inv_acc = INVESTMENT_ACCOUNTS.get(customer_id, {})
+            inv_books = _investment_books(inv_acc)
             inv_deposits = [d for d in inv_acc.get('deposits', []) if _in_period(d.get('timestamp', d.get('created_at')))]
             investment_data = {
-                'balance': safe_float(inv_acc.get('balance', 0)),
-                'index_balance': safe_float(inv_acc.get('index_balance', 0)),
-                'bonds_balance': safe_float(inv_acc.get('bonds_balance', 0)),
-                'crypto_balance': safe_float(inv_acc.get('crypto_balance', 0)),
+                'balance': inv_books['position'],
+                'cash_balance': inv_books['cash'],
+                'index_balance': inv_books['index'],
+                'bonds_balance': inv_books['bonds'],
+                'crypto_balance': inv_books['crypto'],
                 'deposits_count': len(inv_deposits),
                 'deposits_total': round(sum(safe_float(d.get('amount', 0)) for d in inv_deposits), 2),
             }
@@ -38753,7 +38772,7 @@ For claims or questions, please contact:
 
             total_assets = round(
                 safe_float(wallet.get('balance', 0)) +
-                safe_float(inv_acc.get('balance', 0)),
+                inv_books['position'],
                 2
             )
             total_liabilities = round(sum(
@@ -38985,7 +39004,8 @@ For claims or questions, please contact:
             
             # 4. Algo Trading Orders (from transaction ledger)
             for tx in TRANSACTION_LEDGER.values():
-                if tx.get('customer_id') == customer_id and tx.get('tx_type') in ['algo_trade', 'algo_order']:
+                tx_kind = tx.get('tx_type') or tx.get('type')
+                if tx.get('customer_id') == customer_id and tx_kind in ['algo_trade', 'algo_order']:
                     meta = tx.get('metadata', {})
                     activities.append({
                         'id': tx.get('id'),
@@ -39004,14 +39024,15 @@ For claims or questions, please contact:
             
             # 5. Bill Payments
             for tx in TRANSACTION_LEDGER.values():
-                if tx.get('customer_id') == customer_id and tx.get('tx_type') in ['bill_payment', 'premium_payment']:
+                tx_kind = tx.get('tx_type') or tx.get('type')
+                if tx.get('customer_id') == customer_id and tx_kind in ['bill_payment', 'premium_payment', 'bulk_premium_payment']:
                     meta = tx.get('metadata', {})
                     activities.append({
                         'id': tx.get('id'),
-                        'type': tx.get('tx_type'),
+                        'type': tx_kind,
                         'category': 'billing',
                         'icon': '💳',
-                        'description': f"{'Premium' if tx.get('tx_type') == 'premium_payment' else 'Bill'} Payment",
+                        'description': f"{'Premium' if tx_kind in ('premium_payment', 'bulk_premium_payment') else 'Bill'} Payment",
                         'amount': -tx.get('amount', 0),
                         'timestamp': tx.get('timestamp', tx.get('created_at', '')),
                         'nft_token_id': tx.get('nft_token_id'),
@@ -39034,13 +39055,24 @@ For claims or questions, please contact:
                         'ledger_tx_id': claim.get('ledger_tx_id')
                     })
             
+            # Registered NFTs restore flows the store rows do not already list.
+            # A seal is not rewritten, and a broken seal is not turned into cash.
+            from services.nft_ledger import merge_nft_flows
+            owner_tokens = [
+                token for token in NFT_LEDGER.values()
+                if isinstance(token, dict) and (token.get('owner_id') or token.get('customer_id')) == customer_id
+            ]
+            activities = merge_nft_flows(activities, owner_tokens)
+
             # Sort by timestamp descending
             activities.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
             
             # Calculate summary
             total_deposits = sum(a['amount'] for a in activities if a['type'] == 'deposit' and a['amount'] > 0)
             total_purchases = abs(sum(a['amount'] for a in activities if a['type'] == 'medical_purchase'))
-            total_investments = sum(a['amount'] for a in activities if a['type'] == 'investment_deposit' and a['amount'] > 0)
+            # The adjusted investment balance is the position (cash plus holdings),
+            # not the raw cash field a fully allocated row leaves at zero.
+            total_investments = _investment_books(INVESTMENT_ACCOUNTS.get(customer_id, {}))['position']
             total_algo = sum(abs(a['amount']) for a in activities if a['type'] == 'algo_trade')
             
             self._set_json_headers()
@@ -40066,12 +40098,13 @@ For claims or questions, please contact:
             total_investment_deposits = 0.0
             investment_by_type = {'index': 0.0, 'bonds': 0.0, 'crypto': 0.0}
             for account in INVESTMENT_ACCOUNTS.values():
-                total_investment_balance += float(account.get('balance', 0))
+                total_investment_balance += _investment_books(account)['position']
                 investment_by_type['index'] += float(account.get('index_balance', 0))
                 investment_by_type['bonds'] += float(account.get('bonds_balance', 0))
                 investment_by_type['crypto'] += float(account.get('crypto_balance', 0))
                 for dep in account.get('deposits', []):
                     total_investment_deposits += float(dep.get('amount', 0))
+            total_investment_balance = round(total_investment_balance, 2)
             
             # 6. Supplier Offers/Payments
             total_supplier_offers = len(SUPPLIER_OFFERS)
@@ -58764,6 +58797,7 @@ For claims or questions, please contact:
                 # Get all account balances
                 wallet = HEALTH_WALLETS.get(customer_id, {})
                 inv_acc = INVESTMENT_ACCOUNTS.get(customer_id, {})
+                inv_books = _investment_books(inv_acc)
                 
                 algo_balance = 0
                 if unified_balance_enabled:
@@ -58787,10 +58821,11 @@ For claims or questions, please contact:
                         'can_withdraw': True
                     },
                     'investment': {
-                        'balance': inv_acc.get('balance', 0),
-                        'index_balance': inv_acc.get('index_balance', 0),
-                        'bonds_balance': inv_acc.get('bonds_balance', 0),
-                        'crypto_balance': inv_acc.get('crypto_balance', 0),
+                        'balance': inv_books['position'],
+                        'cash_balance': inv_books['cash'],
+                        'index_balance': inv_books['index'],
+                        'bonds_balance': inv_books['bonds'],
+                        'crypto_balance': inv_books['crypto'],
                         'name': 'Investment Account',
                         'icon': '📈',
                         'can_deposit': True,
@@ -61887,9 +61922,15 @@ For claims or questions, please contact:
                         accounts = portfolio_service.get_customer_accounts(customer_id)
                         if accounts:
                             portfolio_cash = sum(acc.balance for acc in accounts)
-                            # Use the maximum of portfolio_service and INVESTMENT_ACCOUNTS
-                            inv_acc_bal = INVESTMENT_ACCOUNTS.get(customer_id, {}).get('balance', 0)
-                            best_balance = max(portfolio_cash, inv_acc_bal)
+                            # A flagged row stores unallocated cash in balance.
+                            # Replacing that cash with a portfolio total would
+                            # count the holdings a second time.
+                            existing = INVESTMENT_ACCOUNTS.get(customer_id)
+                            if isinstance(existing, dict) and existing.get('balance_is_unallocated_cash'):
+                                best_balance = float(existing.get('balance') or 0)
+                            else:
+                                inv_acc_bal = float((existing or {}).get('balance') or 0) if isinstance(existing, dict) else 0.0
+                                best_balance = max(portfolio_cash, inv_acc_bal)
                             
                             # Update unified_balance_service's investment_accounts
                             if customer_id not in unified_balance_service.investment_accounts:
@@ -61982,8 +62023,9 @@ For claims or questions, please contact:
                     
                     # Add debug info about available balances
                     if source == 'investment_account':
-                        inv_bal = unified_balance_service.investment_accounts.get(customer_id, {}).get('balance', 0)
-                        result['available_balance'] = inv_bal
+                        from services.savings_pipeline_service import investment_books
+                        inv_row = unified_balance_service.investment_accounts.get(customer_id, {})
+                        result['available_balance'] = investment_books(inv_row)['position']
                         result['requested_amount'] = amount
                     elif source == 'health_wallet':
                         wallet_bal = unified_balance_service.health_wallets.get(customer_id, {}).get('balance', 0)
@@ -62162,8 +62204,10 @@ For claims or questions, please contact:
                 if unified_balance_enabled:
                     portfolio_tracker_service.algo_balances = unified_balance_service.algo_trading_balances
                 
-                # Sync investment_accounts from investment_portfolio_service
-                if portfolio_enabled and portfolio_service:
+                # Sync investment_accounts from investment_portfolio_service.
+                # The tracker dict is INVESTMENT_ACCOUNTS. Writing a portfolio
+                # total into it would replace the live cash figure.
+                if portfolio_enabled and portfolio_service and portfolio_tracker_service.investment_accounts is not INVESTMENT_ACCOUNTS:
                     try:
                         # Get customer's savings accounts from portfolio service
                         accounts = portfolio_service.get_customer_accounts(customer_id)
@@ -62180,13 +62224,19 @@ For claims or questions, please contact:
                     except Exception as sync_err:
                         print(f"Investment sync note: {sync_err}")
                 
-                # Also sync from global INVESTMENT_ACCOUNTS
-                if customer_id in INVESTMENT_ACCOUNTS:
+                # The tracker dict is the canonical book. Do not put a spend
+                # stub in it: that assignment deletes holdings and deposits.
+                # Investment transfers settle and credit under one row lock.
+                # A second request waits, and a credit that does not stick
+                # puts back only the withdrawal from this request.
+                use_settled_credit = (
+                    source == 'investment' and customer_id in INVESTMENT_ACCOUNTS
+                )
+                if not use_settled_credit and customer_id in INVESTMENT_ACCOUNTS and portfolio_tracker_service.investment_accounts is not INVESTMENT_ACCOUNTS:
                     inv_bal = INVESTMENT_ACCOUNTS[customer_id].get('balance', 0)
                     if customer_id not in portfolio_tracker_service.investment_accounts:
                         portfolio_tracker_service.investment_accounts[customer_id] = INVESTMENT_ACCOUNTS[customer_id].copy()
                     else:
-                        # Use the higher of the two balances (more accurate)
                         current_bal = portfolio_tracker_service.investment_accounts[customer_id].get('balance', 0)
                         portfolio_tracker_service.investment_accounts[customer_id]['balance'] = max(current_bal, inv_bal)
                 
@@ -62194,8 +62244,37 @@ For claims or questions, please contact:
                 if customer_id in HEALTH_WALLETS:
                     portfolio_tracker_service.health_wallets[customer_id] = HEALTH_WALLETS[customer_id]
                 # ========== END SYNC ==========
-                
-                result = portfolio_tracker_service.deposit_to_algo(customer_id, amount, source)
+
+                if use_settled_credit:
+                    from services.savings_pipeline_service import credit_settled_investment
+                    row = INVESTMENT_ACCOUNTS[customer_id]
+
+                    def _credit_algo(applied, remaining):
+                        return portfolio_tracker_service.deposit_to_algo(
+                            customer_id,
+                            applied,
+                            source,
+                            debit_source=False,
+                            source_balance_after=remaining,
+                        )
+
+                    result = credit_settled_investment(row, amount, _credit_algo)
+                    if not result.get('success') and result.get('error') == 'insufficient':
+                        available = float(result.get('available_balance') or 0)
+                        result = {
+                            'success': False,
+                            'error': (
+                                f'Insufficient investment balance. '
+                                f'Available: ${available:.2f}, Requested: ${amount:.2f}'
+                            ),
+                            'available_balance': available,
+                        }
+                else:
+                    result = portfolio_tracker_service.deposit_to_algo(
+                        customer_id,
+                        amount,
+                        source,
+                    )
                 
                 # ========== SYNC BACK AFTER TRANSFER ==========
                 if result.get('success'):
@@ -62206,41 +62285,8 @@ For claims or questions, please contact:
                     # Sync investment accounts back to global store and portfolio service
                     if source == 'investment' and customer_id in INVESTMENT_ACCOUNTS:
                         inv_account = INVESTMENT_ACCOUNTS[customer_id]
-                        
-                        # Calculate current values
-                        total_balance = float(inv_account.get('balance', 0))
-                        index_bal = float(inv_account.get('index_balance', 0))
-                        bonds_bal = float(inv_account.get('bonds_balance', 0))
-                        crypto_bal = float(inv_account.get('crypto_balance', 0))
-                        invested_total = index_bal + bonds_bal + crypto_bal
-                        cash_available = total_balance - invested_total
-                        
-                        # Deduct from cash first, then proportionally from investments
-                        remaining_to_deduct = amount
-                        
-                        if cash_available > 0:
-                            cash_deduction = min(cash_available, remaining_to_deduct)
-                            remaining_to_deduct -= cash_deduction
-                        
-                        # If we need to deduct from investments, do it proportionally
-                        if remaining_to_deduct > 0 and invested_total > 0:
-                            ratio = remaining_to_deduct / invested_total
-                            index_deduction = index_bal * ratio
-                            bonds_deduction = bonds_bal * ratio
-                            crypto_deduction = crypto_bal * ratio
-                            
-                            inv_account['index_balance'] = index_bal - index_deduction
-                            inv_account['bonds_balance'] = bonds_bal - bonds_deduction
-                            inv_account['crypto_balance'] = crypto_bal - crypto_deduction
-                        
-                        # Update total balance
-                        inv_account['balance'] = total_balance - amount
-                        
-                        # Track algo trading profits from this transfer
-                        inv_account['algo_trading_profits'] = inv_account.get('algo_trading_profits', 0) + amount
-                        
-                        INVESTMENT_ACCOUNTS[customer_id] = inv_account
-                        
+                        # The row was settled before the credit. Do not
+                        # withdraw it again.
                         # Update portfolio service accounts
                         if portfolio_enabled and portfolio_service:
                             try:
@@ -64826,6 +64872,7 @@ For claims or questions, please contact:
                     'deposits': [],
                     'allocations': []
                 })
+                inv_books = _investment_books(inv_account)
                 
                 allocation_prefs = get_customer_allocation(customer_id)
                 
@@ -64834,11 +64881,12 @@ For claims or questions, please contact:
                     'success': True,
                     'account': inv_account,
                     'allocation_preferences': allocation_prefs,
-                    'total_balance': inv_account.get('balance', 0.0),
+                    'total_balance': inv_books['position'],
+                    'cash_balance': inv_books['cash'],
                     # Include balance breakdown at root level for dashboard consistency
-                    'index_balance': inv_account.get('index_balance', 0.0),
-                    'bonds_balance': inv_account.get('bonds_balance', 0.0),
-                    'crypto_balance': inv_account.get('crypto_balance', 0.0),
+                    'index_balance': inv_books['index'],
+                    'bonds_balance': inv_books['bonds'],
+                    'crypto_balance': inv_books['crypto'],
                     'deposits_count': len(inv_account.get('deposits', [])),
                     'breakdown': {
                         'index_funds': inv_account.get('index_balance', 0.0),
@@ -64874,12 +64922,51 @@ For claims or questions, please contact:
                     self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
                     return
                 
-                # Get transactions from master ledger
-                transactions = [
-                    tx for tx in TRANSACTION_LEDGER.values()
-                    if tx.get('customer_id') == customer_id
-                    and (not tx_type or tx.get('type') == tx_type)
+                # Get transactions from master ledger. Copies only: the stored
+                # row and its NFT seal are not rewritten.
+                transactions = []
+                seen_ids = set()
+                seen_nfts = set()
+                for tx in TRANSACTION_LEDGER.values():
+                    if tx.get('customer_id') != customer_id:
+                        continue
+                    kind = tx.get('type') or tx.get('tx_type') or 'record'
+                    if tx_type and kind != tx_type:
+                        continue
+                    view = dict(tx)
+                    view['type'] = kind
+                    try:
+                        view['amount'] = float(tx.get('amount') or 0)
+                    except (TypeError, ValueError):
+                        view['amount'] = 0.0
+                    transactions.append(view)
+                    if view.get('id'):
+                        seen_ids.add(str(view['id']))
+                    if view.get('ledger_tx_id'):
+                        seen_ids.add(str(view['ledger_tx_id']))
+                    if view.get('nft_token_id'):
+                        seen_nfts.add(str(view['nft_token_id']))
+
+                from services.nft_ledger import merge_nft_flows
+                owner_tokens = [
+                    token for token in NFT_LEDGER.values()
+                    if isinstance(token, dict) and (token.get('owner_id') or token.get('customer_id')) == customer_id
                 ]
+                for row in merge_nft_flows([], owner_tokens):
+                    if tx_type and row.get('type') != tx_type:
+                        continue
+                    if row.get('nft_token_id') in seen_nfts or row.get('id') in seen_ids:
+                        continue
+                    transactions.append({
+                        'id': row.get('id'),
+                        'customer_id': customer_id,
+                        'type': row.get('type'),
+                        'amount': row.get('amount'),
+                        'description': row.get('description'),
+                        'timestamp': row.get('timestamp'),
+                        'nft_token_id': row.get('nft_token_id'),
+                        'source': 'nft',
+                    })
                 
                 # Sort by timestamp descending
                 transactions.sort(key=lambda x: x.get('timestamp', ''), reverse=True)

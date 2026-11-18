@@ -9,12 +9,19 @@ piece is 60/30/10. ``balance`` stays unallocated cash.
 from services.data_integrity_service import DataIntegrityService
 from services.financial_unification_service import resolve_premium_split
 from services.nft_ledger import mint_token
+from services.portfolio_tracker_service import PortfolioTrackerService
 from services.process_pipeline_orchestrator import ProcessPipelineOrchestrator
+import threading
+
 from services.savings_pipeline_service import (
     AllocationStrategy,
     SavingsPipelineService,
+    apply_investment_withdrawal,
     bounded_distribution,
+    credit_settled_investment,
+    investment_books,
     mark_unallocated_cash,
+    settle_investment_to_algo,
 )
 from services.unified_balance_service import UnifiedBalanceService
 
@@ -607,3 +614,423 @@ def test_orchestrator_algo_credit_lands_in_the_injected_store():
     invested = row["index_balance"] + row["bonds_balance"] + row["crypto_balance"]
     assert row["balance_is_unallocated_cash"] is True
     assert abs((row["balance"] + invested) - 1065.0) < 0.05
+
+
+def test_flagged_position_keeps_holdings_when_cash_is_zero():
+    books = investment_books({
+        "balance": 0.0,
+        "index_balance": 390.0,
+        "bonds_balance": 195.0,
+        "crypto_balance": 65.0,
+        "balance_is_unallocated_cash": True,
+    })
+    assert books["cash"] == 0.0
+    assert books["invested"] == 650.0
+    assert books["position"] == 650.0
+
+
+def test_legacy_total_is_not_added_to_its_own_breakdown():
+    books = investment_books({
+        "balance": 1000.0,
+        "index_balance": 600.0,
+        "bonds_balance": 300.0,
+        "crypto_balance": 100.0,
+    })
+    assert books["position"] == 1000.0
+    assert books["cash"] == 0.0
+    assert books["unallocated_cash"] is False
+
+
+def test_withdrawal_takes_flagged_cash_before_holdings():
+    account = {
+        "balance": 100.0,
+        "index_balance": 390.0,
+        "bonds_balance": 195.0,
+        "crypto_balance": 65.0,
+        "balance_is_unallocated_cash": True,
+    }
+    moved = apply_investment_withdrawal(account, 150.0)
+    assert moved["applied"] == 150.0
+    assert moved["cash_taken"] == 100.0
+    assert account["balance"] == 0.0
+    remaining = account["index_balance"] + account["bonds_balance"] + account["crypto_balance"]
+    assert abs(remaining - 600.0) < 0.05
+    assert investment_books(account)["position"] == 600.0
+
+
+def test_withdrawal_cannot_mint_past_the_position():
+    account = {
+        "balance": 0.0,
+        "index_balance": 60.0,
+        "bonds_balance": 30.0,
+        "crypto_balance": 10.0,
+        "balance_is_unallocated_cash": True,
+    }
+    moved = apply_investment_withdrawal(account, 500.0)
+    assert moved["applied"] == 100.0
+    assert account["balance"] == 0.0
+    assert account["index_balance"] == 0.0
+    assert account["bonds_balance"] == 0.0
+    assert account["crypto_balance"] == 0.0
+
+
+def test_algo_credit_cannot_exceed_the_position():
+    """A credit already posted for more than the position is clawed back."""
+    account = {
+        "balance": 0.0,
+        "index_balance": 60.0,
+        "bonds_balance": 30.0,
+        "crypto_balance": 10.0,
+        "balance_is_unallocated_cash": True,
+        "algo_trading_profits": 5.0,
+    }
+    algo = {"available": 500.0}
+    settled = settle_investment_to_algo(account, 500.0, algo)
+    assert settled["applied"] == 100.0
+    assert settled["shortfall"] == 400.0
+    assert algo["available"] == 100.0
+    assert account["algo_trading_profits"] == 105.0
+    assert investment_books(account)["position"] == 0.0
+
+
+def _balance_service(accounts):
+    recorded = []
+
+    def _record(**kwargs):
+        recorded.append(kwargs)
+        return {"id": "TX-1", "nft_token_id": "NFT-1"}
+
+    service = UnifiedBalanceService(
+        health_wallets={},
+        investment_accounts=accounts,
+        transaction_ledger={},
+        nft_ledger={},
+        record_transaction_func=_record,
+        generate_nft_token_func=lambda *args, **kwargs: {},
+    )
+    return service, recorded
+
+
+def test_transfer_to_algo_refuses_more_than_the_position():
+    accounts = {
+        "CUST-1": {
+            "balance": 0.0,
+            "index_balance": 60.0,
+            "bonds_balance": 30.0,
+            "crypto_balance": 10.0,
+            "balance_is_unallocated_cash": True,
+        }
+    }
+    service, recorded = _balance_service(accounts)
+    result = service.transfer_to_algo_trading("CUST-1", 500.0, "investment_account")
+    assert result["success"] is False
+    assert result["available_balance"] == 100.0
+    assert accounts["CUST-1"]["index_balance"] == 60.0
+    assert "CUST-1" not in service.algo_trading_balances
+    assert recorded == []
+
+
+def test_transfer_to_algo_keeps_holdings_when_cash_covers_it():
+    accounts = {
+        "CUST-1": {
+            "balance": 200.0,
+            "index_balance": 390.0,
+            "bonds_balance": 195.0,
+            "crypto_balance": 65.0,
+            "balance_is_unallocated_cash": True,
+        }
+    }
+    service, recorded = _balance_service(accounts)
+    result = service.transfer_to_algo_trading("CUST-1", 100.0, "investment_account")
+    assert result["success"] is True
+    assert result["amount"] == 100.0
+    assert result["new_algo_balance"] == 100.0
+    assert result["new_source_balance"] == 750.0
+    assert accounts["CUST-1"]["balance"] == 100.0
+    assert accounts["CUST-1"]["index_balance"] == 390.0
+    assert accounts["CUST-1"]["bonds_balance"] == 195.0
+    assert accounts["CUST-1"]["crypto_balance"] == 65.0
+    assert service.algo_trading_balances["CUST-1"]["available"] == 100.0
+    assert recorded[0]["amount"] == 100.0
+    assert investment_books(accounts["CUST-1"])["position"] == 750.0
+
+
+def test_shared_tracker_deposit_keeps_the_canonical_row():
+    """The tracker book is the customer row. Crediting algo must not replace it."""
+    accounts = {
+        "CUST-1": {
+            "balance": 40.0,
+            "index_balance": 60.0,
+            "bonds_balance": 30.0,
+            "crypto_balance": 10.0,
+            "balance_is_unallocated_cash": True,
+            "deposits": [{"id": "DEP-1", "amount": 100.0}],
+            "algo_trading_profits": 0.0,
+        }
+    }
+    recorded = []
+
+    def _record(**kwargs):
+        recorded.append(kwargs)
+        return {"id": "TX-1", "nft_token_id": "NFT-1"}
+
+    tracker = PortfolioTrackerService(
+        investment_accounts=accounts,
+        record_transaction_func=_record,
+    )
+    assert tracker.investment_accounts is accounts
+    row = accounts["CUST-1"]
+    settled = settle_investment_to_algo(row, 50.0)
+    remaining = investment_books(row)["position"]
+    result = tracker.deposit_to_algo(
+        "CUST-1",
+        settled["applied"],
+        "investment",
+        debit_source=False,
+        source_balance_after=remaining,
+    )
+    assert result["success"] is True
+    assert settled["applied"] == 50.0
+    assert remaining == 90.0
+    assert result["source_balance"] == 90.0
+    assert recorded[0]["metadata"]["source_balance_after"] == 90.0
+    assert row["deposits"][0]["id"] == "DEP-1"
+    assert row["balance_is_unallocated_cash"] is True
+    assert row["balance"] == 0.0
+    assert investment_books(row)["position"] == 90.0
+    assert tracker.algo_balances["CUST-1"]["available"] == 50.0
+    assert row["algo_trading_profits"] == 50.0
+
+
+def _flagged_row():
+    return {
+        "balance": 40.0,
+        "index_balance": 60.0,
+        "bonds_balance": 30.0,
+        "crypto_balance": 10.0,
+        "balance_is_unallocated_cash": True,
+        "deposits": [{"id": "DEP-1", "amount": 100.0}],
+        "algo_trading_profits": 7.0,
+    }
+
+
+def test_overlapping_transfers_credit_the_position_once():
+    account = _flagged_row()
+    credited = []
+    ready = threading.Barrier(4)
+
+    def credit(applied, remaining):
+        credited.append((applied, remaining))
+        return {"success": True}
+
+    def worker():
+        ready.wait(timeout=5)
+        credit_settled_investment(account, 140.0, credit)
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+    assert sum(item[0] for item in credited) == 140.0
+    assert credited[0][1] == 0.0
+    assert investment_books(account)["position"] == 0.0
+    assert account["deposits"][0]["id"] == "DEP-1"
+    assert account["balance_is_unallocated_cash"] is True
+
+
+def test_failed_seal_restores_the_row_and_a_retry_moves_the_funds_once():
+    account = _flagged_row()
+    accounts = {"CUST-1": account}
+    calls = {"raised": False}
+    recorded = []
+
+    def _record(**kwargs):
+        if not calls["raised"]:
+            calls["raised"] = True
+            raise RuntimeError("seal failed")
+        recorded.append(kwargs)
+        return {"id": "TX-1", "nft_token_id": "NFT-1"}
+
+    tracker = PortfolioTrackerService(
+        investment_accounts=accounts,
+        record_transaction_func=_record,
+    )
+
+    def credit(applied, remaining):
+        return tracker.deposit_to_algo(
+            "CUST-1",
+            applied,
+            "investment",
+            debit_source=False,
+            source_balance_after=remaining,
+        )
+
+    try:
+        credit_settled_investment(account, 50.0, credit)
+        raised = False
+    except RuntimeError:
+        raised = True
+    assert raised is True
+    assert investment_books(account)["position"] == 140.0
+    assert account["balance"] == 40.0
+    assert account["index_balance"] == 60.0
+    assert account["algo_trading_profits"] == 7.0
+    assert account["deposits"][0]["id"] == "DEP-1"
+    assert tracker.algo_balances.get("CUST-1", {}).get("available", 0) == 0
+
+    result = credit_settled_investment(account, 50.0, credit)
+    assert result["success"] is True
+    assert result["source_balance"] == 90.0
+    assert recorded[0]["metadata"]["source_balance_after"] == 90.0
+    assert tracker.algo_balances["CUST-1"]["available"] == 50.0
+    assert investment_books(account)["position"] == 90.0
+    assert account["algo_trading_profits"] == 57.0
+
+
+def test_portfolio_transfer_cannot_duplicate_a_settled_withdrawal():
+    account = _flagged_row()
+    service, _recorded = _balance_service({"CUST-1": account})
+    moved = []
+    ready = threading.Barrier(2)
+
+    def credit(applied, _remaining):
+        moved.append(applied)
+        return {"success": True}
+
+    def settle():
+        ready.wait(timeout=5)
+        credit_settled_investment(account, 140.0, credit)
+
+    def transfer():
+        ready.wait(timeout=5)
+        result = service.transfer_to_algo_trading("CUST-1", 140.0, "investment_account")
+        if result.get("success"):
+            moved.append(result["amount"])
+
+    threads = [threading.Thread(target=settle), threading.Thread(target=transfer)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+    assert sum(moved) == 140.0
+    assert investment_books(account)["position"] == 0.0
+    assert account["deposits"][0]["id"] == "DEP-1"
+    assert account["balance_is_unallocated_cash"] is True
+
+
+def test_overlapping_wallet_deposits_credit_algo_once():
+    wallet = {"balance": 100.0, "transactions": []}
+    wallets = {"CUST-1": wallet}
+    tracker = PortfolioTrackerService(
+        health_wallets=wallets,
+        record_transaction_func=lambda **_kwargs: {"id": "TX", "nft_token_id": "NFT"},
+    )
+    service, _recorded = _balance_service({})
+    service.health_wallets = wallets
+    results = []
+    ready = threading.Barrier(2)
+
+    def deposit():
+        ready.wait(timeout=5)
+        results.append(tracker.deposit_to_algo("CUST-1", 80.0, "health_wallet"))
+
+    def transfer():
+        ready.wait(timeout=5)
+        results.append(service.transfer_to_algo_trading("CUST-1", 80.0, "health_wallet"))
+
+    threads = [threading.Thread(target=deposit), threading.Thread(target=transfer)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+    assert sum(1 for row in results if row.get("success")) == 1
+    assert wallet["balance"] == 20.0
+    algo = float(tracker.algo_balances.get("CUST-1", {}).get("available", 0) or 0)
+    algo += float(service.algo_trading_balances.get("CUST-1", {}).get("available", 0) or 0)
+    assert algo == 80.0
+
+
+def test_wallet_credit_during_the_seal_is_not_replaced():
+    wallet = {"balance": 100.0, "transactions": []}
+    service, _recorded = _balance_service({})
+    service.health_wallets = {"CUST-1": wallet}
+
+    def _record(**_kwargs):
+        wallet["balance"] += 30.0
+        return {"id": "TX-1", "nft_token_id": "NFT-1"}
+
+    service.record_transaction = _record
+    result = service.transfer_to_algo_trading("CUST-1", 40.0, "health_wallet")
+    assert result["success"] is True
+    assert wallet["balance"] == 90.0
+    assert service.algo_trading_balances["CUST-1"]["available"] == 40.0
+
+
+def test_algo_credit_during_the_seal_is_not_replaced():
+    account = _flagged_row()
+    service, _recorded = _balance_service({"CUST-1": account})
+    service.algo_trading_balances["CUST-1"] = {
+        "available": 0.0,
+        "in_positions": 0.0,
+        "total_pnl": 0.0,
+        "transfers": [],
+    }
+
+    def _record(**_kwargs):
+        service.algo_trading_balances["CUST-1"]["available"] += 25.0
+        return {"id": "TX-1", "nft_token_id": "NFT-1"}
+
+    service.record_transaction = _record
+    result = service.transfer_to_algo_trading("CUST-1", 50.0, "investment_account")
+    assert result["success"] is True
+    assert service.algo_trading_balances["CUST-1"]["available"] == 75.0
+    assert investment_books(account)["position"] == 90.0
+
+
+def test_replaced_algo_bucket_still_receives_the_credit():
+    account = _flagged_row()
+    service, _recorded = _balance_service({"CUST-1": account})
+    service.algo_trading_balances["CUST-1"] = {
+        "available": 0.0,
+        "in_positions": 0.0,
+        "total_pnl": 0.0,
+        "transfers": [],
+    }
+
+    def _record(**_kwargs):
+        service.algo_trading_balances["CUST-1"] = {
+            "available": 10.0,
+            "in_positions": 0.0,
+            "total_pnl": 0.0,
+            "transfers": [],
+        }
+        return {"id": "TX-1", "nft_token_id": "NFT-1"}
+
+    service.record_transaction = _record
+    result = service.transfer_to_algo_trading("CUST-1", 50.0, "investment_account")
+    assert result["success"] is True
+    assert result["new_algo_balance"] == 60.0
+    assert service.algo_trading_balances["CUST-1"]["available"] == 60.0
+    assert investment_books(account)["position"] == 90.0
+
+
+def test_refused_credit_puts_the_withdrawal_back():
+    account = _flagged_row()
+
+    def credit(applied, remaining):
+        return {"success": False, "error": "declined"}
+
+    result = credit_settled_investment(account, 50.0, credit)
+    assert result["success"] is False
+    assert result["error"] == "declined"
+    assert result["available_balance"] == 140.0
+    assert investment_books(account)["position"] == 140.0
+    assert account["algo_trading_profits"] == 7.0
+    assert account["deposits"][0]["id"] == "DEP-1"

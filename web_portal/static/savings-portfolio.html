@@ -1627,12 +1627,10 @@
                     }
                     
                     // Calculate total account value from unified source
-                    const unifiedTotal = unifiedData.total_value || 0;
-                    if (unifiedTotal > 0) {
-                        // Keep market value from portfolio service (has real-time prices)
-                        // but ensure cash balance syncs with INVESTMENT_ACCOUNTS
-                        portfolioData.total_account_value = Math.max(portfolioData.total_market_value || 0, 0) + (unifiedData.cash_balance || 0);
-                    }
+                    const unifiedCash = Math.max(Number(unifiedData.cash_balance || 0), 0);
+                    const unifiedInvested = Math.max(Number(unifiedData.invested_assets || 0), 0);
+                    const marketValue = Math.max(Number(portfolioData.total_market_value || 0), unifiedInvested);
+                    portfolioData.total_account_value = marketValue + unifiedCash;
                 }
                 
                 updatePortfolioDisplay();

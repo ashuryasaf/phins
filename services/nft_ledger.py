@@ -385,6 +385,137 @@ def present_token(token: Mapping[str, Any], direction: str) -> Dict[str, Any]:
     }
 
 
+_FLOW_CATEGORY = {
+    "medical_purchase": "medical",
+    "health_wallet_purchase": "medical",
+    "premium_payment": "billing",
+    "bill_payment": "billing",
+    "bulk_premium_payment": "billing",
+    "wallet_deposit": "health_wallet",
+    "health_wallet_allocation": "health_wallet",
+    "pipeline_allocation": "investments",
+    "investment_deposit": "investments",
+    "savings_addressed": "investments",
+    "algo_allocation": "algo_trading",
+    "claim_payment_received": "claims",
+    "claim_payment_wallet": "claims",
+    "claim_payment_investment": "claims",
+}
+
+_FLOW_ACTIVITY = {
+    "medical_purchase": "medical_purchase",
+    "health_wallet_purchase": "medical_purchase",
+    "wallet_deposit": "deposit",
+    "pipeline_allocation": "investment_deposit",
+    "investment_deposit": "investment_deposit",
+    "savings_addressed": "investment_deposit",
+    "premium_payment": "premium_payment",
+    "bill_payment": "bill_payment",
+    "bulk_premium_payment": "premium_payment",
+    "algo_allocation": "algo_trade",
+    "claim_payment_received": "claim",
+    "claim_payment_wallet": "claim",
+    "claim_payment_investment": "claim",
+}
+
+
+def flow_row(presented: Mapping[str, Any]) -> Dict[str, Any]:
+    """One dashboard activity built from a presented NFT. The seal is not copied back."""
+    tx_type = str(presented.get("transaction_type") or "record")
+    direction = str(presented.get("direction") or "neutral")
+    amount = amount_number(presented.get("amount"))
+    signed = -abs(amount) if direction == "out" else amount
+    if "referral" in tx_type:
+        category = "referral"
+    else:
+        category = _FLOW_CATEGORY.get(tx_type, "ledger")
+    return {
+        "id": str(presented.get("transaction_id") or presented.get("token_id") or ""),
+        "type": _FLOW_ACTIVITY.get(tx_type, tx_type),
+        "category": category,
+        "description": str(presented.get("description") or tx_type.replace("_", " ")),
+        "amount": round(signed, 2),
+        "timestamp": str(presented.get("created_at") or ""),
+        "nft_token_id": str(presented.get("token_id") or ""),
+        "ledger_tx_id": str(presented.get("transaction_id") or ""),
+        "status": presented.get("status") or "confirmed",
+        "counts_as_cash": bool(presented.get("counts_as_cash")),
+        "integrity_valid": bool((presented.get("integrity") or {}).get("valid")),
+        "source": "nft",
+    }
+
+
+def merge_nft_flows(
+    activities: Iterable[Mapping[str, Any]],
+    tokens: Iterable[Mapping[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Add sealed customer NFTs that the store rows do not already show.
+
+    A broken seal is left off the restored flow. An NFT whose token id,
+    transaction id, or ledger link is already on an activity is not added again.
+    """
+    existing = [dict(row) for row in activities if isinstance(row, Mapping)]
+    seen = set()
+    for row in existing:
+        for field in ("id", "ledger_tx_id", "nft_token_id"):
+            value = str(row.get(field) or "")
+            if value:
+                seen.add(value)
+    presented = present_customer_ledger(tokens, limit=10000)["ledger"]
+    for row in presented:
+        integrity = row.get("integrity") if isinstance(row.get("integrity"), dict) else {}
+        if not integrity.get("valid"):
+            continue
+        token_id = str(row.get("token_id") or "")
+        tx_id = str(row.get("transaction_id") or "")
+        # A store row often keeps its own id and puts the ledger id in
+        # ledger_tx_id, with no nft_token_id. Matching either one avoids
+        # listing the same sealed flow twice.
+        if (token_id and token_id in seen) or (tx_id and tx_id in seen):
+            continue
+        existing.append(flow_row(row))
+        if token_id:
+            seen.add(token_id)
+        if tx_id:
+            seen.add(tx_id)
+    return existing
+
+
+def nft_purchase_rows(
+    tokens: Iterable[Mapping[str, Any]],
+    existing_ids: Iterable[str],
+) -> List[Dict[str, Any]]:
+    """Medical-purchase seals that are not already in the purchase store."""
+    known = {str(item) for item in existing_ids if item}
+    rows: List[Dict[str, Any]] = []
+    presented = present_customer_ledger(tokens, limit=10000)["ledger"]
+    for row in presented:
+        if str(row.get("transaction_type") or "") != "medical_purchase":
+            continue
+        integrity = row.get("integrity") if isinstance(row.get("integrity"), dict) else {}
+        if not integrity.get("valid"):
+            continue
+        token_id = str(row.get("token_id") or "")
+        tx_id = str(row.get("transaction_id") or "")
+        if token_id in known or tx_id in known:
+            continue
+        rows.append({
+            "id": tx_id or token_id,
+            "product_name": str(row.get("description") or "Medical purchase"),
+            "amount": abs(amount_number(row.get("amount"))),
+            "timestamp": str(row.get("created_at") or ""),
+            "nft_token_id": token_id,
+            "status": row.get("status") or "confirmed",
+            "source": "nft",
+            "category": "medical",
+        })
+        if token_id:
+            known.add(token_id)
+        if tx_id:
+            known.add(tx_id)
+    return rows
+
+
 def present_customer_ledger(tokens: Iterable[Mapping[str, Any]], *, limit: int = 200) -> Dict[str, Any]:
     """Summary over the full book, plus the newest rows for the table."""
     rows_in = [token for token in tokens if isinstance(token, dict)]
