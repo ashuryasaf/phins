@@ -60954,47 +60954,40 @@ For claims or questions, please contact:
                                 _return_invest_reserve()
                             elif reserved_inv > 0:
                                 # The row was reserved above. An algo withdrawal
-                                # mirrors that cash onto the lowest account id,
-                                # while this buying account may already hold
-                                # cash that was never on the row. Peel the other
-                                # accounts first. Leave the buying account's
-                                # surplus, the portfolio cash above the pre-debit
-                                # row, where it is.
+                                # mirrors that cash onto the lowest account id.
+                                # Only that row-sized slice is peelable, filled
+                                # from the lowest id upward. Cash above it stays
+                                # on the account that holds it, including a sibling.
                                 left = round(reserved_inv, 2)
-                                others = []
-                                for sibling in sibling_accounts:
-                                    if sibling is not None and sibling is not account and sibling not in others:
-                                        others.append(sibling)
-                                others.sort(key=lambda item: str(getattr(item, 'account_id', '')))
-                                portfolio_sum = 0.0
-                                for portfolio_account in others:
-                                    portfolio_sum = round(
-                                        portfolio_sum + float(getattr(portfolio_account, 'balance', 0) or 0),
-                                        2,
-                                    )
-                                buyer_balance = 0.0
+                                peel_accounts = []
                                 if account is not None:
-                                    buyer_balance = round(float(getattr(account, 'balance', 0) or 0), 2)
-                                    portfolio_sum = round(portfolio_sum + buyer_balance, 2)
+                                    peel_accounts.append(account)
+                                for sibling in sibling_accounts:
+                                    if sibling is not None and sibling not in peel_accounts:
+                                        peel_accounts.append(sibling)
+                                peel_accounts.sort(
+                                    key=lambda item: str(getattr(item, 'account_id', '')),
+                                )
                                 post_row = round(float(inv_row.get('balance', 0) or 0), 2) if isinstance(inv_row, dict) else 0.0
-                                pre_row = round(post_row + reserved_inv, 2)
-                                excess = max(0.0, round(portfolio_sum - pre_row, 2))
-                                buyer_keep = min(buyer_balance, excess)
-                                buyer_peelable = round(buyer_balance - buyer_keep, 2)
-                                for portfolio_account in others:
+                                row_left = round(post_row + reserved_inv, 2)
+                                peelable = {}
+                                for portfolio_account in peel_accounts:
+                                    live_cash = round(
+                                        float(getattr(portfolio_account, 'balance', 0) or 0), 2,
+                                    )
+                                    share = min(live_cash, row_left)
+                                    peelable[id(portfolio_account)] = share
+                                    row_left = round(row_left - share, 2)
+                                for portfolio_account in peel_accounts:
                                     if left <= 0:
                                         break
                                     live_cash = round(
                                         float(getattr(portfolio_account, 'balance', 0) or 0), 2,
                                     )
-                                    spend = min(live_cash, left)
+                                    spend = min(peelable.get(id(portfolio_account), 0.0), left)
                                     if spend > 0:
                                         portfolio_account.balance = round(live_cash - spend, 2)
                                         left = round(left - spend, 2)
-                                if left > 0 and account is not None and buyer_peelable > 0:
-                                    spend = min(buyer_peelable, left)
-                                    account.balance = round(buyer_balance - spend, 2)
-                                    left = round(left - spend, 2)
                                 if account is not None:
                                     txn = result.get('transaction')
                                     if isinstance(txn, dict):
