@@ -518,8 +518,13 @@ class BillingCreditService:
                         'transactions': []
                     }
                 
-                prev_balance = self._health_wallets[customer_id].get('balance', 0)
-                self._health_wallets[customer_id]['balance'] = prev_balance + float(amount_decimal)
+                from services.savings_pipeline_service import credit_account_balance
+                new_balance = credit_account_balance(
+                    self._health_wallets[customer_id], float(amount_decimal),
+                )
+                prev_balance = round(
+                    float(new_balance or 0) - float(amount_decimal), 2,
+                )
                 
                 # Record wallet transaction
                 wallet_tx = {

@@ -8866,10 +8866,12 @@ def process_claim_payment_to_wallet(
             'created_at': datetime.now().isoformat()
         }
     
-    # 3. Credit customer's health wallet
-    prev_balance = HEALTH_WALLETS[customer_id]['balance']
-    HEALTH_WALLETS[customer_id]['balance'] += amount
-    new_balance = HEALTH_WALLETS[customer_id]['balance']
+    # 3. Credit customer's health wallet on the live balance. A transfer
+    # to algo holds this row while its reservation is unsealed, so this
+    # credit cannot put the pre-reserve figure back.
+    from services.savings_pipeline_service import credit_account_balance
+    new_balance = credit_account_balance(HEALTH_WALLETS[customer_id], amount)
+    prev_balance = round(float(new_balance or 0) - float(amount or 0), 2)
     
     # 4. Record wallet transaction
     wallet_tx = {
@@ -10306,7 +10308,8 @@ def _apply_direct_savings_distribution(
                 'created_at': now.isoformat(),
             }
             HEALTH_WALLETS[customer_id] = wallet
-        wallet['balance'] = float(wallet.get('balance', 0.0) or 0) + wallet_amount
+        from services.savings_pipeline_service import credit_account_balance
+        credit_account_balance(wallet, wallet_amount)
         wallet.setdefault('transactions', []).append({
             'type': 'pipeline_allocation',
             'amount': wallet_amount,
@@ -57861,9 +57864,13 @@ For claims or questions, please contact:
                             'monthly_deposit': 0.0,
                             'transactions': []
                         }
-                    prev_wallet_balance = safe_float(HEALTH_WALLETS[customer_id].get('balance', 0))
-                    HEALTH_WALLETS[customer_id]['balance'] = prev_wallet_balance + refund_amount
-                    new_wallet_balance = HEALTH_WALLETS[customer_id]['balance']
+                    from services.savings_pipeline_service import credit_account_balance
+                    new_wallet_balance = credit_account_balance(
+                        HEALTH_WALLETS[customer_id], refund_amount,
+                    )
+                    prev_wallet_balance = round(
+                        float(new_wallet_balance or 0) - float(refund_amount or 0), 2,
+                    )
 
                     wallet_tx = {
                         'id': f"WAL-RFD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
@@ -58586,8 +58593,10 @@ For claims or questions, please contact:
                                 'transactions': [],
                                 'created_at': datetime.now().isoformat()
                             }
-                        HEALTH_WALLETS[customer_id]['balance'] += amount
-                        new_balance = HEALTH_WALLETS[customer_id]['balance']
+                        from services.savings_pipeline_service import credit_account_balance
+                        new_balance = credit_account_balance(
+                            HEALTH_WALLETS[customer_id], amount,
+                        )
                         
                         # Add transaction to wallet history
                         HEALTH_WALLETS[customer_id]['transactions'].append({
@@ -59060,9 +59069,13 @@ For claims or questions, please contact:
                         'created_at': datetime.now().isoformat()
                     }
                 
-                # Add funds
-                prev_balance = HEALTH_WALLETS[customer_id]['balance']
-                HEALTH_WALLETS[customer_id]['balance'] += amount
+                # Add funds on the live balance. An algo transfer holds this
+                # row from its reservation through the seal, so a deposit
+                # cannot store a figure it read before that reservation.
+                from services.savings_pipeline_service import credit_account_balance
+                wallet = HEALTH_WALLETS[customer_id]
+                new_balance = credit_account_balance(wallet, amount)
+                prev_balance = round(float(new_balance or 0) - float(amount or 0), 2)
                 
                 # Record transaction
                 transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"

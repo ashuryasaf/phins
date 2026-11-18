@@ -1002,6 +1002,57 @@ def test_wallet_is_reserved_before_the_seal_and_a_bill_cannot_take_it():
     assert service.algo_trading_balances["CUST-1"]["available"] == 80.0
 
 
+def test_wallet_deposit_cannot_restore_cash_reserved_for_algo():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-WAL-RACE"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    service = portal.unified_balance_service
+    original = service.record_transaction
+    seen = {}
+
+    def _record(**kwargs):
+        def _deposit():
+            seen["deposit"] = _post_json("/api/health-wallet/deposit", {
+                "customer_id": customer_id,
+                "amount": 40.0,
+            })
+
+        worker = threading.Thread(target=_deposit)
+        worker.start()
+        worker.join(0.4)
+        seen["blocked"] = worker.is_alive()
+        seen["during"] = portal.HEALTH_WALLETS[customer_id]["balance"]
+        seen["worker"] = worker
+        return original(**kwargs)
+
+    service.record_transaction = _record
+    try:
+        status, body = _post_json("/api/balance/transfer-to-algo", {
+            "customer_id": customer_id,
+            "amount": 100.0,
+            "source": "health_wallet",
+        })
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        assert status == 200, body
+        assert seen.get("blocked") is True
+        assert seen["during"] == 0.0
+        assert seen["deposit"][0] == 200, seen["deposit"]
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 40.0
+        algo = service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 100.0
+    finally:
+        service.record_transaction = original
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        service.algo_trading_balances.pop(customer_id, None)
+
+
 def test_failed_wallet_seal_returns_the_reservation():
     wallet = {"balance": 100.0, "transactions": []}
     service, _recorded = _balance_service({})
@@ -1682,10 +1733,11 @@ def test_transfer_publish_does_not_restore_cash_a_withdraw_already_took():
         if customer != customer_id:
             return accounts
         state["calls"] += 1
-        # The first read is the pre-transfer sync. The next read is the
-        # publish, while the savings lock from the debit is still held.
-        # A withdraw started here has to wait, then take the published cash.
-        if state["calls"] == 2 and not state["fired"]:
+        # The pre-transfer sync, the transfer itself, and the handler
+        # publish each read the accounts. The transfer has already written
+        # the debited cash onto the portfolio. A withdraw started on that
+        # later read waits for the savings lock, then takes what remains.
+        if state["calls"] == 3 and not state["fired"]:
             state["fired"] = True
             state["before"] = (
                 account.balance,
@@ -1719,7 +1771,7 @@ def test_transfer_publish_does_not_restore_cash_a_withdraw_already_took():
         assert state["fired"] is True
         assert state.get("blocked") is True
         assert state["withdraw"][0] == 200, state["withdraw"]
-        assert state["before"] == (100.0, 60.0)
+        assert state["before"] == (60.0, 60.0)
         assert account.balance == 0.0
         assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
         algo = portal.unified_balance_service.algo_trading_balances.get(customer_id, {})
@@ -1780,11 +1832,10 @@ def test_transfer_publish_does_not_restore_the_tracker_book_after_a_withdraw():
         if state["inflight"] or state["fired"]:
             return
         state["releases"] += 1
-        # The publish releases its re-entrant hold first. The outer hold,
-        # taken before the debit, is the later release. The withdraw runs
-        # only once that outer hold is gone and the published balance is
-        # already on the book.
-        if state["releases"] != 2:
+        # The transfer releases its own savings hold, the handler publish
+        # releases the next one, and the outer hold taken before the debit
+        # is the last. The withdraw runs only once that outer hold is gone.
+        if state["releases"] != 3:
             return
         state["fired"] = True
         state["inflight"] = True
@@ -1866,7 +1917,7 @@ def test_withdraw_cannot_spend_portfolio_cash_an_algo_transfer_already_took():
         assert status == 200, body
         assert seen.get("blocked") is True
         assert seen["row_during"] == 0.0
-        assert seen["portfolio_during"] == 100.0
+        assert seen["portfolio_during"] == 0.0
         assert seen["withdraw"][0] == 400, seen["withdraw"]
         assert account.balance == 0.0
         assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
