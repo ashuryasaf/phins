@@ -1423,6 +1423,43 @@ def test_store_funded_invest_spends_the_mirrored_portfolio_cash():
         portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
 
 
+def test_store_funded_invest_peels_the_mirror_on_every_savings_account():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-11"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    first = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-11A", 0.0)
+    second = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-11B", 0.0)
+    first.balance = 50.0
+    second.balance = 50.0
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": first.account_id,
+            "symbol": "USDC",
+            "amount": 100.0,
+        })
+        assert status == 200, body
+        assert first.balance == 0.0
+        assert second.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert len(first.assets) == 1
+        assert second.assets == []
+        withdraw_status, withdraw_body = _post_json("/api/savings/withdraw", {
+            "account_id": second.account_id,
+            "amount": 50.0,
+        })
+        assert withdraw_status == 400, withdraw_body
+        assert second.balance == 0.0
+    finally:
+        portal.portfolio_service.accounts.pop(first.account_id, None)
+        portal.portfolio_service.accounts.pop(second.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
 def test_unflagged_invest_blocks_an_algo_transfer_of_the_reserved_cash():
     import threading
     import web_portal.server as portal

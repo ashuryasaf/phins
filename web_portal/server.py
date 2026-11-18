@@ -60730,28 +60730,48 @@ For claims or questions, please contact:
                 if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account', allow_staff=False):
                     return
                 
-                # One savings-account lock covers the cash decision and the
-                # trade. Store cash is reserved before the trade. A stale
-                # portfolio balance is not spent while those store rows exist.
+                # Every savings account for this customer is locked, in id order,
+                # before the investment row. Deposits mirror one row onto each
+                # account, so the cash reserved from that row has to leave all
+                # of them, not only the account that buys the lot.
                 from services.savings_pipeline_service import (
                     account_book_lock,
                     credit_account_balance,
                     debit_account_balance,
                     named_row_lock,
                 )
-                account_lock = named_row_lock(f"savings:{account_id}")
-                account_lock.acquire()
+                account = portfolio_service.accounts.get(account_id) if portfolio_service else None
+                customer_id = getattr(account, 'customer_id', None) if account is not None else None
+                sibling_accounts = []
+                if customer_id:
+                    try:
+                        sibling_accounts = list(
+                            portfolio_service.get_customer_accounts(customer_id) or []
+                        )
+                    except Exception:
+                        sibling_accounts = []
+                savings_names = []
+                for sibling in sibling_accounts:
+                    sibling_id = getattr(sibling, 'account_id', None)
+                    if sibling_id and str(sibling_id) not in savings_names:
+                        savings_names.append(str(sibling_id))
+                if account_id and str(account_id) not in savings_names:
+                    savings_names.append(str(account_id))
+                savings_names.sort()
+                savings_locks = [named_row_lock(f"savings:{name}") for name in savings_names]
+                acquired_savings = 0
                 reserved_inv = 0.0
                 reserved_wallet = 0.0
                 inv_row = None
                 wallet_row = None
                 funded_from_stores = False
                 try:
-                    account = portfolio_service.accounts.get(account_id)
+                    for savings_lock in savings_locks:
+                        savings_lock.acquire()
+                        acquired_savings += 1
                     short = False
                     held = []
                     if account:
-                        customer_id = account.customer_id
                         candidate_inv = INVESTMENT_ACCOUNTS.get(customer_id)
                         candidate_wallet = HEALTH_WALLETS.get(customer_id)
                         inv_row = candidate_inv if isinstance(candidate_inv, dict) else None
@@ -60815,18 +60835,29 @@ For claims or questions, please contact:
                                 raise
                             if not result.get('success'):
                                 _return_invest_reserve()
-                            elif reserved_inv > 0 and account is not None:
-                                # Deposit wrote these dollars onto the portfolio
-                                # cash figure as well as the investment row.
-                                # The row was reserved above. The portfolio cash
-                                # leaves with it, capped at the cash actually there.
-                                # Both stay under the row lock so a transfer
-                                # cannot write the unpeeled portfolio cash back
-                                # onto the row and spend it again.
-                                live_cash = round(float(account.balance or 0), 2)
-                                spend = min(live_cash, round(reserved_inv, 2))
-                                if spend > 0:
-                                    account.balance = round(live_cash - spend, 2)
+                            elif reserved_inv > 0:
+                                # The row was reserved above. The same dollars
+                                # were also written onto portfolio cash, and
+                                # that mirror can sit on another savings account.
+                                # Peel it from every account, this one first.
+                                left = round(reserved_inv, 2)
+                                peel_accounts = []
+                                if account is not None:
+                                    peel_accounts.append(account)
+                                for sibling in sibling_accounts:
+                                    if sibling is not None and sibling not in peel_accounts:
+                                        peel_accounts.append(sibling)
+                                for portfolio_account in peel_accounts:
+                                    if left <= 0:
+                                        break
+                                    live_cash = round(
+                                        float(getattr(portfolio_account, 'balance', 0) or 0), 2,
+                                    )
+                                    spend = min(live_cash, left)
+                                    if spend > 0:
+                                        portfolio_account.balance = round(live_cash - spend, 2)
+                                        left = round(left - spend, 2)
+                                if account is not None:
                                     txn = result.get('transaction')
                                     if isinstance(txn, dict):
                                         txn['balance_after'] = account.balance
@@ -60835,7 +60866,8 @@ For claims or questions, please contact:
                         for lock in reversed(held[:acquired_books]):
                             lock.release()
                 finally:
-                    account_lock.release()
+                    for savings_lock in reversed(savings_locks[:acquired_savings]):
+                        savings_lock.release()
                 
                 if result.get('success') and audit:
                     try:
