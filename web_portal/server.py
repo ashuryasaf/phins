@@ -62164,39 +62164,66 @@ For claims or questions, please contact:
                     
                     # 1. Sync investment balance back
                     if source == 'investment_account':
-                        from services.savings_pipeline_service import account_book_lock
-                        unified_row = unified_balance_service.investment_accounts.get(customer_id)
-                        global_row = INVESTMENT_ACCOUNTS.get(customer_id)
-                        publish_rows = []
-                        for publish_row in (unified_row, global_row):
-                            if isinstance(publish_row, dict) and publish_row not in publish_rows:
-                                publish_rows.append(publish_row)
-                        publish_rows.sort(key=id)
-                        publish_locks = [account_book_lock(publish_row) for publish_row in publish_rows]
-                        for publish_lock in publish_locks:
-                            publish_lock.acquire()
-                        try:
-                            if isinstance(unified_row, dict):
-                                new_inv_balance = round(float(unified_row.get('balance') or 0), 2)
-                            elif isinstance(global_row, dict):
-                                new_inv_balance = round(float(global_row.get('balance') or 0), 2)
-                            else:
-                                new_inv_balance = 0.0
-                            if isinstance(global_row, dict):
-                                global_row['balance'] = new_inv_balance
-                        finally:
-                            for publish_lock in reversed(publish_locks):
-                                publish_lock.release()
-                        
-                        # Also update portfolio_service
+                        from services.savings_pipeline_service import (
+                            account_book_lock,
+                            named_row_lock,
+                        )
+                        # Withdraw and deposit hold the savings lock, then this
+                        # book lock, while they change portfolio cash. Take
+                        # that same order and publish before either lock is
+                        # released, so this write cannot put back cash they
+                        # already took or credited.
+                        portfolio_accounts = []
                         if portfolio_enabled and portfolio_service:
                             try:
-                                accounts = portfolio_service.get_customer_accounts(customer_id)
-                                if accounts:
-                                    accounts[0].balance = new_inv_balance
+                                portfolio_accounts = list(
+                                    portfolio_service.get_customer_accounts(customer_id) or []
+                                )
                             except Exception:
-                                pass
-                        
+                                portfolio_accounts = []
+                        primary_account = portfolio_accounts[0] if portfolio_accounts else None
+                        savings_locks = []
+                        for portfolio_account in sorted(
+                            portfolio_accounts,
+                            key=lambda item: str(getattr(item, 'account_id', '')),
+                        ):
+                            savings_id = getattr(portfolio_account, 'account_id', None)
+                            if not savings_id:
+                                continue
+                            savings_lock = named_row_lock(f"savings:{savings_id}")
+                            if savings_lock not in savings_locks:
+                                savings_locks.append(savings_lock)
+                        for savings_lock in savings_locks:
+                            savings_lock.acquire()
+                        try:
+                            unified_row = unified_balance_service.investment_accounts.get(customer_id)
+                            global_row = INVESTMENT_ACCOUNTS.get(customer_id)
+                            publish_rows = []
+                            for publish_row in (unified_row, global_row):
+                                if isinstance(publish_row, dict) and publish_row not in publish_rows:
+                                    publish_rows.append(publish_row)
+                            publish_rows.sort(key=id)
+                            publish_locks = [account_book_lock(publish_row) for publish_row in publish_rows]
+                            for publish_lock in publish_locks:
+                                publish_lock.acquire()
+                            try:
+                                if isinstance(unified_row, dict):
+                                    new_inv_balance = round(float(unified_row.get('balance') or 0), 2)
+                                elif isinstance(global_row, dict):
+                                    new_inv_balance = round(float(global_row.get('balance') or 0), 2)
+                                else:
+                                    new_inv_balance = 0.0
+                                if isinstance(global_row, dict):
+                                    global_row['balance'] = new_inv_balance
+                                if primary_account is not None:
+                                    primary_account.balance = new_inv_balance
+                            finally:
+                                for publish_lock in reversed(publish_locks):
+                                    publish_lock.release()
+                        finally:
+                            for savings_lock in reversed(savings_locks):
+                                savings_lock.release()
+
                         # Update portfolio_tracker_service investment_accounts
                         if portfolio_tracker_enabled:
                             if customer_id not in portfolio_tracker_service.investment_accounts:
