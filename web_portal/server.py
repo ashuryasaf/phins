@@ -58395,6 +58395,7 @@ For claims or questions, please contact:
         
         if path == '/api/unified-payment/deposit':
             health_open = None
+            investment_open = None
             source_released = False
             try:
                 data = json.loads(body)
@@ -58477,8 +58478,23 @@ For claims or questions, please contact:
                         health_debited = True
                         health_open = (wallet, float(amount))
                     elif source_account == 'investment':
-                        inv_acc = INVESTMENT_ACCOUNTS.get(customer_id, {})
-                        source_balance = inv_acc.get('balance', 0)
+                        from services.savings_pipeline_service import debit_account_balance
+                        inv_acc = INVESTMENT_ACCOUNTS.get(customer_id)
+                        new_inv = (
+                            debit_account_balance(inv_acc, amount)
+                            if isinstance(inv_acc, dict) else None
+                        )
+                        if new_inv is None:
+                            live = float(inv_acc.get('balance', 0) or 0) if isinstance(inv_acc, dict) else 0.0
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({
+                                'error': 'Insufficient funds',
+                                'source_balance': live,
+                                'required': amount
+                            }).encode('utf-8'))
+                            return
+                        source_balance = round(new_inv + float(amount), 2)
+                        investment_open = (inv_acc, float(amount))
                     elif source_account == 'algo_trading':
                         if unified_balance_enabled:
                             algo_bal = unified_balance_service.get_algo_trading_balance(customer_id)
@@ -58493,11 +58509,9 @@ For claims or questions, please contact:
                         }).encode('utf-8'))
                         return
                     
-                    # Deduct from source
+                    # The investment debit already happened under the row lock.
                     if source_account == 'health_wallet':
                         pass
-                    elif source_account == 'investment':
-                        INVESTMENT_ACCOUNTS[customer_id]['balance'] -= amount
                     elif source_account == 'algo_trading' and unified_balance_enabled:
                         unified_balance_service.withdraw_from_algo_trading(customer_id, amount, destination)
                     
@@ -58629,13 +58643,25 @@ For claims or questions, please contact:
                         bonds_amount = amount * (allocation_prefs['bonds_pct'] / 100.0)
                         crypto_amount = amount * (allocation_prefs['crypto_pct'] / 100.0)
                         
-                        # Update balances with allocation breakdown
-                        INVESTMENT_ACCOUNTS[customer_id]['balance'] += amount
-                        INVESTMENT_ACCOUNTS[customer_id]['index_balance'] = INVESTMENT_ACCOUNTS[customer_id].get('index_balance', 0) + index_amount
-                        INVESTMENT_ACCOUNTS[customer_id]['bonds_balance'] = INVESTMENT_ACCOUNTS[customer_id].get('bonds_balance', 0) + bonds_amount
-                        INVESTMENT_ACCOUNTS[customer_id]['crypto_balance'] = INVESTMENT_ACCOUNTS[customer_id].get('crypto_balance', 0) + crypto_amount
-                        
-                        new_balance = INVESTMENT_ACCOUNTS[customer_id]['balance']
+                        # Credit the live balance under the row lock. A saved
+                        # total plus this amount would put back cash an invest
+                        # or an algo transfer already reserved.
+                        from services.savings_pipeline_service import (
+                            account_book_lock,
+                            credit_account_balance,
+                        )
+                        inv_row = INVESTMENT_ACCOUNTS[customer_id]
+                        with account_book_lock(inv_row):
+                            new_balance = credit_account_balance(inv_row, amount)
+                            inv_row['index_balance'] = round(
+                                float(inv_row.get('index_balance') or 0) + index_amount, 2,
+                            )
+                            inv_row['bonds_balance'] = round(
+                                float(inv_row.get('bonds_balance') or 0) + bonds_amount, 2,
+                            )
+                            inv_row['crypto_balance'] = round(
+                                float(inv_row.get('crypto_balance') or 0) + crypto_amount, 2,
+                            )
                         
                         # Add to deposits history with allocation details
                         INVESTMENT_ACCOUNTS[customer_id]['deposits'].append({
@@ -58781,8 +58807,10 @@ For claims or questions, please contact:
                                     'deposits': [],
                                     'created_at': datetime.now().isoformat()
                                 }
-                            INVESTMENT_ACCOUNTS[customer_id]['balance'] += amount
-                            new_balance = INVESTMENT_ACCOUNTS[customer_id]['balance']
+                            from services.savings_pipeline_service import credit_account_balance
+                            new_balance = credit_account_balance(
+                                INVESTMENT_ACCOUNTS[customer_id], amount,
+                            )
                     
                     payment_result['destination_new_balance'] = new_balance
                     
@@ -58813,6 +58841,9 @@ For claims or questions, please contact:
                 if health_open is not None and not source_released:
                     from services.savings_pipeline_service import credit_account_balance
                     credit_account_balance(health_open[0], health_open[1])
+                if investment_open is not None and not source_released:
+                    from services.savings_pipeline_service import credit_account_balance
+                    credit_account_balance(investment_open[0], investment_open[1])
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
