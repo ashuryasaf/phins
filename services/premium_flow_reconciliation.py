@@ -207,14 +207,38 @@ def _kernel_month(policy: Mapping[str, Any]) -> Dict[str, Any]:
     profit_pinned = profit_value is not None
     expense = _monthly(expense_value) if expense_pinned else Decimal("0.00")
     profit = _monthly(profit_value) if profit_pinned else Decimal("0.00")
+    fee = Decimal("0.00")
+    historical = False
+    try:
+        from services.financial_unification_service import (
+            kernel_components_from_policy,
+            legacy_annual_layers,
+            underwriting_fee_annual,
+        )
+
+        kernel = kernel_components_from_policy(dict(policy))
+        fee = _monthly(underwriting_fee_annual(dict(policy), kernel))
+        legacy = legacy_annual_layers(dict(policy), kernel)
+        if legacy is not None:
+            historical = True
+            risk = _monthly(legacy["risk"])
+            savings = _monthly(legacy["savings"])
+            fee = _monthly(legacy["underwriting_fee"])
+            expense = Decimal("0.00")
+            profit = Decimal("0.00")
+            savings_source = "historical"
+    except Exception:
+        fee = Decimal("0.00")
     return {
         "risk": risk,
+        "underwriting_fee": fee,
         "expense": expense,
         "profit": profit,
         "savings": savings,
         "expense_pinned": expense_pinned,
         "profit_pinned": profit_pinned,
         "savings_source": savings_source,
+        "historical": historical,
     }
 
 
@@ -229,7 +253,7 @@ def _policy_active(policy: Mapping[str, Any], month: str) -> bool:
 
 
 def _sum_kernel(policies: Iterable[Mapping[str, Any]], month: str) -> Dict[str, Any]:
-    risk = expense = profit = savings = Decimal("0.00")
+    risk = expense = profit = savings = fee = Decimal("0.00")
     expense_pinned = True
     profit_pinned = True
     sources = []
@@ -240,16 +264,18 @@ def _sum_kernel(policies: Iterable[Mapping[str, Any]], month: str) -> Dict[str, 
         active += 1
         part = _kernel_month(policy)
         risk += part["risk"]
+        fee += part.get("underwriting_fee") or Decimal("0.00")
         expense += part["expense"]
         profit += part["profit"]
         savings += part["savings"]
         expense_pinned = expense_pinned and part["expense_pinned"]
         profit_pinned = profit_pinned and part["profit_pinned"]
         sources.append(part["savings_source"])
-    stack = (risk + expense + profit + savings).quantize(_CENT)
+    stack = (risk + fee + expense + profit + savings).quantize(_CENT)
     return {
         "policies": active,
         "risk": risk,
+        "underwriting_fee": fee,
         "expense": expense,
         "profit": profit,
         "savings": savings,
@@ -282,8 +308,20 @@ def _booked_split(record: Mapping[str, Any]) -> Tuple[Optional[Decimal], Optiona
     allocation = record.get("premium_allocation")
     if not isinstance(allocation, dict):
         allocation = metadata.get("premium_allocation") if isinstance(metadata.get("premium_allocation"), dict) else {}
+    paid_risk = record.get("risk_amount_paid", metadata.get("risk_amount_paid"))
+    paid_savings = record.get("savings_amount_paid", metadata.get("savings_amount_paid"))
+    if paid_risk is not None or paid_savings is not None:
+        if _money(paid_risk) > 0 or _money(paid_savings) > 0:
+            return _money(paid_risk), _money(paid_savings)
     risk = allocation.get("risk_amount", record.get("risk_amount", metadata.get("risk_amount")))
     savings = allocation.get("savings_amount", record.get("savings_amount", metadata.get("savings_amount")))
+    if risk is None and savings is None:
+        sealed_risk = metadata.get("risk_allocation", record.get("risk_allocation"))
+        sealed_savings = metadata.get("savings_allocation", record.get("savings_allocation"))
+        if sealed_risk is not None and sealed_savings is not None:
+            cash = _money(record.get("amount") if record.get("amount") is not None else record.get("amount_paid"))
+            if cash > 0 and abs(_money(sealed_risk) + _money(sealed_savings) - cash) <= _CENT:
+                risk, savings = sealed_risk, sealed_savings
     risk_value = _money(risk) if risk is not None else None
     savings_value = _money(savings) if savings is not None else None
     return risk_value, savings_value
@@ -335,7 +373,7 @@ def _waterfall(cash: Decimal, kernel: Mapping[str, Decimal]) -> Dict[str, Decima
     """
     left = cash if cash > 0 else Decimal("0.00")
     landed: Dict[str, Decimal] = {}
-    for name in ("risk", "expense", "profit", "savings"):
+    for name in ("risk", "underwriting_fee", "expense", "profit", "savings"):
         take = min(left, kernel[name])
         landed[name] = take.quantize(_CENT)
         left = (left - take).quantize(_CENT)
@@ -377,7 +415,7 @@ def _picture(
     withheld: Sequence[Mapping[str, Any]],
 ) -> Dict[str, Any]:
     """One customer's premiums: kernel risk stays out of savings."""
-    collected = landed_risk = landed_savings = Decimal("0.00")
+    collected = landed_risk = landed_savings = landed_fee = Decimal("0.00")
     kernel_risk = kernel_savings = Decimal("0.00")
     expense = profit = Decimal("0.00")
     flags: List[str] = []
@@ -385,6 +423,7 @@ def _picture(
     for row in rows:
         collected += _money(row.get("collected"))
         landed_risk += _money(row.get("landed_risk"))
+        landed_fee += _money(row.get("landed_underwriting_fee"))
         landed_savings += _money(row.get("landed_savings"))
         kernel_risk += _money(row.get("kernel_risk"))
         kernel_savings += _money(row.get("savings_addon"))
@@ -410,6 +449,7 @@ def _picture(
         "premiums_collected": float(collected.quantize(_CENT)),
         "kernel_risk": float(kernel_risk.quantize(_CENT)),
         "landed_risk": float(landed_risk.quantize(_CENT)),
+        "underwriting_fee": float(landed_fee.quantize(_CENT)),
         "expense_loading": float(expense.quantize(_CENT)),
         "profit": float(profit.quantize(_CENT)),
         "savings_addon": float(kernel_savings.quantize(_CENT)),
@@ -546,6 +586,7 @@ def reconcile_customer(
             "collected": float(cash),
             "bill_ids": bill_ids_by_month.get(month, []),
             "kernel_risk": float(kernel["risk"]),
+            "underwriting_fee": float(kernel.get("underwriting_fee") or 0),
             "expense_loading": float(kernel["expense"]),
             "expense_pinned": kernel["expense_pinned"],
             "phins_operations": expense_parts["phins_operations"],
@@ -560,6 +601,7 @@ def reconcile_customer(
             "savings_algo": savings_parts["algo"],
             "correct_total": float(kernel["correct_total"]),
             "landed_risk": float(landed["risk"]),
+            "landed_underwriting_fee": float(landed.get("underwriting_fee") or 0),
             "landed_expense": float(landed["expense"]),
             "landed_profit": float(landed["profit"]),
             "landed_savings": float(landed["savings"]),

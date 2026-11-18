@@ -11665,6 +11665,7 @@ def process_customer_premium_payment(
     expense_amount = float(premium_split.get('expense_amount') or 0.0)
     profit_amount = float(premium_split.get('profit_amount') or 0.0)
     company_remainder = float(premium_split.get('company_remainder') or 0.0)
+    underwriting_fee_amount = float(premium_split.get('underwriting_fee_amount') or 0.0)
 
     pipeline_ready = bool(savings_pipeline_enabled and savings_pipeline_service)
     if use_pipeline is None:
@@ -11799,6 +11800,7 @@ def process_customer_premium_payment(
         'expense_amount': expense_amount,
         'profit_amount': profit_amount,
         'company_remainder': company_remainder,
+        'underwriting_fee_amount': underwriting_fee_amount,
         'savings_pct': premium_split['savings_percentage'],
         'risk_pct': premium_split['risk_percentage'],
         'split_source': premium_split['split_source'],
@@ -11936,7 +11938,7 @@ def process_customer_premium_payment(
 
     allocation_checks = {
         'savings_risk_sum_ok': abs(
-            (savings_amount + risk_amount + expense_amount + profit_amount + company_remainder) - amount
+            (savings_amount + risk_amount + expense_amount + profit_amount + underwriting_fee_amount + company_remainder) - amount
         ) < 0.05,
         'investment_breakdown_sum_ok': abs((index_amount + bonds_amount + crypto_amount) - investment_base) < 0.01,
         'investment_base': investment_base,
@@ -12017,6 +12019,7 @@ def process_customer_premium_payment(
         'expense_amount': expense_amount,
         'profit_amount': profit_amount,
         'company_remainder': company_remainder,
+        'underwriting_fee_amount': underwriting_fee_amount,
         'investment_breakdown': {
             'index': index_amount,
             'bonds': bonds_amount,
@@ -54927,6 +54930,17 @@ For claims or questions, please contact:
                     'savings_rate_used': premium_data.get('savings_rate_used'),
                     'savings_formula': premium_data.get('savings_formula'),
                     'underwriting_loading': premium_data.get('underwriting_loading'),
+                    'savings_addon': (
+                        (data.get('questionnaire') or {}).get('savings_addon')
+                        if isinstance(data.get('questionnaire'), dict)
+                        else None
+                    ) or data.get('savings_addon'),
+                    'application_channel': data.get('application_channel') or 'classic',
+                    'allocation_version': (
+                        'chat'
+                        if str(data.get('application_channel') or '').strip().lower() == 'chat'
+                        else 'kernel'
+                    ),
                     'life_sum_used': premium_data.get('life_sum_used'),
                     'disability_sum_used': premium_data.get('disability_sum_used'),
                     # Billing configuration (from application Step 4). Due day is the 1st.
@@ -55411,6 +55425,8 @@ For claims or questions, please contact:
                     split = resolve_premium_split(policy.get('annual_premium') or 0, policy)
                     policy['savings_allocation'] = split['savings_percentage']
                     policy['risk_allocation'] = round(100.0 - split['savings_percentage'], 2)
+                    policy['allocation_version'] = 'kernel'
+                    policy['application_channel'] = data.get('application_channel') or 'classic'
                 except Exception:
                     pass
                 

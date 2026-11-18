@@ -234,7 +234,7 @@ _ADDON_RATES = {
     "balanced": Decimal("0.50"),
     "growth": Decimal("1"),
 }
-_LAYER_ORDER = ("risk", "expense", "profit", "savings")
+_LAYER_ORDER = ("risk", "underwriting_fee", "expense", "profit", "savings")
 
 
 def _waterfall_cash(collected: Decimal, layers: Mapping[str, Decimal]) -> Dict[str, Decimal]:
@@ -333,6 +333,211 @@ def _elected_savings(policy: Optional[Dict[str, Any]], kernel: Mapping[str, Any]
     return Decimal("0.00"), "no_savings_election", "no_savings_election"
 
 
+def _loading_fraction(value: Any) -> Decimal:
+    """A loading may be stored as 0.35 or as 35. Zero and junk are no fee."""
+    try:
+        number = Decimal(str(value))
+    except Exception:
+        return Decimal("0")
+    if not number.is_finite() or number <= 0:
+        return Decimal("0")
+    if number >= 1:
+        number = number / Decimal("100")
+    return number
+
+
+def underwriting_fee_annual(policy: Optional[Dict[str, Any]], kernel: Optional[Mapping[str, Any]] = None) -> Decimal:
+    """Company fee from an underwriting decision. It is not a savings add-on.
+
+    The chat quote already folds ``underwriting_loading`` into the kernel risk
+    pin. When the pins sum to the annual premium, the fee is already inside
+    risk and is not charged again. A later decision that grossed the bill up
+    leaves the extra as this fee. An earlier sealed savings allocation is not
+    read and is not changed here.
+    """
+    policy = policy or {}
+    if policy.get("underwriting_fee_annual") is not None:
+        return money(policy.get("underwriting_fee_annual"))
+    kernel = kernel or {}
+    fraction = _loading_fraction(
+        policy.get("underwriting_loading")
+        if policy.get("underwriting_loading") is not None
+        else policy.get("premium_adjustment")
+    )
+    if fraction <= 0:
+        return Decimal("0.00")
+    risk = money(kernel.get("risk_premium_annual"))
+    annual = money(kernel.get("annual_premium"))
+    expense = (
+        money(kernel.get("expense_loading_annual"))
+        if kernel.get("expense_loading_annual") is not None
+        else Decimal("0.00")
+    )
+    profit = (
+        money(kernel.get("profit_margin_annual"))
+        if kernel.get("profit_margin_annual") is not None
+        else Decimal("0.00")
+    )
+    savings = money(kernel.get("savings_premium_annual")) if kernel.get("savings_pin_present") else Decimal("0.00")
+    explained = risk + expense + profit + savings
+    if annual > 0 and abs(explained - annual) <= Decimal("0.05"):
+        return Decimal("0.00")
+    chat_priced = (
+        str(policy.get("allocation_version") or "").strip().lower() in ("chat", "kernel")
+        or str(policy.get("application_channel") or "").strip().lower() == "chat"
+        or bool(str(policy.get("savings_addon") or "").strip())
+    )
+    actuarial = policy.get("actuarial_annual_premium")
+    if actuarial is not None and annual > money(actuarial) > 0:
+        return (annual - money(actuarial)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    # The application chat folds the loading into the kernel risk pin.
+    # Do not charge that loading a second time when no gross-up was stored.
+    if chat_priced:
+        return Decimal("0.00")
+    if risk > 0:
+        return (risk * fraction).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return Decimal("0.00")
+
+
+def legacy_annual_layers(
+    policy: Optional[Dict[str, Any]],
+    kernel: Optional[Mapping[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """An earlier contract's risk and savings percentages.
+
+    A chat application, a kernel pin, or ``allocation_version`` of ``chat``
+    or ``kernel`` uses the current waterfall instead. The stored percentages
+    apply to the pre-fee premium. An underwriting fee is not given a share
+    of that older split.
+    """
+    if not isinstance(policy, dict):
+        return None
+    version = str(policy.get("allocation_version") or "").strip().lower()
+    if version in ("chat", "kernel"):
+        return None
+    if str(policy.get("application_channel") or "").strip().lower() == "chat":
+        return None
+    if str(policy.get("savings_addon") or "").strip():
+        return None
+    kernel = kernel or {}
+    if kernel.get("savings_pin_present"):
+        return None
+    if money(kernel.get("risk_premium_annual")) > 0 and str(
+        policy.get("pricing_source") or ""
+    ) == "pricing_kernel":
+        return None
+    try:
+        risk_pct = Decimal(str(policy.get("risk_allocation")))
+        savings_pct = Decimal(str(policy.get("savings_allocation")))
+    except Exception:
+        return None
+    if savings_pct <= 0 or abs((risk_pct + savings_pct) - Decimal("100")) > Decimal("0.6"):
+        return None
+    annual = money(kernel.get("annual_premium") if kernel.get("annual_premium") is not None else policy.get("annual_premium"))
+    fee = underwriting_fee_annual(policy, kernel)
+    actuarial = policy.get("actuarial_annual_premium")
+    if actuarial is not None:
+        base = money(actuarial)
+    elif fee > 0 and annual > fee:
+        base = (annual - fee).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    else:
+        base = annual
+    savings = (base * savings_pct / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    risk = (base - savings).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if risk < 0:
+        risk = Decimal("0.00")
+    return {
+        "risk": risk,
+        "underwriting_fee": fee,
+        "expense": Decimal("0.00"),
+        "profit": Decimal("0.00"),
+        "savings": savings,
+        "split_label": "historical",
+        "split_source": "historical",
+    }
+
+
+_LAYER_AMOUNT_KEYS = (
+    "risk_amount",
+    "underwriting_fee_amount",
+    "savings_amount",
+    "expense_amount",
+    "profit_amount",
+    "company_remainder",
+)
+
+
+def partition_money(total: Any, weights: Sequence[Tuple[str, Any]]) -> Dict[str, float]:
+    """Split cash across named weights. The parts sum to the total, to the cent."""
+    collected = money(total)
+    parsed: List[Tuple[str, Decimal]] = []
+    weight_sum = Decimal("0")
+    for name, weight in weights:
+        part = money(weight)
+        parsed.append((str(name), part))
+        weight_sum += part
+    if collected == 0 or weight_sum <= 0:
+        return {name: 0.0 for name, _ in parsed}
+    cents = int((collected * 100).to_integral_value(rounding=ROUND_HALF_UP))
+    floors: List[List[Any]] = []
+    used = 0
+    for name, weight in parsed:
+        amount = collected * weight / weight_sum
+        truncated = int(amount * 100)
+        floors.append([name, truncated, amount * 100 - Decimal(truncated)])
+        used += truncated
+    remainder = cents - used
+    order = sorted(range(len(floors)), key=lambda i: (floors[i][2], -i), reverse=True)
+    step = 1 if remainder > 0 else -1
+    left = abs(remainder)
+    cursor = 0
+    while left > 0 and floors:
+        slot = order[cursor % len(order)]
+        floors[slot][1] += step
+        left -= 1
+        cursor += 1
+    return {name: float(Decimal(part_cents) / Decimal(100)) for name, part_cents, _ in floors}
+
+
+def collected_layer_delta(
+    previous_paid: Any,
+    new_paid: Any,
+    policy: Optional[Dict[str, Any]] = None,
+    stored: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Change in the waterfall between two collected totals on one bill.
+
+    Stored paid layers win once they are non-zero. Cash that was collected
+    without those layers uses the waterfall of the earlier total, so a second
+    installment does not start the stack over and does not count the first
+    installment again.
+    """
+    after = resolve_premium_split(new_paid, policy)
+    stored = stored or {}
+    stored_risk = stored.get("risk_amount_paid")
+    stored_savings = stored.get("savings_amount_paid")
+    stored_used = (
+        stored_risk not in (None, "") or stored_savings not in (None, "")
+    ) and (float(stored_risk or 0) != 0 or float(stored_savings or 0) != 0)
+    if stored_used:
+        prior = {
+            "risk_amount": float(stored_risk or 0),
+            "underwriting_fee_amount": float(stored.get("underwriting_fee_amount_paid") or 0),
+            "savings_amount": float(stored_savings or 0),
+            "expense_amount": float(stored.get("expense_amount_paid") or 0),
+            "profit_amount": float(stored.get("profit_amount_paid") or 0),
+            "company_remainder": float(stored.get("company_remainder_paid") or 0),
+        }
+    elif money(previous_paid) > 0:
+        before = resolve_premium_split(previous_paid, policy)
+        prior = {key: float(before[key]) for key in _LAYER_AMOUNT_KEYS}
+    else:
+        prior = {key: 0.0 for key in _LAYER_AMOUNT_KEYS}
+    delta = {key: round(float(after[key]) - prior[key], 2) for key in _LAYER_AMOUNT_KEYS}
+    delta["after"] = after
+    return delta
+
+
 def resolve_premium_split(
     amount: Any,
     policy: Optional[Dict[str, Any]] = None,
@@ -341,9 +546,13 @@ def resolve_premium_split(
     """Split collected premium into risk, savings, expense, and profit.
 
     The kernel risk premium is filled first and is never credited as savings.
-    Only a savings pin, a savings add-on, or a growth add is savings. Expense
-    and profit stay on the company book. A missing election is pure risk:
-    the old 50/50 carve is not applied. ``fallback_risk_pct`` is ignored.
+    An underwriting fee (a decision such as +35%) is filled next and stays
+    on the company book. Only a savings pin, a savings add-on, or a growth
+    add is savings. Expense and profit stay on the company book. A missing
+    election is pure risk: the old 50/50 carve is not applied.
+    ``fallback_risk_pct`` is ignored. A policy that already carries an
+    earlier risk and savings percentage keeps that contract. A chat
+    application or a kernel pin uses the waterfall instead.
 
     A consistent annual pin is shared across the cash in the same proportions,
     so a full installment still lands its add-on. When the pins do not fit
@@ -356,6 +565,7 @@ def resolve_premium_split(
     kernel = kernel_components_from_policy(policy)
     savings_annual, split_label, source = _elected_savings(policy, kernel)
     risk_annual = money(kernel.get("risk_premium_annual"))
+    fee_annual = underwriting_fee_annual(policy, kernel)
     expense_annual = (
         money(kernel.get("expense_loading_annual"))
         if kernel.get("expense_loading_annual") is not None
@@ -368,17 +578,25 @@ def resolve_premium_split(
     )
     annual_layers = {
         "risk": risk_annual,
+        "underwriting_fee": fee_annual,
         "expense": expense_annual,
         "profit": profit_annual,
         "savings": savings_annual,
     }
     annual = money(kernel.get("annual_premium"))
+    legacy = legacy_annual_layers(policy, kernel)
+    if legacy is not None:
+        split_label = str(legacy.pop("split_label"))
+        source = str(legacy.pop("split_source"))
+        annual_layers = legacy
+        fee_annual = money(annual_layers.get("underwriting_fee"))
     stack = sum(annual_layers.values(), Decimal("0.00"))
     pinned_loadings = (
         kernel.get("expense_loading_annual") is not None
         or kernel.get("profit_margin_annual") is not None
         or kernel.get("savings_pin_present")
-        or split_label in ("addon", "growth")
+        or split_label in ("addon", "growth", "historical")
+        or fee_annual > 0
     )
     if collected <= 0:
         landed = {name: Decimal("0.00") for name in _LAYER_ORDER}
@@ -387,6 +605,7 @@ def resolve_premium_split(
         # The premium collected is the risk key. None of it is savings.
         landed = {
             "risk": collected,
+            "underwriting_fee": Decimal("0.00"),
             "expense": Decimal("0.00"),
             "profit": Decimal("0.00"),
             "savings": Decimal("0.00"),
@@ -398,6 +617,7 @@ def resolve_premium_split(
     else:
         landed = _land_unfitted(collected, annual_layers)
     risk_amount = landed["risk"]
+    fee_amount = landed["underwriting_fee"]
     savings_amount = landed["savings"]
     expense_amount = landed["expense"]
     profit_amount = landed["profit"]
@@ -413,6 +633,7 @@ def resolve_premium_split(
         "risk_percentage": float(risk_pct),
         "savings_percentage": float(savings_pct),
         "risk_amount": float(risk_amount),
+        "underwriting_fee_amount": float(fee_amount),
         "savings_amount": float(savings_amount),
         "expense_amount": float(expense_amount),
         "profit_amount": float(profit_amount),
