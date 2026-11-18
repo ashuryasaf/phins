@@ -1719,6 +1719,89 @@ def test_transfer_publish_does_not_restore_cash_a_withdraw_already_took():
         portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
 
 
+def test_transfer_publish_does_not_restore_the_tracker_book_after_a_withdraw():
+    import services.savings_pipeline_service as pipeline
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-XFER-4"
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-XFER-4", 0.0)
+    account.balance = 100.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    assert portal.portfolio_tracker_service.investment_accounts is portal.INVESTMENT_ACCOUNTS
+    original_named = pipeline.named_row_lock
+    state = {"releases": 0, "fired": False, "inflight": False}
+    savings_name = f"savings:{account.account_id}"
+
+    class _LockProxy:
+        def __init__(self, lock):
+            self._lock = lock
+
+        def acquire(self, *args, **kwargs):
+            return self._lock.acquire(*args, **kwargs)
+
+        def release(self):
+            self._lock.release()
+            _after_release()
+
+        def __enter__(self):
+            self.acquire()
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            self.release()
+            return False
+
+    def _named_row_lock(name):
+        lock = original_named(name)
+        if str(name) != savings_name:
+            return lock
+        return _LockProxy(lock)
+
+    def _after_release():
+        if state["inflight"] or state["fired"]:
+            return
+        state["releases"] += 1
+        # The first release is the pre-transfer sync. The next one is the
+        # publish, after the debited balance is on the book.
+        if state["releases"] != 2:
+            return
+        state["fired"] = True
+        state["inflight"] = True
+        try:
+            status, body = _post_json("/api/savings/withdraw", {
+                "account_id": account.account_id,
+                "amount": 60.0,
+            })
+            state["withdraw"] = (status, body)
+        finally:
+            state["inflight"] = False
+
+    pipeline.named_row_lock = _named_row_lock
+    try:
+        status, body = _post_json("/api/balance/transfer-to-algo", {
+            "customer_id": customer_id,
+            "amount": 40.0,
+            "source": "investment_account",
+        })
+        assert status == 200, body
+        assert state["fired"] is True
+        assert state["withdraw"][0] == 200, state["withdraw"]
+        assert account.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert portal.portfolio_tracker_service.investment_accounts[customer_id]["balance"] == 0.0
+        algo = portal.unified_balance_service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 40.0
+    finally:
+        pipeline.named_row_lock = original_named
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
+
+
 def test_transfer_publish_waits_for_a_deposit_holding_the_savings_lock():
     from datetime import datetime, timedelta
     import threading

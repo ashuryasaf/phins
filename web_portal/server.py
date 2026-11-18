@@ -62224,8 +62224,21 @@ For claims or questions, please contact:
                         try:
                             unified_row = unified_balance_service.investment_accounts.get(customer_id)
                             global_row = INVESTMENT_ACCOUNTS.get(customer_id)
+                            # The tracker is the same book as INVESTMENT_ACCOUNTS.
+                            # A write after these locks drop puts a captured
+                            # balance back onto cash a withdraw already took.
+                            tracker_row = None
+                            if portfolio_tracker_enabled:
+                                tracker_accounts = portfolio_tracker_service.investment_accounts
+                                if isinstance(tracker_accounts, dict):
+                                    existing_tracker = tracker_accounts.get(customer_id)
+                                    if isinstance(existing_tracker, dict):
+                                        tracker_row = existing_tracker
+                                    else:
+                                        tracker_row = {'balance': 0.0}
+                                        tracker_accounts[customer_id] = tracker_row
                             publish_rows = []
-                            for publish_row in (unified_row, global_row):
+                            for publish_row in (unified_row, global_row, tracker_row):
                                 if isinstance(publish_row, dict) and publish_row not in publish_rows:
                                     publish_rows.append(publish_row)
                             publish_rows.sort(key=id)
@@ -62241,6 +62254,8 @@ For claims or questions, please contact:
                                     new_inv_balance = 0.0
                                 if isinstance(global_row, dict):
                                     global_row['balance'] = new_inv_balance
+                                if isinstance(tracker_row, dict):
+                                    tracker_row['balance'] = new_inv_balance
                                 if primary_account is not None:
                                     primary_account.balance = new_inv_balance
                             finally:
@@ -62249,13 +62264,6 @@ For claims or questions, please contact:
                         finally:
                             for savings_lock in reversed(savings_locks):
                                 savings_lock.release()
-
-                        # Update portfolio_tracker_service investment_accounts
-                        if portfolio_tracker_enabled:
-                            if customer_id not in portfolio_tracker_service.investment_accounts:
-                                portfolio_tracker_service.investment_accounts[customer_id] = {'balance': new_inv_balance}
-                            else:
-                                portfolio_tracker_service.investment_accounts[customer_id]['balance'] = new_inv_balance
                     
                     # 2. Sync health wallet back
                     elif source == 'health_wallet':
