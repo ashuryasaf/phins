@@ -220,18 +220,25 @@ class FeeSchedule:
         # Calculate final rate
         effective_rate = max(base_rate - volume_discount - promo_discount, 0)
         effective_rate = min(effective_rate, self.maximum_fee_pct)
-        
-        commission = amount * (effective_rate / 100)
-        commission = max(commission, self.minimum_fee)
-        
+
+        # Commission is charged against the supplier bid. It is never
+        # added on top of that bid, and it cannot exceed the bid.
+        gross = round(max(float(amount or 0.0), 0.0), 2)
+        if gross <= 0:
+            commission = 0.0
+        else:
+            commission = gross * (effective_rate / 100.0)
+            commission = max(commission, self.minimum_fee)
+            commission = min(round(commission, 2), gross)
+
         return {
-            "amount": amount,
+            "amount": gross,
             "base_rate_pct": base_rate,
             "volume_discount_pct": volume_discount,
             "promo_discount_pct": promo_discount,
             "effective_rate_pct": effective_rate,
             "commission": round(commission, 2),
-            "supplier_payout": round(amount - commission, 2)
+            "supplier_payout": round(gross - commission, 2)
         }
     
     def to_dict(self) -> Dict:
@@ -1650,8 +1657,10 @@ class SupplyChainEcosystemService:
 
     def _build_pricing_plan(self, base_amount: float, overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Compute pricing components used across wallet/card purchases:
-        expense loading, profit margin, and discounted rate.
+        Decompose a quoted catalog total into expense, profit, and discount.
+
+        Supplier marketplace orders do not call this. A supplier bid is
+        charged as bid minus commission, with no loading added on top.
         """
         payload = overrides or {}
         base = round(max(self._safe_float(base_amount, 0.0), 0.0), 2)
@@ -2592,16 +2601,34 @@ class SupplyChainEcosystemService:
         if max_qty and quantity > max_qty:
             raise ValueError(f"Maximum quantity is {max_qty}")
 
-        # Pricing plan: base + expense loading + profit margin - discounted rate
+        # The supplier bid is the customer price. Commission is charged
+        # out of that bid. Expense loading and profit sit on the premium
+        # kernel; they are not a markup on a marketplace offer. Client
+        # loading, margin, and discount fields cannot raise the price.
         unit_price = round(max(self._safe_float(offer.get("price"), 0.0), 0.0), 2)
         base_amount = round(unit_price * quantity, 2)
-        pricing_plan = self._build_pricing_plan(base_amount, data)
-        total_amount = pricing_plan["final_customer_amount"]
-
-        # Calculate commission and payout against final customer charge
-        fee_calc = self.calculate_order_fees(supplier_id, total_amount, data.get("promo_code"))
-        commission = fee_calc["commission"]
-        supplier_payout = fee_calc["supplier_payout"]
+        fee_calc = self.calculate_order_fees(supplier_id, base_amount, data.get("promo_code"))
+        commission = round(min(max(self._safe_float(fee_calc.get("commission"), 0.0), 0.0), base_amount), 2)
+        supplier_payout = round(base_amount - commission, 2)
+        fee_calc["amount"] = base_amount
+        fee_calc["commission"] = commission
+        fee_calc["supplier_payout"] = supplier_payout
+        pricing_plan = {
+            "base_amount": base_amount,
+            "expense_loading_pct": 0.0,
+            "expense_loading_amount": 0.0,
+            "profit_margin_pct": 0.0,
+            "profit_margin_amount": 0.0,
+            "discounted_rate_pct": 0.0,
+            "discounted_rate_amount": 0.0,
+            "gross_before_discount": base_amount,
+            "final_customer_amount": base_amount,
+            "commission": commission,
+            "supplier_payout": supplier_payout,
+            "price_source": "supplier_bid",
+            "markup_applied": False,
+        }
+        total_amount = base_amount
 
         payment_method = self._normalize_payment_method(data.get("payment_method", "health_wallet"))
         wallet_deduction = 0.0
