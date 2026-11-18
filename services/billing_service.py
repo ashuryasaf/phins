@@ -127,6 +127,17 @@ class BillingService:
         
         return bill
 
+    def _split_pcts(self, bill: Dict[str, Any], amount: float, allocation: Dict[str, Any]):
+        """Stored percentages win. A missing split is the kernel waterfall."""
+        if allocation.get('risk_percentage') is None and allocation.get('savings_percentage') is None:
+            from services.financial_unification_service import resolve_premium_split
+            policy = self._policies.get(bill.get('policy_id') or '', {}) if bill.get('policy_id') else None
+            split = resolve_premium_split(amount, policy or None)
+            return split['risk_percentage'], split['savings_percentage']
+        risk_pct = allocation.get('risk_percentage', self.default_risk_pct)
+        savings_pct = allocation.get('savings_percentage', self.default_savings_pct)
+        return risk_pct, savings_pct
+
     def record_payment(self, 
                        bill_id: str, 
                        amount: float,
@@ -202,10 +213,9 @@ class BillingService:
         
         b['updated_at'] = datetime.now().isoformat()
         
-        # Calculate allocation amounts for this payment
+        # A stored split is kept. A bill with no split is not a 50/50 election.
         allocation = b.get('premium_allocation', {})
-        risk_pct = allocation.get('risk_percentage', self.default_risk_pct)
-        savings_pct = allocation.get('savings_percentage', self.default_savings_pct)
+        risk_pct, savings_pct = self._split_pcts(b, float(amount), allocation)
         
         payment_risk = round(float(amount) * risk_pct / 100, 2)
         payment_savings = round(float(amount) * savings_pct / 100, 2)
@@ -268,10 +278,9 @@ class BillingService:
             b['status'] = 'overdue'
             b['updated_at'] = datetime.now().isoformat()
             
-            # Recalculate allocation amounts
+            # Recalculate allocation amounts from the stored split, or the waterfall.
             allocation = b.get('premium_allocation', {})
-            risk_pct = allocation.get('risk_percentage', self.default_risk_pct)
-            savings_pct = allocation.get('savings_percentage', self.default_savings_pct)
+            risk_pct, savings_pct = self._split_pcts(b, b['amount_due'], allocation)
             allocation['risk_amount_due'] = round(b['amount_due'] * risk_pct / 100, 2)
             allocation['savings_amount_due'] = round(b['amount_due'] * savings_pct / 100, 2)
             b['premium_allocation'] = allocation

@@ -23785,14 +23785,16 @@ class PortalHandler(BaseHTTPRequestHandler):
                 p for p in POLICIES.values()
                 if p.get('customer_id') == cid and status_eq(p, 'active')
             ]
-            monthly_premium = sum(safe_float(p.get('monthly_premium', 0)) for p in customer_policies)
             investment_pct = allocation.get('investment_pct', 65) / 100
-            savings_pct = allocation.get('savings_pct', 50) / 100
-            monthly_investment = monthly_premium * savings_pct * investment_pct
+            savings_cash = sum(
+                _premium_savings_cash(safe_float(p.get('monthly_premium'), 0.0), p)
+                for p in customer_policies
+            )
+            monthly_investment = savings_cash * investment_pct
 
-            balance = safe_float(account.get('balance', monthly_investment * 6))
-            deposited = safe_float(account.get('total_deposited', monthly_investment * 6))
-            returns = safe_float(account.get('total_returns', monthly_investment * 0.05))
+            balance = safe_float(account.get('balance'), 0.0)
+            deposited = safe_float(account.get('total_deposited'), 0.0)
+            returns = safe_float(account.get('total_returns'), 0.0)
 
             total_balance += balance
             total_deposited += deposited
@@ -41223,19 +41225,21 @@ For claims or questions, please contact:
                     # Get active policies for premium info
                     customer_policies = [p for p in POLICIES.values() 
                                         if p.get('customer_id') == customer_id and status_eq(p, 'active')]
-                    monthly_premium = sum(float(p.get('monthly_premium', 0)) for p in customer_policies)
-                    
-                    # Calculate investment portion
+                    # Investment cash is the savings add-on only. A missing
+                    # account is zero, not six months of a 50% carve.
                     investment_pct = allocation.get('investment_pct', 65) / 100
-                    savings_pct = allocation.get('savings_pct', 50) / 100
-                    monthly_investment = monthly_premium * savings_pct * investment_pct
+                    savings_cash = sum(
+                        _premium_savings_cash(safe_float(p.get('monthly_premium'), 0.0), p)
+                        for p in customer_policies
+                    )
+                    monthly_investment = savings_cash * investment_pct
                     
                     result = {
                         'customer_id': customer_id,
                         'account': {
-                            'balance': account.get('balance', monthly_investment * 6),
-                            'total_deposited': account.get('total_deposited', monthly_investment * 6),
-                            'total_returns': account.get('total_returns', monthly_investment * 0.05),
+                            'balance': account.get('balance', 0.0),
+                            'total_deposited': account.get('total_deposited', 0.0),
+                            'total_returns': account.get('total_returns', 0.0),
                             'return_rate': 8.5,
                             'created_at': account.get('created_at', datetime.now().isoformat())
                         },
@@ -55365,8 +55369,10 @@ For claims or questions, please contact:
                     'beneficiary_name': data.get('beneficiary', ''),
                     'notes': data.get('notes', ''),
                     'investment_value': 0,
-                    'risk_allocation': DEFAULT_CUSTOMER_ALLOCATION['risk_pct'],
-                    'savings_allocation': DEFAULT_CUSTOMER_ALLOCATION['savings_pct'],
+                    # Non-savings is the default. The waterfall below overwrites
+                    # this from the kernel pin. A missing election is not 50/50.
+                    'risk_allocation': 100.0,
+                    'savings_allocation': 0.0,
                     'pricing_source': premium_data.get('pricing_source', 'flat_formula'),
                     'integrity_hash': premium_data.get('integrity_hash'),
                     'product_id': premium_data.get('product_id'),
@@ -55381,17 +55387,16 @@ For claims or questions, please contact:
                     'created_date': datetime.now().isoformat()
                 }
                 try:
-                    from services.financial_unification_service import pin_kernel_fields_on_policy
+                    from services.financial_unification_service import (
+                        pin_kernel_fields_on_policy,
+                        resolve_premium_split,
+                    )
                     pin_kernel_fields_on_policy(policy, premium_data)
+                    split = resolve_premium_split(policy.get('annual_premium') or 0, policy)
+                    policy['savings_allocation'] = split['savings_percentage']
+                    policy['risk_allocation'] = round(100.0 - split['savings_percentage'], 2)
                 except Exception:
                     pass
-                if premium_data.get('risk_premium_annual') or premium_data.get('savings_premium_annual'):
-                    kernel_annual = safe_float(premium_data.get('annual'), 0.0)
-                    risk_ann = safe_float(premium_data.get('risk_premium_annual'), 0.0)
-                    if kernel_annual > 0 and risk_ann > 0:
-                        risk_pct = round(risk_ann / kernel_annual * 100.0, 2)
-                        policy['risk_allocation'] = risk_pct
-                        policy['savings_allocation'] = round(100.0 - risk_pct, 2)
                 
                 # Save policy
                 POLICIES[policy_id] = policy

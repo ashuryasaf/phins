@@ -683,6 +683,38 @@ def test_accountant_frs_uses_ledger_claim_cash_not_approved_records():
     assert empty_summary["claims_paid"] == 0.0
 
 
+def test_unstamped_bill_payment_does_not_send_half_the_premium_to_savings():
+    from services.billing_service import BillingService
+
+    policies = {
+        "POL-NOSPLIT": {
+            "id": "POL-NOSPLIT",
+            "customer_id": "CUST-NOSPLIT",
+            "annual_premium": 1200.0,
+            "monthly_premium": 100.0,
+            "risk_premium_annual": 1200.0,
+            "savings_premium_annual": 0.0,
+            "pricing_source": "pricing_kernel",
+        }
+    }
+    bills = {
+        "BILL-NOSPLIT": {
+            "bill_id": "BILL-NOSPLIT",
+            "policy_id": "POL-NOSPLIT",
+            "customer_id": "CUST-NOSPLIT",
+            "amount_due": 100.0,
+            "amount_paid": 0.0,
+            "status": "outstanding",
+        }
+    }
+    updated = BillingService(bills=bills, policies=policies).record_payment(
+        "BILL-NOSPLIT", 100.0, auto_allocate=False
+    )
+    paid = updated["premium_allocation"]
+    assert paid["savings_amount_paid"] == 0.0
+    assert paid["risk_amount_paid"] == 100.0
+
+
 def test_billing_service_payment_writes_ledger_and_accounting_book():
     from services.billing_service import BillingService
     from web_portal.server import POLICIES, TRANSACTION_LEDGER
