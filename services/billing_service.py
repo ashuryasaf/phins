@@ -45,9 +45,10 @@ class BillingService:
         self._policies = policies or {}
         self._allocation_tracker = premium_allocation_tracker
         
-        # Default allocation percentages — kernel-aligned (retired 75/25)
-        self.default_risk_pct = 50.0
-        self.default_savings_pct = 50.0
+        # Used only when a caller passes one side of an explicit split.
+        # A missing election is all risk. It is not 50/50.
+        self.default_risk_pct = 100.0
+        self.default_savings_pct = 0.0
 
     def create_bill(self, 
                     policy_id: str, 

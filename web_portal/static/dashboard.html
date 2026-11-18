@@ -1782,12 +1782,12 @@
         <div style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
           <div style="font-size: 0.85rem; color: #546e7a; margin-bottom: 4px;"> Savings Allocation</div>
           <div id="billing-savings-allocation" style="font-size: 1.5rem; font-weight: 700; color: #2e7d32;">$0.00</div>
-          <div id="billing-savings-pct" style="font-size: 0.75rem; color: #999; margin-top: 4px;">50% → Investments</div>
+          <div id="billing-savings-pct" style="font-size: 0.75rem; color: #999; margin-top: 4px;">0% add-on</div>
         </div>
         <div style="background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
           <div style="font-size: 0.85rem; color: #546e7a; margin-bottom: 4px;"> Risk Allocation</div>
           <div id="billing-risk-allocation" style="font-size: 1.5rem; font-weight: 700; color: #ef6c00;">$0.00</div>
-          <div id="billing-risk-pct" style="font-size: 0.75rem; color: #999; margin-top: 4px;">50% → Coverage</div>
+          <div id="billing-risk-pct" style="font-size: 0.75rem; color: #999; margin-top: 4px;">100% risk</div>
         </div>
         <div style="background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%); border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
           <div style="font-size: 0.85rem; color: rgba(255,255,255,0.85); margin-bottom: 4px;"> Investment Balance</div>
@@ -2179,8 +2179,8 @@
 
     // Kernel-aligned book defaults (retired 25% savings / 75% risk).
     const DEFAULT_CUSTOMER_ALLOCATION = {
-      savings_pct: 50,
-      risk_pct: 50,
+      savings_pct: 0,
+      risk_pct: 100,
       wallet_pct: 30,
       investment_pct: 65,
       algo_pct: 5,
@@ -2216,33 +2216,43 @@
       const annual = Number(policy && policy.annual_premium);
       return Number.isFinite(annual) && annual > 0 ? annual / 12 : 0;
     }
-    function allocationForPolicy(policy, fallback) {
-      const prefs = fallback || customerBook.allocation || DEFAULT_CUSTOMER_ALLOCATION;
+    function allocationForPolicy(policy) {
       const annual = Number(policy && (policy.annual_premium || monthlyPremiumOf(policy) * 12)) || 0;
-      const riskAnn = Number(policy && policy.risk_premium_annual) || 0;
-      const savAnn = Number(policy && policy.savings_premium_annual) || 0;
+      const riskAnn = Number(policy && (policy.risk_premium_annual != null ? policy.risk_premium_annual : policy.risk_premium)) || 0;
+      const addonRates = { none: 0, light: 0.25, balanced: 0.5, growth: 1 };
+      const addon = String(policy && policy.savings_addon || '').toLowerCase();
+      const pinPresent = policy && (policy.savings_premium_annual != null || policy.savings_premium != null);
+      let savAnn = pinPresent ? Number(policy.savings_premium_annual != null ? policy.savings_premium_annual : policy.savings_premium) || 0 : 0;
+      if (!pinPresent && addonRates[addon] > 0) savAnn = riskAnn * addonRates[addon];
       if (annual > 0 && (riskAnn > 0 || savAnn > 0)) {
-        const riskPct = (riskAnn / annual) * 100;
         return {
-          savings_pct: Math.max(0, 100 - riskPct),
-          risk_pct: riskPct,
+          savings_pct: (savAnn / annual) * 100,
+          risk_pct: (riskAnn / annual) * 100,
           source: 'kernel'
         };
       }
-      const stampedRisk = Number(policy && (policy.risk_allocation || policy.risk_pct));
-      const stampedSav = Number(policy && (policy.savings_allocation || policy.savings_pct));
-      const retiredDefault = stampedRisk === 75 && (stampedSav === 25 || !Number.isFinite(stampedSav) || stampedSav === 0);
-      if (!retiredDefault && Number.isFinite(stampedRisk) && stampedRisk > 0 && stampedRisk <= 100) {
-        return { savings_pct: 100 - stampedRisk, risk_pct: stampedRisk, source: 'policy' };
+      const stampedSav = Number(policy && policy.savings_allocation);
+      const stampedRisk = Number(policy && policy.risk_allocation);
+      const retiredHalf = stampedRisk === 50 && stampedSav === 50;
+      if (!retiredHalf && policy && policy.savings_allocation != null && Number.isFinite(stampedSav) && stampedSav >= 0 && stampedSav <= 100) {
+        return { savings_pct: stampedSav, risk_pct: Math.max(0, 100 - stampedSav), source: 'policy' };
       }
-      if (!retiredDefault && Number.isFinite(stampedSav) && stampedSav > 0 && stampedSav <= 100) {
-        return { savings_pct: stampedSav, risk_pct: 100 - stampedSav, source: 'policy' };
-      }
-      return {
-        savings_pct: Number(prefs.savings_pct != null ? prefs.savings_pct : DEFAULT_CUSTOMER_ALLOCATION.savings_pct),
-        risk_pct: Number(prefs.risk_pct != null ? prefs.risk_pct : DEFAULT_CUSTOMER_ALLOCATION.risk_pct),
-        source: 'allocation'
-      };
+      return { savings_pct: 0, risk_pct: 100, source: 'risk' };
+    }
+    function premiumSplitPercents() {
+      const policies = (customerBook.policies || []).filter(isActivePolicy);
+      let premium = 0;
+      let savings = 0;
+      let risk = 0;
+      policies.forEach((policy) => {
+        const monthly = monthlyPremiumOf(policy);
+        const split = allocationForPolicy(policy);
+        premium += monthly;
+        savings += monthly * split.savings_pct / 100;
+        risk += monthly * split.risk_pct / 100;
+      });
+      if (premium <= 0) return { savings_pct: 0, risk_pct: 100 };
+      return { savings_pct: (savings / premium) * 100, risk_pct: (risk / premium) * 100 };
     }
     function syncCustomerBookDisplays() {
       const policies = customerBook.policies || [];
@@ -2262,14 +2272,14 @@
       setText('customer-total-coverage', '$' + formatNumber(coverage, 0));
       setText('total-premium', '$' + formatNumber(monthly, 0));
 
-      const alloc = customerBook.allocation || DEFAULT_CUSTOMER_ALLOCATION;
-      const sav = Number(alloc.savings_pct != null ? alloc.savings_pct : DEFAULT_CUSTOMER_ALLOCATION.savings_pct);
-      const risk = Number(alloc.risk_pct != null ? alloc.risk_pct : DEFAULT_CUSTOMER_ALLOCATION.risk_pct);
-      setText('billing-savings-pct', `${sav}% → Investments`);
-      setText('billing-risk-pct', `${risk}% → Coverage`);
+      const split = premiumSplitPercents();
+      const sav = split.savings_pct;
+      const risk = split.risk_pct;
+      setText('billing-savings-pct', `${sav.toFixed(0)}% add-on`);
+      setText('billing-risk-pct', `${risk.toFixed(0)}% risk`);
       const copy = document.getElementById('premium-allocation-copy');
       if (copy) {
-        copy.textContent = `Your premium savings (${sav}%, kernel-aligned) use each policy's actuarial split when present, then route to your investment portfolio by billing frequency.`;
+        copy.textContent = 'The premium is the kernel risk. Only a savings add-on is saved. There is no percentage split of the premium.';
       }
       const col = document.getElementById('premium-savings-col');
       if (col) col.textContent = `Savings (${sav}%)`;
@@ -10050,7 +10060,7 @@
             <span style="font-weight: 700; color: #7b1fa2;" id="payment-amount-due">$0.00</span>
           </div>
           <div style="display: flex; justify-content: space-between;">
-            <span>→ To Investments (<span id="payment-savings-pct-label">${customerAllocation.savings_pct}%</span>):</span>
+            <span>→ Add-on to savings (<span id="payment-savings-pct-label">${premiumSplitPercents().savings_pct.toFixed(0)}%</span>):</span>
             <span style="color: #2e7d32;" id="payment-to-investments">$0.00</span>
           </div>
         </div>
@@ -10086,7 +10096,7 @@
       const amountDueEl = document.getElementById('billing-amount-due');
       const amountDue = parseFloat(amountDueEl.textContent.replace('$', '').replace(',', '')) || 0;
       document.getElementById('payment-amount-due').textContent = `$${amountDue.toFixed(2)}`;
-      document.getElementById('payment-to-investments').textContent = `$${(amountDue * (customerAllocation.savings_pct / 100)).toFixed(2)}`;
+      document.getElementById('payment-to-investments').textContent = `$${(amountDue * (premiumSplitPercents().savings_pct / 100)).toFixed(2)}`;
       document.getElementById('payment-input').value = amountDue.toFixed(2);
       
       modal.style.display = 'flex';
@@ -10138,7 +10148,8 @@
       } catch (err) {
         // Demo fallback
         closeSettingsModal();
-        showNotification(` Payment of $${amount.toFixed(2)} processed! ${customerAllocation.savings_pct}% ($${(amount * (customerAllocation.savings_pct / 100)).toFixed(2)}) allocated to investments.`, 'success');
+        const addonPct = premiumSplitPercents().savings_pct;
+        showNotification(` Payment of $${amount.toFixed(2)} processed. Add-on ${addonPct.toFixed(0)}% ($${(amount * addonPct / 100).toFixed(2)}) is savings. The rest is risk.`, 'success');
         
         await recordCustomerAction('payment', amount, `Premium payment via ${method}`);
         loadBillingDetails();
@@ -10400,8 +10411,9 @@
     
     // Update allocation display
     function updateAllocationDisplay() {
-      document.getElementById('billing-savings-pct').textContent = `${customerAllocation.savings_pct}% → Investments`;
-      document.getElementById('billing-risk-pct').textContent = `${customerAllocation.risk_pct}% → Coverage`;
+      const split = premiumSplitPercents();
+      document.getElementById('billing-savings-pct').textContent = `${split.savings_pct.toFixed(0)}% add-on`;
+      document.getElementById('billing-risk-pct').textContent = `${split.risk_pct.toFixed(0)}% risk`;
     }
     
     // Show allocation settings with FULL customization
@@ -10410,32 +10422,7 @@
       document.getElementById('modal-title').textContent = ' Adjust Allocation Settings';
       document.getElementById('modal-content').innerHTML = `
         <div style="margin-bottom: 20px;">
-          <p style="color: #666;">Customize your premium split and investment allocation. Changes apply to all future payments.</p>
-        </div>
-        
-        <div style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-radius: 12px; padding: 16px; margin-bottom: 20px;">
-          <div style="font-weight: 600; color: #1565c0; margin-bottom: 12px;"> Premium Split</div>
-          
-          <div style="margin-bottom: 16px;">
-            <label style="display: block; margin-bottom: 8px; font-weight: 500;">Savings % (to Investments)</label>
-            <input type="range" id="alloc-savings" min="10" max="90" value="${customerAllocation.savings_pct}" style="width: 100%;" oninput="updatePremiumSplit()">
-            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: #666;">
-              <span>10% min</span>
-              <span id="alloc-savings-value" style="font-weight: 700; color: #2e7d32;">${customerAllocation.savings_pct}%</span>
-              <span>90% max</span>
-            </div>
-          </div>
-          
-          <div style="display: flex; justify-content: space-between; padding: 12px; background: white; border-radius: 8px;">
-            <div style="text-align: center;">
-              <div style="font-size: 0.8rem; color: #666;">Savings</div>
-              <div id="split-savings-display" style="font-size: 1.2rem; font-weight: 700; color: #2e7d32;">${customerAllocation.savings_pct}%</div>
-            </div>
-            <div style="text-align: center;">
-              <div style="font-size: 0.8rem; color: #666;">Coverage</div>
-              <div id="split-risk-display" style="font-size: 1.2rem; font-weight: 700; color: #ef6c00;">${customerAllocation.risk_pct}%</div>
-            </div>
-          </div>
+          <p style="color: #666;">The premium is the kernel risk. Only a savings add-on is saved. These sliders divide that add-on. They do not split the premium.</p>
         </div>
         
         <div style="background: #f5f5f5; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
@@ -10488,15 +10475,6 @@
       modal.style.display = 'flex';
     }
     
-    function updatePremiumSplit() {
-      const savings = parseInt(document.getElementById('alloc-savings').value);
-      const risk = 100 - savings;
-      
-      document.getElementById('alloc-savings-value').textContent = `${savings}%`;
-      document.getElementById('split-savings-display').textContent = `${savings}%`;
-      document.getElementById('split-risk-display').textContent = `${risk}%`;
-    }
-    
     function updateInvestmentSplit() {
       const index = parseInt(document.getElementById('alloc-index').value);
       const bonds = parseInt(document.getElementById('alloc-bonds').value);
@@ -10518,8 +10496,6 @@
     }
     
     async function saveAllocationSettings() {
-      const savings = parseInt(document.getElementById('alloc-savings').value);
-      const risk = 100 - savings;
       const index = parseInt(document.getElementById('alloc-index').value);
       const bonds = parseInt(document.getElementById('alloc-bonds').value);
       const crypto = parseInt(document.getElementById('alloc-crypto').value);
@@ -10540,8 +10516,6 @@
           },
           body: JSON.stringify({
             customer_id: cid,
-            savings_pct: savings,
-            risk_pct: risk,
             index_pct: index,
             bonds_pct: bonds,
             crypto_pct: crypto
@@ -10552,8 +10526,6 @@
         
         if (result.success) {
           customerAllocation = Object.assign({}, customerAllocation, {
-            savings_pct: savings,
-            risk_pct: risk,
             index_pct: index,
             bonds_pct: bonds,
             crypto_pct: crypto
@@ -10562,7 +10534,7 @@
           updateAllocationDisplay();
           syncCustomerBookDisplays();
           closeSettingsModal();
-          showNotification(` Allocation updated! Savings: ${savings}% | Index: ${index}% | Bonds: ${bonds}% | Crypto: ${crypto}%`, 'success');
+          showNotification(` Investment mix updated. Index: ${index}% | Bonds: ${bonds}% | Crypto: ${crypto}%. The premium split is unchanged.`, 'success');
           loadBillingDetails();
         } else {
           throw new Error(result.error || 'Allocation update failed');

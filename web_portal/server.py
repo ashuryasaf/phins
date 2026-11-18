@@ -10151,8 +10151,8 @@ def get_real_time_status() -> Dict[str, Any]:
 # investment piece 60/30/10. The old 25% savings / 75% risk card is retired.
 DEFAULT_CUSTOMER_ALLOCATION: Dict[str, float] = {
     # Display fallback only. Premium cash uses resolve_premium_split.
-    'savings_pct': 50.0,
-    'risk_pct': 50.0,
+    'savings_pct': 0.0,
+    'risk_pct': 100.0,
 
     # Savings distribution (must sum to 100%)
     'wallet_pct': 30.0,       # % of savings to Health Wallet
@@ -10170,7 +10170,8 @@ def get_customer_allocation(customer_id: str) -> Dict[str, float]:
     """Get customer's allocation preferences or return kernel-aligned defaults
     
     Allocation Model:
-    1. Premium Split: savings_pct % goes to savings, rest to risk coverage
+    1. The premium is not split here. Kernel risk stays risk. Only an add-on
+       is savings. savings_pct and risk_pct are not applied to cash.
     2. Savings Distribution: wallet_pct + investment_pct + algo_pct = 100%
        - wallet_pct: % of savings to Health Wallet
        - investment_pct: % of savings to Investment Portfolio
@@ -10344,13 +10345,10 @@ def update_customer_allocation(customer_id: str, allocations: Dict[str, float]) 
     # Get current or default allocation
     current = get_customer_allocation(customer_id)
     
-    # Premium split validation
-    savings_pct = allocations.get('savings_pct', current['savings_pct'])
-    risk_pct = allocations.get('risk_pct', current['risk_pct'])
-    
-    # Savings + Risk must equal 100%
-    if abs((savings_pct + risk_pct) - 100.0) > 0.01:
-        raise ValueError("Savings + Risk percentages must equal 100%")
+    # The premium is not split by this preference. Kernel risk and the
+    # add-on are the only layers. Stored percents stay 0 savings / 100 risk.
+    savings_pct = 0.0
+    risk_pct = 100.0
     
     # Savings distribution validation
     wallet_pct = allocations.get('wallet_pct', current['wallet_pct'])
@@ -10371,9 +10369,6 @@ def update_customer_allocation(customer_id: str, allocations: Dict[str, float]) 
     # Constraints
     if crypto_pct > 30.0:
         raise ValueError("Crypto allocation cannot exceed 30%")
-    
-    if savings_pct < 10.0:
-        raise ValueError("Savings allocation must be at least 10%")
     
     if algo_pct > 20.0:
         raise ValueError("Algo trading allocation cannot exceed 20%")
@@ -10582,9 +10577,14 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
     total_annual_premium = 0
     total_risk_premium = 0
     total_savings_premium = 0
+    month_risk = 0.0
+    month_savings = 0.0
     active_policies = []
     from services.adl_mapping import SOURCE_UNSPECIFIED, resolve_adl_evidence
-    from services.financial_unification_service import kernel_components_from_policy
+    from services.financial_unification_service import (
+        kernel_components_from_policy,
+        resolve_premium_split,
+    )
     
     for policy in POLICIES.values():
         if policy.get('customer_id') == customer_id and status_eq(policy, 'active'):
@@ -10605,21 +10605,16 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
                 else resolved_adl.clinical_level
             )
 
-            # Issued premium is the identity. Prefer the kernel pin on the
-            # policy (or its snapshot). Never re-price through the quote
-            # wrapper — that path still has a legacy 50% savings override.
+            # Issued premium is the identity. The waterfall is risk, then the
+            # add-on. A stored preference percent is not applied.
             kernel = kernel_components_from_policy(policy)
-            pinned_risk = float(kernel.get('risk_premium_annual') or 0)
-            pinned_savings = float(kernel.get('savings_premium_annual') or 0)
-            if pinned_risk or pinned_savings:
-                total_risk_premium += pinned_risk
-                total_savings_premium += pinned_savings
-                actuarial_source = kernel.get('pricing_source') or 'pricing_kernel'
-            else:
-                risk_share = allocation.get('risk_pct', 50) / 100.0
-                total_risk_premium += annual_premium * risk_share
-                total_savings_premium += annual_premium * (1.0 - risk_share)
-                actuarial_source = 'issued_premium_allocation'
+            split_year = resolve_premium_split(annual_premium, policy)
+            split_month = resolve_premium_split(monthly_premium, policy)
+            total_risk_premium += split_year['risk_amount']
+            total_savings_premium += split_year['savings_amount']
+            month_risk += split_month['risk_amount']
+            month_savings += split_month['savings_amount']
+            actuarial_source = split_year.get('split_source') or 'pricing_kernel'
             
             total_monthly_premium += monthly_premium
             total_annual_premium += annual_premium
@@ -10640,9 +10635,18 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
                 'integrity_hash': kernel.get('integrity_hash'),
             })
     
-    # Calculate savings portion (cumulative from all policies)
-    savings_amount = total_monthly_premium * (allocation['savings_pct'] / 100)
-    risk_amount = total_monthly_premium * (allocation['risk_pct'] / 100)
+    # Savings is only the add-on the waterfall credited. The preference
+    # percent is not a second split of the premium.
+    savings_amount = round(month_savings, 2)
+    risk_amount = round(month_risk, 2)
+    shown = dict(allocation)
+    if total_monthly_premium > 0:
+        shown['savings_pct'] = round(savings_amount / total_monthly_premium * 100, 2)
+        shown['risk_pct'] = round(risk_amount / total_monthly_premium * 100, 2)
+    else:
+        shown['savings_pct'] = 0.0
+        shown['risk_pct'] = 100.0
+    allocation = shown
     
     # Distribute savings to destinations
     wallet_amount = savings_amount * (allocation['wallet_pct'] / 100)
@@ -10686,7 +10690,7 @@ def calculate_monthly_distribution(customer_id: str) -> Dict[str, Any]:
             'total_savings_premium': round(total_savings_premium, 2),
             'data_source': 'pricing_kernel_pin',
             'calculation_method': 'Pinned kernel risk/savings on issued policies',
-            'note': 'Risk/savings come from the policy pin; cash split still follows customer allocation'
+            'note': 'Risk is the kernel premium. Savings is only the add-on. There is no percentage split of the premium.'
         },
         # Annual projections (for financial planning)
         'annual_projection': {
@@ -18393,10 +18397,14 @@ def _bill_tax_year_stamp(bill: Dict[str, Any]) -> str:
 
 
 def _policy_allocation_pcts(policy: Optional[Dict[str, Any]], customer_id: str) -> Tuple[float, float]:
-    """Return (risk_pct, savings_pct) that sum to 100."""
-    allocation = get_customer_allocation(customer_id)
-    risk_pct = safe_float(allocation.get('risk_pct'), 50.0)
-    savings_pct = safe_float(allocation.get('savings_pct'), 50.0)
+    """Return (risk_pct, savings_pct) that sum to 100.
+
+    A customer preference is not a premium split. With no stamp on the
+    policy the whole premium is risk.
+    """
+    del customer_id
+    risk_pct = 100.0
+    savings_pct = 0.0
     if isinstance(policy, dict):
         policy_risk = safe_float(policy.get('risk_allocation'), 0.0)
         policy_savings = safe_float(policy.get('savings_allocation'), 0.0)
@@ -65438,8 +65446,8 @@ For claims or questions, please contact:
                 # If allocation data provided, update preferences
                 if any(k in data for k in ['savings_pct', 'risk_pct', 'index_pct', 'bonds_pct', 'crypto_pct']):
                     allocation_data = {
-                        'savings_pct': float(data.get('savings_pct', DEFAULT_CUSTOMER_ALLOCATION['savings_pct'])),
-                        'risk_pct': float(data.get('risk_pct', DEFAULT_CUSTOMER_ALLOCATION['risk_pct'])),
+                        'savings_pct': 0.0,
+                        'risk_pct': 100.0,
                         'index_pct': float(data.get('index_pct', DEFAULT_CUSTOMER_ALLOCATION['index_pct'])),
                         'bonds_pct': float(data.get('bonds_pct', DEFAULT_CUSTOMER_ALLOCATION['bonds_pct'])),
                         'crypto_pct': float(data.get('crypto_pct', DEFAULT_CUSTOMER_ALLOCATION['crypto_pct'])),

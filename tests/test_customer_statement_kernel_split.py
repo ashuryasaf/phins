@@ -8,10 +8,10 @@ kernel pin.
 import web_portal.server as portal
 
 
-def test_default_customer_allocation_is_kernel_50_50():
+def test_default_customer_allocation_is_not_a_premium_split():
     alloc = portal.DEFAULT_CUSTOMER_ALLOCATION
-    assert alloc["savings_pct"] == 50.0
-    assert alloc["risk_pct"] == 50.0
+    assert alloc["savings_pct"] == 0.0
+    assert alloc["risk_pct"] == 100.0
     assert abs(alloc["savings_pct"] + alloc["risk_pct"] - 100.0) < 0.01
     assert abs(alloc["wallet_pct"] + alloc["investment_pct"] + alloc["algo_pct"] - 100.0) < 0.01
 
@@ -20,8 +20,8 @@ def test_get_customer_allocation_defaults_without_override():
     cid = "CUST-KERNEL-DEFAULT-TEST"
     portal.CUSTOMER_ALLOCATIONS.pop(cid, None)
     alloc = portal.get_customer_allocation(cid)
-    assert alloc["savings_pct"] == 50.0
-    assert alloc["risk_pct"] == 50.0
+    assert alloc["savings_pct"] == 0.0
+    assert alloc["risk_pct"] == 100.0
 
 
 def test_get_mock_statement_uses_allocation_not_legacy_75_25():
