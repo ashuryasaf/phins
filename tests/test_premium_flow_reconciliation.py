@@ -417,3 +417,69 @@ def test_monitoring_list_names_the_platform_customers_and_flags_a_carve():
     due = claim_postings_due(worked_specimen())
     assert [row["claim_id"] for row in due] == ["CLM-X-1"]
     assert worked_specimen()["writes"] is False
+
+
+def test_cashflow_errors_do_not_return_exception_text(monkeypatch, caplog):
+    """A customer can open the premium picture. The failure stays in the log."""
+    import json
+    import os
+    from urllib.error import HTTPError
+    from urllib.request import Request, urlopen
+
+    import web_portal.server as portal
+
+    secret = "SECRET_MODULE /opt/phins/internal.py boom"
+    caplog.set_level("ERROR")
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(portal, "build_cashflow_monitoring", boom)
+    monkeypatch.setattr(portal, "post_unposted_claim_transfers", boom)
+    monkeypatch.setattr("services.premium_flow_reconciliation.reconcile_customer", boom)
+
+    portal.SESSIONS["phins_cash-err-cust"] = {
+        "username": "cust-err@test",
+        "role": "customer",
+        "customer_id": "CUST-ERR",
+        "expires": "2099-01-01T00:00:00",
+    }
+    portal.SESSIONS["phins_cash-err-admin"] = {
+        "username": "admin",
+        "role": "admin",
+        "expires": "2099-01-01T00:00:00",
+    }
+    init_set = getattr(portal, "_TEST_PORTS_INITIALIZED", None)
+    if isinstance(init_set, set):
+        init_set.add(int(os.environ.get("TEST_PORT", "8000")))
+    base = os.environ.get("TEST_BASE_URL", "http://127.0.0.1:8000")
+
+    def call(method, path, token):
+        req = Request(
+            base + path,
+            data=b"{}" if method == "POST" else None,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            method=method,
+        )
+        try:
+            with urlopen(req, timeout=15) as resp:
+                return resp.status, resp.read().decode("utf-8")
+        except HTTPError as exc:
+            return exc.code, exc.read().decode("utf-8")
+
+    try:
+        routes = (
+            ("GET", "/api/customer/premium-picture", "phins_cash-err-cust"),
+            ("GET", "/api/admin/cashflow/monitoring", "phins_cash-err-admin"),
+            ("GET", "/api/admin/cashflow/customers/CUST-ERR", "phins_cash-err-admin"),
+            ("POST", "/api/admin/cashflow/post-claim-transfers", "phins_cash-err-admin"),
+        )
+        for method, path, token in routes:
+            status, body = call(method, path, token)
+            assert status == 500, path
+            assert json.loads(body) == {"error": "internal_error"}, path
+            assert secret not in body
+        assert secret in caplog.text
+    finally:
+        portal.SESSIONS.pop("phins_cash-err-cust", None)
+        portal.SESSIONS.pop("phins_cash-err-admin", None)

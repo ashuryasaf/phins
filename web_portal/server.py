@@ -11527,6 +11527,14 @@ def _cashflow_position_books() -> Dict[str, Dict[str, Dict[str, float]]]:
     return {'wallets': wallets, 'investments': investments, 'algo': algo}
 
 
+def _write_cashflow_internal_error(handler, message: str, *args) -> None:
+    """Log the failure and return a generic error. The exception text stays off the wire."""
+    import logging
+    logging.getLogger(__name__).exception(message, *args)
+    handler._set_json_headers(500)
+    handler.wfile.write(json.dumps({'error': 'internal_error'}).encode('utf-8'))
+
+
 def build_cashflow_monitoring() -> Dict[str, Any]:
     """Read-only monitoring list from ledgers, NFT seals, and live balances."""
     from services.premium_flow_reconciliation import monitoring_report, worked_specimen
@@ -39421,9 +39429,8 @@ For claims or questions, please contact:
                 return
             try:
                 report = build_cashflow_monitoring()
-            except Exception as cash_err:
-                self._set_json_headers(500)
-                self.wfile.write(json.dumps({'error': str(cash_err)}).encode('utf-8'))
+            except Exception:
+                _write_cashflow_internal_error(self, "cashflow monitoring failed")
                 return
             self._set_json_headers()
             self.wfile.write(json.dumps({'success': True, 'monitoring': report}, default=str).encode('utf-8'))
@@ -39448,9 +39455,8 @@ For claims or questions, please contact:
                     claims=CLAIMS.values(),
                     nft_ledger=NFT_LEDGER,
                 )
-            except Exception as cash_err:
-                self._set_json_headers(500)
-                self.wfile.write(json.dumps({'error': str(cash_err)}).encode('utf-8'))
+            except Exception:
+                _write_cashflow_internal_error(self, "cashflow customer picture failed for %s", customer_id)
                 return
             self._set_json_headers()
             self.wfile.write(json.dumps({'success': True, 'picture': report}, default=str).encode('utf-8'))
@@ -39472,9 +39478,8 @@ For claims or questions, please contact:
                     claims=CLAIMS.values(),
                     nft_ledger=NFT_LEDGER,
                 )
-            except Exception as cash_err:
-                self._set_json_headers(500)
-                self.wfile.write(json.dumps({'error': str(cash_err)}).encode('utf-8'))
+            except Exception:
+                _write_cashflow_internal_error(self, "premium picture failed for %s", customer_id)
                 return
             self._set_json_headers()
             self.wfile.write(json.dumps({'success': True, 'picture': report}, default=str).encode('utf-8'))
@@ -53365,9 +53370,8 @@ For claims or questions, please contact:
             actor = str((session or {}).get('username') or 'accountant')
             try:
                 result = post_unposted_claim_transfers(actor)
-            except Exception as post_err:
-                self._set_json_headers(500)
-                self.wfile.write(json.dumps({'error': str(post_err)}).encode('utf-8'))
+            except Exception:
+                _write_cashflow_internal_error(self, "claim transfer post failed")
                 return
             self._set_json_headers()
             self.wfile.write(json.dumps({'success': True, 'transfers': result}, default=str).encode('utf-8'))
