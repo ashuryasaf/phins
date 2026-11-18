@@ -60517,7 +60517,6 @@ For claims or questions, please contact:
                 from services.savings_pipeline_service import (
                     account_book_lock,
                     credit_account_balance,
-                    debit_account_balance,
                     mark_unallocated_cash,
                     named_row_lock,
                 )
@@ -60559,6 +60558,7 @@ For claims or questions, please contact:
                         # lock, so it cannot spend a credit the seal did not keep.
                         with account_book_lock(inv_acc):
                             mark_unallocated_cash(inv_acc)
+                            balance_before = round(float(inv_acc.get('balance', 0) or 0), 2)
                             credited = credit_account_balance(inv_acc, amount)
                             if credited is None:
                                 if created_row:
@@ -60587,9 +60587,10 @@ For claims or questions, please contact:
                                         }
                                     )
                                 except Exception:
-                                    reversed_balance = debit_account_balance(inv_acc, amount)
-                                    if reversed_balance is None:
-                                        raise
+                                    # The row lock was held across the credit, so
+                                    # this restores the pre-credit cash even when
+                                    # a debit of the full amount would refuse.
+                                    inv_acc['balance'] = balance_before
                                     deposits = inv_acc.get('deposits') or []
                                     if deposits and deposits[-1] is deposit_row:
                                         deposits.pop()
@@ -62093,8 +62094,14 @@ For claims or questions, please contact:
                     try:
                         from services.savings_pipeline_service import account_book_lock
                         existing = INVESTMENT_ACCOUNTS.get(customer_id)
-                        sync_lock = account_book_lock(existing) if isinstance(existing, dict) else None
-                        if sync_lock is not None:
+                        unified_existing = unified_balance_service.investment_accounts.get(customer_id)
+                        sync_rows = []
+                        for sync_row in (existing, unified_existing):
+                            if isinstance(sync_row, dict) and sync_row not in sync_rows:
+                                sync_rows.append(sync_row)
+                        sync_rows.sort(key=id)
+                        sync_locks = [account_book_lock(sync_row) for sync_row in sync_rows]
+                        for sync_lock in sync_locks:
                             sync_lock.acquire()
                         try:
                             accounts = portfolio_service.get_customer_accounts(customer_id)
@@ -62120,13 +62127,15 @@ For claims or questions, please contact:
                                 else:
                                     unified_balance_service.investment_accounts[customer_id]['balance'] = best_balance
 
-                                # Also update global INVESTMENT_ACCOUNTS
+                                # Share that row. A copy would let the transfer
+                                # debit one dict and leave the other unchanged.
+                                shared_row = unified_balance_service.investment_accounts[customer_id]
                                 if customer_id not in INVESTMENT_ACCOUNTS:
-                                    INVESTMENT_ACCOUNTS[customer_id] = unified_balance_service.investment_accounts[customer_id].copy()
+                                    INVESTMENT_ACCOUNTS[customer_id] = shared_row
                                 else:
                                     INVESTMENT_ACCOUNTS[customer_id]['balance'] = best_balance
                         finally:
-                            if sync_lock is not None:
+                            for sync_lock in reversed(sync_locks):
                                 sync_lock.release()
                     except Exception as sync_err:
                         print(f"Pre-transfer investment sync note: {sync_err}")
@@ -62156,14 +62165,28 @@ For claims or questions, please contact:
                     # 1. Sync investment balance back
                     if source == 'investment_account':
                         from services.savings_pipeline_service import account_book_lock
-                        synced_row = INVESTMENT_ACCOUNTS.get(customer_id)
-                        if isinstance(synced_row, dict):
-                            with account_book_lock(synced_row):
-                                new_inv_balance = float(synced_row.get('balance') or 0)
-                        else:
-                            new_inv_balance = unified_balance_service.investment_accounts.get(customer_id, {}).get('balance', 0)
-                            if customer_id in INVESTMENT_ACCOUNTS:
-                                INVESTMENT_ACCOUNTS[customer_id]['balance'] = new_inv_balance
+                        unified_row = unified_balance_service.investment_accounts.get(customer_id)
+                        global_row = INVESTMENT_ACCOUNTS.get(customer_id)
+                        publish_rows = []
+                        for publish_row in (unified_row, global_row):
+                            if isinstance(publish_row, dict) and publish_row not in publish_rows:
+                                publish_rows.append(publish_row)
+                        publish_rows.sort(key=id)
+                        publish_locks = [account_book_lock(publish_row) for publish_row in publish_rows]
+                        for publish_lock in publish_locks:
+                            publish_lock.acquire()
+                        try:
+                            if isinstance(unified_row, dict):
+                                new_inv_balance = round(float(unified_row.get('balance') or 0), 2)
+                            elif isinstance(global_row, dict):
+                                new_inv_balance = round(float(global_row.get('balance') or 0), 2)
+                            else:
+                                new_inv_balance = 0.0
+                            if isinstance(global_row, dict):
+                                global_row['balance'] = new_inv_balance
+                        finally:
+                            for publish_lock in reversed(publish_locks):
+                                publish_lock.release()
                         
                         # Also update portfolio_service
                         if portfolio_enabled and portfolio_service:

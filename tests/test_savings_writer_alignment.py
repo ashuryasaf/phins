@@ -1439,7 +1439,7 @@ def test_failed_deposit_seal_returns_both_cash_books():
         portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
 
 
-def test_failed_deposit_seal_keeps_the_portfolio_credit_when_reversal_fails():
+def test_failed_deposit_seal_restores_cash_when_a_debit_would_refuse():
     from datetime import datetime, timedelta
     import services.savings_pipeline_service as pipeline
     import web_portal.server as portal
@@ -1474,8 +1474,9 @@ def test_failed_deposit_seal_keeps_the_portfolio_credit_when_reversal_fails():
             headers={"Authorization": f"Bearer {token}"},
         )
         assert status == 400, body
-        assert account.balance == 50.0
-        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 50.0
+        assert account.balance == 10.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 10.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id].get("deposits") == []
     finally:
         portal.record_transaction = original_tx
         pipeline.debit_account_balance = original_debit
@@ -1602,6 +1603,42 @@ def test_withdraw_blocks_an_algo_transfer_of_the_same_cash():
         portal.portfolio_service.accounts.pop(account.account_id, None)
         portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
         portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_algo_transfer_publishes_the_debited_balance_when_the_rows_differ():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-XFER-1"
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-XFER-1", 0.0)
+    account.balance = 100.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    service = portal.unified_balance_service
+    original_rows = service.investment_accounts
+    service.investment_accounts = {
+        customer_id: {
+            "balance": 100.0,
+            "balance_is_unallocated_cash": True,
+        }
+    }
+    try:
+        status, body = _post_json("/api/balance/transfer-to-algo", {
+            "customer_id": customer_id,
+            "amount": 40.0,
+            "source": "investment_account",
+        })
+        assert status == 200, body
+        assert service.investment_accounts[customer_id]["balance"] == 60.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 60.0
+        assert account.balance == 60.0
+    finally:
+        service.investment_accounts = original_rows
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        service.algo_trading_balances.pop(customer_id, None)
 
 
 def test_deposit_credit_waits_for_the_savings_lock():
