@@ -60514,14 +60514,35 @@ For claims or questions, please contact:
                 if integrity_service_enabled and customer_id:
                     pre_integrity = integrity_service.validate_customer_integrity(customer_id)
                 
-                from services.savings_pipeline_service import named_row_lock
+                from services.savings_pipeline_service import (
+                    credit_account_balance,
+                    debit_account_balance,
+                    mark_unallocated_cash,
+                    named_row_lock,
+                )
+
+                def _undo_portfolio_deposit():
+                    account = portfolio_service.accounts.get(account_id)
+                    if account is None:
+                        return
+                    account.balance = round(float(account.balance or 0) - amount, 2)
+                    txs = getattr(account, 'transactions', None)
+                    if (
+                        txs
+                        and isinstance(txs[-1], dict)
+                        and txs[-1].get('type') == 'deposit'
+                        and abs(float(txs[-1].get('amount') or 0) - amount) < 0.001
+                    ):
+                        txs.pop()
+
+                # The savings lock covers the portfolio credit and the
+                # investment-row credit. Invest reserves that same row under
+                # this lock, so the credit has to read the live balance.
                 with named_row_lock(f"savings:{account_id}"):
                     result = portfolio_service.deposit(account_id, amount, source)
-                
-                if result.get('success'):
-                    # SYNC: Also update INVESTMENT_ACCOUNTS (master record)
-                    if customer_id:
-                        if customer_id not in INVESTMENT_ACCOUNTS:
+                    if result.get('success') and customer_id:
+                        created_row = customer_id not in INVESTMENT_ACCOUNTS
+                        if created_row:
                             INVESTMENT_ACCOUNTS[customer_id] = {
                                 'customer_id': customer_id,
                                 'balance': 0,
@@ -60531,56 +60552,63 @@ For claims or questions, please contact:
                                 'deposits': [],
                                 'created_at': datetime.now().isoformat()
                             }
-                        
                         inv_acc = INVESTMENT_ACCOUNTS[customer_id]
-                        inv_acc['balance'] = float(inv_acc.get('balance', 0) or 0) + amount
-                        inv_acc.setdefault('deposits', []).append({
-                            'id': f"DEP-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}",
-                            'amount': amount,
-                            'source': source,
-                            'account_id': account_id,
-                            'timestamp': datetime.now().isoformat()
-                        })
-                        
-                        # Record on ledger
-                        record_transaction(
-                            customer_id=customer_id,
-                            tx_type='investment_deposit',
-                            amount=amount,
-                            description=f"Investment deposit to savings portfolio from {source}",
-                            metadata={
-                                'account_id': account_id,
+                        mark_unallocated_cash(inv_acc)
+                        credited = credit_account_balance(inv_acc, amount)
+                        if credited is None:
+                            if created_row:
+                                INVESTMENT_ACCOUNTS.pop(customer_id, None)
+                            _undo_portfolio_deposit()
+                            result = {'success': False, 'error': 'Deposit was not credited'}
+                        else:
+                            deposit_row = {
+                                'id': f"DEP-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}",
+                                'amount': amount,
                                 'source': source,
-                                'new_balance': inv_acc['balance']
+                                'account_id': account_id,
+                                'timestamp': datetime.now().isoformat()
                             }
-                        )
-                        
-                        # Force save
-                        save_ledger_data()
-                        
-                        result['investment_account_synced'] = True
-                        result['investment_balance'] = inv_acc['balance']
-                        
-                        # Post-deposit integrity check
-                        if integrity_service_enabled:
-                            post_integrity = integrity_service.validate_customer_integrity(customer_id, auto_correct=True)
-                            result['integrity'] = {
-                                'pre_total': pre_integrity.calculated_total if pre_integrity else 0,
-                                'post_total': post_integrity.calculated_total,
-                                'delta': post_integrity.calculated_total - (pre_integrity.calculated_total if pre_integrity else 0),
-                                'expected_delta': amount,
-                                'is_valid': post_integrity.is_valid,
-                                'issues': post_integrity.issues
-                            }
-                            
-                            # Verify the delta matches deposit amount
-                            actual_delta = post_integrity.calculated_total - (pre_integrity.calculated_total if pre_integrity else 0)
-                            if abs(actual_delta - amount) > 0.01:
-                                result['integrity']['warning'] = f'Balance delta ({actual_delta:.2f}) differs from deposit ({amount:.2f})'
-                    
-                    if audit:
+                            inv_acc.setdefault('deposits', []).append(deposit_row)
+                            try:
+                                record_transaction(
+                                    customer_id=customer_id,
+                                    tx_type='investment_deposit',
+                                    amount=amount,
+                                    description=f"Investment deposit to savings portfolio from {source}",
+                                    metadata={
+                                        'account_id': account_id,
+                                        'source': source,
+                                        'new_balance': inv_acc['balance']
+                                    }
+                                )
+                            except Exception:
+                                debit_account_balance(inv_acc, amount)
+                                deposits = inv_acc.get('deposits') or []
+                                if deposits and deposits[-1] is deposit_row:
+                                    deposits.pop()
+                                if created_row and not inv_acc.get('deposits'):
+                                    INVESTMENT_ACCOUNTS.pop(customer_id, None)
+                                _undo_portfolio_deposit()
+                                raise
+                            save_ledger_data()
+                            result['investment_account_synced'] = True
+                            result['investment_balance'] = inv_acc['balance']
+                            if integrity_service_enabled:
+                                post_integrity = integrity_service.validate_customer_integrity(customer_id, auto_correct=True)
+                                result['integrity'] = {
+                                    'pre_total': pre_integrity.calculated_total if pre_integrity else 0,
+                                    'post_total': post_integrity.calculated_total,
+                                    'delta': post_integrity.calculated_total - (pre_integrity.calculated_total if pre_integrity else 0),
+                                    'expected_delta': amount,
+                                    'is_valid': post_integrity.is_valid,
+                                    'issues': post_integrity.issues
+                                }
+                                actual_delta = post_integrity.calculated_total - (pre_integrity.calculated_total if pre_integrity else 0)
+                                if abs(actual_delta - amount) > 0.01:
+                                    result['integrity']['warning'] = f'Balance delta ({actual_delta:.2f}) differs from deposit ({amount:.2f})'
+                    if result.get('success') and audit:
                         try:
-                            audit.log('system', 'deposit', 'savings_account', account_id, 
+                            audit.log('system', 'deposit', 'savings_account', account_id,
                                      {'amount': amount, 'source': source, 'integrity_valid': result.get('integrity', {}).get('is_valid', True)})
                         except Exception:
                             pass
@@ -60614,9 +60642,26 @@ For claims or questions, please contact:
                 if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account', allow_staff=False):
                     return
                 
-                from services.savings_pipeline_service import named_row_lock
+                from services.savings_pipeline_service import (
+                    account_book_lock,
+                    investment_books,
+                    named_row_lock,
+                )
                 with named_row_lock(f"savings:{account_id}"):
                     result = portfolio_service.withdraw(account_id, amount, reason)
+                    if result.get('success'):
+                        account = portfolio_service.accounts.get(account_id)
+                        owner_id = getattr(account, 'customer_id', None) if account is not None else None
+                        inv_row = INVESTMENT_ACCOUNTS.get(owner_id) if owner_id else None
+                        if isinstance(inv_row, dict):
+                            with account_book_lock(inv_row):
+                                books = investment_books(inv_row)
+                                take = min(round(float(books['cash']), 2), round(amount, 2))
+                                if take > 0:
+                                    if inv_row.get('balance_is_unallocated_cash'):
+                                        inv_row['balance'] = round(books['cash'] - take, 2)
+                                    else:
+                                        inv_row['balance'] = round(max(0.0, books['position'] - take), 2)
                 
                 if result.get('success') and audit:
                     try:
@@ -60747,6 +60792,19 @@ For claims or questions, please contact:
                             raise
                         if not result.get('success'):
                             _return_invest_reserve()
+                        elif reserved_inv > 0 and account is not None:
+                            # Deposit wrote these dollars onto the portfolio
+                            # cash figure as well as the investment row.
+                            # The row was reserved above. The portfolio cash
+                            # leaves with it, capped at the cash actually there.
+                            live_cash = round(float(account.balance or 0), 2)
+                            spend = min(live_cash, round(reserved_inv, 2))
+                            if spend > 0:
+                                account.balance = round(live_cash - spend, 2)
+                                txn = result.get('transaction')
+                                if isinstance(txn, dict):
+                                    txn['balance_after'] = account.balance
+                                result['cash_balance'] = account.balance
                 finally:
                     account_lock.release()
                 

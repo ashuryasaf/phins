@@ -321,8 +321,9 @@ class InvestmentPortfolioService:
         """Invest funds into a specific asset.
 
         ``spend_cash`` is false when the caller already reserved the cash on
-        the investment row and the health wallet. The portfolio cash figure
-        is left unchanged.
+        the investment row and the health wallet. The caller then removes
+        the investment-row portion from this cash figure. Wallet cash that
+        was never on the portfolio is not removed here.
         """
         account = self.accounts.get(account_id)
         if not account:

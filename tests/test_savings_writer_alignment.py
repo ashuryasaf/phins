@@ -1181,16 +1181,19 @@ def test_failed_bulk_pay_returns_the_wallet_debit_and_the_bill():
         portal.BILLING.pop(bill_id, None)
 
 
-def _post_json(path, payload):
+def _post_json(path, payload, headers=None):
     import json
     import os
     from urllib.error import HTTPError
     from urllib.request import Request, urlopen
 
+    hdrs = {"Content-Type": "application/json"}
+    if headers:
+        hdrs.update(headers)
     request = Request(
         os.environ["TEST_BASE_URL"] + path,
         data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
+        headers=hdrs,
     )
     try:
         with urlopen(request) as response:
@@ -1299,6 +1302,7 @@ def test_invest_returns_reserved_cash_when_the_trade_is_not_booked():
 
 
 def test_store_funded_invest_leaves_portfolio_cash_unchanged():
+    """Wallet cash is not the portfolio figure. That $25 stays put."""
     import web_portal.server as portal
 
     _keep_injected_portal_state()
@@ -1320,6 +1324,182 @@ def test_store_funded_invest_leaves_portfolio_cash_unchanged():
     finally:
         portal.portfolio_service.accounts.pop(account.account_id, None)
         portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_store_funded_invest_spends_the_mirrored_portfolio_cash():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-8"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 100.0}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-8", 0.0)
+    account.balance = 100.0
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 80.0,
+        })
+        assert status == 200, body
+        assert account.balance == 20.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 20.0
+        assert len(account.assets) == 1
+        withdraw_status, withdraw_body = _post_json("/api/savings/withdraw", {
+            "account_id": account.account_id,
+            "amount": 100.0,
+        })
+        assert withdraw_status == 400, withdraw_body
+        assert account.balance == 20.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 20.0
+        transfer_status, transfer_body = _post_json("/api/balance/transfer-to-algo", {
+            "customer_id": customer_id,
+            "amount": 100.0,
+            "source": "investment_account",
+        })
+        assert transfer_status == 400, transfer_body
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 20.0
+        assert account.balance == 20.0
+        remainder_status, remainder_body = _post_json("/api/savings/withdraw", {
+            "account_id": account.account_id,
+            "amount": 20.0,
+        })
+        assert remainder_status == 200, remainder_body
+        assert account.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+    finally:
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_withdraw_removes_the_same_cash_from_the_investment_row():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-9"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "index_balance": 60.0,
+        "bonds_balance": 0.0,
+        "crypto_balance": 0.0,
+    }
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-9", 0.0)
+    account.balance = 50.0
+    try:
+        status, body = _post_json("/api/savings/withdraw", {
+            "account_id": account.account_id,
+            "amount": 50.0,
+        })
+        assert status == 200, body
+        assert account.balance == 0.0
+        row = portal.INVESTMENT_ACCOUNTS[customer_id]
+        assert row["balance"] == 60.0
+        assert row["index_balance"] == 60.0
+    finally:
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_failed_deposit_seal_returns_both_cash_books():
+    from datetime import datetime, timedelta
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-DEP-1"
+    token = "phins_dep_seal_token"
+    portal.SESSIONS[token] = {
+        "username": "dep_customer",
+        "role": "customer",
+        "customer_id": customer_id,
+        "expires": (datetime.now() + timedelta(hours=2)).isoformat(),
+    }
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-DEP-1", 0.0)
+    account.balance = 10.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 10.0, "deposits": []}
+    original = portal.record_transaction
+
+    def _boom(**_kwargs):
+        raise RuntimeError("seal failed")
+
+    portal.record_transaction = _boom
+    try:
+        status, body = _post_json(
+            "/api/savings/deposit",
+            {"account_id": account.account_id, "amount": 40.0, "customer_id": customer_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert status == 400, body
+        assert account.balance == 10.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 10.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id].get("deposits") == []
+    finally:
+        portal.record_transaction = original
+        portal.SESSIONS.pop(token, None)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_deposit_credit_waits_for_the_savings_lock():
+    from datetime import datetime, timedelta
+    import threading
+    import services.savings_pipeline_service as pipeline
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-DEP-2"
+    token = "phins_dep_lock_token"
+    portal.SESSIONS[token] = {
+        "username": "dep_lock_customer",
+        "role": "customer",
+        "customer_id": customer_id,
+        "expires": (datetime.now() + timedelta(hours=2)).isoformat(),
+    }
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-DEP-2", 0.0)
+    account.balance = 100.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 100.0, "deposits": []}
+    original_credit = pipeline.credit_account_balance
+    seen = {}
+
+    def _credit(row, amount):
+        def _invest():
+            seen["invest"] = _post_json("/api/savings/invest", {
+                "account_id": account.account_id,
+                "symbol": "USDC",
+                "amount": 80.0,
+            })
+
+        worker = threading.Thread(target=_invest)
+        worker.start()
+        worker.join(0.3)
+        seen["blocked"] = worker.is_alive()
+        seen["balance_at_credit"] = row.get("balance")
+        seen["worker"] = worker
+        return original_credit(row, amount)
+
+    pipeline.credit_account_balance = _credit
+    try:
+        status, body = _post_json(
+            "/api/savings/deposit",
+            {"account_id": account.account_id, "amount": 40.0, "customer_id": customer_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(2)
+        assert status == 200, body
+        assert seen.get("blocked") is True
+        assert seen.get("balance_at_credit") == 100.0
+        assert seen["invest"][0] == 200
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 60.0
+        assert account.balance == 60.0
+        assert len(account.assets) == 1
+    finally:
+        pipeline.credit_account_balance = original_credit
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(2)
+        portal.SESSIONS.pop(token, None)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
         portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
 
 
