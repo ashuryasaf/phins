@@ -236,6 +236,7 @@ class UnifiedBalanceService:
 
                 transfer_id = f"TRF-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
                 prior = None
+                portfolio_cash_taken = 0.0
                 if source != 'health_wallet':
                     prior = _snapshot_investment_transfer(book)
                     moved = apply_investment_withdrawal(book, amount)
@@ -248,6 +249,7 @@ class UnifiedBalanceService:
                             'available_balance': investment_books(book)['position'],
                         }
                     amount = applied
+                    portfolio_cash_taken = round(float(moved.get('cash_taken') or 0), 2)
                     source_balance = investment_books(book)['position'] + amount
 
                 with algo_credit_lock(customer_id):
@@ -322,10 +324,22 @@ class UnifiedBalanceService:
                         'bot_id': bot_id,
                         'timestamp': datetime.now().isoformat()
                     })
-                    if source == 'investment_account' and portfolio_accounts:
-                        portfolio_accounts[0].balance = round(
-                            float(book.get('balance', 0) or 0), 2,
-                        )
+                    # Peel only the cash that left the row. The row's balance
+                    # on an older book is the whole position, and copying it
+                    # onto the first savings account would make those holdings
+                    # withdrawable while the other accounts keep their cash.
+                    if source == 'investment_account' and portfolio_cash_taken > 0:
+                        left = portfolio_cash_taken
+                        for portfolio_account in portfolio_accounts:
+                            if left <= 0:
+                                break
+                            live_cash = round(
+                                float(getattr(portfolio_account, 'balance', 0) or 0), 2,
+                            )
+                            spend = min(live_cash, left)
+                            if spend > 0:
+                                portfolio_account.balance = round(live_cash - spend, 2)
+                                left = round(left - spend, 2)
         finally:
             for savings_lock in reversed(savings_locks[:acquired_savings]):
                 savings_lock.release()

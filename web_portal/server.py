@@ -62223,7 +62223,6 @@ For claims or questions, please contact:
                                 )
                             except Exception:
                                 portfolio_accounts = []
-                        primary_account = portfolio_accounts[0] if portfolio_accounts else None
                         savings_locks = []
                         for portfolio_account in sorted(
                             portfolio_accounts,
@@ -62272,8 +62271,10 @@ For claims or questions, please contact:
                                     global_row['balance'] = new_inv_balance
                                 if isinstance(tracker_row, dict):
                                     tracker_row['balance'] = new_inv_balance
-                                if primary_account is not None:
-                                    primary_account.balance = new_inv_balance
+                                # Portfolio cash was already reduced by the
+                                # cash that left the row, inside the transfer.
+                                # Writing the row balance here would turn an
+                                # older position into spendable cash.
                             finally:
                                 for publish_lock in reversed(publish_locks):
                                     publish_lock.release()

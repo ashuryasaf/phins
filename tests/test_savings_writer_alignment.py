@@ -2041,6 +2041,82 @@ def test_algo_transfer_publishes_the_debited_balance_when_the_rows_differ():
         service.algo_trading_balances.pop(customer_id, None)
 
 
+def test_algo_transfer_peels_cash_and_does_not_copy_the_position():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-XFER-POS"
+    first = portal.portfolio_service.create_savings_account(customer_id, "POL-XFER-POS-1", 0.0)
+    second = portal.portfolio_service.create_savings_account(customer_id, "POL-XFER-POS-2", 0.0)
+    first.balance = 25.0
+    second.balance = 15.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "index_balance": 60.0,
+        "bonds_balance": 0.0,
+        "crypto_balance": 0.0,
+    }
+    service = portal.unified_balance_service
+    service.investment_accounts[customer_id] = portal.INVESTMENT_ACCOUNTS[customer_id]
+    try:
+        status, body = _post_json("/api/balance/transfer-to-algo", {
+            "customer_id": customer_id,
+            "amount": 50.0,
+            "source": "investment_account",
+        })
+        assert status == 200, body
+        assert first.balance == 0.0
+        assert second.balance == 0.0
+        row = portal.INVESTMENT_ACCOUNTS[customer_id]
+        assert row["balance"] == 50.0
+        assert row["index_balance"] == 50.0
+        algo = service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 50.0
+    finally:
+        portal.portfolio_service.accounts.pop(first.account_id, None)
+        portal.portfolio_service.accounts.pop(second.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        service.investment_accounts.pop(customer_id, None)
+        service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_algo_transfer_peels_cash_across_savings_accounts():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-XFER-MANY"
+    first = portal.portfolio_service.create_savings_account(customer_id, "POL-XFER-MANY-1", 0.0)
+    second = portal.portfolio_service.create_savings_account(customer_id, "POL-XFER-MANY-2", 0.0)
+    first.balance = 60.0
+    second.balance = 40.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    service = portal.unified_balance_service
+    service.investment_accounts[customer_id] = portal.INVESTMENT_ACCOUNTS[customer_id]
+    try:
+        status, body = _post_json("/api/balance/transfer-to-algo", {
+            "customer_id": customer_id,
+            "amount": 70.0,
+            "source": "investment_account",
+        })
+        assert status == 200, body
+        assert first.balance + second.balance == 30.0
+        assert first.balance >= 0.0
+        assert second.balance >= 0.0
+        assert max(first.balance, second.balance) == 30.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 30.0
+        algo = service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 70.0
+    finally:
+        portal.portfolio_service.accounts.pop(first.account_id, None)
+        portal.portfolio_service.accounts.pop(second.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        service.investment_accounts.pop(customer_id, None)
+        service.algo_trading_balances.pop(customer_id, None)
+
+
 def test_deposit_credit_waits_for_the_savings_lock():
     from datetime import datetime, timedelta
     import threading
