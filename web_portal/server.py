@@ -10144,16 +10144,15 @@ def get_real_time_status() -> Dict[str, Any]:
 # ========== END REAL-TIME CONNECTIONS CONFIG ==========
 
 
-# Cash default when a policy has no savings pin. This is not the kernel
-# savings_rate: under RISK_PREMIUM_MARKUP that rate is a share of the risk
-# premium, and expense and profit sit on top. A missing pin is labeled
-# "default", not a recorded historical split. The savings component, once
-# known, is distributed 30/65/5 and the investment piece 60/30/10.
-# The old dashboard assumption of 25% savings / 75% risk is retired.
+# Destination weights for a savings add-on that has already been separated
+# from the kernel risk premium. These percents are not a premium split.
+# A missing savings election does not send half the risk premium to savings.
+# The savings component, once known, is distributed 30/65/5 and the
+# investment piece 60/30/10. The old 25% savings / 75% risk card is retired.
 DEFAULT_CUSTOMER_ALLOCATION: Dict[str, float] = {
-    # Premium split used only when the policy has no savings pin
-    'savings_pct': 50.0,      # % of premium addressed to savings (default)
-    'risk_pct': 50.0,         # % of premium labeled risk (default)
+    # Display fallback only. Premium cash uses resolve_premium_split.
+    'savings_pct': 50.0,
+    'risk_pct': 50.0,
 
     # Savings distribution (must sum to 100%)
     'wallet_pct': 30.0,       # % of savings to Health Wallet
@@ -11490,6 +11489,124 @@ def _referral_reward_sheet_slice() -> Optional[Dict[str, Any]]:
     except Exception as referral_sheet_err:
         print(f"[REFERRAL] Balance-sheet slice skipped: {referral_sheet_err}")
         return None
+
+
+def _premium_savings_cash(amount: float, policy: Optional[Dict[str, Any]]) -> float:
+    """Savings add-on inside this premium. Kernel risk is not included."""
+    from services.financial_unification_service import resolve_premium_split
+    return float(resolve_premium_split(amount, policy).get('savings_amount') or 0.0)
+
+
+def _cashflow_position_books() -> Dict[str, Dict[str, Dict[str, float]]]:
+    """Live wallet, investment, and algo figures. Nothing is written."""
+    wallets = {
+        str(customer_id): {'balance': safe_float((row or {}).get('balance'), 0.0)}
+        for customer_id, row in HEALTH_WALLETS.items()
+        if isinstance(row, dict)
+    }
+    investments = {}
+    for customer_id, row in INVESTMENT_ACCOUNTS.items():
+        investments[str(customer_id)] = {
+            'position': safe_float(_investment_books(row).get('position'), 0.0),
+        }
+    algo = {}
+    try:
+        store = getattr(unified_balance_service, 'algo_trading_balances', {}) or {}
+    except Exception:
+        store = {}
+    for customer_id, row in store.items():
+        if not isinstance(row, dict):
+            continue
+        algo[str(customer_id)] = {
+            'available': safe_float(row.get('available', row.get('balance')), 0.0),
+        }
+    return {'wallets': wallets, 'investments': investments, 'algo': algo}
+
+
+def build_cashflow_monitoring() -> Dict[str, Any]:
+    """Read-only monitoring list from ledgers, NFT seals, and live balances."""
+    from services.premium_flow_reconciliation import monitoring_report, worked_specimen
+    positions = _cashflow_position_books()
+    report = monitoring_report(
+        customers=CUSTOMERS,
+        policies=list(POLICIES.values()),
+        bills=list(BILLING.values()),
+        claims=list(CLAIMS.values()),
+        nft_ledger=NFT_LEDGER,
+        wallets=positions['wallets'],
+        investments=positions['investments'],
+        algo=positions['algo'],
+    )
+    report['specimen'] = worked_specimen()
+    report['claims_reserve'] = safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0.0)
+    return report
+
+
+def post_unposted_claim_transfers(actor: str = 'accountant') -> Dict[str, Any]:
+    """Move each unposted paid claim from the reserve onto the health wallet.
+
+    The claim record stays on the books. A broken seal is skipped. A short
+    reserve is reported and is not topped up. A second call finds the seal
+    and does not pay again.
+    """
+    from services.premium_flow_reconciliation import claim_postings_due, reconcile_customer
+    posted = []
+    skipped = []
+    for claim in list(CLAIMS.values()):
+        if not isinstance(claim, dict):
+            continue
+        customer_id = str(claim.get('customer_id') or '')
+        if not customer_id:
+            continue
+        report = reconcile_customer(
+            customer_id,
+            policies=POLICIES.values(),
+            bills=BILLING.values(),
+            claims=CLAIMS.values(),
+            nft_ledger=NFT_LEDGER,
+        )
+        due = {row['claim_id']: row for row in claim_postings_due(report)}
+        claim_id = str(claim.get('id') or claim.get('claim_id') or '')
+        row = due.get(claim_id)
+        if row is None:
+            continue
+        amount = safe_float(row.get('amount'), 0.0)
+        reserve = safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0.0)
+        if amount <= 0 or reserve < amount:
+            skipped.append({
+                'claim_id': claim_id,
+                'customer_id': customer_id,
+                'amount': amount,
+                'reason': 'insufficient_claims_reserve',
+                'claims_reserve': reserve,
+            })
+            continue
+        outcome = process_claim_payment_to_wallet(
+            claim_id, customer_id, amount, processed_by=actor,
+        )
+        if outcome.get('success'):
+            posted.append({
+                'claim_id': claim_id,
+                'customer_id': customer_id,
+                'amount': amount,
+                'destination': 'health_wallet',
+                'payment_reference': outcome.get('payment_reference'),
+                'claim_status': str(claim.get('status') or ''),
+            })
+        else:
+            skipped.append({
+                'claim_id': claim_id,
+                'customer_id': customer_id,
+                'amount': amount,
+                'reason': outcome.get('error') or 'not_posted',
+            })
+    return {
+        'writes_claims': False,
+        'posted': posted,
+        'skipped': skipped,
+        'posted_count': len(posted),
+        'claims_reserve': safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0.0),
+    }
 
 
 def process_customer_premium_payment(
@@ -39287,6 +39404,72 @@ For claims or questions, please contact:
             }, default=str).encode('utf-8'))
             return
 
+        if path == '/api/admin/cashflow/monitoring':
+            if not require_role(session, ['admin', 'accountant', 'actuary', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                report = build_cashflow_monitoring()
+            except Exception as cash_err:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(cash_err)}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'success': True, 'monitoring': report}, default=str).encode('utf-8'))
+            return
+
+        if path.startswith('/api/admin/cashflow/customers/'):
+            if not require_role(session, ['admin', 'accountant', 'actuary', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            customer_id = path.rstrip('/').rsplit('/', 1)[-1]
+            if not customer_id or customer_id == 'customers':
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': 'customer_id required'}).encode('utf-8'))
+                return
+            try:
+                from services.premium_flow_reconciliation import reconcile_customer
+                report = reconcile_customer(
+                    customer_id,
+                    policies=POLICIES.values(),
+                    bills=BILLING.values(),
+                    claims=CLAIMS.values(),
+                    nft_ledger=NFT_LEDGER,
+                )
+            except Exception as cash_err:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(cash_err)}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'success': True, 'picture': report}, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/customer/premium-picture':
+            requested = (qs.get('customer_id') or [None])[0]
+            allowed, customer_id, auth_error = authorize_customer_data(session, requested, 'premium')
+            if not allowed or not customer_id:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': auth_error or 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                from services.premium_flow_reconciliation import reconcile_customer
+                report = reconcile_customer(
+                    customer_id,
+                    policies=POLICIES.values(),
+                    bills=BILLING.values(),
+                    claims=CLAIMS.values(),
+                    nft_ledger=NFT_LEDGER,
+                )
+            except Exception as cash_err:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(cash_err)}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'success': True, 'picture': report}, default=str).encode('utf-8'))
+            return
+
         if path == '/api/admin/balance-sheet':
             # Check authorization
             if not require_role(session, ['admin', 'accountant', 'underwriter', 'claims']):
@@ -53159,6 +53342,25 @@ For claims or questions, please contact:
         
         # ========== PHINS BALANCE SHEET MANAGEMENT API (POST) ==========
 
+        if path == '/api/admin/cashflow/post-claim-transfers':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'accountant', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            actor = str((session or {}).get('username') or 'accountant')
+            try:
+                result = post_unposted_claim_transfers(actor)
+            except Exception as post_err:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(post_err)}).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'success': True, 'transfers': result}, default=str).encode('utf-8'))
+            return
+
         if path == '/api/finance/repair':
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
@@ -58822,9 +59024,8 @@ For claims or questions, please contact:
                                         else:
                                             savings_amount = 0
                                     else:
-                                        customer_alloc = get_customer_allocation(customer_id)
-                                        savings_pct = customer_alloc.get('savings_pct', DEFAULT_CUSTOMER_ALLOCATION['savings_pct'])
-                                        savings_amount = amount * (savings_pct / 100)
+                                        bill_policy = POLICIES.get(str(bill.get('policy_id') or '')) if bill.get('policy_id') else None
+                                        savings_amount = _premium_savings_cash(amount, bill_policy)
                                         source = 'premium_payment'
 
                                     if savings_amount > 0:
@@ -63861,9 +64062,7 @@ For claims or questions, please contact:
 
                     if savings_pipeline_enabled and savings_pipeline_service and policy_id:
                         try:
-                            customer_alloc = get_customer_allocation(customer_id)
-                            savings_pct = customer_alloc.get('savings_pct', DEFAULT_CUSTOMER_ALLOCATION['savings_pct'])
-                            savings_amount = amount * (savings_pct / 100)
+                            savings_amount = _premium_savings_cash(amount, POLICIES.get(policy_id))
                             if savings_amount > 0:
                                 savings_pipeline_service.deposit_to_pipeline(
                                     customer_id=customer_id,

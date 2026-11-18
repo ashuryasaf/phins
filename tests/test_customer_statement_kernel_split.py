@@ -41,12 +41,13 @@ def test_get_mock_statement_uses_allocation_not_legacy_75_25():
         stmt = portal.get_mock_statement(cid)
         assert stmt["policies_count"] == 1
         assert stmt["total_premium"] == 200.0
-        assert stmt["risk_pct"] == 50.0
-        assert stmt["savings_pct"] == 50.0
-        assert stmt["risk_total"] == 100.0
-        assert stmt["savings_total"] == 100.0
-        assert stmt["allocations"][0]["risk_amount"] == 100.0
-        assert stmt["allocations"][0]["savings_amount"] == 100.0
+        assert stmt["risk_pct"] == 100.0
+        assert stmt["savings_pct"] == 0.0
+        assert stmt["risk_total"] == 200.0
+        assert stmt["savings_total"] == 0.0
+        assert stmt["allocations"][0]["risk_amount"] == 200.0
+        assert stmt["allocations"][0]["savings_amount"] == 0.0
+        assert stmt["allocations"][0]["split_source"] == "no_savings_election"
     finally:
         portal.POLICIES.pop(policy_id, None)
 

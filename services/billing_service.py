@@ -7,7 +7,8 @@ When a bill is paid, the premium is automatically split into:
 - Risk Premium: Goes to company risk reserves (covers claims)
 - Savings Premium: Goes to customer's savings (wallet/investment)
 
-Default split is 50% risk / 50% savings (kernel-aligned; configurable per policy).
+When the caller does not pass a split, the pricing kernel decides it.
+The risk premium is not savings. Only a savings add-on or growth add is.
 """
 
 from datetime import datetime, timedelta
@@ -78,18 +79,22 @@ class BillingService:
             policy = self._policies.get(policy_id, {})
             customer_id = policy.get('customer_id', '')
         
-        # Set allocation percentages
-        risk_pct = risk_pct if risk_pct is not None else self.default_risk_pct
-        savings_pct = savings_pct if savings_pct is not None else self.default_savings_pct
-        
-        # Ensure they sum to 100
-        if risk_pct + savings_pct != 100:
-            savings_pct = 100 - risk_pct
-        
-        # Calculate allocation amounts
         amount = float(amount_due)
-        risk_amount = round(amount * risk_pct / 100, 2)
-        savings_amount = round(amount * savings_pct / 100, 2)
+        if risk_pct is None and savings_pct is None:
+            from services.financial_unification_service import resolve_premium_split
+            policy = self._policies.get(policy_id, {}) if policy_id else None
+            split = resolve_premium_split(amount, policy or None)
+            risk_pct = split["risk_percentage"]
+            savings_pct = split["savings_percentage"]
+            risk_amount = split["risk_amount"]
+            savings_amount = split["savings_amount"]
+        else:
+            risk_pct = risk_pct if risk_pct is not None else self.default_risk_pct
+            savings_pct = savings_pct if savings_pct is not None else self.default_savings_pct
+            if risk_pct + savings_pct != 100:
+                savings_pct = 100 - risk_pct
+            risk_amount = round(amount * risk_pct / 100, 2)
+            savings_amount = round(amount * savings_pct / 100, 2)
         
         bill = {
             'bill_id': bill_id,

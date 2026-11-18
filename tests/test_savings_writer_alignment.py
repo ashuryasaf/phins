@@ -1,7 +1,7 @@
 """Writer alignment for the testing-phase savings path.
 
-Premium cash is split by the kernel pin. Only the savings component is
-addressed to savings. A missing pin is the 50/50 default. That savings
+Premium cash is split by the kernel pin. Only a savings add-on or growth
+add is addressed to savings. A missing election is pure risk. That savings
 figure is 30% health wallet, 65% investments, 5% algo, and the investment
 piece is 60/30/10. ``balance`` stays unallocated cash.
 """
@@ -68,29 +68,44 @@ def test_shrunk_annual_cannot_credit_more_than_the_cash_collected():
         + split["profit_amount"]
     )
     assert abs(credited - 10.0) < 0.001
-    assert split["savings_amount"] <= 10.0
-    assert split["risk_percentage"] <= 100.0
-    assert split["savings_percentage"] <= 100.0
+    assert split["savings_amount"] == 0.0
+    assert split["risk_amount"] == 8.33
+    assert split["expense_amount"] == 1.25
+    assert split["profit_amount"] == 0.42
     assert split["company_remainder"] == 0.0
     assert split["split_label"] == "kernel"
     assert split["integrity_hash"] == "pin-unchanged"
     assert policy["integrity_hash"] == "pin-unchanged"
     assert policy["savings_premium_annual"] == 50.0
-    assert abs((split["savings_amount"] / split["risk_amount"]) - 0.5) < 0.02
 
 
-def test_missing_pin_is_labeled_default_not_history():
+def test_missing_pin_is_pure_risk():
     split = resolve_premium_split(
         200.0,
         {"id": "POL-OPEN", "annual_premium": 2400.0},
         fallback_risk_pct=100,
     )
-    assert split["risk_amount"] == 100.0
-    assert split["savings_amount"] == 100.0
-    assert split["split_source"] == "default"
-    assert split["split_label"] == "default"
+    assert split["risk_amount"] == 200.0
+    assert split["savings_amount"] == 0.0
+    assert split["split_source"] == "no_savings_election"
+    assert split["split_label"] == "no_savings_election"
     assert split["expense_amount"] == 0.0
     assert split["profit_amount"] == 0.0
+
+
+def test_growth_add_is_the_only_savings_on_top_of_risk():
+    split = resolve_premium_split(
+        400.0,
+        {
+            "annual_premium": 4800.0,
+            "risk_premium_annual": 2400.0,
+            "savings_addon": "growth",
+        },
+    )
+    assert split["risk_amount"] == 200.0
+    assert split["savings_amount"] == 200.0
+    assert split["split_label"] == "growth"
+    assert split["split_source"] == "addon:growth"
 
 
 def test_explicit_zero_savings_pin_is_not_the_default():
@@ -188,6 +203,9 @@ def test_orchestrator_credits_thirty_percent_of_savings_and_appends_seals():
                 "status": "active",
                 "monthly_premium": 200.0,
                 "annual_premium": 2400.0,
+                "risk_premium_annual": 1200.0,
+                "savings_premium_annual": 1200.0,
+                "savings_addon": "balanced",
                 "health_wallet": {"allocation_percentage": 25},
             }
         },
@@ -199,7 +217,8 @@ def test_orchestrator_credits_thirty_percent_of_savings_and_appends_seals():
     generated = orchestrator.automate_billing_cycle("POL-ORCH")
     breakdown = generated["premium_breakdown"]
     assert breakdown["savings_amount"] == 100.0
-    assert breakdown["split_label"] == "default"
+    assert breakdown["risk_amount"] == 100.0
+    assert breakdown["split_label"] == "kernel"
     assert breakdown["health_wallet_amount"] == 30.0
     assert breakdown["investment_amount"] == 65.0
     assert breakdown["algo_amount"] == 5.0
@@ -545,6 +564,9 @@ def test_checkout_without_pipeline_service_still_credits_savings():
         "status": "active",
         "annual_premium": 200.0,
         "monthly_premium": 200.0,
+        "risk_premium_annual": 100.0,
+        "savings_premium_annual": 100.0,
+        "pricing_source": "pricing_kernel",
     }
     portal.CUSTOMER_ALLOCATIONS.pop(customer_id, None)
     portal.HEALTH_WALLETS.pop(customer_id, None)
@@ -599,6 +621,9 @@ def test_orchestrator_algo_credit_lands_in_the_injected_store():
                 "status": "active",
                 "monthly_premium": 200.0,
                 "annual_premium": 2400.0,
+                "risk_premium_annual": 1200.0,
+                "savings_premium_annual": 1200.0,
+                "pricing_source": "pricing_kernel",
             }
         },
         health_wallets=wallets,

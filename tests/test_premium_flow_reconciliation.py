@@ -1,7 +1,13 @@
 """Marketplace commission is charged on the bid, and the premium table is read-only."""
 
 from services.nft_ledger import mint_token
-from services.premium_flow_reconciliation import reconcile_customer, reconcile_customers
+from services.premium_flow_reconciliation import (
+    claim_postings_due,
+    monitoring_report,
+    reconcile_customer,
+    reconcile_customers,
+    worked_specimen,
+)
 from services.supply_chain_ecosystem_service import (
     SupplierStatus,
     SupplyChainEcosystemService,
@@ -334,3 +340,53 @@ def test_supplier_bid_is_charged_commission_without_markup():
     assert order["total_amount"] == 160.00
     assert order["wallet_deduction"] == 160.00
     assert service.health_wallets["CUST-1"]["balance"] == 340.00
+
+
+def test_monitoring_list_names_the_platform_customers_and_flags_a_carve():
+    policy, bills, claims, ledger, _seals = _customer_x_books()
+    policy = dict(policy, savings_addon="growth")
+    report = monitoring_report(
+        customers={
+            "CUST-ASAF-001": {"name": "Asaf Assurance"},
+            "CUST-X": {"name": "Specimen"},
+        },
+        policies=[policy],
+        bills=bills,
+        claims=claims,
+        nft_ledger=ledger,
+        wallets={
+            "CUST-X": {"balance": 10.0},
+            "CUST-EFRAT-001": {"balance": 0},
+            "PHINS-CORPORATE": {"balance": 99},
+            "SYSTEM": {"balance": 1},
+        },
+        investments={"CUST-X": {"position": 0}},
+        algo={"CUST-X": {"available": 0}},
+    )
+    assert report["writes"] is False
+    by_id = {row["customer_id"]: row for row in report["customers"]}
+    for customer_id in ("CUST-ASAF-001", "CUST-EFRAT-001", "CUST-ASI-001", "CUST-SHOSH-001"):
+        assert by_id[customer_id]["on_watch_list"] is True
+    assert by_id["CUST-ASAF-001"]["name"] == "Asaf Assurance"
+    assert "PHINS-CORPORATE" not in by_id
+    assert "SYSTEM" not in by_id
+    assert by_id["CUST-EFRAT-001"]["name"] == "Efrat PHINS"
+    specimen = by_id["CUST-X"]
+    assert specimen["priority"] == "attention"
+    assert "savings_carved_from_premium" in specimen["flags"]
+    assert "unposted_claim" in specimen["flags"]
+    assert specimen["picture"]["risk_sent_to_savings"] == 0.0
+    assert specimen["picture"]["savings_kind"] == "growth"
+    assert specimen["claim_postings_due"] == [{
+        "customer_id": "CUST-X",
+        "claim_id": "CLM-X-1",
+        "amount": 800.0,
+        "stays_on_books": True,
+        "destination": "health_wallet",
+        "source": "claims_reserve",
+    }]
+    assert report["accumulated_funds"]["health_wallet"] == 10.0
+    assert report["accumulated_funds"]["unposted_claim_transfers"] == 800.0
+    due = claim_postings_due(worked_specimen())
+    assert [row["claim_id"] for row in due] == ["CLM-X-1"]
+    assert worked_specimen()["writes"] is False

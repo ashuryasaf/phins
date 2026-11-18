@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 logger = logging.getLogger("phins.financial_unification")
 
@@ -228,38 +228,85 @@ def kernel_components_from_policy(policy: Optional[Dict[str, Any]]) -> Dict[str,
     }
 
 
-def _cap_credits_to_collected(
-    collected: Decimal, credits: Sequence[Decimal]
-) -> List[Decimal]:
-    """Keep risk, savings, expense, and profit inside the cash just collected.
+_ADDON_RATES = {
+    "none": Decimal("0"),
+    "light": Decimal("0.25"),
+    "balanced": Decimal("0.50"),
+    "growth": Decimal("1"),
+}
+_LAYER_ORDER = ("risk", "expense", "profit", "savings")
 
-    A kernel pin is scaled by ``collected / annual_premium``. When that
-    annual figure is smaller than the pinned components, the raw credits
-    sum to more than the cash. Scale those credits back in the same
-    proportion so their sum is the cash collected. A consistent pin, whose
-    components already fit the annual premium, is returned unchanged.
+
+def _waterfall_cash(collected: Decimal, layers: Mapping[str, Decimal]) -> Dict[str, Decimal]:
+    """Fill risk, then expense, then profit, then the savings add-on.
+
+    A short payment leaves the later layers at zero. Risk is not reduced
+    to keep a savings percentage. Cash above the stack is excess, not savings.
     """
-    fitted = [money(credit) for credit in credits]
-    total = sum(fitted, Decimal("0.00"))
-    if total <= collected or collected <= 0:
-        return fitted
-    scaled = [
-        (credit * collected / total).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        for credit in fitted
-    ]
-    overflow = (sum(scaled, Decimal("0.00")) - collected).quantize(Decimal("0.01"))
-    if overflow > 0:
-        order = sorted(range(len(scaled)), key=lambda index: (scaled[index], index), reverse=True)
-        for index in order:
-            if overflow <= 0:
-                break
-            take = min(scaled[index], overflow)
-            scaled[index] = (scaled[index] - take).quantize(Decimal("0.01"))
-            overflow -= take
-    elif overflow < 0:
-        index = max(range(len(fitted)), key=lambda i: (fitted[i], -i))
-        scaled[index] = (scaled[index] - overflow).quantize(Decimal("0.01"))
-    return scaled
+    left = collected if collected > 0 else Decimal("0.00")
+    landed: Dict[str, Decimal] = {}
+    for name in _LAYER_ORDER:
+        target = money(layers.get(name) or 0)
+        if target < 0:
+            target = Decimal("0.00")
+        take = target if target <= left else left
+        landed[name] = take
+        left = (left - take).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    landed["excess"] = left if left > 0 else Decimal("0.00")
+    return landed
+
+
+def _scale_layers(layers: Mapping[str, Decimal], numerator: Decimal, denominator: Decimal) -> Dict[str, Decimal]:
+    if denominator <= 0:
+        return {name: Decimal("0.00") for name in _LAYER_ORDER}
+    return {
+        name: (money(layers.get(name) or 0) * numerator / denominator).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        for name in _LAYER_ORDER
+    }
+
+
+def _period_layers(annual_layers: Mapping[str, Decimal], collected: Decimal) -> Dict[str, Decimal]:
+    """Installment stack that can hold this payment. A short month stays monthly."""
+    for divisor in (12, 4, 1):
+        scaled = _scale_layers(annual_layers, Decimal(1), Decimal(divisor))
+        stack = sum(scaled.values(), Decimal("0.00"))
+        if collected <= stack + Decimal("0.01"):
+            return scaled
+    return {name: money(annual_layers.get(name) or 0) for name in _LAYER_ORDER}
+
+
+def _elected_savings(policy: Optional[Dict[str, Any]], kernel: Mapping[str, Any]) -> Tuple[Decimal, str, str]:
+    """Savings add-on only. The kernel risk premium is never elected as savings.
+
+    A stored savings pin wins. Otherwise ``savings_addon`` (light, balanced,
+    growth) or ``savings_rate`` prices the add-on as a multiple of the risk
+    premium. No election means no savings.
+    """
+    if kernel.get("savings_pin_present"):
+        return (
+            money(kernel.get("savings_premium_annual")),
+            "kernel",
+            f"kernel:{kernel.get('source') or 'policy'}",
+        )
+    policy = policy or {}
+    addon = str(policy.get("savings_addon") or "").strip().lower()
+    risk = money(kernel.get("risk_premium_annual"))
+    if addon in _ADDON_RATES:
+        rate = _ADDON_RATES[addon]
+        if rate <= 0:
+            return Decimal("0.00"), "no_savings_election", "no_savings_election"
+        label = "growth" if addon == "growth" else "addon"
+        return (risk * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), label, f"addon:{addon}"
+    if policy.get("savings_rate") is not None:
+        rate = money(policy.get("savings_rate"))
+        if rate <= 0:
+            return Decimal("0.00"), "no_savings_election", "no_savings_election"
+        label = "growth" if rate >= 1 else "addon"
+        source = "addon:growth" if rate >= 1 else "addon:rate"
+        return (risk * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), label, source
+    return Decimal("0.00"), "no_savings_election", "no_savings_election"
 
 
 def resolve_premium_split(
@@ -267,69 +314,76 @@ def resolve_premium_split(
     policy: Optional[Dict[str, Any]] = None,
     fallback_risk_pct: Any = 100,
 ) -> Dict[str, Any]:
-    """Split a collected premium into risk, savings, expense, and profit.
+    """Split collected premium into risk, savings, expense, and profit.
 
-    When the policy pin has ``savings_premium`` / ``savings_premium_annual``,
-    only that component is savings. Expense and profit stay on the company
-    book and are not the complement of risk.
+    The kernel risk premium is filled first and is never credited as savings.
+    Only a savings pin, a savings add-on, or a growth add is savings. Expense
+    and profit stay on the company book. A missing election is pure risk:
+    the old 50/50 carve is not applied. ``fallback_risk_pct`` is ignored.
 
-    When the pin is missing, the split is the 50/50 cash default. That label
-    is ``default``. ``fallback_risk_pct`` is not applied: a caller preference
-    is not a recorded historical split.
-
-    The four credits together never exceed the cash collected. A smaller
-    ``annual_premium`` than the pinned components scales those credits back
-    onto the cash instead of minting savings.
+    A consistent annual pin is shared across the cash in the same proportions,
+    so a full installment still lands its add-on. When the pins do not fit
+    the annual premium, or the payment is short of that installment, later
+    layers wait. Risk is not scaled down to manufacture savings. The four
+    credits never exceed the cash collected.
     """
     del fallback_risk_pct  # retained so existing callers keep working
     collected = money(amount)
     kernel = kernel_components_from_policy(policy)
-    risk_ann = money(kernel["risk_premium_annual"])
-    sav_ann = money(kernel["savings_premium_annual"])
-    annual = money(kernel["annual_premium"])
-    expense_amount = Decimal("0.00")
-    profit_amount = Decimal("0.00")
-    if kernel.get("savings_pin_present") and annual > 0:
-        risk_amount = (collected * risk_ann / annual).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
-        savings_amount = (collected * sav_ann / annual).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
-        if kernel.get("expense_loading_annual") is not None:
-            expense_amount = (
-                collected * money(kernel["expense_loading_annual"]) / annual
-            ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        if kernel.get("profit_margin_annual") is not None:
-            profit_amount = (
-                collected * money(kernel["profit_margin_annual"]) / annual
-            ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        source = f"kernel:{kernel['source']}"
-        split_label = "kernel"
-        risk_amount, savings_amount, expense_amount, profit_amount = _cap_credits_to_collected(
-            collected,
-            (risk_amount, savings_amount, expense_amount, profit_amount),
-        )
+    savings_annual, split_label, source = _elected_savings(policy, kernel)
+    risk_annual = money(kernel.get("risk_premium_annual"))
+    expense_annual = (
+        money(kernel.get("expense_loading_annual"))
+        if kernel.get("expense_loading_annual") is not None
+        else Decimal("0.00")
+    )
+    profit_annual = (
+        money(kernel.get("profit_margin_annual"))
+        if kernel.get("profit_margin_annual") is not None
+        else Decimal("0.00")
+    )
+    annual_layers = {
+        "risk": risk_annual,
+        "expense": expense_annual,
+        "profit": profit_annual,
+        "savings": savings_annual,
+    }
+    annual = money(kernel.get("annual_premium"))
+    stack = sum(annual_layers.values(), Decimal("0.00"))
+    pinned_loadings = (
+        kernel.get("expense_loading_annual") is not None
+        or kernel.get("profit_margin_annual") is not None
+        or kernel.get("savings_pin_present")
+        or split_label in ("addon", "growth")
+    )
+    if collected <= 0:
+        landed = {name: Decimal("0.00") for name in _LAYER_ORDER}
+        landed["excess"] = Decimal("0.00")
+    elif not pinned_loadings:
+        # The premium collected is the risk key. None of it is savings.
+        landed = {
+            "risk": collected,
+            "expense": Decimal("0.00"),
+            "profit": Decimal("0.00"),
+            "savings": Decimal("0.00"),
+            "excess": Decimal("0.00"),
+        }
+    elif annual > 0 and stack <= annual + Decimal("0.01"):
+        targets = _scale_layers(annual_layers, collected, annual)
+        landed = _waterfall_cash(collected, targets)
     else:
-        risk_amount = (collected * Decimal("0.50")).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
-        savings_amount = (collected - risk_amount).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
-        source = "default"
-        split_label = "default"
+        landed = _waterfall_cash(collected, _period_layers(annual_layers, collected))
+    risk_amount = landed["risk"]
+    savings_amount = landed["savings"]
+    expense_amount = landed["expense"]
+    profit_amount = landed["profit"]
     if collected > 0:
         risk_pct = (risk_amount / collected * Decimal("100")).quantize(Decimal("0.01"))
         savings_pct = (savings_amount / collected * Decimal("100")).quantize(Decimal("0.01"))
     else:
         risk_pct = Decimal("0.00")
         savings_pct = Decimal("0.00")
-    company_remainder = (
-        collected - risk_amount - savings_amount - expense_amount - profit_amount
-    ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    if company_remainder < 0:
-        company_remainder = Decimal("0.00")
+    company_remainder = money(landed["excess"])
     return {
         "amount": float(collected),
         "risk_percentage": float(risk_pct),

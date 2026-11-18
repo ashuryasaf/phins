@@ -409,9 +409,9 @@ class TestBillingAutomation:
         result = orchestrator.automate_billing_cycle('POL-001')
         assert result['success'] is True
         assert result['bill']['amount_due'] == 500.0
-        assert result['premium_breakdown']['savings_percentage'] == 50.0
-        assert result['premium_breakdown']['split_label'] == 'default'
-        assert result['premium_breakdown']['health_wallet_amount'] == 75.0
+        assert result['premium_breakdown']['savings_percentage'] == 0.0
+        assert result['premium_breakdown']['split_label'] == 'no_savings_election'
+        assert result['premium_breakdown']['health_wallet_amount'] == 0.0
 
     def test_billing_inactive_policy(self, orchestrator):
         orchestrator.policies['POL-INACTIVE'] = {'status': 'cancelled'}
@@ -424,8 +424,7 @@ class TestBillingAutomation:
         result = orchestrator.process_billing_payment(bill_id, 500.0)
         assert result['success'] is True
         assert result['status'] == 'paid'
-        assert result['wallet_credit'] is not None
-        assert result['wallet_credit']['credited'] is True
+        assert result['wallet_credit'] is None
 
     def test_partial_payment(self, orchestrator):
         gen = orchestrator.automate_billing_cycle('POL-001')
@@ -754,7 +753,7 @@ class TestEndToEndPipeline:
 
         pay_result = orchestrator.process_billing_payment(bill_id, 500.0)
         assert pay_result['success'] is True
-        assert pay_result['wallet_credit']['credited'] is True
+        assert pay_result['wallet_credit'] is None
 
         supply_result = orchestrator.validate_new_supply('SUP-001', {
             'name': 'Blood Test Kit',

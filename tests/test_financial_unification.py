@@ -54,13 +54,13 @@ def test_kernel_split_prefers_policy_pin_over_allocation_prefs():
     assert split["integrity_hash"] == "abc123"
 
 
-def test_split_falls_back_to_allocation_when_no_kernel_pin():
+def test_split_without_a_savings_election_is_pure_risk():
     split = resolve_premium_split(200.0, {"annual_premium": 2400.0}, fallback_risk_pct=75)
-    assert split["risk_percentage"] == 50.0
-    assert split["risk_amount"] == 100.0
-    assert split["savings_amount"] == 100.0
-    assert split["split_source"] == "default"
-    assert split["split_label"] == "default"
+    assert split["risk_percentage"] == 100.0
+    assert split["risk_amount"] == 200.0
+    assert split["savings_amount"] == 0.0
+    assert split["split_source"] == "no_savings_election"
+    assert split["split_label"] == "no_savings_election"
 
 
 def test_premium_and_claim_cash_post_to_same_accounting_book():
@@ -1004,9 +1004,9 @@ def test_kernel_split_never_borrows_another_policy_of_the_same_customer():
     }
     untagged = {"type": "premium_payment", "amount": 100.0, "customer_id": "CUST-M"}
     ambiguous = kernel_savings_cash_from_ledger([untagged], policies)
-    # No pin can be chosen, so the cash is the 50/50 default, not POL-SAVE's 80%.
-    assert ambiguous["savings_amount"] == 50.0
-    assert ambiguous["risk_amount"] == 50.0
+    # No single pin can be chosen, so the cash stays risk and is not POL-SAVE's 80%.
+    assert ambiguous["savings_amount"] == 0.0
+    assert ambiguous["risk_amount"] == 100.0
 
     tagged = dict(untagged, metadata={"policy_id": "POL-SAVE"})
     own_split = kernel_savings_cash_from_ledger([tagged], policies)

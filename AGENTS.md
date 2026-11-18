@@ -168,6 +168,23 @@ PHINS is a Python platform built around:
  block) and the claim model (`MUTUALLY_EXCLUSIVE` default, `INDEPENDENT`) are
  parameters. Sandbox, simulator, IFRS 17 waterfall and the actuary dashboard
  all reprice through it — never through a parallel path
+- cash-flow integrity (`services/financial_unification_service.py`
+ `resolve_premium_split`, read side `services/premium_flow_reconciliation.py`):
+ kernel risk is filled first and is never credited as savings. Only a savings
+ pin, `savings_addon` (light/balanced/growth), or `savings_rate` is savings;
+ no election means the whole collected premium is risk. Savings destinations
+ stay 30% health wallet / 65% investments / 5% algo. Paid claims stay on the
+ claims book; `POST /api/admin/cashflow/post-claim-transfers` moves an
+ unposted amount from the reserve to the health wallet and does not rewrite
+ the claim or a broken NFT seal. `GET /api/admin/cashflow/monitoring`
+ (admin, accountant, actuary, claims) is the roster on
+ `/cashflow-integrity.html`: standing watch is Asaf Assurance
+ (`CUST-ASAF-001`), Efrat PHINS (`CUST-EFRAT-001`), Asi PHINS
+ (`CUST-ASI-001`), and Shosh PHINS (`CUST-SHOSH-001`), plus anyone else
+ learned from policies, bills, claims, wallets, or NFT seals. Platform ids
+ (`PHINS-CORPORATE`, `SYSTEM`) are not customers. A customer reads only their
+ own picture at `GET /api/customer/premium-picture`. The page is a live
+ dashboard (`data-phins-letterhead="off"`); the return bar stays
 - chat intake (Phin) is a parallel surface to the classic forms.
   Any committed answer on `/apply-chat.html` and `/file-a-claim.html` can be
   edited until filing. Edits are an append-only checksum chain
