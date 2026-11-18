@@ -1522,6 +1522,60 @@ def test_internal_transfer_cannot_spend_cash_an_invest_already_reserved():
         portal.HEALTH_WALLETS.pop(customer_id, None)
 
 
+def test_internal_transfer_peels_mirrored_portfolio_cash():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-13"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 0.0, "transactions": []}
+    first = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-13A", 0.0)
+    second = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-13B", 0.0)
+    first.balance = 60.0
+    second.balance = 65.0
+    try:
+        status, body = _post_json("/api/unified-payment/deposit", {
+            "customer_id": customer_id,
+            "amount": 100.0,
+            "destination": "health_wallet",
+            "payment_method": "internal_transfer",
+            "source_account": "investment",
+        })
+        assert status == 200, body
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 100.0
+        assert round(first.balance + second.balance, 2) == 25.0
+        keeper = first if first.balance > 0 else second
+        emptied = second if keeper is first else first
+        assert emptied.balance == 0.0
+        refused, refused_body = _post_json("/api/savings/withdraw", {
+            "account_id": emptied.account_id,
+            "amount": 60.0,
+        })
+        assert refused == 400, refused_body
+        leftover, leftover_body = _post_json("/api/savings/withdraw", {
+            "account_id": keeper.account_id,
+            "amount": 25.0,
+        })
+        assert leftover == 200, leftover_body
+        assert keeper.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 100.0
+        again, again_body = _post_json("/api/savings/withdraw", {
+            "account_id": keeper.account_id,
+            "amount": 25.0,
+        })
+        assert again == 400, again_body
+    finally:
+        portal.portfolio_service.accounts.pop(first.account_id, None)
+        portal.portfolio_service.accounts.pop(second.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+
+
 def test_unflagged_invest_blocks_an_algo_transfer_of_the_reserved_cash():
     import threading
     import web_portal.server as portal

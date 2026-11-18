@@ -58478,23 +58478,78 @@ For claims or questions, please contact:
                         health_debited = True
                         health_open = (wallet, float(amount))
                     elif source_account == 'investment':
-                        from services.savings_pipeline_service import debit_account_balance
-                        inv_acc = INVESTMENT_ACCOUNTS.get(customer_id)
-                        new_inv = (
-                            debit_account_balance(inv_acc, amount)
-                            if isinstance(inv_acc, dict) else None
+                        # Savings locks first, then the row. A deposit mirrors
+                        # this cash onto every savings account. Debiting only
+                        # the row would leave that copy withdrawable.
+                        from services.savings_pipeline_service import (
+                            debit_account_balance,
+                            named_row_lock,
                         )
-                        if new_inv is None:
-                            live = float(inv_acc.get('balance', 0) or 0) if isinstance(inv_acc, dict) else 0.0
+                        portfolio_accounts = []
+                        if portfolio_enabled and portfolio_service:
+                            try:
+                                portfolio_accounts = list(
+                                    portfolio_service.get_customer_accounts(customer_id) or []
+                                )
+                            except Exception:
+                                portfolio_accounts = []
+                        savings_locks = []
+                        ordered_accounts = []
+                        for portfolio_account in sorted(
+                            portfolio_accounts,
+                            key=lambda item: str(getattr(item, 'account_id', '')),
+                        ):
+                            savings_id = getattr(portfolio_account, 'account_id', None)
+                            if not savings_id:
+                                continue
+                            savings_lock = named_row_lock(f"savings:{savings_id}")
+                            if savings_lock not in savings_locks:
+                                savings_locks.append(savings_lock)
+                                ordered_accounts.append(portfolio_account)
+                        acquired_savings = 0
+                        short_live = None
+                        try:
+                            for savings_lock in savings_locks:
+                                savings_lock.acquire()
+                                acquired_savings += 1
+                            inv_acc = INVESTMENT_ACCOUNTS.get(customer_id)
+                            new_inv = (
+                                debit_account_balance(inv_acc, amount)
+                                if isinstance(inv_acc, dict) else None
+                            )
+                            if new_inv is None:
+                                short_live = (
+                                    float(inv_acc.get('balance', 0) or 0)
+                                    if isinstance(inv_acc, dict) else 0.0
+                                )
+                            else:
+                                source_balance = round(new_inv + float(amount), 2)
+                                peeled = []
+                                investment_open = (inv_acc, float(amount), peeled)
+                                left = round(float(amount), 2)
+                                for portfolio_account in ordered_accounts:
+                                    if left <= 0:
+                                        break
+                                    live_cash = round(
+                                        float(getattr(portfolio_account, 'balance', 0) or 0),
+                                        2,
+                                    )
+                                    spend = min(live_cash, left)
+                                    if spend > 0:
+                                        portfolio_account.balance = round(live_cash - spend, 2)
+                                        peeled.append((portfolio_account, spend))
+                                        left = round(left - spend, 2)
+                        finally:
+                            for savings_lock in reversed(savings_locks[:acquired_savings]):
+                                savings_lock.release()
+                        if short_live is not None:
                             self._set_json_headers(400)
                             self.wfile.write(json.dumps({
                                 'error': 'Insufficient funds',
-                                'source_balance': live,
+                                'source_balance': short_live,
                                 'required': amount
                             }).encode('utf-8'))
                             return
-                        source_balance = round(new_inv + float(amount), 2)
-                        investment_open = (inv_acc, float(amount))
                     elif source_account == 'algo_trading':
                         if unified_balance_enabled:
                             algo_bal = unified_balance_service.get_algo_trading_balance(customer_id)
@@ -58842,8 +58897,33 @@ For claims or questions, please contact:
                     from services.savings_pipeline_service import credit_account_balance
                     credit_account_balance(health_open[0], health_open[1])
                 if investment_open is not None and not source_released:
-                    from services.savings_pipeline_service import credit_account_balance
-                    credit_account_balance(investment_open[0], investment_open[1])
+                    from services.savings_pipeline_service import (
+                        credit_account_balance,
+                        named_row_lock,
+                    )
+                    inv_row, inv_amount, peeled = investment_open
+                    restore_locks = []
+                    for portfolio_account, _spend in peeled:
+                        savings_id = getattr(portfolio_account, 'account_id', None)
+                        if not savings_id:
+                            continue
+                        restore_lock = named_row_lock(f"savings:{savings_id}")
+                        if restore_lock not in restore_locks:
+                            restore_locks.append(restore_lock)
+                    acquired_restore = 0
+                    try:
+                        for restore_lock in restore_locks:
+                            restore_lock.acquire()
+                            acquired_restore += 1
+                        credit_account_balance(inv_row, inv_amount)
+                        for portfolio_account, spend in peeled:
+                            portfolio_account.balance = round(
+                                float(getattr(portfolio_account, 'balance', 0) or 0) + spend,
+                                2,
+                            )
+                    finally:
+                        for restore_lock in reversed(restore_locks[:acquired_restore]):
+                            restore_lock.release()
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
