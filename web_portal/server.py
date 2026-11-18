@@ -60514,7 +60514,9 @@ For claims or questions, please contact:
                 if integrity_service_enabled and customer_id:
                     pre_integrity = integrity_service.validate_customer_integrity(customer_id)
                 
-                result = portfolio_service.deposit(account_id, amount, source)
+                from services.savings_pipeline_service import named_row_lock
+                with named_row_lock(f"savings:{account_id}"):
+                    result = portfolio_service.deposit(account_id, amount, source)
                 
                 if result.get('success'):
                     # SYNC: Also update INVESTMENT_ACCOUNTS (master record)
@@ -60612,7 +60614,9 @@ For claims or questions, please contact:
                 if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account', allow_staff=False):
                     return
                 
-                result = portfolio_service.withdraw(account_id, amount, reason)
+                from services.savings_pipeline_service import named_row_lock
+                with named_row_lock(f"savings:{account_id}"):
+                    result = portfolio_service.withdraw(account_id, amount, reason)
                 
                 if result.get('success') and audit:
                     try:
@@ -60708,7 +60712,6 @@ For claims or questions, please contact:
                                             reserved_wallet = take_wallet
                                     if not short:
                                         funded_from_stores = True
-                                        account.balance = round(float(account.balance or 0) + amount, 2)
                         finally:
                             for lock in reversed(held):
                                 lock.release()
@@ -60736,15 +60739,13 @@ For claims or questions, please contact:
                         result = {'success': False, 'error': 'Insufficient funds'}
                     else:
                         try:
-                            result = portfolio_service.invest(account_id, symbol, amount)
+                            result = portfolio_service.invest(
+                                account_id, symbol, amount, spend_cash=not funded_from_stores,
+                            )
                         except Exception:
-                            if funded_from_stores and account is not None:
-                                account.balance = round(float(account.balance or 0) - amount, 2)
                             _return_invest_reserve()
                             raise
                         if not result.get('success'):
-                            if funded_from_stores and account is not None:
-                                account.balance = round(float(account.balance or 0) - amount, 2)
                             _return_invest_reserve()
                 finally:
                     account_lock.release()
@@ -60785,7 +60786,9 @@ For claims or questions, please contact:
                 if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account', allow_staff=False):
                     return
                 
-                result = portfolio_service.sell_asset(account_id, symbol, quantity)
+                from services.savings_pipeline_service import named_row_lock
+                with named_row_lock(f"savings:{account_id}"):
+                    result = portfolio_service.sell_asset(account_id, symbol, quantity)
                 
                 if result.get('success') and audit:
                     try:
@@ -63640,9 +63643,12 @@ For claims or questions, please contact:
                 for _bulk_lock in _bulk_locks:
                     _bulk_lock.acquire()
                 try:
+                    locked_ids = set(_bulk_lock_ids)
                     customer_bills = [
                         (bid, b) for bid, b in BILLING.items()
-                        if b.get('customer_id') == customer_id and status_in(b, ['outstanding', 'partial', 'overdue'])
+                        if bid in locked_ids
+                        and b.get('customer_id') == customer_id
+                        and status_in(b, ['outstanding', 'partial', 'overdue'])
                     ]
                     wallet_balance = float(wallet.get('balance', 0) or 0)
                     if not customer_bills:

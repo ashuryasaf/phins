@@ -1215,10 +1215,10 @@ def test_invest_reserves_wallet_cash_before_the_trade_is_booked():
     seen = {}
     original = portal.portfolio_service.invest
 
-    def _spy(account_id, symbol, amount):
+    def _spy(account_id, symbol, amount, **kwargs):
         seen["wallet"] = portal.HEALTH_WALLETS[customer_id]["balance"]
         seen["investment"] = portal.INVESTMENT_ACCOUNTS[customer_id]["balance"]
-        return original(account_id, symbol, amount)
+        return original(account_id, symbol, amount, **kwargs)
 
     portal.portfolio_service.invest = _spy
     try:
@@ -1276,7 +1276,7 @@ def test_invest_returns_reserved_cash_when_the_trade_is_not_booked():
     account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-3", 0.0)
     original = portal.portfolio_service.invest
 
-    def _reject(account_id, symbol, amount):
+    def _reject(account_id, symbol, amount, **_kwargs):
         return {"success": False, "error": "rejected"}
 
     portal.portfolio_service.invest = _reject
@@ -1296,6 +1296,119 @@ def test_invest_returns_reserved_cash_when_the_trade_is_not_booked():
         portal.portfolio_service.accounts.pop(account.account_id, None)
         portal.HEALTH_WALLETS.pop(customer_id, None)
         portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_store_funded_invest_leaves_portfolio_cash_unchanged():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-6"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 0.0, "balance_is_unallocated_cash": True}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-6", 0.0)
+    account.balance = 25.0
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 80.0,
+        })
+        assert status == 200, body
+        assert account.balance == 25.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 20.0
+        assert len(account.assets) == 1
+    finally:
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_failed_store_funded_invest_does_not_change_portfolio_cash():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-7"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 0.0, "balance_is_unallocated_cash": True}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-7", 0.0)
+    account.balance = 25.0
+    original = portal.portfolio_service.invest
+
+    def _reject(account_id, symbol, amount, spend_cash=True):
+        return {"success": False, "error": "rejected"}
+
+    portal.portfolio_service.invest = _reject
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 80.0,
+        })
+        assert status == 400, body
+        assert account.balance == 25.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 100.0
+        assert account.assets == []
+    finally:
+        portal.portfolio_service.invest = original
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_failed_bulk_pay_does_not_restore_an_unlocked_bill():
+    import services.savings_pipeline_service as pipeline
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-HOLD-5"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.BILLING["BILL-HOLD-5"] = {
+        "bill_id": "BILL-HOLD-5",
+        "customer_id": customer_id,
+        "amount": 40.0,
+        "amount_paid": 0.0,
+        "status": "outstanding",
+    }
+    original_lock = pipeline.named_row_lock
+    original_tx = portal.record_transaction
+    inserted = {"done": False}
+
+    def _lock(name):
+        if not inserted["done"]:
+            inserted["done"] = True
+            portal.BILLING["BILL-NEW-5"] = {
+                "bill_id": "BILL-NEW-5",
+                "customer_id": customer_id,
+                "amount": 30.0,
+                "amount_paid": 0.0,
+                "status": "outstanding",
+            }
+        return original_lock(name)
+
+    def _boom(**_kwargs):
+        portal.BILLING["BILL-NEW-5"]["status"] = "paid"
+        portal.BILLING["BILL-NEW-5"]["amount_paid"] = 30.0
+        portal.BILLING["BILL-NEW-5"]["paid_date"] = "concurrent"
+        raise RuntimeError("seal failed")
+
+    pipeline.named_row_lock = _lock
+    portal.record_transaction = _boom
+    try:
+        status, body = _post_json("/api/billing/pay-all-from-wallet", {
+            "customer_id": customer_id,
+        })
+        assert status == 400, body
+        assert portal.BILLING["BILL-HOLD-5"]["status"] == "outstanding"
+        assert portal.BILLING["BILL-HOLD-5"]["amount_paid"] == 0.0
+        assert portal.BILLING["BILL-NEW-5"]["paid_date"] == "concurrent"
+        assert portal.BILLING["BILL-NEW-5"]["amount_paid"] == 30.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 100.0
+    finally:
+        pipeline.named_row_lock = original_lock
+        portal.record_transaction = original_tx
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.BILLING.pop("BILL-HOLD-5", None)
+        portal.BILLING.pop("BILL-NEW-5", None)
 
 
 def test_invest_does_not_spend_a_stale_portfolio_balance():
@@ -1335,7 +1448,7 @@ def test_second_invest_waits_and_does_not_book_the_reserved_cash():
     original = portal.portfolio_service.invest
     seen = {"n": 0}
 
-    def _spy(account_id, symbol, amount):
+    def _spy(account_id, symbol, amount, **kwargs):
         seen["n"] += 1
         if seen["n"] == 1:
             def _second():
@@ -1349,7 +1462,7 @@ def test_second_invest_waits_and_does_not_book_the_reserved_cash():
             worker.join(0.2)
             seen["blocked"] = worker.is_alive()
             seen["worker"] = worker
-        return original(account_id, symbol, amount)
+        return original(account_id, symbol, amount, **kwargs)
 
     portal.portfolio_service.invest = _spy
     try:
