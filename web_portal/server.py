@@ -40098,12 +40098,13 @@ For claims or questions, please contact:
             total_investment_deposits = 0.0
             investment_by_type = {'index': 0.0, 'bonds': 0.0, 'crypto': 0.0}
             for account in INVESTMENT_ACCOUNTS.values():
-                total_investment_balance += float(account.get('balance', 0))
+                total_investment_balance += _investment_books(account)['position']
                 investment_by_type['index'] += float(account.get('index_balance', 0))
                 investment_by_type['bonds'] += float(account.get('bonds_balance', 0))
                 investment_by_type['crypto'] += float(account.get('crypto_balance', 0))
                 for dep in account.get('deposits', []):
                     total_investment_deposits += float(dep.get('amount', 0))
+            total_investment_balance = round(total_investment_balance, 2)
             
             # 6. Supplier Offers/Payments
             total_supplier_offers = len(SUPPLIER_OFFERS)
