@@ -317,13 +317,19 @@ class InvestmentPortfolioService:
         
         return {"success": True, "transaction": transaction, "new_balance": account.balance}
     
-    def invest(self, account_id: str, symbol: str, amount: float) -> Dict:
-        """Invest funds into a specific asset"""
+    def invest(self, account_id: str, symbol: str, amount: float, *, spend_cash: bool = True) -> Dict:
+        """Invest funds into a specific asset.
+
+        ``spend_cash`` is false when the caller already reserved the cash on
+        the investment row and the health wallet. The caller then removes
+        the investment-row portion from this cash figure. Wallet cash that
+        was never on the portfolio is not removed here.
+        """
         account = self.accounts.get(account_id)
         if not account:
             return {"success": False, "error": "Account not found"}
         
-        if amount > account.balance:
+        if spend_cash and amount > account.balance:
             return {"success": False, "error": "Insufficient funds"}
         
         market = self.MARKET_DATA.get(symbol)
@@ -353,7 +359,8 @@ class InvestmentPortfolioService:
             )
             account.assets.append(asset)
         
-        account.balance -= amount
+        if spend_cash:
+            account.balance -= amount
         transaction = {
             "id": f"INV-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}",
             "type": "invest",

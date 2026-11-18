@@ -264,6 +264,61 @@ def _investment_row_lock(account: Dict[str, Any]) -> threading.RLock:
     return account_book_lock(account)
 
 
+_named_row_locks: Dict[str, threading.RLock] = {}
+_named_row_guard = threading.Lock()
+
+
+def named_row_lock(name: str) -> threading.RLock:
+    """Lock for one bill or one savings account, keyed by name.
+
+    Callers that take several of these locks acquire them in sorted name
+    order. The lock is re-entrant.
+    """
+    key = str(name or "")
+    with _named_row_guard:
+        lock = _named_row_locks.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _named_row_locks[key] = lock
+        return lock
+
+
+def debit_account_balance(account: Dict[str, Any], amount: float) -> Optional[float]:
+    """Subtract ``amount`` from a row under its lock.
+
+    Returns the new balance. Returns None when the row is missing or the
+    live balance cannot cover the debit, and leaves that row unchanged.
+    The balance is not taken below zero.
+    """
+    if not isinstance(account, dict):
+        return None
+    needed = round(float(amount or 0), 2)
+    if needed <= 0:
+        return None
+    with account_book_lock(account):
+        live = round(float(account.get('balance', 0) or 0), 2)
+        if live + 1e-9 < needed:
+            return None
+        account['balance'] = round(live - needed, 2)
+        return account['balance']
+
+
+def credit_account_balance(account: Dict[str, Any], amount: float) -> Optional[float]:
+    """Add ``amount`` back to a row under its lock.
+
+    Used when a debit already landed and a later step in the same request
+    did not. The add is applied to the live balance.
+    """
+    if not isinstance(account, dict):
+        return None
+    credit = round(float(amount or 0), 2)
+    if credit <= 0:
+        return None
+    with account_book_lock(account):
+        account['balance'] = round(float(account.get('balance', 0) or 0) + credit, 2)
+        return account['balance']
+
+
 _algo_credit_locks: Dict[str, threading.RLock] = {}
 _algo_credit_guard = threading.Lock()
 

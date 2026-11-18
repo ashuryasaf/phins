@@ -957,6 +957,1833 @@ def test_overlapping_wallet_deposits_credit_algo_once():
     assert algo == 80.0
 
 
+def test_wallet_is_reserved_before_the_seal_and_a_bill_cannot_take_it():
+    from services.savings_pipeline_service import debit_account_balance
+
+    wallet = {"balance": 100.0, "transactions": []}
+    service, _recorded = _balance_service({})
+    service.health_wallets = {"CUST-1": wallet}
+    in_seal = threading.Event()
+    release = threading.Event()
+
+    def _record(**_kwargs):
+        in_seal.set()
+        assert release.wait(timeout=5)
+        return {"id": "TX-1", "nft_token_id": "NFT-1"}
+
+    service.record_transaction = _record
+    result = {}
+
+    def _transfer():
+        result["row"] = service.transfer_to_algo_trading("CUST-1", 80.0, "health_wallet")
+
+    transfer = threading.Thread(target=_transfer)
+    transfer.start()
+    assert in_seal.wait(timeout=5)
+    assert wallet["balance"] == 20.0
+
+    bill = {}
+
+    def _pay_bill():
+        bill["left"] = debit_account_balance(wallet, 80.0)
+
+    payer = threading.Thread(target=_pay_bill)
+    payer.start()
+    payer.join(timeout=0.2)
+    assert payer.is_alive()
+    release.set()
+    transfer.join(timeout=5)
+    payer.join(timeout=5)
+    assert not transfer.is_alive()
+    assert not payer.is_alive()
+    assert result["row"]["success"] is True
+    assert bill["left"] is None
+    assert wallet["balance"] == 20.0
+    assert service.algo_trading_balances["CUST-1"]["available"] == 80.0
+
+
+def test_wallet_deposit_cannot_restore_cash_reserved_for_algo():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-WAL-RACE"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    service = portal.unified_balance_service
+    original = service.record_transaction
+    seen = {}
+
+    def _record(**kwargs):
+        def _deposit():
+            seen["deposit"] = _post_json("/api/health-wallet/deposit", {
+                "customer_id": customer_id,
+                "amount": 40.0,
+            })
+
+        worker = threading.Thread(target=_deposit)
+        worker.start()
+        worker.join(0.4)
+        seen["blocked"] = worker.is_alive()
+        seen["during"] = portal.HEALTH_WALLETS[customer_id]["balance"]
+        seen["worker"] = worker
+        return original(**kwargs)
+
+    service.record_transaction = _record
+    try:
+        status, body = _post_json("/api/balance/transfer-to-algo", {
+            "customer_id": customer_id,
+            "amount": 100.0,
+            "source": "health_wallet",
+        })
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        assert status == 200, body
+        assert seen.get("blocked") is True
+        assert seen["during"] == 0.0
+        assert seen["deposit"][0] == 200, seen["deposit"]
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 40.0
+        algo = service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 100.0
+    finally:
+        service.record_transaction = original
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_failed_wallet_seal_returns_the_reservation():
+    wallet = {"balance": 100.0, "transactions": []}
+    service, _recorded = _balance_service({})
+    service.health_wallets = {"CUST-1": wallet}
+
+    def _record(**_kwargs):
+        wallet["balance"] += 15.0
+        raise RuntimeError("seal failed")
+
+    service.record_transaction = _record
+    try:
+        service.transfer_to_algo_trading("CUST-1", 40.0, "health_wallet")
+        raised = False
+    except RuntimeError:
+        raised = True
+    assert raised is True
+    assert wallet["balance"] == 115.0
+    assert wallet["transactions"] == []
+    assert float(service.algo_trading_balances.get("CUST-1", {}).get("available", 0) or 0) == 0.0
+
+
+def _keep_injected_portal_state():
+    import os
+    import web_portal.server as portal
+
+    port = int(os.environ.get("TEST_PORT", "0") or 0)
+    if port:
+        portal._TEST_PORTS_INITIALIZED.add(port)
+
+
+def test_failed_bill_pay_returns_the_wallet_debit():
+    import json
+    import os
+    from urllib.error import HTTPError
+    from urllib.request import Request, urlopen
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-HOLD-1"
+    bill_id = "BILL-HOLD-1"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.BILLING[bill_id] = {
+        "bill_id": bill_id,
+        "customer_id": customer_id,
+        "amount": 40.0,
+        "amount_due": 40.0,
+        "amount_paid": 0.0,
+        "status": "outstanding",
+    }
+    original = portal.record_transaction
+    called = {"n": 0}
+
+    def _boom_counted(**_kwargs):
+        called["n"] += 1
+        raise RuntimeError("seal failed")
+
+    portal.record_transaction = _boom_counted
+    try:
+        payload = json.dumps({
+            "bill_id": bill_id,
+            "amount": 40.0,
+            "payment_method": "health_wallet",
+        }).encode()
+        request = Request(
+            os.environ["TEST_BASE_URL"] + "/api/billing/pay",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            urlopen(request)
+            status, detail = 200, ""
+        except HTTPError as exc:
+            status, detail = exc.code, exc.read().decode()
+        assert status == 400, detail
+        assert called["n"] == 1
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 100.0
+        assert portal.HEALTH_WALLETS[customer_id]["transactions"] == []
+        assert portal.BILLING[bill_id]["status"] == "outstanding"
+        assert portal.BILLING[bill_id]["amount_paid"] == 0.0
+    finally:
+        portal.record_transaction = original
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.BILLING.pop(bill_id, None)
+
+
+def test_failed_purchase_returns_the_wallet_debit():
+    import json
+    import os
+    from urllib.error import HTTPError
+    from urllib.request import Request, urlopen
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-HOLD-2"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 500.0, "transactions": []}
+    original = portal.record_transaction
+    called = {"n": 0}
+
+    def _boom_counted(**_kwargs):
+        called["n"] += 1
+        raise RuntimeError("seal failed")
+
+    portal.record_transaction = _boom_counted
+    try:
+        payload = json.dumps({
+            "customer_id": customer_id,
+            "product_id": "med-hold-1",
+            "product_name": "Visit",
+            "amount": 40.0,
+            "payment_method": "health_wallet",
+        }).encode()
+        request = Request(
+            os.environ["TEST_BASE_URL"] + "/api/health-wallet/purchase",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            urlopen(request)
+            status, detail = 200, ""
+        except HTTPError as exc:
+            status, detail = exc.code, exc.read().decode()
+        assert status == 500, detail
+        assert called["n"] == 1
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 500.0
+    finally:
+        portal.record_transaction = original
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+
+
+def test_failed_bulk_pay_returns_the_wallet_debit_and_the_bill():
+    import json
+    import os
+    from urllib.error import HTTPError
+    from urllib.request import Request, urlopen
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-HOLD-3"
+    bill_id = "BILL-HOLD-3"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.BILLING[bill_id] = {
+        "bill_id": bill_id,
+        "customer_id": customer_id,
+        "amount": 40.0,
+        "amount_paid": 0.0,
+        "status": "outstanding",
+    }
+    original = portal.record_transaction
+    called = {"n": 0}
+
+    def _boom_counted(**_kwargs):
+        called["n"] += 1
+        raise RuntimeError("seal failed")
+
+    portal.record_transaction = _boom_counted
+    try:
+        payload = json.dumps({"customer_id": customer_id}).encode()
+        request = Request(
+            os.environ["TEST_BASE_URL"] + "/api/billing/pay-all-from-wallet",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            urlopen(request)
+            status, detail = 200, ""
+        except HTTPError as exc:
+            status, detail = exc.code, exc.read().decode()
+        assert status == 400, detail
+        assert called["n"] == 1
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 100.0
+        assert portal.HEALTH_WALLETS[customer_id]["transactions"] == []
+        assert portal.BILLING[bill_id]["status"] == "outstanding"
+        assert portal.BILLING[bill_id]["amount_paid"] == 0.0
+    finally:
+        portal.record_transaction = original
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.BILLING.pop(bill_id, None)
+
+
+def _post_json(path, payload, headers=None):
+    import json
+    import os
+    from urllib.error import HTTPError
+    from urllib.request import Request, urlopen
+
+    hdrs = {"Content-Type": "application/json"}
+    if headers:
+        hdrs.update(headers)
+    request = Request(
+        os.environ["TEST_BASE_URL"] + path,
+        data=json.dumps(payload).encode(),
+        headers=hdrs,
+    )
+    try:
+        with urlopen(request) as response:
+            return response.status, json.loads(response.read().decode())
+    except HTTPError as exc:
+        raw = exc.read().decode()
+        try:
+            body = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            body = {"error": raw}
+        return exc.code, body
+
+
+def test_invest_reserves_wallet_cash_before_the_trade_is_booked():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-1"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 60.0, "balance_is_unallocated_cash": True}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-1", 0.0)
+    seen = {}
+    original = portal.portfolio_service.invest
+
+    def _spy(account_id, symbol, amount, **kwargs):
+        seen["wallet"] = portal.HEALTH_WALLETS[customer_id]["balance"]
+        seen["investment"] = portal.INVESTMENT_ACCOUNTS[customer_id]["balance"]
+        return original(account_id, symbol, amount, **kwargs)
+
+    portal.portfolio_service.invest = _spy
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 100.0,
+        })
+        assert status == 200, body
+        assert body.get("success") is True
+        assert seen["wallet"] == 60.0
+        assert seen["investment"] == 0.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 60.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert account.assets and account.assets[-1].symbol == "USDC"
+    finally:
+        portal.portfolio_service.invest = original
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_invest_refuses_a_short_wallet_and_does_not_book_the_trade():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-2"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 40.0, "transactions": []}
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 0.0, "balance_is_unallocated_cash": True}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-2", 0.0)
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 100.0,
+        })
+        assert status == 400, body
+        assert body.get("success") is False
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 40.0
+        assert account.assets == []
+        assert account.balance == 0.0
+    finally:
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_invest_returns_reserved_cash_when_the_trade_is_not_booked():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-3"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 25.0, "balance_is_unallocated_cash": True}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-3", 0.0)
+    original = portal.portfolio_service.invest
+
+    def _reject(account_id, symbol, amount, **_kwargs):
+        return {"success": False, "error": "rejected"}
+
+    portal.portfolio_service.invest = _reject
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 80.0,
+        })
+        assert status == 400, body
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 100.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 25.0
+        assert account.balance == 0.0
+        assert account.assets == []
+    finally:
+        portal.portfolio_service.invest = original
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_store_funded_invest_leaves_portfolio_cash_unchanged():
+    """Wallet cash is not the portfolio figure. That $25 stays put."""
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-6"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 0.0, "balance_is_unallocated_cash": True}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-6", 0.0)
+    account.balance = 25.0
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 80.0,
+        })
+        assert status == 200, body
+        assert account.balance == 25.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 20.0
+        assert len(account.assets) == 1
+    finally:
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_store_funded_invest_spends_the_mirrored_portfolio_cash():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-8"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 100.0}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-8", 0.0)
+    account.balance = 100.0
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 80.0,
+        })
+        assert status == 200, body
+        assert account.balance == 20.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 20.0
+        assert len(account.assets) == 1
+        withdraw_status, withdraw_body = _post_json("/api/savings/withdraw", {
+            "account_id": account.account_id,
+            "amount": 100.0,
+        })
+        assert withdraw_status == 400, withdraw_body
+        assert account.balance == 20.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 20.0
+        transfer_status, transfer_body = _post_json("/api/balance/transfer-to-algo", {
+            "customer_id": customer_id,
+            "amount": 100.0,
+            "source": "investment_account",
+        })
+        assert transfer_status == 400, transfer_body
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 20.0
+        assert account.balance == 20.0
+        remainder_status, remainder_body = _post_json("/api/savings/withdraw", {
+            "account_id": account.account_id,
+            "amount": 20.0,
+        })
+        assert remainder_status == 200, remainder_body
+        assert account.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+    finally:
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_store_funded_invest_peels_the_mirror_on_every_savings_account():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-11"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    first = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-11A", 0.0)
+    second = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-11B", 0.0)
+    first.balance = 50.0
+    second.balance = 50.0
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": first.account_id,
+            "symbol": "USDC",
+            "amount": 100.0,
+        })
+        assert status == 200, body
+        assert first.balance == 0.0
+        assert second.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert len(first.assets) == 1
+        assert second.assets == []
+        withdraw_status, withdraw_body = _post_json("/api/savings/withdraw", {
+            "account_id": second.account_id,
+            "amount": 50.0,
+        })
+        assert withdraw_status == 400, withdraw_body
+        assert second.balance == 0.0
+    finally:
+        portal.portfolio_service.accounts.pop(first.account_id, None)
+        portal.portfolio_service.accounts.pop(second.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_internal_transfer_cannot_spend_cash_an_invest_already_reserved():
+    import threading
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-12"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 0.0, "transactions": []}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-12", 0.0)
+    account.balance = 100.0
+    original = portal.portfolio_service.invest
+    seen = {}
+
+    def _invest(account_id, symbol, amount, **kwargs):
+        def _transfer():
+            seen["transfer"] = _post_json("/api/unified-payment/deposit", {
+                "customer_id": customer_id,
+                "amount": 100.0,
+                "destination": "health_wallet",
+                "payment_method": "internal_transfer",
+                "source_account": "investment",
+            })
+
+        worker = threading.Thread(target=_transfer)
+        worker.start()
+        worker.join(0.4)
+        seen["blocked"] = worker.is_alive()
+        seen["row_during"] = portal.INVESTMENT_ACCOUNTS[customer_id]["balance"]
+        seen["worker"] = worker
+        return original(account_id, symbol, amount, **kwargs)
+
+    portal.portfolio_service.invest = _invest
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 100.0,
+        })
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        assert status == 200, body
+        assert seen.get("blocked") is True
+        assert seen["row_during"] == 0.0
+        assert seen["transfer"][0] == 400, seen["transfer"]
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 0.0
+        assert len(account.assets) == 1
+        assert account.balance == 0.0
+    finally:
+        portal.portfolio_service.invest = original
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+
+
+def test_internal_transfer_refuses_when_savings_accounts_cannot_be_listed():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-14"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 0.0, "transactions": []}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-14", 0.0)
+    account.balance = 100.0
+    original = portal.portfolio_service.get_customer_accounts
+
+    def _boom(_customer_id):
+        raise RuntimeError("account list failed")
+
+    portal.portfolio_service.get_customer_accounts = _boom
+    try:
+        status, body = _post_json("/api/unified-payment/deposit", {
+            "customer_id": customer_id,
+            "amount": 100.0,
+            "destination": "health_wallet",
+            "payment_method": "internal_transfer",
+            "source_account": "investment",
+        })
+        assert status == 503, body
+        assert body.get("error") == "Savings accounts unavailable"
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 100.0
+        assert account.balance == 100.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 0.0
+        withdrawn, withdraw_body = _post_json("/api/savings/withdraw", {
+            "account_id": account.account_id,
+            "amount": 100.0,
+        })
+        assert withdrawn == 200, withdraw_body
+        assert account.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 0.0
+    finally:
+        portal.portfolio_service.get_customer_accounts = original
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+
+
+def test_algo_withdrawal_credits_the_live_investment_balance():
+    import threading
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-15"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    portal.unified_balance_service.algo_trading_balances[customer_id] = {
+        "available": 40.0,
+        "in_positions": 0.0,
+        "total_pnl": 0.0,
+        "transfers": [],
+    }
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-15", 0.0)
+    account.balance = 100.0
+    original = portal.portfolio_service.invest
+    seen = {}
+
+    def _invest(account_id, symbol, amount, **kwargs):
+        def _withdraw():
+            seen["withdraw"] = _post_json("/api/balance/withdraw-from-algo", {
+                "customer_id": customer_id,
+                "amount": 40.0,
+                "destination": "investment_account",
+            })
+
+        worker = threading.Thread(target=_withdraw)
+        worker.start()
+        worker.join(0.4)
+        seen["blocked"] = worker.is_alive()
+        seen["row_during"] = portal.INVESTMENT_ACCOUNTS[customer_id]["balance"]
+        seen["worker"] = worker
+        return original(account_id, symbol, amount, **kwargs)
+
+    portal.portfolio_service.invest = _invest
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 100.0,
+        })
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        assert status == 200, body
+        assert seen.get("blocked") is True
+        assert seen["row_during"] == 0.0
+        assert seen["withdraw"][0] == 200, seen["withdraw"]
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 40.0
+        assert account.balance == 40.0
+        assert len(account.assets) == 1
+        algo = portal.unified_balance_service.algo_trading_balances[customer_id]
+        assert float(algo.get("available", 0) or 0) == 0.0
+    finally:
+        portal.portfolio_service.invest = original
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_invest_peels_the_algo_mirror_before_the_buying_accounts_other_cash():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-16"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 0.0,
+        "balance_is_unallocated_cash": True,
+    }
+    portal.unified_balance_service.algo_trading_balances[customer_id] = {
+        "available": 40.0,
+        "in_positions": 0.0,
+        "total_pnl": 0.0,
+        "transfers": [],
+    }
+    earlier = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-16A", 0.0)
+    later = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-16B", 0.0)
+    if str(later.account_id) < str(earlier.account_id):
+        earlier, later = later, earlier
+    earlier.balance = 0.0
+    later.balance = 50.0
+    try:
+        status, body = _post_json("/api/balance/withdraw-from-algo", {
+            "customer_id": customer_id,
+            "amount": 40.0,
+            "destination": "investment_account",
+        })
+        assert status == 200, body
+        assert earlier.balance == 40.0
+        assert later.balance == 50.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 40.0
+        invested, invest_body = _post_json("/api/savings/invest", {
+            "account_id": later.account_id,
+            "symbol": "USDC",
+            "amount": 40.0,
+        })
+        assert invested == 200, invest_body
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert earlier.balance == 0.0
+        assert later.balance == 50.0
+        assert len(later.assets) == 1
+        refused, refused_body = _post_json("/api/savings/withdraw", {
+            "account_id": earlier.account_id,
+            "amount": 40.0,
+        })
+        assert refused == 400, refused_body
+        kept, kept_body = _post_json("/api/savings/withdraw", {
+            "account_id": later.account_id,
+            "amount": 50.0,
+        })
+        assert kept == 200, kept_body
+        assert later.balance == 0.0
+    finally:
+        portal.portfolio_service.accounts.pop(earlier.account_id, None)
+        portal.portfolio_service.accounts.pop(later.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_invest_from_the_algo_mirror_does_not_spend_a_sibling_surplus():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-17"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 0.0,
+        "balance_is_unallocated_cash": True,
+    }
+    portal.unified_balance_service.algo_trading_balances[customer_id] = {
+        "available": 40.0,
+        "in_positions": 0.0,
+        "total_pnl": 0.0,
+        "transfers": [],
+    }
+    earlier = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-17A", 0.0)
+    later = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-17B", 0.0)
+    if str(later.account_id) < str(earlier.account_id):
+        earlier, later = later, earlier
+    earlier.balance = 0.0
+    later.balance = 50.0
+    try:
+        status, body = _post_json("/api/balance/withdraw-from-algo", {
+            "customer_id": customer_id,
+            "amount": 40.0,
+            "destination": "investment_account",
+        })
+        assert status == 200, body
+        assert earlier.balance == 40.0
+        assert later.balance == 50.0
+        invested, invest_body = _post_json("/api/savings/invest", {
+            "account_id": earlier.account_id,
+            "symbol": "USDC",
+            "amount": 40.0,
+        })
+        assert invested == 200, invest_body
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert earlier.balance == 0.0
+        assert later.balance == 50.0
+        assert len(earlier.assets) == 1
+        refused, refused_body = _post_json("/api/savings/withdraw", {
+            "account_id": earlier.account_id,
+            "amount": 40.0,
+        })
+        assert refused == 400, refused_body
+        kept, kept_body = _post_json("/api/savings/withdraw", {
+            "account_id": later.account_id,
+            "amount": 50.0,
+        })
+        assert kept == 200, kept_body
+        assert later.balance == 0.0
+    finally:
+        portal.portfolio_service.accounts.pop(earlier.account_id, None)
+        portal.portfolio_service.accounts.pop(later.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_internal_transfer_peels_mirrored_portfolio_cash():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-13"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 0.0, "transactions": []}
+    first = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-13A", 0.0)
+    second = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-13B", 0.0)
+    first.balance = 60.0
+    second.balance = 65.0
+    try:
+        status, body = _post_json("/api/unified-payment/deposit", {
+            "customer_id": customer_id,
+            "amount": 100.0,
+            "destination": "health_wallet",
+            "payment_method": "internal_transfer",
+            "source_account": "investment",
+        })
+        assert status == 200, body
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 100.0
+        assert round(first.balance + second.balance, 2) == 25.0
+        keeper = first if first.balance > 0 else second
+        emptied = second if keeper is first else first
+        assert emptied.balance == 0.0
+        refused, refused_body = _post_json("/api/savings/withdraw", {
+            "account_id": emptied.account_id,
+            "amount": 60.0,
+        })
+        assert refused == 400, refused_body
+        leftover, leftover_body = _post_json("/api/savings/withdraw", {
+            "account_id": keeper.account_id,
+            "amount": 25.0,
+        })
+        assert leftover == 200, leftover_body
+        assert keeper.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 100.0
+        again, again_body = _post_json("/api/savings/withdraw", {
+            "account_id": keeper.account_id,
+            "amount": 25.0,
+        })
+        assert again == 400, again_body
+    finally:
+        portal.portfolio_service.accounts.pop(first.account_id, None)
+        portal.portfolio_service.accounts.pop(second.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+
+
+def test_unflagged_invest_blocks_an_algo_transfer_of_the_reserved_cash():
+    import threading
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-11"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 100.0}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-11", 0.0)
+    account.balance = 100.0
+    original = portal.portfolio_service.invest
+    seen = {}
+
+    def _spy(account_id, symbol, amount, spend_cash=True):
+        def _transfer():
+            seen["transfer"] = _post_json("/api/balance/transfer-to-algo", {
+                "customer_id": customer_id,
+                "amount": 100.0,
+                "source": "investment_account",
+            })
+
+        worker = threading.Thread(target=_transfer)
+        worker.start()
+        worker.join(0.4)
+        seen["blocked"] = worker.is_alive()
+        seen["row_during"] = portal.INVESTMENT_ACCOUNTS[customer_id]["balance"]
+        seen["worker"] = worker
+        return original(account_id, symbol, amount, spend_cash=spend_cash)
+
+    portal.portfolio_service.invest = _spy
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 100.0,
+        })
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        assert status == 200, body
+        assert seen.get("blocked") is True
+        assert seen["row_during"] == 0.0
+        assert account.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert len(account.assets) == 1
+        assert seen["transfer"][0] == 400, seen["transfer"]
+        algo = portal.unified_balance_service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 0.0
+    finally:
+        portal.portfolio_service.invest = original
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_withdraw_removes_the_same_cash_from_the_investment_row():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-9"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "index_balance": 60.0,
+        "bonds_balance": 0.0,
+        "crypto_balance": 0.0,
+    }
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-9", 0.0)
+    account.balance = 50.0
+    try:
+        status, body = _post_json("/api/savings/withdraw", {
+            "account_id": account.account_id,
+            "amount": 50.0,
+        })
+        assert status == 200, body
+        assert account.balance == 0.0
+        row = portal.INVESTMENT_ACCOUNTS[customer_id]
+        assert row["balance"] == 60.0
+        assert row["index_balance"] == 60.0
+    finally:
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_failed_deposit_seal_returns_both_cash_books():
+    from datetime import datetime, timedelta
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-DEP-1"
+    token = "phins_dep_seal_token"
+    portal.SESSIONS[token] = {
+        "username": "dep_customer",
+        "role": "customer",
+        "customer_id": customer_id,
+        "expires": (datetime.now() + timedelta(hours=2)).isoformat(),
+    }
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-DEP-1", 0.0)
+    account.balance = 10.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 10.0, "deposits": []}
+    original = portal.record_transaction
+
+    def _boom(**_kwargs):
+        raise RuntimeError("seal failed")
+
+    portal.record_transaction = _boom
+    try:
+        status, body = _post_json(
+            "/api/savings/deposit",
+            {"account_id": account.account_id, "amount": 40.0, "customer_id": customer_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert status == 400, body
+        assert account.balance == 10.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 10.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id].get("deposits") == []
+    finally:
+        portal.record_transaction = original
+        portal.SESSIONS.pop(token, None)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_failed_deposit_seal_restores_cash_when_a_debit_would_refuse():
+    from datetime import datetime, timedelta
+    import services.savings_pipeline_service as pipeline
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-DEP-3"
+    token = "phins_dep_norev_token"
+    portal.SESSIONS[token] = {
+        "username": "dep_norev_customer",
+        "role": "customer",
+        "customer_id": customer_id,
+        "expires": (datetime.now() + timedelta(hours=2)).isoformat(),
+    }
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-DEP-3", 0.0)
+    account.balance = 10.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 10.0, "deposits": []}
+    original_tx = portal.record_transaction
+    original_debit = pipeline.debit_account_balance
+
+    def _boom(**_kwargs):
+        raise RuntimeError("seal failed")
+
+    def _refuse(_account, _amount):
+        return None
+
+    portal.record_transaction = _boom
+    pipeline.debit_account_balance = _refuse
+    try:
+        status, body = _post_json(
+            "/api/savings/deposit",
+            {"account_id": account.account_id, "amount": 40.0, "customer_id": customer_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert status == 400, body
+        assert account.balance == 10.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 10.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id].get("deposits") == []
+    finally:
+        portal.record_transaction = original_tx
+        pipeline.debit_account_balance = original_debit
+        portal.SESSIONS.pop(token, None)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_failed_deposit_seal_blocks_an_algo_transfer_of_the_credit():
+    from datetime import datetime, timedelta
+    import threading
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-DEP-4"
+    token = "phins_dep_xfer_token"
+    portal.SESSIONS[token] = {
+        "username": "dep_xfer_customer",
+        "role": "customer",
+        "customer_id": customer_id,
+        "expires": (datetime.now() + timedelta(hours=2)).isoformat(),
+    }
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-DEP-4", 0.0)
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 0.0,
+        "deposits": [],
+        "balance_is_unallocated_cash": True,
+    }
+    original = portal.record_transaction
+    seen = {}
+
+    def _boom(**_kwargs):
+        def _transfer():
+            seen["transfer"] = portal.unified_balance_service.transfer_to_algo_trading(
+                customer_id, 40.0, "investment_account"
+            )
+
+        worker = threading.Thread(target=_transfer)
+        worker.start()
+        worker.join(0.3)
+        seen["blocked"] = worker.is_alive()
+        seen["worker"] = worker
+        raise RuntimeError("seal failed")
+
+    portal.record_transaction = _boom
+    try:
+        status, body = _post_json(
+            "/api/savings/deposit",
+            {"account_id": account.account_id, "amount": 40.0, "customer_id": customer_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(2)
+        assert status == 400, body
+        assert seen.get("blocked") is True
+        assert account.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert seen["transfer"]["success"] is False
+        algo = portal.unified_balance_service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 0.0
+    finally:
+        portal.record_transaction = original
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(2)
+        portal.SESSIONS.pop(token, None)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_withdraw_blocks_an_algo_transfer_of_the_same_cash():
+    import threading
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-10"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-10", 0.0)
+    account.balance = 100.0
+    original = portal.portfolio_service.withdraw
+    seen = {}
+
+    def _spy(account_id, amount, reason="withdrawal"):
+        result = original(account_id, amount, reason)
+
+        def _transfer():
+            seen["transfer"] = portal.unified_balance_service.transfer_to_algo_trading(
+                customer_id, 100.0, "investment_account"
+            )
+
+        worker = threading.Thread(target=_transfer)
+        worker.start()
+        worker.join(0.3)
+        seen["blocked"] = worker.is_alive()
+        seen["worker"] = worker
+        return result
+
+    portal.portfolio_service.withdraw = _spy
+    try:
+        status, body = _post_json("/api/savings/withdraw", {
+            "account_id": account.account_id,
+            "amount": 100.0,
+        })
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(2)
+        assert status == 200, body
+        assert seen.get("blocked") is True
+        assert account.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert seen["transfer"]["success"] is False
+        algo = portal.unified_balance_service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 0.0
+    finally:
+        portal.portfolio_service.withdraw = original
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(2)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_transfer_publish_does_not_restore_cash_a_withdraw_already_took():
+    import threading
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-XFER-2"
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-XFER-2", 0.0)
+    account.balance = 100.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    original = portal.portfolio_service.get_customer_accounts
+    state = {"calls": 0, "fired": False}
+
+    def _accounts(customer):
+        accounts = original(customer)
+        if customer != customer_id:
+            return accounts
+        state["calls"] += 1
+        # The pre-transfer sync, the transfer itself, and the handler
+        # publish each read the accounts. The transfer has already written
+        # the debited cash onto the portfolio. A withdraw started on that
+        # later read waits for the savings lock, then takes what remains.
+        if state["calls"] == 3 and not state["fired"]:
+            state["fired"] = True
+            state["before"] = (
+                account.balance,
+                portal.INVESTMENT_ACCOUNTS[customer_id]["balance"],
+            )
+
+            def _withdraw():
+                state["withdraw"] = _post_json("/api/savings/withdraw", {
+                    "account_id": account.account_id,
+                    "amount": 60.0,
+                })
+
+            worker = threading.Thread(target=_withdraw)
+            worker.start()
+            worker.join(0.4)
+            state["blocked"] = worker.is_alive()
+            state["worker"] = worker
+        return accounts
+
+    portal.portfolio_service.get_customer_accounts = _accounts
+    try:
+        status, body = _post_json("/api/balance/transfer-to-algo", {
+            "customer_id": customer_id,
+            "amount": 40.0,
+            "source": "investment_account",
+        })
+        worker = state.get("worker")
+        if worker is not None:
+            worker.join(3)
+        assert status == 200, body
+        assert state["fired"] is True
+        assert state.get("blocked") is True
+        assert state["withdraw"][0] == 200, state["withdraw"]
+        assert state["before"] == (60.0, 60.0)
+        assert account.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        algo = portal.unified_balance_service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 40.0
+    finally:
+        portal.portfolio_service.get_customer_accounts = original
+        worker = state.get("worker")
+        if worker is not None:
+            worker.join(3)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_transfer_publish_does_not_restore_the_tracker_book_after_a_withdraw():
+    import services.savings_pipeline_service as pipeline
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-XFER-4"
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-XFER-4", 0.0)
+    account.balance = 100.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    assert portal.portfolio_tracker_service.investment_accounts is portal.INVESTMENT_ACCOUNTS
+    original_named = pipeline.named_row_lock
+    state = {"releases": 0, "fired": False, "inflight": False}
+    savings_name = f"savings:{account.account_id}"
+
+    class _LockProxy:
+        def __init__(self, lock):
+            self._lock = lock
+
+        def acquire(self, *args, **kwargs):
+            return self._lock.acquire(*args, **kwargs)
+
+        def release(self):
+            self._lock.release()
+            _after_release()
+
+        def __enter__(self):
+            self.acquire()
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            self.release()
+            return False
+
+    def _named_row_lock(name):
+        lock = original_named(name)
+        if str(name) != savings_name:
+            return lock
+        return _LockProxy(lock)
+
+    def _after_release():
+        if state["inflight"] or state["fired"]:
+            return
+        state["releases"] += 1
+        # The transfer releases its own savings hold, the handler publish
+        # releases the next one, and the outer hold taken before the debit
+        # is the last. The withdraw runs only once that outer hold is gone.
+        if state["releases"] != 3:
+            return
+        state["fired"] = True
+        state["inflight"] = True
+        try:
+            status, body = _post_json("/api/savings/withdraw", {
+                "account_id": account.account_id,
+                "amount": 60.0,
+            })
+            state["withdraw"] = (status, body)
+        finally:
+            state["inflight"] = False
+
+    pipeline.named_row_lock = _named_row_lock
+    try:
+        status, body = _post_json("/api/balance/transfer-to-algo", {
+            "customer_id": customer_id,
+            "amount": 40.0,
+            "source": "investment_account",
+        })
+        assert status == 200, body
+        assert state["fired"] is True
+        assert state["withdraw"][0] == 200, state["withdraw"]
+        assert account.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert portal.portfolio_tracker_service.investment_accounts[customer_id]["balance"] == 0.0
+        algo = portal.unified_balance_service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 40.0
+    finally:
+        pipeline.named_row_lock = original_named
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_withdraw_cannot_spend_portfolio_cash_an_algo_transfer_already_took():
+    import threading
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-XFER-5"
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-XFER-5", 0.0)
+    account.balance = 100.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    service = portal.unified_balance_service
+    original = service.transfer_to_algo_trading
+    seen = {}
+
+    def _transfer(*args, **kwargs):
+        result = original(*args, **kwargs)
+
+        def _withdraw():
+            seen["withdraw"] = _post_json("/api/savings/withdraw", {
+                "account_id": account.account_id,
+                "amount": 100.0,
+            })
+
+        worker = threading.Thread(target=_withdraw)
+        worker.start()
+        worker.join(0.4)
+        seen["blocked"] = worker.is_alive()
+        seen["portfolio_during"] = account.balance
+        seen["row_during"] = portal.INVESTMENT_ACCOUNTS[customer_id]["balance"]
+        seen["worker"] = worker
+        return result
+
+    service.transfer_to_algo_trading = _transfer
+    try:
+        status, body = _post_json("/api/balance/transfer-to-algo", {
+            "customer_id": customer_id,
+            "amount": 100.0,
+            "source": "investment_account",
+        })
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        assert status == 200, body
+        assert seen.get("blocked") is True
+        assert seen["row_during"] == 0.0
+        assert seen["portfolio_during"] == 0.0
+        assert seen["withdraw"][0] == 400, seen["withdraw"]
+        assert account.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        algo = service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 100.0
+    finally:
+        service.transfer_to_algo_trading = original
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_transfer_publish_waits_for_a_deposit_holding_the_savings_lock():
+    from datetime import datetime, timedelta
+    import threading
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-XFER-3"
+    token = "phins_xfer_dep_token"
+    portal.SESSIONS[token] = {
+        "username": "xfer_dep_customer",
+        "role": "customer",
+        "customer_id": customer_id,
+        "expires": (datetime.now() + timedelta(hours=2)).isoformat(),
+    }
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-XFER-3", 0.0)
+    account.balance = 100.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+        "deposits": [],
+    }
+    original = portal.portfolio_service.deposit
+    seen = {}
+
+    def _spy(account_id, amount, source="premium_allocation"):
+        result = original(account_id, amount, source)
+
+        def _transfer():
+            seen["transfer"] = _post_json("/api/balance/transfer-to-algo", {
+                "customer_id": customer_id,
+                "amount": 40.0,
+                "source": "investment_account",
+            })
+
+        worker = threading.Thread(target=_transfer)
+        worker.start()
+        worker.join(0.4)
+        seen["blocked"] = worker.is_alive()
+        seen["portfolio_while_deposit_holds_lock"] = account.balance
+        seen["worker"] = worker
+        return result
+
+    portal.portfolio_service.deposit = _spy
+    try:
+        status, body = _post_json(
+            "/api/savings/deposit",
+            {"account_id": account.account_id, "amount": 50.0, "customer_id": customer_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        assert status == 200, body
+        assert seen.get("blocked") is True
+        assert seen["portfolio_while_deposit_holds_lock"] == 150.0
+        transfer_status, transfer_body = seen["transfer"]
+        assert transfer_status == 200, transfer_body
+        assert account.balance == 110.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 110.0
+        algo = portal.unified_balance_service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 40.0
+    finally:
+        portal.portfolio_service.deposit = original
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(3)
+        portal.SESSIONS.pop(token, None)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_algo_transfer_publishes_the_debited_balance_when_the_rows_differ():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-XFER-1"
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-XFER-1", 0.0)
+    account.balance = 100.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    service = portal.unified_balance_service
+    original_rows = service.investment_accounts
+    service.investment_accounts = {
+        customer_id: {
+            "balance": 100.0,
+            "balance_is_unallocated_cash": True,
+        }
+    }
+    try:
+        status, body = _post_json("/api/balance/transfer-to-algo", {
+            "customer_id": customer_id,
+            "amount": 40.0,
+            "source": "investment_account",
+        })
+        assert status == 200, body
+        assert service.investment_accounts[customer_id]["balance"] == 60.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 60.0
+        assert account.balance == 60.0
+    finally:
+        service.investment_accounts = original_rows
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_algo_transfer_peels_cash_and_does_not_copy_the_position():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-XFER-POS"
+    first = portal.portfolio_service.create_savings_account(customer_id, "POL-XFER-POS-1", 0.0)
+    second = portal.portfolio_service.create_savings_account(customer_id, "POL-XFER-POS-2", 0.0)
+    first.balance = 25.0
+    second.balance = 15.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "index_balance": 60.0,
+        "bonds_balance": 0.0,
+        "crypto_balance": 0.0,
+    }
+    service = portal.unified_balance_service
+    service.investment_accounts[customer_id] = portal.INVESTMENT_ACCOUNTS[customer_id]
+    try:
+        status, body = _post_json("/api/balance/transfer-to-algo", {
+            "customer_id": customer_id,
+            "amount": 50.0,
+            "source": "investment_account",
+        })
+        assert status == 200, body
+        assert first.balance == 0.0
+        assert second.balance == 0.0
+        row = portal.INVESTMENT_ACCOUNTS[customer_id]
+        assert row["balance"] == 50.0
+        assert row["index_balance"] == 50.0
+        algo = service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 50.0
+    finally:
+        portal.portfolio_service.accounts.pop(first.account_id, None)
+        portal.portfolio_service.accounts.pop(second.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        service.investment_accounts.pop(customer_id, None)
+        service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_algo_transfer_peels_cash_across_savings_accounts():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-XFER-MANY"
+    first = portal.portfolio_service.create_savings_account(customer_id, "POL-XFER-MANY-1", 0.0)
+    second = portal.portfolio_service.create_savings_account(customer_id, "POL-XFER-MANY-2", 0.0)
+    first.balance = 60.0
+    second.balance = 40.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    service = portal.unified_balance_service
+    service.investment_accounts[customer_id] = portal.INVESTMENT_ACCOUNTS[customer_id]
+    try:
+        status, body = _post_json("/api/balance/transfer-to-algo", {
+            "customer_id": customer_id,
+            "amount": 70.0,
+            "source": "investment_account",
+        })
+        assert status == 200, body
+        assert first.balance + second.balance == 30.0
+        assert first.balance >= 0.0
+        assert second.balance >= 0.0
+        assert max(first.balance, second.balance) == 30.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 30.0
+        algo = service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 70.0
+    finally:
+        portal.portfolio_service.accounts.pop(first.account_id, None)
+        portal.portfolio_service.accounts.pop(second.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        service.investment_accounts.pop(customer_id, None)
+        service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_deposit_credit_waits_for_the_savings_lock():
+    from datetime import datetime, timedelta
+    import threading
+    import services.savings_pipeline_service as pipeline
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-DEP-2"
+    token = "phins_dep_lock_token"
+    portal.SESSIONS[token] = {
+        "username": "dep_lock_customer",
+        "role": "customer",
+        "customer_id": customer_id,
+        "expires": (datetime.now() + timedelta(hours=2)).isoformat(),
+    }
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-DEP-2", 0.0)
+    account.balance = 100.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 100.0, "deposits": []}
+    original_credit = pipeline.credit_account_balance
+    seen = {}
+
+    def _credit(row, amount):
+        def _invest():
+            seen["invest"] = _post_json("/api/savings/invest", {
+                "account_id": account.account_id,
+                "symbol": "USDC",
+                "amount": 80.0,
+            })
+
+        worker = threading.Thread(target=_invest)
+        worker.start()
+        worker.join(0.3)
+        seen["blocked"] = worker.is_alive()
+        seen["balance_at_credit"] = row.get("balance")
+        seen["worker"] = worker
+        return original_credit(row, amount)
+
+    pipeline.credit_account_balance = _credit
+    try:
+        status, body = _post_json(
+            "/api/savings/deposit",
+            {"account_id": account.account_id, "amount": 40.0, "customer_id": customer_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(2)
+        assert status == 200, body
+        assert seen.get("blocked") is True
+        assert seen.get("balance_at_credit") == 100.0
+        assert seen["invest"][0] == 200
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 60.0
+        assert account.balance == 60.0
+        assert len(account.assets) == 1
+    finally:
+        pipeline.credit_account_balance = original_credit
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(2)
+        portal.SESSIONS.pop(token, None)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_failed_store_funded_invest_does_not_change_portfolio_cash():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-7"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 0.0, "balance_is_unallocated_cash": True}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-7", 0.0)
+    account.balance = 25.0
+    original = portal.portfolio_service.invest
+
+    def _reject(account_id, symbol, amount, spend_cash=True):
+        return {"success": False, "error": "rejected"}
+
+    portal.portfolio_service.invest = _reject
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 80.0,
+        })
+        assert status == 400, body
+        assert account.balance == 25.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 100.0
+        assert account.assets == []
+    finally:
+        portal.portfolio_service.invest = original
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_failed_bulk_pay_does_not_restore_an_unlocked_bill():
+    import services.savings_pipeline_service as pipeline
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-HOLD-5"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.BILLING["BILL-HOLD-5"] = {
+        "bill_id": "BILL-HOLD-5",
+        "customer_id": customer_id,
+        "amount": 40.0,
+        "amount_paid": 0.0,
+        "status": "outstanding",
+    }
+    original_lock = pipeline.named_row_lock
+    original_tx = portal.record_transaction
+    inserted = {"done": False}
+
+    def _lock(name):
+        if not inserted["done"]:
+            inserted["done"] = True
+            portal.BILLING["BILL-NEW-5"] = {
+                "bill_id": "BILL-NEW-5",
+                "customer_id": customer_id,
+                "amount": 30.0,
+                "amount_paid": 0.0,
+                "status": "outstanding",
+            }
+        return original_lock(name)
+
+    def _boom(**_kwargs):
+        portal.BILLING["BILL-NEW-5"]["status"] = "paid"
+        portal.BILLING["BILL-NEW-5"]["amount_paid"] = 30.0
+        portal.BILLING["BILL-NEW-5"]["paid_date"] = "concurrent"
+        raise RuntimeError("seal failed")
+
+    pipeline.named_row_lock = _lock
+    portal.record_transaction = _boom
+    try:
+        status, body = _post_json("/api/billing/pay-all-from-wallet", {
+            "customer_id": customer_id,
+        })
+        assert status == 400, body
+        assert portal.BILLING["BILL-HOLD-5"]["status"] == "outstanding"
+        assert portal.BILLING["BILL-HOLD-5"]["amount_paid"] == 0.0
+        assert portal.BILLING["BILL-NEW-5"]["paid_date"] == "concurrent"
+        assert portal.BILLING["BILL-NEW-5"]["amount_paid"] == 30.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 100.0
+    finally:
+        pipeline.named_row_lock = original_lock
+        portal.record_transaction = original_tx
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.BILLING.pop("BILL-HOLD-5", None)
+        portal.BILLING.pop("BILL-NEW-5", None)
+
+
+def test_invest_does_not_spend_a_stale_portfolio_balance():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-4"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 40.0, "transactions": []}
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 0.0, "balance_is_unallocated_cash": True}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-4", 0.0)
+    account.balance = 100.0
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 100.0,
+        })
+        assert status == 400, body
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 40.0
+        assert account.balance == 100.0
+        assert account.assets == []
+    finally:
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_second_invest_waits_and_does_not_book_the_reserved_cash():
+    import threading
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-5"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 0.0, "balance_is_unallocated_cash": True}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-5", 0.0)
+    original = portal.portfolio_service.invest
+    seen = {"n": 0}
+
+    def _spy(account_id, symbol, amount, **kwargs):
+        seen["n"] += 1
+        if seen["n"] == 1:
+            def _second():
+                seen["second"] = _post_json("/api/savings/invest", {
+                    "account_id": account.account_id,
+                    "symbol": "USDC",
+                    "amount": 100.0,
+                })
+            worker = threading.Thread(target=_second)
+            worker.start()
+            worker.join(0.2)
+            seen["blocked"] = worker.is_alive()
+            seen["worker"] = worker
+        return original(account_id, symbol, amount, **kwargs)
+
+    portal.portfolio_service.invest = _spy
+    try:
+        status, body = _post_json("/api/savings/invest", {
+            "account_id": account.account_id,
+            "symbol": "USDC",
+            "amount": 100.0,
+        })
+        seen["worker"].join(2)
+        assert status == 200, body
+        assert seen["blocked"] is True
+        assert seen["second"][0] == 400
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 0.0
+        assert len(account.assets) == 1
+    finally:
+        portal.portfolio_service.invest = original
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(2)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_failed_bill_pay_does_not_book_premium_revenue():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-HOLD-4"
+    bill_id = "BILL-HOLD-4"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.BILLING[bill_id] = {
+        "bill_id": bill_id,
+        "customer_id": customer_id,
+        "amount": 40.0,
+        "amount_paid": 0.0,
+        "status": "outstanding",
+    }
+    original_tx = portal.record_transaction
+    original_revenue = portal.record_premium_revenue
+    revenue_calls = {"n": 0}
+
+    def _boom(**_kwargs):
+        raise RuntimeError("seal failed")
+
+    def _revenue(*_args, **_kwargs):
+        revenue_calls["n"] += 1
+
+    portal.record_transaction = _boom
+    portal.record_premium_revenue = _revenue
+    try:
+        status, body = _post_json("/api/billing/pay", {
+            "bill_id": bill_id,
+            "amount": 40.0,
+            "payment_method": "health_wallet",
+        })
+        assert status == 400, body
+        assert revenue_calls["n"] == 0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 100.0
+        assert portal.BILLING[bill_id]["status"] == "outstanding"
+        assert portal.BILLING[bill_id]["amount_paid"] == 0.0
+    finally:
+        portal.record_transaction = original_tx
+        portal.record_premium_revenue = original_revenue
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.BILLING.pop(bill_id, None)
+
+
+def test_debit_account_balance_refuses_to_go_negative():
+    from services.savings_pipeline_service import credit_account_balance, debit_account_balance
+
+    wallet = {"balance": 25.0}
+    assert debit_account_balance(wallet, 40.0) is None
+    assert wallet["balance"] == 25.0
+    assert debit_account_balance(wallet, 10.0) == 15.0
+    assert wallet["balance"] == 15.0
+    assert credit_account_balance(wallet, 10.0) == 25.0
+    assert credit_account_balance(wallet, 0) is None
+    assert wallet["balance"] == 25.0
+
+
 def test_wallet_credit_during_the_seal_is_not_replaced():
     wallet = {"balance": 100.0, "transactions": []}
     service, _recorded = _balance_service({})

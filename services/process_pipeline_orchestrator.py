@@ -610,7 +610,8 @@ class ProcessPipelineOrchestrator:
         if destination == 'health_wallet':
             wallet = self.health_wallets.get(customer_id)
             if wallet:
-                wallet['balance'] = float(wallet.get('balance', 0)) + amount
+                from services.savings_pipeline_service import credit_account_balance
+                credit_account_balance(wallet, amount)
                 wallet.setdefault('transactions', []).append({
                     'id': f"CLM-PAY-{claim.get('id', claim.get('claim_id', 'unknown'))}",
                     'type': 'claim_payout',
@@ -959,7 +960,8 @@ class ProcessPipelineOrchestrator:
             }
 
         wallet = self.health_wallets[customer_id]
-        wallet['balance'] = float(wallet.get('balance', 0)) + amount
+        from services.savings_pipeline_service import credit_account_balance
+        credit_account_balance(wallet, amount)
         wallet.setdefault('transactions', []).append({
             'id': f"PIPE-{secrets.token_hex(4).upper()}",
             'type': source,

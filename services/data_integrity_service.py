@@ -553,8 +553,8 @@ class DataIntegrityService:
                         'created_at': datetime.now().isoformat()
                     }
                 
-                self.health_wallets[customer_id]['balance'] = \
-                    float(self.health_wallets[customer_id].get('balance', 0) or 0) + amount
+                from services.savings_pipeline_service import credit_account_balance
+                credit_account_balance(self.health_wallets[customer_id], amount)
                 
                 tx_id = f"WDEP-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
                 self.health_wallets[customer_id].setdefault('transactions', []).append({
@@ -729,8 +729,8 @@ class DataIntegrityService:
                         'transactions': [],
                         'created_at': datetime.now().isoformat()
                     }
-                self.health_wallets[customer_id]['balance'] = \
-                    float(self.health_wallets[customer_id].get('balance', 0) or 0) + amount
+                from services.savings_pipeline_service import credit_account_balance
+                credit_account_balance(self.health_wallets[customer_id], amount)
             elif to_lower in ['investment', 'investment_account']:
                 if customer_id not in self.investment_accounts:
                     self.investment_accounts[customer_id] = {

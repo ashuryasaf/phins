@@ -8866,10 +8866,12 @@ def process_claim_payment_to_wallet(
             'created_at': datetime.now().isoformat()
         }
     
-    # 3. Credit customer's health wallet
-    prev_balance = HEALTH_WALLETS[customer_id]['balance']
-    HEALTH_WALLETS[customer_id]['balance'] += amount
-    new_balance = HEALTH_WALLETS[customer_id]['balance']
+    # 3. Credit customer's health wallet on the live balance. A transfer
+    # to algo holds this row while its reservation is unsealed, so this
+    # credit cannot put the pre-reserve figure back.
+    from services.savings_pipeline_service import credit_account_balance
+    new_balance = credit_account_balance(HEALTH_WALLETS[customer_id], amount)
+    prev_balance = round(float(new_balance or 0) - float(amount or 0), 2)
     
     # 4. Record wallet transaction
     wallet_tx = {
@@ -10306,7 +10308,8 @@ def _apply_direct_savings_distribution(
                 'created_at': now.isoformat(),
             }
             HEALTH_WALLETS[customer_id] = wallet
-        wallet['balance'] = float(wallet.get('balance', 0.0) or 0) + wallet_amount
+        from services.savings_pipeline_service import credit_account_balance
+        credit_account_balance(wallet, wallet_amount)
         wallet.setdefault('transactions', []).append({
             'type': 'pipeline_allocation',
             'amount': wallet_amount,
@@ -57861,9 +57864,13 @@ For claims or questions, please contact:
                             'monthly_deposit': 0.0,
                             'transactions': []
                         }
-                    prev_wallet_balance = safe_float(HEALTH_WALLETS[customer_id].get('balance', 0))
-                    HEALTH_WALLETS[customer_id]['balance'] = prev_wallet_balance + refund_amount
-                    new_wallet_balance = HEALTH_WALLETS[customer_id]['balance']
+                    from services.savings_pipeline_service import credit_account_balance
+                    new_wallet_balance = credit_account_balance(
+                        HEALTH_WALLETS[customer_id], refund_amount,
+                    )
+                    prev_wallet_balance = round(
+                        float(new_wallet_balance or 0) - float(refund_amount or 0), 2,
+                    )
 
                     wallet_tx = {
                         'id': f"WAL-RFD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
@@ -58387,6 +58394,9 @@ For claims or questions, please contact:
         # Versatile payment system supporting all deposit destinations and payment methods
         
         if path == '/api/unified-payment/deposit':
+            health_open = None
+            investment_open = None
+            source_released = False
             try:
                 data = json.loads(body)
                 customer_id = data.get('customer_id')
@@ -58443,20 +58453,115 @@ For claims or questions, please contact:
                         self.wfile.write(json.dumps({'error': 'Source and destination cannot be the same'}).encode('utf-8'))
                         return
                     
-                    # Get source balance
+                    # Get source balance. A health-wallet debit is the check
+                    # and the subtraction together, on the same row lock the
+                    # algo transfer holds.
                     source_balance = 0
+                    health_debited = False
                     if source_account == 'health_wallet':
-                        wallet = HEALTH_WALLETS.get(customer_id, {})
-                        source_balance = wallet.get('balance', 0)
+                        from services.savings_pipeline_service import debit_account_balance
+                        wallet = HEALTH_WALLETS.get(customer_id)
+                        new_balance = (
+                            debit_account_balance(wallet, amount)
+                            if isinstance(wallet, dict) else None
+                        )
+                        if new_balance is None:
+                            live = float(wallet.get('balance', 0) or 0) if isinstance(wallet, dict) else 0.0
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({
+                                'error': 'Insufficient funds',
+                                'source_balance': live,
+                                'required': amount
+                            }).encode('utf-8'))
+                            return
+                        source_balance = round(new_balance + float(amount), 2)
+                        health_debited = True
+                        health_open = (wallet, float(amount))
                     elif source_account == 'investment':
-                        inv_acc = INVESTMENT_ACCOUNTS.get(customer_id, {})
-                        source_balance = inv_acc.get('balance', 0)
+                        # Savings locks first, then the row. A deposit mirrors
+                        # this cash onto every savings account. Debiting only
+                        # the row would leave that copy withdrawable.
+                        from services.savings_pipeline_service import (
+                            debit_account_balance,
+                            named_row_lock,
+                        )
+                        portfolio_accounts = []
+                        if portfolio_enabled and portfolio_service:
+                            try:
+                                portfolio_accounts = list(
+                                    portfolio_service.get_customer_accounts(customer_id) or []
+                                )
+                            except Exception:
+                                # A missed list would debit the row and leave
+                                # the mirrored cash withdrawable. Refuse instead.
+                                self._set_json_headers(503)
+                                self.wfile.write(json.dumps({
+                                    'error': 'Savings accounts unavailable'
+                                }).encode('utf-8'))
+                                return
+                        savings_locks = []
+                        ordered_accounts = []
+                        for portfolio_account in sorted(
+                            portfolio_accounts,
+                            key=lambda item: str(getattr(item, 'account_id', '')),
+                        ):
+                            savings_id = getattr(portfolio_account, 'account_id', None)
+                            if not savings_id:
+                                continue
+                            savings_lock = named_row_lock(f"savings:{savings_id}")
+                            if savings_lock not in savings_locks:
+                                savings_locks.append(savings_lock)
+                                ordered_accounts.append(portfolio_account)
+                        acquired_savings = 0
+                        short_live = None
+                        try:
+                            for savings_lock in savings_locks:
+                                savings_lock.acquire()
+                                acquired_savings += 1
+                            inv_acc = INVESTMENT_ACCOUNTS.get(customer_id)
+                            new_inv = (
+                                debit_account_balance(inv_acc, amount)
+                                if isinstance(inv_acc, dict) else None
+                            )
+                            if new_inv is None:
+                                short_live = (
+                                    float(inv_acc.get('balance', 0) or 0)
+                                    if isinstance(inv_acc, dict) else 0.0
+                                )
+                            else:
+                                source_balance = round(new_inv + float(amount), 2)
+                                peeled = []
+                                investment_open = (inv_acc, float(amount), peeled)
+                                left = round(float(amount), 2)
+                                for portfolio_account in ordered_accounts:
+                                    if left <= 0:
+                                        break
+                                    live_cash = round(
+                                        float(getattr(portfolio_account, 'balance', 0) or 0),
+                                        2,
+                                    )
+                                    spend = min(live_cash, left)
+                                    if spend > 0:
+                                        portfolio_account.balance = round(live_cash - spend, 2)
+                                        peeled.append((portfolio_account, spend))
+                                        left = round(left - spend, 2)
+                        finally:
+                            for savings_lock in reversed(savings_locks[:acquired_savings]):
+                                savings_lock.release()
+                        if short_live is not None:
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({
+                                'error': 'Insufficient funds',
+                                'source_balance': short_live,
+                                'required': amount
+                            }).encode('utf-8'))
+                            return
                     elif source_account == 'algo_trading':
                         if unified_balance_enabled:
                             algo_bal = unified_balance_service.get_algo_trading_balance(customer_id)
                             source_balance = algo_bal.get('available', 0)
                     
-                    if source_balance < amount:
+                    if not health_debited and source_balance < amount:
                         self._set_json_headers(400)
                         self.wfile.write(json.dumps({
                             'error': 'Insufficient funds',
@@ -58465,11 +58570,9 @@ For claims or questions, please contact:
                         }).encode('utf-8'))
                         return
                     
-                    # Deduct from source
+                    # The investment debit already happened under the row lock.
                     if source_account == 'health_wallet':
-                        HEALTH_WALLETS[customer_id]['balance'] -= amount
-                    elif source_account == 'investment':
-                        INVESTMENT_ACCOUNTS[customer_id]['balance'] -= amount
+                        pass
                     elif source_account == 'algo_trading' and unified_balance_enabled:
                         unified_balance_service.withdraw_from_algo_trading(customer_id, amount, destination)
                     
@@ -58553,6 +58656,7 @@ For claims or questions, please contact:
                 
                 # If payment successful (or internal transfer), add funds to destination
                 if payment_result['success'] and (payment_method == 'internal_transfer' or payment_result.get('status') == 'completed'):
+                    source_released = True
                     new_balance = 0
                     
                     if destination == 'health_wallet':
@@ -58564,8 +58668,10 @@ For claims or questions, please contact:
                                 'transactions': [],
                                 'created_at': datetime.now().isoformat()
                             }
-                        HEALTH_WALLETS[customer_id]['balance'] += amount
-                        new_balance = HEALTH_WALLETS[customer_id]['balance']
+                        from services.savings_pipeline_service import credit_account_balance
+                        new_balance = credit_account_balance(
+                            HEALTH_WALLETS[customer_id], amount,
+                        )
                         
                         # Add transaction to wallet history
                         HEALTH_WALLETS[customer_id]['transactions'].append({
@@ -58598,13 +58704,25 @@ For claims or questions, please contact:
                         bonds_amount = amount * (allocation_prefs['bonds_pct'] / 100.0)
                         crypto_amount = amount * (allocation_prefs['crypto_pct'] / 100.0)
                         
-                        # Update balances with allocation breakdown
-                        INVESTMENT_ACCOUNTS[customer_id]['balance'] += amount
-                        INVESTMENT_ACCOUNTS[customer_id]['index_balance'] = INVESTMENT_ACCOUNTS[customer_id].get('index_balance', 0) + index_amount
-                        INVESTMENT_ACCOUNTS[customer_id]['bonds_balance'] = INVESTMENT_ACCOUNTS[customer_id].get('bonds_balance', 0) + bonds_amount
-                        INVESTMENT_ACCOUNTS[customer_id]['crypto_balance'] = INVESTMENT_ACCOUNTS[customer_id].get('crypto_balance', 0) + crypto_amount
-                        
-                        new_balance = INVESTMENT_ACCOUNTS[customer_id]['balance']
+                        # Credit the live balance under the row lock. A saved
+                        # total plus this amount would put back cash an invest
+                        # or an algo transfer already reserved.
+                        from services.savings_pipeline_service import (
+                            account_book_lock,
+                            credit_account_balance,
+                        )
+                        inv_row = INVESTMENT_ACCOUNTS[customer_id]
+                        with account_book_lock(inv_row):
+                            new_balance = credit_account_balance(inv_row, amount)
+                            inv_row['index_balance'] = round(
+                                float(inv_row.get('index_balance') or 0) + index_amount, 2,
+                            )
+                            inv_row['bonds_balance'] = round(
+                                float(inv_row.get('bonds_balance') or 0) + bonds_amount, 2,
+                            )
+                            inv_row['crypto_balance'] = round(
+                                float(inv_row.get('crypto_balance') or 0) + crypto_amount, 2,
+                            )
                         
                         # Add to deposits history with allocation details
                         INVESTMENT_ACCOUNTS[customer_id]['deposits'].append({
@@ -58750,8 +58868,10 @@ For claims or questions, please contact:
                                     'deposits': [],
                                     'created_at': datetime.now().isoformat()
                                 }
-                            INVESTMENT_ACCOUNTS[customer_id]['balance'] += amount
-                            new_balance = INVESTMENT_ACCOUNTS[customer_id]['balance']
+                            from services.savings_pipeline_service import credit_account_balance
+                            new_balance = credit_account_balance(
+                                INVESTMENT_ACCOUNTS[customer_id], amount,
+                            )
                     
                     payment_result['destination_new_balance'] = new_balance
                     
@@ -58779,6 +58899,37 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps(payment_result, default=str).encode('utf-8'))
                 
             except Exception as e:
+                if health_open is not None and not source_released:
+                    from services.savings_pipeline_service import credit_account_balance
+                    credit_account_balance(health_open[0], health_open[1])
+                if investment_open is not None and not source_released:
+                    from services.savings_pipeline_service import (
+                        credit_account_balance,
+                        named_row_lock,
+                    )
+                    inv_row, inv_amount, peeled = investment_open
+                    restore_locks = []
+                    for portfolio_account, _spend in peeled:
+                        savings_id = getattr(portfolio_account, 'account_id', None)
+                        if not savings_id:
+                            continue
+                        restore_lock = named_row_lock(f"savings:{savings_id}")
+                        if restore_lock not in restore_locks:
+                            restore_locks.append(restore_lock)
+                    acquired_restore = 0
+                    try:
+                        for restore_lock in restore_locks:
+                            restore_lock.acquire()
+                            acquired_restore += 1
+                        credit_account_balance(inv_row, inv_amount)
+                        for portfolio_account, spend in peeled:
+                            portfolio_account.balance = round(
+                                float(getattr(portfolio_account, 'balance', 0) or 0) + spend,
+                                2,
+                            )
+                    finally:
+                        for restore_lock in reversed(restore_locks[:acquired_restore]):
+                            restore_lock.release()
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             return
@@ -59035,9 +59186,13 @@ For claims or questions, please contact:
                         'created_at': datetime.now().isoformat()
                     }
                 
-                # Add funds
-                prev_balance = HEALTH_WALLETS[customer_id]['balance']
-                HEALTH_WALLETS[customer_id]['balance'] += amount
+                # Add funds on the live balance. An algo transfer holds this
+                # row from its reservation through the seal, so a deposit
+                # cannot store a figure it read before that reservation.
+                from services.savings_pipeline_service import credit_account_balance
+                wallet = HEALTH_WALLETS[customer_id]
+                new_balance = credit_account_balance(wallet, amount)
+                prev_balance = round(float(new_balance or 0) - float(amount or 0), 2)
                 
                 # Record transaction
                 transaction_id = f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
@@ -59345,17 +59500,20 @@ For claims or questions, please contact:
                 external_payment_method = None
 
                 if payment_method == 'health_wallet':
-                    if wallet['balance'] < final_amount:
+                    from services.savings_pipeline_service import debit_account_balance
+                    new_balance = debit_account_balance(wallet, final_amount)
+                    if new_balance is None:
+                        live = float(wallet.get('balance', 0) or 0)
                         self._set_json_headers(400)
                         self.wfile.write(json.dumps({
                             'error': 'Insufficient balance',
-                            'balance': wallet['balance'],
+                            'balance': live,
                             'required': final_amount,
-                            'shortfall': final_amount - wallet['balance'],
+                            'shortfall': final_amount - live,
                             'pricing_plan': pricing_plan
                         }).encode('utf-8'))
                         return
-                    wallet['balance'] = round(wallet['balance'] - final_amount, 2)
+                    prev_balance = round(new_balance + float(final_amount), 2)
                     wallet_deduction = final_amount
                 else:
                     external_payment_method = payment_method
@@ -59363,41 +59521,47 @@ For claims or questions, please contact:
 
                 purchase_id = f"PUR-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
 
-                ledger_tx = record_transaction(
-                    customer_id=customer_id,
-                    tx_type='medical_purchase',
-                    amount=final_amount,
-                    description=f"Medical Purchase: {product_name} from {provider or 'provider'}",
-                    metadata={
-                        'purchase_id': purchase_id,
-                        'product_id': product_id,
-                        'product_name': product_name,
-                        'category': category,
-                        'provider': provider,
-                        'quantity': quantity,
-                        'payment_method': payment_method,
-                        'wallet_deduction': wallet_deduction,
-                        'external_payment_amount': external_payment_amount,
-                        'external_payment_method': external_payment_method,
-                        'pricing_plan': pricing_plan,
-                        'previous_balance': prev_balance,
-                        'new_balance': wallet['balance'],
-                        'payment_source': payment_method,
-                        **({
-                            'bundle_code': catalog_bundle.get('bundle_code'),
-                            'catalog_unit_price': catalog_bundle.get('price'),
-                            'service_period': catalog_bundle.get('service_period'),
-                            'service_term': catalog_term_quote.get('service_term'),
-                            'list_amount': catalog_term_quote.get('list_amount'),
-                            'term_discount_pct': catalog_term_quote.get('term_discount_pct'),
-                            'term_discount_amount': catalog_term_quote.get('term_discount_amount'),
-                            'catalog_amount': catalog_term_quote.get('catalog_amount'),
-                            'terms_url': RESIDENTIAL_CARE_TERMS_URL,
-                            'price_source': RESIDENTIAL_CARE_PRICE_SOURCE,
-                            'image_url': catalog_bundle.get('image_url'),
-                        } if catalog_pricing_plan and catalog_bundle and catalog_term_quote else {}),
-                    }
-                )
+                try:
+                        ledger_tx = record_transaction(
+                        customer_id=customer_id,
+                        tx_type='medical_purchase',
+                        amount=final_amount,
+                        description=f"Medical Purchase: {product_name} from {provider or 'provider'}",
+                        metadata={
+                            'purchase_id': purchase_id,
+                            'product_id': product_id,
+                            'product_name': product_name,
+                            'category': category,
+                            'provider': provider,
+                            'quantity': quantity,
+                            'payment_method': payment_method,
+                            'wallet_deduction': wallet_deduction,
+                            'external_payment_amount': external_payment_amount,
+                            'external_payment_method': external_payment_method,
+                            'pricing_plan': pricing_plan,
+                            'previous_balance': prev_balance,
+                            'new_balance': wallet['balance'],
+                            'payment_source': payment_method,
+                            **({
+                                'bundle_code': catalog_bundle.get('bundle_code'),
+                                'catalog_unit_price': catalog_bundle.get('price'),
+                                'service_period': catalog_bundle.get('service_period'),
+                                'service_term': catalog_term_quote.get('service_term'),
+                                'list_amount': catalog_term_quote.get('list_amount'),
+                                'term_discount_pct': catalog_term_quote.get('term_discount_pct'),
+                                'term_discount_amount': catalog_term_quote.get('term_discount_amount'),
+                                'catalog_amount': catalog_term_quote.get('catalog_amount'),
+                                'terms_url': RESIDENTIAL_CARE_TERMS_URL,
+                                'price_source': RESIDENTIAL_CARE_PRICE_SOURCE,
+                                'image_url': catalog_bundle.get('image_url'),
+                            } if catalog_pricing_plan and catalog_bundle and catalog_term_quote else {}),
+                        }
+                        )
+                except Exception:
+                    if wallet_deduction:
+                        from services.savings_pipeline_service import credit_account_balance
+                        credit_account_balance(wallet, wallet_deduction)
+                    raise
 
                 purchase = {
                     'id': purchase_id,
@@ -60480,12 +60644,35 @@ For claims or questions, please contact:
                 if integrity_service_enabled and customer_id:
                     pre_integrity = integrity_service.validate_customer_integrity(customer_id)
                 
-                result = portfolio_service.deposit(account_id, amount, source)
-                
-                if result.get('success'):
-                    # SYNC: Also update INVESTMENT_ACCOUNTS (master record)
-                    if customer_id:
-                        if customer_id not in INVESTMENT_ACCOUNTS:
+                from services.savings_pipeline_service import (
+                    account_book_lock,
+                    credit_account_balance,
+                    mark_unallocated_cash,
+                    named_row_lock,
+                )
+
+                def _undo_portfolio_deposit():
+                    account = portfolio_service.accounts.get(account_id)
+                    if account is None:
+                        return
+                    account.balance = round(float(account.balance or 0) - amount, 2)
+                    txs = getattr(account, 'transactions', None)
+                    if (
+                        txs
+                        and isinstance(txs[-1], dict)
+                        and txs[-1].get('type') == 'deposit'
+                        and abs(float(txs[-1].get('amount') or 0) - amount) < 0.001
+                    ):
+                        txs.pop()
+
+                # The savings lock covers the portfolio credit and the
+                # investment-row credit. Invest reserves that same row under
+                # this lock, so the credit has to read the live balance.
+                with named_row_lock(f"savings:{account_id}"):
+                    result = portfolio_service.deposit(account_id, amount, source)
+                    if result.get('success') and customer_id:
+                        created_row = customer_id not in INVESTMENT_ACCOUNTS
+                        if created_row:
                             INVESTMENT_ACCOUNTS[customer_id] = {
                                 'customer_id': customer_id,
                                 'balance': 0,
@@ -60495,56 +60682,71 @@ For claims or questions, please contact:
                                 'deposits': [],
                                 'created_at': datetime.now().isoformat()
                             }
-                        
                         inv_acc = INVESTMENT_ACCOUNTS[customer_id]
-                        inv_acc['balance'] = float(inv_acc.get('balance', 0) or 0) + amount
-                        inv_acc.setdefault('deposits', []).append({
-                            'id': f"DEP-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}",
-                            'amount': amount,
-                            'source': source,
-                            'account_id': account_id,
-                            'timestamp': datetime.now().isoformat()
-                        })
-                        
-                        # Record on ledger
-                        record_transaction(
-                            customer_id=customer_id,
-                            tx_type='investment_deposit',
-                            amount=amount,
-                            description=f"Investment deposit to savings portfolio from {source}",
-                            metadata={
-                                'account_id': account_id,
-                                'source': source,
-                                'new_balance': inv_acc['balance']
-                            }
-                        )
-                        
-                        # Force save
-                        save_ledger_data()
-                        
-                        result['investment_account_synced'] = True
-                        result['investment_balance'] = inv_acc['balance']
-                        
-                        # Post-deposit integrity check
-                        if integrity_service_enabled:
-                            post_integrity = integrity_service.validate_customer_integrity(customer_id, auto_correct=True)
-                            result['integrity'] = {
-                                'pre_total': pre_integrity.calculated_total if pre_integrity else 0,
-                                'post_total': post_integrity.calculated_total,
-                                'delta': post_integrity.calculated_total - (pre_integrity.calculated_total if pre_integrity else 0),
-                                'expected_delta': amount,
-                                'is_valid': post_integrity.is_valid,
-                                'issues': post_integrity.issues
-                            }
-                            
-                            # Verify the delta matches deposit amount
-                            actual_delta = post_integrity.calculated_total - (pre_integrity.calculated_total if pre_integrity else 0)
-                            if abs(actual_delta - amount) > 0.01:
-                                result['integrity']['warning'] = f'Balance delta ({actual_delta:.2f}) differs from deposit ({amount:.2f})'
-                    
-                    if audit:
+                        # The book lock covers the peel, the credit, the seal,
+                        # and the reversal. An algo transfer takes this same
+                        # lock, so it cannot spend a credit the seal did not keep.
+                        with account_book_lock(inv_acc):
+                            mark_unallocated_cash(inv_acc)
+                            balance_before = round(float(inv_acc.get('balance', 0) or 0), 2)
+                            credited = credit_account_balance(inv_acc, amount)
+                            if credited is None:
+                                if created_row:
+                                    INVESTMENT_ACCOUNTS.pop(customer_id, None)
+                                _undo_portfolio_deposit()
+                                result = {'success': False, 'error': 'Deposit was not credited'}
+                            else:
+                                deposit_row = {
+                                    'id': f"DEP-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}",
+                                    'amount': amount,
+                                    'source': source,
+                                    'account_id': account_id,
+                                    'timestamp': datetime.now().isoformat()
+                                }
+                                inv_acc.setdefault('deposits', []).append(deposit_row)
+                                try:
+                                    record_transaction(
+                                        customer_id=customer_id,
+                                        tx_type='investment_deposit',
+                                        amount=amount,
+                                        description=f"Investment deposit to savings portfolio from {source}",
+                                        metadata={
+                                            'account_id': account_id,
+                                            'source': source,
+                                            'new_balance': inv_acc['balance']
+                                        }
+                                    )
+                                except Exception:
+                                    # The row lock was held across the credit, so
+                                    # this restores the pre-credit cash even when
+                                    # a debit of the full amount would refuse.
+                                    inv_acc['balance'] = balance_before
+                                    deposits = inv_acc.get('deposits') or []
+                                    if deposits and deposits[-1] is deposit_row:
+                                        deposits.pop()
+                                    if created_row and not inv_acc.get('deposits'):
+                                        INVESTMENT_ACCOUNTS.pop(customer_id, None)
+                                    _undo_portfolio_deposit()
+                                    raise
+                                save_ledger_data()
+                                result['investment_account_synced'] = True
+                                result['investment_balance'] = inv_acc['balance']
+                            if integrity_service_enabled:
+                                post_integrity = integrity_service.validate_customer_integrity(customer_id, auto_correct=True)
+                                result['integrity'] = {
+                                    'pre_total': pre_integrity.calculated_total if pre_integrity else 0,
+                                    'post_total': post_integrity.calculated_total,
+                                    'delta': post_integrity.calculated_total - (pre_integrity.calculated_total if pre_integrity else 0),
+                                    'expected_delta': amount,
+                                    'is_valid': post_integrity.is_valid,
+                                    'issues': post_integrity.issues
+                                }
+                                actual_delta = post_integrity.calculated_total - (pre_integrity.calculated_total if pre_integrity else 0)
+                                if abs(actual_delta - amount) > 0.01:
+                                    result['integrity']['warning'] = f'Balance delta ({actual_delta:.2f}) differs from deposit ({amount:.2f})'
+                    if result.get('success') and audit:
                         try:
-                            audit.log('system', 'deposit', 'savings_account', account_id, 
+                            audit.log('system', 'deposit', 'savings_account', account_id,
                                      {'amount': amount, 'source': source, 'integrity_valid': result.get('integrity', {}).get('is_valid', True)})
                         except Exception:
                             pass
@@ -60578,7 +60780,36 @@ For claims or questions, please contact:
                 if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account', allow_staff=False):
                     return
                 
-                result = portfolio_service.withdraw(account_id, amount, reason)
+                from services.savings_pipeline_service import (
+                    account_book_lock,
+                    investment_books,
+                    named_row_lock,
+                )
+                with named_row_lock(f"savings:{account_id}"):
+                    account = portfolio_service.accounts.get(account_id)
+                    owner_id = getattr(account, 'customer_id', None) if account is not None else None
+                    inv_row = INVESTMENT_ACCOUNTS.get(owner_id) if owner_id else None
+                    # Take the investment-row lock before the portfolio debit.
+                    # An algo transfer drains that row under the same lock, so
+                    # it cannot spend the cash this withdraw is about to take.
+                    if isinstance(inv_row, dict):
+                        book_lock = account_book_lock(inv_row)
+                        book_lock.acquire()
+                    else:
+                        book_lock = None
+                    try:
+                        result = portfolio_service.withdraw(account_id, amount, reason)
+                        if result.get('success') and isinstance(inv_row, dict):
+                            books = investment_books(inv_row)
+                            take = min(round(float(books['cash']), 2), round(amount, 2))
+                            if take > 0:
+                                if inv_row.get('balance_is_unallocated_cash'):
+                                    inv_row['balance'] = round(books['cash'] - take, 2)
+                                else:
+                                    inv_row['balance'] = round(max(0.0, books['position'] - take), 2)
+                    finally:
+                        if book_lock is not None:
+                            book_lock.release()
                 
                 if result.get('success') and audit:
                     try:
@@ -60616,44 +60847,158 @@ For claims or questions, please contact:
                 if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account', allow_staff=False):
                     return
                 
-                # SYNC: Get the account and sync its balance with INVESTMENT_ACCOUNTS
-                account = portfolio_service.accounts.get(account_id)
-                if account:
-                    customer_id = account.customer_id
-                    
-                    # Get actual balance from INVESTMENT_ACCOUNTS
-                    inv_account = INVESTMENT_ACCOUNTS.get(customer_id, {})
-                    actual_balance = float(inv_account.get('balance', 0))
-                    
-                    # Also include Health Wallet as available for investment
-                    health_wallet = HEALTH_WALLETS.get(customer_id, {})
-                    wallet_balance = float(health_wallet.get('balance', 0))
-                    
-                    # Total available = Investment balance + Health Wallet
-                    total_available = actual_balance + wallet_balance
-                    
-                    # Sync the portfolio_service account balance
-                    if total_available > account.balance:
-                        account.balance = total_available
-                        print(f"Synced portfolio balance for {customer_id}: ${total_available:,.2f}")
-                
-                result = portfolio_service.invest(account_id, symbol, amount)
-                
-                # If successful, also update INVESTMENT_ACCOUNTS
-                if result.get('success'):
-                    customer_id = account.customer_id if account else None
-                    if customer_id and customer_id in INVESTMENT_ACCOUNTS:
-                        # Deduct from investment balance first, then health wallet if needed
-                        inv_bal = float(INVESTMENT_ACCOUNTS[customer_id].get('balance', 0))
-                        if amount <= inv_bal:
-                            INVESTMENT_ACCOUNTS[customer_id]['balance'] = inv_bal - amount
+                # Every savings account for this customer is locked, in id order,
+                # before the investment row. Deposits mirror one row onto each
+                # account, so the cash reserved from that row has to leave all
+                # of them, not only the account that buys the lot.
+                from services.savings_pipeline_service import (
+                    account_book_lock,
+                    credit_account_balance,
+                    debit_account_balance,
+                    named_row_lock,
+                )
+                account = portfolio_service.accounts.get(account_id) if portfolio_service else None
+                customer_id = getattr(account, 'customer_id', None) if account is not None else None
+                sibling_accounts = []
+                if customer_id:
+                    try:
+                        sibling_accounts = list(
+                            portfolio_service.get_customer_accounts(customer_id) or []
+                        )
+                    except Exception:
+                        sibling_accounts = []
+                savings_names = []
+                for sibling in sibling_accounts:
+                    sibling_id = getattr(sibling, 'account_id', None)
+                    if sibling_id and str(sibling_id) not in savings_names:
+                        savings_names.append(str(sibling_id))
+                if account_id and str(account_id) not in savings_names:
+                    savings_names.append(str(account_id))
+                savings_names.sort()
+                savings_locks = [named_row_lock(f"savings:{name}") for name in savings_names]
+                acquired_savings = 0
+                reserved_inv = 0.0
+                reserved_wallet = 0.0
+                inv_row = None
+                wallet_row = None
+                funded_from_stores = False
+                try:
+                    for savings_lock in savings_locks:
+                        savings_lock.acquire()
+                        acquired_savings += 1
+                    short = False
+                    held = []
+                    if account:
+                        candidate_inv = INVESTMENT_ACCOUNTS.get(customer_id)
+                        candidate_wallet = HEALTH_WALLETS.get(customer_id)
+                        inv_row = candidate_inv if isinstance(candidate_inv, dict) else None
+                        wallet_row = candidate_wallet if isinstance(candidate_wallet, dict) else None
+                        rows = []
+                        for row in (inv_row, wallet_row):
+                            if row is not None and row not in rows:
+                                rows.append(row)
+                        rows.sort(key=id)
+                        held = [account_book_lock(row) for row in rows]
+                    acquired_books = 0
+                    try:
+                        for lock in held:
+                            lock.acquire()
+                            acquired_books += 1
+                        if account and held:
+                            inv_live = round(float(inv_row.get('balance', 0) or 0), 2) if inv_row else 0.0
+                            wallet_live = round(float(wallet_row.get('balance', 0) or 0), 2) if wallet_row else 0.0
+                            store_cover = round(inv_live + wallet_live, 2)
+                            if store_cover + 1e-9 < amount:
+                                short = True
+                            else:
+                                take_inv = min(amount, inv_live)
+                                take_wallet = round(amount - take_inv, 2)
+                                if take_inv > 0:
+                                    inv_row['balance'] = round(inv_live - take_inv, 2)
+                                    reserved_inv = take_inv
+                                if take_wallet > 0:
+                                    if debit_account_balance(wallet_row, take_wallet) is None:
+                                        if reserved_inv:
+                                            inv_row['balance'] = round(
+                                                float(inv_row.get('balance', 0) or 0) + reserved_inv, 2
+                                            )
+                                            reserved_inv = 0.0
+                                        short = True
+                                    else:
+                                        reserved_wallet = take_wallet
+                                if not short:
+                                    funded_from_stores = True
+
+                        def _return_invest_reserve():
+                            nonlocal reserved_inv, reserved_wallet
+                            if reserved_inv > 0 and inv_row is not None:
+                                inv_row['balance'] = round(
+                                    float(inv_row.get('balance', 0) or 0) + reserved_inv, 2
+                                )
+                                reserved_inv = 0.0
+                            if reserved_wallet > 0 and wallet_row is not None:
+                                credit_account_balance(wallet_row, reserved_wallet)
+                                reserved_wallet = 0.0
+
+                        if short:
+                            result = {'success': False, 'error': 'Insufficient funds'}
                         else:
-                            # Use investment balance first, then health wallet
-                            remaining = amount - inv_bal
-                            INVESTMENT_ACCOUNTS[customer_id]['balance'] = 0
-                            if customer_id in HEALTH_WALLETS:
-                                hw_bal = float(HEALTH_WALLETS[customer_id].get('balance', 0))
-                                HEALTH_WALLETS[customer_id]['balance'] = max(0, hw_bal - remaining)
+                            try:
+                                result = portfolio_service.invest(
+                                    account_id, symbol, amount, spend_cash=not funded_from_stores,
+                                )
+                            except Exception:
+                                _return_invest_reserve()
+                                raise
+                            if not result.get('success'):
+                                _return_invest_reserve()
+                            elif reserved_inv > 0:
+                                # The row was reserved above. An algo withdrawal
+                                # mirrors that cash onto the lowest account id.
+                                # Only that row-sized slice is peelable, filled
+                                # from the lowest id upward. Cash above it stays
+                                # on the account that holds it, including a sibling.
+                                left = round(reserved_inv, 2)
+                                peel_accounts = []
+                                if account is not None:
+                                    peel_accounts.append(account)
+                                for sibling in sibling_accounts:
+                                    if sibling is not None and sibling not in peel_accounts:
+                                        peel_accounts.append(sibling)
+                                peel_accounts.sort(
+                                    key=lambda item: str(getattr(item, 'account_id', '')),
+                                )
+                                post_row = round(float(inv_row.get('balance', 0) or 0), 2) if isinstance(inv_row, dict) else 0.0
+                                row_left = round(post_row + reserved_inv, 2)
+                                peelable = {}
+                                for portfolio_account in peel_accounts:
+                                    live_cash = round(
+                                        float(getattr(portfolio_account, 'balance', 0) or 0), 2,
+                                    )
+                                    share = min(live_cash, row_left)
+                                    peelable[id(portfolio_account)] = share
+                                    row_left = round(row_left - share, 2)
+                                for portfolio_account in peel_accounts:
+                                    if left <= 0:
+                                        break
+                                    live_cash = round(
+                                        float(getattr(portfolio_account, 'balance', 0) or 0), 2,
+                                    )
+                                    spend = min(peelable.get(id(portfolio_account), 0.0), left)
+                                    if spend > 0:
+                                        portfolio_account.balance = round(live_cash - spend, 2)
+                                        left = round(left - spend, 2)
+                                if account is not None:
+                                    txn = result.get('transaction')
+                                    if isinstance(txn, dict):
+                                        txn['balance_after'] = account.balance
+                                    result['cash_balance'] = account.balance
+                    finally:
+                        for lock in reversed(held[:acquired_books]):
+                            lock.release()
+                finally:
+                    for savings_lock in reversed(savings_locks[:acquired_savings]):
+                        savings_lock.release()
                 
                 if result.get('success') and audit:
                     try:
@@ -60691,7 +61036,9 @@ For claims or questions, please contact:
                 if not self._enforce_customer_write(self._savings_account_owner(account_id), 'savings account', allow_staff=False):
                     return
                 
-                result = portfolio_service.sell_asset(account_id, symbol, quantity)
+                from services.savings_pipeline_service import named_row_lock
+                with named_row_lock(f"savings:{account_id}"):
+                    result = portfolio_service.sell_asset(account_id, symbol, quantity)
                 
                 if result.get('success') and audit:
                     try:
@@ -61898,6 +62245,7 @@ For claims or questions, please contact:
                 return
             
             try:
+                carried_savings = []
                 data = json.loads(body)
                 customer_id = data.get('customer_id')
                 amount = float(data.get('amount', 0))
@@ -61915,38 +62263,85 @@ For claims or questions, please contact:
                 
                 # ========== PRE-TRANSFER SYNC ==========
                 # Sync balances from all sources to unified_balance_service before transfer
-                
+                # Savings locks taken here stay held through the debit and the
+                # portfolio publish. Releasing them in between lets a withdraw
+                # pay the pre-transfer portfolio cash after the row is gone.
+
                 # 1. Sync investment balance from portfolio_service
                 if portfolio_enabled and portfolio_service:
                     try:
-                        accounts = portfolio_service.get_customer_accounts(customer_id)
-                        if accounts:
-                            portfolio_cash = sum(acc.balance for acc in accounts)
-                            # A flagged row stores unallocated cash in balance.
-                            # Replacing that cash with a portfolio total would
-                            # count the holdings a second time.
+                        from services.savings_pipeline_service import (
+                            account_book_lock,
+                            named_row_lock,
+                        )
+                        try:
+                            sync_accounts = list(
+                                portfolio_service.get_customer_accounts(customer_id) or []
+                            )
+                        except Exception:
+                            sync_accounts = []
+                        sync_savings = []
+                        for sync_account in sorted(
+                            sync_accounts,
+                            key=lambda item: str(getattr(item, 'account_id', '')),
+                        ):
+                            sync_savings_id = getattr(sync_account, 'account_id', None)
+                            if not sync_savings_id:
+                                continue
+                            sync_savings_lock = named_row_lock(f"savings:{sync_savings_id}")
+                            if sync_savings_lock not in sync_savings:
+                                sync_savings.append(sync_savings_lock)
+                        acquired_savings = 0
+                        acquired_books = 0
+                        sync_locks = []
+                        try:
+                            for sync_savings_lock in sync_savings:
+                                sync_savings_lock.acquire()
+                                acquired_savings += 1
                             existing = INVESTMENT_ACCOUNTS.get(customer_id)
-                            if isinstance(existing, dict) and existing.get('balance_is_unallocated_cash'):
-                                best_balance = float(existing.get('balance') or 0)
-                            else:
-                                inv_acc_bal = float((existing or {}).get('balance') or 0) if isinstance(existing, dict) else 0.0
-                                best_balance = max(portfolio_cash, inv_acc_bal)
-                            
-                            # Update unified_balance_service's investment_accounts
-                            if customer_id not in unified_balance_service.investment_accounts:
-                                unified_balance_service.investment_accounts[customer_id] = {
-                                    'balance': best_balance,
-                                    'deposits': [],
-                                    'created_at': datetime.now().isoformat()
-                                }
-                            else:
-                                unified_balance_service.investment_accounts[customer_id]['balance'] = best_balance
-                            
-                            # Also update global INVESTMENT_ACCOUNTS
-                            if customer_id not in INVESTMENT_ACCOUNTS:
-                                INVESTMENT_ACCOUNTS[customer_id] = unified_balance_service.investment_accounts[customer_id].copy()
-                            else:
-                                INVESTMENT_ACCOUNTS[customer_id]['balance'] = best_balance
+                            unified_existing = unified_balance_service.investment_accounts.get(customer_id)
+                            sync_rows = []
+                            for sync_row in (existing, unified_existing):
+                                if isinstance(sync_row, dict) and sync_row not in sync_rows:
+                                    sync_rows.append(sync_row)
+                            sync_rows.sort(key=id)
+                            sync_locks = [account_book_lock(sync_row) for sync_row in sync_rows]
+                            for sync_lock in sync_locks:
+                                sync_lock.acquire()
+                                acquired_books += 1
+                            if sync_accounts:
+                                portfolio_cash = sum(acc.balance for acc in sync_accounts)
+                                # A flagged row stores unallocated cash in balance.
+                                # Replacing that cash with a portfolio total would
+                                # count the holdings a second time.
+                                existing = INVESTMENT_ACCOUNTS.get(customer_id)
+                                if isinstance(existing, dict) and existing.get('balance_is_unallocated_cash'):
+                                    best_balance = float(existing.get('balance') or 0)
+                                else:
+                                    inv_acc_bal = float((existing or {}).get('balance') or 0) if isinstance(existing, dict) else 0.0
+                                    best_balance = max(portfolio_cash, inv_acc_bal)
+
+                                # Update unified_balance_service's investment_accounts
+                                if customer_id not in unified_balance_service.investment_accounts:
+                                    unified_balance_service.investment_accounts[customer_id] = {
+                                        'balance': best_balance,
+                                        'deposits': [],
+                                        'created_at': datetime.now().isoformat()
+                                    }
+                                else:
+                                    unified_balance_service.investment_accounts[customer_id]['balance'] = best_balance
+
+                                # Share that row. A copy would let the transfer
+                                # debit one dict and leave the other unchanged.
+                                shared_row = unified_balance_service.investment_accounts[customer_id]
+                                if customer_id not in INVESTMENT_ACCOUNTS:
+                                    INVESTMENT_ACCOUNTS[customer_id] = shared_row
+                                else:
+                                    INVESTMENT_ACCOUNTS[customer_id]['balance'] = best_balance
+                        finally:
+                            for sync_lock in reversed(sync_locks[:acquired_books]):
+                                sync_lock.release()
+                            carried_savings.extend(sync_savings[:acquired_savings])
                     except Exception as sync_err:
                         print(f"Pre-transfer investment sync note: {sync_err}")
                 
@@ -61974,24 +62369,81 @@ For claims or questions, please contact:
                     
                     # 1. Sync investment balance back
                     if source == 'investment_account':
-                        new_inv_balance = unified_balance_service.investment_accounts.get(customer_id, {}).get('balance', 0)
-                        INVESTMENT_ACCOUNTS[customer_id]['balance'] = new_inv_balance
-                        
-                        # Also update portfolio_service
+                        from services.savings_pipeline_service import (
+                            account_book_lock,
+                            named_row_lock,
+                        )
+                        # Withdraw and deposit hold the savings lock, then this
+                        # book lock, while they change portfolio cash. Take
+                        # that same order and publish before either lock is
+                        # released, so this write cannot put back cash they
+                        # already took or credited.
+                        portfolio_accounts = []
                         if portfolio_enabled and portfolio_service:
                             try:
-                                accounts = portfolio_service.get_customer_accounts(customer_id)
-                                if accounts:
-                                    accounts[0].balance = new_inv_balance
+                                portfolio_accounts = list(
+                                    portfolio_service.get_customer_accounts(customer_id) or []
+                                )
                             except Exception:
-                                pass
-                        
-                        # Update portfolio_tracker_service investment_accounts
-                        if portfolio_tracker_enabled:
-                            if customer_id not in portfolio_tracker_service.investment_accounts:
-                                portfolio_tracker_service.investment_accounts[customer_id] = {'balance': new_inv_balance}
-                            else:
-                                portfolio_tracker_service.investment_accounts[customer_id]['balance'] = new_inv_balance
+                                portfolio_accounts = []
+                        savings_locks = []
+                        for portfolio_account in sorted(
+                            portfolio_accounts,
+                            key=lambda item: str(getattr(item, 'account_id', '')),
+                        ):
+                            savings_id = getattr(portfolio_account, 'account_id', None)
+                            if not savings_id:
+                                continue
+                            savings_lock = named_row_lock(f"savings:{savings_id}")
+                            if savings_lock not in savings_locks:
+                                savings_locks.append(savings_lock)
+                        for savings_lock in savings_locks:
+                            savings_lock.acquire()
+                        try:
+                            unified_row = unified_balance_service.investment_accounts.get(customer_id)
+                            global_row = INVESTMENT_ACCOUNTS.get(customer_id)
+                            # The tracker is the same book as INVESTMENT_ACCOUNTS.
+                            # A write after these locks drop puts a captured
+                            # balance back onto cash a withdraw already took.
+                            tracker_row = None
+                            if portfolio_tracker_enabled:
+                                tracker_accounts = portfolio_tracker_service.investment_accounts
+                                if isinstance(tracker_accounts, dict):
+                                    existing_tracker = tracker_accounts.get(customer_id)
+                                    if isinstance(existing_tracker, dict):
+                                        tracker_row = existing_tracker
+                                    else:
+                                        tracker_row = {'balance': 0.0}
+                                        tracker_accounts[customer_id] = tracker_row
+                            publish_rows = []
+                            for publish_row in (unified_row, global_row, tracker_row):
+                                if isinstance(publish_row, dict) and publish_row not in publish_rows:
+                                    publish_rows.append(publish_row)
+                            publish_rows.sort(key=id)
+                            publish_locks = [account_book_lock(publish_row) for publish_row in publish_rows]
+                            for publish_lock in publish_locks:
+                                publish_lock.acquire()
+                            try:
+                                if isinstance(unified_row, dict):
+                                    new_inv_balance = round(float(unified_row.get('balance') or 0), 2)
+                                elif isinstance(global_row, dict):
+                                    new_inv_balance = round(float(global_row.get('balance') or 0), 2)
+                                else:
+                                    new_inv_balance = 0.0
+                                if isinstance(global_row, dict):
+                                    global_row['balance'] = new_inv_balance
+                                if isinstance(tracker_row, dict):
+                                    tracker_row['balance'] = new_inv_balance
+                                # Portfolio cash was already reduced by the
+                                # cash that left the row, inside the transfer.
+                                # Writing the row balance here would turn an
+                                # older position into spendable cash.
+                            finally:
+                                for publish_lock in reversed(publish_locks):
+                                    publish_lock.release()
+                        finally:
+                            for savings_lock in reversed(savings_locks):
+                                savings_lock.release()
                     
                     # 2. Sync health wallet back
                     elif source == 'health_wallet':
@@ -62032,8 +62484,14 @@ For claims or questions, please contact:
                         result['available_balance'] = wallet_bal
                         result['requested_amount'] = amount
                 
+                for carried_lock in reversed(carried_savings):
+                    carried_lock.release()
+                carried_savings.clear()
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except Exception as e:
+                for carried_lock in reversed(carried_savings):
+                    carried_lock.release()
+                carried_savings.clear()
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e), 'type': type(e).__name__}).encode('utf-8'))
             return
@@ -62088,30 +62546,11 @@ For claims or questions, please contact:
                     # ========== POST-WITHDRAWAL SYNC ==========
                     # Sync destination balance back to global stores
                     
-                    if destination == 'investment_account':
-                        new_inv_balance = unified_balance_service.investment_accounts.get(customer_id, {}).get('balance', 0)
-                        if customer_id in INVESTMENT_ACCOUNTS:
-                            INVESTMENT_ACCOUNTS[customer_id]['balance'] = new_inv_balance
-                        else:
-                            INVESTMENT_ACCOUNTS[customer_id] = {'balance': new_inv_balance, 'deposits': []}
-                        
-                        # Update portfolio_service
-                        if portfolio_enabled and portfolio_service:
-                            try:
-                                accounts = portfolio_service.get_customer_accounts(customer_id)
-                                if accounts:
-                                    accounts[0].balance = new_inv_balance
-                            except Exception:
-                                pass
-                        
-                        # Update portfolio_tracker_service
-                        if portfolio_tracker_enabled:
-                            if customer_id not in portfolio_tracker_service.investment_accounts:
-                                portfolio_tracker_service.investment_accounts[customer_id] = {'balance': new_inv_balance}
-                            else:
-                                portfolio_tracker_service.investment_accounts[customer_id]['balance'] = new_inv_balance
-                    
-                    elif destination == 'health_wallet':
+                    # An investment destination is already credited on the
+                    # shared row, and that cash is mirrored onto a savings
+                    # account. A captured balance written back here would
+                    # restore cash an invest already reserved.
+                    if destination == 'health_wallet':
                         HEALTH_WALLETS[customer_id] = unified_balance_service.health_wallets.get(customer_id, HEALTH_WALLETS.get(customer_id, {}))
                         if portfolio_tracker_enabled:
                             portfolio_tracker_service.health_wallets[customer_id] = HEALTH_WALLETS[customer_id]
@@ -63227,6 +63666,8 @@ For claims or questions, please contact:
             return
 
         if path == '/api/billing/pay':
+            _wallet_hold = None
+            _bill_before = None
             try:
                 data = json.loads(body)
                 bill_id = data.get('bill_id')
@@ -63286,189 +63727,217 @@ For claims or questions, please contact:
                 customer_id = bill.get('customer_id', 'unknown')
                 policy_id = bill.get('policy_id')
                 
-                # Handle health_wallet payment method
-                wallet_deduction_info = None
-                if payment_method == 'health_wallet':
-                    # Check if customer has sufficient health wallet balance
-                    wallet = HEALTH_WALLETS.get(customer_id, {})
-                    wallet_balance = wallet.get('balance', 0)
-                    
-                    if wallet_balance < amount:
-                        self._set_json_headers(400)
-                        self.wfile.write(json.dumps({
-                            'error': 'Insufficient health wallet balance',
-                            'wallet_balance': wallet_balance,
-                            'amount_required': amount,
-                            'shortfall': amount - wallet_balance
-                        }).encode('utf-8'))
-                        return
-                    
-                    # Deduct from health wallet
-                    prev_wallet_balance = wallet_balance
-                    HEALTH_WALLETS[customer_id]['balance'] -= amount
-                    new_wallet_balance = HEALTH_WALLETS[customer_id]['balance']
-                    
-                    # Record wallet withdrawal transaction
-                    wallet_tx = {
-                        'id': f"WAL-PAY-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
-                        'type': 'premium_payment',
-                        'amount': -amount,
-                        'bill_id': bill_id,
-                        'policy_id': policy_id,
-                        'description': f"Premium payment for bill {bill_id}",
-                        'previous_balance': prev_wallet_balance,
-                        'balance_after': new_wallet_balance,
-                        'timestamp': datetime.now().isoformat()
-                    }
-                    HEALTH_WALLETS[customer_id]['transactions'].append(wallet_tx)
-                    
-                    wallet_deduction_info = {
-                        'previous_balance': prev_wallet_balance,
-                        'amount_deducted': amount,
-                        'new_balance': new_wallet_balance,
-                        'wallet_tx_id': wallet_tx['id']
-                    }
-                
-                prev_paid = bill.get('amount_paid', 0.0)
-                bill['amount_paid'] = prev_paid + amount
-                # Support both 'amount' and 'amount_due' field names for compatibility
-                amount_due = bill.get('amount', bill.get('amount_due', 0))
-                if bill['amount_paid'] >= amount_due:
-                    bill['status'] = 'paid'
-                    bill['paid_date'] = datetime.now().isoformat()
-                else:
-                    bill['status'] = 'partial'
-                
-                bill['payment_method'] = payment_method
-                
-                # EXPLICIT: Re-assign to ensure BILLING is updated
-                BILLING[bill_id] = bill
-                if status_eq(bill, 'paid'):
-                    notify_referral_reward_for_paid_customer(customer_id)
-                
-                # Record premium revenue on PHINS Balance Sheet
+                # The bill lock covers the field update and the seal. A failed
+                # seal restores this request's snapshot before another pay of
+                # the same bill can commit.
+                from services.savings_pipeline_service import named_row_lock
+                _bill_lock = named_row_lock(f"bill:{bill_id}")
+                _bill_lock.acquire()
                 try:
-                    record_premium_revenue(
+                    bill = BILLING.get(bill_id) or bill
+                    wallet_deduction_info = None
+                    if payment_method == 'health_wallet':
+                        # Check and debit under the same row lock an algo
+                        # transfer holds, so the two cannot spend one balance.
+                        from services.savings_pipeline_service import debit_account_balance
+                        wallet = HEALTH_WALLETS.get(customer_id)
+                        new_wallet_balance = (
+                            debit_account_balance(wallet, amount)
+                            if isinstance(wallet, dict) else None
+                        )
+                        if new_wallet_balance is None:
+                            wallet_balance = float(wallet.get('balance', 0) or 0) if isinstance(wallet, dict) else 0.0
+                            self._set_json_headers(400)
+                            self.wfile.write(json.dumps({
+                                'error': 'Insufficient health wallet balance',
+                                'wallet_balance': wallet_balance,
+                                'amount_required': amount,
+                                'shortfall': amount - wallet_balance
+                            }).encode('utf-8'))
+                            return
+
+                        prev_wallet_balance = round(new_wallet_balance + float(amount), 2)
+                        _wallet_hold = (wallet, float(amount), None)
+
+                        wallet_tx = {
+                            'id': f"WAL-PAY-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
+                            'type': 'premium_payment',
+                            'amount': -amount,
+                            'bill_id': bill_id,
+                            'policy_id': policy_id,
+                            'description': f"Premium payment for bill {bill_id}",
+                            'previous_balance': prev_wallet_balance,
+                            'balance_after': new_wallet_balance,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                        HEALTH_WALLETS[customer_id].setdefault('transactions', []).append(wallet_tx)
+                        _wallet_hold = (wallet, float(amount), wallet_tx['id'])
+
+                        wallet_deduction_info = {
+                            'previous_balance': prev_wallet_balance,
+                            'amount_deducted': amount,
+                            'new_balance': new_wallet_balance,
+                            'wallet_tx_id': wallet_tx['id']
+                        }
+
+                    prev_paid = bill.get('amount_paid', 0.0)
+                    _bill_before = {
+                        'amount_paid': bill.get('amount_paid', 0.0),
+                        'status': bill.get('status'),
+                        'paid_date': bill.get('paid_date'),
+                        'payment_method': bill.get('payment_method'),
+                    }
+                    bill['amount_paid'] = prev_paid + amount
+                    amount_due = bill.get('amount', bill.get('amount_due', 0))
+                    if bill['amount_paid'] >= amount_due:
+                        bill['status'] = 'paid'
+                        bill['paid_date'] = datetime.now().isoformat()
+                    else:
+                        bill['status'] = 'partial'
+                    bill['payment_method'] = payment_method
+                    BILLING[bill_id] = bill
+
+                    payment_tx = record_transaction(
+                        customer_id=customer_id,
+                        tx_type='premium_payment' if payment_method == 'health_wallet' else 'bill_payment',
+                        amount=amount,
+                        description=f"Bill payment of ${amount:.2f} for bill {bill_id} via {payment_method}",
+                        metadata={
+                            'bill_id': bill_id,
+                            'policy_id': policy_id,
+                            'payment_method': payment_method,
+                            'amount_due': amount_due,
+                            'amount_paid_total': bill['amount_paid'],
+                            'bill_status': bill['status'],
+                            'prev_paid': prev_paid,
+                            'wallet_deduction': wallet_deduction_info
+                        }
+                    )
+                    # The ledger row is the seal. Revenue is recorded only
+                    # after it returns, so a failed seal does not book income.
+                    _wallet_hold = None
+                    _bill_before = None
+                    if status_eq(bill, 'paid'):
+                        try:
+                            notify_referral_reward_for_paid_customer(customer_id)
+                        except Exception as notify_err:
+                            print(f"[REFERRAL] Error notifying paid customer: {notify_err}")
+                    try:
+                        record_premium_revenue(
+                            customer_id=customer_id,
+                            policy_id=policy_id,
+                            amount=amount,
+                            description=f"Premium payment for {bill_id} via {payment_method}"
+                        )
+                    except Exception as bs_err:
+                        print(f"[BALANCE_SHEET] Error recording premium revenue: {bs_err}")
+                    save_ledger_data()
+                    record_premium_cash_books(
                         customer_id=customer_id,
                         policy_id=policy_id,
                         amount=amount,
-                        description=f"Premium payment for {bill_id} via {payment_method}"
+                        bills_paid=[str(bill_id)],
+                        source_tx_id=str(payment_tx.get('id') or ''),
+                        bill_payments={str(bill_id): float(amount)},
                     )
-                except Exception as bs_err:
-                    print(f"[BALANCE_SHEET] Error recording premium revenue: {bs_err}")
-                
-                # Force save to persistence
-                save_ledger_data()
-                
-                # Record payment on TRANSACTION_LEDGER and NFT_LEDGER
-                payment_tx = record_transaction(
-                    customer_id=customer_id,
-                    tx_type='premium_payment' if payment_method == 'health_wallet' else 'bill_payment',
-                    amount=amount,
-                    description=f"Bill payment of ${amount:.2f} for bill {bill_id} via {payment_method}",
-                    metadata={
-                        'bill_id': bill_id,
-                        'policy_id': policy_id,
+
+                    doc_bundle = generate_action_accounting_documents(
+                        action_type='bill_payment' if payment_method != 'health_wallet' else 'premium_payment',
+                        entity_type='billing',
+                        entity_id=str(bill_id),
+                        customer_id=customer_id,
+                        amount=amount,
+                        description=f"Bill payment for {bill_id}",
+                        tx=payment_tx,
+                        metadata={
+                            'policy_id': policy_id,
+                            'payment_method': payment_method,
+                            'amount_due': amount_due,
+                            'amount_paid_total': bill['amount_paid'],
+                            'bill_status': bill['status'],
+                        },
+                        uploaded_by='billing_system',
+                    )
+
+                    if savings_pipeline_enabled and savings_pipeline_service and policy_id:
+                        try:
+                            customer_alloc = get_customer_allocation(customer_id)
+                            savings_pct = customer_alloc.get('savings_pct', DEFAULT_CUSTOMER_ALLOCATION['savings_pct'])
+                            savings_amount = amount * (savings_pct / 100)
+                            if savings_amount > 0:
+                                savings_pipeline_service.deposit_to_pipeline(
+                                    customer_id=customer_id,
+                                    amount=savings_amount,
+                                    source='premium_payment',
+                                    auto_allocate=True
+                                )
+                        except Exception as pipe_err:
+                            print(f"Pipeline allocation note: {pipe_err}")
+
+                    if audit:
+                        try:
+                            audit.log('system', 'update', 'bill', bill_id, {'paid': amount, 'status': bill['status'], 'method': payment_method})
+                        except Exception:
+                            pass
+
+                    bill_doc_bundle = generate_action_accounting_documents(
+                        action_type='bill_payment',
+                        entity_type='billing',
+                        entity_id=str(bill_id),
+                        customer_id=customer_id,
+                        amount=amount,
+                        description=f"Bill payment for {bill_id}",
+                        tx=payment_tx,
+                        metadata={
+                            'policy_id': policy_id,
+                            'payment_method': payment_method,
+                            'bill_status': bill.get('status'),
+                            'amount_due': amount_due,
+                            'amount_paid_total': bill.get('amount_paid'),
+                        },
+                        uploaded_by='billing_system',
+                    )
+                    generated_bill_documents = bill_doc_bundle.get('documents', [])
+
+                    response_data = {
+                        'success': True,
+                        'bill': bill,
+                        'transaction_recorded': True,
+                        'nft_token_id': payment_tx.get('nft_token_id'),
                         'payment_method': payment_method,
-                        'amount_due': amount_due,
-                        'amount_paid_total': bill['amount_paid'],
-                        'bill_status': bill['status'],
-                        'prev_paid': prev_paid,
-                        'wallet_deduction': wallet_deduction_info
+                        'amount_paid': amount,
+                        'revenue_recorded': True
                     }
-                )
-                record_premium_cash_books(
-                    customer_id=customer_id,
-                    policy_id=policy_id,
-                    amount=amount,
-                    bills_paid=[str(bill_id)],
-                    source_tx_id=str(payment_tx.get('id') or ''),
-                    bill_payments={str(bill_id): float(amount)},
-                )
+                    if doc_bundle.get('documents'):
+                        response_data['documents_generated'] = doc_bundle['documents']
+                    if wallet_deduction_info:
+                        response_data['wallet_deduction'] = wallet_deduction_info
+                        response_data['message'] = f'Bill paid from health wallet. New wallet balance: ${wallet_deduction_info["new_balance"]:,.2f}'
+                    if generated_bill_documents:
+                        response_data['documents_generated'] = generated_bill_documents
 
-                doc_bundle = generate_action_accounting_documents(
-                    action_type='bill_payment' if payment_method != 'health_wallet' else 'premium_payment',
-                    entity_type='billing',
-                    entity_id=str(bill_id),
-                    customer_id=customer_id,
-                    amount=amount,
-                    description=f"Bill payment for {bill_id}",
-                    tx=payment_tx,
-                    metadata={
-                        'policy_id': policy_id,
-                        'payment_method': payment_method,
-                        'amount_due': amount_due,
-                        'amount_paid_total': bill['amount_paid'],
-                        'bill_status': bill['status'],
-                    },
-                    uploaded_by='billing_system',
-                )
-                
-                # If payment allocates to savings (for premium payments), route through pipeline
-                if savings_pipeline_enabled and savings_pipeline_service and policy_id:
-                    try:
-                        # Get customer's allocation preferences
-                        customer_alloc = get_customer_allocation(customer_id)
-                        savings_pct = customer_alloc.get('savings_pct', DEFAULT_CUSTOMER_ALLOCATION['savings_pct'])
-                        savings_amount = amount * (savings_pct / 100)
-                        
-                        if savings_amount > 0:
-                            # Deposit to pipeline for AI allocation
-                            savings_pipeline_service.deposit_to_pipeline(
-                                customer_id=customer_id,
-                                amount=savings_amount,
-                                source='premium_payment',
-                                auto_allocate=True
-                            )
-                    except Exception as pipe_err:
-                        print(f"Pipeline allocation note: {pipe_err}")
-                
-                if audit:
-                    try:
-                        audit.log('system', 'update', 'bill', bill_id, {'paid': amount, 'status': bill['status'], 'method': payment_method})
-                    except Exception:
-                        pass
-                
-                bill_doc_bundle = generate_action_accounting_documents(
-                    action_type='bill_payment',
-                    entity_type='billing',
-                    entity_id=str(bill_id),
-                    customer_id=customer_id,
-                    amount=amount,
-                    description=f"Bill payment for {bill_id}",
-                    tx=payment_tx,
-                    metadata={
-                        'policy_id': policy_id,
-                        'payment_method': payment_method,
-                        'bill_status': bill.get('status'),
-                        'amount_due': amount_due,
-                        'amount_paid_total': bill.get('amount_paid'),
-                    },
-                    uploaded_by='billing_system',
-                )
-                generated_bill_documents = bill_doc_bundle.get('documents', [])
-
-                response_data = {
-                    'success': True,
-                    'bill': bill,
-                    'transaction_recorded': True,
-                    'nft_token_id': payment_tx.get('nft_token_id'),
-                    'payment_method': payment_method,
-                    'amount_paid': amount,
-                    'revenue_recorded': True
-                }
-                if doc_bundle.get('documents'):
-                    response_data['documents_generated'] = doc_bundle['documents']
-                
-                # Include wallet deduction info if paid from health wallet
-                if wallet_deduction_info:
-                    response_data['wallet_deduction'] = wallet_deduction_info
-                    response_data['message'] = f'Bill paid from health wallet. New wallet balance: ${wallet_deduction_info["new_balance"]:,.2f}'
-                if generated_bill_documents:
-                    response_data['documents_generated'] = generated_bill_documents
-                
-                self._set_json_headers(200)
-                self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                finally:
+                    if _wallet_hold is not None:
+                        from services.savings_pipeline_service import credit_account_balance
+                        held_wallet, held_amount, held_tx = _wallet_hold
+                        credit_account_balance(held_wallet, held_amount)
+                        if held_tx and isinstance(held_wallet.get('transactions'), list):
+                            held_wallet['transactions'] = [
+                                tx for tx in held_wallet['transactions']
+                                if tx.get('id') != held_tx
+                            ]
+                        _wallet_hold = None
+                    if _bill_before is not None:
+                        for key, value in _bill_before.items():
+                            if value is None:
+                                bill.pop(key, None)
+                            else:
+                                bill[key] = value
+                        BILLING[bill_id] = bill
+                        _bill_before = None
+                    _bill_lock.release()
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid request', 'details': str(e)}).encode('utf-8'))
@@ -63478,6 +63947,9 @@ For claims or questions, please contact:
         
         # Pay all outstanding bills from health wallet
         if path == '/api/billing/pay-all-from-wallet':
+            _bulk_hold = None
+            _bulk_snapshots = []
+            _bulk_tx_id = None
             try:
                 data = json.loads(body)
                 customer_id = data.get('customer_id')
@@ -63491,157 +63963,220 @@ For claims or questions, please contact:
                 if not self._enforce_customer_write(customer_id, 'wallet', allow_staff=False):
                     return
                 
-                # Get customer's health wallet
-                wallet = HEALTH_WALLETS.get(customer_id, {})
-                wallet_balance = wallet.get('balance', 0)
-                
-                # Get all outstanding bills for this customer (case-insensitive)
-                customer_bills = [
-                    (bid, b) for bid, b in BILLING.items() 
-                    if b.get('customer_id') == customer_id and status_in(b, ['outstanding', 'partial', 'overdue'])
-                ]
-                
-                if not customer_bills:
-                    self._set_json_headers(200)
-                    self.wfile.write(json.dumps({
-                        'success': True,
-                        'message': 'No outstanding bills to pay',
-                        'bills_paid': 0,
-                        'wallet_balance': wallet_balance
-                    }).encode('utf-8'))
-                    return
-                
-                # Calculate total outstanding
-                total_outstanding = sum(
-                    (b.get('amount', b.get('amount_due', 0)) - b.get('amount_paid', 0))
-                    for _, b in customer_bills
-                )
-                
-                # Determine how much can be paid
-                amount_to_pay = min(wallet_balance, total_outstanding)
-                
-                if amount_to_pay <= 0:
+                # Reserve the cash under the row lock, then release it
+                # before revenue and referral notification.
+                wallet = HEALTH_WALLETS.get(customer_id)
+                if not isinstance(wallet, dict):
                     self._set_json_headers(400)
                     self.wfile.write(json.dumps({
                         'error': 'Insufficient wallet balance or no amount due',
-                        'wallet_balance': wallet_balance,
-                        'total_outstanding': total_outstanding
+                        'wallet_balance': 0,
+                        'total_outstanding': 0
                     }).encode('utf-8'))
                     return
-                
-                # Process payments for each bill
-                payments_made = []
-                remaining_to_pay = amount_to_pay
-                prev_wallet_balance = wallet_balance
-                
-                for bill_id, bill in customer_bills:
-                    if remaining_to_pay <= 0:
-                        break
-                    
-                    amount_due = bill.get('amount', bill.get('amount_due', 0))
-                    amount_paid = bill.get('amount_paid', 0)
-                    bill_remaining = amount_due - amount_paid
-                    
-                    if bill_remaining <= 0:
-                        continue
-                    
-                    # Pay this bill (full or partial)
-                    payment_amount = min(remaining_to_pay, bill_remaining)
-                    
-                    bill['amount_paid'] = amount_paid + payment_amount
-                    if bill['amount_paid'] >= amount_due:
-                        bill['status'] = 'paid'
-                        bill['paid_date'] = datetime.now().isoformat()
-                    else:
-                        bill['status'] = 'partial'
-                    bill['payment_method'] = 'health_wallet'
-                    BILLING[bill_id] = bill
-                    
-                    # Record premium revenue on balance sheet
-                    try:
-                        record_premium_revenue(
-                            customer_id=customer_id,
-                            policy_id=bill.get('policy_id'),
-                            amount=payment_amount,
-                            description=f"Premium payment for {bill_id} from health wallet"
-                        )
-                    except Exception as bs_err:
-                        print(f"[BALANCE_SHEET] Error: {bs_err}")
-                    
-                    payments_made.append({
-                        'bill_id': bill_id,
-                        'policy_id': bill.get('policy_id'),
-                        'amount_paid': payment_amount,
-                        'bill_status': bill['status'],
-                        'amount_due': amount_due,
-                        'total_paid': bill['amount_paid']
-                    })
-                    
-                    remaining_to_pay -= payment_amount
 
-                if any(str(item.get('bill_status') or '').lower() == 'paid' for item in payments_made):
-                    notify_referral_reward_for_paid_customer(customer_id)
+                from services.savings_pipeline_service import named_row_lock
+                _bulk_lock_ids = sorted(
+                    bid for bid, b in BILLING.items()
+                    if isinstance(b, dict) and b.get('customer_id') == customer_id
+                    and status_in(b, ['outstanding', 'partial', 'overdue'])
+                )
+                _bulk_locks = [named_row_lock(f"bill:{bid}") for bid in _bulk_lock_ids]
+                for _bulk_lock in _bulk_locks:
+                    _bulk_lock.acquire()
+                try:
+                    locked_ids = set(_bulk_lock_ids)
+                    customer_bills = [
+                        (bid, b) for bid, b in BILLING.items()
+                        if bid in locked_ids
+                        and b.get('customer_id') == customer_id
+                        and status_in(b, ['outstanding', 'partial', 'overdue'])
+                    ]
+                    wallet_balance = float(wallet.get('balance', 0) or 0)
+                    if not customer_bills:
+                        self._set_json_headers(200)
+                        self.wfile.write(json.dumps({
+                            'success': True,
+                            'message': 'No outstanding bills to pay',
+                            'bills_paid': 0,
+                            'wallet_balance': wallet_balance
+                        }).encode('utf-8'))
+                        return
+
+                    total_outstanding = sum(
+                        (b.get('amount', b.get('amount_due', 0)) - b.get('amount_paid', 0))
+                        for _, b in customer_bills
+                    )
+                    amount_to_pay = min(wallet_balance, total_outstanding)
+                    if amount_to_pay <= 0:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Insufficient wallet balance or no amount due',
+                            'wallet_balance': wallet_balance,
+                            'total_outstanding': total_outstanding
+                        }).encode('utf-8'))
+                        return
+
+                    from services.savings_pipeline_service import (
+                        credit_account_balance,
+                        debit_account_balance,
+                    )
+                    new_wallet_balance = debit_account_balance(wallet, amount_to_pay)
+                    if new_wallet_balance is None:
+                        live_balance = float(wallet.get('balance', 0) or 0)
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'error': 'Insufficient wallet balance or no amount due',
+                            'wallet_balance': live_balance,
+                            'total_outstanding': total_outstanding
+                        }).encode('utf-8'))
+                        return
+                    _bulk_hold = (wallet, float(amount_to_pay))
+                    prev_wallet_balance = round(new_wallet_balance + float(amount_to_pay), 2)
+
+                    payments_made = []
+                    remaining_to_pay = amount_to_pay
+
+                    for bill_id, bill in customer_bills:
+                        if remaining_to_pay <= 0:
+                            break
+
+                        amount_due = bill.get('amount', bill.get('amount_due', 0))
+                        amount_paid = bill.get('amount_paid', 0)
+                        bill_remaining = amount_due - amount_paid
+
+                        if bill_remaining <= 0:
+                            continue
+
+                        payment_amount = min(remaining_to_pay, bill_remaining)
+                        _bulk_snapshots.append((bill_id, {
+                            'amount_paid': bill.get('amount_paid', 0),
+                            'status': bill.get('status'),
+                            'paid_date': bill.get('paid_date'),
+                            'payment_method': bill.get('payment_method'),
+                        }))
+                        bill['amount_paid'] = amount_paid + payment_amount
+                        if bill['amount_paid'] >= amount_due:
+                            bill['status'] = 'paid'
+                            bill['paid_date'] = datetime.now().isoformat()
+                        else:
+                            bill['status'] = 'partial'
+                        bill['payment_method'] = 'health_wallet'
+                        BILLING[bill_id] = bill
+
+                        payments_made.append({
+                            'bill_id': bill_id,
+                            'policy_id': bill.get('policy_id'),
+                            'amount_paid': payment_amount,
+                            'bill_status': bill['status'],
+                            'amount_due': amount_due,
+                            'total_paid': bill['amount_paid']
+                        })
+                        remaining_to_pay -= payment_amount
+
+                    total_paid = round(float(amount_to_pay) - float(remaining_to_pay), 2)
+                    unused = round(float(amount_to_pay) - total_paid, 2)
+                    if unused > 0:
+                        credit_account_balance(wallet, unused)
+                    _bulk_hold = (wallet, total_paid) if total_paid > 0 else None
+                    new_wallet_balance = round(float(wallet.get('balance', 0) or 0), 2)
+
+                    wallet_tx = {
+                        'id': f"WAL-BULK-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
+                        'type': 'bulk_premium_payment',
+                        'amount': -total_paid,
+                        'bills_paid': len(payments_made),
+                        'description': f"Bulk premium payment for {len(payments_made)} bills",
+                        'previous_balance': prev_wallet_balance,
+                        'balance_after': new_wallet_balance,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    HEALTH_WALLETS[customer_id].setdefault('transactions', []).append(wallet_tx)
+                    _bulk_tx_id = wallet_tx['id']
+
+                    payment_tx = record_transaction(
+                        customer_id=customer_id,
+                        tx_type='bulk_premium_payment',
+                        amount=total_paid,
+                        description=f"Bulk premium payment of ${total_paid:.2f} for {len(payments_made)} bills from health wallet",
+                        metadata={
+                            'bills_paid': payments_made,
+                            'total_paid': total_paid,
+                            'wallet_previous_balance': prev_wallet_balance,
+                            'wallet_new_balance': new_wallet_balance,
+                            'remaining_outstanding': total_outstanding - total_paid,
+                            'wallet_debit': True,
+                        }
+                    )
+                    _bulk_hold = None
+                    _bulk_snapshots = []
+                    _bulk_tx_id = None
+                    for paid in payments_made:
+                        try:
+                            record_premium_revenue(
+                                customer_id=customer_id,
+                                policy_id=paid.get('policy_id'),
+                                amount=paid.get('amount_paid'),
+                                description=f"Premium payment for {paid.get('bill_id')} from health wallet"
+                            )
+                        except Exception as bs_err:
+                            print(f"[BALANCE_SHEET] Error: {bs_err}")
+                    if any(str(item.get('bill_status') or '').lower() == 'paid' for item in payments_made):
+                        try:
+                            notify_referral_reward_for_paid_customer(customer_id)
+                        except Exception as notify_err:
+                            print(f"[REFERRAL] Error notifying paid customer: {notify_err}")
+                    for paid in payments_made:
+                        record_premium_cash_books(
+                            customer_id=customer_id,
+                            policy_id=paid.get('policy_id'),
+                            amount=paid.get('amount_paid'),
+                            bills_paid=[str(paid.get('bill_id') or '')],
+                            source_tx_id=str(payment_tx.get('id') or ''),
+                            bill_payments={
+                                str(paid.get('bill_id') or ''): float(paid.get('amount_paid') or 0)
+                            },
+                        )
                 
-                # Deduct total from health wallet
-                total_paid = amount_to_pay - remaining_to_pay
-                HEALTH_WALLETS[customer_id]['balance'] -= total_paid
-                new_wallet_balance = HEALTH_WALLETS[customer_id]['balance']
+                    save_ledger_data()
                 
-                # Record wallet transaction
-                wallet_tx = {
-                    'id': f"WAL-BULK-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
-                    'type': 'bulk_premium_payment',
-                    'amount': -total_paid,
-                    'bills_paid': len(payments_made),
-                    'description': f"Bulk premium payment for {len(payments_made)} bills",
-                    'previous_balance': prev_wallet_balance,
-                    'balance_after': new_wallet_balance,
-                    'timestamp': datetime.now().isoformat()
-                }
-                HEALTH_WALLETS[customer_id]['transactions'].append(wallet_tx)
-                
-                # Record on transaction ledger
-                payment_tx = record_transaction(
-                    customer_id=customer_id,
-                    tx_type='bulk_premium_payment',
-                    amount=total_paid,
-                    description=f"Bulk premium payment of ${total_paid:.2f} for {len(payments_made)} bills from health wallet",
-                    metadata={
-                        'bills_paid': payments_made,
+                    self._set_json_headers(200)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'message': f'Paid {len(payments_made)} bills totaling ${total_paid:,.2f} from health wallet',
                         'total_paid': total_paid,
+                        'bills_paid': len(payments_made),
+                        'payment_details': payments_made,
                         'wallet_previous_balance': prev_wallet_balance,
                         'wallet_new_balance': new_wallet_balance,
                         'remaining_outstanding': total_outstanding - total_paid,
-                        'wallet_debit': True,
-                    }
-                )
-                for paid in payments_made:
-                    record_premium_cash_books(
-                        customer_id=customer_id,
-                        policy_id=paid.get('policy_id'),
-                        amount=paid.get('amount_paid'),
-                        bills_paid=[str(paid.get('bill_id') or '')],
-                        source_tx_id=str(payment_tx.get('id') or ''),
-                        bill_payments={
-                            str(paid.get('bill_id') or ''): float(paid.get('amount_paid') or 0)
-                        },
-                    )
-                
-                save_ledger_data()
-                
-                self._set_json_headers(200)
-                self.wfile.write(json.dumps({
-                    'success': True,
-                    'message': f'Paid {len(payments_made)} bills totaling ${total_paid:,.2f} from health wallet',
-                    'total_paid': total_paid,
-                    'bills_paid': len(payments_made),
-                    'payment_details': payments_made,
-                    'wallet_previous_balance': prev_wallet_balance,
-                    'wallet_new_balance': new_wallet_balance,
-                    'remaining_outstanding': total_outstanding - total_paid,
-                    'nft_token_id': payment_tx.get('nft_token_id'),
-                    'wallet_tx_id': wallet_tx['id']
-                }, default=str).encode('utf-8'))
+                        'nft_token_id': payment_tx.get('nft_token_id'),
+                        'wallet_tx_id': wallet_tx['id']
+                    }, default=str).encode('utf-8'))
+                finally:
+                    if _bulk_hold is not None:
+                        from services.savings_pipeline_service import credit_account_balance
+                        held_wallet, held_amount = _bulk_hold
+                        credit_account_balance(held_wallet, held_amount)
+                        if _bulk_tx_id and isinstance(held_wallet.get('transactions'), list):
+                            held_wallet['transactions'] = [
+                                tx for tx in held_wallet['transactions']
+                                if tx.get('id') != _bulk_tx_id
+                            ]
+                        _bulk_hold = None
+                    for snap_id, fields in _bulk_snapshots:
+                        snap_bill = BILLING.get(snap_id)
+                        if not isinstance(snap_bill, dict):
+                            continue
+                        for key, value in fields.items():
+                            if value is None:
+                                snap_bill.pop(key, None)
+                            else:
+                                snap_bill[key] = value
+                        BILLING[snap_id] = snap_bill
+                    _bulk_snapshots = []
+                    for _bulk_lock in reversed(_bulk_locks):
+                        _bulk_lock.release()
             except Exception as e:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
