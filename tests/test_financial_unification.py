@@ -54,6 +54,52 @@ def test_kernel_split_prefers_policy_pin_over_allocation_prefs():
     assert split["integrity_hash"] == "abc123"
 
 
+def test_underwriting_fee_is_not_savings():
+    """A 35% decision sits between risk and the add-on. It is company money."""
+    policy = {
+        "annual_premium": 1620.0,
+        "actuarial_annual_premium": 1200.0,
+        "risk_premium_annual": 1200.0,
+        "underwriting_loading": 0.35,
+    }
+    split = resolve_premium_split(135.0, policy)
+    assert split["risk_amount"] == 100.0
+    assert split["underwriting_fee_amount"] == 35.0
+    assert split["savings_amount"] == 0.0
+    assert split["company_remainder"] == 0.0
+
+
+def test_chat_loading_already_inside_risk_is_not_charged_again():
+    policy = {
+        "annual_premium": 1620.0,
+        "risk_premium_annual": 1620.0,
+        "savings_premium_annual": 0.0,
+        "underwriting_loading": 0.35,
+        "pricing_source": "pricing_kernel",
+        "allocation_version": "chat",
+        "application_channel": "chat",
+    }
+    split = resolve_premium_split(135.0, policy)
+    assert split["underwriting_fee_amount"] == 0.0
+    assert split["risk_amount"] == 135.0
+    assert split["savings_amount"] == 0.0
+
+
+def test_earlier_allocation_is_kept_and_the_fee_stays_out_of_savings():
+    policy = {
+        "annual_premium": 1620.0,
+        "actuarial_annual_premium": 1200.0,
+        "risk_allocation": 60.0,
+        "savings_allocation": 40.0,
+        "underwriting_loading": 0.35,
+    }
+    split = resolve_premium_split(135.0, policy)
+    assert split["split_source"] == "historical"
+    assert split["risk_amount"] == 60.0
+    assert split["savings_amount"] == 40.0
+    assert split["underwriting_fee_amount"] == 35.0
+
+
 def test_split_without_a_savings_election_is_pure_risk():
     split = resolve_premium_split(200.0, {"annual_premium": 2400.0}, fallback_risk_pct=75)
     assert split["risk_percentage"] == 100.0

@@ -408,10 +408,37 @@ def apply_premium_adjustment(
 
     policy.setdefault("actuarial_monthly_premium", monthly)
     policy.setdefault("actuarial_annual_premium", annual)
+    # An earlier risk/savings percentage stays on the policy. The uplift is
+    # a company fee. It is not written into that allocation or the savings pin.
+    base_annual = float(policy.get("actuarial_annual_premium") or 0)
+    base_monthly = float(policy.get("actuarial_monthly_premium") or 0)
+    parts = 0.0
+    priced_parts = False
+    if policy.get("risk_premium_annual") is not None:
+        parts = float(policy.get("risk_premium_annual") or 0)
+        for key in ("expense_loading_annual", "profit_margin_annual", "savings_premium_annual"):
+            if policy.get(key) is not None:
+                parts += float(policy.get(key) or 0)
+        priced_parts = abs(parts - annual) <= 0.05
+    prior = policy.get("underwriting_loading")
+    same_chat_loading = (
+        priced_parts
+        and prior is not None
+        and abs(float(prior) - adj) < 1e-6
+        and (
+            str(policy.get("allocation_version") or "") == "chat"
+            or str(policy.get("application_channel") or "") == "chat"
+        )
+    )
     policy["underwriting_loading"] = adj
-    policy["monthly_premium"] = round(monthly * (1.0 + adj), 2)
-    policy["annual_premium"] = round(annual * (1.0 + adj), 2)
-    policy["quarterly_premium"] = round(policy["monthly_premium"] * 3 * 0.97, 2)
+    if same_chat_loading:
+        # The application chat already folded this loading into the risk pin.
+        policy["underwriting_fee_annual"] = 0.0
+    else:
+        policy["monthly_premium"] = round(base_monthly * (1.0 + adj), 2)
+        policy["annual_premium"] = round(base_annual * (1.0 + adj), 2)
+        policy["underwriting_fee_annual"] = round(policy["annual_premium"] - base_annual, 2)
+    policy["quarterly_premium"] = round(float(policy["monthly_premium"]) * 3 * 0.97, 2)
 
     app["premium_adjustment"] = int(round(adj * 100))
     factors = list(app.get("underwriting_risk_factors") or [])

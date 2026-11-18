@@ -206,6 +206,40 @@ def test_named_addon_is_priced_when_the_savings_pin_is_absent():
     assert light_row["savings_source"] == "addon"
 
 
+def test_earlier_allocation_and_underwriting_fee_are_reported_as_booked():
+    policy = {
+        "id": "POL-OLD",
+        "customer_id": "CUST-OLD",
+        "start_date": "2026-01-01",
+        "annual_premium": 1620.00,
+        "actuarial_annual_premium": 1200.00,
+        "risk_allocation": 60.0,
+        "savings_allocation": 40.0,
+        "underwriting_loading": 0.35,
+    }
+    bills = [{
+        "id": "BILL-OLD",
+        "customer_id": "CUST-OLD",
+        "payment_period": "2026-01",
+        "amount_paid": 135.00,
+        "premium_allocation": {"risk_amount": 60.0, "savings_amount": 40.0},
+    }]
+    report = reconcile_customer("CUST-OLD", policies=[policy], bills=bills)
+    assert report["picture"]["savings_kind"] == "historical"
+    assert report["picture"]["landed_savings"] == 40.00
+    row = report["months"][0]
+    assert row["savings_source"] == "historical"
+    assert row["kernel_risk"] == 60.00
+    assert row["underwriting_fee"] == 35.00
+    assert row["savings_addon"] == 40.00
+    assert row["landed_risk"] == 60.00
+    assert row["landed_underwriting_fee"] == 35.00
+    assert row["landed_savings"] == 40.00
+    assert row["booked_risk"] == 60.00
+    assert row["booked_savings"] == 40.00
+    assert "savings_carved_from_premium" not in row["flags"]
+
+
 def test_issued_quote_field_names_pin_risk_expense_and_profit():
     """Quotes store the kernel's annual amounts without an ``_annual`` suffix."""
     policy = {

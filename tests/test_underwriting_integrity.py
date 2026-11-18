@@ -67,6 +67,42 @@ def test_premium_adjustment_preserves_actuarial_base():
     assert app["premium_adjustment"] == 15
     assert app["underwriting_risk_factors"]
     assert app["underwriting_risk_factors"][0]["category"] == "underwriting"
+    assert policy["underwriting_fee_annual"] == 180.0
+    assert policy["annual_premium"] == 1380.0
+
+
+def test_premium_adjustment_keeps_an_earlier_allocation_and_books_a_fee():
+    policy = {
+        "monthly_premium": 100.0,
+        "annual_premium": 1200.0,
+        "risk_premium_annual": 1000.0,
+        "savings_premium_annual": 200.0,
+        "risk_allocation": 75.0,
+        "savings_allocation": 25.0,
+    }
+    app: dict = {}
+    apply_premium_adjustment(policy=policy, app=app, adjustment=35)
+    assert policy["savings_allocation"] == 25.0
+    assert policy["risk_allocation"] == 75.0
+    assert policy["savings_premium_annual"] == 200.0
+    assert policy["underwriting_fee_annual"] == 420.0
+    assert policy["annual_premium"] == 1620.0
+    assert policy["actuarial_annual_premium"] == 1200.0
+
+
+def test_chat_price_is_not_loaded_a_second_time():
+    policy = {
+        "monthly_premium": 135.0,
+        "annual_premium": 1620.0,
+        "risk_premium_annual": 1620.0,
+        "savings_premium_annual": 0.0,
+        "underwriting_loading": 0.35,
+        "allocation_version": "chat",
+        "application_channel": "chat",
+    }
+    apply_premium_adjustment(policy=policy, app={}, adjustment=35)
+    assert policy["annual_premium"] == 1620.0
+    assert policy["underwriting_fee_annual"] == 0.0
 
 
 def test_archive_rejected_keeps_history_and_leaves_queue():
