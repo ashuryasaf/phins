@@ -1522,6 +1522,52 @@ def test_internal_transfer_cannot_spend_cash_an_invest_already_reserved():
         portal.HEALTH_WALLETS.pop(customer_id, None)
 
 
+def test_internal_transfer_refuses_when_savings_accounts_cannot_be_listed():
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-14"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 0.0, "transactions": []}
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-14", 0.0)
+    account.balance = 100.0
+    original = portal.portfolio_service.get_customer_accounts
+
+    def _boom(_customer_id):
+        raise RuntimeError("account list failed")
+
+    portal.portfolio_service.get_customer_accounts = _boom
+    try:
+        status, body = _post_json("/api/unified-payment/deposit", {
+            "customer_id": customer_id,
+            "amount": 100.0,
+            "destination": "health_wallet",
+            "payment_method": "internal_transfer",
+            "source_account": "investment",
+        })
+        assert status == 503, body
+        assert body.get("error") == "Savings accounts unavailable"
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 100.0
+        assert account.balance == 100.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 0.0
+        withdrawn, withdraw_body = _post_json("/api/savings/withdraw", {
+            "account_id": account.account_id,
+            "amount": 100.0,
+        })
+        assert withdrawn == 200, withdraw_body
+        assert account.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 0.0
+    finally:
+        portal.portfolio_service.get_customer_accounts = original
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+
+
 def test_internal_transfer_peels_mirrored_portfolio_cash():
     import web_portal.server as portal
 

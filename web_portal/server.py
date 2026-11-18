@@ -58492,7 +58492,13 @@ For claims or questions, please contact:
                                     portfolio_service.get_customer_accounts(customer_id) or []
                                 )
                             except Exception:
-                                portfolio_accounts = []
+                                # A missed list would debit the row and leave
+                                # the mirrored cash withdrawable. Refuse instead.
+                                self._set_json_headers(503)
+                                self.wfile.write(json.dumps({
+                                    'error': 'Savings accounts unavailable'
+                                }).encode('utf-8'))
+                                return
                         savings_locks = []
                         ordered_accounts = []
                         for portfolio_account in sorted(
