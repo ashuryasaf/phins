@@ -200,16 +200,6 @@ class UnifiedBalanceService:
                         'available_balance': source_balance,
                     }
 
-            if customer_id not in self.algo_trading_balances:
-                self.algo_trading_balances[customer_id] = {
-                    'available': 0.0,
-                    'in_positions': 0.0,
-                    'total_pnl': 0.0,
-                    'active_bots': 0,
-                    'transfers': [],
-                    'created_at': datetime.now().isoformat()
-                }
-
             transfer_id = f"TRF-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
             prior = None
             if source != 'health_wallet':
@@ -226,8 +216,18 @@ class UnifiedBalanceService:
                 amount = applied
                 source_balance = investment_books(book)['position'] + amount
 
-            bucket = self.algo_trading_balances[customer_id]
             with algo_credit_lock(customer_id):
+                bucket = self.algo_trading_balances.get(customer_id)
+                if not isinstance(bucket, dict):
+                    bucket = {
+                        'available': 0.0,
+                        'in_positions': 0.0,
+                        'total_pnl': 0.0,
+                        'active_bots': 0,
+                        'transfers': [],
+                        'created_at': datetime.now().isoformat()
+                    }
+                    self.algo_trading_balances[customer_id] = bucket
                 algo_after = round(
                     float(bucket.get('available', 0) or 0) + amount,
                     2,
@@ -267,8 +267,17 @@ class UnifiedBalanceService:
                 else:
                     reported_source = round(source_balance - amount, 2)
 
-                bucket['available'] = round(float(bucket.get('available', 0) or 0) + amount, 2)
-                bucket.setdefault('transfers', []).append({
+                # The seal can replace this customer's algo row. Credit the
+                # row now in the map, not the dict captured before the call.
+                live_bucket = self.algo_trading_balances.get(customer_id)
+                if not isinstance(live_bucket, dict):
+                    live_bucket = bucket
+                    self.algo_trading_balances[customer_id] = live_bucket
+                live_bucket['available'] = round(
+                    float(live_bucket.get('available', 0) or 0) + amount,
+                    2,
+                )
+                live_bucket.setdefault('transfers', []).append({
                     'id': transfer_id,
                     'type': 'deposit',
                     'source': source,

@@ -994,6 +994,33 @@ def test_algo_credit_during_the_seal_is_not_replaced():
     assert investment_books(account)["position"] == 90.0
 
 
+def test_replaced_algo_bucket_still_receives_the_credit():
+    account = _flagged_row()
+    service, _recorded = _balance_service({"CUST-1": account})
+    service.algo_trading_balances["CUST-1"] = {
+        "available": 0.0,
+        "in_positions": 0.0,
+        "total_pnl": 0.0,
+        "transfers": [],
+    }
+
+    def _record(**_kwargs):
+        service.algo_trading_balances["CUST-1"] = {
+            "available": 10.0,
+            "in_positions": 0.0,
+            "total_pnl": 0.0,
+            "transfers": [],
+        }
+        return {"id": "TX-1", "nft_token_id": "NFT-1"}
+
+    service.record_transaction = _record
+    result = service.transfer_to_algo_trading("CUST-1", 50.0, "investment_account")
+    assert result["success"] is True
+    assert result["new_algo_balance"] == 60.0
+    assert service.algo_trading_balances["CUST-1"]["available"] == 60.0
+    assert investment_books(account)["position"] == 90.0
+
+
 def test_refused_credit_puts_the_withdrawal_back():
     account = _flagged_row()
 

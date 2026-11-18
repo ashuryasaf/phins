@@ -366,7 +366,14 @@ class PortfolioTrackerService:
                 if debit_source and book is not None:
                     book['balance'] = round(float(book.get('balance', 0) or 0) - amount, 2)
                     source_balance = book['balance']
-                bucket['available'] = round(float(bucket.get('available', 0) or 0) + amount, 2)
+                live_bucket = self.algo_balances.get(customer_id)
+                if not isinstance(live_bucket, dict):
+                    live_bucket = bucket
+                    self.algo_balances[customer_id] = live_bucket
+                live_bucket['available'] = round(
+                    float(live_bucket.get('available', 0) or 0) + amount,
+                    2,
+                )
             trade.nft_token_id = tx.get('nft_token_id')
             trade.ledger_tx_id = tx.get('id')
 
