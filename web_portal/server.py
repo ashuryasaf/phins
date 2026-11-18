@@ -60515,6 +60515,7 @@ For claims or questions, please contact:
                     pre_integrity = integrity_service.validate_customer_integrity(customer_id)
                 
                 from services.savings_pipeline_service import (
+                    account_book_lock,
                     credit_account_balance,
                     debit_account_balance,
                     mark_unallocated_cash,
@@ -60553,46 +60554,52 @@ For claims or questions, please contact:
                                 'created_at': datetime.now().isoformat()
                             }
                         inv_acc = INVESTMENT_ACCOUNTS[customer_id]
-                        mark_unallocated_cash(inv_acc)
-                        credited = credit_account_balance(inv_acc, amount)
-                        if credited is None:
-                            if created_row:
-                                INVESTMENT_ACCOUNTS.pop(customer_id, None)
-                            _undo_portfolio_deposit()
-                            result = {'success': False, 'error': 'Deposit was not credited'}
-                        else:
-                            deposit_row = {
-                                'id': f"DEP-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}",
-                                'amount': amount,
-                                'source': source,
-                                'account_id': account_id,
-                                'timestamp': datetime.now().isoformat()
-                            }
-                            inv_acc.setdefault('deposits', []).append(deposit_row)
-                            try:
-                                record_transaction(
-                                    customer_id=customer_id,
-                                    tx_type='investment_deposit',
-                                    amount=amount,
-                                    description=f"Investment deposit to savings portfolio from {source}",
-                                    metadata={
-                                        'account_id': account_id,
-                                        'source': source,
-                                        'new_balance': inv_acc['balance']
-                                    }
-                                )
-                            except Exception:
-                                debit_account_balance(inv_acc, amount)
-                                deposits = inv_acc.get('deposits') or []
-                                if deposits and deposits[-1] is deposit_row:
-                                    deposits.pop()
-                                if created_row and not inv_acc.get('deposits'):
+                        # The book lock covers the peel, the credit, the seal,
+                        # and the reversal. An algo transfer takes this same
+                        # lock, so it cannot spend a credit the seal did not keep.
+                        with account_book_lock(inv_acc):
+                            mark_unallocated_cash(inv_acc)
+                            credited = credit_account_balance(inv_acc, amount)
+                            if credited is None:
+                                if created_row:
                                     INVESTMENT_ACCOUNTS.pop(customer_id, None)
                                 _undo_portfolio_deposit()
-                                raise
-                            save_ledger_data()
-                            result['investment_account_synced'] = True
-                            result['investment_balance'] = inv_acc['balance']
+                                result = {'success': False, 'error': 'Deposit was not credited'}
+                            else:
+                                deposit_row = {
+                                    'id': f"DEP-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}",
+                                    'amount': amount,
+                                    'source': source,
+                                    'account_id': account_id,
+                                    'timestamp': datetime.now().isoformat()
+                                }
+                                inv_acc.setdefault('deposits', []).append(deposit_row)
+                                try:
+                                    record_transaction(
+                                        customer_id=customer_id,
+                                        tx_type='investment_deposit',
+                                        amount=amount,
+                                        description=f"Investment deposit to savings portfolio from {source}",
+                                        metadata={
+                                            'account_id': account_id,
+                                            'source': source,
+                                            'new_balance': inv_acc['balance']
+                                        }
+                                    )
+                                except Exception:
+                                    reversed_balance = debit_account_balance(inv_acc, amount)
+                                    if reversed_balance is None:
+                                        raise
+                                    deposits = inv_acc.get('deposits') or []
+                                    if deposits and deposits[-1] is deposit_row:
+                                        deposits.pop()
+                                    if created_row and not inv_acc.get('deposits'):
+                                        INVESTMENT_ACCOUNTS.pop(customer_id, None)
+                                    _undo_portfolio_deposit()
+                                    raise
+                                save_ledger_data()
+                                result['investment_account_synced'] = True
+                                result['investment_balance'] = inv_acc['balance']
                             if integrity_service_enabled:
                                 post_integrity = integrity_service.validate_customer_integrity(customer_id, auto_correct=True)
                                 result['integrity'] = {
@@ -60648,20 +60655,30 @@ For claims or questions, please contact:
                     named_row_lock,
                 )
                 with named_row_lock(f"savings:{account_id}"):
-                    result = portfolio_service.withdraw(account_id, amount, reason)
-                    if result.get('success'):
-                        account = portfolio_service.accounts.get(account_id)
-                        owner_id = getattr(account, 'customer_id', None) if account is not None else None
-                        inv_row = INVESTMENT_ACCOUNTS.get(owner_id) if owner_id else None
-                        if isinstance(inv_row, dict):
-                            with account_book_lock(inv_row):
-                                books = investment_books(inv_row)
-                                take = min(round(float(books['cash']), 2), round(amount, 2))
-                                if take > 0:
-                                    if inv_row.get('balance_is_unallocated_cash'):
-                                        inv_row['balance'] = round(books['cash'] - take, 2)
-                                    else:
-                                        inv_row['balance'] = round(max(0.0, books['position'] - take), 2)
+                    account = portfolio_service.accounts.get(account_id)
+                    owner_id = getattr(account, 'customer_id', None) if account is not None else None
+                    inv_row = INVESTMENT_ACCOUNTS.get(owner_id) if owner_id else None
+                    # Take the investment-row lock before the portfolio debit.
+                    # An algo transfer drains that row under the same lock, so
+                    # it cannot spend the cash this withdraw is about to take.
+                    if isinstance(inv_row, dict):
+                        book_lock = account_book_lock(inv_row)
+                        book_lock.acquire()
+                    else:
+                        book_lock = None
+                    try:
+                        result = portfolio_service.withdraw(account_id, amount, reason)
+                        if result.get('success') and isinstance(inv_row, dict):
+                            books = investment_books(inv_row)
+                            take = min(round(float(books['cash']), 2), round(amount, 2))
+                            if take > 0:
+                                if inv_row.get('balance_is_unallocated_cash'):
+                                    inv_row['balance'] = round(books['cash'] - take, 2)
+                                else:
+                                    inv_row['balance'] = round(max(0.0, books['position'] - take), 2)
+                    finally:
+                        if book_lock is not None:
+                            book_lock.release()
                 
                 if result.get('success') and audit:
                     try:
@@ -62074,34 +62091,43 @@ For claims or questions, please contact:
                 # 1. Sync investment balance from portfolio_service
                 if portfolio_enabled and portfolio_service:
                     try:
-                        accounts = portfolio_service.get_customer_accounts(customer_id)
-                        if accounts:
-                            portfolio_cash = sum(acc.balance for acc in accounts)
-                            # A flagged row stores unallocated cash in balance.
-                            # Replacing that cash with a portfolio total would
-                            # count the holdings a second time.
-                            existing = INVESTMENT_ACCOUNTS.get(customer_id)
-                            if isinstance(existing, dict) and existing.get('balance_is_unallocated_cash'):
-                                best_balance = float(existing.get('balance') or 0)
-                            else:
-                                inv_acc_bal = float((existing or {}).get('balance') or 0) if isinstance(existing, dict) else 0.0
-                                best_balance = max(portfolio_cash, inv_acc_bal)
-                            
-                            # Update unified_balance_service's investment_accounts
-                            if customer_id not in unified_balance_service.investment_accounts:
-                                unified_balance_service.investment_accounts[customer_id] = {
-                                    'balance': best_balance,
-                                    'deposits': [],
-                                    'created_at': datetime.now().isoformat()
-                                }
-                            else:
-                                unified_balance_service.investment_accounts[customer_id]['balance'] = best_balance
-                            
-                            # Also update global INVESTMENT_ACCOUNTS
-                            if customer_id not in INVESTMENT_ACCOUNTS:
-                                INVESTMENT_ACCOUNTS[customer_id] = unified_balance_service.investment_accounts[customer_id].copy()
-                            else:
-                                INVESTMENT_ACCOUNTS[customer_id]['balance'] = best_balance
+                        from services.savings_pipeline_service import account_book_lock
+                        existing = INVESTMENT_ACCOUNTS.get(customer_id)
+                        sync_lock = account_book_lock(existing) if isinstance(existing, dict) else None
+                        if sync_lock is not None:
+                            sync_lock.acquire()
+                        try:
+                            accounts = portfolio_service.get_customer_accounts(customer_id)
+                            if accounts:
+                                portfolio_cash = sum(acc.balance for acc in accounts)
+                                # A flagged row stores unallocated cash in balance.
+                                # Replacing that cash with a portfolio total would
+                                # count the holdings a second time.
+                                existing = INVESTMENT_ACCOUNTS.get(customer_id)
+                                if isinstance(existing, dict) and existing.get('balance_is_unallocated_cash'):
+                                    best_balance = float(existing.get('balance') or 0)
+                                else:
+                                    inv_acc_bal = float((existing or {}).get('balance') or 0) if isinstance(existing, dict) else 0.0
+                                    best_balance = max(portfolio_cash, inv_acc_bal)
+
+                                # Update unified_balance_service's investment_accounts
+                                if customer_id not in unified_balance_service.investment_accounts:
+                                    unified_balance_service.investment_accounts[customer_id] = {
+                                        'balance': best_balance,
+                                        'deposits': [],
+                                        'created_at': datetime.now().isoformat()
+                                    }
+                                else:
+                                    unified_balance_service.investment_accounts[customer_id]['balance'] = best_balance
+
+                                # Also update global INVESTMENT_ACCOUNTS
+                                if customer_id not in INVESTMENT_ACCOUNTS:
+                                    INVESTMENT_ACCOUNTS[customer_id] = unified_balance_service.investment_accounts[customer_id].copy()
+                                else:
+                                    INVESTMENT_ACCOUNTS[customer_id]['balance'] = best_balance
+                        finally:
+                            if sync_lock is not None:
+                                sync_lock.release()
                     except Exception as sync_err:
                         print(f"Pre-transfer investment sync note: {sync_err}")
                 
@@ -62129,8 +62155,15 @@ For claims or questions, please contact:
                     
                     # 1. Sync investment balance back
                     if source == 'investment_account':
-                        new_inv_balance = unified_balance_service.investment_accounts.get(customer_id, {}).get('balance', 0)
-                        INVESTMENT_ACCOUNTS[customer_id]['balance'] = new_inv_balance
+                        from services.savings_pipeline_service import account_book_lock
+                        synced_row = INVESTMENT_ACCOUNTS.get(customer_id)
+                        if isinstance(synced_row, dict):
+                            with account_book_lock(synced_row):
+                                new_inv_balance = float(synced_row.get('balance') or 0)
+                        else:
+                            new_inv_balance = unified_balance_service.investment_accounts.get(customer_id, {}).get('balance', 0)
+                            if customer_id in INVESTMENT_ACCOUNTS:
+                                INVESTMENT_ACCOUNTS[customer_id]['balance'] = new_inv_balance
                         
                         # Also update portfolio_service
                         if portfolio_enabled and portfolio_service:

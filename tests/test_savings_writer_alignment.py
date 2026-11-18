@@ -1439,6 +1439,171 @@ def test_failed_deposit_seal_returns_both_cash_books():
         portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
 
 
+def test_failed_deposit_seal_keeps_the_portfolio_credit_when_reversal_fails():
+    from datetime import datetime, timedelta
+    import services.savings_pipeline_service as pipeline
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-DEP-3"
+    token = "phins_dep_norev_token"
+    portal.SESSIONS[token] = {
+        "username": "dep_norev_customer",
+        "role": "customer",
+        "customer_id": customer_id,
+        "expires": (datetime.now() + timedelta(hours=2)).isoformat(),
+    }
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-DEP-3", 0.0)
+    account.balance = 10.0
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {"balance": 10.0, "deposits": []}
+    original_tx = portal.record_transaction
+    original_debit = pipeline.debit_account_balance
+
+    def _boom(**_kwargs):
+        raise RuntimeError("seal failed")
+
+    def _refuse(_account, _amount):
+        return None
+
+    portal.record_transaction = _boom
+    pipeline.debit_account_balance = _refuse
+    try:
+        status, body = _post_json(
+            "/api/savings/deposit",
+            {"account_id": account.account_id, "amount": 40.0, "customer_id": customer_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert status == 400, body
+        assert account.balance == 50.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 50.0
+    finally:
+        portal.record_transaction = original_tx
+        pipeline.debit_account_balance = original_debit
+        portal.SESSIONS.pop(token, None)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+
+
+def test_failed_deposit_seal_blocks_an_algo_transfer_of_the_credit():
+    from datetime import datetime, timedelta
+    import threading
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-DEP-4"
+    token = "phins_dep_xfer_token"
+    portal.SESSIONS[token] = {
+        "username": "dep_xfer_customer",
+        "role": "customer",
+        "customer_id": customer_id,
+        "expires": (datetime.now() + timedelta(hours=2)).isoformat(),
+    }
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-DEP-4", 0.0)
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 0.0,
+        "deposits": [],
+        "balance_is_unallocated_cash": True,
+    }
+    original = portal.record_transaction
+    seen = {}
+
+    def _boom(**_kwargs):
+        def _transfer():
+            seen["transfer"] = portal.unified_balance_service.transfer_to_algo_trading(
+                customer_id, 40.0, "investment_account"
+            )
+
+        worker = threading.Thread(target=_transfer)
+        worker.start()
+        worker.join(0.3)
+        seen["blocked"] = worker.is_alive()
+        seen["worker"] = worker
+        raise RuntimeError("seal failed")
+
+    portal.record_transaction = _boom
+    try:
+        status, body = _post_json(
+            "/api/savings/deposit",
+            {"account_id": account.account_id, "amount": 40.0, "customer_id": customer_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(2)
+        assert status == 400, body
+        assert seen.get("blocked") is True
+        assert account.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert seen["transfer"]["success"] is False
+        algo = portal.unified_balance_service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 0.0
+    finally:
+        portal.record_transaction = original
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(2)
+        portal.SESSIONS.pop(token, None)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
+
+
+def test_withdraw_blocks_an_algo_transfer_of_the_same_cash():
+    import threading
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-INV-10"
+    portal.INVESTMENT_ACCOUNTS[customer_id] = {
+        "balance": 100.0,
+        "balance_is_unallocated_cash": True,
+    }
+    account = portal.portfolio_service.create_savings_account(customer_id, "POL-INV-10", 0.0)
+    account.balance = 100.0
+    original = portal.portfolio_service.withdraw
+    seen = {}
+
+    def _spy(account_id, amount, reason="withdrawal"):
+        result = original(account_id, amount, reason)
+
+        def _transfer():
+            seen["transfer"] = portal.unified_balance_service.transfer_to_algo_trading(
+                customer_id, 100.0, "investment_account"
+            )
+
+        worker = threading.Thread(target=_transfer)
+        worker.start()
+        worker.join(0.3)
+        seen["blocked"] = worker.is_alive()
+        seen["worker"] = worker
+        return result
+
+    portal.portfolio_service.withdraw = _spy
+    try:
+        status, body = _post_json("/api/savings/withdraw", {
+            "account_id": account.account_id,
+            "amount": 100.0,
+        })
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(2)
+        assert status == 200, body
+        assert seen.get("blocked") is True
+        assert account.balance == 0.0
+        assert portal.INVESTMENT_ACCOUNTS[customer_id]["balance"] == 0.0
+        assert seen["transfer"]["success"] is False
+        algo = portal.unified_balance_service.algo_trading_balances.get(customer_id, {})
+        assert float(algo.get("available", 0) or 0) == 0.0
+    finally:
+        portal.portfolio_service.withdraw = original
+        worker = seen.get("worker")
+        if worker is not None:
+            worker.join(2)
+        portal.portfolio_service.accounts.pop(account.account_id, None)
+        portal.INVESTMENT_ACCOUNTS.pop(customer_id, None)
+        portal.unified_balance_service.algo_trading_balances.pop(customer_id, None)
+
+
 def test_deposit_credit_waits_for_the_savings_lock():
     from datetime import datetime, timedelta
     import threading
