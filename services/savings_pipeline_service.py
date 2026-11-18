@@ -264,6 +264,26 @@ def _investment_row_lock(account: Dict[str, Any]) -> threading.RLock:
     return account_book_lock(account)
 
 
+_algo_credit_locks: Dict[str, threading.RLock] = {}
+_algo_credit_guard = threading.Lock()
+
+
+def algo_credit_lock(customer_id: str) -> threading.RLock:
+    """Lock for one customer's algo available balance.
+
+    The source-row lock does not cover this bucket. A transfer from the
+    wallet and a transfer from investments can both seal while the other
+    has already read ``available``. Both must add to the live figure.
+    """
+    key = str(customer_id)
+    with _algo_credit_guard:
+        lock = _algo_credit_locks.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _algo_credit_locks[key] = lock
+        return lock
+
+
 def _snapshot_investment_transfer(account: Dict[str, Any]) -> Dict[str, Any]:
     return {
         field: account[field]

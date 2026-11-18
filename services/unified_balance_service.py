@@ -177,6 +177,7 @@ class UnifiedBalanceService:
 
         from services.savings_pipeline_service import (
             account_book_lock,
+            algo_credit_lock,
             apply_investment_withdrawal,
             investment_books,
             _restore_investment_transfer,
@@ -225,46 +226,56 @@ class UnifiedBalanceService:
                 amount = applied
                 source_balance = investment_books(book)['position'] + amount
 
-            algo_after = float(self.algo_trading_balances[customer_id].get('available', 0) or 0) + amount
-            try:
-                tx = self.record_transaction(
-                    customer_id=customer_id,
-                    tx_type='algo_trading_deposit',
-                    amount=amount,
-                    description=f'Transfer ${amount:.2f} from {source} to Algo Trading',
-                    metadata={
-                        'transfer_id': transfer_id,
-                        'source': source,
-                        'source_balance_before': source_balance,
-                        'source_balance_after': source_balance - amount,
-                        'algo_balance_after': algo_after,
-                        'bot_id': bot_id
-                    }
+            bucket = self.algo_trading_balances[customer_id]
+            with algo_credit_lock(customer_id):
+                algo_after = round(
+                    float(bucket.get('available', 0) or 0) + amount,
+                    2,
                 )
-            except Exception:
-                if prior is not None:
-                    _restore_investment_transfer(book, prior)
-                raise
+                try:
+                    tx = self.record_transaction(
+                        customer_id=customer_id,
+                        tx_type='algo_trading_deposit',
+                        amount=amount,
+                        description=f'Transfer ${amount:.2f} from {source} to Algo Trading',
+                        metadata={
+                            'transfer_id': transfer_id,
+                            'source': source,
+                            'source_balance_before': source_balance,
+                            'source_balance_after': source_balance - amount,
+                            'algo_balance_after': algo_after,
+                            'bot_id': bot_id
+                        }
+                    )
+                except Exception:
+                    if prior is not None:
+                        _restore_investment_transfer(book, prior)
+                    raise
 
-            if source == 'health_wallet':
-                book['balance'] = round(source_balance - amount, 2)
-                book.setdefault('transactions', []).append({
+                if source == 'health_wallet':
+                    # Subtract from the live balance. A credit that arrived
+                    # during the seal is not replaced by the pre-seal figure.
+                    book['balance'] = round(float(book.get('balance', 0) or 0) - amount, 2)
+                    book.setdefault('transactions', []).append({
+                        'id': transfer_id,
+                        'type': 'transfer_out',
+                        'amount': -amount,
+                        'description': 'Transfer to Algo Trading',
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    reported_source = book['balance']
+                else:
+                    reported_source = round(source_balance - amount, 2)
+
+                bucket['available'] = round(float(bucket.get('available', 0) or 0) + amount, 2)
+                bucket.setdefault('transfers', []).append({
                     'id': transfer_id,
-                    'type': 'transfer_out',
-                    'amount': -amount,
-                    'description': 'Transfer to Algo Trading',
+                    'type': 'deposit',
+                    'source': source,
+                    'amount': amount,
+                    'bot_id': bot_id,
                     'timestamp': datetime.now().isoformat()
                 })
-
-            self.algo_trading_balances[customer_id]['available'] = algo_after
-            self.algo_trading_balances[customer_id]['transfers'].append({
-                'id': transfer_id,
-                'type': 'deposit',
-                'source': source,
-                'amount': amount,
-                'bot_id': bot_id,
-                'timestamp': datetime.now().isoformat()
-            })
         
         return {
             'success': True,
@@ -272,7 +283,7 @@ class UnifiedBalanceService:
             'amount': amount,
             'source': source,
             'new_algo_balance': self.algo_trading_balances[customer_id]['available'],
-            'new_source_balance': source_balance - amount,
+            'new_source_balance': reported_source,
             'transaction': tx,
             'nft_token_id': tx.get('nft_token_id')
         }

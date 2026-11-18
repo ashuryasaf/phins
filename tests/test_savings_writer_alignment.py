@@ -957,6 +957,43 @@ def test_overlapping_wallet_deposits_credit_algo_once():
     assert algo == 80.0
 
 
+def test_wallet_credit_during_the_seal_is_not_replaced():
+    wallet = {"balance": 100.0, "transactions": []}
+    service, _recorded = _balance_service({})
+    service.health_wallets = {"CUST-1": wallet}
+
+    def _record(**_kwargs):
+        wallet["balance"] += 30.0
+        return {"id": "TX-1", "nft_token_id": "NFT-1"}
+
+    service.record_transaction = _record
+    result = service.transfer_to_algo_trading("CUST-1", 40.0, "health_wallet")
+    assert result["success"] is True
+    assert wallet["balance"] == 90.0
+    assert service.algo_trading_balances["CUST-1"]["available"] == 40.0
+
+
+def test_algo_credit_during_the_seal_is_not_replaced():
+    account = _flagged_row()
+    service, _recorded = _balance_service({"CUST-1": account})
+    service.algo_trading_balances["CUST-1"] = {
+        "available": 0.0,
+        "in_positions": 0.0,
+        "total_pnl": 0.0,
+        "transfers": [],
+    }
+
+    def _record(**_kwargs):
+        service.algo_trading_balances["CUST-1"]["available"] += 25.0
+        return {"id": "TX-1", "nft_token_id": "NFT-1"}
+
+    service.record_transaction = _record
+    result = service.transfer_to_algo_trading("CUST-1", 50.0, "investment_account")
+    assert result["success"] is True
+    assert service.algo_trading_balances["CUST-1"]["available"] == 75.0
+    assert investment_books(account)["position"] == 90.0
+
+
 def test_refused_credit_puts_the_withdrawal_back():
     account = _flagged_row()
 

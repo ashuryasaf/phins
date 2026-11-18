@@ -324,11 +324,6 @@ class PortfolioTrackerService:
                     }
                 source_balance = current_balance - amount
 
-            current_algo = 0.0
-            if customer_id in self.algo_balances:
-                current_algo = float(self.algo_balances[customer_id].get('available', 0) or 0)
-            algo_after = current_algo + amount
-
             trade = Trade(
                 trade_id=f"TRD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
                 customer_id=customer_id,
@@ -343,33 +338,35 @@ class PortfolioTrackerService:
                 destination='algo_trading'
             )
 
-            tx = {}
-            if self.record_transaction:
-                tx = self.record_transaction(
-                    customer_id=customer_id,
-                    tx_type='algo_trading_deposit',
-                    amount=amount,
-                    description=f'Transfer ${amount:.2f} from {source} to Algo Trading',
-                    metadata={
-                        'trade_id': trade.trade_id,
-                        'source': source,
-                        'source_balance_after': source_balance,
-                        'algo_balance_after': algo_after
+            from services.savings_pipeline_service import algo_credit_lock
+            with algo_credit_lock(customer_id):
+                if customer_id not in self.algo_balances:
+                    self.algo_balances[customer_id] = {
+                        'available': 0, 'in_positions': 0, 'total_pnl': 0,
                     }
-                ) or {}
-                if not isinstance(tx, dict):
-                    tx = {}
+                bucket = self.algo_balances[customer_id]
+                algo_after = round(float(bucket.get('available', 0) or 0) + amount, 2)
+                tx = {}
+                if self.record_transaction:
+                    tx = self.record_transaction(
+                        customer_id=customer_id,
+                        tx_type='algo_trading_deposit',
+                        amount=amount,
+                        description=f'Transfer ${amount:.2f} from {source} to Algo Trading',
+                        metadata={
+                            'trade_id': trade.trade_id,
+                            'source': source,
+                            'source_balance_after': source_balance,
+                            'algo_balance_after': algo_after
+                        }
+                    ) or {}
+                    if not isinstance(tx, dict):
+                        tx = {}
 
-            if source == 'investment' and debit_source:
-                book['balance'] = source_balance
-            elif source == 'health_wallet':
-                book['balance'] = source_balance
-
-            if customer_id not in self.algo_balances:
-                self.algo_balances[customer_id] = {'available': 0, 'in_positions': 0, 'total_pnl': 0}
-            self.algo_balances[customer_id]['available'] = (
-                float(self.algo_balances[customer_id].get('available', 0) or 0) + amount
-            )
+                if debit_source and book is not None:
+                    book['balance'] = round(float(book.get('balance', 0) or 0) - amount, 2)
+                    source_balance = book['balance']
+                bucket['available'] = round(float(bucket.get('available', 0) or 0) + amount, 2)
             trade.nft_token_id = tx.get('nft_token_id')
             trade.ledger_tx_id = tx.get('id')
 
