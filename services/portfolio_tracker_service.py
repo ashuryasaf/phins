@@ -323,6 +323,11 @@ class PortfolioTrackerService:
                         ),
                     }
                 source_balance = current_balance - amount
+                if debit_source:
+                    # Reserve the wallet before the seal so a concurrent bill
+                    # cannot spend the same cash and still leave this credit.
+                    book['balance'] = round(current_balance - amount, 2)
+                    source_balance = book['balance']
 
             trade = Trade(
                 trade_id=f"TRD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}",
@@ -347,25 +352,34 @@ class PortfolioTrackerService:
                 bucket = self.algo_balances[customer_id]
                 algo_after = round(float(bucket.get('available', 0) or 0) + amount, 2)
                 tx = {}
-                if self.record_transaction:
-                    tx = self.record_transaction(
-                        customer_id=customer_id,
-                        tx_type='algo_trading_deposit',
-                        amount=amount,
-                        description=f'Transfer ${amount:.2f} from {source} to Algo Trading',
-                        metadata={
-                            'trade_id': trade.trade_id,
-                            'source': source,
-                            'source_balance_after': source_balance,
-                            'algo_balance_after': algo_after
-                        }
-                    ) or {}
-                    if not isinstance(tx, dict):
-                        tx = {}
+                try:
+                    if self.record_transaction:
+                        tx = self.record_transaction(
+                            customer_id=customer_id,
+                            tx_type='algo_trading_deposit',
+                            amount=amount,
+                            description=f'Transfer ${amount:.2f} from {source} to Algo Trading',
+                            metadata={
+                                'trade_id': trade.trade_id,
+                                'source': source,
+                                'source_balance_after': source_balance,
+                                'algo_balance_after': algo_after
+                            }
+                        ) or {}
+                        if not isinstance(tx, dict):
+                            tx = {}
+                except Exception:
+                    if source == 'health_wallet' and debit_source and book is not None:
+                        book['balance'] = round(
+                            float(book.get('balance', 0) or 0) + amount, 2,
+                        )
+                    raise
 
-                if debit_source and book is not None:
+                if debit_source and book is not None and source != 'health_wallet':
                     book['balance'] = round(float(book.get('balance', 0) or 0) - amount, 2)
                     source_balance = book['balance']
+                elif source == 'health_wallet' and debit_source and book is not None:
+                    source_balance = round(float(book.get('balance', 0) or 0), 2)
                 live_bucket = self.algo_balances.get(customer_id)
                 if not isinstance(live_bucket, dict):
                     live_bucket = bucket
