@@ -35076,6 +35076,7 @@ For claims or questions, please contact:
             for purchase in purchases:
                 known_purchase_ids.append(str(purchase.get('id') or ''))
                 known_purchase_ids.append(str(purchase.get('nft_token_id') or ''))
+                known_purchase_ids.append(str(purchase.get('ledger_tx_id') or ''))
             owner_tokens = [
                 token for token in NFT_LEDGER.values()
                 if isinstance(token, dict) and (token.get('owner_id') or token.get('customer_id')) == customer_id
@@ -61920,9 +61921,15 @@ For claims or questions, please contact:
                         accounts = portfolio_service.get_customer_accounts(customer_id)
                         if accounts:
                             portfolio_cash = sum(acc.balance for acc in accounts)
-                            # Use the maximum of portfolio_service and INVESTMENT_ACCOUNTS
-                            inv_acc_bal = INVESTMENT_ACCOUNTS.get(customer_id, {}).get('balance', 0)
-                            best_balance = max(portfolio_cash, inv_acc_bal)
+                            # A flagged row stores unallocated cash in balance.
+                            # Replacing that cash with a portfolio total would
+                            # count the holdings a second time.
+                            existing = INVESTMENT_ACCOUNTS.get(customer_id)
+                            if isinstance(existing, dict) and existing.get('balance_is_unallocated_cash'):
+                                best_balance = float(existing.get('balance') or 0)
+                            else:
+                                inv_acc_bal = float((existing or {}).get('balance') or 0) if isinstance(existing, dict) else 0.0
+                                best_balance = max(portfolio_cash, inv_acc_bal)
                             
                             # Update unified_balance_service's investment_accounts
                             if customer_id not in unified_balance_service.investment_accounts:
@@ -62015,8 +62022,9 @@ For claims or questions, please contact:
                     
                     # Add debug info about available balances
                     if source == 'investment_account':
-                        inv_bal = unified_balance_service.investment_accounts.get(customer_id, {}).get('balance', 0)
-                        result['available_balance'] = inv_bal
+                        from services.savings_pipeline_service import investment_books
+                        inv_row = unified_balance_service.investment_accounts.get(customer_id, {})
+                        result['available_balance'] = investment_books(inv_row)['position']
                         result['requested_amount'] = amount
                     elif source == 'health_wallet':
                         wallet_bal = unified_balance_service.health_wallets.get(customer_id, {}).get('balance', 0)
@@ -62213,13 +62221,42 @@ For claims or questions, please contact:
                     except Exception as sync_err:
                         print(f"Investment sync note: {sync_err}")
                 
-                # Also sync from global INVESTMENT_ACCOUNTS
-                if customer_id in INVESTMENT_ACCOUNTS:
+                # Also sync from global INVESTMENT_ACCOUNTS.
+                # deposit_to_algo spends the tracker balance. For an investment
+                # source that authority is the position, so a stale higher
+                # tracker balance cannot fund a credit the row does not have.
+                if source == 'investment' and customer_id in INVESTMENT_ACCOUNTS:
+                    from services.savings_pipeline_service import investment_books
+                    position = investment_books(INVESTMENT_ACCOUNTS[customer_id])['position']
+                    if float(amount) > position + 1e-9:
+                        self._set_json_headers(400)
+                        self.wfile.write(json.dumps({
+                            'success': False,
+                            'error': (
+                                f'Insufficient investment balance. '
+                                f'Available: ${position:.2f}, Requested: ${amount:.2f}'
+                            ),
+                            'available_balance': position,
+                        }).encode('utf-8'))
+                        return
+                    canonical = INVESTMENT_ACCOUNTS[customer_id]
+                    tracker = portfolio_tracker_service.investment_accounts.get(customer_id)
+                    # The tracker is only a spend authority. It must not be the
+                    # canonical row, or writing the position into balance would
+                    # count holdings twice on a flagged account.
+                    if tracker is canonical or not isinstance(tracker, dict):
+                        portfolio_tracker_service.investment_accounts[customer_id] = {
+                            'balance': position,
+                            'deposits': [],
+                            'created_at': datetime.now().isoformat(),
+                        }
+                    else:
+                        tracker['balance'] = position
+                elif customer_id in INVESTMENT_ACCOUNTS:
                     inv_bal = INVESTMENT_ACCOUNTS[customer_id].get('balance', 0)
                     if customer_id not in portfolio_tracker_service.investment_accounts:
                         portfolio_tracker_service.investment_accounts[customer_id] = INVESTMENT_ACCOUNTS[customer_id].copy()
                     else:
-                        # Use the higher of the two balances (more accurate)
                         current_bal = portfolio_tracker_service.investment_accounts[customer_id].get('balance', 0)
                         portfolio_tracker_service.investment_accounts[customer_id]['balance'] = max(current_bal, inv_bal)
                 
@@ -62239,13 +62276,19 @@ For claims or questions, please contact:
                     # Sync investment accounts back to global store and portfolio service
                     if source == 'investment' and customer_id in INVESTMENT_ACCOUNTS:
                         inv_account = INVESTMENT_ACCOUNTS[customer_id]
-                        from services.savings_pipeline_service import apply_investment_withdrawal
-                        # Cash first, then holdings. A flagged balance stays cash
-                        # and is not reduced by the invested amount as well.
-                        apply_investment_withdrawal(inv_account, amount)
-                        
-                        # Track algo trading profits from this transfer
-                        inv_account['algo_trading_profits'] = inv_account.get('algo_trading_profits', 0) + amount
+                        from services.savings_pipeline_service import (
+                            investment_books,
+                            settle_investment_to_algo,
+                        )
+                        # Cash first, then holdings. Profits grow by the amount
+                        # the row gave up. A credit already posted for more
+                        # than that is removed from the algo available balance.
+                        algo_bucket = portfolio_tracker_service.algo_balances.get(customer_id)
+                        settle_investment_to_algo(inv_account, amount, algo_bucket)
+                        remaining = investment_books(inv_account)['position']
+                        tracker = portfolio_tracker_service.investment_accounts.get(customer_id)
+                        if isinstance(tracker, dict):
+                            tracker['balance'] = remaining
                         
                         INVESTMENT_ACCOUNTS[customer_id] = inv_account
                         
@@ -64904,6 +64947,8 @@ For claims or questions, please contact:
                     transactions.append(view)
                     if view.get('id'):
                         seen_ids.add(str(view['id']))
+                    if view.get('ledger_tx_id'):
+                        seen_ids.add(str(view['ledger_tx_id']))
                     if view.get('nft_token_id'):
                         seen_nfts.add(str(view['nft_token_id']))
 

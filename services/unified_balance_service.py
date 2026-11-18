@@ -174,9 +174,14 @@ class UnifiedBalanceService:
             inv_acc = self.investment_accounts.get(customer_id)
             if not inv_acc:
                 return {'success': False, 'error': 'Investment account not found'}
-            if inv_acc.get('balance', 0) < amount:
-                return {'success': False, 'error': 'Insufficient investment balance'}
-            source_balance = inv_acc['balance']
+            from services.savings_pipeline_service import investment_books
+            source_balance = investment_books(inv_acc)['position']
+            if float(amount) > source_balance + 1e-9:
+                return {
+                    'success': False,
+                    'error': 'Insufficient investment balance',
+                    'available_balance': source_balance,
+                }
         else:
             return {'success': False, 'error': f'Invalid source: {source}'}
         
@@ -206,15 +211,19 @@ class UnifiedBalanceService:
                 'timestamp': datetime.now().isoformat()
             })
         else:  # investment_account
-            self.investment_accounts[customer_id]['balance'] -= amount
-            # Proportionally reduce balances
-            total = self.investment_accounts[customer_id]['balance'] + amount
-            if total > 0:
-                ratio = self.investment_accounts[customer_id]['balance'] / total
-                for key in ['index_balance', 'bonds_balance', 'crypto_balance']:
-                    if key in self.investment_accounts[customer_id]:
-                        self.investment_accounts[customer_id][key] *= ratio
-        
+            from services.savings_pipeline_service import (
+                apply_investment_withdrawal,
+                investment_books,
+            )
+            # Cash first, then holdings, and never more than the position.
+            # A proportional cut of the sub-balances would shrink holdings
+            # that were not part of this transfer.
+            moved = apply_investment_withdrawal(self.investment_accounts[customer_id], amount)
+            amount = round(float(moved.get('applied') or 0), 2)
+            source_balance = investment_books(
+                self.investment_accounts[customer_id]
+            )['position'] + amount
+
         # Add to algo trading
         self.algo_trading_balances[customer_id]['available'] += amount
         self.algo_trading_balances[customer_id]['transfers'].append({

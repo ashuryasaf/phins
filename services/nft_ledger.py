@@ -451,14 +451,16 @@ def merge_nft_flows(
 ) -> List[Dict[str, Any]]:
     """Add sealed customer NFTs that the store rows do not already show.
 
-    A broken seal is left off the restored flow. An NFT whose token id or
-    linked transaction is already on an activity is not added again.
+    A broken seal is left off the restored flow. An NFT whose token id,
+    transaction id, or ledger link is already on an activity is not added again.
     """
     existing = [dict(row) for row in activities if isinstance(row, Mapping)]
-    seen_nft = {str(row.get("nft_token_id") or "") for row in existing}
-    seen_ids = {str(row.get("id") or "") for row in existing}
-    seen_nft.discard("")
-    seen_ids.discard("")
+    seen = set()
+    for row in existing:
+        for field in ("id", "ledger_tx_id", "nft_token_id"):
+            value = str(row.get(field) or "")
+            if value:
+                seen.add(value)
     presented = present_customer_ledger(tokens, limit=10000)["ledger"]
     for row in presented:
         integrity = row.get("integrity") if isinstance(row.get("integrity"), dict) else {}
@@ -466,15 +468,16 @@ def merge_nft_flows(
             continue
         token_id = str(row.get("token_id") or "")
         tx_id = str(row.get("transaction_id") or "")
-        if token_id and token_id in seen_nft:
-            continue
-        if tx_id and tx_id in seen_ids:
+        # A store row often keeps its own id and puts the ledger id in
+        # ledger_tx_id, with no nft_token_id. Matching either one avoids
+        # listing the same sealed flow twice.
+        if (token_id and token_id in seen) or (tx_id and tx_id in seen):
             continue
         existing.append(flow_row(row))
         if token_id:
-            seen_nft.add(token_id)
+            seen.add(token_id)
         if tx_id:
-            seen_ids.add(tx_id)
+            seen.add(tx_id)
     return existing
 
 

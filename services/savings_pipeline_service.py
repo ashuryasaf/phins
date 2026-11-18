@@ -202,6 +202,35 @@ def apply_investment_withdrawal(account: Dict[str, Any], amount: float) -> Dict[
     }
 
 
+def settle_investment_to_algo(
+    account: Dict[str, Any],
+    credited: float,
+    algo_bucket: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Keep an algo credit equal to the cash and holdings that actually moved.
+
+    ``credited`` is the amount already added to the algo available balance.
+    The investment row gives up at most its position. Any excess already
+    sitting in ``algo_bucket['available']`` is removed, and
+    ``algo_trading_profits`` grows only by the amount that left the row.
+    """
+    if not isinstance(account, dict):
+        return {'applied': 0.0, 'shortfall': round(_safe_amount(credited), 2)}
+    moved = apply_investment_withdrawal(account, credited)
+    applied = round(_safe_amount(moved.get('applied')), 2)
+    shortfall = round(_safe_amount(credited) - applied, 2)
+    if shortfall > 0 and isinstance(algo_bucket, dict):
+        algo_bucket['available'] = round(
+            max(0.0, _safe_amount(algo_bucket.get('available')) - shortfall),
+            2,
+        )
+    account['algo_trading_profits'] = round(
+        _safe_amount(account.get('algo_trading_profits')) + applied,
+        2,
+    )
+    return {'applied': applied, 'shortfall': max(0.0, shortfall)}
+
+
 def mark_unallocated_cash(account: Dict[str, Any]) -> None:
     """Make a later sub-balance credit show up on an older investment row.
 

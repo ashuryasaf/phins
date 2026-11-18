@@ -476,3 +476,13 @@ def test_registered_nfts_restore_flows_without_rewriting_seals():
     assert purchases[0]["amount"] == 40
     assert purchases[0]["nft_token_id"] == purchase["token_id"]
     assert nft_purchase_rows(ledger.values(), [purchase["token_id"]]) == []
+
+    linked = [{
+        "id": "PUR-1",
+        "type": "medical_purchase",
+        "amount": -40,
+        "ledger_tx_id": "TX-MED",
+    }]
+    once = merge_nft_flows(linked, ledger.values())
+    assert len([row for row in once if row.get("ledger_tx_id") == "TX-MED" or row.get("id") == "TX-MED"]) == 1
+    assert nft_purchase_rows(ledger.values(), ["PUR-1", "TX-MED"]) == []

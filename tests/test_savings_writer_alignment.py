@@ -17,6 +17,7 @@ from services.savings_pipeline_service import (
     bounded_distribution,
     investment_books,
     mark_unallocated_cash,
+    settle_investment_to_algo,
 )
 from services.unified_balance_service import UnifiedBalanceService
 
@@ -667,3 +668,84 @@ def test_withdrawal_cannot_mint_past_the_position():
     assert account["index_balance"] == 0.0
     assert account["bonds_balance"] == 0.0
     assert account["crypto_balance"] == 0.0
+
+
+def test_algo_credit_cannot_exceed_the_position():
+    """A credit already posted for more than the position is clawed back."""
+    account = {
+        "balance": 0.0,
+        "index_balance": 60.0,
+        "bonds_balance": 30.0,
+        "crypto_balance": 10.0,
+        "balance_is_unallocated_cash": True,
+        "algo_trading_profits": 5.0,
+    }
+    algo = {"available": 500.0}
+    settled = settle_investment_to_algo(account, 500.0, algo)
+    assert settled["applied"] == 100.0
+    assert settled["shortfall"] == 400.0
+    assert algo["available"] == 100.0
+    assert account["algo_trading_profits"] == 105.0
+    assert investment_books(account)["position"] == 0.0
+
+
+def _balance_service(accounts):
+    recorded = []
+
+    def _record(**kwargs):
+        recorded.append(kwargs)
+        return {"id": "TX-1", "nft_token_id": "NFT-1"}
+
+    service = UnifiedBalanceService(
+        health_wallets={},
+        investment_accounts=accounts,
+        transaction_ledger={},
+        nft_ledger={},
+        record_transaction_func=_record,
+        generate_nft_token_func=lambda *args, **kwargs: {},
+    )
+    return service, recorded
+
+
+def test_transfer_to_algo_refuses_more_than_the_position():
+    accounts = {
+        "CUST-1": {
+            "balance": 0.0,
+            "index_balance": 60.0,
+            "bonds_balance": 30.0,
+            "crypto_balance": 10.0,
+            "balance_is_unallocated_cash": True,
+        }
+    }
+    service, recorded = _balance_service(accounts)
+    result = service.transfer_to_algo_trading("CUST-1", 500.0, "investment_account")
+    assert result["success"] is False
+    assert result["available_balance"] == 100.0
+    assert accounts["CUST-1"]["index_balance"] == 60.0
+    assert "CUST-1" not in service.algo_trading_balances
+    assert recorded == []
+
+
+def test_transfer_to_algo_keeps_holdings_when_cash_covers_it():
+    accounts = {
+        "CUST-1": {
+            "balance": 200.0,
+            "index_balance": 390.0,
+            "bonds_balance": 195.0,
+            "crypto_balance": 65.0,
+            "balance_is_unallocated_cash": True,
+        }
+    }
+    service, recorded = _balance_service(accounts)
+    result = service.transfer_to_algo_trading("CUST-1", 100.0, "investment_account")
+    assert result["success"] is True
+    assert result["amount"] == 100.0
+    assert result["new_algo_balance"] == 100.0
+    assert result["new_source_balance"] == 750.0
+    assert accounts["CUST-1"]["balance"] == 100.0
+    assert accounts["CUST-1"]["index_balance"] == 390.0
+    assert accounts["CUST-1"]["bonds_balance"] == 195.0
+    assert accounts["CUST-1"]["crypto_balance"] == 65.0
+    assert service.algo_trading_balances["CUST-1"]["available"] == 100.0
+    assert recorded[0]["amount"] == 100.0
+    assert investment_books(accounts["CUST-1"])["position"] == 750.0
