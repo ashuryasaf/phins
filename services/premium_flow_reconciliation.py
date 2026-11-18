@@ -45,13 +45,27 @@ _CLAIM_CREDIT_TYPES = frozenset({
     "claim_payout",
     "claim_payment",
 })
+# `closed` is a completed payout in the claims book (`paid` and `closed`
+# are the paid totals). `approved` is still a reserve, not a wallet credit.
 _PAID_STATUSES = frozenset({
     "paid",
     "settled",
+    "closed",
     "closed_paid",
     "approved_paid",
 })
-_UNPAID_HINTS = ("unpaid", "pending", "open", "denied", "rejected", "draft")
+_UNPAID_STATUSES = frozenset({
+    "unpaid",
+    "pending",
+    "under_review",
+    "medical_assessment",
+    "open",
+    "denied",
+    "rejected",
+    "draft",
+    "submitted",
+    "approved",
+})
 
 _CENT = Decimal("0.01")
 
@@ -67,10 +81,41 @@ def _money(value: Any, default: str = "0") -> Decimal:
 
 
 def _month_of(value: Any) -> Optional[str]:
+    """Return ``YYYY-MM`` only when the month is 01–12.
+
+    A value such as ``2026-13`` is not a month. The range filler used to
+    accept it and then increment forever, because it only wraps at 13.
+    """
     text = str(value or "").strip()
-    if len(text) >= 7 and text[4] == "-" and text[:4].isdigit() and text[5:7].isdigit():
-        return text[:7]
-    return None
+    if len(text) < 7 or text[4] != "-":
+        return None
+    year, month = text[:4], text[5:7]
+    if not (year.isdigit() and month.isdigit()):
+        return None
+    month_number = int(month)
+    if month_number < 1 or month_number > 12:
+        return None
+    return f"{int(year):04d}-{month_number:02d}"
+
+
+def _fill_months(start: str, end: str) -> List[str]:
+    """Inclusive month list. Stops rather than looping on a bad endpoint."""
+    start_y, start_m = int(start[:4]), int(start[5:7])
+    end_y, end_m = int(end[:4]), int(end[5:7])
+    if not (1 <= start_m <= 12 and 1 <= end_m <= 12):
+        return [start] if start == end else [start, end]
+    filled: List[str] = []
+    cursor_y, cursor_m = start_y, start_m
+    # Fifty years is longer than any policy term this table is asked to show.
+    for _ in range(12 * 50 + 1):
+        filled.append(f"{cursor_y:04d}-{cursor_m:02d}")
+        if (cursor_y, cursor_m) >= (end_y, end_m):
+            return filled
+        cursor_m += 1
+        if cursor_m == 13:
+            cursor_m = 1
+            cursor_y += 1
+    return filled
 
 
 def _partition(total: Decimal, weights: Sequence[Tuple[str, Decimal]]) -> Dict[str, float]:
@@ -105,19 +150,26 @@ def _monthly(annual: Any) -> Decimal:
     return (_money(annual) / Decimal(12)).quantize(_CENT, rounding=ROUND_HALF_UP)
 
 
+def _first_present(record: Mapping[str, Any], *keys: str) -> Any:
+    """First stored value. Issued quotes use the short annual names."""
+    for key in keys:
+        if record.get(key) is not None:
+            return record.get(key)
+    return None
+
+
 def _kernel_month(policy: Mapping[str, Any]) -> Dict[str, Any]:
-    """One month of the issued kernel pin. Missing loadings are not invented."""
-    risk = _monthly(policy.get("risk_premium_annual"))
-    savings_pinned = (
-        policy.get("savings_premium_annual") is not None
-        or policy.get("savings_premium") is not None
-    )
-    if savings_pinned:
-        savings = _monthly(
-            policy.get("savings_premium_annual")
-            if policy.get("savings_premium_annual") is not None
-            else policy.get("savings_premium")
-        )
+    """One month of the issued kernel pin. Missing loadings are not invented.
+
+    ``risk_premium_annual`` is the canonical pin. Issued quotes store that
+    same annual amount as ``risk_premium``, and the same for expense and
+    profit. A missing pin stays zero. It is not replaced by a 50/25 split.
+    """
+    risk_value = _first_present(policy, "risk_premium_annual", "risk_premium")
+    risk = _monthly(risk_value) if risk_value is not None else Decimal("0.00")
+    savings_value = _first_present(policy, "savings_premium_annual", "savings_premium")
+    if savings_value is not None:
+        savings = _monthly(savings_value)
         savings_source = "kernel_pin"
     else:
         rate = policy.get("savings_rate")
@@ -127,10 +179,12 @@ def _kernel_month(policy: Mapping[str, Any]) -> Dict[str, Any]:
         else:
             savings = (risk * _money(rate)).quantize(_CENT, rounding=ROUND_HALF_UP)
             savings_source = "addon_rate"
-    expense_pinned = policy.get("expense_loading_annual") is not None
-    profit_pinned = policy.get("profit_margin_annual") is not None
-    expense = _monthly(policy.get("expense_loading_annual")) if expense_pinned else Decimal("0.00")
-    profit = _monthly(policy.get("profit_margin_annual")) if profit_pinned else Decimal("0.00")
+    expense_value = _first_present(policy, "expense_loading_annual", "expense_loading")
+    profit_value = _first_present(policy, "profit_margin_annual", "profit_margin")
+    expense_pinned = expense_value is not None
+    profit_pinned = profit_value is not None
+    expense = _monthly(expense_value) if expense_pinned else Decimal("0.00")
+    profit = _monthly(profit_value) if profit_pinned else Decimal("0.00")
     return {
         "risk": risk,
         "expense": expense,
@@ -232,8 +286,8 @@ def _bill_month(bill: Mapping[str, Any]) -> Optional[str]:
 
 
 def _claim_paid(claim: Mapping[str, Any]) -> bool:
-    status = str(claim.get("status") or "").strip().lower().replace(" ", "_")
-    if any(hint in status for hint in _UNPAID_HINTS):
+    status = str(claim.get("status") or "").strip().lower().replace(" ", "_").replace("-", "_")
+    if status in _UNPAID_STATUSES:
         return False
     if status in _PAID_STATUSES or claim.get("paid_date") or claim.get("settled_date"):
         return True
@@ -337,7 +391,6 @@ def reconcile_customer(
     withheld: List[Dict[str, str]] = []
     premium_by_month: Dict[str, Decimal] = {}
     booked_by_month: Dict[str, Tuple[Optional[Decimal], Optional[Decimal]]] = {}
-    first_token_month: Optional[str] = None
     for token in tokens:
         check = verify_token(token)
         if not check.get("valid"):
@@ -347,8 +400,6 @@ def reconcile_customer(
             })
             continue
         month = _token_month(token)
-        if month and (first_token_month is None or month < first_token_month):
-            first_token_month = month
         tx_type = str(token.get("transaction_type") or "")
         if tx_type not in _PREMIUM_TYPES or not month:
             continue
@@ -377,24 +428,10 @@ def reconcile_customer(
         start = _month_of(policy.get("start_date") or policy.get("issued_at") or policy.get("created_at"))
         if start:
             months.add(start)
-    if first_token_month:
-        months.add(first_token_month)
-    if not months:
-        months = set()
 
     ordered = sorted(months)
-    if ordered:
-        start_month, end_month = ordered[0], ordered[-1]
-        cursor_y, cursor_m = int(start_month[:4]), int(start_month[5:7])
-        end_y, end_m = int(end_month[:4]), int(end_month[5:7])
-        filled: List[str] = []
-        while (cursor_y, cursor_m) <= (end_y, end_m):
-            filled.append(f"{cursor_y:04d}-{cursor_m:02d}")
-            cursor_m += 1
-            if cursor_m == 13:
-                cursor_m = 1
-                cursor_y += 1
-        ordered = filled
+    if len(ordered) >= 2:
+        ordered = _fill_months(ordered[0], ordered[-1])
 
     rows: List[Dict[str, Any]] = []
     landed_savings = Decimal("0.00")

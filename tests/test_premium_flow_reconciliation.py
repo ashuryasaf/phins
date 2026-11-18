@@ -173,6 +173,67 @@ def test_broken_premium_seal_is_withheld_and_not_repaired():
     assert january["cash_source"] == "bill"
 
 
+def test_issued_quote_field_names_and_closed_claims_stay_in_bounds():
+    policy = {
+        "id": "POL-SHORT",
+        "customer_id": "CUST-SHORT",
+        "start_date": "2026-13-01",
+        "risk_premium": 2400.00,
+        "savings_premium": 2400.00,
+        "expense_loading": 360.00,
+        "profit_margin": 516.00,
+    }
+    ledger = {}
+    mint_token(
+        ledger,
+        owner_id="CUST-SHORT",
+        transaction_type="wallet_deposit",
+        transaction_id="DEP-1",
+        amount=50.00,
+        description="Earlier wallet deposit",
+        created_at="2025-06-01T00:00:00+00:00",
+    )
+    mint_token(
+        ledger,
+        owner_id="CUST-SHORT",
+        transaction_type="bill_payment",
+        transaction_id="BILL-SHORT",
+        amount=473.00,
+        description="Premium",
+        created_at="2026-02-02T00:00:00+00:00",
+        metadata={"payment_period": "2026-02"},
+    )
+    report = reconcile_customer(
+        "CUST-SHORT",
+        policies=[policy],
+        bills=[{
+            "id": "BILL-OK",
+            "customer_id": "CUST-SHORT",
+            "payment_period": "2026-13",
+            "amount_paid": 999.00,
+        }, {
+            "id": "BILL-FEB",
+            "customer_id": "CUST-SHORT",
+            "payment_period": "2026-02",
+            "amount_paid": 473.00,
+        }],
+        claims=[
+            {"id": "CLM-CLOSED", "customer_id": "CUST-SHORT", "status": "closed", "paid_amount": 40.00},
+            {"id": "CLM-APPROVED", "customer_id": "CUST-SHORT", "status": "approved", "approved_amount": 70.00},
+        ],
+        nft_ledger=ledger,
+    )
+    assert report["months"] and report["months"][0]["month"] == "2026-02"
+    assert all(row["month"] >= "2026-01" for row in report["months"])
+    assert report["months"][0]["kernel_risk"] == 200.00
+    assert report["months"][0]["expense_loading"] == 30.00
+    assert report["months"][0]["profit"] == 43.00
+    assert report["months"][0]["savings_addon"] == 200.00
+    by_claim = {row["claim_id"]: row for row in report["claims"]}
+    assert by_claim["CLM-CLOSED"]["unposted_reserve_transfer"] == 40.00
+    assert "CLM-APPROVED" not in by_claim
+
+
 def test_supplier_bid_is_charged_commission_without_markup():
     service = SupplyChainEcosystemService(
         suppliers_store={
