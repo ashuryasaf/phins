@@ -1023,14 +1023,175 @@ def test_failed_wallet_seal_returns_the_reservation():
     assert float(service.algo_trading_balances.get("CUST-1", {}).get("available", 0) or 0) == 0.0
 
 
+def _keep_injected_portal_state():
+    import os
+    import web_portal.server as portal
+
+    port = int(os.environ.get("TEST_PORT", "0") or 0)
+    if port:
+        portal._TEST_PORTS_INITIALIZED.add(port)
+
+
+def test_failed_bill_pay_returns_the_wallet_debit():
+    import json
+    import os
+    from urllib.error import HTTPError
+    from urllib.request import Request, urlopen
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-HOLD-1"
+    bill_id = "BILL-HOLD-1"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.BILLING[bill_id] = {
+        "bill_id": bill_id,
+        "customer_id": customer_id,
+        "amount": 40.0,
+        "amount_due": 40.0,
+        "amount_paid": 0.0,
+        "status": "outstanding",
+    }
+    original = portal.record_transaction
+    called = {"n": 0}
+
+    def _boom_counted(**_kwargs):
+        called["n"] += 1
+        raise RuntimeError("seal failed")
+
+    portal.record_transaction = _boom_counted
+    try:
+        payload = json.dumps({
+            "bill_id": bill_id,
+            "amount": 40.0,
+            "payment_method": "health_wallet",
+        }).encode()
+        request = Request(
+            os.environ["TEST_BASE_URL"] + "/api/billing/pay",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            urlopen(request)
+            status, detail = 200, ""
+        except HTTPError as exc:
+            status, detail = exc.code, exc.read().decode()
+        assert status == 400, detail
+        assert called["n"] == 1
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 100.0
+        assert portal.HEALTH_WALLETS[customer_id]["transactions"] == []
+        assert portal.BILLING[bill_id]["status"] == "outstanding"
+        assert portal.BILLING[bill_id]["amount_paid"] == 0.0
+    finally:
+        portal.record_transaction = original
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.BILLING.pop(bill_id, None)
+
+
+def test_failed_purchase_returns_the_wallet_debit():
+    import json
+    import os
+    from urllib.error import HTTPError
+    from urllib.request import Request, urlopen
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-HOLD-2"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 500.0, "transactions": []}
+    original = portal.record_transaction
+    called = {"n": 0}
+
+    def _boom_counted(**_kwargs):
+        called["n"] += 1
+        raise RuntimeError("seal failed")
+
+    portal.record_transaction = _boom_counted
+    try:
+        payload = json.dumps({
+            "customer_id": customer_id,
+            "product_id": "med-hold-1",
+            "product_name": "Visit",
+            "amount": 40.0,
+            "payment_method": "health_wallet",
+        }).encode()
+        request = Request(
+            os.environ["TEST_BASE_URL"] + "/api/health-wallet/purchase",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            urlopen(request)
+            status, detail = 200, ""
+        except HTTPError as exc:
+            status, detail = exc.code, exc.read().decode()
+        assert status == 500, detail
+        assert called["n"] == 1
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 500.0
+    finally:
+        portal.record_transaction = original
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+
+
+def test_failed_bulk_pay_returns_the_wallet_debit_and_the_bill():
+    import json
+    import os
+    from urllib.error import HTTPError
+    from urllib.request import Request, urlopen
+    import web_portal.server as portal
+
+    _keep_injected_portal_state()
+    customer_id = "CUST-HOLD-3"
+    bill_id = "BILL-HOLD-3"
+    portal.HEALTH_WALLETS[customer_id] = {"balance": 100.0, "transactions": []}
+    portal.BILLING[bill_id] = {
+        "bill_id": bill_id,
+        "customer_id": customer_id,
+        "amount": 40.0,
+        "amount_paid": 0.0,
+        "status": "outstanding",
+    }
+    original = portal.record_transaction
+    called = {"n": 0}
+
+    def _boom_counted(**_kwargs):
+        called["n"] += 1
+        raise RuntimeError("seal failed")
+
+    portal.record_transaction = _boom_counted
+    try:
+        payload = json.dumps({"customer_id": customer_id}).encode()
+        request = Request(
+            os.environ["TEST_BASE_URL"] + "/api/billing/pay-all-from-wallet",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            urlopen(request)
+            status, detail = 200, ""
+        except HTTPError as exc:
+            status, detail = exc.code, exc.read().decode()
+        assert status == 400, detail
+        assert called["n"] == 1
+        assert portal.HEALTH_WALLETS[customer_id]["balance"] == 100.0
+        assert portal.HEALTH_WALLETS[customer_id]["transactions"] == []
+        assert portal.BILLING[bill_id]["status"] == "outstanding"
+        assert portal.BILLING[bill_id]["amount_paid"] == 0.0
+    finally:
+        portal.record_transaction = original
+        portal.HEALTH_WALLETS.pop(customer_id, None)
+        portal.BILLING.pop(bill_id, None)
+
+
 def test_debit_account_balance_refuses_to_go_negative():
-    from services.savings_pipeline_service import debit_account_balance
+    from services.savings_pipeline_service import credit_account_balance, debit_account_balance
 
     wallet = {"balance": 25.0}
     assert debit_account_balance(wallet, 40.0) is None
     assert wallet["balance"] == 25.0
     assert debit_account_balance(wallet, 10.0) == 15.0
     assert wallet["balance"] == 15.0
+    assert credit_account_balance(wallet, 10.0) == 25.0
+    assert credit_account_balance(wallet, 0) is None
+    assert wallet["balance"] == 25.0
 
 
 def test_wallet_credit_during_the_seal_is_not_replaced():

@@ -284,6 +284,22 @@ def debit_account_balance(account: Dict[str, Any], amount: float) -> Optional[fl
         return account['balance']
 
 
+def credit_account_balance(account: Dict[str, Any], amount: float) -> Optional[float]:
+    """Add ``amount`` back to a row under its lock.
+
+    Used when a debit already landed and a later step in the same request
+    did not. The add is applied to the live balance.
+    """
+    if not isinstance(account, dict):
+        return None
+    credit = round(float(amount or 0), 2)
+    if credit <= 0:
+        return None
+    with account_book_lock(account):
+        account['balance'] = round(float(account.get('balance', 0) or 0) + credit, 2)
+        return account['balance']
+
+
 _algo_credit_locks: Dict[str, threading.RLock] = {}
 _algo_credit_guard = threading.Lock()
 
