@@ -517,6 +517,8 @@ def post_collected_premiums_to_accounting(
     unbilled_amount: Any = 0,
     engine: Any = None,
     bill_payments: Optional[Dict[str, Any]] = None,
+    risk_percentage: Any = None,
+    savings_percentage: Any = None,
 ) -> List[Dict[str, Any]]:
     """Post each paid bill (and any unbilled remainder) to the accounting book.
 
@@ -543,7 +545,15 @@ def post_collected_premiums_to_accounting(
                 bill_amount = remaining_cash
         if bill_amount <= 0:
             continue
-        bill_split = resolve_premium_split(bill_amount, policy, split["risk_percentage"])
+        if risk_percentage is not None and savings_percentage is not None:
+            # This slice is the change in the running waterfall, not a new stack.
+            bill_split = {
+                "risk_percentage": float(risk_percentage),
+                "savings_percentage": float(savings_percentage),
+                "split_source": "payment_delta",
+            }
+        else:
+            bill_split = resolve_premium_split(bill_amount, policy, split["risk_percentage"])
         results.append(
             post_premium_to_accounting_book(
                 bill_id=str(bill.get("id") or bill_id),

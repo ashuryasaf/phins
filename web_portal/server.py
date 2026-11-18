@@ -8966,6 +8966,8 @@ def record_premium_cash_books(
     unbilled_amount: float = 0.0,
     bill_payments: Optional[Dict[str, float]] = None,
     policy: Optional[Dict[str, Any]] = None,
+    risk_percentage: Optional[float] = None,
+    savings_percentage: Optional[float] = None,
 ) -> None:
     """Post collected premium cash into the shared accounting book.
 
@@ -8994,6 +8996,8 @@ def record_premium_cash_books(
             fallback_risk_pct=fallback,
             unbilled_amount=unbilled_amount,
             bill_payments=bill_payments,
+            risk_percentage=risk_percentage,
+            savings_percentage=savings_percentage,
         )
     except Exception as acct_err:
         print(f"[ACCOUNTING_BOOK] Premium post skipped: {acct_err}")

@@ -132,12 +132,13 @@ class BillingService:
         return bill
 
     def _layers_for_amount(self, bill: Dict[str, Any], amount: float, allocation: Dict[str, Any]):
-        """Dollar layers for this cash slice.
+        """Dollar layers for the cash collected so far.
 
         An explicit caller split stays proportional, and the remainder stays
-        on risk. A kernel bill uses the waterfall amounts. Rebuilding those
-        amounts from rounded percentages puts a dollar over a finished month
-        onto savings.
+        on risk. A kernel bill uses the waterfall of this total. A later
+        installment is the difference from the previous total, so two halves
+        of one month still reach the add-on. Rebuilding a slice from rounded
+        percentages puts a dollar over a finished month onto savings.
         """
         amount = round(float(amount), 2)
         source = allocation.get('split_source')
@@ -186,6 +187,17 @@ class BillingService:
         prev_paid = float(b.get('amount_paid', 0.0))
         was_already_paid = b.get('status') == 'paid'
         b['amount_paid'] = round(prev_paid + float(amount), 2)
+
+        # Paid layers are the waterfall of cash collected so far. A fresh
+        # waterfall of each installment would fill risk twice and skip the add-on.
+        allocation = b.get('premium_allocation', {})
+        total_risk, total_savings, risk_pct, savings_pct = self._layers_for_amount(
+            b, b['amount_paid'], allocation
+        )
+        prior_risk = round(float(allocation.get('risk_amount_paid') or 0), 2)
+        prior_savings = round(float(allocation.get('savings_amount_paid') or 0), 2)
+        slice_risk = round(total_risk - prior_risk, 2)
+        slice_savings = round(total_savings - prior_savings, 2)
         
         # Update status
         if b['amount_paid'] >= b['amount_due']:
@@ -226,29 +238,25 @@ class BillingService:
                     amount=float(amount),
                     description=f"Premium payment for bill {bill_id}"
                 )
+                slice_amount = float(amount)
                 record_premium_cash_books(
                     customer_id=b.get('customer_id', ''),
                     policy_id=b.get('policy_id', ''),
-                    amount=float(amount),
+                    amount=slice_amount,
                     bills_paid=[str(bill_id)],
                     source_tx_id=str((ledger_tx or {}).get('id') or ''),
+                    risk_percentage=(round(slice_risk / slice_amount * 100, 2) if slice_amount else risk_pct),
+                    savings_percentage=(round(slice_savings / slice_amount * 100, 2) if slice_amount else savings_pct),
                 )
             except (ImportError, AttributeError, Exception) as e:
                 logger.warning(f"Could not update books for bill {bill_id}: {e}")
         
         b['updated_at'] = datetime.now().isoformat()
-        
-        # A stored explicit split is kept. A kernel bill waterfalls this slice.
-        allocation = b.get('premium_allocation', {})
-        payment_risk, payment_savings, risk_pct, savings_pct = self._layers_for_amount(
-            b, float(amount), allocation
-        )
-        
-        # Update allocation tracking on the bill
-        allocation['risk_amount_paid'] = round(
-            float(allocation.get('risk_amount_paid', 0)) + payment_risk, 2)
-        allocation['savings_amount_paid'] = round(
-            float(allocation.get('savings_amount_paid', 0)) + payment_savings, 2)
+
+        # The running total is the waterfall of every dollar received, not the
+        # sum of a fresh waterfall on each installment.
+        allocation['risk_amount_paid'] = total_risk
+        allocation['savings_amount_paid'] = total_savings
         
         b['premium_allocation'] = allocation
         
@@ -274,7 +282,7 @@ class BillingService:
                 allocation['allocation_id'] = alloc_record.allocation_id
                 b['premium_allocation'] = allocation
                 
-                logger.info(f"Recorded allocation for bill {bill_id}: ${payment_risk:.2f} risk, ${payment_savings:.2f} savings")
+                logger.info(f"Recorded allocation for bill {bill_id}: ${risk_paid:.2f} risk, ${savings_paid:.2f} savings")
             except Exception as e:
                 logger.error(f"Failed to record allocation for bill {bill_id}: {e}")
         

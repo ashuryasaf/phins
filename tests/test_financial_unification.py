@@ -683,6 +683,41 @@ def test_accountant_frs_uses_ledger_claim_cash_not_approved_records():
     assert empty_summary["claims_paid"] == 0.0
 
 
+def test_two_halves_of_a_growth_bill_still_credit_the_add_on():
+    """Each installment is the change in the running waterfall, not a new stack."""
+    from services.billing_service import BillingService
+    from services.premium_allocation_tracker import PremiumAllocationTracker
+
+    policies = {
+        "POL-HALF": {
+            "id": "POL-HALF",
+            "customer_id": "CUST-HALF",
+            "annual_premium": 2400.0,
+            "risk_premium_annual": 2400.0,
+            "savings_addon": "growth",
+            "pricing_source": "pricing_kernel",
+        }
+    }
+    bills = {}
+    tracker = PremiumAllocationTracker(bills=bills, policies=policies)
+    billing = BillingService(bills=bills, policies=policies, premium_allocation_tracker=tracker)
+    bill = billing.create_bill("POL-HALF", 400.0, customer_id="CUST-HALF")
+    assert bill["premium_allocation"]["risk_amount_due"] == 200.0
+    assert bill["premium_allocation"]["savings_amount_due"] == 200.0
+
+    first = billing.record_payment(bill["bill_id"], 200.0)
+    assert first["premium_allocation"]["risk_amount_paid"] == 200.0
+    assert first["premium_allocation"]["savings_amount_paid"] == 0.0
+
+    second = billing.record_payment(bill["bill_id"], 200.0)
+    assert second["status"] == "paid"
+    assert second["premium_allocation"]["risk_amount_paid"] == 200.0
+    assert second["premium_allocation"]["savings_amount_paid"] == 200.0
+    recorded = next(iter(tracker.allocations.values()))
+    assert float(recorded.risk_amount) == 200.0
+    assert float(recorded.savings_amount) == 200.0
+
+
 def test_payment_over_a_finished_month_keeps_the_extra_dollar_on_risk():
     """Rounded bill percentages must not move the next month's first dollar."""
     from services.billing_service import BillingService
