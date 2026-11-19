@@ -11703,25 +11703,40 @@ _SAVINGS_RECONCILE_SKIP = frozenset({'CUST-X', 'PHINS-CORPORATE', 'PHINS', 'SYST
 def _max_intact_cover(caps: List[float], balance: float) -> float:
     """Largest sum of intact payments that can still sit in this balance.
 
-    A spent payment is not set aside when other payments explain more of
-    the balance. If the combination is too large to settle exactly, the
-    whole balance is treated as claim cash so it is not stamped as savings.
+    A payment larger than the live balance has left the wallet. It does not
+    count, and it does not hide the cash left beside repeated lines.
     """
     limit = int(round(max(0.0, balance) * 100))
-    items = [int(round(cap * 100)) for cap in caps if cap > 0.005]
-    if limit <= 0 or not items:
+    if limit <= 0:
         return 0.0
-    if len(items) > 18:
-        return round(max(0.0, balance), 2)
-    reachable = {0}
+    items = []
+    for cap in caps:
+        cents = int(round(cap * 100))
+        if 0 < cents <= limit:
+            items.append(cents)
+    if not items:
+        return 0.0
+    total = sum(items)
+    if total <= limit:
+        return round(total / 100.0, 2)
+    # A very wide balance is packed from the largest fitting payment. Cash
+    # those payments cannot hold stays outside the cover.
+    if limit > 1_000_000:
+        remaining = limit
+        for cap in sorted(items, reverse=True):
+            if cap <= remaining:
+                remaining -= cap
+        return round((limit - remaining) / 100.0, 2)
+    reachable = bytearray(limit + 1)
+    reachable[0] = 1
     for cap in items:
-        if cap > limit:
-            continue
-        additions = {value + cap for value in reachable if value + cap <= limit}
-        reachable.update(additions)
-        if len(reachable) > 100000:
-            return round(max(0.0, balance), 2)
-    return round(max(reachable) / 100.0, 2)
+        for value in range(limit - cap, -1, -1):
+            if reachable[value]:
+                reachable[value + cap] = 1
+    best = limit
+    while best > 0 and not reachable[best]:
+        best -= 1
+    return round(best / 100.0, 2)
 
 
 def _wallet_non_claim_cash(wallet: Dict[str, Any]) -> float:

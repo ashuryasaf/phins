@@ -707,6 +707,49 @@ class TestClaimPaymentToWallet:
         assert all(row['customer_id'] != 'CUST-GONE' for row in result['credited'])
         assert portal.HEALTH_WALLETS['CUST-GONE']['balance'] == 80.0
 
+    def test_many_spent_claims_do_not_hide_savings_beside_duplicate_lines(self):
+        import web_portal.server as portal
+        transactions = []
+        for index in range(19):
+            claim_id = f'CLM-MANY-{index}'
+            portal.CLAIMS[claim_id] = {
+                'id': claim_id, 'customer_id': 'CUST-MANY', 'status': 'paid', 'paid_amount': 4500.0,
+            }
+            transactions.append({
+                'id': f'W-MANY-{index}', 'type': 'claim_payment', 'claim_id': claim_id,
+                'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+                'timestamp': f'2026-02-{index + 1:02d}T00:00:00',
+            })
+        portal.CLAIMS['CLM-MANY-DUP'] = {
+            'id': 'CLM-MANY-DUP', 'customer_id': 'CUST-MANY', 'status': 'paid', 'paid_amount': 4500.0,
+        }
+        transactions.extend([
+            {'id': 'W-MANY-D1', 'type': 'claim_payment', 'claim_id': 'CLM-MANY-DUP',
+             'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+             'timestamp': '2026-03-01T00:00:00'},
+            {'id': 'W-MANY-D2', 'type': 'claim_payment', 'claim_id': 'CLM-MANY-DUP',
+             'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+             'timestamp': '2026-03-02T00:00:00'},
+        ])
+        portal.POLICIES['POL-MANY'] = {
+            'id': 'POL-MANY', 'customer_id': 'CUST-MANY', 'start_date': '2026-01-01',
+            'annual_premium': 1200.0, 'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING['BILL-MANY'] = {
+            'id': 'BILL-MANY', 'customer_id': 'CUST-MANY', 'policy_id': 'POL-MANY',
+            'payment_period': '2026-01', 'amount_paid': 200.0, 'status': 'paid',
+            'premium_allocation': {'risk_amount_paid': 120.0, 'savings_amount_paid': 80.0},
+        }
+        portal.HEALTH_WALLETS['CUST-MANY'] = {
+            'customer_id': 'CUST-MANY',
+            'balance': 80.0,
+            'transactions': transactions,
+        }
+
+        result = portal.reconcile_savings_premium_balances()
+        assert all(row['customer_id'] != 'CUST-MANY' for row in result['credited'])
+        assert portal.HEALTH_WALLETS['CUST-MANY']['balance'] == 80.0
+
     def test_a_spent_claim_is_not_set_aside_ahead_of_claims_still_in_the_wallet(self):
         import web_portal.server as portal
         portal.CLAIMS['CLM-BIG-SPENT'] = {
