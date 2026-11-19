@@ -34,6 +34,24 @@
         pre { white-space: pre-wrap; background: #0e1c33; padding: 14px; border-radius: 12px; color: #efe6d2; }
         .note { color: #b7c3d6; font-size: 13px; }
         h2 { font-weight: 500; margin-top: 28px; }
+        h3 { font-weight: 500; color: #e8d7a8; margin: 22px 0 8px; }
+        .card em { display: block; font-style: normal; margin-top: 2px; }
+        .unified-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+        .unified-tools label { color: #b7c3d6; font-size: 13px; }
+        .unified-tools input { width: 84px; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(196,163,90,.5); background: #0e1c33; color: #f4efe4; }
+        .unified-tools button.quiet { background: transparent; color: #e8d7a8; border: 1px solid rgba(196,163,90,.5); }
+        .stmt-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px; }
+        .stmt { background: #13284a; border: 1px solid rgba(196,163,90,.4); border-radius: 12px; padding: 4px 14px 10px; }
+        .stmt h3 { display: flex; justify-content: space-between; gap: 12px; margin: 12px 0 6px; }
+        .stmt h3 b { color: #f3e6c0; font-weight: 600; }
+        .stmt table { background: transparent; }
+        .stmt td { white-space: normal; padding: 6px 4px; font-size: 13px; }
+        .stmt td.amt { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .stmt td.book { color: #9fb0c8; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+        .stmt tr.accrual td { color: #b7c3d6; font-style: italic; }
+        #unified-checks { list-style: none; padding: 0; margin: 10px 0 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 6px 18px; }
+        #unified-checks li { font-size: 13px; color: #d5dcea; line-height: 1.45; }
+        #unified-checks li.bad { color: #ffd9d2; }
     </style>
 </head>
 <body>
@@ -48,6 +66,32 @@
     <main>
         <p class="rules" id="rules">Kernel risk stays on the risk book. Only an add-on or a growth add is saved. Paid claims stay on the claims book and move from the reserve to the health wallet.</p>
         <div class="cards" id="funds"></div>
+        <section id="unified-report">
+            <h2>Unified cash flow statement <span id="unified-verdict"></span></h2>
+            <p class="note" id="unified-basis"></p>
+            <div class="unified-tools">
+                <label for="unified-fee">Management fee on assets under management, % per year</label>
+                <input id="unified-fee" type="number" min="0" max="10" step="0.05" placeholder="1.00">
+                <button id="unified-refresh" type="button">Read the books</button>
+                <button id="unified-download" type="button" class="quiet">Download JSON</button>
+                <span class="note" id="unified-stamp"></span>
+            </div>
+            <div class="cards" id="unified-cards"></div>
+            <ul id="unified-checks"></ul>
+            <div class="stmt-grid" id="unified-statement"></div>
+            <h3>Kernel pricing of the in-force book, per year</h3>
+            <div id="unified-kernel"></div>
+            <h3>Claims, each counted once</h3>
+            <p class="note" id="unified-claims-note"></p>
+            <div id="unified-claims"></div>
+            <h3>Marketplace and suppliers</h3>
+            <p class="note" id="unified-market-note"></p>
+            <div id="unified-suppliers"></div>
+            <h3>Agents and affiliates</h3>
+            <div id="unified-agents"></div>
+            <h3>Customers</h3>
+            <div id="unified-customers"></div>
+        </section>
         <h2>Customers to monitor</h2>
         <p class="note">Asaf Assurance, Efrat PHINS, Asi PHINS, and Shosh PHINS are the standing list. Anyone else with a ledger, bill, claim, wallet, or NFT seal is added from the books.</p>
         <div class="roster-wrap">
@@ -77,6 +121,7 @@
         <pre id="specimen">Loading…</pre>
     </main>
     <script src="/phins-doc-return.js"></script>
+    <script src="/cashflow-unified-report.js"></script>
     <script>
         const money = (value) => '$' + Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const token = localStorage.getItem('phins_token') || '';

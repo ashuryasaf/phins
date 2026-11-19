@@ -454,6 +454,41 @@ def transferred_claim_amounts(
     return covered
 
 
+def claim_cash_books(
+    *,
+    transactions: Any = (),
+    wallets: Any = None,
+    balance_sheet: Any = None,
+    nft_ledger: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Dict[str, Decimal]]:
+    """Claim cash as each book records it, keyed by claim id.
+
+    The customer ledger, the health wallet, the balance sheet, and the NFT
+    seals each describe the same transfer. They are returned side by side
+    so a report can count the claim once and show where a book repeats it.
+    A broken seal is left out. Nothing is written.
+    """
+    sealed: Dict[str, Decimal] = {}
+    for token in (nft_ledger or {}).values():
+        if not isinstance(token, Mapping):
+            continue
+        if str(token.get("transaction_type") or "") not in _CLAIM_CREDIT_TYPES:
+            continue
+        if not verify_token(token).get("valid"):
+            continue
+        metadata = token.get("metadata") if isinstance(token.get("metadata"), dict) else {}
+        claim_id = str(metadata.get("claim_id") or "")
+        amount = _token_amount(token)
+        if claim_id and amount > 0:
+            sealed[claim_id] = (sealed.get(claim_id, Decimal("0.00")) + amount).quantize(_CENT)
+    return {
+        "ledger": _sum_claim_cash(_tx_rows(transactions), types=_CLAIM_LEDGER_TYPES),
+        "wallet": _sum_claim_cash(_tx_rows(wallets), types=_CLAIM_LEDGER_TYPES),
+        "balance_sheet": _sum_claim_cash(_tx_rows(balance_sheet), category="claims_paid"),
+        "sealed": sealed,
+    }
+
+
 def duplicate_claim_row_ids(rows: Sequence[Mapping[str, Any]], paid_amount: Any) -> List[str]:
     """Ids of claims-paid lines that repeat a claim above its paid amount.
 

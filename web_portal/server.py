@@ -2537,6 +2537,9 @@ def get_customer_with_fallback(customer_id: str) -> dict:
 HEALTH_WALLETS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {balance, transactions, monthly_deposit}
 MEDICAL_PURCHASES: Dict[str, Dict[str, Any]] = {}  # purchase_id -> purchase data
 NFT_LEDGER: Dict[str, Dict[str, Any]] = {}  # token_id -> NFT token data for customer ledger
+# Health-wallet withdrawal requests (services/wallet_withdrawal_service.py). Saved
+# in the same snapshot as HEALTH_WALLETS so a hold and its wallet stay together.
+WALLET_WITHDRAWALS: Dict[str, Dict[str, Any]] = {}  # withdrawal_id -> request
 
 # Customer allocation preferences - adjustable savings/risk percentages
 CUSTOMER_ALLOCATIONS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {savings_pct, risk_pct, index_pct, bonds_pct, crypto_pct, updated_at}
@@ -11684,6 +11687,60 @@ def build_cashflow_monitoring() -> Dict[str, Any]:
     report['specimen'] = worked_specimen()
     report['claims_reserve'] = safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0.0)
     return report
+
+
+def _cashflow_referral_book() -> Dict[str, Any]:
+    """Stored acquisition settlements. The referral book is not refreshed."""
+    try:
+        from services import referral_reward_service as _rrs
+        with _rrs._LOCK:
+            _rrs._ensure_loaded()
+            settlements = [dict(row) for row in _rrs.SETTLEMENTS.values() if isinstance(row, dict)]
+            expected_cents = int(_rrs.verify_integrity().get('expense_cents') or 0)
+        return {'settlements': settlements, 'expected_expense': expected_cents / 100.0}
+    except Exception:
+        return {'settlements': [], 'expected_expense': None}
+
+
+def _cashflow_agent_book() -> Dict[str, List[Dict[str, Any]]]:
+    """Commission rows and payout runs as the agent book holds them."""
+    try:
+        from services import agent_ecosystem_service as _aes
+        return {
+            'commissions': [dict(row) for row in _aes.list_commissions()],
+            'payouts': [dict(row) for row in _aes.list_payouts()],
+        }
+    except Exception:
+        return {'commissions': [], 'payouts': []}
+
+
+def build_cashflow_unified_report(management_fee_pct: Any = None) -> Dict[str, Any]:
+    """One statement across premiums, claims, customer money, the marketplace,
+    suppliers, and agents. Reads the live books and writes none of them."""
+    from services.cashflow_unified_report import unified_cashflow_report
+    positions = _cashflow_position_books()
+    referral = _cashflow_referral_book()
+    agent_book = _cashflow_agent_book()
+    return unified_cashflow_report(
+        customers=CUSTOMERS,
+        policies=list(POLICIES.values()),
+        bills=list(BILLING.values()),
+        claims=list(CLAIMS.values()),
+        nft_ledger=NFT_LEDGER,
+        transactions=list(TRANSACTION_LEDGER.values()),
+        wallets=HEALTH_WALLETS,
+        investments=positions['investments'],
+        algo=positions['algo'],
+        balance_sheet=PHINS_BALANCE_SHEET,
+        orders=list(SUPPLIER_ORDERS.values()),
+        suppliers=SUPPLIERS,
+        commissions=agent_book['commissions'],
+        payouts=agent_book['payouts'],
+        referral_settlements=referral['settlements'],
+        acquisition_expected_expense=referral['expected_expense'],
+        withdrawals=list(WALLET_WITHDRAWALS.values()),
+        management_fee_pct=management_fee_pct,
+    )
 
 
 _PREMIUM_SAVINGS_SLICE_TYPES = frozenset({
@@ -40112,6 +40169,33 @@ For claims or questions, please contact:
                 return
             self._set_json_headers()
             self.wfile.write(json.dumps({'success': True, 'monitoring': report}, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/admin/cashflow/unified-report':
+            if not require_role(session, ['admin', 'accountant', 'actuary', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            fee_pct = (qs.get('management_fee_pct') or [None])[0]
+            if fee_pct is not None:
+                try:
+                    fee_value = float(fee_pct)
+                except (TypeError, ValueError):
+                    fee_value = None
+                if fee_value is None or not (0.0 <= fee_value <= 10.0):
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({
+                        'error': 'management_fee_pct must be a percentage between 0 and 10',
+                    }).encode('utf-8'))
+                    return
+                fee_pct = fee_value / 100.0
+            try:
+                report = build_cashflow_unified_report(fee_pct)
+            except Exception:
+                _write_cashflow_internal_error(self, "cashflow unified report failed")
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'success': True, 'report': report}, default=str).encode('utf-8'))
             return
 
         if path.startswith('/api/admin/cashflow/customers/'):
