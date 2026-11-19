@@ -587,6 +587,46 @@ class TestClaimPaymentToWallet:
         assert portal.HEALTH_WALLETS['CUST-DUP']['balance'] == 80.0
         assert portal.HEALTH_WALLETS['CUST-DUP2']['balance'] == 80.0
 
+    def test_an_intact_claim_is_not_savings_beside_another_claims_duplicates(self):
+        import web_portal.server as portal
+        portal.CLAIMS['CLM-INTACT'] = {
+            'id': 'CLM-INTACT', 'customer_id': 'CUST-MIX', 'status': 'paid', 'paid_amount': 4500.0,
+        }
+        portal.CLAIMS['CLM-REPEAT'] = {
+            'id': 'CLM-REPEAT', 'customer_id': 'CUST-MIX', 'status': 'paid', 'paid_amount': 4500.0,
+        }
+        portal.POLICIES['POL-MIX'] = {
+            'id': 'POL-MIX', 'customer_id': 'CUST-MIX', 'start_date': '2026-01-01',
+            'annual_premium': 1200.0, 'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING['BILL-MIX'] = {
+            'id': 'BILL-MIX', 'customer_id': 'CUST-MIX', 'policy_id': 'POL-MIX',
+            'payment_period': '2026-01', 'amount_paid': 200.0, 'status': 'paid',
+            'premium_allocation': {'risk_amount_paid': 120.0, 'savings_amount_paid': 80.0},
+        }
+        portal.HEALTH_WALLETS['CUST-MIX'] = {
+            'customer_id': 'CUST-MIX',
+            'balance': 4500.0,
+            'transactions': [
+                {'id': 'W-INTACT', 'type': 'claim_payment', 'claim_id': 'CLM-INTACT',
+                 'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+                 'timestamp': '2026-02-01T00:00:00'},
+                {'id': 'W-R1', 'type': 'claim_payment', 'claim_id': 'CLM-REPEAT',
+                 'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+                 'timestamp': '2026-03-01T00:00:00'},
+                {'id': 'W-R2', 'type': 'claim_payment', 'claim_id': 'CLM-REPEAT',
+                 'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+                 'timestamp': '2026-03-02T00:00:00'},
+            ],
+        }
+
+        result = portal.reconcile_savings_premium_balances()
+        mixed = [row for row in result['credited'] if row['customer_id'] == 'CUST-MIX']
+        assert len(mixed) == 1
+        assert mixed[0]['credited'] == 80.0
+        stamped = portal.INVESTMENT_ACCOUNTS.get('CUST-MIX', {}).get('savings_premiums_applied')
+        assert stamped == 80.0
+
     def test_after_journal_miss_still_reports_a_durable_repair(self, monkeypatch):
         import web_portal.server as portal
         self._setup_customer_and_policy(portal)

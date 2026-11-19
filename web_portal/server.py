@@ -11690,6 +11690,8 @@ def _wallet_non_claim_cash(wallet: Dict[str, Any]) -> float:
     Duplicate claim lines count once, up to that claim's paid amount. Cash
     that was already in the wallet before the first claim credit still
     counts after the claim is spent. A later spend does not open a new gap.
+    An intact claim that still fills the wallet is not savings, including
+    when another claim has repeated lines.
     """
     from services.premium_flow_reconciliation import paid_claim_amount
     balance = safe_float(wallet.get('balance'), 0.0)
@@ -11702,24 +11704,30 @@ def _wallet_non_claim_cash(wallet: Dict[str, Any]) -> float:
             claims_by_id[claim_id] = claim
     grouped: Dict[str, List[float]] = {}
     claim_rows: List[Dict[str, Any]] = []
-    raw = 0.0
     for row in wallet.get('transactions') or []:
         if not isinstance(row, dict):
             continue
         if str(row.get('type') or '') not in _CLAIM_LEG_TYPES:
             continue
         amount = safe_float(row.get('amount'), 0.0)
-        raw += amount
         claim_id = str(row.get('claim_id') or '')
         grouped.setdefault(claim_id, []).append(amount)
         claim_rows.append(row)
     capped = 0.0
+    intact = 0.0
+    duplicated_caps: List[float] = []
     for claim_id, amounts in grouped.items():
         claim = claims_by_id.get(claim_id)
         cap = float(paid_claim_amount(claim)) if claim is not None else 0.0
         if cap <= 0 and amounts:
             cap = max(amounts)
-        capped += min(sum(amounts), cap) if cap > 0 else sum(amounts)
+        total = sum(amounts)
+        one = min(total, cap) if cap > 0 else total
+        capped += one
+        if total > one + 0.01:
+            duplicated_caps.append(one)
+        else:
+            intact += one
     residual = round(max(0.0, balance - min(capped, balance)), 2)
     pre_claim = None
     ordered = sorted(claim_rows, key=lambda row: str(row.get('timestamp') or ''))
@@ -11733,11 +11741,13 @@ def _wallet_non_claim_cash(wallet: Dict[str, Any]) -> float:
     landed = residual
     if pre_claim is not None:
         landed = max(landed, pre_claim)
-    # A stored starting balance of zero is still a stored field. Repeated
-    # claim lines that the live balance cannot hold are not a second copy
-    # of the claim, so the cash left beside them still counts.
-    if raw > capped + 0.01 and capped > balance + 0.01:
-        landed = max(landed, round(max(0.0, balance), 2))
+    # Repeated lines that the live balance cannot hold are not a second
+    # copy of that claim. Cash left after the intact claims still counts.
+    # The intact claim itself does not.
+    if duplicated_caps and capped > balance + 0.01:
+        unexplained = round(max(0.0, balance - intact), 2)
+        if unexplained + 0.01 < min(duplicated_caps):
+            landed = max(landed, unexplained)
     return round(landed, 2)
 
 
