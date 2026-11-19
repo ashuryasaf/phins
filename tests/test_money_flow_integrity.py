@@ -524,14 +524,37 @@ class TestClaimPaymentToWallet:
             'balance': 80.0,
             'transactions': [
                 {'id': f'WD-{n}', 'type': 'claim_payment', 'claim_id': 'CLM-DUP',
+                 'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+                 'timestamp': f'2026-03-0{n}T00:00:00'}
+                for n in (1, 2, 3)
+            ],
+        }
+        portal.CLAIMS['CLM-DUP2'] = {
+            'id': 'CLM-DUP2', 'customer_id': 'CUST-DUP2', 'status': 'paid', 'paid_amount': 4500.0,
+        }
+        portal.POLICIES['POL-DUP2'] = {
+            'id': 'POL-DUP2', 'customer_id': 'CUST-DUP2', 'start_date': '2026-01-01',
+            'annual_premium': 1200.0, 'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING['BILL-DUP2'] = {
+            'id': 'BILL-DUP2', 'customer_id': 'CUST-DUP2', 'policy_id': 'POL-DUP2',
+            'payment_period': '2026-01', 'amount_paid': 200.0, 'status': 'paid',
+            'premium_allocation': {'risk_amount_paid': 120.0, 'savings_amount_paid': 80.0},
+        }
+        portal.HEALTH_WALLETS['CUST-DUP2'] = {
+            'customer_id': 'CUST-DUP2',
+            'balance': 80.0,
+            'transactions': [
+                {'id': f'WD2-{n}', 'type': 'claim_payment', 'claim_id': 'CLM-DUP2',
                  'amount': 4500.0, 'timestamp': f'2026-03-0{n}T00:00:00'}
                 for n in (1, 2, 3)
             ],
         }
 
         result = portal.reconcile_savings_premium_balances()
-        assert all(row['customer_id'] != 'CUST-DUP' for row in result['credited'])
+        assert all(row['customer_id'] not in {'CUST-DUP', 'CUST-DUP2'} for row in result['credited'])
         assert portal.HEALTH_WALLETS['CUST-DUP']['balance'] == 80.0
+        assert portal.HEALTH_WALLETS['CUST-DUP2']['balance'] == 80.0
 
     def test_after_journal_miss_still_reports_a_durable_repair(self, monkeypatch):
         import web_portal.server as portal

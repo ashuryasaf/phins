@@ -11730,11 +11730,15 @@ def _wallet_non_claim_cash(wallet: Dict[str, Any]) -> float:
         if row.get('balance_after') is not None:
             pre_claim = round(max(0.0, safe_float(row.get('balance_after'), 0.0) - safe_float(row.get('amount'), 0.0)), 2)
             break
+    landed = residual
     if pre_claim is not None:
-        return round(max(pre_claim, residual), 2)
+        landed = max(landed, pre_claim)
+    # A stored starting balance of zero is still a stored field. Repeated
+    # claim lines that the live balance cannot hold are not a second copy
+    # of the claim, so the cash left beside them still counts.
     if raw > capped + 0.01 and capped > balance + 0.01:
-        return round(max(0.0, balance), 2)
-    return residual
+        landed = max(landed, round(max(0.0, balance), 2))
+    return round(landed, 2)
 
 
 def _premium_savings_already_landed(customer_id: str) -> float:
