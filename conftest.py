@@ -202,6 +202,7 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
         "SESSIONS",
         "BILLING",
         "HEALTH_WALLETS",
+        "WALLET_WITHDRAWALS",
         "MEDICAL_PURCHASES",
         "INVESTMENT_ACCOUNTS",
         "CUSTOMER_ALLOCATIONS",

@@ -109,6 +109,7 @@
             + '.phins-doc-return button{font:600 13px Inter,"Segoe UI",sans-serif;border-radius:8px;padding:8px 14px;cursor:pointer;}'
             + '.phins-doc-back{background:#fff;color:#0e2f63;border:1px solid #d5deea;}'
             + '.phins-doc-close{background:linear-gradient(135deg,#060d1f 0%,#0e2f63 46%,#123f82 100%);color:#fff;border:0;}'
+            + '.phins-doc-return[hidden]{display:none !important;}'
             + '@media print{.phins-doc-return{display:none !important;}}';
         (global.document.head || global.document.documentElement).appendChild(style);
     }

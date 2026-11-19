@@ -454,6 +454,41 @@ def transferred_claim_amounts(
     return covered
 
 
+def claim_cash_books(
+    *,
+    transactions: Any = (),
+    wallets: Any = None,
+    balance_sheet: Any = None,
+    nft_ledger: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Dict[str, Decimal]]:
+    """Claim cash as each book records it, keyed by claim id.
+
+    The customer ledger, the health wallet, the balance sheet, and the NFT
+    seals each describe the same transfer. They are returned side by side
+    so a report can count the claim once and show where a book repeats it.
+    A broken seal is left out. Nothing is written.
+    """
+    sealed: Dict[str, Decimal] = {}
+    for token in (nft_ledger or {}).values():
+        if not isinstance(token, Mapping):
+            continue
+        if str(token.get("transaction_type") or "") not in _CLAIM_CREDIT_TYPES:
+            continue
+        if not verify_token(token).get("valid"):
+            continue
+        metadata = token.get("metadata") if isinstance(token.get("metadata"), dict) else {}
+        claim_id = str(metadata.get("claim_id") or "")
+        amount = _token_amount(token)
+        if claim_id and amount > 0:
+            sealed[claim_id] = (sealed.get(claim_id, Decimal("0.00")) + amount).quantize(_CENT)
+    return {
+        "ledger": _sum_claim_cash(_tx_rows(transactions), types=_CLAIM_LEDGER_TYPES),
+        "wallet": _sum_claim_cash(_tx_rows(wallets), types=_CLAIM_LEDGER_TYPES),
+        "balance_sheet": _sum_claim_cash(_tx_rows(balance_sheet), category="claims_paid"),
+        "sealed": sealed,
+    }
+
+
 def duplicate_claim_row_ids(rows: Sequence[Mapping[str, Any]], paid_amount: Any) -> List[str]:
     """Ids of claims-paid lines that repeat a claim above its paid amount.
 
@@ -1041,12 +1076,16 @@ def monitoring_report(
     premium_transactions: Iterable[Mapping[str, Any]] = (),
     claim_wallets: Optional[Mapping[str, Any]] = None,
     balance_sheet: Optional[Mapping[str, Any]] = None,
+    withdrawn: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Customer monitoring list learned from ledgers, NFTs, and live balances.
 
     Reads only. Live wallet, investment, and algo figures are compared with
     the savings add-on that the waterfall says landed, plus sealed claim
     credits on the health wallet. A difference is flagged and not repaired.
+    ``withdrawn`` is health-wallet money a customer has on hold or paid out
+    to their bank. It is added back for the comparison, so a withdrawal is
+    not read as missing savings.
     """
     policy_rows = [row for row in policies if isinstance(row, Mapping)]
     bill_rows = [row for row in bills if isinstance(row, Mapping)]
@@ -1123,7 +1162,8 @@ def monitoring_report(
         learned = report["admin_balances_from_landed_savings"]
         paid_parts = _partition(_money(report["picture"].get("savings_premiums_paid")), _SAVINGS_SPLIT)
         learned_wallet = _money(paid_parts["health_wallet"]) + _money(learned["sealed_claim_credits"])
-        gap = (wallet - learned_wallet).copy_abs()
+        wallet_withdrawn = _money((withdrawn or {}).get(customer_id))
+        gap = (wallet + wallet_withdrawn - learned_wallet).copy_abs()
         invest_gap = (investment - _money(paid_parts["investments"])).copy_abs()
         algo_gap = (algo_balance - _money(paid_parts["algo"])).copy_abs()
         flags = list(report["picture"]["flags"])
@@ -1152,6 +1192,7 @@ def monitoring_report(
                 "health_wallet": float(wallet),
                 "investments": float(investment),
                 "algo": float(algo_balance),
+                "withdrawn": float(wallet_withdrawn),
             },
             "learned": learned,
             "claim_postings_due": claim_postings_due(report),

@@ -103,6 +103,9 @@ CUSTOMER_PRIVATE_PAGES: FrozenSet[str] = frozenset({
     # Each customer's own Mislaka tool. Staff stay on the admin assessment
     # surfaces and are not given this personal view.
     "/mislaka-report.html",
+    # The customer's own withdrawal request. The desk works from the
+    # retention bar on /customer-management.html.
+    "/wallet-withdraw-chat.html",
 })
 
 # Both sides may open these. APIs still scope rows to the caller.
@@ -153,6 +156,7 @@ _CUSTOMER_PRIVATE_POST_PREFIXES = (
     "/api/savings/sell",
     "/api/savings/update-risk-profile",
     "/api/balance/transfer-to-algo",
+    "/api/customer/wallet-withdrawals",
 )
 
 _STAFF_ONLY_EXACT = frozenset({

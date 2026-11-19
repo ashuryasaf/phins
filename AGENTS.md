@@ -15,12 +15,12 @@ PHINS is a Python platform built around:
   `api_assessment_center.py`, `api_chat_application.py` (chat-style policy
   intake / "Phin"), `api_claims_chat.py` (public claims chat), and
   `api_customer_identity.py` (ID + nationality master))
-- service-layer logic in `services/` (158 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
+- service-layer logic in `services/` (163 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (286 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (292 files) and root-level `test_*.py` (11 files)
 - one generalized job queue (`services/agent_job_queue.py`, table
  `document_processing_jobs`, rows keyed by `subject_type`/`subject_id` and
  `submitted_by`; retries, dead-letter, idempotency keys, handler registry —
@@ -185,6 +185,45 @@ PHINS is a Python platform built around:
  (`PHINS-CORPORATE`, `SYSTEM`) are not customers. A customer reads only their
  own picture at `GET /api/customer/premium-picture`. The page is a live
  dashboard (`data-phins-letterhead="off"`); the return bar stays
+- unified cash flow statement (`services/cashflow_unified_report.py`,
+ `GET /api/admin/cashflow/unified-report`, same four roles, shown on
+ `/cashflow-integrity.html` by `cashflow-unified-report.js`): one read of
+ premiums, claims, customer money, the marketplace, suppliers, agents, and
+ the referral book. It writes nothing. Collected premium is split by the
+ kernel pins on the policy (risk first, then the underwriting fee, expense
+ loading, profit, and the elected savings add-on 30 / 65 / 5). A claim is
+ counted once at the amount the claims book paid; a second line for the same
+ claim on the ledger, wallet, or balance sheet is listed under
+ `claims.repeated_by_book` and fails `claims_counted_once`, and is not added
+ (`claim_cash_books` in `premium_flow_reconciliation.py`). Underwriting
+ surplus is risk premium less those claims. The management fee is an accrual
+ on investments and algo (`management_fee_pct`, default 1%, 0–10) and is not
+ charged. A marketplace bid is the customer price: commission plus supplier
+ payout. Agent commission omits `REF-` rows, which stay on the referral
+ book. `integrity.checks` names every identity that does not tie
+- health wallet withdrawal (`services/wallet_withdrawal_service.py`,
+ `web_portal/api_wallet_withdrawal.py`, `/wallet-withdraw-chat.html`): the
+ Withdraw tile on the customer dashboard opens a chat that starts from the
+ customer record and asks for the amount, the reason, the bank account, an
+ identity document, a portrait cut from it (`services/id_photo_crop.py`,
+ Pillow only; the customer can move the frame), a bank document, and a drawn
+ signature. Filing holds the amount on the wallet (`withdrawal_hold`),
+ anchors the signature through `_legal_doc_sign` (`wallet_withdrawal`,
+ `LGL-<id>`), and mints the wallet NFT `wallet_withdrawal_request` with the
+ document SHA-256; a failed step returns the hold. The document is the
+ letterhead render of that sealed record and is withheld when the seal or a
+ picture checksum does not match. The bank account number is vaulted and
+ shown as its last four; the national ID is the master's reference only. The
+ hold waits `PHINS_WITHDRAWAL_RETENTION_DAYS` (default 3, 0–14). The
+ customer-relations bar on `/customer-management.html`
+ (`withdrawal-retention-bar.js`, `/api/admin/wallet-withdrawals`) lists each
+ flagged customer with the retention methods (call, message, keep / withdraw
+ less / move to savings / use for premiums offers, one extension of up to
+ four days, escalation, note) on a checksummed trail. Only the customer
+ reverses, by cancelling or accepting an offer. Staff do not move the money:
+ admin or accountant release after the window or decline, and a decline
+ returns the hold to the same wallet. Requests persist with the wallet
+ snapshot (`WALLET_WITHDRAWALS`)
 - chat intake (Phin) is a parallel surface to the classic forms.
   Any committed answer on `/apply-chat.html` and `/file-a-claim.html` can be
   edited until filing. Edits are an append-only checksum chain
@@ -396,6 +435,8 @@ Preferred file-by-task:
 | Customer identity (ID + nationality) | `services/customer_identity_service.py` (one writer), `web_portal/api_customer_identity.py` |
 | Admin desk (mailboxes, diary, letters, tables, pipeline shares) | `services/admin_desk_service.py`, `services/admin_desk_network.py` (pipeline map, share-to-desk, meeting next move), `services/admin_desk_mail.py`, `web_portal/api_admin_desk.py`, `/admin-desk.html` |
 | Referral CAC / professional roles | `services/referral_reward_service.py`, `web_portal/api_referral_rewards.py`, `database/repositories/referral_reward_repository.py` |
+| Unified cash flow statement | `services/cashflow_unified_report.py`, `services/premium_flow_reconciliation.py` (`claim_cash_books`), `web_portal/static/cashflow-unified-report.js`; tests in `tests/test_cashflow_unified_report.py` |
+| Health wallet withdrawal / retention bar | `services/wallet_withdrawal_service.py`, `services/id_photo_crop.py`, `web_portal/api_wallet_withdrawal.py`, `web_portal/static/wallet-withdraw-chat.{html,js}`, `web_portal/static/withdrawal-retention-bar.js`; tests in `tests/test_wallet_withdrawal.py` |
 | Customer intro / invitation landing | `web_portal/static/join.html`; films `join_intro_*` on the media Customer relations tab; briefs in `services/solution_video_blueprints.py` (`JOIN_INTRO_OUTLINES`, `JOIN-` campaigns) |
 | Document archive / durability probe | `services/customer_document_vault_service.py`, `services/document_durability_agent.py` |
 | Unified business plan / investor deck (`/business-plan.html`) | `services/business_plan_model.py` (factor register, `compute_plan`, `ROUND_SEED_ILS` / `ROUND_PRE_MONEY_ILS` — the one writer for seed / pre-money; `appraisal.sensitivity` grid), `services/business_plan_document.py` (narrative, placeholders, founder block, HTML/Markdown renderers), `services/business_plan_charts.py` (chart + Gantt specs read from the plan dict; one layout engine → inline SVG for HTML and `?charts=1`, reportlab Drawing for the PDF; Markdown carries `<!-- phins-chart {json} -->` directives plus a data table), `services/business_plan_sources.py` (figure lineage + research registry kept byte-equal with the pitch-dashboard `sourceRegistry`), `services/business_plan_portrait.py` (Pillow-processed founder portrait), `services/investor_deck_video.py` (Part II paragraph scenes; the plan is not written), `web_portal/server.py` (`GET /api/business-plan/model[?charts=1]`, `GET /api/business-plan/founder-portrait`); then `python3 scripts/build_business_plan.py` and `python3 scripts/generate_investor_pdfs.py --only unified-business-plan`; tests in `tests/test_business_plan.py` |
@@ -442,6 +483,7 @@ Preferred file-by-task:
 |  |- api_claims_chat.py               # public claims chat (loopback into /api/claims/create)
 |  |- api_customer_identity.py         # ID + nationality master surface
 |  |- api_referral_rewards.py          # referral CAC, accept, professional role, role switch
+|  |- api_wallet_withdrawal.py         # health wallet withdrawal chat + retention desk
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
 |                                        # (includes `static/locales/he.json` Hebrew i18n)
@@ -510,7 +552,7 @@ Preferred file-by-task:
 |- scripts/                             # operational utilities
 |  |- run_agent_eval.py                 # golden sets + decision replay CLI
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
-|- tests/                               # 286 test files
+|- tests/                               # 292 test files
 |  `- golden/<agent>/*.json             # frozen agent outputs ({name, input, expected})
 |- docs/
 |  |- platform_data_architecture.md
@@ -986,6 +1028,9 @@ Environment variables commonly used:
  `PHINS_CUSTOMER_MESSAGING_CONSENT_ENFORCED` (default on; off skips only the
  consent check for relational copy — an explicit opt-out and the cap still
  apply)
+- **Wallet withdrawal:** `PHINS_WITHDRAWAL_RETENTION_DAYS` (days a filed
+ health wallet withdrawal is held for customer relations before payout,
+ default 3, range 0–14)
 - **Delivery bidding (B11):** `PHINS_DELIVERY_SLA_TICK_SECONDS` (SLA clock
  interval for closing elapsed bidding windows, default 60)
 - **Admin desk:** an admin saves a mailbox password once on
@@ -1176,7 +1221,7 @@ Important test harness facts:
   change re-renders them (the page fetches `?charts=1` and swaps the SVG).
   `RESEARCH_SOURCES` must stay identical to the pitch-dashboard
   `sourceRegistry`; the test parses both
-- 286 test files under `tests/`, 11 root-level `test_*.py` files
+- 292 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -1299,4 +1344,4 @@ If you update this file again:
 
 ---
 
-Last updated: October 28, 2026
+Last updated: November 19, 2026
