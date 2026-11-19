@@ -627,6 +627,43 @@ class TestClaimPaymentToWallet:
         stamped = portal.INVESTMENT_ACCOUNTS.get('CUST-MIX', {}).get('savings_premiums_applied')
         assert stamped == 80.0
 
+    def test_a_spent_claim_does_not_hide_savings_beside_duplicate_lines(self):
+        import web_portal.server as portal
+        portal.CLAIMS['CLM-GONE'] = {
+            'id': 'CLM-GONE', 'customer_id': 'CUST-GONE', 'status': 'paid', 'paid_amount': 4500.0,
+        }
+        portal.CLAIMS['CLM-COPIES'] = {
+            'id': 'CLM-COPIES', 'customer_id': 'CUST-GONE', 'status': 'paid', 'paid_amount': 4500.0,
+        }
+        portal.POLICIES['POL-GONE'] = {
+            'id': 'POL-GONE', 'customer_id': 'CUST-GONE', 'start_date': '2026-01-01',
+            'annual_premium': 1200.0, 'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING['BILL-GONE'] = {
+            'id': 'BILL-GONE', 'customer_id': 'CUST-GONE', 'policy_id': 'POL-GONE',
+            'payment_period': '2026-01', 'amount_paid': 200.0, 'status': 'paid',
+            'premium_allocation': {'risk_amount_paid': 120.0, 'savings_amount_paid': 80.0},
+        }
+        portal.HEALTH_WALLETS['CUST-GONE'] = {
+            'customer_id': 'CUST-GONE',
+            'balance': 80.0,
+            'transactions': [
+                {'id': 'W-GONE', 'type': 'claim_payment', 'claim_id': 'CLM-GONE',
+                 'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+                 'timestamp': '2026-02-01T00:00:00'},
+                {'id': 'W-C1', 'type': 'claim_payment', 'claim_id': 'CLM-COPIES',
+                 'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+                 'timestamp': '2026-03-01T00:00:00'},
+                {'id': 'W-C2', 'type': 'claim_payment', 'claim_id': 'CLM-COPIES',
+                 'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+                 'timestamp': '2026-03-02T00:00:00'},
+            ],
+        }
+
+        result = portal.reconcile_savings_premium_balances()
+        assert all(row['customer_id'] != 'CUST-GONE' for row in result['credited'])
+        assert portal.HEALTH_WALLETS['CUST-GONE']['balance'] == 80.0
+
     def test_after_journal_miss_still_reports_a_durable_repair(self, monkeypatch):
         import web_portal.server as portal
         self._setup_customer_and_policy(portal)

@@ -11690,8 +11690,9 @@ def _wallet_non_claim_cash(wallet: Dict[str, Any]) -> float:
     Duplicate claim lines count once, up to that claim's paid amount. Cash
     that was already in the wallet before the first claim credit still
     counts after the claim is spent. A later spend does not open a new gap.
-    An intact claim that still fills the wallet is not savings, including
-    when another claim has repeated lines.
+    An intact claim counts only while the live balance can still hold it.
+    A spent claim, including one whose first line stores a starting balance
+    of zero, does not hide cash left beside repeated lines.
     """
     from services.premium_flow_reconciliation import paid_claim_amount
     balance = safe_float(wallet.get('balance'), 0.0)
@@ -11714,7 +11715,7 @@ def _wallet_non_claim_cash(wallet: Dict[str, Any]) -> float:
         grouped.setdefault(claim_id, []).append(amount)
         claim_rows.append(row)
     capped = 0.0
-    intact = 0.0
+    intact_caps: List[float] = []
     duplicated_caps: List[float] = []
     for claim_id, amounts in grouped.items():
         claim = claims_by_id.get(claim_id)
@@ -11726,8 +11727,8 @@ def _wallet_non_claim_cash(wallet: Dict[str, Any]) -> float:
         capped += one
         if total > one + 0.01:
             duplicated_caps.append(one)
-        else:
-            intact += one
+        elif one > 0:
+            intact_caps.append(one)
     residual = round(max(0.0, balance - min(capped, balance)), 2)
     pre_claim = None
     ordered = sorted(claim_rows, key=lambda row: str(row.get('timestamp') or ''))
@@ -11742,12 +11743,16 @@ def _wallet_non_claim_cash(wallet: Dict[str, Any]) -> float:
     if pre_claim is not None:
         landed = max(landed, pre_claim)
     # Repeated lines that the live balance cannot hold are not a second
-    # copy of that claim. Cash left after the intact claims still counts.
-    # The intact claim itself does not.
+    # copy of that claim. An intact payment is set aside only while the
+    # balance can still hold it. A spent claim does not consume the cash
+    # left beside those repeated lines.
     if duplicated_caps and capped > balance + 0.01:
-        unexplained = round(max(0.0, balance - intact), 2)
-        if unexplained + 0.01 < min(duplicated_caps):
-            landed = max(landed, unexplained)
+        remaining = round(max(0.0, balance), 2)
+        for cap in sorted(intact_caps, reverse=True):
+            if cap <= remaining + 0.01:
+                remaining = round(remaining - cap, 2)
+        if remaining + 0.01 < min(duplicated_caps):
+            landed = max(landed, remaining)
     return round(landed, 2)
 
 
