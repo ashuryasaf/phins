@@ -136,7 +136,7 @@
     ".wrb-empty{font-size:.88rem;color:rgba(234,241,255,.7);padding:6px 0}",
     ".wrb-facts{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:.84rem;margin:0 0 12px}",
     ".wrb-facts dt{color:rgba(234,241,255,.6)}.wrb-facts dd{margin:0}",
-    ".wrb-modal{position:fixed;inset:0;z-index:4000;background:rgba(2,8,23,.82);display:flex;flex-direction:column;padding:18px}",
+    ".wrb-modal{position:fixed;inset:0;z-index:4000;background:rgba(2,8,23,.94);display:flex;flex-direction:column;padding:18px}",
     ".wrb-modal iframe{flex:1;width:100%;max-width:920px;margin:0 auto;border:0;border-radius:12px;background:#fff}",
     ".wrb-modal-bar{display:flex;justify-content:flex-end;gap:8px;max-width:920px;width:100%;margin:0 auto 10px}",
   ].join("");
@@ -225,8 +225,9 @@
         const spec = methodSpec(entry.method);
         const label = spec ? spec.label : (entry.method === "release" ? "Released" : entry.method === "decline" ? "Declined"
           : String(entry.method || "").replace(/_/g, " "));
-        return "<li><strong>" + esc(label) + "</strong> · " + esc(String(entry.outcome || "").replace(/_/g, " ")) +
-          "<br>" + esc(entry.note || "") + "<br><time>" + esc(when(entry.at)) + " · " + esc(entry.actor) + "</time></li>";
+        const kept = entry.outcome === "offered" && entry.keep_amount ? " · keep " + money(entry.keep_amount) : "";
+        return "<li><strong>" + esc(label) + "</strong> · " + esc(String(entry.outcome || "").replace(/_/g, " ")) + kept +
+          (entry.note ? "<br>" + esc(entry.note) : "") + "<br><time>" + esc(when(entry.at)) + " · " + esc(entry.actor) + "</time></li>";
       }).join("") + "</ul>";
     }
     return html + "</div></div></div>";

@@ -1512,6 +1512,7 @@ def record_retention(withdrawal_id: str, *, actor: str, role: str, method: str, 
             outcome = "offered"
             extra["offer_id"] = offer["offer_id"]
             extra["keep_amount"] = keep
+            note = note or message
         elif method == "extend_hold":
             if retention.get("extended"):
                 raise WithdrawalError("The window was already extended once", 409, "already_extended")
@@ -1756,15 +1757,19 @@ def render_document(withdrawal_id: str) -> str:
         f"{_e(_country_label(holder.get('nationality')))} · ID ending {_e(holder.get('national_id_last4'))}"
         if holder.get("national_id_last4") else "No identity on the customer master"
     )
+    # The sealed figure stays on the page; a later reduction is shown beside it, never over it.
+    reduced = status in ("held", "paid_out") and abs(amount_now - sealed["amount"]) > 0.005
+    headline = amount_now if reduced else sealed["amount"]
     body = [_DOCUMENT_STYLE]
     body.append(
         '<div class="wdr-head">' + photo_html + '<div>'
         f'<span class="wdr-status {_e(status)}">{_e(status_label)}</span>'
-        f'<div class="wdr-amount">${sealed["amount"]:,.2f} {_e(sealed.get("currency"))}</div>'
+        f'<div class="wdr-amount">${headline:,.2f} {_e(sealed.get("currency"))}</div>'
         f'<p class="sub">Withdrawal from the health wallet of <strong>{_e(holder.get("name"))}</strong><br>'
         f'Request <code>{_e(sealed["withdrawal_id"])}</code> · filed {_e(sealed["filed_at"][:19].replace("T", " "))} UTC</p>'
-        + (f'<p class="sub">Amount now on this request: <strong>${amount_now:,.2f}</strong></p>'
-           if status == "held" and abs(amount_now - sealed["amount"]) > 0.005 else "")
+        + (f'<p class="sub">Filed and signed for <strong>${sealed["amount"]:,.2f}</strong>. '
+           f'${sealed["amount"] - amount_now:,.2f} went back to the wallet after filing; see After filing.</p>'
+           if reduced else "")
         + '</div></div>'
     )
     body.append('<div class="wdr-cols"><div><h2>Account holder</h2><table class="wdr">'
@@ -1775,8 +1780,8 @@ def render_document(withdrawal_id: str) -> str:
                 + '</table></div>')
     body.append('<div><h2>Transfer</h2><table class="wdr">'
                 + _row("From", "PHINS health wallet")
-                + _row("Wallet before", f"${sealed['wallet']['balance_before']:,.2f}")
-                + _row("Wallet after the hold", f"${sealed['wallet']['balance_after']:,.2f}")
+                + _row("Wallet before filing", f"${sealed['wallet']['balance_before']:,.2f}")
+                + _row("Wallet after the hold at filing", f"${sealed['wallet']['balance_after']:,.2f}")
                 + _row("Account holder", bank.get("holder")) + _row("Bank", bank.get("bank_name"))
                 + _row("Branch", bank.get("branch")) + _row("Country", _country_label(bank.get("country")))
                 + _row(account_label, "•••• " + str(bank.get("account_last4") or ""))

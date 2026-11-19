@@ -12,10 +12,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/apply-chat.css">
     <style>
-        .process-strip { display: flex; gap: 8px; overflow-x: auto; padding: 8px 16px; position: sticky; top: 56px; z-index: 15; background: rgba(6, 13, 31, 0.92); backdrop-filter: blur(8px); border-bottom: 1px solid rgba(127, 178, 255, 0.14); }
+        .process-strip { display: flex; flex: 0 0 auto; gap: 8px; overflow-x: auto; overflow-y: hidden; padding: 8px 16px; position: sticky; top: 56px; z-index: 15; background: rgba(6, 13, 31, 0.92); backdrop-filter: blur(8px); border-bottom: 1px solid rgba(127, 178, 255, 0.14); }
         .chat-dock, .chat-dock canvas { -webkit-user-select: none; user-select: none; }
         .chat-dock input, .chat-dock textarea { -webkit-user-select: text; user-select: text; }
-        .process-chip { flex: 0 0 auto; border: 1px solid rgba(127, 178, 255, 0.2); border-radius: 999px; padding: 6px 10px; font-size: 0.78rem; color: rgba(234, 241, 255, 0.78); background: rgba(16, 31, 63, 0.55); }
+        .process-chip { flex: 0 0 auto; white-space: nowrap; border: 1px solid rgba(127, 178, 255, 0.2); border-radius: 999px; padding: 6px 10px; font-size: 0.78rem; color: rgba(234, 241, 255, 0.78); background: rgba(16, 31, 63, 0.55); }
         .process-chip.now { color: #071022; background: linear-gradient(135deg, #f7e2a0, #e3bf6f); border-color: transparent; font-weight: 600; }
         .process-chip.done { color: #4cd6a5; }
         .process-chip.done::before { content: "✓ "; }
@@ -45,7 +45,7 @@
         #crop-preview { width: 120px; height: 150px; border: 2px solid #e3bf6f; background: #0a1531; }
         .wd-crop-side { display: grid; gap: 8px; justify-items: center; font-size: 0.78rem; color: rgba(234, 241, 255, 0.7); }
         .wd-crop input[type=range] { width: 100%; accent-color: #e3bf6f; }
-        .wd-status { background: rgba(11, 23, 48, 0.94); border: 1px solid rgba(227, 191, 111, 0.45); border-radius: 22px; padding: 18px; }
+        .wd-status { background: #0b1730; border: 1px solid rgba(227, 191, 111, 0.45); border-radius: 22px; padding: 18px; }
         .wd-status h2 { font-family: "Space Grotesk", Inter, sans-serif; margin: 0 0 4px; font-size: 1.25rem; color: #f7e2a0; }
         .wd-status .big { font-family: "Space Grotesk", Inter, sans-serif; font-size: 2rem; color: #fff; margin: 6px 0; }
         .wd-pill { display: inline-block; border-radius: 999px; padding: 3px 12px; font-size: 0.74rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; background: #e3bf6f; color: #071022; }

@@ -478,6 +478,9 @@ def test_retention_methods_are_recorded_and_only_the_customer_moves_money(books,
         message="Keep $250 for next month's pharmacy order?",
     )
     assert view["retention"]["offer"]["status"] == "open"
+    offered = view["retention"]["attempts"][-1]
+    assert offered["outcome"] == "offered" and offered["keep_amount"] == 250
+    assert offered["note"] == "Keep $250 for next month's pharmacy order?"
     assert portal.HEALTH_WALLETS[CUSTOMER]["balance"] == 600.00
     with pytest.raises(WithdrawalError) as err:
         withdrawals.record_retention(wid, actor="rel", role="claims", method="offer_keep_in_wallet")
@@ -492,6 +495,9 @@ def test_retention_methods_are_recorded_and_only_the_customer_moves_money(books,
     assert accepted["status"] == "held" and accepted["amount"] == 150.00
     assert accepted["amendments"][-1]["kind"] == "reduced"
     assert portal.HEALTH_WALLETS[CUSTOMER]["balance"] == 850.00
+    reduced = withdrawals.render_document(wid)
+    assert '<div class="wdr-amount">$150.00 USD</div>' in reduced
+    assert "Filed and signed for <strong>$400.00</strong>" in reduced
 
     view = withdrawals.record_retention(wid, actor="rel", role="claims", method="extend_hold", days=2, note="Customer asked for time")
     assert view["window"]["extended"] is True
