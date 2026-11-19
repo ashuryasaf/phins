@@ -515,6 +515,56 @@ def test_a_mint_that_does_not_finish_filing_is_not_left_as_a_live_hold(books, mo
     assert "nft_void_pending" in record["flags"]
 
 
+def test_a_later_filing_does_not_seal_a_rollback_flag(books, monkeypatch):
+    wid = _complete_draft(400.00, holder="Ada Other")
+    real_tx = portal.record_transaction
+    real_sign = portal._legal_doc_sign
+
+    def mint_then_fail(*args, **kwargs):
+        real_tx(*args, **kwargs)
+        raise RuntimeError("ledger broke after the mint")
+
+    def sign_then_void_fails(body, ip, session=None):
+        if str((body or {}).get("event") or "").lower() == "void":
+            raise RuntimeError("void ledger offline")
+        return real_sign(body, ip, session)
+
+    monkeypatch.setattr(portal, "record_transaction", mint_then_fail)
+    monkeypatch.setattr(portal, "_legal_doc_sign", sign_then_void_fails)
+    with pytest.raises(WithdrawalError) as err:
+        withdrawals.file_request(CUSTOMER, wid)
+    assert err.value.code == "filing_failed"
+    record = portal.WALLET_WITHDRAWALS[wid]
+    assert record["status"] == "draft" and "seal" not in record
+    assert "nft_void_pending" in record["flags"]
+    assert "anchor_void_pending" in record["flags"]
+    assert "third_party_account" in record["flags"]
+
+    def refuse(*_args, **_kwargs):
+        raise RuntimeError("ledger offline")
+
+    monkeypatch.setattr(portal, "record_transaction", refuse)
+    monkeypatch.setattr(portal, "_legal_doc_sign", real_sign)
+    with pytest.raises(WithdrawalError):
+        withdrawals.file_request(CUSTOMER, wid)
+    assert record["status"] == "draft"
+    assert "nft_void_pending" in record["flags"]
+    assert "anchor_void_pending" in record["flags"]
+    assert "third_party_account" in record["flags"]
+
+    monkeypatch.undo()
+    view = withdrawals.file_request(CUSTOMER, wid)
+    assert view["status"] == "held"
+    assert "nft_void_pending" not in view["flags"]
+    assert "anchor_void_pending" not in view["flags"]
+    assert "third_party_account" in view["flags"]
+    assert record["sealed"]["flags"] == ["identity_not_on_file", "third_party_account"]
+    document = withdrawals.render_document(wid)
+    assert "Review notes: identity not on file, third party account" in document
+    assert "nft void pending" not in document
+    assert "anchor void pending" not in document
+
+
 def test_filing_is_refused_when_the_wallet_no_longer_covers_the_amount(books):
     wid = _complete_draft(400.00)
     portal.HEALTH_WALLETS[CUSTOMER]["balance"] = 100.00

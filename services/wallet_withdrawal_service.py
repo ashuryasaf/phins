@@ -57,6 +57,9 @@ DEFAULT_RETENTION_DAYS = 3
 MAX_RETENTION_DAYS = 14
 MAX_EXTENSION_DAYS = 4
 DOC_TYPE = "wallet_withdrawal"
+# Recovery marks left on an open draft when a filing attempt is rolled back.
+# A later filing that holds drops them. The seal's review notes stay the KYC flags.
+_FILING_ROLLBACK_FLAGS = frozenset({"anchor_void_pending", "nft_void_pending"})
 
 REASONS: Dict[str, str] = {
     "medical_expense": "A medical expense outside the marketplace",
@@ -1048,7 +1051,10 @@ def _sealed_snapshot(record: Dict[str, Any], balance_before: float, balance_afte
             for key in ("signer_name", "sha256", "document_id", "signed_at", "method")
         },
         "wallet": {"balance_before": balance_before, "balance_after": balance_after},
-        "flags": sorted(record.get("flags") or []),
+        "flags": sorted(
+            flag for flag in (record.get("flags") or [])
+            if flag not in _FILING_ROLLBACK_FLAGS
+        ),
         "retention_window_days": window_days,
         "release_after": release_after,
     }
@@ -1276,6 +1282,10 @@ def file_request(customer_id: str, withdrawal_id: str, *, client_ip: str = "",
             if isinstance(exc, WithdrawalError):
                 raise
             raise WithdrawalError("The withdrawal could not be filed. Nothing was held.", 503, "filing_failed")
+        record["flags"] = [
+            flag for flag in (record.get("flags") or [])
+            if flag not in _FILING_ROLLBACK_FLAGS
+        ]
         record["seal"]["nft_token_id"] = ledger_tx.get("nft_token_id")
         record["seal"]["ledger_tx_id"] = ledger_tx.get("id")
         hold_row["nft_token_id"] = ledger_tx.get("nft_token_id")
