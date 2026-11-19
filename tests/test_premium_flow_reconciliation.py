@@ -1,11 +1,15 @@
 """Marketplace commission is charged on the bid, and the premium table is read-only."""
 
 from services.nft_ledger import mint_token
+from decimal import Decimal
+
 from services.premium_flow_reconciliation import (
     claim_postings_due,
+    duplicate_claim_row_ids,
     monitoring_report,
     reconcile_customer,
     reconcile_customers,
+    transferred_claim_amounts,
     worked_specimen,
 )
 from services.supply_chain_ecosystem_service import (
@@ -517,3 +521,103 @@ def test_cashflow_errors_do_not_return_exception_text(monkeypatch, caplog):
     finally:
         portal.SESSIONS.pop("phins_cash-err-cust", None)
         portal.SESSIONS.pop("phins_cash-err-admin", None)
+
+
+def test_paid_claim_covered_by_the_ledger_is_not_unposted_without_a_seal():
+    policy, bills, claims, ledger, seals = _customer_x_books()
+    report = reconcile_customer(
+        "CUST-X",
+        policies=[policy],
+        bills=bills,
+        claims=claims,
+        nft_ledger=ledger,
+        claim_transfers={"CLM-X-1": Decimal("800.00")},
+    )
+    assert {token_id: token["verification_hash"] for token_id, token in ledger.items()} == seals
+    by_claim = {row["claim_id"]: row for row in report["claims"]}
+    assert by_claim["CLM-X-1"]["unposted_reserve_transfer"] == 0.0
+    assert by_claim["CLM-X-1"]["posted"] is True
+    assert by_claim["CLM-X-1"]["sealed_wallet_credit"] == 0.0
+    assert claim_postings_due(report) == []
+    assert "savings_carved_from_premium" in report["picture"]["flags"]
+    assert report["picture"]["savings_premiums_paid"] == report["picture"]["landed_savings"]
+
+
+def test_three_balance_sheet_lines_count_as_one_claim():
+    policy, bills, claims, ledger, _seals = _customer_x_books()
+    sheet = {
+        "transactions": [
+            {"tx_id": "BS-1", "category": "claims_paid", "claim_id": "CLM-X-1", "amount": 800},
+            {"tx_id": "BS-2", "category": "claims_paid", "claim_id": "CLM-X-1", "amount": 800},
+            {"tx_id": "BS-3", "category": "claims_paid", "claim_id": "CLM-X-1", "amount": 800},
+        ]
+    }
+    covered = transferred_claim_amounts(balance_sheet=sheet)
+    assert covered["CLM-X-1"] == Decimal("2400.00")
+    report = reconcile_customer(
+        "CUST-X",
+        policies=[policy],
+        bills=bills,
+        claims=claims,
+        nft_ledger=ledger,
+        claim_transfers=covered,
+    )
+    by_claim = {row["claim_id"]: row for row in report["claims"]}
+    assert by_claim["CLM-X-1"]["unposted_reserve_transfer"] == 0.0
+    assert duplicate_claim_row_ids(
+        [
+            {"id": "BS-1", "amount": 800, "timestamp": "2026-01-01"},
+            {"id": "BS-2", "amount": 800, "timestamp": "2026-01-02"},
+            {"id": "BS-3", "amount": 800, "timestamp": "2026-01-03"},
+        ],
+        800,
+    ) == ["BS-2", "BS-3"]
+    assert duplicate_claim_row_ids(
+        [
+            {"id": "P1", "amount": 200, "timestamp": "2026-01-01"},
+            {"id": "P2", "amount": 300, "timestamp": "2026-01-02"},
+            {"id": "P3", "amount": 300, "timestamp": "2026-01-03"},
+        ],
+        800,
+    ) == []
+
+
+def test_billed_savings_is_kept_when_the_policy_pin_is_gone():
+    policy = {
+        "id": "POL-S",
+        "customer_id": "CUST-S",
+        "start_date": "2026-01-01",
+        "annual_premium": 1200.00,
+        "risk_premium_annual": 1200.00,
+    }
+    bills = [{
+        "id": "BILL-S",
+        "customer_id": "CUST-S",
+        "payment_period": "2026-01",
+        "amount_paid": 200.00,
+        "premium_allocation": {"risk_amount_paid": 120.00, "savings_amount_paid": 80.00},
+    }]
+    report = reconcile_customer("CUST-S", policies=[policy], bills=bills)
+    assert report["picture"]["landed_savings"] == 0.0
+    assert report["picture"]["savings_premiums_paid"] == 80.0
+    assert report["writes"] is False
+
+
+def test_a_premium_with_no_savings_election_does_not_invent_savings():
+    policy = {
+        "id": "POL-R",
+        "customer_id": "CUST-R",
+        "start_date": "2026-01-01",
+        "annual_premium": 1200.00,
+        "risk_premium_annual": 1200.00,
+    }
+    bills = [{
+        "id": "BILL-R",
+        "customer_id": "CUST-R",
+        "payment_period": "2026-01",
+        "amount_paid": 100.00,
+    }]
+    report = reconcile_customer("CUST-R", policies=[policy], bills=bills)
+    assert report["picture"]["landed_savings"] == 0.0
+    assert report["picture"]["savings_premiums_paid"] == 0.0
+    assert report["writes"] is False

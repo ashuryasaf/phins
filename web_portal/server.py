@@ -8815,6 +8815,54 @@ def record_balance_sheet_transaction(
     
     return {**transaction, 'nft_token_id': nft_token['token_id']}
 
+_CLAIM_LEG_TYPES = frozenset({
+    'claim_payment_received',
+    'claim_payment',
+    'claim_paid',
+    'claims_paid',
+    'claim_payout',
+})
+
+
+def _posted_claim_legs(claim_id: str, customer_id: str) -> Dict[str, float]:
+    """Cash already recorded for this claim on each book. Nothing is written."""
+    sheet = 0.0
+    for tx in PHINS_BALANCE_SHEET.get('transactions') or []:
+        if not isinstance(tx, dict):
+            continue
+        if str(tx.get('category') or '') != 'claims_paid':
+            continue
+        if str(tx.get('claim_id') or '') != claim_id:
+            continue
+        sheet += safe_float(tx.get('amount'), 0.0)
+    wallet_total = 0.0
+    wallet = HEALTH_WALLETS.get(customer_id) or {}
+    if isinstance(wallet, dict):
+        for tx in wallet.get('transactions') or []:
+            if not isinstance(tx, dict):
+                continue
+            if str(tx.get('claim_id') or '') != claim_id:
+                continue
+            if str(tx.get('type') or '') not in _CLAIM_LEG_TYPES:
+                continue
+            wallet_total += safe_float(tx.get('amount'), 0.0)
+    ledger_total = 0.0
+    for tx in TRANSACTION_LEDGER.values():
+        if not isinstance(tx, dict) or str(tx.get('customer_id') or '') != customer_id:
+            continue
+        if str(tx.get('type') or '') not in _CLAIM_LEG_TYPES:
+            continue
+        meta = tx.get('metadata') if isinstance(tx.get('metadata'), dict) else {}
+        if str(meta.get('claim_id') or tx.get('claim_id') or '') != claim_id:
+            continue
+        ledger_total += abs(safe_float(tx.get('amount'), 0.0))
+    return {
+        'sheet': round(sheet, 2),
+        'wallet': round(wallet_total, 2),
+        'ledger': round(ledger_total, 2),
+    }
+
+
 def process_claim_payment_to_wallet(
     claim_id: str,
     customer_id: str,
@@ -8826,35 +8874,62 @@ def process_claim_payment_to_wallet(
     1. Deducting from PHINS claims reserve
     2. Transferring directly to customer's health wallet
     3. Recording all transactions on ledger
+
+    A claim already on the balance sheet, the wallet, and the customer
+    ledger is not written again. A missing leg is filled up to ``amount``.
     """
     global PHINS_BALANCE_SHEET, HEALTH_WALLETS
-    
-    # Check sufficient reserves
-    if PHINS_BALANCE_SHEET['claims_reserve'] < amount:
+
+    amount = round(safe_float(amount, 0.0), 2)
+    legs = _posted_claim_legs(claim_id, customer_id)
+    sheet_gap = round(max(0.0, amount - legs['sheet']), 2)
+    wallet_gap = round(max(0.0, amount - legs['wallet']), 2)
+    ledger_gap = round(max(0.0, amount - legs['ledger']), 2)
+    if sheet_gap <= 0 and wallet_gap <= 0 and ledger_gap <= 0:
+        current = HEALTH_WALLETS.get(customer_id) or {}
+        return {
+            'success': True,
+            'already_posted': True,
+            'payment_reference': None,
+            'amount_paid': amount,
+            'customer_id': customer_id,
+            'claim_id': claim_id,
+            'destination': 'health_wallet',
+            'new_wallet_balance': safe_float((current or {}).get('balance'), 0.0),
+            'balance_sheet_tx': None,
+            'customer_tx': None,
+            'claims_reserve_remaining': PHINS_BALANCE_SHEET.get('claims_reserve'),
+        }
+
+    # Check sufficient reserves for the amount not already on the sheet.
+    if sheet_gap > 0 and PHINS_BALANCE_SHEET['claims_reserve'] < sheet_gap:
         return {
             'success': False,
             'error': 'Insufficient claims reserve',
             'available': PHINS_BALANCE_SHEET['claims_reserve'],
-            'required': amount
+            'required': sheet_gap
         }
     
     # Generate payment reference
     payment_ref = f"CLAIM-PAY-{datetime.now().strftime('%Y%m%d')}-{random.randint(10000, 99999)}"
     
-    # 1. Record expense on balance sheet (deduct from claims reserve)
-    bs_tx = record_balance_sheet_transaction(
-        tx_type='expense',
-        category='claims_paid',
-        amount=amount,
-        description=f"Claim payment {claim_id} to customer {customer_id}",
-        actor=processed_by,
-        customer_id=customer_id,
-        claim_id=claim_id,
-        metadata={
-            'payment_reference': payment_ref,
-            'destination': 'health_wallet'
-        }
-    )
+    # 1. Record expense on balance sheet (deduct from claims reserve).
+    # A line already on the sheet for this claim is not written again.
+    bs_tx = None
+    if sheet_gap > 0:
+        bs_tx = record_balance_sheet_transaction(
+            tx_type='expense',
+            category='claims_paid',
+            amount=sheet_gap,
+            description=f"Claim payment {claim_id} to customer {customer_id}",
+            actor=processed_by,
+            customer_id=customer_id,
+            claim_id=claim_id,
+            metadata={
+                'payment_reference': payment_ref,
+                'destination': 'health_wallet'
+            }
+        )
     
     # 2. Ensure customer has health wallet
     if customer_id not in HEALTH_WALLETS:
@@ -8868,43 +8943,50 @@ def process_claim_payment_to_wallet(
     
     # 3. Credit customer's health wallet on the live balance. A transfer
     # to algo holds this row while its reservation is unsealed, so this
-    # credit cannot put the pre-reserve figure back.
+    # credit cannot put the pre-reserve figure back. A claim already
+    # credited is not credited again.
     from services.savings_pipeline_service import credit_account_balance
-    new_balance = credit_account_balance(HEALTH_WALLETS[customer_id], amount)
-    prev_balance = round(float(new_balance or 0) - float(amount or 0), 2)
-    
-    # 4. Record wallet transaction
-    wallet_tx = {
-        'id': payment_ref,
-        'type': 'claim_payment',
-        'amount': amount,
-        'source': 'PHINS_CLAIMS_RESERVE',
-        'claim_id': claim_id,
-        'description': f"Claim payment received - {claim_id}",
-        'previous_balance': prev_balance,
-        'balance_after': new_balance,
-        'timestamp': datetime.now().isoformat()
-    }
-    HEALTH_WALLETS[customer_id]['transactions'].append(wallet_tx)
+    wallet_tx = None
+    if wallet_gap > 0:
+        new_balance = credit_account_balance(HEALTH_WALLETS[customer_id], wallet_gap)
+        prev_balance = round(float(new_balance or 0) - float(wallet_gap or 0), 2)
+        wallet_tx = {
+            'id': payment_ref,
+            'type': 'claim_payment',
+            'amount': wallet_gap,
+            'source': 'PHINS_CLAIMS_RESERVE',
+            'claim_id': claim_id,
+            'description': f"Claim payment received - {claim_id}",
+            'previous_balance': prev_balance,
+            'balance_after': new_balance,
+            'timestamp': datetime.now().isoformat()
+        }
+        HEALTH_WALLETS[customer_id]['transactions'].append(wallet_tx)
+    else:
+        new_balance = safe_float(HEALTH_WALLETS[customer_id].get('balance'), 0.0)
+        prev_balance = new_balance
     
     # 5. Record on customer's transaction ledger
-    customer_tx = record_transaction(
-        customer_id=customer_id,
-        tx_type='claim_payment_received',
-        amount=amount,
-        description=f"Claim {claim_id} payment deposited to Health Wallet",
-        metadata={
-            'claim_id': claim_id,
-            'payment_reference': payment_ref,
-            'source': 'PHINS_CLAIMS_RESERVE',
-            'previous_balance': prev_balance,
-            'new_balance': new_balance,
-            'balance_sheet_tx_id': bs_tx['tx_id']
-        }
-    )
+    customer_tx = None
+    if ledger_gap > 0:
+        customer_tx = record_transaction(
+            customer_id=customer_id,
+            tx_type='claim_payment_received',
+            amount=ledger_gap,
+            description=f"Claim {claim_id} payment deposited to Health Wallet",
+            metadata={
+                'claim_id': claim_id,
+                'payment_reference': payment_ref,
+                'source': 'PHINS_CLAIMS_RESERVE',
+                'previous_balance': prev_balance,
+                'new_balance': new_balance,
+                'balance_sheet_tx_id': (bs_tx or {}).get('tx_id')
+            }
+        )
     
-    wallet_tx['nft_token_id'] = customer_tx.get('nft_token_id')
-    wallet_tx['ledger_tx_id'] = customer_tx.get('id')
+    if wallet_tx is not None and customer_tx is not None:
+        wallet_tx['nft_token_id'] = customer_tx.get('nft_token_id')
+        wallet_tx['ledger_tx_id'] = customer_tx.get('id')
     
     # 6. Record in accounting engine if available
     try:
@@ -11539,6 +11621,33 @@ def _write_cashflow_internal_error(handler, message: str, *args) -> None:
     handler.wfile.write(json.dumps({'error': 'internal_error'}).encode('utf-8'))
 
 
+def _cashflow_claim_transfers() -> Dict[str, Any]:
+    from services.premium_flow_reconciliation import transferred_claim_amounts
+    return transferred_claim_amounts(
+        transactions=TRANSACTION_LEDGER,
+        wallets=HEALTH_WALLETS,
+        balance_sheet=PHINS_BALANCE_SHEET,
+    )
+
+
+def customer_savings_premiums_paid(customer_id: str) -> float:
+    """Savings premiums already charged for one customer. Nothing is written."""
+    try:
+        from services.premium_flow_reconciliation import reconcile_customer
+        report = reconcile_customer(
+            customer_id,
+            policies=POLICIES.values(),
+            bills=BILLING.values(),
+            claims=CLAIMS.values(),
+            nft_ledger=NFT_LEDGER,
+            claim_transfers=_cashflow_claim_transfers(),
+            premium_transactions=TRANSACTION_LEDGER.values(),
+        )
+        return safe_float((report.get('picture') or {}).get('savings_premiums_paid'), 0.0)
+    except Exception:
+        return 0.0
+
+
 def build_cashflow_monitoring() -> Dict[str, Any]:
     """Read-only monitoring list from ledgers, NFT seals, and live balances."""
     from services.premium_flow_reconciliation import monitoring_report, worked_specimen
@@ -11552,37 +11661,309 @@ def build_cashflow_monitoring() -> Dict[str, Any]:
         wallets=positions['wallets'],
         investments=positions['investments'],
         algo=positions['algo'],
+        premium_transactions=list(TRANSACTION_LEDGER.values()),
+        claim_wallets=HEALTH_WALLETS,
+        balance_sheet=PHINS_BALANCE_SHEET,
     )
     report['specimen'] = worked_specimen()
     report['claims_reserve'] = safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0.0)
     return report
 
 
-def post_unposted_claim_transfers(actor: str = 'accountant') -> Dict[str, Any]:
-    """Move each unposted paid claim from the reserve onto the health wallet.
+_PREMIUM_SAVINGS_SLICE_TYPES = frozenset({
+    'pipeline_allocation',
+    'premium_allocation',
+    'savings_premium_reconcile',
+})
+_PREMIUM_SAVINGS_DEPOSIT_TYPES = frozenset({
+    'pipeline_deposit',
+    'savings_deposit',
+})
+_SAVINGS_RECONCILE_SKIP = frozenset({'CUST-X', 'PHINS-CORPORATE', 'PHINS', 'SYSTEM'})
 
-    The claim record stays on the books. A broken seal is skipped. A short
-    reserve is reported and is not topped up. A second call finds the seal
-    and does not pay again.
+
+def _premium_savings_already_landed(customer_id: str) -> float:
+    """Premium savings already sitting on this customer's books.
+
+    Deposit rows and the 30/65/5 slices are two records of the same cash.
+    The larger one is kept. A later spend does not erase the allocation
+    row, so the gap is not filled a second time.
     """
-    from services.premium_flow_reconciliation import claim_postings_due, reconcile_customer
-    posted = []
-    skipped = []
-    for claim in list(CLAIMS.values()):
-        if not isinstance(claim, dict):
-            continue
-        customer_id = str(claim.get('customer_id') or '')
-        if not customer_id:
-            continue
+    marker = 0.0
+    deposits = 0.0
+    slices = 0.0
+    account = INVESTMENT_ACCOUNTS.get(customer_id)
+    if isinstance(account, dict):
+        marker = max(marker, safe_float(account.get('savings_premiums_applied'), 0.0))
+        for row in account.get('deposits') or []:
+            if isinstance(row, dict) and str(row.get('type') or '') in _PREMIUM_SAVINGS_DEPOSIT_TYPES:
+                deposits += safe_float(row.get('amount'), 0.0)
+        for row in account.get('allocations') or []:
+            if isinstance(row, dict) and str(row.get('type') or '') in _PREMIUM_SAVINGS_SLICE_TYPES:
+                slices += safe_float(row.get('amount', row.get('total_amount')), 0.0)
+    wallet = HEALTH_WALLETS.get(customer_id)
+    if isinstance(wallet, dict):
+        marker = max(marker, safe_float(wallet.get('savings_premiums_applied'), 0.0))
+        for row in wallet.get('transactions') or []:
+            if not isinstance(row, dict):
+                continue
+            kind = str(row.get('type') or '')
+            if kind in _PREMIUM_SAVINGS_DEPOSIT_TYPES:
+                deposits += safe_float(row.get('amount'), 0.0)
+            elif kind in _PREMIUM_SAVINGS_SLICE_TYPES:
+                slices += safe_float(row.get('amount'), 0.0)
+    try:
+        store = getattr(unified_balance_service, 'algo_trading_balances', {}) or {}
+    except Exception:
+        store = {}
+    algo = store.get(customer_id) if isinstance(store, dict) else None
+    if isinstance(algo, dict):
+        marker = max(marker, safe_float(algo.get('savings_premiums_applied'), 0.0))
+        for row in algo.get('transfers') or []:
+            if isinstance(row, dict) and str(row.get('type') or '') in _PREMIUM_SAVINGS_SLICE_TYPES:
+                slices += safe_float(row.get('amount'), 0.0)
+    return round(max(marker, deposits, slices), 2)
+
+
+def _stamp_savings_premiums_applied(customer_id: str, amount: float) -> None:
+    stamped = round(safe_float(amount, 0.0), 2)
+    account = INVESTMENT_ACCOUNTS.get(customer_id)
+    if isinstance(account, dict):
+        account['savings_premiums_applied'] = stamped
+        return
+    wallet = HEALTH_WALLETS.get(customer_id)
+    if isinstance(wallet, dict):
+        wallet['savings_premiums_applied'] = stamped
+
+
+def reconcile_savings_premium_balances() -> Dict[str, Any]:
+    """Credit savings premiums that were charged and never landed.
+
+    The credit is the gap under the charged savings, split 30/65/5.
+    Kernel risk is not moved. A second call credits nothing. CUST-X is
+    not written.
+    """
+    from services.premium_flow_reconciliation import reconcile_customer
+    seen = set()
+    customer_ids = []
+
+    def _add(customer_id: Any) -> None:
+        value = str(customer_id or '').strip()
+        if not value or value in seen or value in _SAVINGS_RECONCILE_SKIP:
+            return
+        seen.add(value)
+        customer_ids.append(value)
+
+    for row in list(POLICIES.values()) + list(BILLING.values()) + list(TRANSACTION_LEDGER.values()):
+        if isinstance(row, dict):
+            _add(row.get('customer_id'))
+    for customer_id in list(HEALTH_WALLETS.keys()) + list(INVESTMENT_ACCOUNTS.keys()):
+        _add(customer_id)
+    credited = []
+    for customer_id in customer_ids:
         report = reconcile_customer(
             customer_id,
             policies=POLICIES.values(),
             bills=BILLING.values(),
             claims=CLAIMS.values(),
             nft_ledger=NFT_LEDGER,
+            claim_transfers=_cashflow_claim_transfers(),
+            premium_transactions=TRANSACTION_LEDGER.values(),
+        )
+        target = safe_float((report.get('picture') or {}).get('savings_premiums_paid'), 0.0)
+        observed = _premium_savings_already_landed(customer_id)
+        gap = round(target - observed, 2)
+        if gap <= 0.01:
+            if target > 0 or observed > 0:
+                _stamp_savings_premiums_applied(customer_id, max(observed, target))
+            continue
+        parts = _apply_direct_savings_distribution(
+            customer_id,
+            gap,
+            {
+                'wallet_pct': DEFAULT_CUSTOMER_ALLOCATION['wallet_pct'],
+                'investment_pct': DEFAULT_CUSTOMER_ALLOCATION['investment_pct'],
+                'algo_pct': DEFAULT_CUSTOMER_ALLOCATION['algo_pct'],
+                'index_pct': DEFAULT_CUSTOMER_ALLOCATION['index_pct'],
+                'bonds_pct': DEFAULT_CUSTOMER_ALLOCATION['bonds_pct'],
+                'crypto_pct': DEFAULT_CUSTOMER_ALLOCATION['crypto_pct'],
+            },
+            datetime.now(),
+        )
+        account = INVESTMENT_ACCOUNTS.get(customer_id)
+        if isinstance(account, dict):
+            allocations = account.get('allocations') or []
+            if allocations and isinstance(allocations[-1], dict):
+                allocations[-1]['type'] = 'savings_premium_reconcile'
+            account['savings_premiums_applied'] = round(max(observed, target), 2)
+        wallet = HEALTH_WALLETS.get(customer_id)
+        if isinstance(wallet, dict):
+            txs = wallet.get('transactions') or []
+            if txs and isinstance(txs[-1], dict) and txs[-1].get('type') == 'pipeline_allocation':
+                txs[-1]['type'] = 'savings_premium_reconcile'
+        credited.append({
+            'customer_id': customer_id,
+            'savings_premiums_paid': round(target, 2),
+            'credited': gap,
+            'wallet': parts.get('wallet_amount'),
+            'investments': parts.get('investment_amount'),
+            'algo': parts.get('algo_amount'),
+        })
+    return {
+        'credited': credited,
+        'credited_count': len(credited),
+        'credited_total': round(sum(row['credited'] for row in credited), 2),
+    }
+
+
+def collapse_duplicate_claim_transfers() -> Dict[str, Any]:
+    """Fold repeated claims-paid lines back to the claim's paid amount.
+
+    The extra reserve is restored and the extra wallet credit is removed.
+    The claim, its status, and any NFT seal are left as they are.
+    """
+    from services.premium_flow_reconciliation import duplicate_claim_row_ids, paid_claim_amount
+    from services.savings_pipeline_service import debit_account_balance
+    claims_by_id: Dict[str, Dict[str, Any]] = {}
+    for claim in CLAIMS.values():
+        if not isinstance(claim, dict):
+            continue
+        claim_id = str(claim.get('id') or claim.get('claim_id') or '')
+        if claim_id and claim_id not in claims_by_id:
+            claims_by_id[claim_id] = claim
+
+    drop_sheet = set()
+    restored = 0.0
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for tx in PHINS_BALANCE_SHEET.get('transactions') or []:
+        if not isinstance(tx, dict) or str(tx.get('category') or '') != 'claims_paid':
+            continue
+        claim_id = str(tx.get('claim_id') or '')
+        if claim_id:
+            grouped.setdefault(claim_id, []).append(tx)
+    for claim_id, rows in grouped.items():
+        claim = claims_by_id.get(claim_id)
+        if claim is None:
+            continue
+        drop = set(duplicate_claim_row_ids(
+            [{
+                'id': tx.get('tx_id'),
+                'amount': tx.get('amount'),
+                'timestamp': tx.get('timestamp'),
+            } for tx in rows],
+            float(paid_claim_amount(claim)),
+        ))
+        if not drop:
+            continue
+        drop_sheet.update(drop)
+        for tx in rows:
+            if str(tx.get('tx_id') or '') in drop:
+                restored += safe_float(tx.get('amount'), 0.0)
+    if drop_sheet:
+        PHINS_BALANCE_SHEET['transactions'] = [
+            tx for tx in (PHINS_BALANCE_SHEET.get('transactions') or [])
+            if str((tx or {}).get('tx_id') or '') not in drop_sheet
+        ]
+        PHINS_BALANCE_SHEET['claims_reserve'] = round(
+            safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0.0) + restored, 2,
+        )
+        breakdown = PHINS_BALANCE_SHEET.setdefault('expense_breakdown', {})
+        breakdown['claims_paid'] = round(max(
+            0.0, safe_float(breakdown.get('claims_paid'), 0.0) - restored,
+        ), 2)
+        PHINS_BALANCE_SHEET['total_expenses'] = round(max(
+            0.0, safe_float(PHINS_BALANCE_SHEET.get('total_expenses'), 0.0) - restored,
+        ), 2)
+
+    wallet_removed = 0.0
+    wallet_shortfall = 0.0
+    for customer_id, wallet in list(HEALTH_WALLETS.items()):
+        if not isinstance(wallet, dict):
+            continue
+        by_claim: Dict[str, List[Dict[str, Any]]] = {}
+        for tx in wallet.get('transactions') or []:
+            if not isinstance(tx, dict) or str(tx.get('type') or '') != 'claim_payment':
+                continue
+            claim_id = str(tx.get('claim_id') or '')
+            if claim_id:
+                by_claim.setdefault(claim_id, []).append(tx)
+        drop_ids = set()
+        extra = 0.0
+        for claim_id, rows in by_claim.items():
+            claim = claims_by_id.get(claim_id)
+            if claim is None:
+                continue
+            drop = set(duplicate_claim_row_ids(
+                [{
+                    'id': tx.get('id'),
+                    'amount': tx.get('amount'),
+                    'timestamp': tx.get('timestamp'),
+                } for tx in rows],
+                float(paid_claim_amount(claim)),
+            ))
+            drop_ids.update(drop)
+            for tx in rows:
+                if str(tx.get('id') or '') in drop:
+                    extra += safe_float(tx.get('amount'), 0.0)
+        if not drop_ids:
+            continue
+        extra = round(extra, 2)
+        debited = debit_account_balance(wallet, extra)
+        if debited is None:
+            live = round(safe_float(wallet.get('balance'), 0.0), 2)
+            if live > 0:
+                debit_account_balance(wallet, live)
+            wallet_shortfall += round(max(0.0, extra - live), 2)
+            wallet_removed += min(live, extra)
+        else:
+            wallet_removed += extra
+        wallet['transactions'] = [
+            tx for tx in (wallet.get('transactions') or [])
+            if str((tx or {}).get('id') or '') not in drop_ids
+        ]
+    return {
+        'balance_sheet_rows_removed': len(drop_sheet),
+        'reserve_restored': round(restored, 2),
+        'wallet_credit_removed': round(wallet_removed, 2),
+        'wallet_shortfall': round(wallet_shortfall, 2),
+        'claims_reserve': safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0.0),
+    }
+
+
+def post_unposted_claim_transfers(actor: str = 'accountant') -> Dict[str, Any]:
+    """Move each still-unposted paid claim from the reserve onto the health wallet.
+
+    Repeated balance-sheet lines for one claim are folded back to the paid
+    amount first, and the reserve is restored for the extras. A claim the
+    ledger, the wallet, or the balance sheet already covers is not posted
+    again. The claim record stays on the books. A broken seal is skipped.
+    Savings premiums that were charged and never landed are credited once.
+    """
+    from services.premium_flow_reconciliation import claim_postings_due, reconcile_customer
+    collapsed = collapse_duplicate_claim_transfers()
+    savings = reconcile_savings_premium_balances()
+    posted = []
+    skipped = []
+    seen = set()
+    transfers = _cashflow_claim_transfers()
+    for claim in list(CLAIMS.values()):
+        if not isinstance(claim, dict):
+            continue
+        customer_id = str(claim.get('customer_id') or '')
+        claim_id = str(claim.get('id') or claim.get('claim_id') or '')
+        if not customer_id or not claim_id or claim_id in seen:
+            continue
+        seen.add(claim_id)
+        report = reconcile_customer(
+            customer_id,
+            policies=POLICIES.values(),
+            bills=BILLING.values(),
+            claims=CLAIMS.values(),
+            nft_ledger=NFT_LEDGER,
+            claim_transfers=transfers,
+            premium_transactions=TRANSACTION_LEDGER.values(),
         )
         due = {row['claim_id']: row for row in claim_postings_due(report)}
-        claim_id = str(claim.get('id') or claim.get('claim_id') or '')
         row = due.get(claim_id)
         if row is None:
             continue
@@ -11607,8 +11988,10 @@ def post_unposted_claim_transfers(actor: str = 'accountant') -> Dict[str, Any]:
                 'amount': amount,
                 'destination': 'health_wallet',
                 'payment_reference': outcome.get('payment_reference'),
+                'already_posted': bool(outcome.get('already_posted')),
                 'claim_status': str(claim.get('status') or ''),
             })
+            transfers = _cashflow_claim_transfers()
         else:
             skipped.append({
                 'claim_id': claim_id,
@@ -11616,11 +11999,15 @@ def post_unposted_claim_transfers(actor: str = 'accountant') -> Dict[str, Any]:
                 'amount': amount,
                 'reason': outcome.get('error') or 'not_posted',
             })
+    if collapsed.get('balance_sheet_rows_removed') or savings.get('credited_count'):
+        threading.Thread(target=save_ledger_data, daemon=True).start()
     return {
         'writes_claims': False,
         'posted': posted,
         'skipped': skipped,
         'posted_count': len(posted),
+        'collapsed': collapsed,
+        'savings': savings,
         'claims_reserve': safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0.0),
     }
 
@@ -18693,6 +19080,7 @@ def _build_tax_year_premium_report(
         'verified_wallet_balance': _round_money(verified_balances.get('wallet_balance', 0.0)),
         'verified_investment_balance': _round_money(verified_balances.get('investment_balance', 0.0)),
         'verified_algo_trading_balance': _round_money(verified_balances.get('algo_trading_balance', 0.0)),
+        'savings_premiums_paid': _round_money(customer_savings_premiums_paid(customer_id)),
     }
 
     premium_summary = {
@@ -37007,6 +37395,7 @@ For claims or questions, please contact:
                     
                     # Summary values (matching dashboard)
                     'total_value': total_value,
+                    'savings_premiums_paid': customer_savings_premiums_paid(customer_id),
                     'cash_balance': cash_balance,
                     'invested_assets': invested_assets,
                     'algo_trading_profits': algo_trading_profits,
@@ -38531,7 +38920,8 @@ For claims or questions, please contact:
                 'index_balance': inv_books['index'],
                 'bonds_balance': inv_books['bonds'],
                 'crypto_balance': inv_books['crypto'],
-                'deposits_count': len(inv_acc.get('deposits', []))
+                'deposits_count': len(inv_acc.get('deposits', [])),
+                'savings_premiums_paid': customer_savings_premiums_paid(customer_id),
             }
             
             # 6. Algo trading balance
@@ -39461,6 +39851,8 @@ For claims or questions, please contact:
                     bills=BILLING.values(),
                     claims=CLAIMS.values(),
                     nft_ledger=NFT_LEDGER,
+                    claim_transfers=_cashflow_claim_transfers(),
+                    premium_transactions=TRANSACTION_LEDGER.values(),
                 )
             except Exception:
                 _write_cashflow_internal_error(self, "cashflow customer picture failed for %s", customer_id)
@@ -39484,6 +39876,8 @@ For claims or questions, please contact:
                     bills=BILLING.values(),
                     claims=CLAIMS.values(),
                     nft_ledger=NFT_LEDGER,
+                    claim_transfers=_cashflow_claim_transfers(),
+                    premium_transactions=TRANSACTION_LEDGER.values(),
                 )
             except Exception:
                 _write_cashflow_internal_error(self, "premium picture failed for %s", customer_id)

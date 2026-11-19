@@ -6,8 +6,11 @@ The savings layer is an add-on (a multiple of the risk premium), and only
 that add-on is split across the health wallet, investments, and algo.
 
 This module does not write wallets, bills, policies, claims, or NFT seals.
-A paid claim with no sealed wallet credit is reported as an unposted
-reserve-to-wallet transfer. It is not added to a balance.
+A paid claim is already transferred when an intact seal, the customer
+ledger, the health wallet, or one balance-sheet claims line covers the
+paid amount. Only the remainder is an unposted reserve transfer. It is
+not added to a balance. A repeated line for the same claim is not a
+second payment.
 """
 
 from __future__ import annotations
@@ -365,6 +368,230 @@ def _claim_id(claim: Mapping[str, Any]) -> str:
     return str(claim.get("id") or claim.get("claim_id") or "")
 
 
+def paid_claim_amount(claim: Mapping[str, Any]) -> Decimal:
+    """The claim's paid amount. An unpaid claim is zero. Nothing is written."""
+    if not isinstance(claim, Mapping) or not _claim_paid(claim):
+        return Decimal("0.00")
+    return _claim_amount(claim)
+
+
+_CLAIM_LEDGER_TYPES = frozenset({
+    "claim_payment_received",
+    "claim_payment",
+    "claim_paid",
+    "claims_paid",
+    "claim_payout",
+})
+_SAVINGS_EVIDENCE_TYPES = _PREMIUM_TYPES | frozenset({
+    "bill_paid",
+    "premium_received",
+    "premium_deposit",
+})
+
+
+def _tx_rows(store: Any) -> List[Mapping[str, Any]]:
+    if store is None:
+        return []
+    if isinstance(store, Mapping):
+        nested = store.get("transactions")
+        if isinstance(nested, list):
+            return [row for row in nested if isinstance(row, Mapping)]
+        rows: List[Mapping[str, Any]] = []
+        for value in store.values():
+            if isinstance(value, Mapping) and isinstance(value.get("transactions"), list):
+                rows.extend(row for row in value["transactions"] if isinstance(row, Mapping))
+            elif isinstance(value, Mapping):
+                rows.append(value)
+        return rows
+    return [row for row in store if isinstance(row, Mapping)]
+
+
+def _claim_key(row: Mapping[str, Any]) -> str:
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    return str(row.get("claim_id") or metadata.get("claim_id") or "")
+
+
+def _sum_claim_cash(rows: Iterable[Mapping[str, Any]], *, types: Optional[frozenset] = None, category: Optional[str] = None) -> Dict[str, Decimal]:
+    totals: Dict[str, Decimal] = {}
+    for row in rows:
+        if category is not None:
+            if str(row.get("category") or "") != category:
+                continue
+        else:
+            kind = str(row.get("type") or row.get("transaction_type") or "")
+            if kind not in (types or frozenset()):
+                continue
+        claim_id = _claim_key(row)
+        amount = _money(row.get("amount")).copy_abs()
+        if claim_id and amount > 0:
+            totals[claim_id] = (totals.get(claim_id, Decimal("0.00")) + amount).quantize(_CENT)
+    return totals
+
+
+def transferred_claim_amounts(
+    *,
+    transactions: Any = (),
+    wallets: Any = None,
+    balance_sheet: Any = None,
+) -> Dict[str, Decimal]:
+    """Cash already moved for each claim.
+
+    The customer ledger, the health-wallet lines, and the balance-sheet
+    claims lines are three records of one transfer. The amount is the
+    largest of those records, not their sum, so a repeated line does not
+    look like a larger payment. Nothing is written.
+    """
+    ledger = _sum_claim_cash(_tx_rows(transactions), types=_CLAIM_LEDGER_TYPES)
+    wallet = _sum_claim_cash(_tx_rows(wallets), types=_CLAIM_LEDGER_TYPES)
+    sheet = _sum_claim_cash(_tx_rows(balance_sheet), category="claims_paid")
+    covered: Dict[str, Decimal] = {}
+    for claim_id in set(ledger) | set(wallet) | set(sheet):
+        covered[claim_id] = max(
+            ledger.get(claim_id, Decimal("0.00")),
+            wallet.get(claim_id, Decimal("0.00")),
+            sheet.get(claim_id, Decimal("0.00")),
+        )
+    return covered
+
+
+def duplicate_claim_row_ids(rows: Sequence[Mapping[str, Any]], paid_amount: Any) -> List[str]:
+    """Ids of claims-paid lines that repeat a claim above its paid amount.
+
+    The earliest line equal to the paid amount is kept. Partial lines that
+    add up to the paid amount are kept. Nothing is dropped when the lines
+    do not exceed what the claim was paid.
+    """
+    parsed: List[Tuple[str, str, Decimal]] = []
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        row_id = str(row.get("id") or row.get("tx_id") or "")
+        if not row_id:
+            continue
+        parsed.append((
+            str(row.get("timestamp") or row.get("created_at") or ""),
+            row_id,
+            _money(row.get("amount")).copy_abs(),
+        ))
+    parsed.sort()
+    paid = _money(paid_amount)
+    total = sum((amount for _, _, amount in parsed), Decimal("0.00"))
+    if paid <= 0 or total <= paid + _CENT:
+        return []
+    equals = [row_id for _, row_id, amount in parsed if abs(amount - paid) <= _CENT]
+    if equals:
+        keep = equals[0]
+        return [row_id for _, row_id, _amount in parsed if row_id != keep]
+    kept = Decimal("0.00")
+    drop: List[str] = []
+    for _stamp, row_id, amount in parsed:
+        if kept + amount <= paid + _CENT:
+            kept += amount
+        else:
+            drop.append(row_id)
+    return drop
+
+
+def _explicit_savings_paid(record: Mapping[str, Any]) -> Optional[Decimal]:
+    """Savings the billing waterfall already charged on this payment.
+
+    ``None`` when the payment does not carry that field. A stored
+    risk/savings pair that merely splits the cash is not this field.
+    """
+    if not isinstance(record, Mapping):
+        return None
+    metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    allocation = record.get("premium_allocation")
+    if not isinstance(allocation, dict):
+        nested = metadata.get("premium_allocation")
+        allocation = nested if isinstance(nested, dict) else {}
+    for source in (record, metadata, allocation):
+        if isinstance(source, Mapping) and source.get("savings_amount_paid") is not None:
+            amount = _money(source.get("savings_amount_paid"))
+            return amount if amount > 0 else Decimal("0.00")
+    return None
+
+
+def _payment_month(record: Mapping[str, Any]) -> str:
+    metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    return (
+        _bill_month(record)
+        or _month_of(metadata.get("payment_period"))
+        or _month_of(metadata.get("period"))
+        or _month_of(record.get("timestamp"))
+        or _month_of(record.get("created_at"))
+        or ""
+    )
+
+
+def _payment_bill_id(record: Mapping[str, Any]) -> str:
+    metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    return str(record.get("bill_id") or metadata.get("bill_id") or record.get("id") or record.get("bill_id") or "")
+
+
+def savings_premiums_paid(
+    customer_id: str,
+    *,
+    months: Sequence[Mapping[str, Any]] = (),
+    bills: Iterable[Mapping[str, Any]] = (),
+    transactions: Iterable[Mapping[str, Any]] = (),
+) -> Decimal:
+    """Savings premiums already charged for this customer.
+
+    A billing ``savings_amount_paid`` is that charge. A month with no such
+    field keeps the add-on the waterfall landed, including an earlier
+    contract's own savings layer. A 50/50 pair stored on the cash is not
+    added on top of that. Nothing is written.
+    """
+    explicit_by_month: Dict[str, Decimal] = {}
+    seen_bills = set()
+
+    def _take(record: Mapping[str, Any]) -> None:
+        value = _explicit_savings_paid(record)
+        if value is None:
+            return
+        month = _payment_month(record)
+        explicit_by_month[month] = (explicit_by_month.get(month, Decimal("0.00")) + value).quantize(_CENT)
+        bill_id = _payment_bill_id(record)
+        if bill_id:
+            seen_bills.add(bill_id)
+
+    for tx in transactions:
+        if not isinstance(tx, Mapping):
+            continue
+        if str(tx.get("customer_id") or "") != customer_id:
+            continue
+        kind = str(tx.get("type") or tx.get("transaction_type") or "")
+        if kind not in _SAVINGS_EVIDENCE_TYPES:
+            continue
+        _take(tx)
+    for bill in bills:
+        if not isinstance(bill, Mapping):
+            continue
+        if str(bill.get("customer_id") or "") != customer_id:
+            continue
+        bill_id = str(bill.get("id") or bill.get("bill_id") or "")
+        if bill_id and bill_id in seen_bills:
+            continue
+        if _bill_cash(bill) <= 0:
+            continue
+        _take(bill)
+    total = Decimal("0.00")
+    seen_months = set()
+    for row in months:
+        month = str(row.get("month") or "")
+        seen_months.add(month)
+        landed = _money(row.get("landed_savings"))
+        explicit = explicit_by_month.get(month, Decimal("0.00"))
+        # A default zero on the bill does not hide an add-on the waterfall
+        # landed. A charge recorded on the bill is kept when the pin is gone.
+        total += explicit if explicit >= landed else landed
+    for month, explicit in explicit_by_month.items():
+        if month not in seen_months:
+            total += explicit
+    return total.quantize(_CENT)
+
+
 def _waterfall(cash: Decimal, kernel: Mapping[str, Decimal]) -> Dict[str, Decimal]:
     """Apply collected cash in order: risk, expense, profit, savings.
 
@@ -482,6 +709,8 @@ def reconcile_customer(
     claims: Iterable[Mapping[str, Any]] = (),
     nft_ledger: Optional[Mapping[str, Any]] = None,
     savings_split: Sequence[Tuple[str, Decimal]] = _SAVINGS_SPLIT,
+    claim_transfers: Optional[Mapping[str, Any]] = None,
+    premium_transactions: Iterable[Mapping[str, Any]] = (),
 ) -> Dict[str, Any]:
     """Monthly risk, expense, and savings table for one customer.
 
@@ -618,7 +847,7 @@ def reconcile_customer(
             "flags": _flags(cash, kernel, booked_risk, booked_savings),
         })
 
-    claim_rows = _claim_rows(own_claims, tokens)
+    claim_rows = _claim_rows(own_claims, tokens, claim_transfers)
     sealed_claim_credits = sum(
         (_money(row["sealed_wallet_credit"]) for row in claim_rows),
         Decimal("0.00"),
@@ -628,6 +857,13 @@ def reconcile_customer(
         Decimal("0.00"),
     )
     picture = _picture(rows, claim_rows, withheld)
+    paid_savings = savings_premiums_paid(
+        customer_id,
+        months=rows,
+        bills=own_bills,
+        transactions=premium_transactions,
+    )
+    picture["savings_premiums_paid"] = float(paid_savings)
     return {
         "customer_id": customer_id,
         "writes": False,
@@ -641,6 +877,7 @@ def reconcile_customer(
             "investments": float(landed_investments.quantize(_CENT)),
             "algo": float(landed_algo.quantize(_CENT)),
             "savings_landed": float(landed_savings.quantize(_CENT)),
+            "savings_premiums_paid": float(paid_savings),
             "sealed_claim_credits": float(sealed_claim_credits.quantize(_CENT)),
             "unposted_claim_transfers": float(unposted_claims.quantize(_CENT)),
         },
@@ -648,12 +885,16 @@ def reconcile_customer(
             "Risk premium is the kernel pin and is not scaled down to fit a smaller bill.",
             "Expense loading is partitioned in full across PHINS operations, the carrier, and the reinsurance ceding reserve.",
             "Savings is the add-on layer. Only cash left after risk, expense, and profit lands in wallet, investments, and algo.",
-            "A paid claim with no sealed wallet credit is an unposted reserve transfer and is not added to a balance.",
+            "A paid claim is transferred once. A seal, the customer ledger, the health wallet, or a balance-sheet claims line covers it. A repeated line is the same claim.",
         ],
     }
 
 
-def _claim_rows(claims: Sequence[Mapping[str, Any]], tokens: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+def _claim_rows(
+    claims: Sequence[Mapping[str, Any]],
+    tokens: Sequence[Mapping[str, Any]],
+    transfers: Optional[Mapping[str, Any]] = None,
+) -> List[Dict[str, Any]]:
     credits: List[Dict[str, Any]] = []
     for token in tokens:
         if not verify_token(token).get("valid"):
@@ -667,6 +908,7 @@ def _claim_rows(claims: Sequence[Mapping[str, Any]], tokens: Sequence[Mapping[st
             "amount": _token_amount(token),
             "used": False,
         })
+    evidence = transfers or {}
     rows = []
     for claim in claims:
         if not _claim_paid(claim):
@@ -680,15 +922,20 @@ def _claim_rows(claims: Sequence[Mapping[str, Any]], tokens: Sequence[Mapping[st
             if credit["claim_id"] and claim_id and credit["claim_id"] == claim_id:
                 matched += credit["amount"]
                 credit["used"] = True
-        unposted = (amount - matched).quantize(_CENT)
+        seal = matched if matched <= amount else amount
+        other = _money(evidence.get(claim_id)) if claim_id else Decimal("0.00")
+        if other > amount:
+            other = amount
+        covered = seal if seal >= other else other
+        unposted = (amount - covered).quantize(_CENT)
         if unposted < 0:
             unposted = Decimal("0.00")
         rows.append({
             "claim_id": claim_id,
             "paid_amount": float(amount),
-            "sealed_wallet_credit": float(matched.quantize(_CENT)),
+            "sealed_wallet_credit": float(seal.quantize(_CENT)),
             "unposted_reserve_transfer": float(unposted),
-            "posted": unposted == 0 and matched > 0,
+            "posted": unposted == 0 and covered > 0,
         })
     return rows
 
@@ -754,7 +1001,10 @@ def _live_money(balances: Optional[Mapping[str, Any]], customer_id: str, *keys: 
 
 
 def claim_postings_due(report: Mapping[str, Any]) -> List[Dict[str, Any]]:
-    """Paid claims with no intact wallet seal. A broken seal is not posted."""
+    """Paid claims not yet covered by a seal, the ledger, the wallet, or the balance sheet.
+
+    A broken seal is not posted again.
+    """
     broken = {
         str(row.get("claim_id") or "")
         for row in report.get("withheld_seals") or []
@@ -788,6 +1038,9 @@ def monitoring_report(
     investments: Optional[Mapping[str, Any]] = None,
     algo: Optional[Mapping[str, Any]] = None,
     watch: Sequence[Mapping[str, str]] = PLATFORM_WATCH,
+    premium_transactions: Iterable[Mapping[str, Any]] = (),
+    claim_wallets: Optional[Mapping[str, Any]] = None,
+    balance_sheet: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Customer monitoring list learned from ledgers, NFTs, and live balances.
 
@@ -838,9 +1091,15 @@ def monitoring_report(
         "investments": Decimal("0.00"),
         "algo": Decimal("0.00"),
         "learned_savings": Decimal("0.00"),
+        "savings_premiums_paid": Decimal("0.00"),
         "sealed_claim_credits": Decimal("0.00"),
         "unposted_claim_transfers": Decimal("0.00"),
     }
+    claim_transfers = transferred_claim_amounts(
+        transactions=premium_transactions,
+        wallets=claim_wallets,
+        balance_sheet=balance_sheet,
+    )
     attention = 0
     for customer_id in ordered:
         record = customers.get(customer_id) if isinstance(customers, Mapping) else None
@@ -855,15 +1114,18 @@ def monitoring_report(
             bills=bill_rows,
             claims=claim_rows,
             nft_ledger=ledger,
+            claim_transfers=claim_transfers,
+            premium_transactions=premium_transactions,
         )
         wallet = _money(_live_money(wallets, customer_id, "balance"))
         investment = _money(_live_money(investments, customer_id, "position", "balance"))
         algo_balance = _money(_live_money(algo, customer_id, "available", "balance"))
         learned = report["admin_balances_from_landed_savings"]
-        learned_wallet = _money(learned["health_wallet_savings"]) + _money(learned["sealed_claim_credits"])
+        paid_parts = _partition(_money(report["picture"].get("savings_premiums_paid")), _SAVINGS_SPLIT)
+        learned_wallet = _money(paid_parts["health_wallet"]) + _money(learned["sealed_claim_credits"])
         gap = (wallet - learned_wallet).copy_abs()
-        invest_gap = (investment - _money(learned["investments"])).copy_abs()
-        algo_gap = (algo_balance - _money(learned["algo"])).copy_abs()
+        invest_gap = (investment - _money(paid_parts["investments"])).copy_abs()
+        algo_gap = (algo_balance - _money(paid_parts["algo"])).copy_abs()
         flags = list(report["picture"]["flags"])
         if gap > _CENT or invest_gap > _CENT or algo_gap > _CENT:
             flags.append("balance_differs")
@@ -876,6 +1138,7 @@ def monitoring_report(
         funds["investments"] += investment
         funds["algo"] += algo_balance
         funds["learned_savings"] += _money(learned["savings_landed"])
+        funds["savings_premiums_paid"] += _money(report["picture"].get("savings_premiums_paid"))
         funds["sealed_claim_credits"] += _money(learned["sealed_claim_credits"])
         funds["unposted_claim_transfers"] += _money(learned["unposted_claim_transfers"])
         customer_rows.append({
@@ -908,7 +1171,7 @@ def monitoring_report(
         "rules": [
             "Kernel risk premium is filled first and is never credited to savings.",
             "Only a savings add-on or a growth add lands in the health wallet, investments, and algo, and it stays there.",
-            "A paid claim stays on the claims book. Unposted cash moves from the claims reserve to the health wallet once, and only when the seal is intact or absent.",
+            "A paid claim stays on the claims book. Cash moves from the claims reserve to the health wallet once, up to the paid amount. A seal, the customer ledger, the wallet, or a balance-sheet line already covers it.",
             "A broken NFT seal is withheld and is not repaired.",
         ],
     }

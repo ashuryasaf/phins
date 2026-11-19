@@ -96,6 +96,14 @@ class TestClaimPaymentToWallet:
             'status': 'approved',
         }
         portal.PHINS_BALANCE_SHEET['claims_reserve'] = 1000000.0
+        portal.PHINS_BALANCE_SHEET['transactions'] = [
+            tx for tx in (portal.PHINS_BALANCE_SHEET.get('transactions') or [])
+            if not (
+                isinstance(tx, dict)
+                and tx.get('claim_id') == 'CLM-TEST-PAY'
+                and tx.get('category') == 'claims_paid'
+            )
+        ]
 
     def test_claim_payment_credits_wallet(self):
         import web_portal.server as portal
@@ -179,6 +187,146 @@ class TestClaimPaymentToWallet:
         )
         assert result['success'] is False
         assert 'Insufficient' in result.get('error', '')
+
+    def test_second_claim_payment_does_not_write_the_balance_sheet_again(self):
+        import web_portal.server as portal
+        self._setup_customer_and_policy(portal)
+        portal.PHINS_BALANCE_SHEET['claims_reserve'] = 100000.0
+        portal.PHINS_BALANCE_SHEET.setdefault('transactions', [])
+
+        first = portal.process_claim_payment_to_wallet(
+            claim_id='CLM-TEST-PAY',
+            customer_id='CUST-TEST-PAY',
+            amount=4500.0,
+            processed_by='test',
+        )
+        assert first['success'] is True
+        assert first.get('already_posted') is not True
+        sheet = [
+            tx for tx in portal.PHINS_BALANCE_SHEET['transactions']
+            if tx.get('claim_id') == 'CLM-TEST-PAY' and tx.get('category') == 'claims_paid'
+        ]
+        assert len(sheet) == 1
+        wallet = portal.HEALTH_WALLETS['CUST-TEST-PAY']['balance']
+        reserve = portal.PHINS_BALANCE_SHEET['claims_reserve']
+
+        second = portal.process_claim_payment_to_wallet(
+            claim_id='CLM-TEST-PAY',
+            customer_id='CUST-TEST-PAY',
+            amount=4500.0,
+            processed_by='test',
+        )
+        assert second['success'] is True
+        assert second['already_posted'] is True
+        sheet_again = [
+            tx for tx in portal.PHINS_BALANCE_SHEET['transactions']
+            if tx.get('claim_id') == 'CLM-TEST-PAY' and tx.get('category') == 'claims_paid'
+        ]
+        assert len(sheet_again) == 1
+        assert portal.HEALTH_WALLETS['CUST-TEST-PAY']['balance'] == wallet
+        assert portal.PHINS_BALANCE_SHEET['claims_reserve'] == reserve
+
+    def test_three_claim_lines_collapse_to_the_paid_amount(self):
+        import web_portal.server as portal
+        self._setup_customer_and_policy(portal)
+        claim = portal.CLAIMS['CLM-TEST-PAY']
+        claim['status'] = 'paid'
+        claim['paid_amount'] = 4500.0
+        portal.PHINS_BALANCE_SHEET['claims_reserve'] = 10000.0
+        portal.PHINS_BALANCE_SHEET['transactions'] = [
+            {'tx_id': 'BS-1', 'category': 'claims_paid', 'claim_id': 'CLM-TEST-PAY', 'amount': 4500.0, 'timestamp': '2026-01-01T00:00:00'},
+            {'tx_id': 'BS-2', 'category': 'claims_paid', 'claim_id': 'CLM-TEST-PAY', 'amount': 4500.0, 'timestamp': '2026-01-02T00:00:00'},
+            {'tx_id': 'BS-3', 'category': 'claims_paid', 'claim_id': 'CLM-TEST-PAY', 'amount': 4500.0, 'timestamp': '2026-01-03T00:00:00'},
+        ]
+        portal.PHINS_BALANCE_SHEET.setdefault('expense_breakdown', {})
+        portal.PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid'] = 13500.0
+        portal.PHINS_BALANCE_SHEET['total_expenses'] = 13500.0
+        portal.HEALTH_WALLETS['CUST-TEST-PAY'] = {
+            'customer_id': 'CUST-TEST-PAY',
+            'balance': 13500.0,
+            'transactions': [
+                {'id': 'W1', 'type': 'claim_payment', 'claim_id': 'CLM-TEST-PAY', 'amount': 4500.0, 'timestamp': '2026-01-01T00:00:00'},
+                {'id': 'W2', 'type': 'claim_payment', 'claim_id': 'CLM-TEST-PAY', 'amount': 4500.0, 'timestamp': '2026-01-02T00:00:00'},
+                {'id': 'W3', 'type': 'claim_payment', 'claim_id': 'CLM-TEST-PAY', 'amount': 4500.0, 'timestamp': '2026-01-03T00:00:00'},
+            ],
+        }
+
+        folded = portal.collapse_duplicate_claim_transfers()
+        assert folded['balance_sheet_rows_removed'] == 2
+        assert folded['reserve_restored'] == 9000.0
+        assert portal.PHINS_BALANCE_SHEET['claims_reserve'] == 19000.0
+        remaining = [
+            tx for tx in portal.PHINS_BALANCE_SHEET['transactions']
+            if tx.get('claim_id') == 'CLM-TEST-PAY'
+        ]
+        assert len(remaining) == 1
+        assert remaining[0]['amount'] == 4500.0
+        assert portal.HEALTH_WALLETS['CUST-TEST-PAY']['balance'] == 4500.0
+        assert len(portal.HEALTH_WALLETS['CUST-TEST-PAY']['transactions']) == 1
+        assert claim['status'] == 'paid'
+
+        again = portal.post_unposted_claim_transfers('test')
+        assert again['posted_count'] == 0
+        still = [
+            tx for tx in portal.PHINS_BALANCE_SHEET['transactions']
+            if tx.get('claim_id') == 'CLM-TEST-PAY' and tx.get('category') == 'claims_paid'
+        ]
+        assert len(still) == 1
+        assert portal.HEALTH_WALLETS['CUST-TEST-PAY']['balance'] == 4500.0
+
+    def test_charged_savings_is_credited_once_and_a_plain_premium_is_not(self):
+        import web_portal.server as portal
+        portal.POLICIES['POL-SAVE'] = {
+            'id': 'POL-SAVE',
+            'customer_id': 'CUST-SAVE',
+            'start_date': '2026-01-01',
+            'annual_premium': 1200.0,
+            'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING['BILL-SAVE'] = {
+            'id': 'BILL-SAVE',
+            'customer_id': 'CUST-SAVE',
+            'policy_id': 'POL-SAVE',
+            'payment_period': '2026-01',
+            'amount_paid': 200.0,
+            'status': 'paid',
+            'premium_allocation': {'risk_amount_paid': 120.0, 'savings_amount_paid': 80.0},
+        }
+        portal.POLICIES['POL-RISK'] = {
+            'id': 'POL-RISK',
+            'customer_id': 'CUST-RISK',
+            'start_date': '2026-01-01',
+            'annual_premium': 1200.0,
+            'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING['BILL-RISK'] = {
+            'id': 'BILL-RISK',
+            'customer_id': 'CUST-RISK',
+            'policy_id': 'POL-RISK',
+            'payment_period': '2026-01',
+            'amount_paid': 100.0,
+            'status': 'paid',
+        }
+
+        first = portal.reconcile_savings_premium_balances()
+        saved = [row for row in first['credited'] if row['customer_id'] == 'CUST-SAVE']
+        assert len(saved) == 1
+        assert saved[0]['credited'] == 80.0
+        assert all(row['customer_id'] != 'CUST-RISK' for row in first['credited'])
+        assert 'CUST-RISK' not in portal.INVESTMENT_ACCOUNTS
+        books = portal._investment_books(portal.INVESTMENT_ACCOUNTS['CUST-SAVE'])
+        wallet = portal.HEALTH_WALLETS['CUST-SAVE']['balance']
+        algo_store = getattr(portal.unified_balance_service, 'algo_trading_balances', {}) or {}
+        algo = float((algo_store.get('CUST-SAVE') or {}).get('available') or 0)
+        assert round(books['position'] + wallet + algo, 2) == 80.0
+
+        second = portal.reconcile_savings_premium_balances()
+        assert all(row['customer_id'] != 'CUST-SAVE' for row in second['credited'])
+        books_again = portal._investment_books(portal.INVESTMENT_ACCOUNTS['CUST-SAVE'])
+        assert books_again['position'] == books['position']
+        assert portal.HEALTH_WALLETS['CUST-SAVE']['balance'] == wallet
+        assert portal.customer_savings_premiums_paid('CUST-SAVE') == 80.0
+        assert portal.customer_savings_premiums_paid('CUST-RISK') == 0.0
 
 
 class TestClaimPaymentPipeline:
