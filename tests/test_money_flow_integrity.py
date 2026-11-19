@@ -105,6 +105,49 @@ class TestClaimPaymentToWallet:
             )
         ]
 
+    def test_claim_payment_waits_until_the_repair_lock_is_free(self):
+        import threading
+        import web_portal.server as portal
+        self._setup_customer_and_policy(portal)
+        portal._CASHFLOW_REPAIR_LOCK.acquire()
+        started = threading.Event()
+        done = threading.Event()
+        holder = {}
+
+        def _pay():
+            started.set()
+            holder['result'] = portal.process_claim_payment_to_wallet(
+                claim_id='CLM-TEST-PAY',
+                customer_id='CUST-TEST-PAY',
+                amount=4500.0,
+                processed_by='test',
+            )
+            done.set()
+
+        thread = threading.Thread(target=_pay)
+        thread.start()
+        try:
+            assert started.wait(2)
+            assert not done.wait(0.3)
+            wallet = portal.HEALTH_WALLETS.get('CUST-TEST-PAY') or {}
+            assert float(wallet.get('balance') or 0) == 0.0
+            assert not any(
+                isinstance(tx, dict) and tx.get('type') == 'claim_payment'
+                for tx in wallet.get('transactions') or []
+            )
+        finally:
+            portal._CASHFLOW_REPAIR_LOCK.release()
+        assert done.wait(3)
+        thread.join(timeout=3)
+        assert holder['result']['success'] is True
+        wallet = portal.HEALTH_WALLETS['CUST-TEST-PAY']
+        claim_rows = [
+            tx for tx in wallet['transactions']
+            if isinstance(tx, dict) and tx.get('type') == 'claim_payment'
+        ]
+        assert len(claim_rows) == 1
+        assert wallet['balance'] == 4500.0
+
     def test_claim_payment_credits_wallet(self):
         import web_portal.server as portal
         self._setup_customer_and_policy(portal)

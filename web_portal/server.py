@@ -8877,7 +8877,23 @@ def process_claim_payment_to_wallet(
 
     A claim already on the balance sheet, the wallet, and the customer
     ledger is not written again. A missing leg is filled up to ``amount``.
+
+    The cash-flow repair replaces those transaction lists. This payment
+    holds the same lock, so a row appended here is not dropped after the
+    reserve and the wallet have already moved.
     """
+    with _CASHFLOW_REPAIR_LOCK:
+        return _post_claim_payment_to_wallet(
+            claim_id, customer_id, amount, processed_by,
+        )
+
+
+def _post_claim_payment_to_wallet(
+    claim_id: str,
+    customer_id: str,
+    amount: float,
+    processed_by: str = 'accountant'
+) -> Dict[str, Any]:
     global PHINS_BALANCE_SHEET, HEALTH_WALLETS
 
     amount = round(safe_float(amount, 0.0), 2)
@@ -12085,7 +12101,9 @@ def _cashflow_repair_refused(before: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-_CASHFLOW_REPAIR_LOCK = threading.Lock()
+# Re-entrant: the repair posts a claim through process_claim_payment_to_wallet,
+# and that payment takes this same lock so its new row survives the list rebuild.
+_CASHFLOW_REPAIR_LOCK = threading.RLock()
 
 
 def post_unposted_claim_transfers(actor: str = 'accountant') -> Dict[str, Any]:
@@ -12103,7 +12121,9 @@ def post_unposted_claim_transfers(actor: str = 'accountant') -> Dict[str, Any]:
     snapshot that was saved.
 
     One repair runs at a time. A second staff request waits, then sees the
-    books the first request already changed.
+    books the first request already changed. A claim payment waits on the
+    same lock, so its new wallet or balance-sheet row is not replaced by
+    a list this repair built earlier.
     """
     with _CASHFLOW_REPAIR_LOCK:
         return _run_unposted_claim_transfers(actor)
