@@ -2179,6 +2179,30 @@ except ImportError:
         api_referral_post = None
         print("Warning: Referral Rewards API not available.")
 
+# Health-wallet withdrawals: the customer's chat request, the hold, the
+# sealed document, and the retention desk.
+try:
+    from web_portal.api_wallet_withdrawal import (
+        API_PREFIXES as WALLET_WITHDRAWAL_API_PREFIXES,
+        dispatch_get as api_wallet_withdrawal_get,
+        dispatch_post as api_wallet_withdrawal_post,
+    )
+    wallet_withdrawal_enabled = True
+except ImportError:
+    try:
+        from api_wallet_withdrawal import (  # type: ignore
+            API_PREFIXES as WALLET_WITHDRAWAL_API_PREFIXES,
+            dispatch_get as api_wallet_withdrawal_get,
+            dispatch_post as api_wallet_withdrawal_post,
+        )
+        wallet_withdrawal_enabled = True
+    except ImportError:
+        wallet_withdrawal_enabled = False
+        WALLET_WITHDRAWAL_API_PREFIXES = ()
+        api_wallet_withdrawal_get = None
+        api_wallet_withdrawal_post = None
+        print("Warning: Wallet Withdrawal API not available.")
+
 REFERRAL_API_PREFIXES = (
     '/api/customer/referral-rewards',
     '/api/customer/professional-requests',
@@ -9332,6 +9356,7 @@ def save_ledger_data(_periodic: bool = False):
                 'saved_at': datetime.now().isoformat(),
                 'version': '2.0',
                 'health_wallets': HEALTH_WALLETS,
+                'wallet_withdrawals': WALLET_WITHDRAWALS,
                 'medical_purchases': MEDICAL_PURCHASES,
                 'nft_ledger': NFT_LEDGER,
                 'customer_allocations': CUSTOMER_ALLOCATIONS,
@@ -9686,6 +9711,7 @@ def load_ledger_data():
         
         # Load each data store
         HEALTH_WALLETS.update(data.get('health_wallets', {}))
+        WALLET_WITHDRAWALS.update(data.get('wallet_withdrawals', {}) or {})
         MEDICAL_PURCHASES.update(data.get('medical_purchases', {}))
         NFT_LEDGER.update(data.get('nft_ledger', {}))
         CUSTOMER_ALLOCATIONS.update(data.get('customer_allocations', {}))
@@ -11671,7 +11697,13 @@ def build_cashflow_monitoring() -> Dict[str, Any]:
     """Read-only monitoring list from ledgers, NFT seals, and live balances."""
     from services.premium_flow_reconciliation import monitoring_report, worked_specimen
     positions = _cashflow_position_books()
+    withdrawn: Dict[str, float] = {}
+    for row in WALLET_WITHDRAWALS.values():
+        if isinstance(row, dict) and row.get('status') in ('held', 'paid_out'):
+            owner = str(row.get('customer_id') or '')
+            withdrawn[owner] = round(withdrawn.get(owner, 0.0) + safe_float(row.get('amount'), 0.0), 2)
     report = monitoring_report(
+        withdrawn=withdrawn,
         customers=CUSTOMERS,
         policies=list(POLICIES.values()),
         bills=list(BILLING.values()),
@@ -11866,6 +11898,16 @@ def _wallet_non_claim_cash(wallet: Dict[str, Any]) -> float:
     return round(landed, 2)
 
 
+def _wallet_withdrawn_net(customer_id: str) -> float:
+    """Health-wallet money this customer has on hold or paid out to a bank."""
+    total = 0.0
+    for row in WALLET_WITHDRAWALS.values():
+        if (isinstance(row, dict) and row.get('customer_id') == customer_id
+                and row.get('status') in ('held', 'paid_out')):
+            total += safe_float(row.get('amount'), 0.0)
+    return round(total, 2)
+
+
 def _premium_savings_already_landed(customer_id: str) -> float:
     """Premium savings already sitting on this customer's books.
 
@@ -11893,6 +11935,12 @@ def _premium_savings_already_landed(customer_id: str) -> float:
     wallet_balance = 0.0
     if isinstance(wallet, dict):
         marker = max(marker, safe_float(wallet.get('savings_premiums_applied'), 0.0))
+        # Money the customer withdrew was still savings that landed. The
+        # wallet is read as if it were there, so it is not credited again.
+        withdrawn = _wallet_withdrawn_net(customer_id)
+        if withdrawn > 0:
+            wallet = dict(wallet)
+            wallet['balance'] = round(safe_float(wallet.get('balance'), 0.0) + withdrawn, 2)
         wallet_balance = _wallet_non_claim_cash(wallet)
         for row in wallet.get('transactions') or []:
             if not isinstance(row, dict):
@@ -15121,6 +15169,7 @@ def _ensure_test_port_state(server_port: int) -> None:
         _clear_if_dict(SESSIONS)
         _clear_if_dict(BILLING)
         _clear_if_dict(HEALTH_WALLETS)
+        _clear_if_dict(WALLET_WITHDRAWALS)
         _clear_if_dict(MEDICAL_PURCHASES)
         _clear_if_dict(INVESTMENT_ACCOUNTS)
         _clear_if_dict(CUSTOMER_ALLOCATIONS)
@@ -25991,6 +26040,22 @@ For claims or questions, please contact:
                     return
             except Exception as e:
                 print(f"Referral Rewards error (GET {path}): {e}")
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
+
+        # Health-wallet withdrawals (GET): own request, document, retention board.
+        if wallet_withdrawal_enabled and api_wallet_withdrawal_get and path.startswith(WALLET_WITHDRAWAL_API_PREFIXES):
+            try:
+                withdrawal_result = api_wallet_withdrawal_get(path, session, qs)
+                if withdrawal_result is not None:
+                    status_code, response_data = withdrawal_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception("wallet withdrawal GET failed for %s", path)
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
                 return
@@ -46725,6 +46790,28 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
                 return
         
+        # Health-wallet withdrawals (POST). Body and session are bound above.
+        if wallet_withdrawal_enabled and api_wallet_withdrawal_post and path.startswith(WALLET_WITHDRAWAL_API_PREFIXES):
+            try:
+                try:
+                    withdrawal_body = json.loads(body) if body else {}
+                except json.JSONDecodeError:
+                    withdrawal_body = {}
+                if not isinstance(withdrawal_body, dict):
+                    withdrawal_body = {}
+                withdrawal_result = api_wallet_withdrawal_post(path, session, withdrawal_body, client_ip)
+                if withdrawal_result is not None:
+                    status_code, response_data = withdrawal_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception("wallet withdrawal POST failed for %s", path)
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
+
         # ========== TRADING TERMINAL API (POST) ==========
         if path == '/api/terminal/order':
             if not trading_platform_enabled:
