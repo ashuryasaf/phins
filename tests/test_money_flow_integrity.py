@@ -750,6 +750,59 @@ class TestClaimPaymentToWallet:
         assert all(row['customer_id'] != 'CUST-MANY' for row in result['credited'])
         assert portal.HEALTH_WALLETS['CUST-MANY']['balance'] == 80.0
 
+    def test_a_large_wallet_uses_the_best_claim_combination(self):
+        import web_portal.server as portal
+        portal.CLAIMS['CLM-WIDE-SPENT'] = {
+            'id': 'CLM-WIDE-SPENT', 'customer_id': 'CUST-WIDE', 'status': 'paid', 'paid_amount': 6000.0,
+        }
+        portal.CLAIMS['CLM-WIDE-A'] = {
+            'id': 'CLM-WIDE-A', 'customer_id': 'CUST-WIDE', 'status': 'paid', 'paid_amount': 5000.0,
+        }
+        portal.CLAIMS['CLM-WIDE-B'] = {
+            'id': 'CLM-WIDE-B', 'customer_id': 'CUST-WIDE', 'status': 'paid', 'paid_amount': 5000.0,
+        }
+        portal.CLAIMS['CLM-WIDE-DUP'] = {
+            'id': 'CLM-WIDE-DUP', 'customer_id': 'CUST-WIDE', 'status': 'paid', 'paid_amount': 3000.0,
+        }
+        portal.POLICIES['POL-WIDE'] = {
+            'id': 'POL-WIDE', 'customer_id': 'CUST-WIDE', 'start_date': '2026-01-01',
+            'annual_premium': 1200.0, 'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING['BILL-WIDE'] = {
+            'id': 'BILL-WIDE', 'customer_id': 'CUST-WIDE', 'policy_id': 'POL-WIDE',
+            'payment_period': '2026-01', 'amount_paid': 200.0, 'status': 'paid',
+            'premium_allocation': {'risk_amount_paid': 120.0, 'savings_amount_paid': 80.0},
+        }
+        portal.HEALTH_WALLETS['CUST-WIDE'] = {
+            'customer_id': 'CUST-WIDE',
+            'balance': 10080.0,
+            'transactions': [
+                {'id': 'W-WIDE-SPENT', 'type': 'claim_payment', 'claim_id': 'CLM-WIDE-SPENT',
+                 'amount': 6000.0, 'previous_balance': 0.0, 'balance_after': 6000.0,
+                 'timestamp': '2026-02-01T00:00:00'},
+                {'id': 'W-WIDE-A', 'type': 'claim_payment', 'claim_id': 'CLM-WIDE-A',
+                 'amount': 5000.0, 'previous_balance': 0.0, 'balance_after': 5000.0,
+                 'timestamp': '2026-02-02T00:00:00'},
+                {'id': 'W-WIDE-B', 'type': 'claim_payment', 'claim_id': 'CLM-WIDE-B',
+                 'amount': 5000.0, 'previous_balance': 0.0, 'balance_after': 10000.0,
+                 'timestamp': '2026-02-03T00:00:00'},
+                {'id': 'W-WIDE-D1', 'type': 'claim_payment', 'claim_id': 'CLM-WIDE-DUP',
+                 'amount': 3000.0, 'previous_balance': 0.0, 'balance_after': 3000.0,
+                 'timestamp': '2026-03-01T00:00:00'},
+                {'id': 'W-WIDE-D2', 'type': 'claim_payment', 'claim_id': 'CLM-WIDE-DUP',
+                 'amount': 3000.0, 'previous_balance': 0.0, 'balance_after': 3000.0,
+                 'timestamp': '2026-03-02T00:00:00'},
+            ],
+        }
+
+        result = portal.reconcile_savings_premium_balances()
+        assert all(row['customer_id'] != 'CUST-WIDE' for row in result['credited'])
+        assert portal.HEALTH_WALLETS['CUST-WIDE']['balance'] == 10080.0
+        stamped = portal.INVESTMENT_ACCOUNTS.get('CUST-WIDE', {}).get('savings_premiums_applied')
+        if stamped is None:
+            stamped = portal.HEALTH_WALLETS['CUST-WIDE'].get('savings_premiums_applied')
+        assert stamped == 80.0
+
     def test_a_spent_claim_is_not_set_aside_ahead_of_claims_still_in_the_wallet(self):
         import web_portal.server as portal
         portal.CLAIMS['CLM-BIG-SPENT'] = {

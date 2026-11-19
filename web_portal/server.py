@@ -11700,11 +11700,25 @@ _PREMIUM_SAVINGS_DEPOSIT_TYPES = frozenset({
 _SAVINGS_RECONCILE_SKIP = frozenset({'CUST-X', 'PHINS-CORPORATE', 'PHINS', 'SYSTEM'})
 
 
+def _max_subset_cents(items: List[int], limit: int) -> int:
+    """Largest sum of ``items`` that does not exceed ``limit``.
+
+    One bit per cent. Each payment is used once. The result is the best
+    combination, including when the balance is large.
+    """
+    bits = 1
+    mask = (1 << (limit + 1)) - 1
+    for cap in items:
+        bits = (bits | (bits << cap)) & mask
+    return bits.bit_length() - 1
+
+
 def _max_intact_cover(caps: List[float], balance: float) -> float:
     """Largest sum of intact payments that can still sit in this balance.
 
     A payment larger than the live balance has left the wallet. It does not
-    count, and it does not hide the cash left beside repeated lines.
+    count, and it does not hide the cash left beside repeated lines. The
+    cover is the best combination that fits, not the largest single payment.
     """
     limit = int(round(max(0.0, balance) * 100))
     if limit <= 0:
@@ -11719,24 +11733,7 @@ def _max_intact_cover(caps: List[float], balance: float) -> float:
     total = sum(items)
     if total <= limit:
         return round(total / 100.0, 2)
-    # A very wide balance is packed from the largest fitting payment. Cash
-    # those payments cannot hold stays outside the cover.
-    if limit > 1_000_000:
-        remaining = limit
-        for cap in sorted(items, reverse=True):
-            if cap <= remaining:
-                remaining -= cap
-        return round((limit - remaining) / 100.0, 2)
-    reachable = bytearray(limit + 1)
-    reachable[0] = 1
-    for cap in items:
-        for value in range(limit - cap, -1, -1):
-            if reachable[value]:
-                reachable[value + cap] = 1
-    best = limit
-    while best > 0 and not reachable[best]:
-        best -= 1
-    return round(best / 100.0, 2)
+    return round(_max_subset_cents(items, limit) / 100.0, 2)
 
 
 def _wallet_non_claim_cash(wallet: Dict[str, Any]) -> float:
