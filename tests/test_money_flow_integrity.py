@@ -914,6 +914,121 @@ class TestClaimPaymentToWallet:
         assert portal.HEALTH_WALLETS['CUST-LEFT']['balance'] == 12500.0
         assert portal.HEALTH_WALLETS['CUST-LEFT'].get('savings_premiums_applied') == 500.0
 
+    def _savings_books(self, portal, customer_id, policy_id, bill_id):
+        portal.POLICIES[policy_id] = {
+            'id': policy_id, 'customer_id': customer_id, 'start_date': '2026-01-01',
+            'annual_premium': 1200.0, 'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING[bill_id] = {
+            'id': bill_id, 'customer_id': customer_id, 'policy_id': policy_id,
+            'payment_period': '2026-01', 'amount_paid': 200.0, 'status': 'paid',
+            'premium_allocation': {'risk_amount_paid': 120.0, 'savings_amount_paid': 80.0},
+        }
+
+    def test_many_small_claims_do_not_hide_savings_left_beside_them(self):
+        import web_portal.server as portal
+        customer_id = 'CUST-MANY-SMALL'
+        transactions = []
+        for n in range(1, 20):
+            claim_id = f'CLM-SMALL-{n}'
+            portal.CLAIMS[claim_id] = {
+                'id': claim_id, 'customer_id': customer_id, 'status': 'paid', 'paid_amount': 1.0,
+            }
+            transactions.append({
+                'id': f'W-SMALL-{n}', 'type': 'claim_payment', 'claim_id': claim_id,
+                'amount': 1.0, 'timestamp': f'2026-02-{n:02d}T00:00:00',
+            })
+        portal.CLAIMS['CLM-SMALL-DUP'] = {
+            'id': 'CLM-SMALL-DUP', 'customer_id': customer_id, 'status': 'paid', 'paid_amount': 4500.0,
+        }
+        transactions.extend([
+            {'id': 'W-SMALL-D1', 'type': 'claim_payment', 'claim_id': 'CLM-SMALL-DUP',
+             'amount': 4500.0, 'timestamp': '2026-03-01T00:00:00'},
+            {'id': 'W-SMALL-D2', 'type': 'claim_payment', 'claim_id': 'CLM-SMALL-DUP',
+             'amount': 4500.0, 'timestamp': '2026-03-02T00:00:00'},
+        ])
+        self._savings_books(portal, customer_id, 'POL-MANY-SMALL', 'BILL-MANY-SMALL')
+        portal.HEALTH_WALLETS[customer_id] = {
+            'customer_id': customer_id, 'balance': 80.0, 'transactions': transactions,
+        }
+
+        result = portal.reconcile_savings_premium_balances()
+        credited = [row for row in result['credited'] if row['customer_id'] == customer_id]
+        assert len(credited) == 1
+        assert credited[0]['credited'] == 19.0
+        assert portal.INVESTMENT_ACCOUNTS.get(customer_id, {}).get('savings_premiums_applied') == 80.0
+
+    def test_a_cover_already_reached_is_not_replaced_by_the_whole_balance(self):
+        import web_portal.server as portal
+        customer_id = 'CUST-REACHED'
+        amounts = [float(1 << n) for n in range(17)]
+        cover = float(sum(amounts))
+        balance = cover + 80.0
+        transactions = []
+        for n, amount in enumerate(amounts, start=1):
+            claim_id = f'CLM-REACHED-{n}'
+            portal.CLAIMS[claim_id] = {
+                'id': claim_id, 'customer_id': customer_id, 'status': 'paid', 'paid_amount': amount,
+            }
+            transactions.append({
+                'id': f'W-REACHED-{n}', 'type': 'claim_payment', 'claim_id': claim_id,
+                'amount': amount, 'timestamp': f'2026-02-{n:02d}T00:00:00',
+            })
+        portal.CLAIMS['CLM-REACHED-DUP'] = {
+            'id': 'CLM-REACHED-DUP', 'customer_id': customer_id, 'status': 'paid', 'paid_amount': 4500.0,
+        }
+        transactions.extend([
+            {'id': 'W-REACHED-D1', 'type': 'claim_payment', 'claim_id': 'CLM-REACHED-DUP',
+             'amount': 4500.0, 'timestamp': '2026-03-01T00:00:00'},
+            {'id': 'W-REACHED-D2', 'type': 'claim_payment', 'claim_id': 'CLM-REACHED-DUP',
+             'amount': 4500.0, 'timestamp': '2026-03-02T00:00:00'},
+        ])
+        self._savings_books(portal, customer_id, 'POL-REACHED', 'BILL-REACHED')
+        portal.HEALTH_WALLETS[customer_id] = {
+            'customer_id': customer_id, 'balance': balance, 'transactions': transactions,
+        }
+
+        assert portal._max_intact_cover(amounts, balance) == cover
+        result = portal.reconcile_savings_premium_balances()
+        assert all(row['customer_id'] != customer_id for row in result['credited'])
+        assert portal.HEALTH_WALLETS[customer_id]['balance'] == balance
+
+    def test_a_payment_after_the_cover_cutoff_is_still_set_aside(self):
+        import web_portal.server as portal
+        customer_id = 'CUST-AFTER'
+        amounts = [float(1 << n) for n in range(17)]
+        amounts.append(80.0)
+        balance = float(sum(amounts))
+        transactions = []
+        for n, amount in enumerate(amounts, start=1):
+            claim_id = f'CLM-AFTER-{n}'
+            portal.CLAIMS[claim_id] = {
+                'id': claim_id, 'customer_id': customer_id, 'status': 'paid', 'paid_amount': amount,
+            }
+            transactions.append({
+                'id': f'W-AFTER-{n}', 'type': 'claim_payment', 'claim_id': claim_id,
+                'amount': amount, 'timestamp': f'2026-02-{n:02d}T00:00:00',
+            })
+        portal.CLAIMS['CLM-AFTER-DUP'] = {
+            'id': 'CLM-AFTER-DUP', 'customer_id': customer_id, 'status': 'paid', 'paid_amount': 4500.0,
+        }
+        transactions.extend([
+            {'id': 'W-AFTER-D1', 'type': 'claim_payment', 'claim_id': 'CLM-AFTER-DUP',
+             'amount': 4500.0, 'timestamp': '2026-03-01T00:00:00'},
+            {'id': 'W-AFTER-D2', 'type': 'claim_payment', 'claim_id': 'CLM-AFTER-DUP',
+             'amount': 4500.0, 'timestamp': '2026-03-02T00:00:00'},
+        ])
+        self._savings_books(portal, customer_id, 'POL-AFTER', 'BILL-AFTER')
+        portal.HEALTH_WALLETS[customer_id] = {
+            'customer_id': customer_id, 'balance': balance, 'transactions': transactions,
+        }
+
+        assert portal._max_intact_cover(amounts, balance) == balance
+        result = portal.reconcile_savings_premium_balances()
+        credited = [row for row in result['credited'] if row['customer_id'] == customer_id]
+        assert len(credited) == 1
+        assert credited[0]['credited'] == 80.0
+
     def test_a_spent_claim_is_not_set_aside_ahead_of_claims_still_in_the_wallet(self):
         import web_portal.server as portal
         portal.CLAIMS['CLM-BIG-SPENT'] = {
