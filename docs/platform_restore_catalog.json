@@ -1,24 +1,24 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-10T12:20:21Z",
-  "latest": "20261010T122007Z",
+  "updated_at": "2026-10-12T06:08:48Z",
+  "latest": "20261012T060837Z",
   "count": 1,
   "backups": [
     {
-      "backup_id": "20261010T122007Z",
-      "created_at": "2026-10-10T12:20:19Z",
-      "git_commit": "49ddc064bdfdd55e00f8a3950c33de041c4241fa",
+      "backup_id": "20261012T060837Z",
+      "created_at": "2026-10-12T06:08:47Z",
+      "git_commit": "d44179b93a996ccd07abab6ee7acca667317d8d0",
       "git_status_dirty": false,
       "has_db_dump": false,
-      "snapshot_sha256": "53a69e4cbaf2370ad801d3e4438ffe4a28114c2a70c46df35facbe830055b485",
-      "snapshot_bytes": 23734556,
-      "repository_bundle_sha256": "b2c44fadf417e730903b8fa45262d310424b36ae826569f74c2231cb04d1d9da",
-      "repository_bundle_bytes": 437052142,
-      "repository_ref_count": 784,
-      "repository_head": "49ddc064bdfdd55e00f8a3950c33de041c4241fa",
-      "backup_dir": "/workspace/backups/20261010T122007Z",
-      "verify_command": "scripts/backup_platform.sh --verify /workspace/backups/20261010T122007Z",
-      "restore_code": "git checkout 49ddc064bdfdd55e00f8a3950c33de041c4241fa"
+      "snapshot_sha256": "631f776fb95ed61e6351621b7e6cecf667db488f12690fb42aea167b03a4f54f",
+      "snapshot_bytes": 23749744,
+      "repository_bundle_sha256": "9e72a407d0d2bf0f50872c5c58a974cecc9620423723fd09d8081ee0a08a1910",
+      "repository_bundle_bytes": 438732172,
+      "repository_ref_count": 787,
+      "repository_head": "d44179b93a996ccd07abab6ee7acca667317d8d0",
+      "backup_dir": "/workspace/backups/20261012T060837Z",
+      "verify_command": "scripts/backup_platform.sh --verify /workspace/backups/20261012T060837Z",
+      "restore_code": "git checkout d44179b93a996ccd07abab6ee7acca667317d8d0"
     }
   ]
 }
