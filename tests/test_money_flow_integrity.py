@@ -664,6 +664,100 @@ class TestClaimPaymentToWallet:
         assert all(row['customer_id'] != 'CUST-GONE' for row in result['credited'])
         assert portal.HEALTH_WALLETS['CUST-GONE']['balance'] == 80.0
 
+    def test_a_spent_claim_is_not_set_aside_ahead_of_claims_still_in_the_wallet(self):
+        import web_portal.server as portal
+        portal.CLAIMS['CLM-BIG-SPENT'] = {
+            'id': 'CLM-BIG-SPENT', 'customer_id': 'CUST-PACK', 'status': 'paid', 'paid_amount': 3000.0,
+        }
+        portal.CLAIMS['CLM-HELD-A'] = {
+            'id': 'CLM-HELD-A', 'customer_id': 'CUST-PACK', 'status': 'paid', 'paid_amount': 2000.0,
+        }
+        portal.CLAIMS['CLM-HELD-B'] = {
+            'id': 'CLM-HELD-B', 'customer_id': 'CUST-PACK', 'status': 'paid', 'paid_amount': 2000.0,
+        }
+        portal.CLAIMS['CLM-PACK-DUP'] = {
+            'id': 'CLM-PACK-DUP', 'customer_id': 'CUST-PACK', 'status': 'paid', 'paid_amount': 4500.0,
+        }
+        portal.POLICIES['POL-PACK'] = {
+            'id': 'POL-PACK', 'customer_id': 'CUST-PACK', 'start_date': '2026-01-01',
+            'annual_premium': 1200.0, 'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING['BILL-PACK'] = {
+            'id': 'BILL-PACK', 'customer_id': 'CUST-PACK', 'policy_id': 'POL-PACK',
+            'payment_period': '2026-01', 'amount_paid': 200.0, 'status': 'paid',
+            'premium_allocation': {'risk_amount_paid': 120.0, 'savings_amount_paid': 80.0},
+        }
+        portal.HEALTH_WALLETS['CUST-PACK'] = {
+            'customer_id': 'CUST-PACK',
+            'balance': 4000.0,
+            'transactions': [
+                {'id': 'W-BIG', 'type': 'claim_payment', 'claim_id': 'CLM-BIG-SPENT',
+                 'amount': 3000.0, 'previous_balance': 0.0, 'balance_after': 3000.0,
+                 'timestamp': '2026-02-01T00:00:00'},
+                {'id': 'W-A', 'type': 'claim_payment', 'claim_id': 'CLM-HELD-A',
+                 'amount': 2000.0, 'previous_balance': 0.0, 'balance_after': 2000.0,
+                 'timestamp': '2026-02-02T00:00:00'},
+                {'id': 'W-B', 'type': 'claim_payment', 'claim_id': 'CLM-HELD-B',
+                 'amount': 2000.0, 'previous_balance': 0.0, 'balance_after': 4000.0,
+                 'timestamp': '2026-02-03T00:00:00'},
+                {'id': 'W-PD1', 'type': 'claim_payment', 'claim_id': 'CLM-PACK-DUP',
+                 'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+                 'timestamp': '2026-03-01T00:00:00'},
+                {'id': 'W-PD2', 'type': 'claim_payment', 'claim_id': 'CLM-PACK-DUP',
+                 'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+                 'timestamp': '2026-03-02T00:00:00'},
+            ],
+        }
+
+        result = portal.reconcile_savings_premium_balances()
+        packed = [row for row in result['credited'] if row['customer_id'] == 'CUST-PACK']
+        assert len(packed) == 1
+        assert packed[0]['credited'] == 80.0
+        assert portal.INVESTMENT_ACCOUNTS.get('CUST-PACK', {}).get('savings_premiums_applied') == 80.0
+
+    def test_savings_beside_a_held_claim_is_not_credited_again(self):
+        import web_portal.server as portal
+        portal.CLAIMS['CLM-STILL'] = {
+            'id': 'CLM-STILL', 'customer_id': 'CUST-BESIDE', 'status': 'paid', 'paid_amount': 4500.0,
+        }
+        portal.CLAIMS['CLM-SMALL-SPENT'] = {
+            'id': 'CLM-SMALL-SPENT', 'customer_id': 'CUST-BESIDE', 'status': 'paid', 'paid_amount': 100.0,
+        }
+        portal.CLAIMS['CLM-BESIDE-DUP'] = {
+            'id': 'CLM-BESIDE-DUP', 'customer_id': 'CUST-BESIDE', 'status': 'paid', 'paid_amount': 4500.0,
+        }
+        portal.POLICIES['POL-BESIDE'] = {
+            'id': 'POL-BESIDE', 'customer_id': 'CUST-BESIDE', 'start_date': '2026-01-01',
+            'annual_premium': 1200.0, 'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING['BILL-BESIDE'] = {
+            'id': 'BILL-BESIDE', 'customer_id': 'CUST-BESIDE', 'policy_id': 'POL-BESIDE',
+            'payment_period': '2026-01', 'amount_paid': 200.0, 'status': 'paid',
+            'premium_allocation': {'risk_amount_paid': 120.0, 'savings_amount_paid': 80.0},
+        }
+        portal.HEALTH_WALLETS['CUST-BESIDE'] = {
+            'customer_id': 'CUST-BESIDE',
+            'balance': 4580.0,
+            'transactions': [
+                {'id': 'W-STILL', 'type': 'claim_payment', 'claim_id': 'CLM-STILL',
+                 'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+                 'timestamp': '2026-02-01T00:00:00'},
+                {'id': 'W-SMALL', 'type': 'claim_payment', 'claim_id': 'CLM-SMALL-SPENT',
+                 'amount': 100.0, 'previous_balance': 0.0, 'balance_after': 100.0,
+                 'timestamp': '2026-02-02T00:00:00'},
+                {'id': 'W-BD1', 'type': 'claim_payment', 'claim_id': 'CLM-BESIDE-DUP',
+                 'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+                 'timestamp': '2026-03-01T00:00:00'},
+                {'id': 'W-BD2', 'type': 'claim_payment', 'claim_id': 'CLM-BESIDE-DUP',
+                 'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+                 'timestamp': '2026-03-02T00:00:00'},
+            ],
+        }
+
+        result = portal.reconcile_savings_premium_balances()
+        assert all(row['customer_id'] != 'CUST-BESIDE' for row in result['credited'])
+        assert portal.HEALTH_WALLETS['CUST-BESIDE']['balance'] == 4580.0
+
     def test_after_journal_miss_still_reports_a_durable_repair(self, monkeypatch):
         import web_portal.server as portal
         self._setup_customer_and_policy(portal)

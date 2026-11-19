@@ -11684,15 +11684,39 @@ _PREMIUM_SAVINGS_DEPOSIT_TYPES = frozenset({
 _SAVINGS_RECONCILE_SKIP = frozenset({'CUST-X', 'PHINS-CORPORATE', 'PHINS', 'SYSTEM'})
 
 
+def _max_intact_cover(caps: List[float], balance: float) -> float:
+    """Largest sum of intact payments that can still sit in this balance.
+
+    A spent payment is not set aside when other payments explain more of
+    the balance. If the combination is too large to settle exactly, the
+    whole balance is treated as claim cash so it is not stamped as savings.
+    """
+    limit = int(round(max(0.0, balance) * 100))
+    items = [int(round(cap * 100)) for cap in caps if cap > 0.005]
+    if limit <= 0 or not items:
+        return 0.0
+    if len(items) > 18:
+        return round(max(0.0, balance), 2)
+    reachable = {0}
+    for cap in items:
+        if cap > limit:
+            continue
+        additions = {value + cap for value in reachable if value + cap <= limit}
+        reachable.update(additions)
+        if len(reachable) > 100000:
+            return round(max(0.0, balance), 2)
+    return round(max(reachable) / 100.0, 2)
+
+
 def _wallet_non_claim_cash(wallet: Dict[str, Any]) -> float:
     """Wallet cash that is not one paid claim still sitting in the balance.
 
     Duplicate claim lines count once, up to that claim's paid amount. Cash
     that was already in the wallet before the first claim credit still
     counts after the claim is spent. A later spend does not open a new gap.
-    An intact claim counts only while the live balance can still hold it.
-    A spent claim, including one whose first line stores a starting balance
-    of zero, does not hide cash left beside repeated lines.
+    Intact payments are set aside together, up to the largest sum the live
+    balance can hold. A spent payment does not take that place, and it does
+    not hide cash left beside repeated lines.
     """
     from services.premium_flow_reconciliation import paid_claim_amount
     balance = safe_float(wallet.get('balance'), 0.0)
@@ -11743,14 +11767,11 @@ def _wallet_non_claim_cash(wallet: Dict[str, Any]) -> float:
     if pre_claim is not None:
         landed = max(landed, pre_claim)
     # Repeated lines that the live balance cannot hold are not a second
-    # copy of that claim. An intact payment is set aside only while the
-    # balance can still hold it. A spent claim does not consume the cash
-    # left beside those repeated lines.
+    # copy of that claim. Cash left after the largest set of intact
+    # payments the balance can hold is not one of those claims.
     if duplicated_caps and capped > balance + 0.01:
-        remaining = round(max(0.0, balance), 2)
-        for cap in sorted(intact_caps, reverse=True):
-            if cap <= remaining + 0.01:
-                remaining = round(remaining - cap, 2)
+        cover = _max_intact_cover(intact_caps, balance)
+        remaining = round(max(0.0, balance - cover), 2)
         if remaining + 0.01 < min(duplicated_caps):
             landed = max(landed, remaining)
     return round(landed, 2)
