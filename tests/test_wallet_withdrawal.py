@@ -350,13 +350,47 @@ def test_the_unified_document_carries_the_details_the_portrait_and_the_signature
 
 def test_a_changed_answer_is_said_as_a_change_and_asks_for_a_new_signature(books):
     wid = _complete_draft(400.00)
+    kept = portal.WALLET_WITHDRAWALS[wid]["documents"]["bank_document"]["sha256"]
     view = withdrawals.answer(CUSTOMER, wid, "amount", {"amount": 250})
     assert view["amount"] == 250.00
     assert view["messages"][-2] == {**view["messages"][-2], "from": "user", "text": "Changed the amount: $250.00"}
     assert view["messages"][-1]["text"].startswith("Updated. ")
     assert view["step"]["id"] == "signature" and view["signature"] is None
+    assert view["documents"]["bank_document"]["sha256"] == kept
     with pytest.raises(WithdrawalError):
         withdrawals.file_request(CUSTOMER, wid, client_ip="127.0.0.1")
+
+
+def test_changing_the_bank_account_drops_the_old_bank_document(books):
+    wid = _complete_draft(400.00)
+    old_sha = portal.WALLET_WITHDRAWALS[wid]["documents"]["bank_document"]["sha256"]
+    identity = portal.WALLET_WITHDRAWALS[wid]["documents"]["id_document"]["sha256"]
+    view = withdrawals.answer(CUSTOMER, wid, "bank", {
+        "holder": "Dana Levi", "bank_name": "Local Bank", "country": "IL",
+        "account": "123456", "branch": "701",
+    })
+    assert view["bank"]["account_last4"] == "3456"
+    assert view["answers"]["bank_document"] is False
+    assert "bank_document" not in view["documents"]
+    assert view["documents"]["id_document"]["sha256"] == identity
+    assert view["documents"]["portrait"]["sha256"]
+    assert view["signature"] is None
+    assert view["step"]["id"] == "bank_document"
+    with pytest.raises(WithdrawalError) as err:
+        withdrawals.file_request(CUSTOMER, wid)
+    assert err.value.code == "incomplete"
+
+    other = Image.new("RGB", (600, 300), (255, 250, 240))
+    ImageDraw.Draw(other).rectangle([40, 40, 200, 90], fill=(90, 40, 20))
+    view = withdrawals.attach_document(CUSTOMER, wid, "bank_document", "image/png", _b64(_png(other)))
+    assert view["documents"]["bank_document"]["sha256"] != old_sha
+    assert view["step"]["id"] == "signature"
+    withdrawals.sign(CUSTOMER, wid, "Dana Levi", _signature_url())
+    filed = withdrawals.file_request(CUSTOMER, wid, client_ip="127.0.0.1")
+    assert filed["status"] == "held"
+    sealed = portal.WALLET_WITHDRAWALS[wid]["sealed"]
+    assert sealed["bank"]["account_last4"] == "3456"
+    assert sealed["documents"]["bank_document"]["sha256"] != old_sha
 
 
 def test_the_return_bar_is_hidden_inside_a_frame():
@@ -425,6 +459,60 @@ def test_a_failed_seal_returns_the_hold(books, monkeypatch):
     monkeypatch.undo()
     assert withdrawals.file_request(CUSTOMER, wid)["status"] == "held"
     assert wallet["balance"] == 600.00
+
+
+def _live_request_tokens(wid):
+    return [
+        token for token in portal.NFT_LEDGER.values()
+        if (token.get("metadata") or {}).get("withdrawal_id") == wid
+        and token.get("transaction_type") == "wallet_withdrawal_request"
+        and token.get("status") != "voided"
+    ]
+
+
+def test_a_mint_that_does_not_finish_filing_is_not_left_as_a_live_hold(books, monkeypatch):
+    wid = _complete_draft(400.00)
+    real = portal.record_transaction
+
+    def omit_token_id(*args, **kwargs):
+        minted = real(*args, **kwargs)
+        return {key: value for key, value in minted.items() if key != "nft_token_id"}
+
+    monkeypatch.setattr(portal, "record_transaction", omit_token_id)
+    with pytest.raises(WithdrawalError) as err:
+        withdrawals.file_request(CUSTOMER, wid)
+    assert err.value.code == "nft_failed"
+    wallet = portal.HEALTH_WALLETS[CUSTOMER]
+    record = portal.WALLET_WITHDRAWALS[wid]
+    assert wallet["balance"] == 1000.00
+    assert not [row for row in wallet["transactions"] if row["type"] == "withdrawal_hold"]
+    assert record["status"] == "draft" and "seal" not in record
+    assert _live_request_tokens(wid) == []
+    assert "wallet_withdrawal_reversed" in _nft_kinds(wid)
+    anchors = portal._legal_doc_signatures_for(f"LGL-{wid}")
+    assert any(item.get("voided") for item in anchors)
+    ledger_types = [
+        entry.get("type") or entry.get("event_type")
+        for entry in portal.TRANSACTION_LEDGER.values()
+        if ((entry.get("metadata") or {}).get("withdrawal_id") == wid)
+    ]
+    assert "wallet_withdrawal_request" in ledger_types
+    assert "wallet_withdrawal_reversed" in ledger_types
+    assert "nft_void_pending" not in (record.get("flags") or [])
+
+    def mint_then_fail(*args, **kwargs):
+        real(*args, **kwargs)
+        raise RuntimeError("ledger broke after the mint")
+
+    monkeypatch.setattr(portal, "record_transaction", mint_then_fail)
+    with pytest.raises(WithdrawalError) as err:
+        withdrawals.file_request(CUSTOMER, wid)
+    assert err.value.code == "filing_failed"
+    assert wallet["balance"] == 1000.00
+    assert not [row for row in wallet["transactions"] if row["type"] == "withdrawal_hold"]
+    assert record["status"] == "draft" and "seal" not in record
+    assert _live_request_tokens(wid) == []
+    assert "nft_void_pending" in record["flags"]
 
 
 def test_filing_is_refused_when_the_wallet_no_longer_covers_the_amount(books):

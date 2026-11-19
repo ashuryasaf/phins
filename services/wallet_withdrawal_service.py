@@ -5,8 +5,8 @@ request is a Phin chat that starts from the customer record already on file
 and collects the amount, the bank account, an identity document, a portrait
 cut from that document, a bank document, and a drawn signature.
 
-Filing does three things, in this order, and undoes the first if a later one
-fails:
+Filing does three things, in this order, and undoes each one that landed if a
+later one fails:
 
 1. The amount leaves the wallet balance into a hold (``withdrawal_hold``).
 2. The signature is anchored through the legal-document signer
@@ -489,10 +489,16 @@ def _invalidate_from(record: Dict[str, Any], step: str) -> None:
     if step != "signature" and answers.get("signature"):
         answers.pop("signature", None)
         record.pop("signature", None)
+    documents = record.get("documents") or {}
     if step == "id_document":
+        # The portrait was cut from this document.
         answers.pop("photo", None)
-        (record.get("documents") or {}).pop("portrait", None)
-        (record.get("documents") or {}).pop("photo_source", None)
+        documents.pop("portrait", None)
+        documents.pop("photo_source", None)
+    if step == "bank":
+        # The statement attested the previous account.
+        answers.pop("bank_document", None)
+        documents.pop("bank_document", None)
 
 
 def _prompt(record: Dict[str, Any], step: str) -> Dict[str, Any]:
@@ -1100,6 +1106,65 @@ def _record_nft(record: Dict[str, Any], tx_type: str, amount: float, description
     return writer(record["customer_id"], tx_type, _money(amount), description, metadata)
 
 
+def _request_tokens(record: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Wallet-withdrawal NFTs still marked as a live hold for this request."""
+    portal = _portal()
+    ledger = getattr(portal, "NFT_LEDGER", None) if portal else None
+    if not isinstance(ledger, dict):
+        return []
+    found = []
+    for token in list(ledger.values()):
+        if not isinstance(token, dict) or token.get("status") == "voided":
+            continue
+        if token.get("transaction_type") != "wallet_withdrawal_request":
+            continue
+        meta = token.get("metadata") if isinstance(token.get("metadata"), dict) else {}
+        if meta.get("withdrawal_id") == record.get("id"):
+            found.append(token)
+    return found
+
+
+def _rollback_mint(record: Dict[str, Any], ledger_tx: Any, amount: float) -> None:
+    """A mint from a filing that did not finish is not left as a live hold.
+
+    The token stays on the chain (its hash is the next seal's parent) and is
+    marked void. A reversal row then covers the platform-ledger entry the same
+    way a cancelled hold does. A ledger that cannot take the reversal is
+    flagged; the token is still void.
+    """
+    minted = _request_tokens(record)
+    known = str(ledger_tx.get("nft_token_id") or "") if isinstance(ledger_tx, dict) else ""
+    if known:
+        portal = _portal()
+        ledger = getattr(portal, "NFT_LEDGER", None) if portal else None
+        token = ledger.get(known) if isinstance(ledger, dict) else None
+        if isinstance(token, dict) and token not in minted and token.get("status") != "voided":
+            minted.append(token)
+    ledger_ids: List[str] = []
+    if isinstance(ledger_tx, dict) and ledger_tx.get("id"):
+        ledger_ids.append(str(ledger_tx["id"]))
+    for token in minted:
+        tx_id = str(token.get("transaction_id") or "")
+        if tx_id and tx_id not in ledger_ids:
+            ledger_ids.append(tx_id)
+    if not minted and not ledger_ids:
+        return
+    for token in minted:
+        token["status"] = "voided"
+    try:
+        _record_nft(
+            record, "wallet_withdrawal_reversed", amount,
+            f"Health wallet withdrawal {record['id']} was not filed; the hold was not kept",
+            {
+                "reversed_by": "filing_rollback",
+                "voids_nft_token_id": known or (str(minted[0].get("token_id") or "") if minted else ""),
+                "voids_ledger_tx_id": ledger_ids[0] if ledger_ids else "",
+            },
+        )
+    except Exception:
+        record.setdefault("flags", []).append("nft_void_pending")
+
+
 def file_request(customer_id: str, withdrawal_id: str, *, client_ip: str = "",
                  session: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Hold the amount, anchor the signature, and mint the wallet NFT."""
@@ -1137,6 +1202,7 @@ def file_request(customer_id: str, withdrawal_id: str, *, client_ip: str = "",
             )
         hold_row = _wallet_row(wallet, "withdrawal_hold", amount, record["id"])
         anchor_request: Optional[Dict[str, Any]] = None
+        ledger_tx: Optional[Dict[str, Any]] = None
         stamp = _now()
         window_days = retention_days()
         release_after = _iso(stamp + timedelta(days=window_days))
@@ -1172,7 +1238,7 @@ def file_request(customer_id: str, withdrawal_id: str, *, client_ip: str = "",
                 "legal_entry_hash": anchored.get("entry_hash"),
                 "wallet_transaction_id": hold_row["id"],
             }
-            ledger_tx = _record_nft(
+            minted = _record_nft(
                 record, "wallet_withdrawal_request", amount,
                 f"Health wallet withdrawal {record['id']} held for payout",
                 {
@@ -1187,10 +1253,12 @@ def file_request(customer_id: str, withdrawal_id: str, *, client_ip: str = "",
                     "signature_sha256": signature.get("sha256"),
                 },
             )
-            if not ledger_tx.get("nft_token_id"):
+            if isinstance(minted, dict):
+                ledger_tx = minted
+            if not isinstance(minted, dict) or not minted.get("nft_token_id"):
                 raise WithdrawalError("The wallet NFT could not be minted", 503, "nft_failed")
         except Exception as exc:
-            # The hold comes back before anything else is said.
+            # The hold comes back, and a mint from this attempt is not left as a live token.
             credit_account_balance(wallet, amount)
             wallet["transactions"] = [row for row in wallet.get("transactions") or [] if row is not hold_row]
             if anchor_request is not None:
@@ -1200,6 +1268,7 @@ def file_request(customer_id: str, withdrawal_id: str, *, client_ip: str = "",
                            session or {"username": "wallet_withdrawal", "role": "system"})
                 except Exception:
                     record.setdefault("flags", []).append("anchor_void_pending")
+            _rollback_mint(record, ledger_tx, amount)
             record.pop("sealed", None)
             record.pop("seal", None)
             _touch(record)
