@@ -1050,6 +1050,11 @@
           <div class="stat-value">+$</div>
           <div class="stat-change">Card, PayPal, crypto</div>
         </button>
+        <a class="stat-box phins-wallet-add" id="wallet-withdraw-link" href="/wallet-withdraw-chat.html" style="text-decoration: none; color: inherit; display: block;">
+          <div class="stat-label">Withdraw</div>
+          <div class="stat-value" id="wallet-withdraw-value">&minus;$</div>
+          <div class="stat-change" id="wallet-withdraw-note">To your bank account</div>
+        </a>
       </div>
 
       <div class="phins-wallet-actions">
@@ -8442,6 +8447,36 @@
       
       // Update investment display too
       updateInvestmentDisplay(allBalances.investment);
+      refreshWithdrawalTile();
+    }
+
+    // The Withdraw tile names an open request so the customer returns to it
+    // instead of starting a second one. It only reads.
+    let withdrawalTileLoading = false;
+    async function refreshWithdrawalTile() {
+      const note = document.getElementById('wallet-withdraw-note');
+      const value = document.getElementById('wallet-withdraw-value');
+      if (!note || !value || withdrawalTileLoading || typeof authToken === 'undefined' || !authToken) return;
+      withdrawalTileLoading = true;
+      try {
+        const res = await fetch('/api/customer/wallet-withdrawals', { headers: { Authorization: `Bearer ${authToken}` } });
+        if (!res.ok) return;
+        const open = (await res.json()).open;
+        if (open && open.status === 'held') {
+          value.textContent = `$${Number(open.amount || 0).toFixed(2)}`;
+          note.textContent = 'Held for transfer · view or cancel';
+        } else if (open && open.status === 'draft') {
+          value.innerHTML = '&minus;$';
+          note.textContent = 'Continue your request';
+        } else {
+          value.innerHTML = '&minus;$';
+          note.textContent = 'To your bank account';
+        }
+      } catch (err) {
+        /* the tile keeps its default text */
+      } finally {
+        withdrawalTileLoading = false;
+      }
     }
     
     // Show transfer modal for moving funds between accounts
