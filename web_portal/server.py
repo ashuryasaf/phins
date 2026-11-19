@@ -12103,6 +12103,7 @@ def _cashflow_repair_refused(before: Dict[str, Any]) -> Dict[str, Any]:
 
 # Re-entrant: the repair posts a claim through process_claim_payment_to_wallet,
 # and that payment takes this same lock so its new row survives the list rebuild.
+# The pay routes wait here too, then write onto the lists the repair left in place.
 _CASHFLOW_REPAIR_LOCK = threading.RLock()
 
 
