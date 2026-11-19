@@ -361,6 +361,37 @@ class TestClaimPaymentToWallet:
         assert wallet['balance'] == 100.0
         assert len(wallet['transactions']) == 3
 
+    def test_spent_duplicate_does_not_take_the_paid_claim(self):
+        import web_portal.server as portal
+        self._setup_customer_and_policy(portal)
+        claim = portal.CLAIMS['CLM-TEST-PAY']
+        claim['status'] = 'paid'
+        claim['paid_amount'] = 4500.0
+        portal.PHINS_BALANCE_SHEET['claims_reserve'] = 10000.0
+        portal.PHINS_BALANCE_SHEET['transactions'] = [
+            {'tx_id': 'BS-1', 'category': 'claims_paid', 'claim_id': 'CLM-TEST-PAY', 'amount': 4500.0, 'timestamp': '2026-01-01T00:00:00'},
+            {'tx_id': 'BS-2', 'category': 'claims_paid', 'claim_id': 'CLM-TEST-PAY', 'amount': 4500.0, 'timestamp': '2026-01-02T00:00:00'},
+            {'tx_id': 'BS-3', 'category': 'claims_paid', 'claim_id': 'CLM-TEST-PAY', 'amount': 4500.0, 'timestamp': '2026-01-03T00:00:00'},
+        ]
+        portal.HEALTH_WALLETS['CUST-TEST-PAY'] = {
+            'customer_id': 'CUST-TEST-PAY',
+            'balance': 9000.0,
+            'transactions': [
+                {'id': f'W{n}', 'type': 'claim_payment', 'claim_id': 'CLM-TEST-PAY',
+                 'amount': 4500.0, 'timestamp': f'2026-01-0{n}T00:00:00'}
+                for n in (1, 2, 3)
+            ],
+        }
+
+        folded = portal.collapse_duplicate_claim_transfers()
+        assert folded['reserve_restored'] == 9000.0
+        assert folded['wallet_shortfall'] == 9000.0
+        assert folded['wallet_credit_removed'] == 0.0
+        wallet = portal.HEALTH_WALLETS['CUST-TEST-PAY']
+        assert wallet['balance'] == 9000.0
+        assert len(wallet['transactions']) == 3
+        assert claim['status'] == 'paid'
+
     def test_savings_already_in_the_investment_balance_is_not_credited_again(self):
         import web_portal.server as portal
         portal.POLICIES['POL-HELD'] = {

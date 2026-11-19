@@ -11889,8 +11889,9 @@ def reconcile_savings_premium_balances() -> Dict[str, Any]:
 def collapse_duplicate_claim_transfers() -> Dict[str, Any]:
     """Fold repeated claims-paid lines back to the claim's paid amount.
 
-    The extra reserve is restored and the extra wallet credit is removed.
-    The claim, its status, and any NFT seal are left as they are.
+    The extra reserve is restored. The extra wallet credit is removed only
+    when the balance still covers the paid claim afterward. The claim, its
+    status, and any NFT seal are left as they are.
     """
     from services.premium_flow_reconciliation import duplicate_claim_row_ids, paid_claim_amount
     from services.savings_pipeline_service import debit_account_balance
@@ -11966,6 +11967,7 @@ def collapse_duplicate_claim_transfers() -> Dict[str, Any]:
                 by_claim.setdefault(claim_id, []).append(tx)
         drop_ids = set()
         extra = 0.0
+        kept = 0.0
         for claim_id, rows in by_claim.items():
             claim = claims_by_id.get(claim_id)
             if claim is None:
@@ -11980,14 +11982,22 @@ def collapse_duplicate_claim_transfers() -> Dict[str, Any]:
             ))
             drop_ids.update(drop)
             for tx in rows:
+                amount = safe_float(tx.get('amount'), 0.0)
                 if str(tx.get('id') or '') in drop:
-                    extra += safe_float(tx.get('amount'), 0.0)
+                    extra += amount
+                else:
+                    kept += amount
         if not drop_ids:
             continue
         extra = round(extra, 2)
-        # Only take the duplicate off the wallet when the live balance can
-        # cover it. A short balance may be other cash, so it stays, and the
-        # duplicate lines stay so the claim is not posted again.
+        kept = round(kept, 2)
+        balance = safe_float(wallet.get('balance'), 0.0)
+        # The kept line is the paid claim. A debit may take only the cash
+        # above that amount. Once part of a duplicate was spent, the balance
+        # still holds the payout, and that payout stays.
+        if balance + 0.01 < extra + kept:
+            wallet_shortfall += extra
+            continue
         debited = debit_account_balance(wallet, extra)
         if debited is None:
             wallet_shortfall += extra
