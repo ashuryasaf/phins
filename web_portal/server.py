@@ -12035,6 +12035,9 @@ def _cashflow_repair_refused(before: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+_CASHFLOW_REPAIR_LOCK = threading.Lock()
+
+
 def post_unposted_claim_transfers(actor: str = 'accountant') -> Dict[str, Any]:
     """Move each still-unposted paid claim from the reserve onto the health wallet.
 
@@ -12048,7 +12051,15 @@ def post_unposted_claim_transfers(actor: str = 'accountant') -> Dict[str, Any]:
     balance changes. If that journal cannot be written, nothing is changed.
     A miss on the after-line does not undo the books and does not hide a
     snapshot that was saved.
+
+    One repair runs at a time. A second staff request waits, then sees the
+    books the first request already changed.
     """
+    with _CASHFLOW_REPAIR_LOCK:
+        return _run_unposted_claim_transfers(actor)
+
+
+def _run_unposted_claim_transfers(actor: str) -> Dict[str, Any]:
     from services.premium_flow_reconciliation import claim_postings_due, reconcile_customer
     before = {
         'claims_reserve': safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0.0),

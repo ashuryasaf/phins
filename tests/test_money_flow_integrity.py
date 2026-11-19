@@ -599,6 +599,70 @@ class TestClaimPaymentToWallet:
         assert saved['called'] is True
         assert result['durable'] is True
 
+    def test_overlapping_repairs_apply_once(self, monkeypatch):
+        import threading
+        import web_portal.server as portal
+        self._setup_customer_and_policy(portal)
+        claim = portal.CLAIMS['CLM-TEST-PAY']
+        claim['status'] = 'paid'
+        claim['paid_amount'] = 4500.0
+        portal.PHINS_BALANCE_SHEET['claims_reserve'] = 10000.0
+        portal.PHINS_BALANCE_SHEET['transactions'] = [
+            {'tx_id': f'BS-{n}', 'category': 'claims_paid', 'claim_id': 'CLM-TEST-PAY',
+             'amount': 4500.0, 'timestamp': f'2026-03-0{n}T00:00:00'}
+            for n in (1, 2, 3)
+        ]
+        portal.POLICIES['POL-RACE'] = {
+            'id': 'POL-RACE', 'customer_id': 'CUST-TEST-PAY', 'start_date': '2026-01-01',
+            'annual_premium': 1200.0, 'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING['BILL-RACE'] = {
+            'id': 'BILL-RACE', 'customer_id': 'CUST-TEST-PAY', 'policy_id': 'POL-RACE',
+            'payment_period': '2026-01', 'amount_paid': 200.0, 'status': 'paid',
+            'premium_allocation': {'risk_amount_paid': 120.0, 'savings_amount_paid': 80.0},
+        }
+        entered = threading.Event()
+        release = threading.Event()
+        original = portal.collapse_duplicate_claim_transfers
+        calls = {'n': 0}
+
+        def _first_waits():
+            calls['n'] += 1
+            if calls['n'] == 1:
+                entered.set()
+                assert release.wait(timeout=3)
+            return original()
+
+        monkeypatch.setattr(portal, 'collapse_duplicate_claim_transfers', _first_waits)
+        monkeypatch.setattr(portal, 'save_ledger_data', lambda *args, **kwargs: True)
+        results = {}
+
+        def _run(name):
+            results[name] = portal.post_unposted_claim_transfers(name)
+
+        first = threading.Thread(target=_run, args=('one',))
+        second = threading.Thread(target=_run, args=('two',))
+        first.start()
+        assert entered.wait(timeout=3)
+        second.start()
+        second.join(timeout=0.3)
+        assert second.is_alive()
+        assert portal.PHINS_BALANCE_SHEET['claims_reserve'] == 10000.0
+        release.set()
+        first.join(timeout=3)
+        second.join(timeout=3)
+
+        assert not first.is_alive() and not second.is_alive()
+        assert portal.PHINS_BALANCE_SHEET['claims_reserve'] == 19000.0
+        assert calls['n'] == 2
+        wallet = portal.HEALTH_WALLETS.get('CUST-TEST-PAY', {}).get('balance', 0.0)
+        books = portal._investment_books(portal.INVESTMENT_ACCOUNTS.get('CUST-TEST-PAY') or {})
+        algo_store = getattr(portal.unified_balance_service, 'algo_trading_balances', {}) or {}
+        algo = float((algo_store.get('CUST-TEST-PAY') or {}).get('available') or 0)
+        assert round(float(wallet) + float(books.get('position') or 0) + algo, 2) == 80.0
+        assert results['one']['success'] is True
+        assert results['two']['success'] is True
+
 
 class TestClaimPaymentPipeline:
     """Test /api/claims/pay processes through wallet pipeline."""
