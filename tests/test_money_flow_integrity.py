@@ -393,6 +393,66 @@ class TestClaimPaymentToWallet:
         assert portal.INVESTMENT_ACCOUNTS['CUST-HELD']['balance'] == 80.0
         assert 'CUST-HELD' not in portal.HEALTH_WALLETS
 
+    def test_repair_journal_is_written_before_the_reserve_moves(self):
+        import web_portal.server as portal
+        self._setup_customer_and_policy(portal)
+        claim = portal.CLAIMS['CLM-TEST-PAY']
+        claim['status'] = 'paid'
+        claim['paid_amount'] = 4500.0
+        portal.PHINS_BALANCE_SHEET['claims_reserve'] = 10000.0
+        portal.PHINS_BALANCE_SHEET['transactions'] = [
+            {'tx_id': f'BS-{n}', 'category': 'claims_paid', 'claim_id': 'CLM-TEST-PAY',
+             'amount': 4500.0, 'timestamp': f'2026-03-0{n}T00:00:00'}
+            for n in (1, 2, 3)
+        ]
+        before = portal.PHINS_BALANCE_SHEET['claims_reserve']
+
+        result = portal.post_unposted_claim_transfers('cashier-1')
+
+        assert result['success'] is True
+        assert result['durable'] is True
+        assert portal.PHINS_BALANCE_SHEET['claims_reserve'] == before + 9000.0
+        lines = [
+            json.loads(line)
+            for line in open(portal._cashflow_repair_journal_path(), encoding='utf-8')
+            if line.strip()
+        ]
+        opening = [row for row in lines if row.get('phase') == 'before' and row.get('actor') == 'cashier-1']
+        closing = [row for row in lines if row.get('phase') == 'after' and row.get('actor') == 'cashier-1']
+        assert opening and closing
+        assert opening[-1]['before']['claims_reserve'] == before
+        assert closing[-1]['after']['claims_reserve'] == before + 9000.0
+        assert closing[-1]['after']['reserve_restored'] == 9000.0
+        recorded = portal.audit.recent(20)
+        assert any(
+            row.get('actor') == 'cashier-1' and row.get('action') == 'cashflow.reconcile'
+            for row in recorded
+        )
+
+    def test_a_failed_repair_journal_leaves_the_reserve_unchanged(self, monkeypatch):
+        import web_portal.server as portal
+        self._setup_customer_and_policy(portal)
+        claim = portal.CLAIMS['CLM-TEST-PAY']
+        claim['status'] = 'paid'
+        claim['paid_amount'] = 4500.0
+        portal.PHINS_BALANCE_SHEET['claims_reserve'] = 10000.0
+        portal.PHINS_BALANCE_SHEET['transactions'] = [
+            {'tx_id': f'BS-{n}', 'category': 'claims_paid', 'claim_id': 'CLM-TEST-PAY',
+             'amount': 4500.0, 'timestamp': f'2026-03-0{n}T00:00:00'}
+            for n in (1, 2, 3)
+        ]
+
+        def _refuse(_record):
+            raise OSError('journal volume unavailable')
+
+        monkeypatch.setattr(portal, '_append_cashflow_repair_journal', _refuse)
+        result = portal.post_unposted_claim_transfers('cashier-1')
+
+        assert result['success'] is False
+        assert result['error'] == 'repair_journal_failed'
+        assert portal.PHINS_BALANCE_SHEET['claims_reserve'] == 10000.0
+        assert len(portal.PHINS_BALANCE_SHEET['transactions']) == 3
+
 
 class TestClaimPaymentPipeline:
     """Test /api/claims/pay processes through wallet pipeline."""

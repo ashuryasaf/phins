@@ -11848,6 +11848,7 @@ def collapse_duplicate_claim_transfers() -> Dict[str, Any]:
             claims_by_id[claim_id] = claim
 
     drop_sheet = set()
+    removed_sheet: List[Dict[str, Any]] = []
     restored = 0.0
     grouped: Dict[str, List[Dict[str, Any]]] = {}
     for tx in PHINS_BALANCE_SHEET.get('transactions') or []:
@@ -11873,7 +11874,13 @@ def collapse_duplicate_claim_transfers() -> Dict[str, Any]:
         drop_sheet.update(drop)
         for tx in rows:
             if str(tx.get('tx_id') or '') in drop:
-                restored += safe_float(tx.get('amount'), 0.0)
+                amount = safe_float(tx.get('amount'), 0.0)
+                restored += amount
+                removed_sheet.append({
+                    'tx_id': tx.get('tx_id'),
+                    'claim_id': claim_id,
+                    'amount': round(amount, 2),
+                })
     if drop_sheet:
         PHINS_BALANCE_SHEET['transactions'] = [
             tx for tx in (PHINS_BALANCE_SHEET.get('transactions') or [])
@@ -11940,7 +11947,40 @@ def collapse_duplicate_claim_transfers() -> Dict[str, Any]:
         'reserve_restored': round(restored, 2),
         'wallet_credit_removed': round(wallet_removed, 2),
         'wallet_shortfall': round(wallet_shortfall, 2),
+        'removed_sheet': removed_sheet,
         'claims_reserve': safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0.0),
+    }
+
+
+def _cashflow_repair_journal_path() -> str:
+    directory = os.path.dirname(LEDGER_PERSISTENCE_FILE) or '.'
+    return os.path.join(directory, 'cashflow_repair_journal.jsonl')
+
+
+def _append_cashflow_repair_journal(record: Dict[str, Any]) -> None:
+    """Append one forensic line and fsync it. Raises if the line is not durable."""
+    path = _cashflow_repair_journal_path()
+    directory = os.path.dirname(path) or '.'
+    os.makedirs(directory, exist_ok=True)
+    line = json.dumps(record, default=str, sort_keys=True) + '\n'
+    with open(path, 'a', encoding='utf-8') as handle:
+        handle.write(line)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _cashflow_repair_refused(before: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        'success': False,
+        'error': 'repair_journal_failed',
+        'writes_claims': False,
+        'posted': [],
+        'skipped': [],
+        'posted_count': 0,
+        'collapsed': {},
+        'savings': {},
+        'claims_reserve': before.get('claims_reserve'),
+        'durable': False,
     }
 
 
@@ -11952,8 +11992,33 @@ def post_unposted_claim_transfers(actor: str = 'accountant') -> Dict[str, Any]:
     ledger, the wallet, or the balance sheet already covers is not posted
     again. The claim record stays on the books. A broken seal is skipped.
     Savings premiums that were charged and never landed are credited once.
+
+    The before-state is journaled and attributed to ``actor`` before any
+    balance changes. If that journal cannot be written, nothing is changed.
     """
     from services.premium_flow_reconciliation import claim_postings_due, reconcile_customer
+    before = {
+        'claims_reserve': safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0.0),
+        'claims_paid': safe_float(
+            (PHINS_BALANCE_SHEET.get('expense_breakdown') or {}).get('claims_paid'), 0.0,
+        ),
+        'total_expenses': safe_float(PHINS_BALANCE_SHEET.get('total_expenses'), 0.0),
+    }
+    try:
+        _append_cashflow_repair_journal({
+            'phase': 'before',
+            'action': 'cashflow.reconcile',
+            'actor': actor,
+            'at': datetime.now().isoformat(),
+            'before': before,
+        })
+        if audit is not None:
+            audit.log(actor, 'cashflow.reconcile', 'balance_sheet', 'claims_reserve', {
+                'phase': 'before',
+                'before': before,
+            })
+    except Exception:
+        return _cashflow_repair_refused(before)
     collapsed = collapse_duplicate_claim_transfers()
     savings = reconcile_savings_premium_balances()
     posted = []
@@ -12013,16 +12078,66 @@ def post_unposted_claim_transfers(actor: str = 'accountant') -> Dict[str, Any]:
                 'amount': amount,
                 'reason': outcome.get('error') or 'not_posted',
             })
-    if collapsed.get('balance_sheet_rows_removed') or savings.get('credited_count'):
-        threading.Thread(target=save_ledger_data, daemon=True).start()
+    after = {
+        'claims_reserve': safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0.0),
+        'claims_paid': safe_float(
+            (PHINS_BALANCE_SHEET.get('expense_breakdown') or {}).get('claims_paid'), 0.0,
+        ),
+        'total_expenses': safe_float(PHINS_BALANCE_SHEET.get('total_expenses'), 0.0),
+        'removed_sheet': collapsed.get('removed_sheet') or [],
+        'reserve_restored': collapsed.get('reserve_restored'),
+        'wallet_credit_removed': collapsed.get('wallet_credit_removed'),
+        'wallet_shortfall': collapsed.get('wallet_shortfall'),
+        'savings_credited': savings.get('credited') or [],
+        'posted': posted,
+    }
+    journal_after = True
+    try:
+        _append_cashflow_repair_journal({
+            'phase': 'after',
+            'action': 'cashflow.reconcile',
+            'actor': actor,
+            'at': datetime.now().isoformat(),
+            'before': before,
+            'after': after,
+        })
+        if audit is not None:
+            audit.log(actor, 'cashflow.reconcile', 'balance_sheet', 'claims_reserve', {
+                'phase': 'after',
+                'before': before,
+                'after': after,
+            })
+    except Exception:
+        journal_after = False
+    changed = bool(
+        collapsed.get('balance_sheet_rows_removed')
+        or savings.get('credited_count')
+        or posted
+    )
+    if changed:
+        try:
+            durable = bool(save_ledger_data())
+        except Exception:
+            durable = False
+    else:
+        durable = True
+    refusal = None
+    if not journal_after:
+        refusal = 'repair_journal_failed'
+    elif not durable:
+        refusal = 'not_durable'
     return {
+        'success': refusal is None,
+        'error': refusal,
         'writes_claims': False,
         'posted': posted,
         'skipped': skipped,
         'posted_count': len(posted),
         'collapsed': collapsed,
         'savings': savings,
-        'claims_reserve': safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0.0),
+        'claims_reserve': after['claims_reserve'],
+        'journal_after': journal_after,
+        'durable': durable,
     }
 
 
@@ -53787,6 +53902,13 @@ For claims or questions, please contact:
                 result = post_unposted_claim_transfers(actor)
             except Exception:
                 _write_cashflow_internal_error(self, "claim transfer post failed")
+                return
+            if result.get('success') is False:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({
+                    'error': result.get('error') or 'not_durable',
+                    'transfers': result,
+                }, default=str).encode('utf-8'))
                 return
             self._set_json_headers()
             self.wfile.write(json.dumps({'success': True, 'transfers': result}, default=str).encode('utf-8'))
