@@ -58,7 +58,7 @@
                     <th>Priority</th>
                     <th>Premiums</th>
                     <th>Risk landed</th>
-                    <th>Savings add-on</th>
+                    <th>Savings premiums paid</th>
                     <th>Wallet</th>
                     <th>Investments</th>
                     <th>Algo</th>
@@ -107,6 +107,7 @@
                 ['Investments', funds.investments],
                 ['Algo', funds.algo],
                 ['Learned savings', funds.learned_savings],
+                ['Savings premiums paid', funds.savings_premiums_paid],
                 ['Sealed claim credits', funds.sealed_claim_credits],
                 ['Unposted claims', funds.unposted_claim_transfers],
                 ['Claims reserve', report.claims_reserve]
@@ -120,7 +121,7 @@
                     + '<td>' + tag(row.priority) + '</td>'
                     + '<td>' + money(picture.premiums_collected) + '</td>'
                     + '<td>' + money(picture.landed_risk) + '</td>'
-                    + '<td>' + money(picture.landed_savings) + ' <span class="note">' + (picture.savings_kind || '') + '</span></td>'
+                    + '<td>' + money(picture.savings_premiums_paid != null ? picture.savings_premiums_paid : picture.landed_savings) + ' <span class="note">' + (picture.savings_kind || '') + '</span></td>'
                     + '<td>' + money(live.health_wallet) + '</td>'
                     + '<td>' + money(live.investments) + '</td>'
                     + '<td>' + money(live.algo) + '</td>'
@@ -156,7 +157,7 @@
             const body = await response.json();
             const transfers = body.transfers || {};
             document.getElementById('post-result').textContent = response.ok
-                ? ('Posted ' + (transfers.posted_count || 0) + ' claim transfer(s). Claims stay on the book. Reserve left ' + money(transfers.claims_reserve) + '.')
+                ? ('Posted ' + (transfers.posted_count || 0) + ' claim transfer(s). Folded ' + ((transfers.collapsed || {}).balance_sheet_rows_removed || 0) + ' repeated claim line(s) back to the paid amount. Reserve left ' + money(transfers.claims_reserve) + '. Savings premiums credited ' + money((transfers.savings || {}).credited_total) + '.' + (transfers.journal_after === false ? ' The after-record could not be written. The books were still saved.' : ''))
                 : (body.error || 'Could not post.');
             button.disabled = false;
             load();
