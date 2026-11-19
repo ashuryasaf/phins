@@ -11719,6 +11719,8 @@ def _max_intact_cover(caps: List[float], balance: float) -> float:
     A payment larger than the live balance has left the wallet. It does not
     count, and it does not hide the cash left beside repeated lines. The
     cover is the best combination that fits, not the largest single payment.
+    Above $1,000,000 the combination is not built. The whole balance stays
+    claim cash, so that unfinished gap is not stamped as savings.
     """
     limit = int(round(max(0.0, balance) * 100))
     if limit <= 0:
@@ -11733,6 +11735,8 @@ def _max_intact_cover(caps: List[float], balance: float) -> float:
     total = sum(items)
     if total <= limit:
         return round(total / 100.0, 2)
+    if limit > 100_000_000:
+        return round(limit / 100.0, 2)
     return round(_max_subset_cents(items, limit) / 100.0, 2)
 
 

@@ -803,6 +803,117 @@ class TestClaimPaymentToWallet:
             stamped = portal.HEALTH_WALLETS['CUST-WIDE'].get('savings_premiums_applied')
         assert stamped == 80.0
 
+    def test_a_large_wallet_uses_the_combination_that_fills_the_balance(self):
+        import web_portal.server as portal
+        # $9,000 plus two $6,000 claims fill $12,000. Largest-first packing
+        # stops at $9,000, and that $3,000 gap is smaller than the repeated
+        # line, so it would be stamped as savings and the charged premium
+        # would never be credited.
+        assert portal._max_intact_cover([9000.0, 6000.0, 6000.0], 12000.0) == 12000.0
+        assert portal._max_intact_cover([600000.0, 600000.0], 1_000_000.01) == 1_000_000.01
+        portal.CLAIMS['CLM-FILL-A'] = {
+            'id': 'CLM-FILL-A', 'customer_id': 'CUST-FILL', 'status': 'paid', 'paid_amount': 9000.0,
+        }
+        portal.CLAIMS['CLM-FILL-B'] = {
+            'id': 'CLM-FILL-B', 'customer_id': 'CUST-FILL', 'status': 'paid', 'paid_amount': 6000.0,
+        }
+        portal.CLAIMS['CLM-FILL-C'] = {
+            'id': 'CLM-FILL-C', 'customer_id': 'CUST-FILL', 'status': 'paid', 'paid_amount': 6000.0,
+        }
+        portal.CLAIMS['CLM-FILL-DUP'] = {
+            'id': 'CLM-FILL-DUP', 'customer_id': 'CUST-FILL', 'status': 'paid', 'paid_amount': 4500.0,
+        }
+        portal.POLICIES['POL-FILL'] = {
+            'id': 'POL-FILL', 'customer_id': 'CUST-FILL', 'start_date': '2026-01-01',
+            'annual_premium': 1200.0, 'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING['BILL-FILL'] = {
+            'id': 'BILL-FILL', 'customer_id': 'CUST-FILL', 'policy_id': 'POL-FILL',
+            'payment_period': '2026-01', 'amount_paid': 200.0, 'status': 'paid',
+            'premium_allocation': {'risk_amount_paid': 120.0, 'savings_amount_paid': 80.0},
+        }
+        portal.HEALTH_WALLETS['CUST-FILL'] = {
+            'customer_id': 'CUST-FILL',
+            'balance': 12000.0,
+            'transactions': [
+                {'id': 'W-FA', 'type': 'claim_payment', 'claim_id': 'CLM-FILL-A',
+                 'amount': 9000.0, 'previous_balance': 0.0, 'balance_after': 9000.0,
+                 'timestamp': '2026-02-01T00:00:00'},
+                {'id': 'W-FB', 'type': 'claim_payment', 'claim_id': 'CLM-FILL-B',
+                 'amount': 6000.0, 'previous_balance': 0.0, 'balance_after': 6000.0,
+                 'timestamp': '2026-02-02T00:00:00'},
+                {'id': 'W-FC', 'type': 'claim_payment', 'claim_id': 'CLM-FILL-C',
+                 'amount': 6000.0, 'previous_balance': 0.0, 'balance_after': 12000.0,
+                 'timestamp': '2026-02-03T00:00:00'},
+                {'id': 'W-FD1', 'type': 'claim_payment', 'claim_id': 'CLM-FILL-DUP',
+                 'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+                 'timestamp': '2026-03-01T00:00:00'},
+                {'id': 'W-FD2', 'type': 'claim_payment', 'claim_id': 'CLM-FILL-DUP',
+                 'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+                 'timestamp': '2026-03-02T00:00:00'},
+            ],
+        }
+
+        result = portal.reconcile_savings_premium_balances()
+        wide = [row for row in result['credited'] if row['customer_id'] == 'CUST-FILL']
+        assert len(wide) == 1
+        assert wide[0]['credited'] == 80.0
+        assert portal.INVESTMENT_ACCOUNTS.get('CUST-FILL', {}).get('savings_premiums_applied') == 80.0
+
+    def test_savings_left_in_a_large_wallet_is_not_credited_again(self):
+        import web_portal.server as portal
+        # The same claims leave $500 in a $12,500 wallet. Largest-first
+        # packing leaves $3,500, which meets the repeated line and hides
+        # that $500, so the charged premium is credited a second time.
+        assert portal._max_intact_cover([9000.0, 6000.0, 6000.0], 12500.0) == 12000.0
+        portal.CLAIMS['CLM-LEFT-A'] = {
+            'id': 'CLM-LEFT-A', 'customer_id': 'CUST-LEFT', 'status': 'paid', 'paid_amount': 9000.0,
+        }
+        portal.CLAIMS['CLM-LEFT-B'] = {
+            'id': 'CLM-LEFT-B', 'customer_id': 'CUST-LEFT', 'status': 'paid', 'paid_amount': 6000.0,
+        }
+        portal.CLAIMS['CLM-LEFT-C'] = {
+            'id': 'CLM-LEFT-C', 'customer_id': 'CUST-LEFT', 'status': 'paid', 'paid_amount': 6000.0,
+        }
+        portal.CLAIMS['CLM-LEFT-DUP'] = {
+            'id': 'CLM-LEFT-DUP', 'customer_id': 'CUST-LEFT', 'status': 'paid', 'paid_amount': 3000.0,
+        }
+        portal.POLICIES['POL-LEFT'] = {
+            'id': 'POL-LEFT', 'customer_id': 'CUST-LEFT', 'start_date': '2026-01-01',
+            'annual_premium': 1200.0, 'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING['BILL-LEFT'] = {
+            'id': 'BILL-LEFT', 'customer_id': 'CUST-LEFT', 'policy_id': 'POL-LEFT',
+            'payment_period': '2026-01', 'amount_paid': 200.0, 'status': 'paid',
+            'premium_allocation': {'risk_amount_paid': 120.0, 'savings_amount_paid': 80.0},
+        }
+        portal.HEALTH_WALLETS['CUST-LEFT'] = {
+            'customer_id': 'CUST-LEFT',
+            'balance': 12500.0,
+            'transactions': [
+                {'id': 'W-LA', 'type': 'claim_payment', 'claim_id': 'CLM-LEFT-A',
+                 'amount': 9000.0, 'previous_balance': 0.0, 'balance_after': 9000.0,
+                 'timestamp': '2026-02-01T00:00:00'},
+                {'id': 'W-LB', 'type': 'claim_payment', 'claim_id': 'CLM-LEFT-B',
+                 'amount': 6000.0, 'previous_balance': 0.0, 'balance_after': 6000.0,
+                 'timestamp': '2026-02-02T00:00:00'},
+                {'id': 'W-LC', 'type': 'claim_payment', 'claim_id': 'CLM-LEFT-C',
+                 'amount': 6000.0, 'previous_balance': 0.0, 'balance_after': 12000.0,
+                 'timestamp': '2026-02-03T00:00:00'},
+                {'id': 'W-LD1', 'type': 'claim_payment', 'claim_id': 'CLM-LEFT-DUP',
+                 'amount': 3000.0, 'previous_balance': 0.0, 'balance_after': 3000.0,
+                 'timestamp': '2026-03-01T00:00:00'},
+                {'id': 'W-LD2', 'type': 'claim_payment', 'claim_id': 'CLM-LEFT-DUP',
+                 'amount': 3000.0, 'previous_balance': 0.0, 'balance_after': 3000.0,
+                 'timestamp': '2026-03-02T00:00:00'},
+            ],
+        }
+
+        result = portal.reconcile_savings_premium_balances()
+        assert all(row['customer_id'] != 'CUST-LEFT' for row in result['credited'])
+        assert portal.HEALTH_WALLETS['CUST-LEFT']['balance'] == 12500.0
+        assert portal.HEALTH_WALLETS['CUST-LEFT'].get('savings_premiums_applied') == 500.0
+
     def test_a_spent_claim_is_not_set_aside_ahead_of_claims_still_in_the_wallet(self):
         import web_portal.server as portal
         portal.CLAIMS['CLM-BIG-SPENT'] = {
