@@ -580,6 +580,15 @@ def test_three_balance_sheet_lines_count_as_one_claim():
         ],
         800,
     ) == []
+    # One line already equals the paid amount, so the other lines are copies.
+    assert duplicate_claim_row_ids(
+        [
+            {"id": "PART", "amount": 200, "timestamp": "2026-01-01"},
+            {"id": "FULL", "amount": 800, "timestamp": "2026-01-02"},
+            {"id": "COPY", "amount": 800, "timestamp": "2026-01-03"},
+        ],
+        800,
+    ) == ["PART", "COPY"]
 
 
 def test_billed_savings_is_kept_when_the_policy_pin_is_gone():

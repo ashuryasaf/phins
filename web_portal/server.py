@@ -11674,10 +11674,12 @@ _PREMIUM_SAVINGS_SLICE_TYPES = frozenset({
     'pipeline_allocation',
     'premium_allocation',
     'savings_premium_reconcile',
+    'investment_allocation',
 })
 _PREMIUM_SAVINGS_DEPOSIT_TYPES = frozenset({
     'pipeline_deposit',
     'savings_deposit',
+    'investment_deposit',
 })
 _SAVINGS_RECONCILE_SKIP = frozenset({'CUST-X', 'PHINS-CORPORATE', 'PHINS', 'SYSTEM'})
 
@@ -11685,16 +11687,20 @@ _SAVINGS_RECONCILE_SKIP = frozenset({'CUST-X', 'PHINS-CORPORATE', 'PHINS', 'SYST
 def _premium_savings_already_landed(customer_id: str) -> float:
     """Premium savings already sitting on this customer's books.
 
-    Deposit rows and the 30/65/5 slices are two records of the same cash.
-    The larger one is kept. A later spend does not erase the allocation
-    row, so the gap is not filled a second time.
+    Tagged deposits and the 30/65/5 slices are two records of the same cash.
+    Live investment and algo balances count too, as do wallet cash that is
+    not a claim credit. The larger figure is kept, so a savings balance
+    that landed under another type is not credited again. A later spend
+    does not erase a tagged allocation row.
     """
     marker = 0.0
     deposits = 0.0
     slices = 0.0
     account = INVESTMENT_ACCOUNTS.get(customer_id)
+    investment_position = 0.0
     if isinstance(account, dict):
         marker = max(marker, safe_float(account.get('savings_premiums_applied'), 0.0))
+        investment_position = safe_float(_investment_books(account).get('position'), 0.0)
         for row in account.get('deposits') or []:
             if isinstance(row, dict) and str(row.get('type') or '') in _PREMIUM_SAVINGS_DEPOSIT_TYPES:
                 deposits += safe_float(row.get('amount'), 0.0)
@@ -11702,13 +11708,18 @@ def _premium_savings_already_landed(customer_id: str) -> float:
             if isinstance(row, dict) and str(row.get('type') or '') in _PREMIUM_SAVINGS_SLICE_TYPES:
                 slices += safe_float(row.get('amount', row.get('total_amount')), 0.0)
     wallet = HEALTH_WALLETS.get(customer_id)
+    wallet_balance = 0.0
+    claim_credits = 0.0
     if isinstance(wallet, dict):
         marker = max(marker, safe_float(wallet.get('savings_premiums_applied'), 0.0))
+        wallet_balance = safe_float(wallet.get('balance'), 0.0)
         for row in wallet.get('transactions') or []:
             if not isinstance(row, dict):
                 continue
             kind = str(row.get('type') or '')
-            if kind in _PREMIUM_SAVINGS_DEPOSIT_TYPES:
+            if kind in _CLAIM_LEG_TYPES:
+                claim_credits += safe_float(row.get('amount'), 0.0)
+            elif kind in _PREMIUM_SAVINGS_DEPOSIT_TYPES:
                 deposits += safe_float(row.get('amount'), 0.0)
             elif kind in _PREMIUM_SAVINGS_SLICE_TYPES:
                 slices += safe_float(row.get('amount'), 0.0)
@@ -11717,12 +11728,16 @@ def _premium_savings_already_landed(customer_id: str) -> float:
     except Exception:
         store = {}
     algo = store.get(customer_id) if isinstance(store, dict) else None
+    algo_available = 0.0
     if isinstance(algo, dict):
         marker = max(marker, safe_float(algo.get('savings_premiums_applied'), 0.0))
+        algo_available = safe_float(algo.get('available', algo.get('balance')), 0.0)
         for row in algo.get('transfers') or []:
             if isinstance(row, dict) and str(row.get('type') or '') in _PREMIUM_SAVINGS_SLICE_TYPES:
                 slices += safe_float(row.get('amount'), 0.0)
-    return round(max(marker, deposits, slices), 2)
+    wallet_savings = round(max(0.0, wallet_balance - claim_credits), 2)
+    live_books = round(wallet_savings + investment_position + algo_available, 2)
+    return round(max(marker, deposits, slices, live_books), 2)
 
 
 def _stamp_savings_premiums_applied(customer_id: str, amount: float) -> None:
@@ -11908,15 +11923,14 @@ def collapse_duplicate_claim_transfers() -> Dict[str, Any]:
         if not drop_ids:
             continue
         extra = round(extra, 2)
+        # Only take the duplicate off the wallet when the live balance can
+        # cover it. A short balance may be other cash, so it stays, and the
+        # duplicate lines stay so the claim is not posted again.
         debited = debit_account_balance(wallet, extra)
         if debited is None:
-            live = round(safe_float(wallet.get('balance'), 0.0), 2)
-            if live > 0:
-                debit_account_balance(wallet, live)
-            wallet_shortfall += round(max(0.0, extra - live), 2)
-            wallet_removed += min(live, extra)
-        else:
-            wallet_removed += extra
+            wallet_shortfall += extra
+            continue
+        wallet_removed += extra
         wallet['transactions'] = [
             tx for tx in (wallet.get('transactions') or [])
             if str((tx or {}).get('id') or '') not in drop_ids

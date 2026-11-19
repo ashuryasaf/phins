@@ -328,6 +328,71 @@ class TestClaimPaymentToWallet:
         assert portal.customer_savings_premiums_paid('CUST-SAVE') == 80.0
         assert portal.customer_savings_premiums_paid('CUST-RISK') == 0.0
 
+    def test_wallet_shortfall_does_not_take_other_cash(self):
+        import web_portal.server as portal
+        self._setup_customer_and_policy(portal)
+        claim = portal.CLAIMS['CLM-TEST-PAY']
+        claim['status'] = 'paid'
+        claim['paid_amount'] = 4500.0
+        portal.PHINS_BALANCE_SHEET['claims_reserve'] = 10000.0
+        portal.PHINS_BALANCE_SHEET['transactions'] = [
+            {'tx_id': 'BS-1', 'category': 'claims_paid', 'claim_id': 'CLM-TEST-PAY', 'amount': 4500.0, 'timestamp': '2026-01-01T00:00:00'},
+            {'tx_id': 'BS-2', 'category': 'claims_paid', 'claim_id': 'CLM-TEST-PAY', 'amount': 4500.0, 'timestamp': '2026-01-02T00:00:00'},
+            {'tx_id': 'BS-3', 'category': 'claims_paid', 'claim_id': 'CLM-TEST-PAY', 'amount': 4500.0, 'timestamp': '2026-01-03T00:00:00'},
+        ]
+        portal.PHINS_BALANCE_SHEET.setdefault('expense_breakdown', {})
+        portal.PHINS_BALANCE_SHEET['expense_breakdown']['claims_paid'] = 13500.0
+        portal.PHINS_BALANCE_SHEET['total_expenses'] = 13500.0
+        portal.HEALTH_WALLETS['CUST-TEST-PAY'] = {
+            'customer_id': 'CUST-TEST-PAY',
+            'balance': 100.0,
+            'transactions': [
+                {'id': 'W1', 'type': 'claim_payment', 'claim_id': 'CLM-TEST-PAY', 'amount': 4500.0, 'timestamp': '2026-01-01T00:00:00'},
+                {'id': 'W2', 'type': 'claim_payment', 'claim_id': 'CLM-TEST-PAY', 'amount': 4500.0, 'timestamp': '2026-01-02T00:00:00'},
+                {'id': 'W3', 'type': 'claim_payment', 'claim_id': 'CLM-TEST-PAY', 'amount': 4500.0, 'timestamp': '2026-01-03T00:00:00'},
+            ],
+        }
+
+        folded = portal.collapse_duplicate_claim_transfers()
+        assert folded['reserve_restored'] == 9000.0
+        assert folded['wallet_shortfall'] == 9000.0
+        assert folded['wallet_credit_removed'] == 0.0
+        wallet = portal.HEALTH_WALLETS['CUST-TEST-PAY']
+        assert wallet['balance'] == 100.0
+        assert len(wallet['transactions']) == 3
+
+    def test_savings_already_in_the_investment_balance_is_not_credited_again(self):
+        import web_portal.server as portal
+        portal.POLICIES['POL-HELD'] = {
+            'id': 'POL-HELD',
+            'customer_id': 'CUST-HELD',
+            'start_date': '2026-01-01',
+            'annual_premium': 1200.0,
+            'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING['BILL-HELD'] = {
+            'id': 'BILL-HELD',
+            'customer_id': 'CUST-HELD',
+            'policy_id': 'POL-HELD',
+            'payment_period': '2026-01',
+            'amount_paid': 200.0,
+            'status': 'paid',
+            'premium_allocation': {'risk_amount_paid': 120.0, 'savings_amount_paid': 80.0},
+        }
+        portal.INVESTMENT_ACCOUNTS['CUST-HELD'] = {
+            'balance': 80.0,
+            'index_balance': 0.0,
+            'bonds_balance': 0.0,
+            'crypto_balance': 0.0,
+            'deposits': [],
+            'allocations': [],
+        }
+
+        result = portal.reconcile_savings_premium_balances()
+        assert all(row['customer_id'] != 'CUST-HELD' for row in result['credited'])
+        assert portal.INVESTMENT_ACCOUNTS['CUST-HELD']['balance'] == 80.0
+        assert 'CUST-HELD' not in portal.HEALTH_WALLETS
+
 
 class TestClaimPaymentPipeline:
     """Test /api/claims/pay processes through wallet pipeline."""
