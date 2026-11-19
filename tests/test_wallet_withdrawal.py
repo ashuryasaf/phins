@@ -608,7 +608,8 @@ def sessions(books):
         "phins_wdr-admin": {"username": "admin", "role": "admin"},
     }
     for token, session in tokens.items():
-        portal.SESSIONS[token] = dict(session, expires="2099-01-01T00:00:00")
+        # Stamped like a login, so an earlier crisis-drop test does not close it.
+        portal.SESSIONS[token] = portal._stamp_session_payload(dict(session, expires="2099-01-01T00:00:00"))
     yield
     for token in tokens:
         portal.SESSIONS.pop(token, None)

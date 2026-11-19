@@ -308,13 +308,14 @@ def test_unified_report_route_is_staff_only_and_reads_the_live_books():
     portal.HEALTH_WALLETS.update(wallets)
     sheet_before = copy.deepcopy(portal.PHINS_BALANCE_SHEET)
     portal.PHINS_BALANCE_SHEET.setdefault("transactions", []).extend(sheet["transactions"])
-    portal.SESSIONS["phins_unified-admin"] = {
+    # Stamped like a login, so an earlier crisis-drop test does not close them.
+    portal.SESSIONS["phins_unified-admin"] = portal._stamp_session_payload({
         "username": "admin", "role": "admin", "expires": "2099-01-01T00:00:00",
-    }
-    portal.SESSIONS["phins_unified-cust"] = {
+    })
+    portal.SESSIONS["phins_unified-cust"] = portal._stamp_session_payload({
         "username": "u1@test", "role": "customer", "customer_id": "CUST-U1",
         "expires": "2099-01-01T00:00:00",
-    }
+    })
     init_set = getattr(portal, "_TEST_PORTS_INITIALIZED", None)
     if isinstance(init_set, set):
         init_set.add(int(os.environ.get("TEST_PORT", "8000")))
