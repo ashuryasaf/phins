@@ -12,7 +12,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/apply-chat.css">
     <style>
-        .process-strip { display: flex; gap: 8px; overflow-x: auto; padding: 8px 16px 0; position: relative; z-index: 2; }
+        .process-strip { display: flex; gap: 8px; overflow-x: auto; padding: 8px 16px; position: sticky; top: 56px; z-index: 15; background: rgba(6, 13, 31, 0.92); backdrop-filter: blur(8px); border-bottom: 1px solid rgba(127, 178, 255, 0.14); }
+        .chat-dock, .chat-dock canvas { -webkit-user-select: none; user-select: none; }
+        .chat-dock input, .chat-dock textarea { -webkit-user-select: text; user-select: text; }
         .process-chip { flex: 0 0 auto; border: 1px solid rgba(127, 178, 255, 0.2); border-radius: 999px; padding: 6px 10px; font-size: 0.78rem; color: rgba(234, 241, 255, 0.78); background: rgba(16, 31, 63, 0.55); }
         .process-chip.now { color: #071022; background: linear-gradient(135deg, #f7e2a0, #e3bf6f); border-color: transparent; font-weight: 600; }
         .process-chip.done { color: #4cd6a5; }

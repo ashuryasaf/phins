@@ -43,6 +43,11 @@ STEPS: Tuple[str, ...] = (
     "details", "amount", "reason", "bank", "id_document", "photo",
     "bank_document", "signature", "review",
 )
+STEP_NAMES: Dict[str, str] = {
+    "details": "my details", "amount": "the amount", "reason": "the reason", "bank": "the bank account",
+    "id_document": "my identity document", "photo": "my photo", "bank_document": "my bank document",
+    "signature": "my signature",
+}
 OPEN_STATUSES = frozenset({"draft", "held"})
 CLOSED_STATUSES = frozenset({"discarded", "reversed", "declined", "paid_out"})
 MAX_UPLOAD_BYTES = 6 * 1024 * 1024
@@ -747,9 +752,18 @@ def _draft(customer_id: str, withdrawal_id: str) -> Dict[str, Any]:
 
 
 def _advance(record: Dict[str, Any], step: str, echo: str) -> Dict[str, Any]:
-    record.setdefault("answers", {})[step] = True
-    _say(record, "user", echo)
-    _say(record, "bot", _prompt(record, _next_step(record))["prompt"])
+    answers = record.setdefault("answers", {})
+    changed = bool(answers.get(step))
+    answers[step] = True
+    upcoming = _prompt(record, _next_step(record))["prompt"]
+    if changed:
+        # An edit is said as an edit, so the thread does not read as if the
+        # customer answered the same question twice.
+        _say(record, "user", f"Changed {STEP_NAMES.get(step, step)}: {echo}")
+        _say(record, "bot", "Updated. " + upcoming)
+    else:
+        _say(record, "user", echo)
+        _say(record, "bot", upcoming)
     _touch(record)
     _persist()
     return customer_view(record)
@@ -1655,6 +1669,8 @@ def _e(value: Any) -> str:
 
 
 def _row(label: str, value: Any, code: bool = False) -> str:
+    if value is None or str(value).strip() == "":
+        return ""
     shown = f"<code>{_e(value)}</code>" if code else _e(value)
     return f"<tr><th>{_e(label)}</th><td>{shown}</td></tr>"
 
@@ -1748,10 +1764,11 @@ def render_document(withdrawal_id: str) -> str:
                 + _row("Wallet before", f"${sealed['wallet']['balance_before']:,.2f}")
                 + _row("Wallet after the hold", f"${sealed['wallet']['balance_after']:,.2f}")
                 + _row("Account holder", bank.get("holder")) + _row("Bank", bank.get("bank_name"))
-                + _row("Branch", bank.get("branch") or "—") + _row("Country", bank.get("country"))
+                + _row("Branch", bank.get("branch")) + _row("Country", bank.get("country"))
                 + _row(account_label, "•••• " + str(bank.get("account_last4") or ""))
-                + _row("SWIFT", bank.get("swift") or "—")
+                + _row("SWIFT", bank.get("swift"))
                 + _row("Reason given", (sealed.get("reason") or {}).get("label"))
+                + _row("Customer's note", (sealed.get("reason") or {}).get("note"))
                 + _row("Released after", str(sealed.get("release_after") or "")[:19].replace("T", " ") + " UTC")
                 + '</table></div></div>')
     body.append('<h2>Authorisation</h2><p class="sub">I ask PHINS to transfer the amount above from my health wallet '

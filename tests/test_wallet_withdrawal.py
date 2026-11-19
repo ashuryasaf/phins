@@ -341,8 +341,50 @@ def test_the_unified_document_carries_the_details_the_portrait_and_the_signature
         "document_id": record["signature"]["document_id"], "sha256": record["signature"]["sha256"],
     })
     assert base64.b64encode(signature).decode("ascii") in document
+    assert "A family expense" in document
+    # An IBAN carries no branch on this request; an empty row is left out.
+    assert "<th>SWIFT</th>" in document and "<th>Branch</th>" not in document
     with pytest.raises(WithdrawalError):
         withdrawals.render_document_for_customer(OTHER, wid)
+
+
+def test_a_changed_answer_is_said_as_a_change_and_asks_for_a_new_signature(books):
+    wid = _complete_draft(400.00)
+    view = withdrawals.answer(CUSTOMER, wid, "amount", {"amount": 250})
+    assert view["amount"] == 250.00
+    assert view["messages"][-2] == {**view["messages"][-2], "from": "user", "text": "Changed the amount: $250.00"}
+    assert view["messages"][-1]["text"].startswith("Updated. ")
+    assert view["step"]["id"] == "signature" and view["signature"] is None
+    with pytest.raises(WithdrawalError):
+        withdrawals.file_request(CUSTOMER, wid, client_ip="127.0.0.1")
+
+
+def test_the_return_bar_is_hidden_inside_a_frame():
+    # The chat and the retention bar show the document in a frame with their
+    # own Close button; the document's bar sets display and must yield.
+    root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web_portal", "static")
+    rule = ".phins-doc-return[hidden]"
+    with open(os.path.join(root, "phins-document.css"), encoding="utf-8") as handle:
+        assert rule in handle.read()
+    with open(os.path.join(root, "phins-doc-return.js"), encoding="utf-8") as handle:
+        assert rule in handle.read()
+
+
+def test_the_pages_carry_the_withdrawal_entry_points():
+    root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web_portal", "static")
+
+    def page(name):
+        with open(os.path.join(root, name), encoding="utf-8") as handle:
+            return handle.read()
+
+    assert 'href="/wallet-withdraw-chat.html"' in page("dashboard.html")
+    assert '<script src="/wallet-withdraw-chat.js"></script>' in page("wallet-withdraw-chat.html")
+    management = page("customer-management.html")
+    assert 'id="withdrawal-retention-bar"' in management
+    assert '<script src="/withdrawal-retention-bar.js"></script>' in management
+    from security import access_hierarchy
+
+    assert "/wallet-withdraw-chat.html" in access_hierarchy.CUSTOMER_PRIVATE_PAGES
 
 
 def test_a_changed_record_is_withheld_and_cannot_be_paid(books, monkeypatch):

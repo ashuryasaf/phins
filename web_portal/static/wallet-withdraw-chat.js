@@ -132,8 +132,17 @@
     }
   }
 
+  // The strip stays under the page header so the steps remain reachable
+  // while the conversation grows.
+  function pinStrip() {
+    const header = document.querySelector(".chat-header");
+    if (header) strip.style.top = header.offsetHeight + "px";
+  }
+  window.addEventListener("resize", pinStrip);
+
   function renderStrip() {
     if (!view) { strip.hidden = true; return; }
+    pinStrip();
     const steps = view.steps || Object.keys(STEP_TITLES);
     const draft = view.status === "draft";
     const current = draft ? (editing || (view.step && view.step.id)) : null;
@@ -696,7 +705,8 @@
       (input.portrait ? "<img src=\"" + esc(input.portrait) + "\" alt=\"Your photo from the document\">" : "<span></span>") +
       "<dl class=\"wd-details\" style=\"margin:0;\">" +
       "<dt>Amount</dt><dd><strong>" + money(view.amount) + "</strong> of " + money(view.wallet_balance) + " in your wallet</dd>" +
-      "<dt>Reason</dt><dd>" + esc((view.reason && view.reason.label) || "—") + "</dd>" +
+      "<dt>Reason</dt><dd>" + esc((view.reason && view.reason.label) || "—") +
+      (view.reason && view.reason.note ? " · " + esc(view.reason.note) : "") + "</dd>" +
       "<dt>To</dt><dd>" + bankLine(view.bank) + "</dd>" +
       "<dt>Identity file</dt><dd>" + esc((documents.id_document && documents.id_document.file_name) || "—") + "</dd>" +
       "<dt>Bank file</dt><dd>" + esc((documents.bank_document && documents.bank_document.file_name) || "—") + "</dd>" +

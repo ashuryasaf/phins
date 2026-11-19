@@ -165,6 +165,9 @@ body {
   font-family: Inter, "Segoe UI", sans-serif;
   color: var(--phins-ink);
 }
+/* The bar sets display, which would otherwise outrank the hidden attribute
+   the return script sets when the document is framed. */
+.phins-doc-return[hidden] { display: none !important; }
 .phins-doc-return-note {
   font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
   font-weight: 600;
