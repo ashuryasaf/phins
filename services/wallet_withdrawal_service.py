@@ -1668,6 +1668,20 @@ def _e(value: Any) -> str:
     return html.escape(str(value if value is not None else ""), quote=True)
 
 
+def _country_label(code: Any) -> str:
+    """``Israel (IL)`` for a stored alpha-2 code; the code alone when unknown."""
+    text = str(code or "").strip()
+    if not text:
+        return ""
+    try:
+        from services.customer_identity_service import nationality_name
+
+        name = nationality_name(text)
+    except Exception:
+        name = None
+    return f"{name} ({text})" if name and name != text else text
+
+
 def _row(label: str, value: Any, code: bool = False) -> str:
     if value is None or str(value).strip() == "":
         return ""
@@ -1739,7 +1753,7 @@ def render_document(withdrawal_id: str) -> str:
     }.get(status, status)
     account_label = "IBAN" if bank.get("account_kind") == "iban" else "Account number"
     identity_line = (
-        f"{_e(holder.get('nationality'))} · ID ending {_e(holder.get('national_id_last4'))}"
+        f"{_e(_country_label(holder.get('nationality')))} · ID ending {_e(holder.get('national_id_last4'))}"
         if holder.get("national_id_last4") else "No identity on the customer master"
     )
     body = [_DOCUMENT_STYLE]
@@ -1764,7 +1778,7 @@ def render_document(withdrawal_id: str) -> str:
                 + _row("Wallet before", f"${sealed['wallet']['balance_before']:,.2f}")
                 + _row("Wallet after the hold", f"${sealed['wallet']['balance_after']:,.2f}")
                 + _row("Account holder", bank.get("holder")) + _row("Bank", bank.get("bank_name"))
-                + _row("Branch", bank.get("branch")) + _row("Country", bank.get("country"))
+                + _row("Branch", bank.get("branch")) + _row("Country", _country_label(bank.get("country")))
                 + _row(account_label, "•••• " + str(bank.get("account_last4") or ""))
                 + _row("SWIFT", bank.get("swift"))
                 + _row("Reason given", (sealed.get("reason") or {}).get("label"))

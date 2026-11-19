@@ -127,7 +127,7 @@
     ".wrb-btn{border:0;border-radius:10px;padding:9px 16px;font:inherit;font-size:.84rem;font-weight:700;cursor:pointer;background:linear-gradient(135deg,#f7e2a0,#e3bf6f);color:#071022}",
     ".wrb-btn.ghost{background:transparent;border:1px solid rgba(127,178,255,.35);color:#eaf1ff;font-weight:600}",
     ".wrb-btn.danger{background:transparent;border:1px solid rgba(240,120,90,.6);color:#ffb39f}",
-    ".wrb-btn:disabled{opacity:.45;cursor:not-allowed}",
+    ".wrb-btn:disabled{opacity:.4;cursor:not-allowed;filter:grayscale(1)}",
     ".wrb-trail{list-style:none;margin:0;padding:0;display:grid;gap:8px;max-height:260px;overflow:auto}",
     ".wrb-trail li{font-size:.82rem;border-left:2px solid rgba(227,191,111,.6);padding:2px 0 2px 10px}",
     ".wrb-trail time{color:rgba(234,241,255,.55);font-size:.74rem}",
@@ -205,6 +205,10 @@
         }).join("") + "</div>";
       if (openMethod) html += formHtml(row, methodSpec(openMethod));
     }
+    // Shown beside the form it answers, above the payout buttons.
+    if (message && message.row === row.id) {
+      html += "<p class=\"wrb-msg" + (message.bad ? " bad" : "") + "\" role=\"status\">" + esc(message.text) + "</p>";
+    }
     html += "<div class=\"wrb-btns\" style=\"margin-top:14px;\">" +
       "<button type=\"button\" class=\"wrb-btn ghost\" data-act=\"document\">Open the withdrawal document</button>" +
       "<a class=\"wrb-btn ghost\" style=\"text-decoration:none;\" href=\"#customers-section\" data-act=\"find\">Find in the customer list</a>";
@@ -213,11 +217,7 @@
         ">Release " + money(row.amount) + " to the bank</button>" +
         "<button type=\"button\" class=\"wrb-btn danger\" data-act=\"decline\">Decline and return to wallet</button>";
     }
-    html += "</div>";
-    if (message && message.row === row.id) {
-      html += "<p class=\"wrb-msg" + (message.bad ? " bad" : "") + "\">" + esc(message.text) + "</p>";
-    }
-    html += "</div><div><p class=\"wrb-h\">Trail</p>";
+    html += "</div></div><div><p class=\"wrb-h\">Trail</p>";
     if (!attempts.length) {
       html += "<p class=\"wrb-empty\">No retention step yet. The transfer goes ahead when the window ends.</p>";
     } else {
@@ -338,8 +338,18 @@
       openMethod = "";
       await load(true);
     } catch (err) {
+      // Keep what was typed: the refusal is written under the form in place.
       say(row, err.message, true);
-      render();
+      const form = mount.querySelector(".wrb-form");
+      if (!form) { render(); return; }
+      let note = form.parentNode.querySelector(".wrb-msg");
+      if (!note) {
+        note = document.createElement("p");
+        note.setAttribute("role", "status");
+        form.insertAdjacentElement("afterend", note);
+      }
+      note.className = "wrb-msg bad";
+      note.textContent = err.message;
     }
   }
 
