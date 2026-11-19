@@ -157,7 +157,7 @@
             const body = await response.json();
             const transfers = body.transfers || {};
             document.getElementById('post-result').textContent = response.ok
-                ? ('Posted ' + (transfers.posted_count || 0) + ' claim transfer(s). Folded ' + ((transfers.collapsed || {}).balance_sheet_rows_removed || 0) + ' repeated claim line(s) back to the paid amount. Reserve left ' + money(transfers.claims_reserve) + '. Savings premiums credited ' + money((transfers.savings || {}).credited_total) + '.')
+                ? ('Posted ' + (transfers.posted_count || 0) + ' claim transfer(s). Folded ' + ((transfers.collapsed || {}).balance_sheet_rows_removed || 0) + ' repeated claim line(s) back to the paid amount. Reserve left ' + money(transfers.claims_reserve) + '. Savings premiums credited ' + money((transfers.savings || {}).credited_total) + '.' + (transfers.journal_after === false ? ' The after-record could not be written. The books were still saved.' : ''))
                 : (body.error || 'Could not post.');
             button.disabled = false;
             load();

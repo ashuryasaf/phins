@@ -11684,14 +11684,67 @@ _PREMIUM_SAVINGS_DEPOSIT_TYPES = frozenset({
 _SAVINGS_RECONCILE_SKIP = frozenset({'CUST-X', 'PHINS-CORPORATE', 'PHINS', 'SYSTEM'})
 
 
+def _wallet_non_claim_cash(wallet: Dict[str, Any]) -> float:
+    """Wallet cash that is not one paid claim still sitting in the balance.
+
+    Duplicate claim lines count once, up to that claim's paid amount. Cash
+    that was already in the wallet before the first claim credit still
+    counts after the claim is spent. A later spend does not open a new gap.
+    """
+    from services.premium_flow_reconciliation import paid_claim_amount
+    balance = safe_float(wallet.get('balance'), 0.0)
+    claims_by_id: Dict[str, Dict[str, Any]] = {}
+    for claim in CLAIMS.values():
+        if not isinstance(claim, dict):
+            continue
+        claim_id = str(claim.get('id') or claim.get('claim_id') or '')
+        if claim_id and claim_id not in claims_by_id:
+            claims_by_id[claim_id] = claim
+    grouped: Dict[str, List[float]] = {}
+    claim_rows: List[Dict[str, Any]] = []
+    raw = 0.0
+    for row in wallet.get('transactions') or []:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get('type') or '') not in _CLAIM_LEG_TYPES:
+            continue
+        amount = safe_float(row.get('amount'), 0.0)
+        raw += amount
+        claim_id = str(row.get('claim_id') or '')
+        grouped.setdefault(claim_id, []).append(amount)
+        claim_rows.append(row)
+    capped = 0.0
+    for claim_id, amounts in grouped.items():
+        claim = claims_by_id.get(claim_id)
+        cap = float(paid_claim_amount(claim)) if claim is not None else 0.0
+        if cap <= 0 and amounts:
+            cap = max(amounts)
+        capped += min(sum(amounts), cap) if cap > 0 else sum(amounts)
+    residual = round(max(0.0, balance - min(capped, balance)), 2)
+    pre_claim = None
+    ordered = sorted(claim_rows, key=lambda row: str(row.get('timestamp') or ''))
+    for row in ordered:
+        if row.get('previous_balance') is not None:
+            pre_claim = safe_float(row.get('previous_balance'), 0.0)
+            break
+        if row.get('balance_after') is not None:
+            pre_claim = round(max(0.0, safe_float(row.get('balance_after'), 0.0) - safe_float(row.get('amount'), 0.0)), 2)
+            break
+    if pre_claim is not None:
+        return round(max(pre_claim, residual), 2)
+    if raw > capped + 0.01 and capped > balance + 0.01:
+        return round(max(0.0, balance), 2)
+    return residual
+
+
 def _premium_savings_already_landed(customer_id: str) -> float:
     """Premium savings already sitting on this customer's books.
 
     Tagged deposits and the 30/65/5 slices are two records of the same cash.
-    Live investment and algo balances count too, as do wallet cash that is
-    not a claim credit. The larger figure is kept, so a savings balance
-    that landed under another type is not credited again. A later spend
-    does not erase a tagged allocation row.
+    Live investment and algo balances count too, as does wallet cash that
+    is not one paid claim. Duplicate claim lines and a spent claim do not
+    hide that cash, so it is not credited again. The larger figure is kept.
+    A later spend does not erase a tagged allocation row.
     """
     marker = 0.0
     deposits = 0.0
@@ -11709,17 +11762,16 @@ def _premium_savings_already_landed(customer_id: str) -> float:
                 slices += safe_float(row.get('amount', row.get('total_amount')), 0.0)
     wallet = HEALTH_WALLETS.get(customer_id)
     wallet_balance = 0.0
-    claim_credits = 0.0
     if isinstance(wallet, dict):
         marker = max(marker, safe_float(wallet.get('savings_premiums_applied'), 0.0))
-        wallet_balance = safe_float(wallet.get('balance'), 0.0)
+        wallet_balance = _wallet_non_claim_cash(wallet)
         for row in wallet.get('transactions') or []:
             if not isinstance(row, dict):
                 continue
             kind = str(row.get('type') or '')
             if kind in _CLAIM_LEG_TYPES:
-                claim_credits += safe_float(row.get('amount'), 0.0)
-            elif kind in _PREMIUM_SAVINGS_DEPOSIT_TYPES:
+                continue
+            if kind in _PREMIUM_SAVINGS_DEPOSIT_TYPES:
                 deposits += safe_float(row.get('amount'), 0.0)
             elif kind in _PREMIUM_SAVINGS_SLICE_TYPES:
                 slices += safe_float(row.get('amount'), 0.0)
@@ -11735,8 +11787,7 @@ def _premium_savings_already_landed(customer_id: str) -> float:
         for row in algo.get('transfers') or []:
             if isinstance(row, dict) and str(row.get('type') or '') in _PREMIUM_SAVINGS_SLICE_TYPES:
                 slices += safe_float(row.get('amount'), 0.0)
-    wallet_savings = round(max(0.0, wallet_balance - claim_credits), 2)
-    live_books = round(wallet_savings + investment_position + algo_available, 2)
+    live_books = round(wallet_balance + investment_position + algo_available, 2)
     return round(max(marker, deposits, slices, live_books), 2)
 
 
@@ -11995,6 +12046,8 @@ def post_unposted_claim_transfers(actor: str = 'accountant') -> Dict[str, Any]:
 
     The before-state is journaled and attributed to ``actor`` before any
     balance changes. If that journal cannot be written, nothing is changed.
+    A miss on the after-line does not undo the books and does not hide a
+    snapshot that was saved.
     """
     from services.premium_flow_reconciliation import claim_postings_due, reconcile_customer
     before = {
@@ -12101,16 +12154,21 @@ def post_unposted_claim_transfers(actor: str = 'accountant') -> Dict[str, Any]:
             'before': before,
             'after': after,
         })
-        if audit is not None:
+    except Exception:
+        journal_after = False
+    if audit is not None:
+        try:
             audit.log(actor, 'cashflow.reconcile', 'balance_sheet', 'claims_reserve', {
                 'phase': 'after',
                 'before': before,
                 'after': after,
+                'journal_after': journal_after,
             })
-    except Exception:
-        journal_after = False
+        except Exception:
+            pass
     changed = bool(
         collapsed.get('balance_sheet_rows_removed')
+        or collapsed.get('wallet_credit_removed')
         or savings.get('credited_count')
         or posted
     )
@@ -12121,11 +12179,7 @@ def post_unposted_claim_transfers(actor: str = 'accountant') -> Dict[str, Any]:
             durable = False
     else:
         durable = True
-    refusal = None
-    if not journal_after:
-        refusal = 'repair_journal_failed'
-    elif not durable:
-        refusal = 'not_durable'
+    refusal = None if durable else 'not_durable'
     return {
         'success': refusal is None,
         'error': refusal,

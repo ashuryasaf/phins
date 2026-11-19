@@ -453,6 +453,152 @@ class TestClaimPaymentToWallet:
         assert portal.PHINS_BALANCE_SHEET['claims_reserve'] == 10000.0
         assert len(portal.PHINS_BALANCE_SHEET['transactions']) == 3
 
+    def test_claim_lines_do_not_hide_savings_still_in_the_wallet(self):
+        import web_portal.server as portal
+        portal.CLAIMS['CLM-SPENT'] = {
+            'id': 'CLM-SPENT', 'customer_id': 'CUST-SPENT', 'status': 'paid', 'paid_amount': 4500.0,
+        }
+        portal.POLICIES['POL-SPENT'] = {
+            'id': 'POL-SPENT', 'customer_id': 'CUST-SPENT', 'start_date': '2026-01-01',
+            'annual_premium': 1200.0, 'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING['BILL-SPENT'] = {
+            'id': 'BILL-SPENT', 'customer_id': 'CUST-SPENT', 'policy_id': 'POL-SPENT',
+            'payment_period': '2026-01', 'amount_paid': 200.0, 'status': 'paid',
+            'premium_allocation': {'risk_amount_paid': 120.0, 'savings_amount_paid': 80.0},
+        }
+        portal.HEALTH_WALLETS['CUST-SPENT'] = {
+            'customer_id': 'CUST-SPENT',
+            'balance': 80.0,
+            'transactions': [{
+                'id': 'W-SPENT', 'type': 'claim_payment', 'claim_id': 'CLM-SPENT',
+                'amount': 4500.0, 'previous_balance': 80.0, 'balance_after': 4580.0,
+                'timestamp': '2026-02-01T00:00:00',
+            }],
+        }
+        portal.CLAIMS['CLM-HELD'] = {
+            'id': 'CLM-HELD', 'customer_id': 'CUST-HELD-CLAIM', 'status': 'paid', 'paid_amount': 4500.0,
+        }
+        portal.POLICIES['POL-HELD-CLAIM'] = {
+            'id': 'POL-HELD-CLAIM', 'customer_id': 'CUST-HELD-CLAIM', 'start_date': '2026-01-01',
+            'annual_premium': 1200.0, 'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING['BILL-HELD-CLAIM'] = {
+            'id': 'BILL-HELD-CLAIM', 'customer_id': 'CUST-HELD-CLAIM', 'policy_id': 'POL-HELD-CLAIM',
+            'payment_period': '2026-01', 'amount_paid': 200.0, 'status': 'paid',
+            'premium_allocation': {'risk_amount_paid': 120.0, 'savings_amount_paid': 80.0},
+        }
+        portal.HEALTH_WALLETS['CUST-HELD-CLAIM'] = {
+            'customer_id': 'CUST-HELD-CLAIM',
+            'balance': 4500.0,
+            'transactions': [{
+                'id': 'W-HELD', 'type': 'claim_payment', 'claim_id': 'CLM-HELD',
+                'amount': 4500.0, 'previous_balance': 0.0, 'balance_after': 4500.0,
+                'timestamp': '2026-02-01T00:00:00',
+            }],
+        }
+
+        result = portal.reconcile_savings_premium_balances()
+        assert all(row['customer_id'] != 'CUST-SPENT' for row in result['credited'])
+        assert portal.HEALTH_WALLETS['CUST-SPENT']['balance'] == 80.0
+        held = [row for row in result['credited'] if row['customer_id'] == 'CUST-HELD-CLAIM']
+        assert len(held) == 1
+        assert held[0]['credited'] == 80.0
+
+    def test_duplicate_wallet_lines_do_not_credit_savings_again(self):
+        import web_portal.server as portal
+        portal.CLAIMS['CLM-DUP'] = {
+            'id': 'CLM-DUP', 'customer_id': 'CUST-DUP', 'status': 'paid', 'paid_amount': 4500.0,
+        }
+        portal.POLICIES['POL-DUP'] = {
+            'id': 'POL-DUP', 'customer_id': 'CUST-DUP', 'start_date': '2026-01-01',
+            'annual_premium': 1200.0, 'risk_premium_annual': 1200.0,
+        }
+        portal.BILLING['BILL-DUP'] = {
+            'id': 'BILL-DUP', 'customer_id': 'CUST-DUP', 'policy_id': 'POL-DUP',
+            'payment_period': '2026-01', 'amount_paid': 200.0, 'status': 'paid',
+            'premium_allocation': {'risk_amount_paid': 120.0, 'savings_amount_paid': 80.0},
+        }
+        portal.HEALTH_WALLETS['CUST-DUP'] = {
+            'customer_id': 'CUST-DUP',
+            'balance': 80.0,
+            'transactions': [
+                {'id': f'WD-{n}', 'type': 'claim_payment', 'claim_id': 'CLM-DUP',
+                 'amount': 4500.0, 'timestamp': f'2026-03-0{n}T00:00:00'}
+                for n in (1, 2, 3)
+            ],
+        }
+
+        result = portal.reconcile_savings_premium_balances()
+        assert all(row['customer_id'] != 'CUST-DUP' for row in result['credited'])
+        assert portal.HEALTH_WALLETS['CUST-DUP']['balance'] == 80.0
+
+    def test_after_journal_miss_still_reports_a_durable_repair(self, monkeypatch):
+        import web_portal.server as portal
+        self._setup_customer_and_policy(portal)
+        claim = portal.CLAIMS['CLM-TEST-PAY']
+        claim['status'] = 'paid'
+        claim['paid_amount'] = 4500.0
+        portal.PHINS_BALANCE_SHEET['claims_reserve'] = 10000.0
+        portal.PHINS_BALANCE_SHEET['transactions'] = [
+            {'tx_id': f'BS-{n}', 'category': 'claims_paid', 'claim_id': 'CLM-TEST-PAY',
+             'amount': 4500.0, 'timestamp': f'2026-03-0{n}T00:00:00'}
+            for n in (1, 2, 3)
+        ]
+        calls = {'n': 0}
+        original = portal._append_cashflow_repair_journal
+
+        def _append(record):
+            calls['n'] += 1
+            if record.get('phase') == 'after':
+                raise OSError('after line failed')
+            original(record)
+
+        monkeypatch.setattr(portal, '_append_cashflow_repair_journal', _append)
+        result = portal.post_unposted_claim_transfers('cashier-2')
+
+        assert result['journal_after'] is False
+        assert result['durable'] is True
+        assert result['success'] is True
+        assert result['error'] is None
+        assert portal.PHINS_BALANCE_SHEET['claims_reserve'] == 19000.0
+        assert calls['n'] >= 2
+
+    def test_wallet_only_collapse_is_saved(self, monkeypatch):
+        import web_portal.server as portal
+        self._setup_customer_and_policy(portal)
+        claim = portal.CLAIMS['CLM-TEST-PAY']
+        claim['status'] = 'paid'
+        claim['paid_amount'] = 4500.0
+        portal.PHINS_BALANCE_SHEET['claims_reserve'] = 10000.0
+        portal.PHINS_BALANCE_SHEET['transactions'] = [
+            {'tx_id': 'BS-1', 'category': 'claims_paid', 'claim_id': 'CLM-TEST-PAY',
+             'amount': 4500.0, 'timestamp': '2026-03-01T00:00:00'},
+        ]
+        portal.HEALTH_WALLETS['CUST-TEST-PAY'] = {
+            'customer_id': 'CUST-TEST-PAY',
+            'balance': 13500.0,
+            'transactions': [
+                {'id': f'W-{n}', 'type': 'claim_payment', 'claim_id': 'CLM-TEST-PAY',
+                 'amount': 4500.0, 'timestamp': f'2026-03-0{n}T00:00:00'}
+                for n in (1, 2, 3)
+            ],
+        }
+        saved = {'called': False}
+
+        def _save(*args, **kwargs):
+            saved['called'] = True
+            return True
+
+        monkeypatch.setattr(portal, 'save_ledger_data', _save)
+        result = portal.post_unposted_claim_transfers('cashier-3')
+
+        assert result['collapsed']['balance_sheet_rows_removed'] == 0
+        assert result['collapsed']['wallet_credit_removed'] == 9000.0
+        assert portal.HEALTH_WALLETS['CUST-TEST-PAY']['balance'] == 4500.0
+        assert saved['called'] is True
+        assert result['durable'] is True
+
 
 class TestClaimPaymentPipeline:
     """Test /api/claims/pay processes through wallet pipeline."""
