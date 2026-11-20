@@ -134,18 +134,28 @@
     }
 
     function armClip(video) {
-        if (!video || video.dataset.armed === '1' || !video.getAttribute('src')) return;
+        if (!video || video.dataset.armed === '1') return;
         // A later scene starts from the previous clip's ended event, which is
-        // not a user gesture. play() has to run in this click, while the
-        // element already has a src. A blob that arrives later is left
-        // unarmed so the next click can unlock it.
+        // not a user gesture. play() has to run in this click, even while the
+        // authorized bytes are still loading. A muted play() after that fetch
+        // does not unlock unmuted playback, and marking it armed would skip
+        // a second click.
+        if (!video.getAttribute('src')) {
+            var deckSrc = video.getAttribute('data-deck-src') || '';
+            var ready = resolvedDeckUrl(deckSrc);
+            if (ready) {
+                video.removeAttribute('data-deck-src');
+                video.src = ready;
+            }
+        }
+        var hasSrc = !!video.getAttribute('src');
         video.muted = true;
         try {
             var pending = video.play();
             video.pause();
             try { video.currentTime = 0; } catch (e) { /* metadata not in yet */ }
             video.muted = false;
-            video.dataset.armed = '1';
+            if (hasSrc) video.dataset.armed = '1';
             if (pending && pending.catch) pending.catch(function () {});
         } catch (e) {
             video.muted = false;
@@ -486,6 +496,12 @@
         if (play) play.addEventListener('click', function () {
             var index = state.blocked ? state.cursor : 0;
             armOtherClips(state, index);
+            var currentClip = state.clips[index];
+            var currentVideo = currentClip && currentClip.querySelector('video');
+            // The clip about to start is not in armOtherClips. Unlock it in
+            // this click too when its blob is not on the element yet, without
+            // rewinding a clip that already has a source.
+            if (currentVideo && !currentVideo.getAttribute('src')) armClip(currentVideo);
             playAt(state, index);
         });
         target.querySelectorAll('[data-idl-lang]').forEach(function (button) {

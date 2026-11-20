@@ -6748,52 +6748,71 @@ def read_deck_media_bytes(asset: Dict[str, Any]) -> Dict[str, Any]:
     return {'payload': payload, 'mime': mime, 'error': ''}
 
 
-def _deck_referenced_media_ids() -> set:
-    """Library ids the investor deck or the Swiss Re deck already points at.
-
-    A scene clip, a scene photo, a combined slide video, a watermark image,
-    and a slide chrome image. Nothing else is streamed from ``/deck-media/``.
-    """
+def _deck_scene_media_ids(*store_names: str) -> set:
+    """Scene clips and scene photos named in the given design stores."""
     found = set()
-
-    def add(value: Any) -> None:
-        text = str(value or '').strip()
-        if text:
-            found.add(text)
-
-    for name in (
-        'investor_deck_scenes',
-        'investor_deck_scenes_he',
-        'reinsurer_deck_scenes',
-        'reinsurer_deck_scenes_he',
-    ):
+    for name in store_names:
         store = DESIGN_SETTINGS.get(name)
         if not isinstance(store, dict):
             continue
         for record in store.values():
             if not isinstance(record, dict):
                 continue
-            add(record.get('last_asset_id'))
-            add(record.get('reference_image_asset_id'))
+            for field in ('last_asset_id', 'reference_image_asset_id'):
+                text = str(record.get(field) or '').strip()
+                if text:
+                    found.add(text)
+    return found
+
+
+def _investor_deck_media_ids() -> set:
+    """Library ids the investor deck already points at."""
+    found = _deck_scene_media_ids('investor_deck_scenes', 'investor_deck_scenes_he')
     slide_media = DESIGN_SETTINGS.get('investor_deck_slide_media')
     if isinstance(slide_media, dict):
         for record in slide_media.values():
             if isinstance(record, dict):
-                add(record.get('asset_id'))
+                text = str(record.get('asset_id') or '').strip()
+                if text:
+                    found.add(text)
     watermark = DESIGN_SETTINGS.get('investor_deck_watermark')
     if isinstance(watermark, dict):
         for item in watermark.get('images') or []:
             if isinstance(item, dict):
-                add(item.get('asset_id'))
+                text = str(item.get('asset_id') or '').strip()
+                if text:
+                    found.add(text)
     chrome = DESIGN_SETTINGS.get('investor_deck_slide_chrome')
     if isinstance(chrome, dict):
         for record in chrome.values():
             if isinstance(record, dict):
-                add(record.get('image_asset_id'))
+                text = str(record.get('image_asset_id') or '').strip()
+                if text:
+                    found.add(text)
     portrait = str(DESIGN_SETTINGS.get('founder_portrait_id') or '').strip()
     if portrait:
         found.add(portrait)
     return found
+
+
+def _reinsurer_deck_media_ids() -> set:
+    """Library ids the Swiss Re deck already points at. Its own scene stores only."""
+    return _deck_scene_media_ids('reinsurer_deck_scenes', 'reinsurer_deck_scenes_he')
+
+
+def _deck_referenced_media_ids(scope: str = 'staff') -> set:
+    """Ids ``/deck-media/`` may stream for this reader.
+
+    ``staff`` is both decks. ``investor`` and ``reinsurer`` stay on the deck
+    that share opened. Any other scope is empty.
+    """
+    if scope == 'investor':
+        return _investor_deck_media_ids()
+    if scope == 'reinsurer':
+        return _reinsurer_deck_media_ids()
+    if scope == 'staff':
+        return _investor_deck_media_ids() | _reinsurer_deck_media_ids()
+    return set()
 
 
 def _deck_playback_url(media: Dict[str, Any]) -> str:
@@ -23226,25 +23245,25 @@ class PortalHandler(BaseHTTPRequestHandler):
             return opened
         return None
 
-    def _deck_media_allowed(self) -> bool:
-        """Who may stream ``/deck-media/``. The library record is not written.
+    def _deck_media_reader_scope(self) -> str:
+        """Which deck's clips this request may stream. Empty when refused.
 
-        A bearer reader or a staff-unlock cookie is enough. A share cookie
-        for the investor deck or the Swiss Re deck is enough while that
+        A bearer reader or a staff-unlock cookie may read both decks. A share
+        cookie may read only the deck that share opened, and only while that
         opening is still active. An anonymous request is refused.
         """
         if self._investor_deck_reader(self._get_session()):
-            return True
+            return 'staff'
         if not _confidential_access_enabled or confidential_access is None:
-            return False
+            return ''
         try:
             jar = confidential_access.parse_cookies(self.headers.get('Cookie', ''))
             cookie = jar.get(confidential_access.SHARE_COOKIE_NAME)
         except Exception:
-            return False
-        for root in (
-            confidential_access.INVESTOR_DECK_SCOPE_ROOT,
-            confidential_access.REINSURER_DECK_SCOPE_ROOT,
+            return ''
+        for scope, root in (
+            ('investor', confidential_access.INVESTOR_DECK_SCOPE_ROOT),
+            ('reinsurer', confidential_access.REINSURER_DECK_SCOPE_ROOT),
         ):
             try:
                 claims = confidential_access.verify_share_cookie(cookie, root)
@@ -23257,8 +23276,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                 root,
                 str(claims.get('sk') or ''),
             ):
-                return True
-        return False
+                return scope
+        return ''
 
     def _autopilot_control_actor(self, body_data: Optional[Dict[str, Any]] = None,
                                  qs: Optional[Dict[str, Any]] = None) -> Optional[str]:
@@ -25296,6 +25315,7 @@ For claims or questions, please contact:
             self.send_header('Content-Range', f'bytes {start}-{end}/{size}')
         for name, value in static_asset_security_headers():
             self.send_header(name, value)
+        self.send_header('Cache-Control', 'private, no-store')
         self.end_headers()
         if length > 0:
             self.wfile.write(body[start:end + 1])
@@ -42391,11 +42411,12 @@ For claims or questions, please contact:
             return
 
         if path.startswith('/deck-media/'):
-            if not self._deck_media_allowed():
+            reader_scope = self._deck_media_reader_scope()
+            if not reader_scope:
                 self.send_error(401, 'Authentication required')
                 return
             asset_id = _deck_media_id(path[len('/deck-media/'):])
-            if not asset_id or asset_id not in _deck_referenced_media_ids():
+            if not asset_id or asset_id not in _deck_referenced_media_ids(reader_scope):
                 self.send_error(404, 'Not found')
                 return
             asset = MEDIA_ASSETS.get(asset_id) if asset_id else None
@@ -42417,6 +42438,7 @@ For claims or questions, please contact:
                 self.send_header('Content-Length', str(len(payload)))
                 for name, value in static_asset_security_headers():
                     self.send_header(name, value)
+                self.send_header('Cache-Control', 'private, no-store')
                 self.end_headers()
                 self.wfile.write(payload)
             return

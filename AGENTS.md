@@ -961,8 +961,11 @@ Environment variables commonly used:
  a checksummed pointer in `investor_deck_slide_media`
  (`GET`/`POST /api/admin/media/investor-deck/presentation`); a mismatch is
  omitted and the library file is not rewritten. Playback in that response
- is the stored `/…` or http(s) address, or `/media-files/{id}/…` when the
- stored address is a `data:` URL. The library record is not rewritten and
+ is the stored `/…` or http(s) address, or `/deck-media/{id}` when the only
+ address is a `data:` URL. `GET /deck-media/{id}` is `Cache-Control: private, no-store`.
+ A staff reader may stream a clip either deck already points at. An investor-deck
+ share streams only that deck's clips, and a Swiss Re share streams only the
+ Swiss Re scenes. The library record is not rewritten and
  the data URL is not copied into the JSON. The media dashboard loads the
  deck document with the staff bearer (`srcdoc`) because an iframe
  navigation does not send it; a failed plan read replaces “Loading the
