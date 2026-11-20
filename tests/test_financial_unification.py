@@ -6,7 +6,13 @@ to the accounting book. Historical billed amounts are never rewritten.
 
 from decimal import Decimal
 
-from accounting_engine import reset_accounting_engine, get_accounting_engine, EntryType
+from accounting_engine import (
+    AccountType,
+    AllocationStatus,
+    EntryType,
+    get_accounting_engine,
+    reset_accounting_engine,
+)
 from services.financial_unification_service import (
     CLAIM_CASH_TYPES,
     PREMIUM_AUDIT_TYPES,
@@ -16,6 +22,7 @@ from services.financial_unification_service import (
     economic_claims_reserve,
     ensure_seed_claims_reserve,
     kernel_components_from_policy,
+    kernel_pin_restore_candidate,
     kernel_savings_cash_from_ledger,
     ledger_cash_total,
     ledger_derived_balance_sheet_view,
@@ -25,7 +32,9 @@ from services.financial_unification_service import (
     reconcile_financial_books,
     reconstruct_accounting_book_from_ledger,
     repair_financial_books,
+    repin_kernel_fields_on_policy,
     resolve_premium_split,
+    resplit_accounting_book_premiums,
     savings_and_investments_books,
     sum_paid_claim_records,
 )
@@ -1342,3 +1351,489 @@ def test_kernel_quote_for_seed_rejects_auto():
         raise AssertionError("auto should not kernel-price")
     except ValueError as exc:
         assert "non-kernel" in str(exc)
+
+
+# ---------------------------------------------------------------------------
+# Full kernel stack: every premium dollar lands on one stream
+# ---------------------------------------------------------------------------
+
+def _full_stack_policy(**extra):
+    """Annual $3,557.68 = risk 1,960.15 + savings 980.08 + expense 294.02 + profit 323.43."""
+    policy = {
+        "id": "POL-FS",
+        "customer_id": "CUST-FS",
+        "annual_premium": 3557.68,
+        "monthly_premium": 296.47,
+        "pricing_source": "pricing_kernel",
+        "risk_premium_annual": 1960.15,
+        "savings_premium_annual": 980.08,
+        "expense_loading_annual": 294.02,
+        "profit_margin_annual": 323.43,
+        "savings_addon": "balanced",
+    }
+    policy.update(extra)
+    return policy
+
+
+def test_a_closed_kernel_stack_shares_the_installment_to_the_cent():
+    split = resolve_premium_split(296.47, _full_stack_policy())
+    assert split["risk_amount"] == 163.35
+    assert split["expense_amount"] == 24.50
+    assert split["profit_amount"] == 26.95
+    assert split["savings_amount"] == 81.67
+    assert split["company_remainder"] == 0.0
+    landed = Decimal("0")
+    for key in ("risk_amount", "underwriting_fee_amount", "expense_amount", "profit_amount", "savings_amount"):
+        landed += Decimal(str(split[key]))
+    assert landed == Decimal("296.47")
+
+
+def test_twelve_installments_of_a_closed_stack_leave_no_cent_above_it():
+    policy = _full_stack_policy()
+    for amount in (296.47, 100.00, 0.01, 3557.68, 17.33):
+        split = resolve_premium_split(amount, policy)
+        parts = sum(
+            Decimal(str(split[key]))
+            for key in ("risk_amount", "underwriting_fee_amount", "expense_amount", "profit_amount", "savings_amount")
+        )
+        assert parts == Decimal(str(amount)), (amount, split)
+        assert split["company_remainder"] == 0.0
+
+
+def test_pin_kernel_fields_carries_the_loadings():
+    policy = {"id": "P", "annual_premium": 3557.68}
+    pin_kernel_fields_on_policy(policy, {
+        "pricing_source": "pricing_kernel",
+        "risk_premium_annual": 1960.15,
+        "savings_premium_annual": 980.08,
+        "expense_loading_annual": 294.02,
+        "profit_margin_annual": 323.43,
+    })
+    assert policy["expense_loading_annual"] == 294.02
+    assert policy["profit_margin_annual"] == 323.43
+
+
+def test_repin_replaces_the_money_pins_and_a_flat_reprice_clears_them():
+    policy = _full_stack_policy()
+    repin_kernel_fields_on_policy(policy, {
+        "pricing_source": "pricing_kernel",
+        "integrity_hash": "new",
+        "risk_premium_annual": 1000.0,
+        "savings_premium_annual": 0.0,
+        "expense_loading_annual": 150.0,
+        "profit_margin_annual": 165.0,
+    })
+    assert policy["risk_premium_annual"] == 1000.0
+    assert policy["savings_premium_annual"] == 0.0
+    assert policy["integrity_hash"] == "new"
+    repin_kernel_fields_on_policy(policy, {"annual": 900.0, "monthly": 75.0})
+    for key in ("risk_premium_annual", "savings_premium_annual", "expense_loading_annual", "profit_margin_annual"):
+        assert policy[key] is None
+
+
+def test_accounting_book_carries_the_cents_the_split_landed():
+    engine = get_accounting_engine()
+    policy = _full_stack_policy()
+    post_collected_premiums_to_accounting(
+        customer_id="CUST-FS",
+        policy_id="POL-FS",
+        policy=policy,
+        amount=296.47,
+        bills_paid=["BILL-FS"],
+        billing={"BILL-FS": {"id": "BILL-FS", "policy_id": "POL-FS", "amount_paid": 296.47}},
+        source_tx_id="TX-FS",
+        fallback_risk_pct=100,
+        engine=engine,
+    )
+    totals = accounting_book_totals(engine)
+    assert totals["premium_posted"] == 296.47
+    # A two-decimal percentage of 296.47 would have booked 81.68.
+    assert totals["savings_posted"] == 81.67
+
+
+def _savings_reconcile(landed):
+    reset_accounting_engine()
+    engine = get_accounting_engine()
+    policy = _full_stack_policy()
+    post_collected_premiums_to_accounting(
+        customer_id="CUST-FS",
+        policy_id="POL-FS",
+        policy=policy,
+        amount=296.47,
+        bills_paid=["BILL-FS"],
+        billing={"BILL-FS": {"id": "BILL-FS", "policy_id": "POL-FS", "amount_paid": 296.47}},
+        source_tx_id="TX-FS",
+        fallback_risk_pct=100,
+        engine=engine,
+    )
+    return reconcile_financial_books(
+        policies={"POL-FS": policy},
+        claims={},
+        billing={"BILL-FS": {"id": "BILL-FS", "customer_id": "CUST-FS", "policy_id": "POL-FS", "amount_paid": 296.47}},
+        transactions=[{
+            "id": "TX-FS", "customer_id": "CUST-FS", "type": "bill_payment", "amount": 296.47,
+            "metadata": {"bill_id": "BILL-FS", "policy_id": "POL-FS"},
+        }],
+        balance_sheet={
+            "revenue_breakdown": {"premium_income": 296.47},
+            "expense_breakdown": {"claims_paid": 0.0},
+            "claims_reserve": 3_500_000.0,
+            "seed_claims_reserve": 3_500_000.0,
+        },
+        engine=engine,
+        investment_accounts={},
+        savings_landed_by_customer=landed,
+    )
+
+
+def test_reconcile_counts_savings_on_the_customers_own_books():
+    report = _savings_reconcile({"CUST-FS": 81.67})
+    assert report["is_consistent"] is True, report["discrepancies"]
+    assert report["savings"]["savings_landed_basis"] == "customer_books"
+    assert report["savings"]["savings_landed"] == 81.67
+    assert report["savings"]["unlanded_savings_cash"] == 0.0
+    assert report["premium_streams"] == {
+        "risk": 163.35,
+        "underwriting_fee": 0.0,
+        "expense_loading": 24.5,
+        "profit": 26.95,
+        "savings": 81.67,
+        "above_kernel_stack": 0.0,
+        "without_kernel_pin": 0.0,
+    }
+    assert report["warnings"] == []
+
+
+def test_reconcile_names_the_customer_whose_savings_never_landed():
+    report = _savings_reconcile({"CUST-FS": 20.00})
+    assert report["is_consistent"] is False
+    item = next(d for d in report["discrepancies"] if d["check"] == "savings_cash_not_landed_in_portfolios")
+    assert item["difference"] == 61.67
+    assert item["customers"] == [{
+        "customer_id": "CUST-FS",
+        "savings_charged": 81.67,
+        "savings_landed": 20.0,
+        "not_landed": 61.67,
+    }]
+
+
+def test_a_customers_own_deposits_do_not_cover_another_customers_savings():
+    """Extra money on one book is not counted against a different customer's gap."""
+    report = _savings_reconcile({"CUST-FS": 0.0, "CUST-OTHER": 5000.0})
+    assert report["savings"]["savings_landed"] == 0.0
+    assert report["savings"]["unlanded_savings_cash"] == 81.67
+
+
+def test_reconcile_warns_about_premium_cash_on_a_policy_with_no_pin():
+    reset_accounting_engine()
+    engine = get_accounting_engine()
+    policy = {"id": "POL-NP", "customer_id": "CUST-NP", "annual_premium": 1200.0}
+    post_premium_to_accounting_book(
+        bill_id="BILL-NP", policy_id="POL-NP", customer_id="CUST-NP",
+        amount=100.0, risk_percentage=100, source_tx_id="TX-NP", engine=engine,
+    )
+    report = reconcile_financial_books(
+        policies={"POL-NP": policy},
+        claims={},
+        billing={"BILL-NP": {"id": "BILL-NP", "customer_id": "CUST-NP", "policy_id": "POL-NP", "amount_paid": 100.0}},
+        transactions=[{
+            "id": "TX-NP", "customer_id": "CUST-NP", "type": "bill_payment", "amount": 100.0,
+            "metadata": {"bill_id": "BILL-NP", "policy_id": "POL-NP"},
+        }],
+        balance_sheet={
+            "revenue_breakdown": {"premium_income": 100.0},
+            "expense_breakdown": {"claims_paid": 0.0},
+            "claims_reserve": 3_500_000.0,
+            "seed_claims_reserve": 3_500_000.0,
+        },
+        engine=engine,
+        savings_landed_by_customer={},
+    )
+    # The totals tie, so the books are in balance. The warning says what is not known.
+    assert report["is_consistent"] is True, report["discrepancies"]
+    warning = next(w for w in report["warnings"] if w["check"] == "premium_cash_without_kernel_pin")
+    assert warning["amount"] == 100.0
+    assert warning["policy_ids"] == ["POL-NP"]
+    # It sits on the risk book, and it is shown apart from priced risk.
+    assert report["savings"]["kernel_risk_cash"] == 100.0
+    assert report["premium_streams"]["risk"] == 0.0
+    assert report["premium_streams"]["without_kernel_pin"] == 100.0
+    assert round(sum(report["premium_streams"].values()), 2) == 100.0
+
+
+# ---------------------------------------------------------------------------
+# A pin that arrives after the cash was booked: the book is re-split
+# ---------------------------------------------------------------------------
+
+def _booked_before_the_pin():
+    """$296.47 booked all-risk on a policy with no pin, then the pin is restored."""
+    reset_accounting_engine()
+    engine = get_accounting_engine()
+    billing = {"BILL-FS": {"id": "BILL-FS", "customer_id": "CUST-FS", "policy_id": "POL-FS", "amount_paid": 296.47}}
+    transactions = [{
+        "id": "TX-FS", "customer_id": "CUST-FS", "type": "bill_payment", "amount": 296.47,
+        "metadata": {"bill_id": "BILL-FS", "policy_id": "POL-FS"},
+    }]
+    unpinned = {"id": "POL-FS", "customer_id": "CUST-FS", "annual_premium": 3557.68, "monthly_premium": 296.47}
+    post_collected_premiums_to_accounting(
+        customer_id="CUST-FS", policy_id="POL-FS", policy=unpinned, amount=296.47,
+        bills_paid=["BILL-FS"], billing=billing, source_tx_id="TX-FS",
+        fallback_risk_pct=100, engine=engine,
+    )
+    assert accounting_book_totals(engine)["risk_posted"] == 296.47
+    return engine, {"POL-FS": _full_stack_policy()}, billing, transactions
+
+
+def _books(engine, policies, billing, transactions):
+    return reconcile_financial_books(
+        policies=policies, claims={}, billing=billing, transactions=transactions,
+        balance_sheet={
+            "revenue_breakdown": {"premium_income": 296.47},
+            "expense_breakdown": {"claims_paid": 0.0},
+            "claims_reserve": 3_500_000.0,
+            "seed_claims_reserve": 3_500_000.0,
+        },
+        engine=engine, investment_accounts={},
+        savings_landed_by_customer={"CUST-FS": 81.67},
+    )
+
+
+def test_reconcile_reports_a_book_split_that_no_longer_matches_the_pin():
+    engine, policies, billing, transactions = _booked_before_the_pin()
+    report = _books(engine, policies, billing, transactions)
+    assert report["is_consistent"] is False
+    item = next(d for d in report["discrepancies"] if d["check"] == "accounting_book_split_vs_kernel_pins")
+    assert item["book"] == {"risk": 296.47, "savings": 0.0}
+    assert item["kernel"] == {"risk": 163.35, "savings": 81.67}
+    assert item["difference"] == -81.67
+    # The reserve bridge still reads the stale book until it is re-split.
+    assert report["reserves"]["risk_cash_collected"] == 296.47
+
+
+def test_resplit_reverses_the_old_posting_and_books_the_pinned_split():
+    engine, policies, billing, transactions = _booked_before_the_pin()
+    preview = resplit_accounting_book_premiums(
+        policies=policies, billing=billing, transactions=transactions, engine=engine, dry_run=True,
+    )
+    assert preview["resplit_count"] == 1 and preview["dry_run"] is True
+    assert accounting_book_totals(engine)["risk_posted"] == 296.47
+
+    result = resplit_accounting_book_premiums(
+        policies=policies, billing=billing, transactions=transactions, engine=engine, actor="accountant",
+    )
+    assert result["failed"] == []
+    row = result["resplit"][0]
+    assert row["before"] == {"risk": 296.47, "savings": 0.0}
+    assert row["after"] == {"risk": 163.35, "savings": 81.67}
+    totals = accounting_book_totals(engine)
+    assert totals["premium_posted"] == 296.47
+    assert totals["risk_posted"] == 163.35
+    assert totals["savings_posted"] == 81.67
+    assert totals["allocation_count"] == 1
+    # The first posting stays on record, reversed, with contra entries.
+    reversed_alloc = engine.allocations[row["reversed_allocation_id"]]
+    assert reversed_alloc.status == AllocationStatus.REVERSED
+    assert "reversed_by=accountant" in reversed_alloc.notes
+    contra = [e for e in engine.ledger_entries if e.allocation_id == row["reversed_allocation_id"] and e.credit_amount > 0]
+    assert [float(e.credit_amount) for e in contra] == [296.47]
+    risk_fund = [e for e in engine.ledger_entries if e.account_type == AccountType.RISK_FUND][-1]
+    assert float(risk_fund.balance) == 163.35
+
+    report = _books(engine, policies, billing, transactions)
+    assert report["is_consistent"] is True, report["discrepancies"]
+    assert report["reserves"]["risk_cash_collected"] == 163.35
+
+    again = resplit_accounting_book_premiums(
+        policies=policies, billing=billing, transactions=transactions, engine=engine,
+    )
+    assert again["resplit_count"] == 0
+    assert accounting_book_totals(engine)["allocation_count"] == 1
+
+
+def test_resplit_is_limited_to_the_named_policies_and_ignores_a_cent():
+    engine, policies, billing, transactions = _booked_before_the_pin()
+    other = resplit_accounting_book_premiums(
+        policies=policies, billing=billing, transactions=transactions, engine=engine,
+        policy_ids=["POL-OTHER"],
+    )
+    assert other["resplit_count"] == 0
+    assert accounting_book_totals(engine)["risk_posted"] == 296.47
+
+    reset_accounting_engine()
+    engine = get_accounting_engine()
+    post_premium_to_accounting_book(
+        bill_id="BILL-FS", policy_id="POL-FS", customer_id="CUST-FS", amount=296.47,
+        risk_percentage=55.1, savings_percentage=27.55, source_tx_id="TX-FS", engine=engine,
+        risk_amount=163.36, savings_amount=81.66,
+    )
+    cent = resplit_accounting_book_premiums(
+        policies=policies, billing=billing, transactions=transactions, engine=engine,
+    )
+    assert cent["resplit_count"] == 0
+    assert accounting_book_totals(engine)["risk_posted"] == 163.36
+
+
+def test_books_repair_resplits_a_stale_posting():
+    engine, policies, billing, transactions = _booked_before_the_pin()
+    sheet = {
+        "revenue_breakdown": {"premium_income": 296.47},
+        "expense_breakdown": {"claims_paid": 0.0},
+        "claims_reserve": 3_500_000.0,
+        "seed_claims_reserve": 3_500_000.0,
+    }
+    ledger = {tx["id"]: tx for tx in transactions}
+    dry = repair_financial_books(
+        policies=policies, claims={}, billing=billing, transactions=ledger,
+        balance_sheet=sheet, engine=engine, dry_run=True,
+        savings_landed_by_customer={"CUST-FS": 81.67},
+    )
+    assert [a["action"] for a in dry["actions"]] == ["resplit_premium_accounting"]
+    assert accounting_book_totals(engine)["risk_posted"] == 296.47
+
+    done = repair_financial_books(
+        policies=policies, claims={}, billing=billing, transactions=ledger,
+        balance_sheet=sheet, engine=engine,
+        savings_landed_by_customer={"CUST-FS": 81.67},
+    )
+    assert done["is_consistent"] is True, done["after"]["discrepancies"]
+    assert accounting_book_totals(engine)["savings_posted"] == 81.67
+    assert len(ledger) == 1 and sheet["revenue_breakdown"]["premium_income"] == 296.47
+
+
+# ---------------------------------------------------------------------------
+# Restoring a pin that was never stored: reproduce the premium or refuse
+# ---------------------------------------------------------------------------
+
+def _quote(annual, risk, savings, expense, profit, rate):
+    return {
+        "annual": annual,
+        "monthly": round(annual / 12.0, 2),
+        "pricing_source": "pricing_kernel",
+        "integrity_hash": f"h-{annual}",
+        "product_id": "phins_hybrid_savings" if rate else "phins_pure_risk_adjustable",
+        "tables_version": "V2.0",
+        "config_version": "cfg_v1",
+        "risk_premium_annual": risk,
+        "savings_premium_annual": savings,
+        "expense_loading_annual": expense,
+        "profit_margin_annual": profit,
+        "savings_rate_used": rate,
+        "savings_formula": "risk_premium_markup",
+        "eligible": True,
+    }
+
+
+def _pricer(table):
+    def price(payload):
+        return table.get((float(payload["savings_rate"]), int(payload["term_years"])))
+    return price
+
+
+_STORED = {
+    "id": "POL-R1", "customer_id": "CUST-R1", "type": "life", "coverage_amount": 500000,
+    "annual_premium": 3557.68, "monthly_premium": 296.47, "status": "active",
+}
+
+
+def test_restore_offers_the_one_decomposition_that_reproduces_the_premium():
+    table = {
+        (0.0, 20): _quote(2479.59, 1960.15, 0.0, 294.02, 225.42, 0.0),
+        (0.5, 20): _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5),
+        (1.0, 20): _quote(4635.76, 1960.15, 1960.15, 294.02, 421.44, 1.0),
+    }
+    result = kernel_pin_restore_candidate(dict(_STORED), application={"age": 40}, pricer=_pricer(table))
+    assert result["status"] == "restorable"
+    assert result["matches"] == [{"savings_addon": "balanced", "savings_rate": 0.5, "term_years": 20}]
+    pins = result["pins"]
+    assert pins["risk_premium_annual"] == 1960.15
+    assert pins["savings_premium_annual"] == 980.08
+    assert pins["expense_loading_annual"] == 294.02
+    assert pins["profit_margin_annual"] == 323.43
+    assert pins["savings_addon"] == "balanced"
+    assert pins["kernel_pin_source"] == "restored_by_reprice"
+    # The restored pins close the premium, so no cash is left above the stack.
+    split = resolve_premium_split(296.47, {**_STORED, **pins})
+    assert split["company_remainder"] == 0.0 and split["savings_amount"] == 81.67
+
+
+def test_restore_refuses_when_no_kernel_price_gives_the_premium():
+    table = {(0.0, 20): _quote(2479.59, 1960.15, 0.0, 294.02, 225.42, 0.0)}
+    result = kernel_pin_restore_candidate(dict(_STORED), pricer=_pricer(table))
+    assert result["status"] == "refused"
+    assert result["reason"] == "no_kernel_price_reproduces_the_premium"
+    assert result["pins"] == {}
+
+
+def test_restore_refuses_when_two_decompositions_give_the_same_premium():
+    table = {
+        (0.5, 20): _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5),
+        (0.25, 30): _quote(3557.68, 2300.00, 575.00, 345.00, 337.68, 0.25),
+    }
+    result = kernel_pin_restore_candidate(dict(_STORED), pricer=_pricer(table))
+    assert result["status"] == "refused"
+    assert result["reason"] == "more_than_one_decomposition"
+    assert result["pins"] == {}
+
+
+def test_restore_accepts_two_terms_that_price_identically():
+    quote = _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5)
+    result = kernel_pin_restore_candidate(dict(_STORED), pricer=_pricer({(0.5, 20): quote, (0.5, 25): quote}))
+    assert result["status"] == "restorable"
+    assert len(result["matches"]) == 2
+
+
+def test_restore_keeps_an_underwriting_loading_as_the_company_fee():
+    stored = {**_STORED, "annual_premium": 4802.87, "monthly_premium": 400.23}
+    table = {(0.5, 20): {**_quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5), "monthly": 296.47}}
+    result = kernel_pin_restore_candidate(
+        stored, application={"premium_adjustment": 35}, pricer=_pricer(table),
+    )
+    assert result["status"] == "restorable", result
+    pins = result["pins"]
+    assert pins["actuarial_annual_premium"] == 3557.68
+    assert pins["underwriting_fee_annual"] == 1245.19
+    assert pins["underwriting_loading"] == 0.35
+    split = resolve_premium_split(4802.87, {**stored, **pins})
+    assert split["underwriting_fee_amount"] == 1245.19
+    assert split["savings_amount"] == 980.08
+    assert split["company_remainder"] == 0.0
+
+
+def test_restore_refuses_a_discount_a_broken_seal_and_a_mismatched_monthly():
+    table = {(0.5, 20): _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5)}
+    discounted = kernel_pin_restore_candidate(
+        dict(_STORED), application={"premium_adjustment": -10}, pricer=_pricer(table),
+    )
+    assert (discounted["status"], discounted["reason"]) == ("refused", "discounted_premium")
+    broken = kernel_pin_restore_candidate({**_STORED, "kernel_pin_intact": False}, pricer=_pricer(table))
+    assert (broken["status"], broken["reason"]) == ("refused", "pin_seal_broken")
+    monthly = kernel_pin_restore_candidate({**_STORED, "monthly_premium": 300.00}, pricer=_pricer(table))
+    assert monthly["status"] == "refused"
+
+
+def test_restore_leaves_a_pinned_policy_and_an_earlier_allocation_alone():
+    pinned = kernel_pin_restore_candidate(_full_stack_policy(), pricer=_pricer({}))
+    assert (pinned["status"], pinned["reason"]) == ("pinned", "already_pinned")
+    earlier = kernel_pin_restore_candidate(
+        {**_STORED, "risk_allocation": 75, "savings_allocation": 25}, pricer=_pricer({}),
+    )
+    assert (earlier["status"], earlier["reason"]) == ("pinned", "earlier_sealed_allocation")
+
+
+def test_restore_reproduces_a_premium_the_live_kernel_priced():
+    from services.pricing_shadow_service import price_application_with_kernel
+
+    application = {"policy_type": "life", "coverage_amount": 500000, "age": 40, "risk_score": "medium"}
+    quote = price_application_with_kernel({
+        "type": "life", "coverage_amount": 500000, "age": 40, "risk_score": "medium",
+        "savings_rate": 0.5, "term_years": 20,
+    })
+    stored = {
+        "id": "POL-LIVE", "customer_id": "CUST-LIVE", "type": "life", "coverage_amount": 500000,
+        "annual_premium": quote["annual"], "monthly_premium": quote["monthly"], "risk_score": "medium",
+    }
+    result = kernel_pin_restore_candidate(stored, application=application)
+    assert result["status"] == "restorable", result
+    for key in ("risk_premium_annual", "savings_premium_annual", "expense_loading_annual", "profit_margin_annual"):
+        assert result["pins"][key] == quote[key]
+    assert result["pins"]["savings_addon"] == "balanced"

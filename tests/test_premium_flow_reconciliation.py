@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from services.premium_flow_reconciliation import (
     claim_postings_due,
+    customer_cash_flow_streams,
     duplicate_claim_row_ids,
     monitoring_report,
     reconcile_customer,
@@ -630,3 +631,66 @@ def test_a_premium_with_no_savings_election_does_not_invent_savings():
     assert report["picture"]["landed_savings"] == 0.0
     assert report["picture"]["savings_premiums_paid"] == 0.0
     assert report["writes"] is False
+
+
+def _full_stack_report(cash=296.47):
+    policy = {
+        "id": "POL-CF", "customer_id": "CUST-CF", "start_date": "2026-01-01",
+        "annual_premium": 3557.68,
+        "risk_premium_annual": 1960.15, "savings_premium_annual": 980.08,
+        "expense_loading_annual": 294.02, "profit_margin_annual": 323.43,
+    }
+    bills = [{
+        "id": "BILL-CF-01", "customer_id": "CUST-CF", "policy_id": "POL-CF",
+        "payment_period": "2026-01", "status": "paid", "amount_paid": cash,
+    }]
+    return reconcile_customer("CUST-CF", policies=[policy], bills=bills, claims=[], nft_ledger={})
+
+
+def test_customer_streams_add_up_to_the_premium_paid():
+    before = _full_stack_report()
+    flow = customer_cash_flow_streams(
+        before, savings_on_accounts=81.67,
+        balances={"health_wallet": 24.50, "investments": 53.09, "algo": 4.08},
+    )
+    assert flow["writes"] is False
+    assert flow["collected"] == 296.47
+    assert flow["ties"] is True and flow["streams_total"] == 296.47
+    amounts = {row["key"]: row["amount"] for row in flow["streams"]}
+    assert amounts == {"risk": 163.35, "expense_loading": 24.50, "profit": 26.95, "savings": 81.67}
+    # Rounded one by one these would print 55.1 + 8.3 + 9.1 + 27.6 = 100.1.
+    shares = {row["key"]: row["share_pct"] for row in flow["streams"]}
+    assert shares == {"risk": 55.1, "expense_loading": 8.3, "profit": 9.1, "savings": 27.5}
+    assert round(sum(shares.values()), 1) == 100.0
+    assert flow["savings"]["charged"] == 81.67
+    assert (
+        flow["savings"]["health_wallet"] + flow["savings"]["investments"] + flow["savings"]["algo"]
+    ) == 81.67
+    assert flow["savings"]["on_accounts"] == 81.67
+    assert flow["savings"]["not_yet_on_accounts"] == 0.0
+    assert flow["balances"] == {"health_wallet": 24.50, "investments": 53.09, "algo": 4.08}
+
+
+def test_customer_streams_show_savings_that_have_not_reached_the_accounts():
+    flow = customer_cash_flow_streams(_full_stack_report(), savings_on_accounts=20.00)
+    assert flow["savings"]["on_accounts"] == 20.00
+    assert flow["savings"]["not_yet_on_accounts"] == 61.67
+    assert flow["balances"] is None
+    # Money already on the accounts above the charged savings is not counted twice.
+    over = customer_cash_flow_streams(_full_stack_report(), savings_on_accounts=5000.00)
+    assert over["savings"]["on_accounts"] == 81.67
+    assert over["savings"]["not_yet_on_accounts"] == 0.0
+
+
+def test_customer_streams_name_premium_on_a_policy_with_no_pin():
+    policy = {"id": "POL-NP", "customer_id": "CUST-NP", "start_date": "2026-01-01", "annual_premium": 1200.00}
+    bills = [{
+        "id": "BILL-NP-01", "customer_id": "CUST-NP", "policy_id": "POL-NP",
+        "payment_period": "2026-01", "status": "paid", "amount_paid": 100.00,
+    }]
+    report = reconcile_customer("CUST-NP", policies=[policy], bills=bills, claims=[], nft_ledger={})
+    flow = customer_cash_flow_streams(report)
+    amounts = {row["key"]: row["amount"] for row in flow["streams"]}
+    assert amounts == {"risk": 0.0, "not_split": 100.00}
+    assert flow["ties"] is True
+    assert flow["savings"]["on_accounts"] is None

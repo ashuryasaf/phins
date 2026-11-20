@@ -184,7 +184,29 @@ PHINS is a Python platform built around:
  learned from policies, bills, claims, wallets, or NFT seals. Platform ids
  (`PHINS-CORPORATE`, `SYSTEM`) are not customers. A customer reads only their
  own picture at `GET /api/customer/premium-picture`. The page is a live
- dashboard (`data-phins-letterhead="off"`); the return bar stays
+ dashboard (`data-phins-letterhead="off"`); the return bar stays. A policy
+ is issued with the whole kernel stack pinned (risk, underwriting fee,
+ expense loading, profit, savings), which adds up to the annual premium to
+ the cent. With the database on, those pins are the checksummed
+ `policies.kernel_pin` column (`POLICY_KERNEL_PIN_FIELDS` in
+ `database/models.py`); add a new pin to that tuple or it is dropped on
+ save. A pin whose checksum fails is not applied and is not overwritten.
+ `GET /api/finance/reconcile` reports premium cash by stream
+ (`premium_streams`), counts savings as landed per customer, and lists
+ premium on a policy with no pin under `warnings`. It fails
+ `accounting_book_split_vs_kernel_pins` when the accounting book's risk and
+ savings split differs from the pins now on the policies; the pin restore
+ and `POST /api/finance/repair` re-book that split with a reversal and a
+ new posting (`resplit_accounting_book_premiums`), on the book only.
+ `GET /api/admin/cashflow/kernel-pins` (admin, accountant, actuary) previews
+ and `POST /api/admin/cashflow/restore-kernel-pins` restores a missing pin.
+ The restore reprices the stored application and pins only when exactly one
+ decomposition reproduces the billed premium to the cent; a discount, no
+ match, or two matches is refused and listed. It writes the before/after
+ journal first, does not change a premium, a bill, or a ledger row, and
+ leaves crediting unlanded savings to the claim-transfer repair. The
+ customer dashboard card "Where my premium goes" reads `cash_flow` on the
+ premium picture and writes nothing
 - unified cash flow statement (`services/cashflow_unified_report.py`,
  `GET /api/admin/cashflow/unified-report`, same four roles, shown on
  `/cashflow-integrity.html` by `cashflow-unified-report.js`): one read of
@@ -1344,4 +1366,4 @@ If you update this file again:
 
 ---
 
-Last updated: November 19, 2026
+Last updated: November 20, 2026

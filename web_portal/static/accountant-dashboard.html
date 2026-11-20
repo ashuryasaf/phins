@@ -936,6 +936,38 @@
                 { label: 'Economic reserve', value: economic, display: formatCurrency(economic), color: economic < 0 ? '#b42318' : '#0f766e' },
                 { label: 'Seed capital', value: seed, display: formatCurrency(seed), color: '#8a7340' },
             ];
+            const streams = rec.premium_streams || sav.streams || {};
+            const streamSeries = [
+                { label: 'Kernel risk premium', key: 'risk', color: '#1a3a78' },
+                { label: 'Underwriting fee', key: 'underwriting_fee', color: '#0a1630' },
+                { label: 'Expense loading', key: 'expense_loading', color: '#8a7340' },
+                { label: 'Profit margin', key: 'profit', color: '#b45309' },
+                { label: 'Savings add-on', key: 'savings', color: '#0f766e' },
+                { label: 'Above the kernel stack', key: 'above_kernel_stack', color: '#b42318' },
+                { label: 'No kernel pin', key: 'without_kernel_pin', color: '#7a271a' },
+            ].map(row => ({
+                label: row.label,
+                value: Number(streams[row.key] || 0),
+                display: formatCurrency(streams[row.key] || 0),
+                color: row.color,
+            }));
+            const streamTotal = streamSeries.reduce((sum, row) => sum + row.value, 0);
+            const landedNote = sav.savings_landed_basis === 'customer_books'
+                ? "Landed is what each customer's health wallet, investments, and algo hold from premium savings."
+                : 'Landed is investment allocations plus pipeline cash.';
+            const escBooks = value => String(value == null ? '' : value).replace(/[&<>"']/g, ch => (
+                { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+            ));
+            const warnings = rec.warnings || [];
+            let warningPaper = '';
+            if (warnings.length) {
+                warningPaper = '<h3>Unexplained premium</h3><table><thead><tr><th>Item</th><th>Amount</th><th>Policies</th></tr></thead><tbody>';
+                warnings.forEach(w => {
+                    const ids = (w.policy_ids || []).map(escBooks).join(', ');
+                    warningPaper += `<tr><td>${escBooks(w.check)}<br><span class="acct-note">${escBooks(w.description)}</span></td><td>${formatCurrency(w.amount)}</td><td>${w.policy_count != null ? escBooks(w.policy_count) : '—'}${ids ? `<br><span class="acct-note">${ids}</span>` : ''}</td></tr>`;
+                });
+                warningPaper += '</tbody></table><p class="acct-note">The cash totals tie. These premiums are not split by the kernel and sit on the risk book until the policy carries a pin. Restore the pins on the <a href="/cashflow-integrity.html">cash flow page</a>.</p>';
+            }
             const discrepancies = rec.discrepancies || [];
             let paper = '';
             if (discrepancies.length) {
@@ -944,7 +976,8 @@
                     const left = d.left != null ? formatCurrency(d.left) : '—';
                     const right = d.right != null ? formatCurrency(d.right) : '—';
                     const diff = d.difference != null ? formatCurrency(d.difference) : (d.count != null ? String(d.count) : '—');
-                    paper += `<tr><td>${d.check || ''}<br><span class="acct-note">${d.description || ''}</span></td><td>${left}</td><td>${right}</td><td>${diff}</td></tr>`;
+                    const owed = (d.customers || []).map(c => `${escBooks(c.customer_id)}: ${formatCurrency(c.not_landed)}`).join(', ');
+                    paper += `<tr><td>${d.check || ''}<br><span class="acct-note">${d.description || ''}${owed ? '<br>' + owed : ''}</span></td><td>${left}</td><td>${right}</td><td>${diff}</td></tr>`;
                 });
                 paper += '</tbody></table>';
             } else {
@@ -959,6 +992,11 @@
                         ${renderScaledBars(cashSeries)}
                     </div>
                     <div>
+                        <h4>Premium cash by kernel stream</h4>
+                        <p class="acct-note">Every premium dollar on the customer ledger lands on one stream. The streams add up to ${formatCurrency(streamTotal)}.</p>
+                        ${renderScaledBars(streamSeries)}
+                    </div>
+                    <div>
                         <h4>Annual premium identity</h4>
                         ${renderScaledBars(annualSeries)}
                     </div>
@@ -968,7 +1006,7 @@
                     </div>
                     <div>
                         <h4>Savings rollforward</h4>
-                        <p class="acct-note">Landed is investment allocations plus pipeline cash. Unlanded savings cash: ${formatCurrency(sav.unlanded_savings_cash)}.</p>
+                        <p class="acct-note">${landedNote} Unlanded savings cash: ${formatCurrency(sav.unlanded_savings_cash)}.</p>
                         ${renderScaledBars(savingsSeries)}
                     </div>
                     <div>
@@ -977,6 +1015,7 @@
                         ${renderScaledBars(reserveSeries)}
                     </div>
                 </div>
+                ${warningPaper}
                 ${paper}
             `;
         }
@@ -2492,12 +2531,17 @@
                     setText('ctl-seed-reserve', formatCurrency(reserves.seed_claims_reserve));
                     setText('sv-seed-capital', formatCurrency(reserves.seed_claims_reserve));
                 }
+                const unexplained = (rec.warnings || []).reduce((sum, w) => sum + Number(w.amount || 0), 0);
+                const booksTone = !ok ? 'integrity-issues' : (unexplained > 0 ? 'integrity-warnings' : 'integrity-healthy');
+                const booksHeadline = !ok ? 'have discrepancies' : (unexplained > 0 ? 'tie, with premium not split by the kernel' : 'in balance');
                 const statusEl = document.getElementById('ctl-books-status');
                 if (statusEl) {
-                    statusEl.className = 'integrity-status phins-books-note ' + (ok ? 'integrity-healthy' : 'integrity-issues');
-                    statusEl.textContent = ok
-                        ? 'Financial books are in balance. Cash identity is the customer ledger; premium identity is the actuarial kernel pin.'
-                        : 'Financial books have discrepancies. Review the Integrity tab — amounts are not silently rewritten.';
+                    statusEl.className = 'integrity-status phins-books-note ' + booksTone + (booksTone === 'integrity-healthy' ? '' : ' gap');
+                    statusEl.textContent = !ok
+                        ? 'Financial books have discrepancies. Review the Integrity tab — amounts are not silently rewritten.'
+                        : (unexplained > 0
+                            ? `The cash totals tie, and ${formatCurrency(unexplained)} of premium is not split by the kernel. See Unexplained premium in the pipeline books.`
+                            : 'Financial books are in balance. Cash identity is the customer ledger; premium identity is the actuarial kernel pin.');
                 }
                 const flowHtml = renderBooksFlow(rec);
                 const flowHost = document.getElementById('ctl-books-flow');
@@ -2507,8 +2551,8 @@
                     return;
                 }
                 let html = `
-                    <div class="integrity-status ${ok ? 'integrity-healthy' : 'integrity-issues'}">
-                        <h3 style="margin:0;">Financial books ${ok ? 'in balance' : 'have discrepancies'}</h3>
+                    <div class="integrity-status ${booksTone}">
+                        <h3 style="margin:0;">Financial books ${booksHeadline}</h3>
                         <p style="margin:5px 0 0 0;">Cash identity is the customer ledger. Premium identity is the actuarial kernel pin.</p>
                     </div>
                     <div class="stats-grid">

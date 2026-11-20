@@ -92,6 +92,13 @@
             <h3>Customers</h3>
             <div id="unified-customers"></div>
         </section>
+        <section id="kernel-pins">
+            <h2>Kernel pins <span id="pins-verdict"></span></h2>
+            <p class="note">A policy stored without its kernel decomposition cannot be split into risk, loadings, and savings. Each one is repriced from its stored application. A pin is restored only when exactly one kernel decomposition gives the billed premium to the cent. The premium, the bills, and the balances are not changed. Savings that were charged and never landed are credited by the claim and savings repair on this page.</p>
+            <div class="roster-wrap" id="pins-table"></div>
+            <p style="margin-top:12px"><button id="pins-restore" type="button" disabled>Restore the pins that reproduce</button></p>
+            <p class="note" id="pins-result"></p>
+        </section>
         <h2>Customers to monitor</h2>
         <p class="note">Asaf Assurance, Efrat PHINS, Asi PHINS, and Shosh PHINS are the standing list. Anyone else with a ledger, bill, claim, wallet, or NFT seal is added from the books.</p>
         <div class="roster-wrap">
@@ -112,7 +119,7 @@
             <tbody id="roster"></tbody>
         </table>
         </div>
-        <p style="margin-top:16px"><button id="post-claims" type="button">Post unposted claims from reserve to health wallets</button></p>
+        <p style="margin-top:16px"><button id="post-claims" type="button">Post unposted claims to health wallets and credit savings that never landed</button></p>
         <p class="note" id="post-result"></p>
         <h2 id="detail-title">Customer picture</h2>
         <pre id="detail">Select a customer.</pre>
@@ -195,6 +202,83 @@
             document.getElementById('detail').textContent = JSON.stringify(body.picture || body, null, 2);
         }
 
+        const PIN_REASONS = {
+            one_decomposition_reproduces_the_premium: 'One kernel decomposition gives this premium',
+            no_kernel_price_reproduces_the_premium: 'No kernel price gives this premium. Left as stored.',
+            more_than_one_decomposition: 'More than one decomposition gives this premium. Left as stored.',
+            discounted_premium: 'The premium was discounted at underwriting. Left as stored.',
+            pin_seal_broken: 'The stored pin fails its checksum. It is not served and not replaced.',
+            no_annual_premium: 'No annual premium on the policy.',
+            changed_since_preview: 'The policy changed while this ran.',
+            pin_not_read_back: 'The pin was written and did not read back.'
+        };
+
+        async function loadPins() {
+            const response = await fetch('/api/admin/cashflow/kernel-pins', { headers });
+            const body = await response.json();
+            const host = document.getElementById('pins-table');
+            const button = document.getElementById('pins-restore');
+            if (!response.ok) {
+                host.innerHTML = '';
+                document.getElementById('pins-verdict').innerHTML = '';
+                document.getElementById('pins-result').textContent = body.error === 'Unauthorized'
+                    ? 'Admin, accountant, or actuary can read the pins.' : (body.error || 'Could not read the pins.');
+                button.disabled = true;
+                return;
+            }
+            const pins = body.kernel_pins || {};
+            const counts = pins.counts || {};
+            const rows = pins.policies || [];
+            const open = (counts.restorable || 0) + (counts.refused || 0) + (counts.not_verified || 0);
+            document.getElementById('pins-verdict').innerHTML = open
+                ? '<span class="tag attention">' + open + ' without a pin</span>'
+                : '<span class="tag clear">every policy is pinned</span>';
+            button.disabled = !(counts.restorable > 0);
+            button.textContent = counts.restorable > 0
+                ? 'Restore ' + counts.restorable + ' pin(s) that reproduce · ' + money(pins.restorable_annual_premium) + ' a year'
+                : 'Restore the pins that reproduce';
+            if (!rows.length) {
+                host.innerHTML = '<p class="note">' + (counts.pinned || 0) + ' policies carry their kernel pin. Nothing to restore.</p>';
+                return;
+            }
+            host.innerHTML = '<table><thead><tr><th>Policy</th><th>Customer</th><th>Annual premium</th><th>Outcome</th>'
+                + '<th>Risk</th><th>Underwriting fee</th><th>Expense loading</th><th>Profit</th><th>Savings add-on</th></tr></thead><tbody>'
+                + rows.map((row) => {
+                    const p = row.pins || {};
+                    const ok = row.status === 'restorable' || row.status === 'restored';
+                    const cell = (value) => ok ? money(value) : '—';
+                    return '<tr><td>' + text(row.policy_id) + '</td><td>' + text(row.customer_id) + '</td><td>' + money(row.annual_premium) + '</td>'
+                        + '<td><span class="tag ' + (ok ? 'watch' : 'attention') + '">' + text(row.status) + '</span> <span class="note">'
+                        + text(PIN_REASONS[row.reason] || row.reason) + '</span></td>'
+                        + '<td>' + cell(p.risk_premium_annual) + '</td><td>' + cell(p.underwriting_fee_annual) + '</td>'
+                        + '<td>' + cell(p.expense_loading_annual) + '</td><td>' + cell(p.profit_margin_annual) + '</td>'
+                        + '<td>' + cell(p.savings_premium_annual) + (p.savings_addon ? ' <span class="note">' + text(p.savings_addon) + '</span>' : '') + '</td></tr>';
+                }).join('') + '</tbody></table>'
+                + (pins.policies_total > rows.length ? '<p class="note">Showing ' + rows.length + ' of ' + pins.policies_total + '.</p>' : '');
+        }
+
+        document.getElementById('pins-restore').addEventListener('click', async () => {
+            const button = document.getElementById('pins-restore');
+            button.disabled = true;
+            const response = await fetch('/api/admin/cashflow/restore-kernel-pins', { method: 'POST', headers, body: '{}' });
+            const body = await response.json();
+            const counts = (body.kernel_pins || {}).counts || {};
+            const book = (body.kernel_pins || {}).accounting_book || {};
+            const failures = {
+                repair_journal_failed: 'The repair journal could not be written, so nothing was changed.',
+                pin_not_read_back: 'A pin was written and did not read back. That policy is listed again.',
+                accounting_book_not_resplit: 'The pins were restored. A premium already booked could not be re-split on the accounting book; run Repair books on the accounting page.',
+            };
+            document.getElementById('pins-result').textContent = response.ok
+                ? ('Restored ' + (counts.restored || 0) + ' pin(s). ' + (counts.refused || 0) + ' left as stored. '
+                    + (book.resplit_count || 0) + ' premium posting(s) re-split on the accounting book. The before and after lines are in the repair journal.')
+                : (failures[body.error] || body.error || 'Could not restore.');
+            await loadPins();
+            load();
+            const refresh = document.getElementById('unified-refresh');
+            if (refresh) refresh.click();
+        });
+
         document.getElementById('post-claims').addEventListener('click', async () => {
             const button = document.getElementById('post-claims');
             button.disabled = true;
@@ -209,6 +293,7 @@
         });
 
         load();
+        loadPins();
     </script>
 </body>
 </html>

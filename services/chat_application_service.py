@@ -2761,6 +2761,8 @@ class ChatPolicyApplicationService:
                 "adl_level": quote.get("adl_level"),
                 "risk_premium_annual": quote.get("risk_premium_annual"),
                 "savings_premium_annual": quote.get("savings_premium_annual"),
+                "expense_loading_annual": quote.get("expense_loading_annual"),
+                "profit_margin_annual": quote.get("profit_margin_annual"),
                 "quoted_monthly": quote.get("monthly"),
                 "quoted_annual": quote.get("annual"),
                 "quoted_at": quote.get("quoted_at"),
