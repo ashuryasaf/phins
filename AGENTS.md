@@ -222,7 +222,25 @@ PHINS is a Python platform built around:
  on investments and algo (`management_fee_pct`, default 1%, 0–10) and is not
  charged. A marketplace bid is the customer price: commission plus supplier
  payout. Agent commission omits `REF-` rows, which stay on the referral
- book. `integrity.checks` names every identity that does not tie
+ book. `integrity.checks` names every identity that does not tie. Premium
+ on a policy with no kernel pin is held on the risk book, as the writer books
+ it, and is not company income; `kernel_pins_present` still fails for it
+- balance sheet and statement tie (`premium_cash_position` in
+ `financial_unification_service.py`): every premium dollar sits on one
+ balance line — claims reserve (kernel risk, premium with no pin included,
+ less claims paid), operating reserve (underwriting fee, PHINS share of the
+ expense loading, profit), and three held lines (customer savings, carrier
+ share, reinsurance ceding reserve). Own funds plus held equals premium cash
+ less claim cash. `GET /api/admin/balance-sheet` serves the operating
+ reserve restated (stored counter, less the premium rows it took in whole,
+ plus the company's part), `held_for_others`, `total_balance` as own funds,
+ and `net_income` after the held amounts; `premium_position` carries the
+ lines and `stored_operating_reserve` the counter as stored. The GET does
+ not write the stored sheet, and `revenue_breakdown.premium_income` stays
+ the ledger cash. The statement compares itself with those lines under
+ `balance_sheet` and fails `balance_sheet_ties` on a difference (cash totals
+ to the cent, split lines one cent per paid month). Both leave out the same
+ suspended accounts (`is_suspended_account`)
 - health wallet withdrawal (`services/wallet_withdrawal_service.py`,
  `web_portal/api_wallet_withdrawal.py`, `/wallet-withdraw-chat.html`): the
  Withdraw tile on the customer dashboard opens a chat that starts from the
