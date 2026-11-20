@@ -925,6 +925,101 @@ def reconcile_customer(
     }
 
 
+# One customer's premium cash, in the order the waterfall fills it.
+_CUSTOMER_STREAMS: Tuple[Tuple[str, str, str, str], ...] = (
+    ("risk", "landed_risk", "Cover", "Kernel risk premium for the cover on your policy"),
+    ("underwriting_fee", "landed_underwriting_fee", "Underwriting fee", "Loading from the underwriting decision"),
+    ("expense_loading", "landed_expense", "Service and administration", "Expense loading in your premium"),
+    ("profit", "landed_profit", "Company margin", "Profit margin in your premium"),
+    ("savings", "landed_savings", "Savings add-on", "Shared 30 / 65 / 5 across your health wallet, investments, and algo"),
+    ("not_split", "overbooked_excess", "Not yet split", "Collected above the kernel stack on your policy"),
+)
+
+
+def customer_cash_flow_streams(
+    report: Mapping[str, Any],
+    *,
+    savings_on_accounts: Any = None,
+    balances: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    """What one customer's premium cash became, stream by stream.
+
+    Read from a ``reconcile_customer`` report. The streams add up to the
+    cash collected. ``savings_on_accounts`` is the premium savings already
+    on that customer's wallet, investments, and algo; the part of the
+    charged savings above it is shown as not yet there. Nothing is written.
+    """
+    months = [row for row in (report.get("months") or []) if isinstance(row, Mapping)]
+    collected = sum((_money(row.get("collected")) for row in months), Decimal("0.00"))
+    totals = {
+        key: sum((_money(row.get(field)) for row in months), Decimal("0.00"))
+        for key, field, _label, _detail in _CUSTOMER_STREAMS
+    }
+    streams_total = sum(totals.values(), Decimal("0.00"))
+    streams = []
+    for key, _field, label, detail in _CUSTOMER_STREAMS:
+        amount = totals[key].quantize(_CENT)
+        if amount <= 0 and key != "risk":
+            continue
+        streams.append({
+            "key": key,
+            "label": label,
+            "detail": detail,
+            "amount": float(amount),
+            "share_pct": 0.0,
+        })
+    # Shares are tenths of a percent handed out by largest remainder, so the
+    # column a customer reads adds up to the 100.0 printed under it.
+    shown_total = sum((_money(row["amount"]) for row in streams), Decimal("0.00"))
+    if shown_total > 0:
+        exact = [_money(row["amount"]) / shown_total * Decimal("1000") for row in streams]
+        tenths = [int(value) for value in exact]
+        order = sorted(range(len(streams)), key=lambda i: (exact[i] - tenths[i], exact[i]), reverse=True)
+        for index in order[: 1000 - sum(tenths)]:
+            tenths[index] += 1
+        for row, value in zip(streams, tenths):
+            row["share_pct"] = value / 10.0
+    books = report.get("admin_balances_from_landed_savings") or {}
+    picture = report.get("picture") or {}
+    charged = _money(picture.get("savings_premiums_paid"))
+    savings: Dict[str, Any] = {
+        "charged": float(charged),
+        "health_wallet": float(_money(books.get("health_wallet_savings"))),
+        "investments": float(_money(books.get("investments"))),
+        "algo": float(_money(books.get("algo"))),
+        "on_accounts": None,
+        "not_yet_on_accounts": None,
+    }
+    if savings_on_accounts is not None:
+        held = _money(savings_on_accounts)
+        counted = held if held < charged else charged
+        gap = (charged - counted).quantize(_CENT)
+        savings["on_accounts"] = float(counted.quantize(_CENT))
+        savings["not_yet_on_accounts"] = float(gap if gap > _CENT else Decimal("0.00"))
+    claims = [row for row in (report.get("claims") or []) if isinstance(row, Mapping)]
+    paid = sum((_money(row.get("paid_amount")) for row in claims), Decimal("0.00"))
+    unposted = sum((_money(row.get("unposted_reserve_transfer")) for row in claims), Decimal("0.00"))
+    return {
+        "writes": False,
+        "collected": float(collected.quantize(_CENT)),
+        "streams": streams,
+        "streams_total": float(streams_total.quantize(_CENT)),
+        "ties": abs(streams_total - collected) <= _CENT,
+        "months_paid": sum(1 for row in months if _money(row.get("collected")) > 0),
+        "savings": savings,
+        "claims": {
+            "count": len(claims),
+            "paid": float(paid.quantize(_CENT)),
+            "in_health_wallet": float((paid - unposted).quantize(_CENT)),
+            "not_yet_in_health_wallet": float(unposted.quantize(_CENT)),
+        },
+        "balances": {
+            name: float(_money((balances or {}).get(name)))
+            for name in ("health_wallet", "investments", "algo")
+        } if balances is not None else None,
+    }
+
+
 def _claim_rows(
     claims: Sequence[Mapping[str, Any]],
     tokens: Sequence[Mapping[str, Any]],
@@ -1141,7 +1236,7 @@ def monitoring_report(
     )
     attention = 0
     for customer_id in ordered:
-        record = customers.get(customer_id) if isinstance(customers, Mapping) else None
+        record = customers.get(customer_id) if hasattr(customers, "get") else None
         name = ""
         if isinstance(record, Mapping):
             name = str(record.get("name") or record.get("full_name") or "")
