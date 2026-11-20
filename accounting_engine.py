@@ -159,6 +159,10 @@ class PremiumAllocation:
     # When set, savings is the kernel savings component. The remainder
     # (expense and profit) is not folded back into savings.
     preserve_savings_percentage: bool = False
+    # The cents the payment writer already landed for this cash. A percentage
+    # rounded to two places can sit a cent away from them on every payment.
+    risk_amount_exact: Optional[Decimal] = None
+    savings_amount_exact: Optional[Decimal] = None
     
     def __post_init__(self):
         """Calculate risk and savings amounts, validate percentages, set interest rate"""
@@ -183,6 +187,12 @@ class PremiumAllocation:
         # Calculate and round monetary values to 2 decimal places
         self.risk_premium = (total * (Decimal(str(self.risk_percentage)) / Decimal('100'))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         self.savings_premium = (total * (Decimal(str(self.savings_percentage)) / Decimal('100'))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        if self.risk_amount_exact is not None and self.savings_amount_exact is not None:
+            exact_risk = Decimal(str(self.risk_amount_exact)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            exact_savings = Decimal(str(self.savings_amount_exact)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            if exact_risk >= 0 and exact_savings >= 0 and exact_risk + exact_savings <= total + Decimal('0.01'):
+                self.risk_premium = exact_risk
+                self.savings_premium = exact_savings
         
         # Calculate investment ratio (risk:savings)
         if self.savings_premium > Decimal('0'):
@@ -519,7 +529,9 @@ By selecting an investment route, you confirm you understand the risks and benef
                          total_premium: Decimal, risk_percentage: Decimal,
                          investment_route: InvestmentRoute = InvestmentRoute.BASIC_SAVINGS,
                          allocation_notes: str = "",
-                         savings_percentage: Optional[Decimal] = None) -> PremiumAllocation:
+                         savings_percentage: Optional[Decimal] = None,
+                         risk_amount: Optional[Decimal] = None,
+                         savings_amount: Optional[Decimal] = None) -> PremiumAllocation:
         """
         Create premium allocation with risk/savings split and investment route choice
         
@@ -534,6 +546,8 @@ By selecting an investment route, you confirm you understand the risks and benef
             savings_percentage: Kernel savings share. When omitted, savings is
                 the complement of risk. When supplied, expense and profit are
                 not folded into savings.
+            risk_amount, savings_amount: The cents already landed for this
+                cash. When both are given they are booked as they are.
         
         Returns:
             Created PremiumAllocation object
@@ -555,6 +569,8 @@ By selecting an investment route, you confirm you understand the risks and benef
             investment_route=investment_route,
             notes=allocation_notes,
             preserve_savings_percentage=preserve_savings,
+            risk_amount_exact=risk_amount,
+            savings_amount_exact=savings_amount,
         )
         
         self.allocations[allocation_id] = allocation
@@ -605,6 +621,39 @@ By selecting an investment route, you confirm you understand the risks and benef
         
         except Exception as e:
             return False, f"Error posting allocation: {str(e)}"
+
+    def reverse_allocation(self, allocation_id: str, reversed_by: str, reason: str = "") -> Tuple[bool, str]:
+        """Take a posted allocation off the book with contra entries.
+
+        The allocation stays on record as ``REVERSED`` and its fund entries
+        are offset, so the history of what was booked is not removed.
+        """
+        allocation = self.allocations.get(allocation_id)
+        if allocation is None:
+            return False, f"Allocation {allocation_id} not found"
+        if allocation.status != AllocationStatus.POSTED:
+            return False, f"Allocation {allocation_id} is not posted"
+        note = f"reversed_by={reversed_by}" + (f"; {reason}" if reason else "")
+        for entry_type, account_type, amount in (
+            (EntryType.RISK_PAYMENT, AccountType.RISK_FUND, allocation.risk_premium),
+            (EntryType.SAVINGS_DEPOSIT, AccountType.SAVINGS_FUND, allocation.savings_premium),
+        ):
+            if Decimal(str(amount)) <= Decimal("0"):
+                continue
+            self._create_ledger_entry(
+                allocation_id=allocation_id,
+                policy_id=allocation.policy_id,
+                customer_id=allocation.customer_id,
+                entry_date=date.today(),
+                entry_type=entry_type,
+                account_type=account_type,
+                credit_amount=amount,
+                description=f"Reversal of allocation {allocation_id} ({note})",
+                reference_no=allocation.bill_id,
+            )
+        allocation.status = AllocationStatus.REVERSED
+        allocation.notes = "; ".join(bit for bit in (allocation.notes, note) if bit)
+        return True, f"Allocation {allocation_id} reversed"
     
     def get_customer_statement(self, customer_id: str, start_date: date, 
                                end_date: date) -> CustomerPremiumStatement:

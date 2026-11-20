@@ -575,7 +575,8 @@ def unified_cashflow_report(
         wallet_row = wallet_store.get(customer_id) or {}
         investment_row = (investments or {}).get(customer_id) or {}
         algo_row = (algo or {}).get(customer_id) or {}
-        record = customers.get(customer_id) if isinstance(customers, Mapping) else None
+        # The database-backed store answers ``get`` without being a Mapping.
+        record = customers.get(customer_id) if hasattr(customers, "get") else None
         name = ""
         if isinstance(record, Mapping):
             name = str(record.get("name") or record.get("full_name") or "")

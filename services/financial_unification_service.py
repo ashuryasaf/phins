@@ -611,6 +611,15 @@ def resolve_premium_split(
             "savings": Decimal("0.00"),
             "excess": Decimal("0.00"),
         }
+    elif annual > 0 and abs(stack - annual) <= Decimal("0.01"):
+        # The pins explain the whole annual premium, so the cash is shared in
+        # those proportions to the cent. Rounding each layer on its own would
+        # leave a cent over, or take it from the add-on at the end of the line.
+        shares = partition_money(
+            collected, [(name, annual_layers[name]) for name in _LAYER_ORDER]
+        )
+        landed = {name: money(shares[name]) for name in _LAYER_ORDER}
+        landed["excess"] = Decimal("0.00")
     elif annual > 0 and stack <= annual + Decimal("0.01"):
         targets = _scale_layers(annual_layers, collected, annual)
         landed = _waterfall_cash(collected, targets)
@@ -646,8 +655,13 @@ def resolve_premium_split(
     }
 
 
-def _allocation_already_posted(engine: Any, bill_id: str, source_tx_id: Optional[str]) -> bool:
-    """True when this cash slice is already on the book.
+def _allocation_is_reversed(alloc: Any) -> bool:
+    status = getattr(alloc, "status", None)
+    return str(getattr(status, "name", status) or "").upper() == "REVERSED"
+
+
+def _matching_allocation(engine: Any, bill_id: str, source_tx_id: Optional[str]) -> Any:
+    """The allocation that already carries this cash slice, or ``None``.
 
     Key is (bill_id, source_tx_id). The same bill can receive several
     partial payments — each ledger tx must post. Missing source_tx_id
@@ -655,24 +669,33 @@ def _allocation_already_posted(engine: Any, bill_id: str, source_tx_id: Optional
 
     If the same ledger tx was booked as ``UNBILLED-{tx}`` (bills missing at
     post time), a later real ``bill_id`` for that tx must not post again.
+
+    A reversed allocation no longer carries the cash, so it does not match.
     """
     allocations = getattr(engine, "allocations", {}) or {}
     wanted_bill = str(bill_id or "")
     marker = f"ledger_tx={source_tx_id}" if source_tx_id else ""
     unbilled_key = f"UNBILLED-{source_tx_id}" if source_tx_id else ""
     for alloc in allocations.values():
+        if _allocation_is_reversed(alloc):
+            continue
         alloc_bill = str(getattr(alloc, "bill_id", "") or "")
         notes = str(getattr(alloc, "notes", "") or "")
         if unbilled_key and alloc_bill == unbilled_key and marker in notes:
-            return True
+            return alloc
         if not wanted_bill or alloc_bill != wanted_bill:
             continue
         if source_tx_id:
             if marker in notes:
-                return True
+                return alloc
             continue
-        return True
-    return False
+        return alloc
+    return None
+
+
+def _allocation_already_posted(engine: Any, bill_id: str, source_tx_id: Optional[str]) -> bool:
+    """True when this cash slice is already on the book."""
+    return _matching_allocation(engine, bill_id, source_tx_id) is not None
 
 
 def post_premium_to_accounting_book(
@@ -687,8 +710,14 @@ def post_premium_to_accounting_book(
     source_tx_id: Optional[str] = None,
     notes: str = "",
     engine: Any = None,
+    risk_amount: Any = None,
+    savings_amount: Any = None,
 ) -> Dict[str, Any]:
-    """Idempotently post a collected premium into the shared accounting book."""
+    """Idempotently post a collected premium into the shared accounting book.
+
+    ``risk_amount`` and ``savings_amount`` are the cents the split landed.
+    Given together, the book carries those cents and not a rounded percentage.
+    """
     collected = money(amount)
     if collected <= 0:
         return {"posted": False, "reason": "zero_amount"}
@@ -711,6 +740,14 @@ def post_premium_to_accounting_book(
             risk_percentage=Decimal(str(risk_percentage)),
             allocation_notes="; ".join(note_bits),
             savings_percentage=savings_arg,
+            **(
+                {
+                    "risk_amount": money(risk_amount),
+                    "savings_amount": money(savings_amount),
+                }
+                if risk_amount is not None and savings_amount is not None
+                else {}
+            ),
         )
         ok, message = engine.post_allocation(allocation.allocation_id, posted_by)
         return {
@@ -786,6 +823,8 @@ def post_collected_premiums_to_accounting(
                 source_tx_id=source_tx_id,
                 notes=f"kernel_split={bill_split['split_source']}",
                 engine=engine,
+                risk_amount=bill_split.get("risk_amount"),
+                savings_amount=bill_split.get("savings_amount"),
             )
         )
         posted_from_bills += bill_amount
@@ -807,6 +846,8 @@ def post_collected_premiums_to_accounting(
                 source_tx_id=source_tx_id,
                 notes=f"unbilled kernel_split={leftover_split['split_source']}",
                 engine=engine,
+                risk_amount=leftover_split.get("risk_amount"),
+                savings_amount=leftover_split.get("savings_amount"),
             )
         )
     return results
@@ -1197,6 +1238,17 @@ def _policy_for_tx(
     return None
 
 
+# Where one premium dollar can land. The six streams add up to the cash.
+_STREAM_KEYS = {
+    "risk": "risk_amount",
+    "underwriting_fee": "underwriting_fee_amount",
+    "expense_loading": "expense_amount",
+    "profit": "profit_amount",
+    "savings": "savings_amount",
+    "above_kernel_stack": "company_remainder",
+}
+
+
 def kernel_savings_cash_from_ledger(
     transactions: Iterable[Dict[str, Any]],
     policies: Optional[Dict[str, Any]] = None,
@@ -1207,6 +1259,11 @@ def kernel_savings_cash_from_ledger(
     """Kernel-split savings portion of customer-ledger premium cash."""
     risk = Decimal("0.00")
     savings = Decimal("0.00")
+    streams = {name: Decimal("0.00") for name in _STREAM_KEYS}
+    savings_by_customer: Dict[str, Decimal] = {}
+    unpinned_cash = Decimal("0.00")
+    unpinned_risk = Decimal("0.00")
+    unpinned_ids: List[str] = []
     count = 0
     for tx in transactions:
         if not isinstance(tx, dict):
@@ -1223,11 +1280,35 @@ def kernel_savings_cash_from_ledger(
         split = resolve_premium_split(amount, policy, fallback_risk_pct=100)
         risk += money(split["risk_amount"])
         savings += money(split["savings_amount"])
+        if isinstance(policy, dict) and split.get("split_label") != "historical" and (
+            policy.get("risk_premium_annual") is None and policy.get("risk_premium") is None
+        ):
+            # No kernel pin: the writer books this cash as risk because it
+            # has nothing else to go on. It is counted so it can be seen.
+            unpinned_cash += money(amount)
+            unpinned_risk += money(split["risk_amount"])
+            policy_id = str(policy.get("id") or policy.get("policy_id") or "")
+            if policy_id and policy_id not in unpinned_ids:
+                unpinned_ids.append(policy_id)
+        for name, key in _STREAM_KEYS.items():
+            streams[name] += money(split.get(key))
+        if money(split["savings_amount"]) > 0:
+            savings_by_customer[cid] = savings_by_customer.get(cid, Decimal("0.00")) + money(
+                split["savings_amount"]
+            )
         count += 1
     return {
         "risk_amount": float(risk),
         "savings_amount": float(savings),
         "premium_count": count,
+        "streams": {name: float(value) for name, value in streams.items()},
+        "savings_by_customer": {cid: float(value) for cid, value in savings_by_customer.items()},
+        "without_kernel_pin": {
+            "premium_cash": float(unpinned_cash),
+            "booked_as_risk": float(unpinned_risk),
+            "policy_count": len(unpinned_ids),
+            "policy_ids": unpinned_ids[:25],
+        },
     }
 
 
@@ -1301,8 +1382,16 @@ def savings_and_investments_books(
     savings_pipeline_accounts: Optional[Any] = None,
     engine: Any = None,
     exclude_customer: Optional[Any] = None,
+    savings_landed_by_customer: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Tie kernel savings cash to the accounting book and portfolio deposits."""
+    """Tie kernel savings cash to the accounting book and portfolio deposits.
+
+    ``savings_landed_by_customer`` is what each customer's health wallet,
+    investments, and algo already hold from premium savings. With it the
+    comparison is made customer by customer, which is where the money sits
+    once the pipeline has allocated it 30/65/5. Without it only tagged
+    investment deposits and unallocated pipeline cash are visible.
+    """
     ledger_split = kernel_savings_cash_from_ledger(
         transactions,
         policies,
@@ -1316,19 +1405,43 @@ def savings_and_investments_books(
     pipeline = pipeline_savings_cash(
         savings_pipeline_accounts, exclude_customer=exclude_customer
     )
-    landed = money(investments["premium_allocations"]) + money(pipeline["cash_balance"])
     savings_cash = money(ledger_split["savings_amount"])
+    unlanded_customers: List[Dict[str, Any]] = []
+    if savings_landed_by_customer is not None:
+        landed = Decimal("0.00")
+        unlanded = Decimal("0.00")
+        for cid, charged in sorted(ledger_split["savings_by_customer"].items()):
+            charged_cash = money(charged)
+            held = money(savings_landed_by_customer.get(cid) or 0)
+            counted = held if held < charged_cash else charged_cash
+            landed += counted
+            gap = charged_cash - counted
+            if gap > TOLERANCE:
+                unlanded += gap
+                unlanded_customers.append({
+                    "customer_id": cid,
+                    "savings_charged": float(charged_cash),
+                    "savings_landed": float(counted),
+                    "not_landed": float(gap),
+                })
+        landed_basis = "customer_books"
+    else:
+        landed = money(investments["premium_allocations"]) + money(pipeline["cash_balance"])
+        unlanded = max(Decimal("0.00"), savings_cash - landed)
+        landed_basis = "tagged_deposits"
     return {
         "kernel_savings_cash": ledger_split["savings_amount"],
         "kernel_risk_cash": ledger_split["risk_amount"],
+        "streams": ledger_split["streams"],
+        "without_kernel_pin": ledger_split["without_kernel_pin"],
         "accounting_savings_posted": book.get("savings_posted", 0.0),
         "investment_premium_allocations": investments["premium_allocations"],
         "investment_aum": investments["aum_balance"],
         "pipeline_cash": pipeline["cash_balance"],
         "savings_landed": float(landed),
-        "unlanded_savings_cash": float(
-            max(Decimal("0.00"), savings_cash - landed)
-        ),
+        "savings_landed_basis": landed_basis,
+        "unlanded_savings_cash": float(unlanded),
+        "unlanded_customers": unlanded_customers,
     }
 
 
@@ -1347,6 +1460,7 @@ def reconcile_financial_books(
     engine: Any = None,
     investment_accounts: Optional[Dict[str, Any]] = None,
     savings_pipeline_accounts: Optional[Any] = None,
+    savings_landed_by_customer: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Compare kernel-priced identity, customer-ledger cash, bills, BS, book, savings.
 
@@ -1540,6 +1654,7 @@ def reconcile_financial_books(
         savings_pipeline_accounts=savings_pipeline_accounts,
         engine=engine,
         exclude_customer=exclude_customer,
+        savings_landed_by_customer=savings_landed_by_customer,
     )
     savings_cash = money(savings_books["kernel_savings_cash"])
     savings_landed = money(savings_books["savings_landed"])
@@ -1561,7 +1676,21 @@ def reconcile_financial_books(
     # Collected savings premium that never landed in a savings book.
     # Only flag when there is savings cash and nothing at all on the
     # investment or pipeline side (historical durability gap).
-    if (
+    if savings_landed_by_customer is not None:
+        if money(savings_books["unlanded_savings_cash"]) > TOLERANCE:
+            discrepancies.append({
+                "check": "savings_cash_not_landed_in_portfolios",
+                "description": (
+                    "Savings add-on cash was collected and is not on that "
+                    "customer's health wallet, investments, or algo"
+                ),
+                "left": float(savings_cash),
+                "right": float(savings_landed),
+                "difference": _diff(savings_cash, savings_landed),
+                "customers": savings_books["unlanded_customers"][:50],
+                "count": len(savings_books["unlanded_customers"]),
+            })
+    elif (
         savings_cash > TOLERANCE
         and savings_landed + TOLERANCE < savings_cash
         and money(savings_books["investment_aum"]) + TOLERANCE < savings_cash
@@ -1577,10 +1706,74 @@ def reconcile_financial_books(
             "difference": _diff(savings_cash, savings_landed),
         })
 
+    # The accounting book splits a premium when the cash is posted. When the
+    # policy pin changes afterwards (a restored pin, a reprice) the book still
+    # carries the earlier split until the repair re-books it. Compared only
+    # when the premium totals tie, so a missing posting is reported once.
+    # Each posting may round by a cent.
+    book_premium = money(book["premium_posted"])
+    if (book_premium - ledger_premium).copy_abs() <= TOLERANCE and book_premium > 0:
+        rounding = TOLERANCE * max(1, int(book.get("allocation_count") or 0))
+        book_risk = money(book.get("risk_posted", 0))
+        book_savings = money(book.get("savings_posted", 0))
+        ledger_risk = money(savings_books["kernel_risk_cash"])
+        if (
+            (book_risk - ledger_risk).copy_abs() > rounding
+            or (book_savings - savings_cash).copy_abs() > rounding
+        ):
+            discrepancies.append({
+                "check": "accounting_book_split_vs_kernel_pins",
+                "description": (
+                    "The accounting book's risk and savings split of premium "
+                    "cash differs from the kernel pins now on the policies. "
+                    "Repair re-books the split; no premium or customer balance moves"
+                ),
+                "left": float(book_savings),
+                "right": float(savings_cash),
+                "difference": _diff(book_savings, savings_cash),
+                "book": {"risk": float(book_risk), "savings": float(book_savings)},
+                "kernel": {"risk": float(ledger_risk), "savings": float(savings_cash)},
+            })
+
     seed = ensure_seed_claims_reserve(bs) if bs else float(bs_reserve)
+
+    # The books can tie while a premium is still unexplained. That is a
+    # warning beside the totals: it does not move a book out of balance.
+    warnings: List[Dict[str, Any]] = []
+    unpinned = savings_books.get("without_kernel_pin") or {}
+    if money(unpinned.get("premium_cash")) > TOLERANCE:
+        warnings.append({
+            "check": "premium_cash_without_kernel_pin",
+            "description": (
+                "Premium cash was collected on policies that carry no kernel "
+                "pin, so it is booked as risk and is not split into streams"
+            ),
+            "amount": float(money(unpinned.get("premium_cash"))),
+            "policy_count": int(unpinned.get("policy_count") or 0),
+            "policy_ids": list(unpinned.get("policy_ids") or []),
+        })
+    above_stack = money((savings_books.get("streams") or {}).get("above_kernel_stack"))
+    if above_stack > TOLERANCE:
+        warnings.append({
+            "check": "premium_cash_above_kernel_stack",
+            "description": (
+                "Premium cash was collected above the pinned kernel stack "
+                "and stays on the company book"
+            ),
+            "amount": float(above_stack),
+        })
+
+    # Cash on a policy with no pin sits on the risk book only because the
+    # writer has nothing else to go on. It is shown as its own stream.
+    premium_streams = dict(savings_books.get("streams") or {})
+    unpinned_as_risk = money(unpinned.get("booked_as_risk"))
+    premium_streams["risk"] = float(money(premium_streams.get("risk")) - unpinned_as_risk)
+    premium_streams["without_kernel_pin"] = float(unpinned_as_risk)
 
     return {
         "is_consistent": len(discrepancies) == 0,
+        "warnings": warnings,
+        "premium_streams": premium_streams,
         "tolerance": float(TOLERANCE),
         "authority": {
             "premium_identity": "actuarial_kernel_or_issued_policy",
@@ -1704,6 +1897,8 @@ def reconstruct_accounting_book_from_ledger(
             source_tx_id=source_tx_id or None,
             notes=f"reconstruct kernel_split={split['split_source']}",
             engine=engine,
+            risk_amount=split.get("risk_amount"),
+            savings_amount=split.get("savings_amount"),
         )
         if result.get("posted"):
             posted_count += 1
@@ -1762,6 +1957,125 @@ def reconstruct_accounting_book_from_ledger(
     }
 
 
+def resplit_accounting_book_premiums(
+    *,
+    policies: Dict[str, Any],
+    billing: Dict[str, Any],
+    transactions: Any,
+    policy_ids: Optional[Iterable[str]] = None,
+    exclude_customer: Optional[Any] = None,
+    engine: Any = None,
+    dry_run: bool = False,
+    actor: str = "books_repair",
+) -> Dict[str, Any]:
+    """Re-book premium cash whose risk/savings split no longer matches the policy pin.
+
+    The accounting book splits a premium when the cash is posted. A policy
+    whose kernel pin was restored afterwards still carries the earlier split
+    (usually all risk). This reverses that allocation with contra entries
+    and posts the cash again under the pin, which is what the boot
+    reconstruction would book. ``policy_ids`` limits it to those policies.
+
+    Only the accounting book moves. The customer ledger, bills, premiums, and
+    customer balances are not written. A difference of a cent or less is
+    rounding and is left as booked.
+    """
+    if engine is None:
+        try:
+            from accounting_engine import get_accounting_engine
+
+            engine = get_accounting_engine()
+        except Exception:
+            engine = None
+    wanted = None if policy_ids is None else {str(pid) for pid in policy_ids if pid}
+    ledger_iterable = (
+        list(transactions.values()) if hasattr(transactions, "values") else list(transactions)
+    )
+    rows: List[Dict[str, Any]] = []
+    failed: List[Dict[str, Any]] = []
+    if engine is None:
+        return {"resplit_count": 0, "resplit": rows, "failed": failed, "dry_run": bool(dry_run)}
+    for tx in ledger_iterable:
+        if not isinstance(tx, dict) or _tx_type(tx) not in PREMIUM_CASH_TYPES:
+            continue
+        cid = str(tx.get("customer_id") or "")
+        if exclude_customer and cid and exclude_customer(cid):
+            continue
+        amount = _tx_amount(tx)
+        if amount <= 0:
+            continue
+        policy = _policy_for_tx(tx, policies, billing)
+        if not isinstance(policy, dict):
+            continue
+        meta = _tx_metadata(tx)
+        policy_id = str(policy.get("id") or meta.get("policy_id") or tx.get("policy_id") or "")
+        if wanted is not None and policy_id not in wanted:
+            continue
+        source_tx_id = str(tx.get("id") or tx.get("tx_id") or "").strip()
+        bill_id = str(meta.get("bill_id") or tx.get("bill_id") or "").strip()
+        book_bill = bill_id or f"UNBILLED-{source_tx_id or cid}"
+        alloc = _matching_allocation(engine, book_bill, source_tx_id or None)
+        if alloc is None or money(getattr(alloc, "total_premium", 0)) != money(amount):
+            # Not on the book as this one cash slice: the missing-post repair owns it.
+            continue
+        split = resolve_premium_split(amount, policy, fallback_risk_pct=100)
+        before_risk = money(getattr(alloc, "risk_premium", 0))
+        before_savings = money(getattr(alloc, "savings_premium", 0))
+        after_risk = money(split["risk_amount"])
+        after_savings = money(split["savings_amount"])
+        if (
+            (before_risk - after_risk).copy_abs() <= TOLERANCE
+            and (before_savings - after_savings).copy_abs() <= TOLERANCE
+        ):
+            continue
+        row = {
+            "action": "resplit_premium_accounting",
+            "bill_id": book_bill,
+            "policy_id": policy_id,
+            "customer_id": cid,
+            "source_tx_id": source_tx_id,
+            "amount": float(amount),
+            "before": {"risk": float(before_risk), "savings": float(before_savings)},
+            "after": {"risk": float(after_risk), "savings": float(after_savings)},
+            "split_source": split.get("split_source"),
+        }
+        if dry_run:
+            rows.append(row)
+            continue
+        ok, message = engine.reverse_allocation(
+            alloc.allocation_id, actor, "kernel pin on the policy changed"
+        )
+        if not ok:
+            failed.append({**row, "error": message})
+            continue
+        posted = post_premium_to_accounting_book(
+            bill_id=book_bill,
+            policy_id=policy_id,
+            customer_id=cid,
+            amount=amount,
+            risk_percentage=split["risk_percentage"],
+            savings_percentage=split["savings_percentage"],
+            posted_by=actor,
+            source_tx_id=source_tx_id or None,
+            notes=f"resplit kernel_split={split['split_source']}",
+            engine=engine,
+            risk_amount=split.get("risk_amount"),
+            savings_amount=split.get("savings_amount"),
+        )
+        if not posted.get("posted"):
+            failed.append({**row, "error": posted.get("message") or posted.get("reason") or "not_posted"})
+            continue
+        row["reversed_allocation_id"] = alloc.allocation_id
+        row["allocation_id"] = posted.get("allocation_id")
+        rows.append(row)
+    return {
+        "resplit_count": len(rows),
+        "resplit": rows,
+        "failed": failed,
+        "dry_run": bool(dry_run),
+    }
+
+
 def repair_financial_books(
     *,
     policies: Dict[str, Any],
@@ -1776,6 +2090,7 @@ def repair_financial_books(
     append_ledger: Optional[Any] = None,
     dry_run: bool = False,
     actor: str = "books_repair",
+    savings_landed_by_customer: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Reconstruct missing cash-identity rows from operational evidence.
 
@@ -1787,7 +2102,9 @@ def repair_financial_books(
     2. Appends missing ``claim_payment_received`` rows for paid/closed claims.
     3. Posts missing accounting-book premiums from the ledger.
     4. Posts missing accounting-book claim entries from the ledger.
-    5. Derives balance-sheet ``premium_income`` / ``claims_paid`` from the ledger.
+    5. Re-books a premium whose risk/savings split no longer matches the
+       policy's kernel pin (reversal plus a new posting on the book only).
+    6. Derives balance-sheet ``premium_income`` / ``claims_paid`` from the ledger.
 
     Never rewrites ``annual_premium``, ``Bill.amount``, or
     ``seed_claims_reserve``. Idempotent. ``dry_run=True`` reports actions
@@ -1812,6 +2129,7 @@ def repair_financial_books(
         engine=engine,
         investment_accounts=investment_accounts,
         savings_pipeline_accounts=savings_pipeline_accounts,
+        savings_landed_by_customer=savings_landed_by_customer,
     )
 
     actions: List[Dict[str, Any]] = []
@@ -1982,6 +2300,21 @@ def repair_financial_books(
     )
     actions.extend(book_posts.get("actions") or [])
 
+    book_resplit = resplit_accounting_book_premiums(
+        policies=policies,
+        billing=billing,
+        transactions=ledger_iterable,
+        exclude_customer=exclude_customer,
+        engine=engine,
+        dry_run=dry_run,
+        actor=actor,
+    )
+    actions.extend(book_resplit.get("resplit") or [])
+    actions.extend(
+        {**row, "action": "resplit_premium_accounting_failed"}
+        for row in book_resplit.get("failed") or []
+    )
+
     if dry_run:
         ledger_iterable = (
             (list(transactions.values()) if hasattr(transactions, "values") else list(transactions))
@@ -2045,6 +2378,7 @@ def repair_financial_books(
             engine=engine,
             investment_accounts=investment_accounts,
             savings_pipeline_accounts=savings_pipeline_accounts,
+            savings_landed_by_customer=savings_landed_by_customer,
         )
 
     return {
@@ -2303,6 +2637,8 @@ def pin_kernel_fields_on_policy(policy: Dict[str, Any], premium_data: Dict[str, 
         "config_version",
         "risk_premium_annual",
         "savings_premium_annual",
+        "expense_loading_annual",
+        "profit_margin_annual",
         "mortality_premium_annual",
         "disability_premium_annual",
         "savings_rate_used",
@@ -2329,3 +2665,233 @@ def pin_kernel_fields_on_policy(policy: Dict[str, Any], premium_data: Dict[str, 
         if premium_data.get(key) is not None and policy.get(key) in (None, ""):
             policy[key] = premium_data[key]
     return policy
+
+
+_KERNEL_MONEY_PINS = (
+    "risk_premium_annual",
+    "savings_premium_annual",
+    "expense_loading_annual",
+    "profit_margin_annual",
+    "mortality_premium_annual",
+    "disability_premium_annual",
+)
+
+
+def repin_kernel_fields_on_policy(policy: Dict[str, Any], premium_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Replace the money pins after the policy's premium was repriced.
+
+    A new annual premium with the earlier decomposition would leave the pins
+    summing to a premium that is no longer billed. A kernel reprice replaces
+    all of them together. A reprice the kernel did not produce clears them,
+    so that premium is reported unpinned instead of split by the old stack.
+    """
+    if not isinstance(policy, dict) or not isinstance(premium_data, dict):
+        return policy
+    kernel_priced = (
+        str(premium_data.get("pricing_source") or "") == "pricing_kernel"
+        and premium_data.get("risk_premium_annual") is not None
+    )
+    for key in _KERNEL_MONEY_PINS:
+        # None is the cleared pin: the database copy drops that key too.
+        policy[key] = premium_data.get(key) if kernel_priced else None
+    for key in (
+        "pricing_source", "integrity_hash", "product_id", "tables_version",
+        "config_version", "savings_rate_used", "savings_formula",
+    ):
+        if premium_data.get(key) is not None:
+            policy[key] = premium_data[key]
+    return policy
+
+
+# ---------------------------------------------------------------------------
+# Restoring a kernel pin that was never stored
+# ---------------------------------------------------------------------------
+
+# The savings add-ons and terms the application forms offer. The restore tries
+# only these, so a premium is matched against what could have been sold.
+RESTORE_SAVINGS_ADDONS: Tuple[Tuple[str, float], ...] = (
+    ("none", 0.0),
+    ("light", 0.25),
+    ("balanced", 0.50),
+    ("growth", 1.00),
+)
+RESTORE_TERM_YEARS: Tuple[int, ...] = (10, 15, 20, 25, 30)
+
+_RESTORE_PIN_KEYS = (
+    "pricing_source",
+    "integrity_hash",
+    "product_id",
+    "tables_version",
+    "config_version",
+    "risk_premium_annual",
+    "mortality_premium_annual",
+    "disability_premium_annual",
+    "savings_premium_annual",
+    "expense_loading_annual",
+    "profit_margin_annual",
+    "savings_rate_used",
+    "savings_formula",
+)
+
+
+def _restore_loading(policy: Mapping[str, Any], application: Optional[Mapping[str, Any]]) -> Decimal:
+    """Underwriter loading on the billed premium, as a fraction."""
+    raw = (application or {}).get("premium_adjustment")
+    if raw in (None, ""):
+        raw = policy.get("premium_adjustment")
+    try:
+        value = Decimal(str(raw if raw not in (None, "") else 0))
+    except Exception:
+        value = Decimal("0")
+    if abs(value) >= 1:
+        value = value / Decimal("100")
+    return value
+
+
+def _restore_pricing_payload(
+    policy: Mapping[str, Any],
+    application: Optional[Mapping[str, Any]],
+    customer: Optional[Mapping[str, Any]],
+) -> Dict[str, Any]:
+    app = application or {}
+    person = customer or {}
+    payload: Dict[str, Any] = {
+        "type": policy.get("type") or app.get("policy_type") or "life",
+        "coverage_amount": policy.get("coverage_amount") or app.get("coverage_amount"),
+        "risk_score": app.get("risk_score") or policy.get("risk_score") or "medium",
+    }
+    age = app.get("age")
+    if age in (None, ""):
+        age = person.get("age")
+    if age not in (None, ""):
+        payload["age"] = age
+    else:
+        dob = person.get("dob") or person.get("date_of_birth")
+        if dob:
+            payload["dob"] = dob
+    for key, sources in (
+        ("gender", (app.get("gender"), person.get("gender"))),
+        ("smoking_status", (app.get("smoking_status"),)),
+        ("ethnicity", (app.get("ethnicity"), person.get("ethnicity"))),
+        ("adl_level", (app.get("adl_level"), policy.get("adl_level"))),
+    ):
+        for value in sources:
+            if value not in (None, ""):
+                payload[key] = value
+                break
+    questionnaire = app.get("questionnaire") or app.get("questionnaire_responses")
+    if isinstance(questionnaire, Mapping):
+        payload["questionnaire"] = dict(questionnaire)
+    return payload
+
+
+def kernel_pin_restore_candidate(
+    policy: Mapping[str, Any],
+    *,
+    application: Optional[Mapping[str, Any]] = None,
+    customer: Optional[Mapping[str, Any]] = None,
+    pricer: Any = None,
+) -> Dict[str, Any]:
+    """Find the one kernel decomposition that reproduces a stored premium.
+
+    The policy is repriced from its stored application for each savings
+    add-on and term the forms offer. A pin is offered only when exactly one
+    decomposition gives the billed annual premium to the cent (and the
+    monthly premium when one is stored). Anything else is refused: no match,
+    more than one match, a discounted premium, or a seal that fails its
+    checksum. Nothing is written here.
+    """
+    policy_id = str(policy.get("id") or policy.get("policy_id") or "")
+    annual = money(policy.get("annual_premium"))
+    result: Dict[str, Any] = {
+        "policy_id": policy_id,
+        "customer_id": str(policy.get("customer_id") or ""),
+        "annual_premium": float(annual),
+        "status": "refused",
+        "reason": "",
+        "pins": {},
+        "matches": [],
+    }
+    if policy.get("kernel_pin_intact") is False:
+        result["reason"] = "pin_seal_broken"
+        return result
+    if policy.get("risk_premium_annual") is not None or policy.get("risk_premium") is not None:
+        result["status"] = "pinned"
+        result["reason"] = "already_pinned"
+        return result
+    if annual <= 0:
+        result["reason"] = "no_annual_premium"
+        return result
+    if legacy_annual_layers(dict(policy), {}) is not None:
+        # An earlier contract's stored percentages are its allocation.
+        result["status"] = "pinned"
+        result["reason"] = "earlier_sealed_allocation"
+        return result
+    if pricer is None:
+        from services.pricing_shadow_service import price_application_with_kernel as pricer
+
+    loading = _restore_loading(policy, application)
+    if loading < 0:
+        result["reason"] = "discounted_premium"
+        return result
+    base_payload = _restore_pricing_payload(policy, application, customer)
+    stored_monthly = money(policy.get("monthly_premium"))
+    factor = Decimal("1") + loading
+    found: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+    for addon, rate in RESTORE_SAVINGS_ADDONS:
+        for term in RESTORE_TERM_YEARS:
+            payload = dict(base_payload)
+            payload["savings_rate"] = rate
+            payload["term_years"] = term
+            try:
+                quote = pricer(payload)
+            except Exception:
+                quote = None
+            if not isinstance(quote, Mapping) or quote.get("risk_premium_annual") is None:
+                continue
+            if quote.get("eligible") is False:
+                continue
+            base_annual = money(quote.get("annual"))
+            if money(base_annual * factor) != annual:
+                continue
+            if stored_monthly > 0 and money(money(quote.get("monthly")) * factor) != stored_monthly:
+                continue
+            layers = tuple(
+                str(money(quote.get(key)))
+                for key in (
+                    "risk_premium_annual",
+                    "savings_premium_annual",
+                    "expense_loading_annual",
+                    "profit_margin_annual",
+                )
+            )
+            if sum((Decimal(value) for value in layers), Decimal("0")) != base_annual:
+                continue
+            entry = found.setdefault(layers, {"quote": dict(quote), "addon": addon, "rate": rate, "terms": []})
+            entry["terms"].append(term)
+            result["matches"].append({"savings_addon": addon, "savings_rate": rate, "term_years": term})
+    if not found:
+        result["reason"] = "no_kernel_price_reproduces_the_premium"
+        return result
+    if len(found) > 1:
+        result["reason"] = "more_than_one_decomposition"
+        return result
+
+    entry = next(iter(found.values()))
+    quote = entry["quote"]
+    pins: Dict[str, Any] = {
+        key: quote[key] for key in _RESTORE_PIN_KEYS if quote.get(key) is not None
+    }
+    if entry["rate"] > 0:
+        pins["savings_addon"] = entry["addon"]
+        pins["savings_rate"] = entry["rate"]
+    if loading > 0:
+        base_annual = money(quote.get("annual"))
+        pins["actuarial_annual_premium"] = float(base_annual)
+        pins["underwriting_loading"] = float(loading)
+        pins["underwriting_fee_annual"] = float(annual - base_annual)
+    pins["kernel_pin_source"] = "restored_by_reprice"
+    result["status"] = "restorable"
+    result["reason"] = "one_decomposition_reproduces_the_premium"
+    result["pins"] = pins
+    return result

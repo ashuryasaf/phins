@@ -1031,6 +1031,7 @@ def run_financial_books_repair(*, dry_run: bool = False, actor: str = 'books_rep
         balance_sheet=PHINS_BALANCE_SHEET,
         investment_accounts=INVESTMENT_ACCOUNTS,
         savings_pipeline_accounts=_savings_pipeline_accounts(),
+        savings_landed_by_customer=_SavingsLandedView(),
         exclude_customer=is_suspended_account,
         append_ledger=_append_ledger,
         dry_run=dry_run,
@@ -11658,6 +11659,22 @@ def _cashflow_position_books() -> Dict[str, Dict[str, Dict[str, float]]]:
     return {'wallets': wallets, 'investments': investments, 'algo': algo}
 
 
+def _customer_position_balances(customer_id: str) -> Dict[str, float]:
+    """One customer's live wallet, investment, and algo figures. Nothing is written."""
+    wallet = HEALTH_WALLETS.get(customer_id)
+    account = INVESTMENT_ACCOUNTS.get(customer_id)
+    try:
+        store = getattr(unified_balance_service, 'algo_trading_balances', {}) or {}
+    except Exception:
+        store = {}
+    algo = store.get(customer_id) if isinstance(store, dict) else None
+    return {
+        'health_wallet': safe_float((wallet or {}).get('balance'), 0.0) if isinstance(wallet, dict) else 0.0,
+        'investments': safe_float(_investment_books(account).get('position'), 0.0) if isinstance(account, dict) else 0.0,
+        'algo': safe_float(algo.get('available', algo.get('balance')), 0.0) if isinstance(algo, dict) else 0.0,
+    }
+
+
 def _write_cashflow_internal_error(handler, message: str, *args) -> None:
     """Log the failure and return a generic error. The exception text stays off the wire."""
     import logging
@@ -11968,6 +11985,25 @@ def _premium_savings_already_landed(customer_id: str) -> float:
     return round(max(marker, deposits, slices, live_books), 2)
 
 
+class _SavingsLandedView(dict):
+    """Premium savings on each customer's books, read on first use.
+
+    The reconciliation asks only for customers whose premiums carried a
+    savings add-on, so a customer nobody asks about is not read.
+    """
+
+    def __missing__(self, customer_id):
+        value = _premium_savings_already_landed(str(customer_id))
+        self[customer_id] = value
+        return value
+
+    def get(self, customer_id, default=None):
+        try:
+            return self[customer_id]
+        except Exception:
+            return default
+
+
 def _stamp_savings_premiums_applied(customer_id: str, amount: float) -> None:
     stamped = round(safe_float(amount, 0.0), 2)
     account = INVESTMENT_ACCOUNTS.get(customer_id)
@@ -12226,6 +12262,182 @@ def _cashflow_repair_refused(before: Dict[str, Any]) -> Dict[str, Any]:
 # and that payment takes this same lock so its new row survives the list rebuild.
 # The pay routes wait here too, then write onto the lists the repair left in place.
 _CASHFLOW_REPAIR_LOCK = threading.RLock()
+
+
+def restore_kernel_pins(actor: str = 'accountant', apply: bool = False) -> Dict[str, Any]:
+    """Put the kernel decomposition back on policies stored without one.
+
+    Each policy is repriced from its stored application. A pin is written
+    only when exactly one kernel decomposition reproduces the billed premium
+    to the cent; every other policy is listed with the reason and is left as
+    stored. The premium, the bills, the ledger, and every balance stay as
+    they are. Savings that were charged and never landed are credited by
+    the claim-transfer repair, as a separate step.
+
+    With ``apply`` the before-state is journaled first. If that line cannot
+    be written, no policy is changed. Each write is read back. Premium cash
+    already booked on a restored policy is then re-split on the accounting
+    book (reversal plus a new posting), so the book and the pin agree.
+    """
+    from services.financial_unification_service import (
+        kernel_pin_restore_candidate,
+        resplit_accounting_book_premiums,
+    )
+    with _CASHFLOW_REPAIR_LOCK:
+        applications: Dict[str, Any] = {}
+        try:
+            for app_id, app in list(UNDERWRITING_APPLICATIONS.items()):
+                if not isinstance(app, dict):
+                    continue
+                applications[str(app_id)] = app
+                if app.get('policy_id'):
+                    applications.setdefault('policy:' + str(app.get('policy_id')), app)
+        except Exception:
+            applications = {}
+        rows = []
+        restorable = []
+        counts = {'pinned': 0, 'restorable': 0, 'refused': 0, 'restored': 0, 'not_verified': 0}
+        restorable_annual = 0.0
+        for policy_id, policy in list(POLICIES.items()):
+            if not isinstance(policy, dict) or safe_float(policy.get('annual_premium'), 0.0) <= 0:
+                continue
+            application = (
+                applications.get(str(policy.get('underwriting_id') or ''))
+                or applications.get('policy:' + str(policy_id))
+            )
+            customer = CUSTOMERS.get(policy.get('customer_id')) if policy.get('customer_id') else None
+            candidate = kernel_pin_restore_candidate(
+                policy,
+                application=application,
+                customer=customer if isinstance(customer, dict) else None,
+            )
+            candidate['policy_id'] = candidate.get('policy_id') or str(policy_id)
+            status = candidate.get('status')
+            counts[status if status in counts else 'refused'] += 1
+            if status == 'pinned':
+                continue
+            if status == 'restorable':
+                restorable.append((str(policy_id), candidate))
+                restorable_annual += safe_float(candidate.get('annual_premium'), 0.0)
+            rows.append(candidate)
+
+        result = {
+            'success': True,
+            'applied': False,
+            'writes_premiums': False,
+            'counts': counts,
+            'restorable_annual_premium': round(restorable_annual, 2),
+            'policies': rows[:200],
+            'policies_listed': min(len(rows), 200),
+            'policies_total': len(rows),
+            'durable': True,
+        }
+        if not apply or not restorable:
+            return result
+
+        stamp = datetime.now().isoformat()
+        try:
+            _append_cashflow_repair_journal({
+                'phase': 'before',
+                'action': 'cashflow.kernel_pin_restore',
+                'actor': actor,
+                'at': stamp,
+                'policies': [
+                    {
+                        'policy_id': policy_id,
+                        'annual_premium': candidate.get('annual_premium'),
+                        'before': {key: (POLICIES.get(policy_id) or {}).get(key) for key in candidate['pins']},
+                        'after': candidate['pins'],
+                    }
+                    for policy_id, candidate in restorable
+                ],
+            })
+            if audit is not None:
+                audit.log(actor, 'cashflow.kernel_pin_restore', 'policies', 'kernel_pin', {
+                    'phase': 'before',
+                    'policy_ids': [policy_id for policy_id, _ in restorable][:200],
+                    'count': len(restorable),
+                })
+        except Exception:
+            result['success'] = False
+            result['error'] = 'repair_journal_failed'
+            result['durable'] = False
+            return result
+
+        restored_ids = []
+        for policy_id, candidate in restorable:
+            policy = POLICIES.get(policy_id)
+            if not isinstance(policy, dict) or policy.get('risk_premium_annual') is not None:
+                candidate['status'] = 'refused'
+                candidate['reason'] = 'changed_since_preview'
+                continue
+            pins = dict(candidate['pins'])
+            pins['kernel_pin_restored_at'] = stamp
+            policy.update(pins)
+            POLICIES[policy_id] = policy
+            stored = POLICIES.get(policy_id) or {}
+            verified = all(
+                stored.get(key) is not None
+                and abs(safe_float(stored.get(key), 0.0) - safe_float(pins.get(key), 0.0)) <= 0.005
+                for key in (
+                    'risk_premium_annual', 'savings_premium_annual',
+                    'expense_loading_annual', 'profit_margin_annual',
+                )
+            )
+            if verified:
+                candidate['status'] = 'restored'
+                restored_ids.append(policy_id)
+            else:
+                candidate['status'] = 'not_verified'
+                candidate['reason'] = 'pin_not_read_back'
+        counts['restored'] = len(restored_ids)
+        counts['not_verified'] = sum(1 for _, c in restorable if c.get('status') == 'not_verified')
+        counts['restorable'] = sum(1 for _, c in restorable if c.get('status') == 'restorable')
+        result['applied'] = True
+        result['restored_policy_ids'] = restored_ids[:200]
+        book = {'resplit_count': 0, 'resplit': [], 'failed': []}
+        if restored_ids:
+            try:
+                book = resplit_accounting_book_premiums(
+                    policies=POLICIES,
+                    billing=BILLING,
+                    transactions=TRANSACTION_LEDGER,
+                    policy_ids=restored_ids,
+                    exclude_customer=is_suspended_account,
+                    actor=actor,
+                )
+            except Exception:
+                logging.getLogger(__name__).exception('accounting book re-split after a kernel pin restore failed')
+                book = {'resplit_count': 0, 'resplit': [], 'failed': [{'error': 'resplit_failed'}]}
+        result['accounting_book'] = {
+            'resplit_count': book.get('resplit_count', 0),
+            'resplit': (book.get('resplit') or [])[:200],
+            'failed_count': len(book.get('failed') or []),
+        }
+        try:
+            _append_cashflow_repair_journal({
+                'phase': 'after',
+                'action': 'cashflow.kernel_pin_restore',
+                'actor': actor,
+                'at': datetime.now().isoformat(),
+                'restored': restored_ids,
+                'not_verified': [pid for pid, c in restorable if c.get('status') == 'not_verified'],
+                'accounting_book_resplit': book.get('resplit') or [],
+                'accounting_book_resplit_failed': book.get('failed') or [],
+            })
+        except Exception:
+            result['durable'] = False
+        if counts['not_verified']:
+            result['success'] = False
+            result['error'] = 'pin_not_read_back'
+        elif book.get('failed'):
+            result['success'] = False
+            result['error'] = 'accounting_book_not_resplit'
+        try:
+            threading.Thread(target=save_ledger_data, daemon=True).start()
+        except Exception:
+            pass
+        return result
 
 
 def post_unposted_claim_transfers(actor: str = 'accountant') -> Dict[str, Any]:
@@ -22010,6 +22222,8 @@ def calculate_premium(policy_data: Dict[str, Any]) -> Dict[str, float]:
                     'mortality_premium_annual': kernel.get('mortality_premium_annual'),
                     'disability_premium_annual': kernel.get('disability_premium_annual'),
                     'savings_premium_annual': kernel.get('savings_premium_annual'),
+                    'expense_loading_annual': kernel.get('expense_loading_annual'),
+                    'profit_margin_annual': kernel.get('profit_margin_annual'),
                     'savings_rate_used': kernel.get('savings_rate_used'),
                     'savings_formula': kernel.get('savings_formula'),
                     'adl_level': kernel.get('adl_level'),
@@ -22113,6 +22327,19 @@ def _apply_accepted_quote_provenance(
     ):
         if prov.get(key) not in (None, ""):
             bound[key] = prov.get(key)
+    # The loadings belong to the quote that was accepted. A quote sealed
+    # without them keeps the recalculated pair only while the recalculated
+    # annual is that same quote; otherwise they stay unpinned.
+    quoted_loadings = all(
+        prov.get(key) not in (None, "")
+        for key in ("expense_loading_annual", "profit_margin_annual")
+    )
+    if quoted_loadings:
+        bound["expense_loading_annual"] = prov.get("expense_loading_annual")
+        bound["profit_margin_annual"] = prov.get("profit_margin_annual")
+    elif abs(safe_float(premium_data.get("annual"), 0.0) - quoted_annual) > 0.01:
+        bound.pop("expense_loading_annual", None)
+        bound.pop("profit_margin_annual", None)
     bound["quote_bound"] = True
     return bound
 
@@ -40209,6 +40436,7 @@ For claims or questions, please contact:
                     exclude_customer=is_suspended_account,
                     investment_accounts=INVESTMENT_ACCOUNTS,
                     savings_pipeline_accounts=_savings_pipeline_accounts(),
+                    savings_landed_by_customer=_SavingsLandedView(),
                 )
             except Exception as rec_err:
                 self._set_json_headers(500)
@@ -40234,6 +40462,20 @@ For claims or questions, please contact:
                 return
             self._set_json_headers()
             self.wfile.write(json.dumps({'success': True, 'monitoring': report}, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/admin/cashflow/kernel-pins':
+            if not require_role(session, ['admin', 'accountant', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                preview = restore_kernel_pins(str((session or {}).get('username') or 'accountant'), apply=False)
+            except Exception:
+                _write_cashflow_internal_error(self, "kernel pin preview failed")
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'success': True, 'kernel_pins': preview}, default=str).encode('utf-8'))
             return
 
         if path == '/api/admin/cashflow/unified-report':
@@ -40308,6 +40550,12 @@ For claims or questions, please contact:
                     nft_ledger=NFT_LEDGER,
                     claim_transfers=_cashflow_claim_transfers(),
                     premium_transactions=TRANSACTION_LEDGER.values(),
+                )
+                from services.premium_flow_reconciliation import customer_cash_flow_streams
+                report['cash_flow'] = customer_cash_flow_streams(
+                    report,
+                    savings_on_accounts=_premium_savings_already_landed(customer_id),
+                    balances=_customer_position_balances(customer_id),
                 )
             except Exception:
                 _write_cashflow_internal_error(self, "premium picture failed for %s", customer_id)
@@ -54237,6 +54485,31 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({'success': True, 'transfers': result}, default=str).encode('utf-8'))
             return
 
+        if path == '/api/admin/cashflow/restore-kernel-pins':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'accountant', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            actor = str((session or {}).get('username') or 'accountant')
+            try:
+                result = restore_kernel_pins(actor, apply=True)
+            except Exception:
+                _write_cashflow_internal_error(self, "kernel pin restore failed")
+                return
+            if result.get('success') is False:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({
+                    'error': result.get('error') or 'not_durable',
+                    'kernel_pins': result,
+                }, default=str).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'success': True, 'kernel_pins': result}, default=str).encode('utf-8'))
+            return
+
         if path == '/api/finance/repair':
             auth_header = self.headers.get('Authorization', '')
             token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
@@ -55778,6 +56051,8 @@ For claims or questions, please contact:
                     'config_version': premium_data.get('config_version'),
                     'risk_premium_annual': premium_data.get('risk_premium_annual'),
                     'savings_premium_annual': premium_data.get('savings_premium_annual'),
+                    'expense_loading_annual': premium_data.get('expense_loading_annual'),
+                    'profit_margin_annual': premium_data.get('profit_margin_annual'),
                     'mortality_premium_annual': premium_data.get('mortality_premium_annual'),
                     'disability_premium_annual': premium_data.get('disability_premium_annual'),
                     'savings_rate_used': premium_data.get('savings_rate_used'),
@@ -56098,14 +56373,24 @@ For claims or questions, please contact:
                         changes['coverage_amount'] = {'old': policy.get('coverage_amount'), 'new': new_amount}
                         policy['coverage_amount'] = new_amount
                         # Recalculate premium
-                        premium_data = calculate_premium({
+                        reprice_inputs = {
                             'type': policy.get('type', 'standard'),
                             'coverage_amount': new_amount,
                             'age': policy.get('age', 35),
                             'risk_score': policy.get('risk_score', 'medium')
-                        })
+                        }
+                        # The elected add-on is part of the contract. A new
+                        # face amount reprices it; it does not cancel it.
+                        if safe_float(policy.get('savings_rate_used'), 0.0) > 0:
+                            reprice_inputs['savings_rate'] = safe_float(policy.get('savings_rate_used'), 0.0)
+                        premium_data = calculate_premium(reprice_inputs)
                         policy['monthly_premium'] = premium_data['monthly']
                         policy['annual_premium'] = premium_data['annual']
+                        try:
+                            from services.financial_unification_service import repin_kernel_fields_on_policy
+                            repin_kernel_fields_on_policy(policy, premium_data)
+                        except Exception as _repin_err:
+                            print(f"[KERNEL_PIN] Repin skipped for {policy_id}: {_repin_err}")
                 
                 if 'monthly_premium' in data:
                     new_premium = float(data['monthly_premium'])
@@ -56263,6 +56548,8 @@ For claims or questions, please contact:
                     'config_version': premium_data.get('config_version'),
                     'risk_premium_annual': premium_data.get('risk_premium_annual'),
                     'savings_premium_annual': premium_data.get('savings_premium_annual'),
+                    'expense_loading_annual': premium_data.get('expense_loading_annual'),
+                    'profit_margin_annual': premium_data.get('profit_margin_annual'),
                     'mortality_premium_annual': premium_data.get('mortality_premium_annual'),
                     'disability_premium_annual': premium_data.get('disability_premium_annual'),
                     'savings_rate_used': premium_data.get('savings_rate_used'),
@@ -56526,6 +56813,7 @@ For claims or questions, please contact:
                         or quote_summary.get('annual')
                         or (monthly * 12 if monthly else 0)
                     )
+                    referral_premium_data = None
                     if monthly <= 0:
                         premium_data = calculate_premium({
                             'type': app.get('policy_type') or 'phins_unified',
@@ -56542,6 +56830,7 @@ For claims or questions, please contact:
                         })
                         annual = float(premium_data.get('annual') or 0)
                         monthly = float(premium_data.get('monthly') or (annual / 12.0))
+                        referral_premium_data = premium_data
                         quote_summary = {**quote_summary, **{
                             'tables_version': premium_data.get('tables_version'),
                             'config_version': premium_data.get('config_version'),
@@ -56549,7 +56838,7 @@ For claims or questions, please contact:
                             'integrity_hash': premium_data.get('integrity_hash'),
                         }}
                     policy_id = f"POL-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000,9999)}"
-                    POLICIES[policy_id] = {
+                    referral_policy = {
                         'id': policy_id,
                         'customer_id': customer_id,
                         'type': app.get('policy_type') or 'phins_unified',
@@ -56568,6 +56857,14 @@ For claims or questions, please contact:
                         'integrity_hash': quote_summary.get('integrity_hash'),
                         'chat_application_id': app.get('chat_application_id'),
                     }
+                    if referral_premium_data is not None:
+                        # Priced here, so the decomposition of this premium is known.
+                        try:
+                            from services.financial_unification_service import pin_kernel_fields_on_policy
+                            pin_kernel_fields_on_policy(referral_policy, referral_premium_data)
+                        except Exception:
+                            pass
+                    POLICIES[policy_id] = referral_policy
                     app['policy_id'] = policy_id
                     app['policy_status'] = 'pending_underwriting'
 
@@ -67052,7 +67349,7 @@ For claims or questions, please contact:
             })
             
             # Create policy
-            POLICIES[policy_id] = {
+            registration_policy = {
                 'id': policy_id,
                 'customer_id': customer_id,
                 'type': policy_type,
@@ -67066,6 +67363,12 @@ For claims or questions, please contact:
                 'end_date': (datetime.now() + timedelta(days=365)).isoformat(),
                 'created_date': datetime.now().isoformat()
             }
+            try:
+                from services.financial_unification_service import pin_kernel_fields_on_policy
+                pin_kernel_fields_on_policy(registration_policy, premium_data)
+            except Exception:
+                pass
+            POLICIES[policy_id] = registration_policy
 
             save_ledger_data()
             

@@ -6,6 +6,8 @@ import os
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import pytest
+
 from services.cashflow_unified_report import management_fee_rate, unified_cashflow_report
 from services.nft_ledger import mint_token
 
@@ -354,3 +356,250 @@ def test_unified_report_route_is_staff_only_and_reads_the_live_books():
         portal.SESSIONS.pop("phins_unified-cust", None)
         portal.PHINS_BALANCE_SHEET.clear()
         portal.PHINS_BALANCE_SHEET.update(sheet_before)
+
+
+# ---------------------------------------------------------------------------
+# Issued through the real routes: the books and the customer agree
+# ---------------------------------------------------------------------------
+
+_MONEY_PINS = (
+    "risk_premium_annual", "savings_premium_annual",
+    "expense_loading_annual", "profit_margin_annual",
+)
+
+
+def _http(method, path, token=None, body=None):
+    base = os.environ.get("TEST_BASE_URL", "http://127.0.0.1:8000")
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    data = json.dumps(body or {}).encode("utf-8") if method == "POST" else None
+    req = Request(base + path, data=data, headers=headers, method=method)
+    try:
+        with urlopen(req, timeout=60) as resp:
+            return resp.status, json.loads(resp.read().decode("utf-8") or "{}")
+    except HTTPError as exc:
+        return exc.code, json.loads(exc.read().decode("utf-8") or "{}")
+
+
+def _session(portal, token, role, username, customer_id=None):
+    payload = {"username": username, "role": role, "expires": "2099-01-01T00:00:00"}
+    if customer_id:
+        payload["customer_id"] = customer_id
+    portal.SESSIONS[token] = portal._stamp_session_payload(payload)
+    init_set = getattr(portal, "_TEST_PORTS_INITIALIZED", None)
+    if isinstance(init_set, set):
+        init_set.add(int(os.environ.get("TEST_PORT", "8000")))
+    return token
+
+
+def _issue_and_pay(portal, email, pay=True):
+    """Apply with the balanced savings add-on, approve, and pay the first bill."""
+    admin = _session(portal, "phins_streams-admin", "admin", "admin")
+    underwriter = _session(portal, "phins_streams-uw", "underwriter", "underwriter")
+    status, created = _http("POST", "/api/policies/create", body={
+        "customer_name": "Noa Barak", "customer_email": email, "customer_phone": "555-0456",
+        "type": "life", "coverage_amount": 500000, "risk_score": "medium", "age": 40,
+        "savings_addon": "balanced", "savings_rate": 0.5,
+    })
+    assert status in (200, 201), created
+    customer_id = created["customer"]["id"]
+    policy_id = created["policy"]["id"]
+    status, body = _http("POST", "/api/underwriting/approve", underwriter, {
+        "id": created["underwriting"]["id"], "approved_by": "underwriter",
+    })
+    assert status == 200, body
+    paid = 0.0
+    if pay:
+        for bill in [b for b in portal.BILLING.values() if b.get("customer_id") == customer_id]:
+            amount = bill.get("amount_due") or bill.get("amount")
+            status, body = _http("POST", "/api/billing/pay", admin, {"bill_id": bill["id"], "amount": amount})
+            assert status == 200, body
+            paid += float(amount)
+    return admin, customer_id, policy_id, round(paid, 2)
+
+
+@pytest.fixture
+def live_books():
+    """The balance sheet is process-wide, so each journey hands it back as found."""
+    import web_portal.server as portal
+
+    sheet_before = copy.deepcopy(dict(portal.PHINS_BALANCE_SHEET))
+    portal.initialize_balance_sheet()
+    sheet = portal.PHINS_BALANCE_SHEET
+    # Cash an earlier test left on the sheet is not this journey's premium.
+    sheet.setdefault("revenue_breakdown", {})["premium_income"] = 0.0
+    sheet.setdefault("expense_breakdown", {})["claims_paid"] = 0.0
+    sheet["claims_reserve"] = sheet.get("seed_claims_reserve", 3_500_000.0)
+    try:
+        yield portal
+    finally:
+        portal.PHINS_BALANCE_SHEET.clear()
+        portal.PHINS_BALANCE_SHEET.update(sheet_before)
+        for token in [t for t in portal.SESSIONS if str(t).startswith(("phins_streams-", "phins_restore-"))]:
+            portal.SESSIONS.pop(token, None)
+
+
+def test_issued_policy_books_every_premium_dollar_on_a_kernel_stream(live_books):
+    portal = live_books
+
+    admin, customer_id, policy_id, paid = _issue_and_pay(portal, "noa.streams@example.com")
+    policy = portal.POLICIES[policy_id]
+    stack = sum(round(float(policy[key]), 2) for key in _MONEY_PINS)
+    assert abs(stack - float(policy["annual_premium"])) <= 0.011, policy
+    assert float(policy["savings_premium_annual"]) > 0
+
+    status, body = _http("GET", "/api/finance/reconcile", admin)
+    assert status == 200, body
+    reconcile = body["reconcile"]
+    assert reconcile["is_consistent"] is True, reconcile["discrepancies"]
+    assert reconcile["warnings"] == []
+    streams = reconcile["premium_streams"]
+    assert streams["above_kernel_stack"] == 0.0
+    assert round(sum(streams.values()), 2) == paid
+    assert streams["savings"] > 0
+    assert reconcile["savings"]["unlanded_savings_cash"] == 0.0
+    assert reconcile["savings"]["accounting_savings_posted"] == streams["savings"]
+
+    status, body = _http("GET", "/api/admin/cashflow/unified-report", admin)
+    assert status == 200, body
+    report = body["report"]
+    # Seals from earlier tests stay in the shared NFT ledger, so read this customer's row.
+    own = next(row for row in report["customers"] if row["customer_id"] == customer_id)
+    assert own["premiums_collected"] == paid
+    assert own["risk"] == streams["risk"]
+    assert own["expense_loading"] == streams["expense_loading"]
+    assert own["profit"] == streams["profit"]
+    assert own["savings"] == streams["savings"]
+    assert own["flags"] == []
+    assert _check(report, "kernel_pins_present")["ok"] is True
+    assert _check(report, "premium_waterfall_ties")["ok"] is True
+
+    customer = _session(portal, "phins_streams-cust", "customer", "noa.streams@example.com", customer_id)
+    status, body = _http("GET", "/api/customer/premium-picture", customer)
+    assert status == 200, body
+    flow = body["picture"]["cash_flow"]
+    assert flow["writes"] is False
+    assert flow["collected"] == paid
+    assert flow["ties"] is True and flow["streams_total"] == paid
+    by_key = {row["key"]: row["amount"] for row in flow["streams"]}
+    assert by_key["risk"] == streams["risk"]
+    assert by_key["savings"] == streams["savings"]
+    assert "not_split" not in by_key
+    assert flow["savings"]["charged"] == streams["savings"]
+    assert flow["savings"]["on_accounts"] == streams["savings"]
+    assert flow["savings"]["not_yet_on_accounts"] == 0.0
+    held = flow["balances"]
+    assert round(held["health_wallet"] + held["investments"] + held["algo"], 2) == streams["savings"]
+
+
+def test_kernel_pin_restore_reproduces_the_premium_and_journals_first(live_books, monkeypatch):
+    portal = live_books
+
+    admin, customer_id, policy_id, _paid = _issue_and_pay(portal, "noa.restore@example.com", pay=False)
+    policy = portal.POLICIES[policy_id]
+    issued = {key: policy[key] for key in _MONEY_PINS}
+    annual = policy["annual_premium"]
+    # The policy as the database kept it before the pin was durable.
+    for key in list(policy):
+        if key in _MONEY_PINS or key in (
+            "integrity_hash", "product_id", "savings_addon", "savings_rate", "savings_rate_used",
+            "savings_formula", "allocation_version", "pricing_source",
+        ):
+            policy.pop(key)
+    for bill in [b for b in portal.BILLING.values() if b.get("customer_id") == customer_id]:
+        status, body = _http("POST", "/api/billing/pay", admin, {
+            "bill_id": bill["id"], "amount": bill.get("amount_due") or bill.get("amount"),
+        })
+        assert status == 200, body
+
+    status, body = _http("GET", "/api/finance/reconcile", admin)
+    warning = next(w for w in body["reconcile"]["warnings"] if w["check"] == "premium_cash_without_kernel_pin")
+    assert policy_id in warning["policy_ids"]
+    # With nothing to split it by, the cash sits on the risk book and is shown apart.
+    unsplit = body["reconcile"]["premium_streams"]
+    assert unsplit["without_kernel_pin"] == warning["amount"] > 0
+    assert unsplit["risk"] == 0.0 and unsplit["savings"] == 0.0
+    assert body["reconcile"]["savings"]["accounting_savings_posted"] == 0.0
+
+    journal = []
+    monkeypatch.setattr(portal, "_append_cashflow_repair_journal", journal.append)
+    customer = _session(portal, "phins_restore-cust", "customer", "noa.restore@example.com", customer_id)
+    claims = _session(portal, "phins_restore-claims", "claims", "claims_adjuster")
+    for token in (customer, claims, None):
+        status, body = _http("GET", "/api/admin/cashflow/kernel-pins", token)
+        assert status in (401, 403) and "error" in body
+        status, body = _http("POST", "/api/admin/cashflow/restore-kernel-pins", token)
+        assert status in (401, 403) and "error" in body
+
+    status, body = _http("GET", "/api/admin/cashflow/kernel-pins", admin)
+    assert status == 200, body
+    preview = body["kernel_pins"]
+    assert preview["applied"] is False
+    row = next(r for r in preview["policies"] if r["policy_id"] == policy_id)
+    assert row["status"] == "restorable"
+    assert {key: row["pins"][key] for key in _MONEY_PINS} == issued
+    # Reading the preview pins nothing and journals nothing.
+    assert portal.POLICIES[policy_id].get("risk_premium_annual") is None
+    assert journal == []
+
+    def _refuse(_record):
+        raise OSError("journal volume is read-only")
+
+    monkeypatch.setattr(portal, "_append_cashflow_repair_journal", _refuse)
+    status, body = _http("POST", "/api/admin/cashflow/restore-kernel-pins", admin)
+    assert status == 503 and body["error"] == "repair_journal_failed"
+    assert portal.POLICIES[policy_id].get("risk_premium_annual") is None
+
+    monkeypatch.setattr(portal, "_append_cashflow_repair_journal", journal.append)
+    status, body = _http("POST", "/api/admin/cashflow/restore-kernel-pins", admin)
+    assert status == 200, body
+    assert policy_id in body["kernel_pins"]["restored_policy_ids"]
+    restored = portal.POLICIES[policy_id]
+    assert {key: restored[key] for key in _MONEY_PINS} == issued
+    assert restored["annual_premium"] == annual
+    assert restored["kernel_pin_source"] == "restored_by_reprice"
+    assert [line["phase"] for line in journal] == ["before", "after"]
+    before = next(p for p in journal[0]["policies"] if p["policy_id"] == policy_id)
+    assert before["before"]["risk_premium_annual"] is None
+    assert before["after"]["risk_premium_annual"] == issued["risk_premium_annual"]
+    assert journal[0]["actor"] == "admin"
+    # The cash already booked all-risk is re-split on the accounting book.
+    book = body["kernel_pins"]["accounting_book"]
+    assert book["resplit_count"] == 1 and book["failed_count"] == 0
+    assert book["resplit"][0]["before"] == {"risk": warning["amount"], "savings": 0.0}
+    assert journal[1]["accounting_book_resplit"] == book["resplit"]
+
+    # The streams are known now, and the savings that never landed are named.
+    status, body = _http("GET", "/api/finance/reconcile", admin)
+    reconcile = body["reconcile"]
+    assert not [w for w in reconcile["warnings"] if w["check"] == "premium_cash_without_kernel_pin"]
+    assert [d["check"] for d in reconcile["discrepancies"]] == ["savings_cash_not_landed_in_portfolios"]
+    streams = reconcile["premium_streams"]
+    assert streams["without_kernel_pin"] == 0.0 and streams["savings"] > 0
+    assert reconcile["savings"]["accounting_savings_posted"] == streams["savings"]
+    assert reconcile["reserves"]["risk_cash_collected"] == streams["risk"]
+    assert book["resplit"][0]["after"] == {"risk": streams["risk"], "savings": streams["savings"]}
+    gap = next(d for d in reconcile["discrepancies"] if d["check"] == "savings_cash_not_landed_in_portfolios")
+    assert gap["customers"][0]["customer_id"] == customer_id
+    owed = gap["customers"][0]["not_landed"]
+    assert owed > 0
+
+    status, body = _http("GET", "/api/customer/premium-picture", customer)
+    assert body["picture"]["cash_flow"]["savings"]["not_yet_on_accounts"] == owed
+
+    # The existing repair credits them once, 30 / 65 / 5, and the books tie.
+    status, body = _http("POST", "/api/admin/cashflow/post-claim-transfers", admin)
+    assert status == 200, body
+    assert body["transfers"]["savings"]["credited_total"] == owed
+    status, body = _http("GET", "/api/finance/reconcile", admin)
+    assert body["reconcile"]["is_consistent"] is True, body["reconcile"]["discrepancies"]
+    status, body = _http("GET", "/api/customer/premium-picture", customer)
+    assert body["picture"]["cash_flow"]["savings"]["not_yet_on_accounts"] == 0.0
+
+    # A second restore finds nothing to do.
+    lines = len(journal)
+    status, body = _http("POST", "/api/admin/cashflow/restore-kernel-pins", admin)
+    assert status == 200 and body["kernel_pins"]["applied"] is False
+    assert len([line for line in journal if line.get("action") == "cashflow.kernel_pin_restore"]) == 2
+    assert lines >= 2
