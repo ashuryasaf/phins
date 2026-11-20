@@ -188,6 +188,40 @@ def map_fields_for_repository(repository_name: str, data: Dict[str, Any]) -> Dic
     return result
 
 
+def _seal_policy_kernel_pin(key: str, value: Dict[str, Any], existing: Any) -> None:
+    """Carry a policy's kernel pin into the sealed ``kernel_pin`` column.
+
+    The pin keys are not columns, so without this they are dropped on write
+    and every later premium books as pure risk. A write that names only some
+    keys keeps the rest, and a key written as ``None`` is cleared. A stored
+    pin whose checksum does not match is left as it is: it is not overwritten
+    and the new keys are not written.
+    """
+    from database.models import (
+        POLICY_KERNEL_PIN_FIELDS,
+        pack_policy_kernel_pin,
+        policy_kernel_pin_fields,
+        unpack_policy_kernel_pin,
+    )
+
+    value.pop('kernel_pin', None)
+    incoming = policy_kernel_pin_fields(value)
+    cleared = [name for name in POLICY_KERNEL_PIN_FIELDS if name in value and value[name] is None]
+    stored: Dict[str, Any] = {}
+    if existing is not None:
+        stored, intact = unpack_policy_kernel_pin(getattr(existing, 'kernel_pin', None))
+        if not intact:
+            logger.error(
+                "Policy %s kernel pin failed its checksum; the stored pin is left unchanged", key
+            )
+            return
+    merged = {**stored, **incoming}
+    for name in cleared:
+        merged.pop(name, None)
+    if merged != stored:
+        value['kernel_pin'] = pack_policy_kernel_pin(merged) if merged else None
+
+
 class DatabaseDict:
     """
     Dictionary-like wrapper around database repository.
@@ -348,6 +382,8 @@ class DatabaseDict:
             with DatabaseManager() as db:
                 repo = self._get_repository(db)
                 existing = repo.get_by_id(key)
+                if self.repository_name == 'policies':
+                    _seal_policy_kernel_pin(key, value, existing)
                 if existing:
                     # Update existing - filter out keys that aren't model attributes
                     update_data = {k: v for k, v in value.items() if hasattr(existing, k)}
