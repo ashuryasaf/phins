@@ -1238,6 +1238,38 @@ def _policy_for_tx(
     return None
 
 
+def _cash_booked_without_kernel_pin(
+    policy: Optional[Dict[str, Any]],
+    split: Mapping[str, Any],
+    amount: Decimal,
+) -> bool:
+    """True when this payment was booked entirely as risk for lack of a pin.
+
+    A snapshot or an add-on election already filled other layers. That cash
+    stays on those streams. Only a payment the writer had nothing else to
+    split — the whole amount on risk, and no risk pin on the policy — is
+    counted here.
+    """
+    if not isinstance(policy, dict):
+        return False
+    if split.get("split_label") not in (None, "", "no_savings_election"):
+        return False
+    if policy.get("risk_premium_annual") is not None or policy.get("risk_premium") is not None:
+        return False
+    if money(split.get("risk_amount")) != money(amount):
+        return False
+    for key in (
+        "underwriting_fee_amount",
+        "savings_amount",
+        "expense_amount",
+        "profit_amount",
+        "company_remainder",
+    ):
+        if money(split.get(key)) != 0:
+            return False
+    return True
+
+
 # Where one premium dollar can land. The six streams add up to the cash.
 _STREAM_KEYS = {
     "risk": "risk_amount",
@@ -1280,11 +1312,9 @@ def kernel_savings_cash_from_ledger(
         split = resolve_premium_split(amount, policy, fallback_risk_pct=100)
         risk += money(split["risk_amount"])
         savings += money(split["savings_amount"])
-        if isinstance(policy, dict) and split.get("split_label") != "historical" and (
-            policy.get("risk_premium_annual") is None and policy.get("risk_premium") is None
-        ):
-            # No kernel pin: the writer books this cash as risk because it
-            # has nothing else to go on. It is counted so it can be seen.
+        if _cash_booked_without_kernel_pin(policy, split, amount):
+            # No kernel pin, snapshot, or add-on: the writer books this cash
+            # as risk because it has nothing else to go on.
             unpinned_cash += money(amount)
             unpinned_risk += money(split["risk_amount"])
             policy_id = str(policy.get("id") or policy.get("policy_id") or "")
@@ -2865,7 +2895,10 @@ def kernel_pin_restore_candidate(
                     "profit_margin_annual",
                 )
             )
-            if sum((Decimal(value) for value in layers), Decimal("0")) != base_annual:
+            # Each layer is already in cents, so the sum can sit a cent away
+            # from the kernel's own annual. Issuance closes that same gap.
+            layer_sum = sum((Decimal(value) for value in layers), Decimal("0"))
+            if (layer_sum - base_annual).copy_abs() > TOLERANCE:
                 continue
             entry = found.setdefault(layers, {"quote": dict(quote), "addon": addon, "rate": rate, "terms": []})
             entry["terms"].append(term)

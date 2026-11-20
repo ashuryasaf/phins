@@ -1413,6 +1413,109 @@ def test_pin_kernel_fields_carries_the_loadings():
     assert policy["profit_margin_annual"] == 323.43
 
 
+def test_monthly_premium_override_drops_the_stale_kernel_pin():
+    """A hand-set monthly premium must not keep splitting cash by the old stack."""
+    import json
+    import os
+    from urllib.request import Request, urlopen
+
+    import web_portal.server as portal
+
+    token = "phins_pin_override"
+    portal.SESSIONS[token] = portal._stamp_session_payload({
+        "username": "admin", "role": "admin", "expires": "2099-01-01T00:00:00",
+    })
+    init_set = getattr(portal, "_TEST_PORTS_INITIALIZED", None)
+    if isinstance(init_set, set):
+        init_set.add(int(os.environ.get("TEST_PORT", "8000")))
+
+    policy_id = "POL-OVERRIDE-PIN"
+    portal.POLICIES[policy_id] = {
+        "id": policy_id,
+        "customer_id": "CUST-OVERRIDE",
+        "type": "life",
+        "coverage_amount": 500000,
+        "status": "active",
+        "annual_premium": 3557.68,
+        "monthly_premium": 296.47,
+        "pricing_source": "pricing_kernel",
+        "allocation_version": "kernel",
+        "risk_premium_annual": 1960.15,
+        "savings_premium_annual": 980.08,
+        "expense_loading_annual": 294.02,
+        "profit_margin_annual": 323.43,
+        "savings_addon": "balanced",
+        "savings_rate": 0.5,
+    }
+    base = os.environ.get("TEST_BASE_URL", "http://127.0.0.1:8000")
+    request = Request(
+        base + "/api/policy/update",
+        data=json.dumps({"policy_id": policy_id, "monthly_premium": 100}).encode(),
+        headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=30) as response:
+        body = json.loads(response.read().decode())
+    assert body["success"] is True
+    policy = portal.POLICIES[policy_id]
+    assert policy["monthly_premium"] == 100.0
+    assert policy["annual_premium"] == 1200.0
+    for key in (
+        "risk_premium_annual", "savings_premium_annual",
+        "expense_loading_annual", "profit_margin_annual",
+    ):
+        assert policy[key] is None
+    assert policy.get("savings_addon") is None
+    assert policy.get("savings_rate") is None
+    split = resolve_premium_split(100.0, policy)
+    assert split["risk_amount"] == 100.0
+    assert split["savings_amount"] == 0.0
+    assert split["expense_amount"] == 0.0
+    assert split["profit_amount"] == 0.0
+    assert split["company_remainder"] == 0.0
+    assert split["split_label"] == "no_savings_election"
+
+    # Writing the same premium back leaves a pin that still matches the bill.
+    kept_id = "POL-OVERRIDE-KEPT"
+    portal.POLICIES[kept_id] = {
+        "id": kept_id,
+        "customer_id": "CUST-OVERRIDE",
+        "type": "life",
+        "coverage_amount": 500000,
+        "status": "active",
+        "annual_premium": 3557.68,
+        "monthly_premium": 296.47,
+        "risk_premium_annual": 1960.15,
+        "savings_premium_annual": 980.08,
+        "expense_loading_annual": 294.02,
+        "profit_margin_annual": 323.43,
+        "savings_addon": "balanced",
+    }
+    request = Request(
+        base + "/api/policy/update",
+        data=json.dumps({"policy_id": kept_id, "monthly_premium": 296.47}).encode(),
+        headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=30) as response:
+        assert json.loads(response.read().decode())["success"] is True
+    kept = portal.POLICIES[kept_id]
+    assert kept["risk_premium_annual"] == 1960.15
+    assert kept["savings_addon"] == "balanced"
+    assert resolve_premium_split(296.47, kept)["savings_amount"] == 81.67
+
+    request = Request(
+        base + "/api/policy/update",
+        data=json.dumps({"policy_id": policy_id, "monthly_premium": 100, "notes": "same"}).encode(),
+        headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=30) as response:
+        assert json.loads(response.read().decode())["success"] is True
+    assert portal.POLICIES[policy_id]["risk_premium_annual"] is None
+    assert portal.POLICIES[policy_id]["notes"] == "same"
+
+
 def test_repin_replaces_the_money_pins_and_a_flat_reprice_clears_them():
     policy = _full_stack_policy()
     repin_kernel_fields_on_policy(policy, {
@@ -1559,6 +1662,96 @@ def test_reconcile_warns_about_premium_cash_on_a_policy_with_no_pin():
     assert report["premium_streams"]["risk"] == 0.0
     assert report["premium_streams"]["without_kernel_pin"] == 100.0
     assert round(sum(report["premium_streams"].values()), 2) == 100.0
+
+
+def _reconcile_payment(policy, amount, landed):
+    reset_accounting_engine()
+    engine = get_accounting_engine()
+    policy_id = policy["id"]
+    customer_id = policy["customer_id"]
+    billing = {
+        "BILL-X": {
+            "id": "BILL-X", "customer_id": customer_id, "policy_id": policy_id,
+            "amount_paid": amount,
+        }
+    }
+    transactions = [{
+        "id": "TX-X", "customer_id": customer_id, "type": "bill_payment", "amount": amount,
+        "metadata": {"bill_id": "BILL-X", "policy_id": policy_id},
+    }]
+    post_collected_premiums_to_accounting(
+        customer_id=customer_id, policy_id=policy_id, policy=policy, amount=amount,
+        bills_paid=["BILL-X"], billing=billing, source_tx_id="TX-X",
+        fallback_risk_pct=100, engine=engine,
+    )
+    return reconcile_financial_books(
+        policies={policy_id: policy},
+        claims={},
+        billing=billing,
+        transactions=transactions,
+        balance_sheet={
+            "revenue_breakdown": {"premium_income": amount},
+            "expense_breakdown": {"claims_paid": 0.0},
+            "claims_reserve": 3_500_000.0,
+            "seed_claims_reserve": 3_500_000.0,
+        },
+        engine=engine,
+        investment_accounts={},
+        savings_landed_by_customer=landed,
+    )
+
+
+def test_reconcile_keeps_a_snapshot_split_on_its_own_streams(monkeypatch):
+    """A policy with no stored pin can still be split from its premium snapshot."""
+    policy = {
+        "id": "POL-SNAP",
+        "customer_id": "CUST-SNAP",
+        "annual_premium": 1200.0,
+        "savings_addon": "balanced",
+    }
+
+    def _snaps(policy_id):
+        assert policy_id == "POL-SNAP"
+        return [{
+            "components": {
+                "risk_premium_annual": 800.0,
+                "savings_premium_annual": 400.0,
+            },
+            "kernel_annual": 1200.0,
+            "integrity_hash": "snap",
+            "product_id": "phins_hybrid_savings",
+        }]
+
+    monkeypatch.setattr("services.pricing_shadow_service.get_snapshots_for_policy", _snaps)
+    split = resolve_premium_split(100.0, policy)
+    assert split["risk_amount"] != 100.0 and split["savings_amount"] > 0
+    report = _reconcile_payment(policy, 100.0, {"CUST-SNAP": split["savings_amount"]})
+    assert report["is_consistent"] is True, report["discrepancies"]
+    assert not [w for w in report["warnings"] if w["check"] == "premium_cash_without_kernel_pin"]
+    streams = report["premium_streams"]
+    assert streams["without_kernel_pin"] == 0.0
+    assert streams["risk"] == split["risk_amount"]
+    assert streams["savings"] == split["savings_amount"]
+    assert round(sum(streams.values()), 2) == 100.0
+
+
+def test_an_addon_without_a_risk_pin_is_not_also_counted_as_unpinned():
+    """The add-on already explains the row. It is not a second 'no pin' warning."""
+    policy = {
+        "id": "POL-ADD",
+        "customer_id": "CUST-ADD",
+        "annual_premium": 1200.0,
+        "savings_addon": "balanced",
+    }
+    report = _reconcile_payment(policy, 100.0, {})
+    streams = report["premium_streams"]
+    assert streams["above_kernel_stack"] == 100.0
+    assert streams["without_kernel_pin"] == 0.0
+    assert streams["risk"] == 0.0
+    checks = [w["check"] for w in report["warnings"]]
+    assert "premium_cash_without_kernel_pin" not in checks
+    assert "premium_cash_above_kernel_stack" in checks
+    assert sum(w["amount"] for w in report["warnings"]) == 100.0
 
 
 # ---------------------------------------------------------------------------
@@ -1762,6 +1955,25 @@ def test_restore_refuses_when_no_kernel_price_gives_the_premium():
     assert result["status"] == "refused"
     assert result["reason"] == "no_kernel_price_reproduces_the_premium"
     assert result["pins"] == {}
+
+
+def test_restore_accepts_a_one_cent_gap_between_the_layers_and_the_annual():
+    """Issuance already treats a one-cent stack gap as closed. Restore must too."""
+    short = _quote(3557.68, 1960.15, 980.08, 294.02, 323.42, 0.5)
+    assert round(1960.15 + 980.08 + 294.02 + 323.42, 2) == 3557.67
+    result = kernel_pin_restore_candidate(dict(_STORED), pricer=_pricer({(0.5, 20): short}))
+    assert result["status"] == "restorable", result
+    assert result["pins"]["profit_margin_annual"] == 323.42
+
+    over = _quote(3557.68, 1960.15, 980.08, 294.03, 323.43, 0.5)
+    assert round(1960.15 + 980.08 + 294.03 + 323.43, 2) == 3557.69
+    result = kernel_pin_restore_candidate(dict(_STORED), pricer=_pricer({(0.5, 20): over}))
+    assert result["status"] == "restorable", result
+
+    two_cents = _quote(3557.68, 1960.15, 980.08, 294.04, 323.43, 0.5)
+    result = kernel_pin_restore_candidate(dict(_STORED), pricer=_pricer({(0.5, 20): two_cents}))
+    assert result["status"] == "refused"
+    assert result["reason"] == "no_kernel_price_reproduces_the_premium"
 
 
 def test_restore_refuses_when_two_decompositions_give_the_same_premium():

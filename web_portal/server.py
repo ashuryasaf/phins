@@ -56396,9 +56396,42 @@ For claims or questions, please contact:
                     new_premium = float(data['monthly_premium'])
                     if new_premium > 0:
                         new_premium = round(new_premium, 2)
-                        changes['monthly_premium'] = {'old': policy.get('monthly_premium'), 'new': new_premium}
-                        policy['monthly_premium'] = new_premium
-                        policy['annual_premium'] = round(new_premium * 12, 2)
+                        old_monthly = round(safe_float(policy.get('monthly_premium'), 0.0), 2)
+                        # Echoing the current monthly must not annualize over
+                        # the kernel annual (monthly × 12 can be a few cents
+                        # off) and must not drop the pin that still matches it.
+                        if new_premium != old_monthly:
+                            new_annual = round(new_premium * 12, 2)
+                            changes['monthly_premium'] = {'old': policy.get('monthly_premium'), 'new': new_premium}
+                            had_kernel_pin = any(
+                                policy.get(key) is not None
+                                for key in (
+                                    'risk_premium_annual',
+                                    'savings_premium_annual',
+                                    'expense_loading_annual',
+                                    'profit_margin_annual',
+                                )
+                            )
+                            policy['monthly_premium'] = new_premium
+                            policy['annual_premium'] = new_annual
+                            # A hand-set premium is not a kernel reprice. The
+                            # pins that described the previous bill would keep
+                            # splitting later cash against that old stack.
+                            if had_kernel_pin:
+                                try:
+                                    from services.financial_unification_service import repin_kernel_fields_on_policy
+                                    repin_kernel_fields_on_policy(policy, {
+                                        'annual': new_annual,
+                                        'monthly': new_premium,
+                                    })
+                                    # The add-on was priced into those pins.
+                                    # Left in place it books the new premium
+                                    # above an empty stack.
+                                    for key in ('savings_addon', 'savings_rate'):
+                                        if key in policy:
+                                            policy[key] = None
+                                except Exception as _repin_err:
+                                    print(f"[KERNEL_PIN] Repin skipped for {policy_id}: {_repin_err}")
                 
                 if 'status' in data:
                     new_status = data['status']
