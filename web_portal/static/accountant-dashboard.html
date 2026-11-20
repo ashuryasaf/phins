@@ -683,6 +683,7 @@
                                 <div class="ifrs-row"><span>Investment earnings</span><strong id="bs-investment-earnings">$0</strong></div>
                                 <div class="ifrs-row"><span>Late fees</span><strong id="bs-late-fees">$0</strong></div>
                                 <div class="ifrs-row"><span>Other income</span><strong id="bs-other-income">$0</strong></div>
+                                <div class="ifrs-row" title="Savings add-on owed to customers, the carrier share, and the reinsurance ceding reserve. Premium cash, not income."><span>Less premium held for customers, the carrier, and reinsurance</span><strong id="bs-held-for-others">$0</strong></div>
                             </div>
                         </div>
                         <div class="ifrs-col">
@@ -696,6 +697,12 @@
                                 <div class="ifrs-row"><span>Customer acquisition</span><strong id="bs-customer-acquisition">$0</strong></div>
                             </div>
                         </div>
+                    </div>
+                    <div class="ifrs-col" style="margin-top:20px;">
+                        <h3>Where the premium cash sits</h3>
+                        <p id="bs-position-note" style="color:#5b6d8a;font-size:13px;margin:0 0 10px;">Reading the premium cash…</p>
+                        <div id="bs-position-lines"></div>
+                        <p id="bs-position-operating" style="color:#5b6d8a;font-size:13px;margin:10px 0 0;"></p>
                     </div>
                     <div style="margin-top:20px;padding:16px;background:#f6f8fc;border-radius:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
                         <div style="font-size:13px;color:#5b6d8a;">Last updated: <strong id="bs-last-updated">Never</strong></div>
@@ -3516,6 +3523,63 @@
             }
         };
         
+        // Premium cash by the balance sheet line that holds it. The same
+        // lines close the cash flow statement on /cashflow-integrity.html.
+        function renderPremiumPosition(bs, fmt) {
+            const note = document.getElementById('bs-position-note');
+            const linesEl = document.getElementById('bs-position-lines');
+            const operatingEl = document.getElementById('bs-position-operating');
+            if (!note || !linesEl) return;
+            const position = bs.premium_position;
+            if (!position) {
+                note.textContent = 'The premium cash could not be read through the kernel pins.';
+                linesEl.textContent = '';
+                if (operatingEl) operatingEl.textContent = '';
+                return;
+            }
+            const signed = (value) => (Number(value) < 0 ? '−' : '') + fmt(Math.abs(Number(value) || 0));
+            linesEl.textContent = '';
+            const addRow = (label, amount, strong) => {
+                const row = document.createElement('div');
+                row.className = 'ifrs-row';
+                const name = document.createElement('span');
+                name.textContent = label;
+                const value = document.createElement('strong');
+                value.textContent = signed(amount);
+                if (strong) { name.style.fontWeight = '700'; }
+                row.appendChild(name);
+                row.appendChild(value);
+                linesEl.appendChild(row);
+            };
+            (position.lines || []).forEach((line) => addRow(line.label, line.amount, false));
+            addRow('Own funds · claims reserve and operating reserve', position.own_funds, true);
+            addRow('Held for customers, the carrier, and reinsurance', position.held_for_others, true);
+            addRow('Premium cash less claims paid', position.total, true);
+            let text = 'Premium cash ' + fmt(position.premium_cash) + ' less claims paid ' + fmt(position.claim_cash)
+                + ' is ' + fmt(position.net_cash) + '. ';
+            text += position.ties_to_cash
+                ? 'The lines add up to it.'
+                : 'The lines differ from it by ' + signed(position.difference) + '.';
+            if (Number(position.premium_without_kernel_pin) > 0) {
+                text += ' ' + fmt(position.premium_without_kernel_pin)
+                    + ' is premium on a policy with no kernel pin and is held in the claims reserve until the policy is pinned.';
+            }
+            if (position.reserve_ties_to_book === false) {
+                text += ' The accounting book carries a claims reserve of ' + signed(position.accounting_book_claims_reserve)
+                    + ', ' + signed(position.reserve_difference) + ' from the kernel pins. Repair books re-books the split.';
+            }
+            note.textContent = text;
+            note.style.color = (position.ties_to_cash && position.reserve_ties_to_book !== false) ? '#5b6d8a' : '#b42318';
+            const operating = position.operating_reserve;
+            if (operatingEl) {
+                operatingEl.textContent = operating
+                    ? 'Operating reserve: the stored counter reads ' + signed(operating.stored) + ' and took in '
+                        + fmt(operating.premium_taken_in_whole) + ' of premium whole. ' + fmt(operating.company_part_of_premium)
+                        + ' of the premium is the company\'s, so the reserve shown is ' + signed(operating.restated) + '.'
+                    : '';
+            }
+        }
+
         // Load PHINS Balance Sheet (General Reserves)
         async function loadBalanceSheet() {
             try {
@@ -3567,6 +3631,8 @@
                         document.getElementById('bs-late-fees').textContent = fmt(bs.revenue_breakdown.late_fees);
                         document.getElementById('bs-other-income').textContent = fmt(bs.revenue_breakdown.other_income);
                     }
+                    setText('bs-held-for-others', '−' + fmt(bs.held_for_others || 0));
+                    renderPremiumPosition(bs, fmt);
                     
                     // Expense breakdown
                     if (bs.expense_breakdown) {

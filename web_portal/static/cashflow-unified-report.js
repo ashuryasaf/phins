@@ -101,6 +101,26 @@
         el('unified-checks').innerHTML = renderChecks(integrity);
         el('unified-statement').innerHTML = renderStatement(report.statement || []);
 
+        var balance = report.balance_sheet;
+        if (!balance) {
+            el('unified-balance-note').textContent = 'The balance sheet reading of the customer ledger could not be made.';
+            el('unified-balance').innerHTML = '';
+        } else {
+            el('unified-balance-note').textContent = 'The statement reads sealed premiums and bills month by month. '
+                + 'The balance sheet reads the customer ledger payment by payment. Own funds ' + money(balance.own_funds)
+                + ', held for customers, the carrier, and reinsurance ' + money(balance.held_for_others)
+                + ', together ' + money(balance.total) + ' against premium cash less claims paid of ' + money(balance.net_cash) + '.';
+            el('unified-balance').innerHTML = table(
+                ['Line', 'This statement', 'Balance sheet', 'Difference', ''],
+                (balance.compared || []).map(function (row) {
+                    return [
+                        esc(row.label), money(row.statement), money(row.balance_sheet), money(row.difference),
+                        '<span class="tag ' + (row.ok ? 'clear' : 'attention') + '">' + (row.ok ? 'ties' : 'look') + '</span>'
+                    ];
+                })
+            );
+        }
+
         el('unified-kernel').innerHTML = table(
             ['In force', 'Kernel pinned', 'Without pin', 'Annual premium', 'Risk', 'Underwriting fee', 'Expense loading', 'Profit', 'Savings add-on'],
             kernel.policies_in_force ? [[

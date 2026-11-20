@@ -11763,6 +11763,18 @@ def _cashflow_agent_book() -> Dict[str, List[Dict[str, Any]]]:
         return {'commissions': [], 'payouts': []}
 
 
+def build_premium_cash_position() -> Dict[str, Any]:
+    """Where collected premium cash sits. Reads the live books and writes none."""
+    from services.financial_unification_service import premium_cash_position
+    return premium_cash_position(
+        transactions=list(TRANSACTION_LEDGER.values()),
+        policies=POLICIES,
+        billing=BILLING,
+        exclude_customer=is_suspended_account,
+        balance_sheet=PHINS_BALANCE_SHEET,
+    )
+
+
 def build_cashflow_unified_report(management_fee_pct: Any = None) -> Dict[str, Any]:
     """One statement across premiums, claims, customer money, the marketplace,
     suppliers, and agents. Reads the live books and writes none of them."""
@@ -11789,6 +11801,8 @@ def build_cashflow_unified_report(management_fee_pct: Any = None) -> Dict[str, A
         acquisition_expected_expense=referral['expected_expense'],
         withdrawals=list(WALLET_WITHDRAWALS.values()),
         management_fee_pct=management_fee_pct,
+        # The same customers the balance sheet and the books reconcile cover.
+        exclude_customer=is_suspended_account,
     )
 
 
@@ -40612,6 +40626,16 @@ For claims or questions, please contact:
                 print(f"[FINANCIAL_UNIFICATION] economic reserve attach skipped: {_econ_err}")
                 derived_sheet = None
 
+            # Where the premium cash sits, read through the same kernel pins
+            # the cash flow statement uses. Response only.
+            premium_position = None
+            if derived_sheet is not None:
+                try:
+                    premium_position = build_premium_cash_position()
+                except Exception as _pos_err:
+                    print(f"[FINANCIAL_UNIFICATION] premium position skipped: {_pos_err}")
+                    premium_position = None
+
             display_sheet = derived_sheet if isinstance(derived_sheet, dict) else PHINS_BALANCE_SHEET
             display_revenue = display_sheet.get('revenue_breakdown') or PHINS_BALANCE_SHEET.get('revenue_breakdown') or {}
             display_expense = display_sheet.get('expense_breakdown') or PHINS_BALANCE_SHEET.get('expense_breakdown') or {}
@@ -40626,12 +40650,25 @@ For claims or questions, please contact:
             # identity (collected risk cash minus claim cash), so total_balance
             # must sum that same figure with the other reserve slices — using
             # the seed here would break the parts-equal-the-whole identity.
+            # The stored operating counter took in every premium whole, which
+            # counts the risk premium a second time beside the claims reserve
+            # and counts money held for customers, the carrier, and the
+            # reinsurance ceding reserve as the company's own. The restated
+            # figure keeps only the company's part of the premium.
+            operating_reserve = PHINS_BALANCE_SHEET['operating_reserve']
+            held_for_others = 0.0
+            if premium_position is not None:
+                operating_reserve = premium_position['operating_reserve']['restated']
+                held_for_others = premium_position['held_for_others']
             total_balance = round(
                 economic_reserve +
-                PHINS_BALANCE_SHEET['operating_reserve'] +
+                operating_reserve +
                 PHINS_BALANCE_SHEET['supplier_reserve'] +
                 PHINS_BALANCE_SHEET['investment_reserve'],
                 2,
+            )
+            net_income = round(
+                (display_total_revenue or 0) - (display_total_expenses or 0) - held_for_others, 2
             )
 
             self._set_json_headers()
@@ -40650,9 +40687,16 @@ For claims or questions, please contact:
                     'seed_claims_reserve': seed_claims_reserve,
                     'economic_claims_reserve': economic_reserve,
                     'claims_reserve': economic_reserve,
-                    'operating_reserve': PHINS_BALANCE_SHEET['operating_reserve'],
+                    'operating_reserve': operating_reserve,
+                    'stored_operating_reserve': PHINS_BALANCE_SHEET['operating_reserve'],
                     'supplier_reserve': PHINS_BALANCE_SHEET['supplier_reserve'],
                     'investment_reserve': PHINS_BALANCE_SHEET['investment_reserve'],
+
+                    # Premium cash that is not the company's: customers'
+                    # savings, the carrier share, the reinsurance ceding
+                    # reserve. Shown beside total_balance, never inside it.
+                    'held_for_others': held_for_others,
+                    'premium_position': premium_position,
                     
                     # Revenue — premium_income is ledger cash identity (response
                     # only; the stored sheet is not mutated by GET).
@@ -40672,8 +40716,11 @@ For claims or questions, please contact:
                     'total_expenses': display_total_expenses,
                     'expense_breakdown': display_expense,
                     
-                    # Net position
-                    'net_income': (display_total_revenue or 0) - (display_total_expenses or 0),
+                    # Net position: premium cash held for others is not income.
+                    'net_income': net_income,
+                    'net_income_before_amounts_held_for_others': round(
+                        (display_total_revenue or 0) - (display_total_expenses or 0), 2
+                    ),
                     
                     # Transaction count
                     'transaction_count': len(PHINS_BALANCE_SHEET['transactions'])

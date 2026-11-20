@@ -1468,8 +1468,11 @@
             <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
               <span>Underwriting Fees</span><span id="bs-underwriting-fees">$0</span>
             </div>
-            <div style="display: flex; justify-content: space-between; padding: 6px 0;">
+            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
               <span>Other Income</span><span id="bs-other-income">$0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 6px 0;" title="Savings add-on owed to customers, the carrier share, and the reinsurance ceding reserve. Premium cash, not income.">
+              <span>Less premium held for customers, carrier, reinsurance</span><span id="bs-held-for-others">$0</span>
             </div>
           </div>
         </div>
@@ -6507,6 +6510,8 @@
             document.getElementById('bs-underwriting-fees').textContent = fmt(bs.revenue_breakdown.underwriting_fees);
             document.getElementById('bs-other-income').textContent = fmt(bs.revenue_breakdown.other_income + bs.revenue_breakdown.late_fees + bs.revenue_breakdown.investment_earnings);
           }
+          const heldEl = document.getElementById('bs-held-for-others');
+          if (heldEl) heldEl.textContent = '−' + fmt(bs.held_for_others || 0);
           
           // Expense breakdown
           if (bs.expense_breakdown) {
