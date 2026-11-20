@@ -1823,6 +1823,28 @@
         </button>
       </div>
       
+      <!-- Where the premium paid so far has gone, from the books -->
+      <div id="premium-cash-flow-card" style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px;">
+          <h3 style="margin: 0; color: #333;">Where my premium goes</h3>
+          <span id="premium-cash-flow-tie" style="font-size: 0.8rem; font-weight: 600; padding: 4px 10px; border-radius: 12px; background: #eceff1; color: #546e7a;">Reading the books…</span>
+        </div>
+        <p id="premium-cash-flow-copy" style="color: #666; font-size: 0.9rem; margin: 8px 0 14px 0;">Every premium you have paid, split the way your policy was priced.</p>
+        <div id="premium-cash-flow-bar" role="img" aria-label="Premium paid, by stream" style="display: flex; height: 18px; border-radius: 9px; overflow: hidden; background: #eceff1; margin-bottom: 14px;"></div>
+        <div class="table-card" style="border-radius: 8px; overflow: hidden;">
+          <table class="data-table" style="margin: 0;">
+            <thead style="background: #f5f5f5;">
+              <tr><th>Stream</th><th>What it is</th><th style="text-align: right;">Paid so far</th><th style="text-align: right;">Share</th></tr>
+            </thead>
+            <tbody id="premium-cash-flow-rows">
+              <tr><td colspan="4" style="text-align: center; color: #666; padding: 24px;">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="premium-cash-flow-savings" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-top: 14px;"></div>
+        <p id="premium-cash-flow-note" style="color: #666; font-size: 0.85rem; margin: 12px 0 0 0;"></p>
+      </div>
+
       <!-- Premium Allocation to Investments Table -->
       <div style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
         <h3 style="margin: 0 0 16px 0; color: #333;"> Premium Savings → Investment Allocation</h3>
@@ -9853,6 +9875,117 @@
       await loadBillingPaidMonthsSchedule();
       // Load premium allocations
       await loadPremiumAllocations();
+      await loadPremiumCashFlow();
+    }
+
+    const PREMIUM_STREAM_COLORS = {
+      risk: '#1565c0',
+      underwriting_fee: '#0d47a1',
+      expense_loading: '#8a7340',
+      profit: '#ef6c00',
+      savings: '#2e7d32',
+      not_split: '#b42318'
+    };
+
+    // The same split the accounting books carry, read from the customer's own picture.
+    async function loadPremiumCashFlow() {
+      const tie = document.getElementById('premium-cash-flow-tie');
+      const rows = document.getElementById('premium-cash-flow-rows');
+      const bar = document.getElementById('premium-cash-flow-bar');
+      const savingsHost = document.getElementById('premium-cash-flow-savings');
+      const note = document.getElementById('premium-cash-flow-note');
+      if (!tie || !rows || !bar) return;
+      const setTie = (label, background, color) => {
+        tie.textContent = label;
+        tie.style.background = background;
+        tie.style.color = color;
+      };
+      try {
+        const response = await fetch('/api/customer/premium-picture', {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const body = await response.json();
+        const flow = body && body.picture && body.picture.cash_flow;
+        if (!response.ok || !flow) {
+          setTie('Not available', '#eceff1', '#546e7a');
+          rows.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #666; padding: 24px;">Your premium split could not be read just now.</td></tr>';
+          return;
+        }
+        const collected = Number(flow.collected || 0);
+        const streams = flow.streams || [];
+        document.getElementById('premium-cash-flow-copy').textContent = collected > 0
+          ? `You have paid ${formatCurrency(collected)} in premiums over ${flow.months_paid || 0} month(s). This is where each dollar went, split the way your policy was priced.`
+          : 'No premium has been paid yet. Once a payment lands, this shows where each dollar went.';
+        if (collected <= 0) {
+          setTie('No premium paid yet', '#eceff1', '#546e7a');
+          bar.innerHTML = '';
+          rows.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #666; padding: 24px;">Nothing to show yet.</td></tr>';
+          if (savingsHost) savingsHost.innerHTML = '';
+          if (note) note.textContent = '';
+          return;
+        }
+        if (flow.ties) {
+          setTie(`Adds up to ${formatCurrency(flow.streams_total)}`, '#e8f5e9', '#2e7d32');
+        } else {
+          setTie('Being reconciled', '#fff3e0', '#ef6c00');
+        }
+        bar.innerHTML = streams.filter(row => Number(row.amount) > 0).map(row => (
+          `<span title="${escapeHtml(row.label)} ${formatCurrency(row.amount)}" style="width: ${Math.max(0, Number(row.share_pct) || 0)}%; background: ${PREMIUM_STREAM_COLORS[row.key] || '#78909c'};"></span>`
+        )).join('');
+        rows.innerHTML = streams.map(row => `
+          <tr>
+            <td style="font-weight: 600;"><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; background: ${PREMIUM_STREAM_COLORS[row.key] || '#78909c'};"></span>${escapeHtml(row.label)}</td>
+            <td style="color: #546e7a; font-size: 0.85rem;">${escapeHtml(row.detail)}</td>
+            <td style="text-align: right; font-weight: 600;">${formatCurrency(row.amount)}</td>
+            <td style="text-align: right;">${(Number(row.share_pct) || 0).toFixed(1)}%</td>
+          </tr>
+        `).join('') + `
+          <tr style="background: #fafafa;">
+            <td style="font-weight: 700;">Premium paid</td><td></td>
+            <td style="text-align: right; font-weight: 700;">${formatCurrency(collected)}</td>
+            <td style="text-align: right;">100.0%</td>
+          </tr>`;
+        const savings = flow.savings || {};
+        const claims = flow.claims || {};
+        const tile = (label, value, sub) => `
+          <div style="background: #f5f7fa; border-radius: 10px; padding: 12px 14px;">
+            <div style="font-size: 0.8rem; color: #546e7a;">${label}</div>
+            <div style="font-size: 1.15rem; font-weight: 700; color: #263238;">${formatCurrency(value)}</div>
+            <div style="font-size: 0.75rem; color: #78909c;">${sub}</div>
+          </div>`;
+        if (savingsHost) {
+          const tiles = [];
+          if (Number(savings.charged) > 0) {
+            tiles.push(tile('Savings to health wallet', savings.health_wallet, '30% of your savings add-on'));
+            tiles.push(tile('Savings to investments', savings.investments, '65% of your savings add-on'));
+            tiles.push(tile('Savings to algo', savings.algo, '5% of your savings add-on'));
+          }
+          if (Number(claims.paid) > 0) {
+            tiles.push(tile('Claims paid to you', claims.paid, `${claims.count || 0} claim(s), in your health wallet`));
+          }
+          savingsHost.innerHTML = tiles.join('');
+        }
+        if (note) {
+          const parts = [];
+          if (Number(savings.charged) <= 0) {
+            parts.push('Your policy has no savings add-on, so none of your premium is saved.');
+          } else if (Number(savings.not_yet_on_accounts) > 0) {
+            parts.push(`${formatCurrency(savings.not_yet_on_accounts)} of your savings add-on is not on your accounts yet. It is owed to you and our accounting team posts it.`);
+          } else if (savings.on_accounts != null) {
+            parts.push(`All ${formatCurrency(savings.charged)} of your savings add-on is on your accounts.`);
+          }
+          if (Number(claims.not_yet_in_health_wallet) > 0) {
+            parts.push(`${formatCurrency(claims.not_yet_in_health_wallet)} of paid claims is still on its way to your health wallet.`);
+          }
+          if (streams.some(row => row.key === 'not_split' && Number(row.amount) > 0)) {
+            parts.push('Part of your premium has not been split yet. Our accounting team is reconciling it; nothing is taken from your cover or your savings.');
+          }
+          note.textContent = parts.join(' ');
+        }
+      } catch (err) {
+        console.error('Error loading premium cash flow:', err);
+        setTie('Not available', '#eceff1', '#546e7a');
+      }
     }
     
     // Load and display premium allocations to investments (using customer's custom allocation)
