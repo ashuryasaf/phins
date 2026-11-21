@@ -872,6 +872,11 @@ def reconcile_customer(
             "landed_profit": float(landed["profit"]),
             "landed_savings": float(landed["savings"]),
             "overbooked_excess": float(landed["overbooked_excess"]),
+            # No stack at all this month: the writer holds this cash on the
+            # risk book, so it is told apart from cash paid above a stack.
+            "no_kernel_pin_cash": (
+                float(landed["overbooked_excess"]) if kernel["correct_total"] <= 0 else 0.0
+            ),
             "booked_risk": None if booked_risk is None else float(booked_risk),
             "booked_savings": None if booked_savings is None else float(booked_savings),
             "retired_50_50_risk": float(retired_half),

@@ -4,6 +4,7 @@ The actuarial kernel pin (when present) decides the risk/savings split posted
 to the accounting book. Historical billed amounts are never rewritten.
 """
 
+import copy
 from decimal import Decimal
 
 from accounting_engine import (
@@ -29,6 +30,8 @@ from services.financial_unification_service import (
     pin_kernel_fields_on_policy,
     post_collected_premiums_to_accounting,
     post_premium_to_accounting_book,
+    premium_cash_position,
+    premium_revenue_rows_on_sheet,
     reconcile_financial_books,
     reconstruct_accounting_book_from_ledger,
     repair_financial_books,
@@ -1837,3 +1840,106 @@ def test_restore_reproduces_a_premium_the_live_kernel_priced():
     for key in ("risk_premium_annual", "savings_premium_annual", "expense_loading_annual", "profit_margin_annual"):
         assert result["pins"][key] == quote[key]
     assert result["pins"]["savings_addon"] == "balanced"
+
+
+def _position_books():
+    """A pinned policy and one with no pin, each paid once, and one claim paid."""
+    engine = get_accounting_engine()
+    policies = {
+        "POL-FS": _full_stack_policy(),
+        "POL-NP": {"id": "POL-NP", "customer_id": "CUST-NP", "annual_premium": 2100.60, "monthly_premium": 175.05},
+    }
+    billing = {
+        "BILL-FS": {"id": "BILL-FS", "customer_id": "CUST-FS", "policy_id": "POL-FS", "amount_paid": 296.47},
+        "BILL-NP": {"id": "BILL-NP", "customer_id": "CUST-NP", "policy_id": "POL-NP", "amount_paid": 175.05},
+    }
+    transactions = [
+        {"id": "TX-FS", "customer_id": "CUST-FS", "type": "bill_payment", "amount": 296.47,
+         "metadata": {"bill_id": "BILL-FS", "policy_id": "POL-FS"}},
+        {"id": "TX-NP", "customer_id": "CUST-NP", "type": "bill_payment", "amount": 175.05,
+         "metadata": {"bill_id": "BILL-NP", "policy_id": "POL-NP"}},
+        {"id": "TX-CLM", "customer_id": "CUST-FS", "type": "claim_payment_received", "amount": 120.00,
+         "metadata": {"claim_id": "CLM-FS"}},
+    ]
+    for policy_id, customer_id, bill_id, tx_id, amount in (
+        ("POL-FS", "CUST-FS", "BILL-FS", "TX-FS", 296.47),
+        ("POL-NP", "CUST-NP", "BILL-NP", "TX-NP", 175.05),
+    ):
+        post_collected_premiums_to_accounting(
+            customer_id=customer_id, policy_id=policy_id, policy=policies[policy_id], amount=amount,
+            bills_paid=[bill_id], billing=billing, source_tx_id=tx_id, fallback_risk_pct=100, engine=engine,
+        )
+    return engine, policies, billing, transactions
+
+
+def test_premium_cash_position_puts_every_dollar_on_one_balance_sheet_line():
+    engine, policies, billing, transactions = _position_books()
+    position = premium_cash_position(
+        transactions=transactions, policies=policies, billing=billing, engine=engine,
+    )
+    assert position["premium_cash"] == 471.52 and position["claim_cash"] == 120.00
+    assert position["net_cash"] == 351.52
+    # Kernel risk 163.35, and the unpinned 175.05 the writer holds as risk, less the claim.
+    assert position["risk_premium"] == 163.35
+    assert position["premium_without_kernel_pin"] == 175.05
+    assert position["claims_reserve"] == 218.40
+    # Expense loading 24.50 is shared 12.76 / 2.55 / 9.19. Only the first is the company's.
+    assert position["company_lines"] == {
+        "underwriting_fee": 0.0, "phins_operations": 12.76, "profit": 26.95, "above_kernel_stack": 0.0,
+    }
+    assert position["company_income"] == 39.71
+    assert position["customer_savings"] == 81.67
+    assert position["carrier_share"] == 2.55
+    assert position["reinsurance_ceding_reserve"] == 9.19
+    assert position["own_funds"] == 258.11
+    assert position["held_for_others"] == 93.41
+    assert position["total"] == 351.52 and position["difference"] == 0.0
+    assert position["ties_to_cash"] is True
+    assert round(sum(line["amount"] for line in position["lines"]), 2) == position["net_cash"]
+    # The reserve the accounting book carries is the same figure.
+    assert position["accounting_book_claims_reserve"] == 218.40
+    assert position["reserve_ties_to_book"] is True
+    assert "operating_reserve" not in position
+
+
+def test_premium_cash_position_restates_the_operating_counter_that_took_premiums_whole():
+    engine, policies, billing, transactions = _position_books()
+    sheet = {
+        # A $500 deposit, then both premiums added whole by the revenue writer.
+        "operating_reserve": 971.52,
+        "transactions": [
+            {"tx_id": "BS-1", "type": "revenue", "category": "premium_income", "amount": 296.47},
+            {"tx_id": "BS-2", "type": "revenue", "category": "premium_income", "amount": 175.05},
+            {"tx_id": "BS-3", "type": "revenue", "category": "late_fees", "amount": 15.00},
+            {"tx_id": "BS-4", "type": "expense", "category": "claims_paid", "amount": 120.00},
+        ],
+    }
+    before = copy.deepcopy(sheet)
+    assert premium_revenue_rows_on_sheet(sheet) == Decimal("471.52")
+    position = premium_cash_position(
+        transactions=transactions, policies=policies, billing=billing, engine=engine, balance_sheet=sheet,
+    )
+    assert position["operating_reserve"] == {
+        "stored": 971.52,
+        "premium_taken_in_whole": 471.52,
+        "company_part_of_premium": 39.71,
+        "restated": 539.71,
+    }
+    # Reading the position leaves the stored sheet as it was.
+    assert sheet == before
+
+
+def test_premium_cash_position_names_a_reserve_the_book_has_not_re_split():
+    engine, policies, billing, transactions = _booked_before_the_pin()
+    position = premium_cash_position(
+        transactions=transactions, policies=policies, billing=billing, engine=engine,
+    )
+    assert position["ties_to_cash"] is True
+    assert position["claims_reserve"] == 163.35
+    assert position["accounting_book_claims_reserve"] == 296.47
+    assert position["reserve_difference"] == 133.12
+    assert position["reserve_ties_to_book"] is False
+    without_book = premium_cash_position(
+        transactions=transactions, policies=policies, billing=billing, with_accounting_book=False,
+    )
+    assert "reserve_ties_to_book" not in without_book

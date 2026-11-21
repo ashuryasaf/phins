@@ -1098,6 +1098,164 @@ def apply_ledger_derived_balance_sheet(
     }
 
 
+def premium_revenue_rows_on_sheet(balance_sheet: Optional[Mapping[str, Any]]) -> Decimal:
+    """Premium the stored sheet added, in full, to its operating counter.
+
+    Every ``revenue`` row raises ``operating_reserve`` by its whole amount,
+    so the premium rows are exactly what that counter took in from premiums.
+    """
+    total = Decimal("0.00")
+    rows = (balance_sheet or {}).get("transactions") if isinstance(balance_sheet, Mapping) else None
+    for row in rows or []:
+        if not isinstance(row, Mapping):
+            continue
+        if str(row.get("type") or "") != "revenue":
+            continue
+        if str(row.get("category") or "") != "premium_income":
+            continue
+        total += money(row.get("amount"))
+    return total
+
+
+def premium_cash_position(
+    *,
+    transactions: Iterable[Dict[str, Any]],
+    policies: Optional[Dict[str, Any]] = None,
+    billing: Optional[Dict[str, Any]] = None,
+    engine: Any = None,
+    exclude_customer: Optional[Any] = None,
+    balance_sheet: Optional[Mapping[str, Any]] = None,
+    with_accounting_book: bool = True,
+) -> Dict[str, Any]:
+    """Where collected premium cash sits, by the book that holds it.
+
+    One reading of the customer ledger through the kernel pins. Kernel risk,
+    and premium on a policy with no pin, is the claims reserve once claim
+    cash is taken off. The underwriting fee, the PHINS share of the expense
+    loading, the profit margin, and cash above a pinned stack are the
+    company's. The savings add-on is the customers' money. The carrier share
+    and the reinsurance ceding reserve are held for those parties. The lines
+    add up to premium cash less claim cash.
+
+    With ``balance_sheet``, the operating reserve is restated: the stored
+    counter took in every premium whole, so those rows come off and the
+    company's own part of the premium goes on. Nothing is written.
+    """
+    from services.premium_flow_reconciliation import _EXPENSE_WEIGHTS, _partition
+
+    rows = [tx for tx in transactions if isinstance(tx, dict)]
+    split = kernel_savings_cash_from_ledger(
+        rows, policies, billing, exclude_customer=exclude_customer
+    )
+    streams = {name: money(value) for name, value in (split.get("streams") or {}).items()}
+    premium_cash = money(
+        ledger_cash_total(rows, PREMIUM_CASH_TYPES, exclude_customer=exclude_customer)["total"]
+    )
+    claim_cash = money(
+        ledger_cash_total(rows, CLAIM_CASH_TYPES, exclude_customer=exclude_customer)["total"]
+    )
+    risk = streams.get("risk", Decimal("0.00"))
+    unpinned = money((split.get("without_kernel_pin") or {}).get("booked_as_risk"))
+    fee = streams.get("underwriting_fee", Decimal("0.00"))
+    expense = streams.get("expense_loading", Decimal("0.00"))
+    profit = streams.get("profit", Decimal("0.00"))
+    savings = streams.get("savings", Decimal("0.00"))
+    above = streams.get("above_kernel_stack", Decimal("0.00"))
+    shares = {name: money(value) for name, value in _partition(expense, _EXPENSE_WEIGHTS).items()}
+    operations = shares.get("phins_operations", Decimal("0.00"))
+    carrier = shares.get("carrier_share", Decimal("0.00"))
+    ceding = shares.get("reinsurance_ceding_reserve", Decimal("0.00"))
+
+    claims_reserve = risk - claim_cash
+    company = fee + operations + profit + above
+    held_for_others = savings + carrier + ceding
+    own_funds = claims_reserve + company
+    net_cash = premium_cash - claim_cash
+    total = own_funds + held_for_others
+
+
+    lines = [
+        {
+            "key": "claims_reserve",
+            "label": "Claims reserve · kernel risk premium less claims paid",
+            "holder": "risk book",
+            "amount": float(claims_reserve),
+        },
+        {
+            "key": "company",
+            "label": "Operating reserve · fee, PHINS share of the expense loading, profit margin",
+            "holder": "company",
+            "amount": float(company),
+        },
+        {
+            "key": "customer_savings",
+            "label": "Held for customers · savings add-on",
+            "holder": "customers",
+            "amount": float(savings),
+        },
+        {
+            "key": "carrier_share",
+            "label": "Held for the carrier · share of the expense loading",
+            "holder": "carrier",
+            "amount": float(carrier),
+        },
+        {
+            "key": "reinsurance_ceding_reserve",
+            "label": "Reinsurance ceding reserve",
+            "holder": "reinsurance",
+            "amount": float(ceding),
+        },
+    ]
+    position: Dict[str, Any] = {
+        "premium_cash": float(premium_cash),
+        "claim_cash": float(claim_cash),
+        "net_cash": float(net_cash),
+        "risk_premium": float(risk - unpinned),
+        "premium_without_kernel_pin": float(unpinned),
+        "claims_reserve": float(claims_reserve),
+        "company_income": float(company),
+        "company_lines": {
+            "underwriting_fee": float(fee),
+            "phins_operations": float(operations),
+            "profit": float(profit),
+            "above_kernel_stack": float(above),
+        },
+        "customer_savings": float(savings),
+        "carrier_share": float(carrier),
+        "reinsurance_ceding_reserve": float(ceding),
+        "own_funds": float(own_funds),
+        "held_for_others": float(held_for_others),
+        "total": float(total),
+        "difference": _diff(total, net_cash),
+        "ties_to_cash": (total - net_cash).copy_abs() <= TOLERANCE,
+        "lines": lines,
+        "identity": "premium_cash_less_claim_cash",
+    }
+    if with_accounting_book:
+        # The sheet shows the reserve the accounting book carries. A posting
+        # split before its policy was pinned can leave the two apart until
+        # the repair re-books it; each posting may round by a cent.
+        economic = economic_claims_reserve(
+            transactions=rows, policies=policies, engine=engine, exclude_customer=exclude_customer
+        )
+        book_reserve = money(economic["economic_claims_reserve"])
+        book = accounting_book_totals(engine, exclude_customer=exclude_customer)
+        rounding = TOLERANCE * max(1, int(book.get("allocation_count") or 0))
+        position["accounting_book_claims_reserve"] = float(book_reserve)
+        position["reserve_difference"] = _diff(book_reserve, claims_reserve)
+        position["reserve_ties_to_book"] = (book_reserve - claims_reserve).copy_abs() <= rounding
+    if isinstance(balance_sheet, Mapping):
+        stored = money(balance_sheet.get("operating_reserve"))
+        premium_rows = premium_revenue_rows_on_sheet(balance_sheet)
+        position["operating_reserve"] = {
+            "stored": float(stored),
+            "premium_taken_in_whole": float(premium_rows),
+            "company_part_of_premium": float(company),
+            "restated": float(stored - premium_rows + company),
+        }
+    return position
+
+
 def _tx_metadata(tx: Dict[str, Any]) -> Dict[str, Any]:
     meta = tx.get("metadata")
     return meta if isinstance(meta, dict) else {}

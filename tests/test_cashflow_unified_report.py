@@ -93,6 +93,7 @@ def test_premium_waterfall_fills_kernel_risk_first_and_ties_to_the_cent():
         "profit": 86.00,
         "savings": 400.00,
         "above_stack": 0.0,
+        "without_kernel_pin": 0.0,
     }
     assert premiums["savings_destinations"] == {
         "health_wallet": 120.00, "investments": 260.00, "algo": 20.00,
@@ -105,6 +106,98 @@ def test_premium_waterfall_fills_kernel_risk_first_and_ties_to_the_cent():
     assert kernel["annual"]["risk"] == 2400.00
     assert kernel["annual"]["savings_addon"] == 2400.00
     assert report["writes"] is False
+
+
+def _ledger_cash():
+    """The same two premiums and the one paid claim, as the customer ledger holds them."""
+    return [
+        {"id": "TX-U1-01", "customer_id": "CUST-U1", "type": "bill_payment", "amount": 473.00,
+         "metadata": {"bill_id": "BILL-U1-01", "policy_id": "POL-U1"}},
+        {"id": "TX-U1-02", "customer_id": "CUST-U1", "type": "bill_payment", "amount": 473.00,
+         "metadata": {"bill_id": "BILL-U1-02", "policy_id": "POL-U1"}},
+        {"id": "TX-CLM-U1-1", "customer_id": "CUST-U1", "type": "claim_payment_received", "amount": 150.00,
+         "metadata": {"claim_id": "CLM-U1-1"}},
+    ]
+
+
+def _section(report, name):
+    return next(row for row in report["statement"] if row["section"].startswith(name))
+
+
+def test_the_statement_ties_to_the_balance_sheet_line_by_line():
+    policy, bills, claims, ledger = _books()
+    report = unified_cashflow_report(
+        policies=[policy], bills=bills, claims=claims, nft_ledger=ledger, transactions=_ledger_cash(),
+    )
+    balance = report["balance_sheet"]
+    assert balance["ties"] is True and balance["largest_difference"] == 0.0
+    assert _check(report, "balance_sheet_ties")["ok"] is True
+    compared = {row["key"]: row for row in balance["compared"]}
+    assert all(row["ok"] and row["difference"] == 0.0 for row in compared.values())
+    assert compared["premium_cash"]["balance_sheet"] == 946.00
+    assert compared["claim_cash"]["balance_sheet"] == 150.00
+    assert compared["claims_reserve"]["balance_sheet"] == 250.00
+    assert compared["customer_savings"]["balance_sheet"] == 400.00
+    # Own funds are the risk book and the company's premium income, nothing else.
+    assert balance["own_funds"] == _section(report, "Risk book")["total"] + report["company"]["premium_income"]
+    assert round(balance["own_funds"] + balance["held_for_others"], 2) == balance["net_cash"] == 796.00
+    closing = _section(report, "Balance sheet")
+    assert closing["total"] == 796.00
+    assert round(sum(line["amount"] for line in closing["lines"]), 2) == 796.00
+
+
+def test_premium_with_no_kernel_pin_is_held_on_the_risk_book_and_is_not_company_income():
+    policy, bills, claims, ledger = _books()
+    unpinned = {
+        "id": "POL-U2", "customer_id": "CUST-U2", "status": "active", "start_date": "2026-01-01",
+        "annual_premium": 2100.60,
+    }
+    bills = bills + [{
+        "id": "BILL-U2-01", "customer_id": "CUST-U2", "policy_id": "POL-U2",
+        "payment_period": "2026-01", "status": "paid", "amount_paid": 175.05,
+    }]
+    transactions = _ledger_cash() + [{
+        "id": "TX-U2-01", "customer_id": "CUST-U2", "type": "bill_payment", "amount": 175.05,
+        "metadata": {"bill_id": "BILL-U2-01", "policy_id": "POL-U2"},
+    }]
+    report = unified_cashflow_report(
+        policies=[policy, unpinned], bills=bills, claims=claims, nft_ledger=ledger, transactions=transactions,
+    )
+    landed = report["premiums"]["landed"]
+    assert landed["without_kernel_pin"] == 175.05 and landed["above_stack"] == 0.0
+    assert _check(report, "premium_waterfall_ties")["ok"] is True
+    assert _check(report, "kernel_pins_present")["ok"] is False
+    risk_book = _section(report, "Risk book")
+    assert risk_book["total"] == 425.05
+    assert {"label": "Premium with no kernel pin, held until the policy is pinned", "amount": 175.05, "book": "risk"} in risk_book["lines"]
+    # The company keeps its loading and margin on the pinned policy only.
+    assert report["company"]["premium_income"] == 117.25
+    assert report["underwriting"]["premium_without_kernel_pin"] == 175.05
+    row = next(row for row in report["customers"] if row["customer_id"] == "CUST-U2")
+    assert (row["premiums_collected"], row["risk"], row["without_kernel_pin"]) == (175.05, 0.0, 175.05)
+    # The balance sheet holds the same cash in the claims reserve, so the two tie.
+    balance = report["balance_sheet"]
+    assert balance["ties"] is True
+    assert balance["premium_without_kernel_pin"] == 175.05
+    compared = {row["key"]: row for row in balance["compared"]}
+    assert compared["claims_reserve"]["statement"] == compared["claims_reserve"]["balance_sheet"] == 425.05
+    assert compared["company_income"]["statement"] == compared["company_income"]["balance_sheet"] == 117.25
+
+
+def test_cash_the_customer_ledger_does_not_carry_fails_the_balance_sheet_tie():
+    policy, bills, claims, ledger = _books()
+    # One of the two premiums never reached the customer ledger.
+    report = unified_cashflow_report(
+        policies=[policy], bills=bills, claims=claims, nft_ledger=ledger, transactions=_ledger_cash()[1:],
+    )
+    check = _check(report, "balance_sheet_ties")
+    assert check["ok"] is False and check["amount"] == 473.00
+    assert "balance_sheet_ties" in report["integrity"]["failed"]
+    compared = {row["key"]: row for row in report["balance_sheet"]["compared"]}
+    assert compared["premium_cash"] == {
+        "key": "premium_cash", "label": "Premium cash collected",
+        "statement": 946.00, "balance_sheet": 473.00, "difference": 473.00, "ok": False,
+    }
 
 
 def test_a_claim_reported_three_times_is_counted_once():
@@ -603,3 +696,68 @@ def test_kernel_pin_restore_reproduces_the_premium_and_journals_first(live_books
     assert status == 200 and body["kernel_pins"]["applied"] is False
     assert len([line for line in journal if line.get("action") == "cashflow.kernel_pin_restore"]) == 2
     assert lines >= 2
+
+
+def _balance_sheet(admin):
+    status, body = _http("GET", "/api/admin/balance-sheet", admin)
+    assert status == 200, body
+    return body["balance_sheet"]
+
+
+def test_balance_sheet_holds_premium_cash_on_the_lines_the_statement_reports(live_books):
+    portal = live_books
+
+    admin, customer_id, policy_id, _ = _issue_and_pay(portal, "noa.balance@example.com", pay=False)
+    stored_before = copy.deepcopy(dict(portal.PHINS_BALANCE_SHEET))
+    before = _balance_sheet(admin)
+    assert before["premium_position"]["premium_cash"] == 0.0
+    paid = 0.0
+    for bill in [b for b in portal.BILLING.values() if b.get("customer_id") == customer_id]:
+        amount = bill.get("amount_due") or bill.get("amount")
+        status, body = _http("POST", "/api/billing/pay", admin, {"bill_id": bill["id"], "amount": amount})
+        assert status == 200, body
+        paid = round(paid + float(amount), 2)
+    assert paid > 0
+
+    status, body = _http("GET", "/api/finance/reconcile", admin)
+    streams = body["reconcile"]["premium_streams"]
+    sheet = _balance_sheet(admin)
+    position = sheet["premium_position"]
+    assert position["premium_cash"] == paid == sheet["ledger_premium_collected"]
+    assert position["ties_to_cash"] is True and position["reserve_ties_to_book"] is True
+    assert position["claims_reserve"] == streams["risk"] == sheet["claims_reserve"]
+    assert position["customer_savings"] == streams["savings"] > 0
+    assert round(position["own_funds"] + position["held_for_others"], 2) == paid
+
+    # The stored counter took the premium in whole. The sheet shows the company's part.
+    stored = portal.PHINS_BALANCE_SHEET["operating_reserve"]
+    assert round(stored - stored_before["operating_reserve"], 2) == paid
+    assert sheet["stored_operating_reserve"] == stored
+    assert round(sheet["operating_reserve"] - before["operating_reserve"], 2) == position["company_income"]
+    # Own funds rise by the risk premium and the company's part, not by the whole premium twice.
+    assert round(sheet["total_balance"] - before["total_balance"], 2) == position["own_funds"]
+    assert position["own_funds"] < paid
+    # Savings, the carrier share, and the ceding reserve are held, not earned.
+    assert sheet["held_for_others"] == position["held_for_others"]
+    assert round(sheet["net_income"] - before["net_income"], 2) == position["own_funds"]
+    assert round(
+        sheet["net_income_before_amounts_held_for_others"] - sheet["net_income"], 2
+    ) == position["held_for_others"]
+    # Premium income stays the ledger cash identity.
+    assert sheet["revenue_breakdown"]["premium_income"] == paid
+
+    status, body = _http("GET", "/api/admin/cashflow/unified-report", admin)
+    assert status == 200, body
+    own = next(row for row in body["report"]["customers"] if row["customer_id"] == customer_id)
+    assert own["risk"] == position["claims_reserve"]
+    assert own["savings"] == position["customer_savings"]
+    compared = {row["key"]: row for row in body["report"]["balance_sheet"]["compared"]}
+    assert compared["claims_reserve"]["balance_sheet"] == sheet["claims_reserve"]
+    assert compared["customer_savings"]["balance_sheet"] == position["customer_savings"]
+
+    # The tie-out sheet shows the cash net position beside who it belongs to.
+    status, body = _http("GET", "/api/admin/balance-sheet/reconcile?auto_correct=false", admin)
+    assert status == 200, body
+    totals = body["summary_totals"]
+    assert (totals["own_funds"], totals["held_for_others"]) == (position["own_funds"], position["held_for_others"])
+    assert round(totals["own_funds"] + totals["held_for_others"], 2) == round(totals["net_position"], 2) == paid

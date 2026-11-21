@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from services.premium_flow_reconciliation import (
     _EXPENSE_WEIGHTS,
@@ -441,6 +441,84 @@ def _withdrawals_section(withdrawals: Sequence[Mapping[str, Any]]) -> Dict[str, 
     }
 
 
+_BALANCE_LINES: Tuple[Tuple[str, str], ...] = (
+    ("premium_cash", "Premium cash collected"),
+    ("claim_cash", "Claims paid"),
+    ("claims_reserve", "Claims reserve"),
+    ("company_income", "Operating reserve, the company's part of the premium"),
+    ("customer_savings", "Held for customers"),
+    ("carrier_share", "Held for the carrier"),
+    ("reinsurance_ceding_reserve", "Reinsurance ceding reserve"),
+)
+
+
+def _balance_sheet_tie(
+    *,
+    transactions: Sequence[Mapping[str, Any]],
+    policies: Sequence[Mapping[str, Any]],
+    bills: Sequence[Mapping[str, Any]],
+    paid_months: int,
+    statement: Mapping[str, Decimal],
+) -> Optional[Dict[str, Any]]:
+    """This statement beside the balance sheet's reading of the same cash.
+
+    The statement reads sealed premiums and bills month by month. The balance
+    sheet reads the customer ledger payment by payment. Both use the kernel
+    pins, so each line is the same amount; a paid month may round by a cent.
+    """
+    try:
+        from services.financial_unification_service import premium_cash_position
+
+        position = premium_cash_position(
+            transactions=[dict(row) for row in transactions],
+            policies={
+                str(row.get("id") or row.get("policy_id") or index): dict(row)
+                for index, row in enumerate(policies)
+            },
+            billing={
+                str(row.get("id") or row.get("bill_id") or index): dict(row)
+                for index, row in enumerate(bills)
+            },
+            with_accounting_book=False,
+        )
+    except Exception:
+        return None
+    allowance = _CENT * max(1, int(paid_months or 0))
+    rows: List[Dict[str, Any]] = []
+    largest = _ZERO
+    ties = bool(position.get("ties_to_cash"))
+    for key, label in _BALANCE_LINES:
+        on_statement = _dec(statement.get(key))
+        on_sheet = _dec(position.get(key))
+        difference = on_statement - on_sheet
+        # Cash totals are exact. A split line may round once per paid month.
+        limit = _CENT if key in ("premium_cash", "claim_cash") else allowance
+        ok = abs(difference) <= limit
+        ties = ties and ok
+        if abs(difference) > abs(largest):
+            largest = difference
+        rows.append({
+            "key": key,
+            "label": label,
+            "statement": _f(on_statement),
+            "balance_sheet": _f(on_sheet),
+            "difference": _f(difference),
+            "ok": ok,
+        })
+    return {
+        "ties": ties,
+        "largest_difference": _f(largest),
+        "rounding_allowance": _f(allowance),
+        "total": position.get("total"),
+        "net_cash": position.get("net_cash"),
+        "own_funds": position.get("own_funds"),
+        "held_for_others": position.get("held_for_others"),
+        "premium_without_kernel_pin": position.get("premium_without_kernel_pin"),
+        "lines": position.get("lines") or [],
+        "compared": rows,
+    }
+
+
 def _check(check_id: str, ok: bool, detail: str, amount: Any = None) -> Dict[str, Any]:
     row: Dict[str, Any] = {"id": check_id, "ok": bool(ok), "detail": detail}
     if amount is not None:
@@ -526,10 +604,16 @@ def unified_cashflow_report(
         transactions=tx_rows, wallets=wallet_store, balance_sheet=sheet,
     )
 
-    landed = {name: _ZERO for name in ("risk", "underwriting_fee", "expense_loading", "profit", "savings", "above_stack")}
+    landed = {
+        name: _ZERO
+        for name in (
+            "risk", "underwriting_fee", "expense_loading", "profit", "savings",
+            "above_stack", "without_kernel_pin",
+        )
+    }
     due = {name: _ZERO for name in ("risk", "underwriting_fee", "expense_loading", "profit", "savings")}
     collected = booked_risk = booked_savings = savings_paid = _ZERO
-    month_count = withheld = 0
+    month_count = paid_months = withheld = 0
     flag_counts: Dict[str, int] = {}
     customer_rows: List[Dict[str, Any]] = []
     for customer_id in customer_ids:
@@ -553,8 +637,13 @@ def unified_cashflow_report(
             own["expense_loading"] += _dec(month.get("landed_expense"))
             own["profit"] += _dec(month.get("landed_profit"))
             own["savings"] += _dec(month.get("landed_savings"))
-            own["above_stack"] += _dec(month.get("overbooked_excess"))
+            # Cash on a month with no kernel stack is held on the risk book,
+            # where the writer posts it. Cash above a pinned stack is not.
+            unpinned = _dec(month.get("no_kernel_pin_cash"))
+            own["without_kernel_pin"] += unpinned
+            own["above_stack"] += _dec(month.get("overbooked_excess")) - unpinned
             if cash > 0:
+                paid_months += 1
                 due["risk"] += _dec(month.get("kernel_risk"))
                 due["underwriting_fee"] += _dec(month.get("underwriting_fee"))
                 due["expense_loading"] += _dec(month.get("expense_loading"))
@@ -586,6 +675,7 @@ def unified_cashflow_report(
                 "name": name,
                 "premiums_collected": _f(own_collected),
                 "risk": _f(own["risk"]),
+                "without_kernel_pin": _f(own["without_kernel_pin"]),
                 "underwriting_fee": _f(own["underwriting_fee"]),
                 "expense_loading": _f(own["expense_loading"]),
                 "profit": _f(own["profit"]),
@@ -635,16 +725,34 @@ def unified_cashflow_report(
     acquisition = _acquisition_section(_rows(referral_settlements), sheet, acquisition_expected_expense)
     kernel = _kernel_section(policy_rows)
 
-    surplus = landed["risk"] - claims_once
+    # Premium on a policy with no kernel pin is held on the risk book, where
+    # the cash writer posts it. It is not company income.
+    risk_held = landed["risk"] + landed["without_kernel_pin"]
+    surplus = risk_held - claims_once
     loss_ratio = None
     if landed["risk"] > 0:
         loss_ratio = float((claims_once / landed["risk"] * Decimal(100)).quantize(_CENT))
-    company_income = (
+    company_premium_income = (
         landed["underwriting_fee"]
         + _dec(expense_parts["phins_operations"])
         + landed["profit"]
         + landed["above_stack"]
-        + _dec(marketplace["commission"])
+    )
+    company_income = company_premium_income + _dec(marketplace["commission"])
+    balance = _balance_sheet_tie(
+        transactions=tx_rows,
+        policies=policy_rows,
+        bills=bill_rows,
+        paid_months=paid_months,
+        statement={
+            "premium_cash": collected,
+            "claim_cash": claims_once,
+            "claims_reserve": surplus,
+            "company_income": company_premium_income,
+            "customer_savings": landed["savings"],
+            "carrier_share": _dec(expense_parts["carrier_share"]),
+            "reinsurance_ceding_reserve": _dec(expense_parts["reinsurance_ceding_reserve"]),
+        },
     )
     third_party_owed = (
         _dec(marketplace["suppliers"]["pending"])
@@ -653,6 +761,12 @@ def unified_cashflow_report(
         + _dec(acquisition["releasable"])
     )
 
+    if surplus < 0:
+        surplus_label = "Drawn from the claims reserve"
+    elif landed["without_kernel_pin"] > 0:
+        surplus_label = "Held on the risk book, premium with no kernel pin included"
+    else:
+        surplus_label = "Underwriting surplus"
     statement = [
         {
             "section": "Premium cash collected",
@@ -668,6 +782,7 @@ def unified_cashflow_report(
                 {"label": "Savings add-on · investments (65%)", "amount": savings_parts["investments"], "book": "customer"},
                 {"label": "Savings add-on · algo (5%)", "amount": savings_parts["algo"], "book": "customer"},
                 {"label": "Collected above the kernel stack", "amount": _f(landed["above_stack"]), "book": "company"},
+                {"label": "Premium on a policy with no kernel pin", "amount": _f(landed["without_kernel_pin"]), "book": "risk"},
             ],
         },
         {
@@ -675,8 +790,9 @@ def unified_cashflow_report(
             "total": _f(surplus),
             "lines": [
                 {"label": "Kernel risk premium collected", "amount": _f(landed["risk"]), "book": "risk"},
+                {"label": "Premium with no kernel pin, held until the policy is pinned", "amount": _f(landed["without_kernel_pin"]), "book": "risk"},
                 {"label": "Claims paid, each claim once", "amount": _f(-claims_once), "book": "risk"},
-                {"label": "Underwriting surplus" if surplus >= 0 else "Drawn from the claims reserve", "amount": _f(surplus), "book": "risk"},
+                {"label": surplus_label, "amount": _f(surplus), "book": "risk"},
             ],
         },
         {
@@ -715,6 +831,16 @@ def unified_cashflow_report(
             ],
         },
     ]
+
+    if balance is not None:
+        statement.append({
+            "section": "Balance sheet · where the premium cash sits",
+            "total": balance["total"],
+            "lines": [
+                {"label": line["label"], "amount": line["amount"], "book": line["holder"]}
+                for line in balance["lines"]
+            ],
+        })
 
     carved = flag_counts.get("savings_carved_from_premium", 0)
     held_rows = sum(
@@ -808,6 +934,14 @@ def unified_cashflow_report(
             (held_rows - returned_rows) - withdrawn_net,
         ),
     ]
+    if balance is not None:
+        checks.append(_check(
+            "balance_sheet_ties",
+            balance["ties"],
+            "Premium cash less claims paid sits on the same balance sheet lines as this statement: "
+            "claims reserve, operating reserve, and money held for customers, the carrier, and reinsurance.",
+            balance["largest_difference"],
+        ))
 
     return {
         "writes": False,
@@ -841,6 +975,7 @@ def unified_cashflow_report(
             "risk_premium": _f(landed["risk"]),
             "underwriting_fee": _f(landed["underwriting_fee"]),
             "claims_paid": _f(claims_once),
+            "premium_without_kernel_pin": _f(landed["without_kernel_pin"]),
             "surplus": _f(surplus),
             "loss_ratio_pct": loss_ratio,
             "claims_reserve": _f(_dec(sheet.get("claims_reserve"))),
@@ -869,8 +1004,10 @@ def unified_cashflow_report(
         "withdrawals": withdrawals_section,
         "company": {
             "income": _f(company_income),
+            "premium_income": _f(company_premium_income),
             "owed_to_third_parties": _f(third_party_owed),
         },
+        "balance_sheet": balance,
         "statement": statement,
         "integrity": {
             "ok": all(check["ok"] for check in checks),
