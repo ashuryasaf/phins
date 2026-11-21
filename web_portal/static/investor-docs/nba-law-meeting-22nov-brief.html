@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PHINS — NBA Law Legal Agenda (22 November 2026) · Naschitz Brandes Amir, introduced by Adv. Keshet Sirota-Leviner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+/* Shared letterhead for generated PHINS documents (claim notice, processing
+   record, probability report, risk reports). Self-contained: no external
+   assets except the inlined emblem. */
+:root {
+  --phins-navy: #0e2f63;
+  --phins-navy-deep: #060d1f;
+  --phins-navy-mid: #123f82;
+  --phins-gold: #c9a04e;
+  --phins-gold-strong: #f7e2a0;
+  --phins-ink: #12284c;
+  --phins-muted: #5b6b82;
+  --phins-ice: #f3f7fd;
+  --phins-line: #d5deea;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: #e8eef6;
+  color: var(--phins-ink);
+  font-family: Inter, "Segoe UI", sans-serif;
+  line-height: 1.5;
+}
+.phins-doc {
+  max-width: 920px;
+  margin: 24px auto;
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(6, 13, 31, 0.12);
+}
+.phins-doc-banner {
+  background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+  color: #fff;
+  padding: 22px 28px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+.phins-doc-brand { display: flex; gap: 12px; align-items: center; }
+.phins-doc-logo { width: 52px; height: 52px; flex: 0 0 52px; }
+.phins-doc-logo svg, .phins-doc-logo img { width: 52px; height: 52px; display: block; }
+.phins-doc-body iframe.phins-file-frame { width: 100%; min-height: 72vh; border: 0; background: #fff; }
+.phins-doc-wordmark {
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-size: 20px;
+}
+.phins-doc-tagline { font-size: 11px; letter-spacing: 0.03em; opacity: 0.84; }
+.phins-doc-kicker {
+  text-align: right;
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  font-weight: 600;
+  font-size: 15px;
+}
+.phins-doc-kicker span {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400;
+  font-size: 12px;
+  opacity: 0.82;
+  font-family: Inter, "Segoe UI", sans-serif;
+}
+.phins-doc-gold {
+  height: 4px;
+  background: linear-gradient(90deg, #b8893b 0%, #f7e2a0 42%, #e3bf6f 100%);
+}
+.phins-doc-body { padding: 24px 28px 8px; }
+.phins-doc h1, .phins-doc h2, .phins-doc h3 {
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  color: var(--phins-navy);
+  margin: 0 0 8px;
+}
+.phins-doc h1 { font-size: 22px; }
+.phins-doc h2 { font-size: 16px; margin-top: 8px; }
+.phins-doc .gold { color: var(--phins-gold); }
+.phins-doc .sub { color: var(--phins-muted); margin: 0 0 16px; font-size: 13px; }
+.phins-doc table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; }
+.phins-doc th, .phins-doc td {
+  border: 1px solid var(--phins-line);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+  font-size: 14px;
+}
+.phins-doc th {
+  background: var(--phins-ice);
+  color: var(--phins-navy);
+  font-weight: 600;
+}
+.phins-doc td code, .phins-doc code {
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--phins-navy-mid);
+}
+.phins-doc .seal, .phins-doc-foot {
+  font-size: 12px;
+  color: var(--phins-muted);
+}
+.phins-doc-foot {
+  padding: 14px 28px 20px;
+  border-top: 1px solid var(--phins-line);
+}
+.phins-doc .metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 0 0 18px;
+}
+.phins-doc .metric {
+  background: var(--phins-ice);
+  border: 1px solid var(--phins-line);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.phins-doc .metric strong {
+  display: block;
+  font-family: "Space Grotesk", Inter, sans-serif;
+  font-size: 1.45rem;
+  color: var(--phins-navy);
+}
+.phins-doc .metric.ok strong { color: #0f6b45; }
+.phins-doc .metric.warn strong { color: #8a5a12; }
+.phins-doc .metric.alert strong { color: #9b2c2c; }
+.phins-doc .metric span { color: var(--phins-muted); font-size: 12px; }
+.phins-doc .bar { height: 8px; background: #e5e7eb; border-radius: 4px; margin-top: 8px; }
+.phins-doc .bar-fill { height: 100%; border-radius: 4px; background: var(--phins-navy-mid); }
+.phins-doc .note {
+  background: var(--phins-ice);
+  border-left: 4px solid var(--phins-gold);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 0 0 16px;
+}
+.phins-doc .summary-box {
+  background: var(--phins-ice);
+  border: 1px solid var(--phins-line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin: 0 0 16px;
+}
+.phins-doc .metric-value { font-weight: 700; color: var(--phins-navy); font-size: 18px; }
+.phins-doc .metric-label { font-size: 11px; color: var(--phins-muted); }
+.phins-doc iframe.phins-file-frame {
+  width: 100%;
+  min-height: 70vh;
+  border: 1px solid var(--phins-line);
+  border-radius: 8px;
+  background: #fff;
+}
+/* Leave-document bar. Hidden in print so a saved PDF stays a document. */
+.phins-doc-return {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #fff;
+  border-bottom: 4px solid transparent;
+  border-image: linear-gradient(90deg, #b8893b 0%, #f7e2a0 42%, #e3bf6f 100%) 1;
+  font-family: Inter, "Segoe UI", sans-serif;
+  color: var(--phins-ink);
+}
+/* The bar sets display, which would otherwise outrank the hidden attribute
+   the return script sets when the document is framed. */
+.phins-doc-return[hidden] { display: none !important; }
+.phins-doc-return-note {
+  font-family: "Space Grotesk", Inter, "Segoe UI", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  color: var(--phins-navy);
+}
+.phins-doc-return-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.phins-doc-return button {
+  font-family: Inter, "Segoe UI", sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.phins-doc-back {
+  background: #fff;
+  color: var(--phins-navy);
+  border: 1px solid var(--phins-line);
+}
+.phins-doc-close {
+  background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+  color: #fff;
+  border: 0;
+}
+/* Right-to-left editions (html[dir="rtl"]): the letterhead keeps its logo on
+   the leading side, tables and callouts mirror, figures stay as rendered. */
+[dir="rtl"] .phins-doc-kicker { text-align: left; }
+[dir="rtl"] .phins-doc th, [dir="rtl"] .phins-doc td { text-align: right; }
+[dir="rtl"] .phins-doc .note { border-left: 0; border-right: 4px solid var(--phins-gold); }
+[dir="rtl"] .phins-doc code, [dir="rtl"] .phins-doc pre { direction: ltr; unicode-bidi: isolate; }
+@media print {
+  body { background: #fff; }
+  .phins-doc { box-shadow: none; margin: 0; max-width: none; border-radius: 0; }
+  .phins-doc-return { display: none !important; }
+  .phins-doc-body button { display: none !important; }
+}
+
+</style>
+</head>
+<body>
+<nav class="phins-doc-return" aria-label="Leave this document"><span class="phins-doc-return-note">PHINS document</span><span class="phins-doc-return-actions"><button type="button" class="phins-doc-back">Go back</button><button type="button" class="phins-doc-close">Close</button></span></nav>
+<script>
+/* PHINS document return bar.
+   Every report, file, or document a person can open must include this script
+   (or the markup from services/phins_document.py, which inlines it) so the
+   page is never a dead end. Chrome only: it does not read or rewrite document
+   data. Future generated documents call PhinsDocument.printReport /
+   render_phins_document, or load /phins-doc-return.js with a script tag.
+   This file is also inlined inside a script element, so it must never
+   contain a literal script tag: the HTML parser would close the element
+   there and print the rest of this source as page text.
+   Set data-phins-return="off" on <body> when the page already has its own
+   Go back and Close controls that call phinsDocGoBack / phinsDocClose.
+   That page keeps its own layout: the return bar and the letterhead wrap
+   are both skipped. Set data-phins-letterhead="off" on <html> to keep the
+   return bar and skip only the wrap, for a live page that is not a document. */
+(function (global) {
+    'use strict';
+
+    if (global.__phinsDocReturnInstalled) return;
+    global.__phinsDocReturnInstalled = true;
+
+    /* Role homes for the cross-pipeline checkout. Keep in sync with
+       PIPELINE_DOCUMENT_HOMES in services/phins_document.py. */
+    var PHINS_DOCUMENT_HOMES = {
+        admin: '/admin.html',
+        manager: '/admin.html',
+        compliance: '/admin.html',
+        founder: '/admin.html',
+        development: '/admin-desk.html',
+        underwriter: '/underwriter-dashboard.html',
+        claims_agent: '/chat-process-review.html',
+        claims_manager: '/chat-process-review.html',
+        claims: '/claims-adjuster-dashboard.html',
+        claims_adjuster: '/claims-adjuster-dashboard.html',
+        adjuster: '/claims-adjuster-dashboard.html',
+        accountant: '/accountant-dashboard.html',
+        actuary: '/actuary-dashboard.html',
+        supplier: '/supplier-portal.html',
+        regulator: '/regulator-dashboard.html',
+        customer: '/dashboard.html',
+        foundation: '/foundation-dashboard.html',
+        community: '/foundation-dashboard.html'
+    };
+
+    function framed() {
+        try { return global.top !== global.self; } catch (e) { return true; }
+    }
+
+    function sameOriginPath(value) {
+        if (!value || value.charAt(0) !== '/' || value.charAt(1) === '/' || value.indexOf('\\') !== -1) {
+            return '';
+        }
+        if (value.indexOf('..') !== -1) return '';
+        return value;
+    }
+
+    function phinsDocReturnTarget() {
+        try {
+            var q = new URLSearchParams(global.location.search || '');
+            var explicit = sameOriginPath(q.get('return') || '');
+            if (explicit) return explicit;
+        } catch (e) { /* keep going */ }
+        if (global.document.referrer) {
+            try {
+                var ref = new URL(global.document.referrer);
+                if (ref.origin === global.location.origin && ref.pathname !== global.location.pathname) {
+                    return ref.pathname + ref.search + ref.hash;
+                }
+            } catch (e2) { /* ignore */ }
+        }
+        var role = '';
+        try {
+            var raw = global.localStorage.getItem('session') || global.sessionStorage.getItem('session') || '';
+            if (raw) role = String((JSON.parse(raw) || {}).role || '').toLowerCase();
+        } catch (e3) { /* ignore */ }
+        return PHINS_DOCUMENT_HOMES[role] || '/documents.html';
+    }
+
+    function phinsDocGoBack() {
+        if (framed()) return;
+        try {
+            if (global.history.length > 1) {
+                global.history.back();
+                return;
+            }
+        } catch (e) { /* fall through */ }
+        global.location.href = phinsDocReturnTarget();
+    }
+
+    function phinsDocClose() {
+        if (framed()) return;
+        var target = phinsDocReturnTarget();
+        try { global.close(); } catch (e) { /* blocked */ }
+        global.setTimeout(function () {
+            if (!global.closed) global.location.href = target;
+        }, 180);
+    }
+
+    function ensureStyle() {
+        if (global.document.getElementById('phins-doc-return-style')) return;
+        var style = global.document.createElement('style');
+        style.id = 'phins-doc-return-style';
+        style.textContent = ''
+            + '.phins-doc-return{position:sticky;top:0;z-index:80;display:flex;justify-content:space-between;'
+            + 'align-items:center;gap:12px;padding:10px 16px;background:#fff;color:#12284c;'
+            + 'border-bottom:4px solid #c9a04e;font-family:Inter,"Segoe UI",sans-serif;}'
+            + '.phins-doc-return-note{font-family:"Space Grotesk",Inter,"Segoe UI",sans-serif;font-weight:600;'
+            + 'letter-spacing:.06em;font-size:12px;color:#0e2f63;}'
+            + '.phins-doc-return-actions{display:flex;gap:8px;flex-wrap:wrap;}'
+            + '.phins-doc-return button{font:600 13px Inter,"Segoe UI",sans-serif;border-radius:8px;padding:8px 14px;cursor:pointer;}'
+            + '.phins-doc-back{background:#fff;color:#0e2f63;border:1px solid #d5deea;}'
+            + '.phins-doc-close{background:linear-gradient(135deg,#060d1f 0%,#0e2f63 46%,#123f82 100%);color:#fff;border:0;}'
+            + '.phins-doc-return[hidden]{display:none !important;}'
+            + '@media print{.phins-doc-return{display:none !important;}}';
+        (global.document.head || global.document.documentElement).appendChild(style);
+    }
+
+    function buildBar() {
+        var bar = global.document.createElement('nav');
+        bar.className = 'phins-doc-return';
+        bar.setAttribute('aria-label', 'Leave this document');
+        bar.innerHTML = '<span class="phins-doc-return-note">PHINS document</span>'
+            + '<span class="phins-doc-return-actions">'
+            + '<button type="button" class="phins-doc-back">Go back</button>'
+            + '<button type="button" class="phins-doc-close">Close</button>'
+            + '</span>';
+        return bar;
+    }
+
+    function mount() {
+        ensureStyle();
+        var existing = global.document.querySelector('.phins-doc-return');
+        var off = global.document.body && global.document.body.getAttribute('data-phins-return') === 'off';
+        if (framed()) {
+            if (existing) existing.hidden = true;
+            return;
+        }
+        if (!existing && !off && global.document.body) {
+            global.document.body.insertBefore(buildBar(), global.document.body.firstChild);
+        }
+        mountLetterhead();
+    }
+
+    function loadScript(src, marker) {
+        if (global.document.querySelector('script[src="' + src + '"]')) return;
+        var script = global.document.createElement('script');
+        script.src = src;
+        script.setAttribute(marker, '1');
+        (global.document.head || global.document.documentElement).appendChild(script);
+    }
+
+    function mountLetterhead() {
+        if (global.document.querySelector('.phins-doc-banner')) return;
+        if (global.document.documentElement.getAttribute('data-phins-letterhead') === 'off') return;
+        if (global.document.body && global.document.body.getAttribute('data-phins-return') === 'off') return;
+        loadScript('/phins-doc-open.js', 'data-phins-doc-open');
+        function run() {
+            if (global.PhinsDocument && global.PhinsDocument.adoptPage) {
+                global.PhinsDocument.adoptPage();
+            }
+        }
+        if (global.PhinsDocument && global.PhinsDocument.adoptPage) {
+            run();
+            return;
+        }
+        var existingDoc = global.document.querySelector('script[src="/phins-document.js"]');
+        if (existingDoc) {
+            existingDoc.addEventListener('load', run);
+            return;
+        }
+        var script = global.document.createElement('script');
+        script.src = '/phins-document.js';
+        script.setAttribute('data-phins-document-js', '1');
+        script.onload = run;
+        (global.document.head || global.document.documentElement).appendChild(script);
+    }
+
+    global.phinsDocGoBack = phinsDocGoBack;
+    global.phinsDocClose = phinsDocClose;
+    global.PHINS_DOCUMENT_HOMES = PHINS_DOCUMENT_HOMES;
+
+    global.document.addEventListener('click', function (event) {
+        var node = event.target && event.target.closest
+            ? event.target.closest('.phins-doc-back, .phins-doc-close')
+            : null;
+        if (!node || framed()) return;
+        event.preventDefault();
+        if (node.classList.contains('phins-doc-close')) phinsDocClose();
+        else phinsDocGoBack();
+    });
+
+    if (global.document.readyState === 'loading') {
+        global.document.addEventListener('DOMContentLoaded', mount);
+    } else {
+        mount();
+    }
+})(window);
+
+</script>
+<article class="phins-doc">
+  <header class="phins-doc-banner">
+    <div class="phins-doc-brand">
+      <div class="phins-doc-logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="PHINS emblem">
+  <defs>
+    <linearGradient id="phinsShield" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0e2f63"/>
+      <stop offset="55%" stop-color="#123f82"/>
+      <stop offset="100%" stop-color="#081c3f"/>
+    </linearGradient>
+    <linearGradient id="phinsGold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f7e2a0"/>
+      <stop offset="45%" stop-color="#e3bf6f"/>
+      <stop offset="100%" stop-color="#b8893b"/>
+    </linearGradient>
+    <linearGradient id="phinsFin" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4fd8ff"/>
+      <stop offset="55%" stop-color="#6ea8ff"/>
+      <stop offset="100%" stop-color="#b7d9ff"/>
+    </linearGradient>
+    <linearGradient id="phinsWave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4fd8ff" stop-opacity="0.15"/>
+      <stop offset="50%" stop-color="#7fe3ff"/>
+      <stop offset="100%" stop-color="#4fd8ff" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Shield body -->
+  <path d="M60 6 L106 22 V57 C106 88 86 108 60 116 C34 108 14 88 14 57 V22 Z"
+        fill="url(#phinsShield)"/>
+  <!-- Gold rim -->
+  <path d="M60 6 L106 22 V57 C106 88 86 108 60 116 C34 108 14 88 14 57 V22 Z"
+        fill="none" stroke="url(#phinsGold)" stroke-width="4" stroke-linejoin="round"/>
+  <!-- Inner keyline -->
+  <path d="M60 14 L98 27.5 V56.5 C98 83 81 100.5 60 107.5 C39 100.5 22 83 22 56.5 V27.5 Z"
+        fill="none" stroke="#ffffff" stroke-opacity="0.14" stroke-width="1.5"/>
+
+  <!-- Guiding star -->
+  <path d="M60 22 L62.2 28.2 L68.5 28.4 L63.5 32.2 L65.3 38.3 L60 34.7 L54.7 38.3 L56.5 32.2 L51.5 28.4 L57.8 28.2 Z"
+        fill="url(#phinsGold)"/>
+
+  <!-- Dolphin fin -->
+  <path d="M40 76 C44.5 57 57 44 80 38.5 C72.5 50.5 70.5 61 73 73.5 C61.5 66.5 49 69 40 76 Z"
+        fill="url(#phinsFin)"/>
+  <!-- Fin highlight -->
+  <path d="M46 70 C51 58 60 49 72 44.5 C67 53 65.5 61 66.8 69.5 C59.5 65.5 52 66.5 46 70 Z"
+        fill="#ffffff" fill-opacity="0.16"/>
+
+  <!-- Waves -->
+  <path d="M32 84 Q42 77.5 52 84 T72 84 T92 84" fill="none"
+        stroke="url(#phinsWave)" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M40 93 Q49 87.5 58 93 T76 93" fill="none"
+        stroke="url(#phinsWave)" stroke-width="2.4" stroke-linecap="round" opacity="0.7"/>
+</svg></div>
+      <div>
+        <div class="phins-doc-wordmark">PHINS</div>
+        <div class="phins-doc-tagline">Personal Health Insurance &amp; Savings</div>
+      </div>
+    </div>
+    <div class="phins-doc-kicker">Legal agenda · 22 November 2026 · 12:00–13:00<span>NBA Law · introduced by Adv. Keshet Sirota-Leviner · five legal issues</span></div>
+  </header>
+  <div class="phins-doc-gold"></div>
+  <div class="phins-doc-body">
+<h1>PHINS — NBA Law Legal Agenda (22 November 2026)</h1>
+<blockquote><p><strong>Internal · Confidential.</strong> Sunday 22 November 2026, 12:00–13:00, a one-hour working meeting with Naschitz, Brandes, Amir &amp; Co. (NBA Law). The firm was introduced through Adv. Keshet Sirota-Leviner, Partner and Head of Tax, at the 25 October 2026 introduction meeting. The agenda has five legal issues. Each issue lists the questions PHINS brings and the artefact that already exists. Figures are the canonical defaults of plan identity <code>unified-2026.10-v1</code>. This brief is preparation, not legal advice. It does not record an engagement, an opinion, or an outcome.</p></blockquote>
+<h2>Meeting facts</h2>
+<table><thead><tr><th>Item</th><th>Detail</th></tr></thead><tbody><tr><td>Date</td><td>Sunday 22 November 2026</td></tr><tr><td>Time</td><td>12:00–13:00 (Israel time) · 60 minutes · hard stop at 13:00</td></tr><tr><td>Format</td><td>Working meeting · counsel</td></tr><tr><td>Firm</td><td>Naschitz, Brandes, Amir &amp; Co. (NBA Law) · full-service · Tel Aviv · https://www.nblaw.com/</td></tr><tr><td>Introduced by</td><td>Adv. Keshet Sirota-Leviner — Partner, Head of Tax (25 October 2026 introduction meeting)</td></tr><tr><td>NBA attendees</td><td>TBC · the partners Keshet convenes for each desk</td></tr><tr><td>Location</td><td>TBC</td></tr><tr><td>Continues</td><td>NBA Law 25.10 bar (<code>#nba-law-meeting-25oct</code>); Authority pre-ruling track opened 12 October 2026 (<code>#regulatory-preruling-avi-ovadia</code>); Corporate, Legal &amp; Funding bar</td></tr><tr><td>One standard</td><td>Unified Business Plan · Investor Deck · Appendices (<code>#unified-business-plan-card</code>)</td></tr><tr><td>Status</td><td>Scheduled</td></tr><tr><td>Pack</td><td>Pitch dashboard — NBA Law 22.11 section</td></tr></tbody></table>
+<p><strong>Purpose.</strong> Take the five legal issues below from questions to a written scope: who at NBA owns each issue, which existing draft they mark up first, and what must be signed before Gate 5 on 1 January 2027. Tax stays with Keshet&#x27;s desk.</p>
+<h2>Where PHINS is on 22 November</h2>
+<ul><li>The technology layer is in production: one platform, one pricing kernel, a hash-chained ledger. AI recommends. The ledger decides. People supervise.</li><li>The first contract (life with a lifelong 3+ ADL disability mechanism, Draft 3.1) is written in actuarial form. It is not approved.</li><li>The pre-ruling track with the Capital Market, Insurance and Savings Authority opened on 12 October 2026. No outcome is recorded here.</li><li>PHINS is not a licensed insurer. Risk sits with a designated licensed Israeli carrier and approved reinsurance. The 25% PHINS / 75% carrier split is the economic identity, not a signed agreement.</li><li>The open capital step is the seed: ILS 6,000,000 on ILS 24,000,000 pre-money (ILS 30,000,000 post, 20%). The Series A indication is ILS 18,000,000. Neither is recorded as closed.</li><li>Diary rows since 25 October: Aspire (26 October), Meir Uzan (28 October), D.N.R. (12 November), and the Swiss Re Israel meeting set for 8 December 2026. This brief records none of them as an outcome.</li></ul>
+<h2>The five legal issues at a glance</h2>
+<table><thead><tr><th>#</th><th>Issue</th><th>Lead question for NBA</th><th>Before Gate 5</th></tr></thead><tbody><tr><td>1</td><td>Association and contracts</td><td>One entity and one contract stack for founders, investors (seed, VC, Series A), customers, employees, and privacy</td><td>Entity, founders, seed documents, customer terms, privacy notice</td></tr><tr><td>2</td><td>Intellectual property</td><td>Ownership and protection of the policy wording, the processes, the code, and the NDA set</td><td>Assignments from everyone who wrote code or wording</td></tr><tr><td>3</td><td>Tax</td><td>Tax on the structure, the round, the MGA take, employee equity, and the reward flows</td><td>Structure ruling questions before the seed closes</td></tr><tr><td>4</td><td>Israeli and segmented regulation</td><td>One map of licences per segment: insurance, distribution, savings, wallet and payments, data, AI</td><td>The filing the Authority can approve</td></tr><tr><td>5</td><td>Commercial contracts with the insurer and the reinsurer</td><td>MGA / binding-authority agreement with the carrier and the reinsurance terms around it</td><td>Signed carrier agreement; reinsurance indication</td></tr></tbody></table>
+<h2>Issue 1 — Association and contracts</h2>
+<p>Corporate formation, founders, seed and later rounds, investors, customers, employees, and privacy, all as contracts.</p>
+<table><thead><tr><th>#</th><th>Question for NBA</th><th>What already exists</th></tr></thead><tbody><tr><td>1.1</td><td>Entity and seat. The signable drafts default to a Delaware C-Corporation with Delaware governing law. The meeting briefs name PHINS Technologies Ltd. Which is the operating company, and is a Delaware parent with an Israeli subsidiary needed before the seed?</td><td><code>/legal/incorporation-delaware.html</code>; founder agreement and term sheet (Delaware defaults)</td></tr><tr><td>1.2</td><td>Founders. Vesting, the co-founder exit clause, decision-making, and the executive actuary&#x27;s path to co-founder.</td><td><code>/legal/founder-agreement.html</code>; <code>/legal/cofounder-exit-clause.html</code>; <code>/legal/cap-table.html</code></td></tr><tr><td>1.3</td><td>Seed. Priced round or a convertible instrument, at the one price on the book: ILS 6,000,000 / 24,000,000 / 30,000,000. Option pool inside or outside the pre-money.</td><td><code>/legal/term-sheet.html</code> (non-binding); <code>/legal/shareholders-agreement.html</code></td></tr><tr><td>1.4</td><td>VC and Series A. Preference, anti-dilution, pro-rata, board, protective provisions, and information rights that do not block the Series A indication of ILS 18,000,000.</td><td>Shareholders agreement sections 2–6</td></tr><tr><td>1.5</td><td>Investor NDAs. One-way investor NDA on open links, mutual NDA for partners, sealed signatures, and the use ledger. Is the platform NDA enforceable as signed?</td><td><code>/legal/nda.html</code>; signed-documents desk; <code>/nda-dashboard.html</code></td></tr><tr><td>1.6</td><td>Customers. The Terms of Use are under New York law. What must change for an Israeli consumer (consumer protection, standard-contract terms, Hebrew)? Chat intake and electronic signature on applications and claims.</td><td><code>/terms-of-use.html</code>; Phin chat intake on <code>/apply-chat.html</code> and <code>/file-a-claim.html</code></td></tr><tr><td>1.7</td><td>Employees and contractors. Employment agreement, offer letter, ESOP, and HR policies under Israeli labour law. Contractors and the agent and supplier roles.</td><td><code>/legal/employment-agreement.html</code>; <code>/legal/offer-letter.html</code>; <code>/legal/esop-agreement.html</code>; <code>/legal/hr-policies.html</code></td></tr><tr><td>1.8</td><td>Privacy as contract. Privacy notice, consent wording, processor agreements with cloud and AI providers, and the data clauses in investor diligence.</td><td><code>/privacy-policy.html</code> (written to GDPR / CCPA / HIPAA); consent registry in the customer agent</td></tr></tbody></table>
+<h2>Issue 2 — Intellectual property</h2>
+<p>Policy wording, processes, code, and the NDA set.</p>
+<table><thead><tr><th>#</th><th>Question for NBA</th><th>What already exists</th></tr></thead><tbody><tr><td>2.1</td><td>Code ownership. Founder, employee, and contractor assignment, including service inventions and any waiver of compensation for them.</td><td><code>/legal/ip-assignment.html</code>; IP clauses in the founder and employment agreements</td></tr><tr><td>2.2</td><td>AI-assisted code and content. Authorship and ownership where code, documents, or media were produced with AI tools; provider terms on generated video and images.</td><td>Production codebase; media library with SHA-256 checksums</td></tr><tr><td>2.3</td><td>Open-source licences. Audit of third-party packages before diligence; any copyleft exposure in a licensed or white-labelled platform.</td><td><code>requirements.txt</code> and the static assets</td></tr><tr><td>2.4</td><td>Policy and process. Who owns the policy wording once it is filed with the Authority or shared with a carrier? Can the pricing kernel, the underwriting flow, or the evidence pipeline be patented, or are they trade secrets?</td><td>Draft 3.1 wording; pricing kernel; published rate tables</td></tr><tr><td>2.5</td><td>Trademark. The PHINS name and the shield mark in Israel and the partner markets; domains.</td><td><code>/legal/trademark-ip.html</code></td></tr><tr><td>2.6</td><td>Licensing out. Per-market licence and royalty on risk GWP to partners; what the carrier may use on termination.</td><td>Unified plan, partner-market model</td></tr><tr><td>2.7</td><td>NDA and trade-secret hygiene. Who has seen the kernel and the tables, and under which NDA. Sealed signatures and the document use ledger as evidence.</td><td>Signed-documents folder; <code>document_use_ledger</code></td></tr></tbody></table>
+<h2>Issue 3 — Tax</h2>
+<p>Keshet&#x27;s desk. Do not state a tax rate in the meeting; ask what she needs.</p>
+<table><thead><tr><th>#</th><th>Question for NBA</th><th>What already exists</th></tr></thead><tbody><tr><td>3.1</td><td>Structure. Israeli company or a Delaware parent with an Israeli subsidiary: residence, transfer pricing, and where the IP sits.</td><td>Issue 1.1 drafts</td></tr><tr><td>3.2</td><td>The round. Tax on the seed and on the Series A indication; investor-side incentives for Israeli technology companies; the tax position of founder shares issued before the round.</td><td>Term sheet; cap table</td></tr><tr><td>3.3</td><td>The 25% MGA take. Income character, VAT on the MGA and platform fees, and any financial-institution status.</td><td>25% / 75% identity of the Israel book</td></tr><tr><td>3.4</td><td>Employee equity. A section 102 trustee track for Israeli employees and the treatment of US-law option documents.</td><td><code>/legal/esop-agreement.html</code> (section 4, tax and plan terms)</td></tr><tr><td>3.5</td><td>Grants and incentives. Approved or preferred technology enterprise status, and Innovation Authority funding with its limits on moving IP abroad.</td><td>None filed</td></tr><tr><td>3.6</td><td>Reward and savings flows. Referral rewards paid to customers (platform default $650 per acquired customer across up to three layers, held 3 months), health-wallet withdrawals, and the savings add-on. Reporting and withholding.</td><td>Referral reward book; health wallet; savings add-on</td></tr><tr><td>3.7</td><td>Cross-border. Reinsurance premiums paid abroad and a later partner market.</td><td>Swiss Re Israel meeting on 8 December 2026</td></tr></tbody></table>
+<h2>Issue 4 — Israeli and segmented regulation</h2>
+<p>One map of who regulates each segment, and what PHINS may do before and after Gate 5.</p>
+<table><thead><tr><th>#</th><th>Segment</th><th>Question for NBA</th><th>What already exists</th></tr></thead><tbody><tr><td>4.1</td><td>Insurance product</td><td>The path from the 12 October pre-ruling track to an approved filing. PHINS is not a licensed insurer; the product is filed by the carrier.</td><td>Regulatory memorandum EN + HE; pre-ruling brief; Appendix C of the unified plan</td></tr><tr><td>4.2</td><td>MGA and distribution</td><td>Which licence PHINS needs to underwrite, bill, and handle claims for a carrier; agent licensing; agency distribution (D.N.R.) that does not move risk to the agency.</td><td>Functional MGA model; agent ecosystem</td></tr><tr><td>4.3</td><td>Referral rewards</td><td>May an unlicensed customer receive a reward for referring an insured? Where the line sits between a referral reward and an agent commission.</td><td>Customer <code>REF-</code> rail separate from agent <code>AGI-</code> commissions</td></tr><tr><td>4.4</td><td>Savings add-on</td><td>Separate licensing of the savings flow and the investment company; investment advice and marketing; pension data (Mislaka) access.</td><td>Savings add-on outside risk GWP; Mislaka parser</td></tr><tr><td>4.5</td><td>Health wallet and payments</td><td>Payment-services and anti-money-laundering duties on the wallet, holds, and withdrawals (3-day retention by default).</td><td>Health wallet withdrawal flow</td></tr><tr><td>4.6</td><td>Data and AI</td><td>Israeli Privacy Protection Law and its data-security regulations for health and identity data; cross-border transfer to cloud and AI providers; disclosure of automated recommendations.</td><td>One identity writer (vaulted ID, hash, last four); <code>ai_decision_log</code>; evidence provenance</td></tr><tr><td>4.7</td><td>Outsourcing and records</td><td>Carrier outsourcing rules for a platform that runs its underwriting, billing, and claims; audit access; record retention.</td><td>Hash-chained ledger; audit trail</td></tr><tr><td>4.8</td><td>Partner markets</td><td>What changes per market; the EU (GDPR, AI Act) when a partner market opens.</td><td>Unified plan, partner-market model</td></tr></tbody></table>
+<h2>Issue 5 — Commercial contracts with the insurer and the reinsurer</h2>
+<p>The carrier holds 75% of risk GWP and the risk. The reinsurer follows the carrier.</p>
+<table><thead><tr><th>#</th><th>Question for NBA</th><th>What already exists</th></tr></thead><tbody><tr><td>5.1</td><td>Carrier agreement. MGA or binding-authority scope: underwriting authority and limits, claims authority, the actuary function, and exactly what PHINS decides.</td><td>25% / 75% economic identity, not signed</td></tr><tr><td>5.2</td><td>Money. Who collects premium, trust or client-money accounts, remittance timing, and the 25% fee against any profit share.</td><td>Billing engine; cash-flow integrity reconciliation</td></tr><tr><td>5.3</td><td>Data and the customer. Ownership of policyholder data and of the book on termination; portability; the platform licence to the carrier.</td><td>Customer master; durable document archive</td></tr><tr><td>5.4</td><td>Service levels and audit. Service levels, the carrier&#x27;s audit and inspection rights, and the regulator&#x27;s access to records.</td><td>Ledger, audit trail, evidence on every recommendation</td></tr><tr><td>5.5</td><td>Liability. Errors-and-omissions cover for PHINS, liability caps, indemnities, and claims disputes.</td><td>None signed</td></tr><tr><td>5.6</td><td>Exclusivity and change. Exclusivity, term, termination, run-off, and the option after year 3 to move the 75% insurance take to a PHINS-group Israeli insurer.</td><td>Turnover option in the plan (an option, not a promise)</td></tr><tr><td>5.7</td><td>Reinsurance. The plan&#x27;s quota share is 18% of risk GWP with a 25% ceding commission (2027 ceded premium ILS 9,758,880). The cedent is the carrier. Bordereaux, claims cooperation, profit commission, lead-reinsurer terms.</td><td>Swiss Re Israel meeting deck (8 December 2026)</td></tr><tr><td>5.8</td><td>Before 8 December. Review the NDA and the non-binding indication letter for the Swiss Re Israel meeting so nothing reads as bound.</td><td><code>/reinsurer-deck.html</code>; platform NDA</td></tr><tr><td>5.9</td><td>Savings and distribution partners. The separate agreement with the investment company for the savings flow, and the agency distribution agreement.</td><td>Savings add-on; agent ecosystem</td></tr></tbody></table>
+<h2>60-minute run of show</h2>
+<table><thead><tr><th>Time</th><th>Segment</th><th>Talking points</th></tr></thead><tbody><tr><td>12:00–12:05</td><td>Opening</td><td>Since the 25 October introduction. Conflict check. Named partner per issue. Hard stop at 13:00.</td></tr><tr><td>12:05–12:17</td><td>Issue 1 · Association and contracts</td><td>Entity and seat first (Delaware drafts versus PHINS Technologies Ltd.). Founders, seed, VC and Series A, customers, employees, privacy.</td></tr><tr><td>12:17–12:27</td><td>Issue 2 · Intellectual property</td><td>Assignments, AI-assisted code, open source, policy wording, trademark, NDA set.</td></tr><tr><td>12:27–12:37</td><td>Issue 3 · Tax</td><td>Keshet&#x27;s desk. Structure, round, 25% take, section 102, reward flows. No rate stated.</td></tr><tr><td>12:37–12:47</td><td>Issue 4 · Regulation</td><td>Segment map: insurance, MGA and distribution, referrals, savings, wallet, data and AI, outsourcing.</td></tr><tr><td>12:47–12:55</td><td>Issue 5 · Insurer and reinsurer</td><td>Carrier MGA agreement, money, data, liability, exclusivity, 18% quota share; Swiss Re papers before 8 December.</td></tr><tr><td>12:55–13:00</td><td>Close</td><td>Scope per issue, the first draft each desk marks up, fee basis, next date. Log the Meeting Diary.</td></tr></tbody></table>
+<h2>Do not open</h2>
+<ul><li>A claim that the Authority has approved the product or the MGA.</li><li>A claim that a carrier, a reinsurer, or NBA Law is already retained.</li><li>A tax rate, a second valuation, or a second use-of-funds table.</li><li>Plaintext ID numbers, customer data, or a live one-time code.</li></ul>
+<h2>Decision outputs</h2>
+<ul><li>Conflict status and a named NBA partner for each of the five issues.</li><li>A written scope per issue, ordered by Gate 5: entity and founders, IP assignments, seed documents, regulation map, carrier agreement, tax.</li><li>The first draft each desk will mark up.</li><li>Whether the Swiss Re NDA and indication letter are reviewed before 8 December 2026.</li><li>The note logged in the Meeting Diary. This meeting does not write the ledger.</li></ul>
+<h2>The one standard this meeting addresses</h2>
+<table><thead><tr><th>Piece</th><th>Address</th></tr></thead><tbody><tr><td>Unified business plan</td><td><a href="/business-plan.html">Open the unified plan</a></td></tr><tr><td>Investor deck</td><td><a href="/business-plan.html#part-deck">Open the investor deck</a></td></tr><tr><td>Appendices A–H</td><td><a href="/business-plan.html#part-appendices">Open appendices A–H</a></td></tr><tr><td>Pitch-dashboard bar</td><td><a href="/pitch-dashboard.html#unified-business-plan-card">Unified Business Plan bar</a></td></tr><tr><td>Plan identity</td><td><code>unified-2026.10-v1</code></td></tr><tr><td>Model</td><td><code>/api/business-plan/model</code></td></tr><tr><td>Earlier bars</td><td><code>#nba-law-meeting-25oct</code> · <code>#regulatory-preruling-avi-ovadia</code> · <code>#swissre-israel-meeting-8dec2026</code> · <code>/corporate-legal-dashboard.html</code></td></tr></tbody></table>
+<h2>Data integrity</h2>
+<p>Every figure in this brief is a canonical default of plan identity <code>unified-2026.10-v1</code> or a stated platform default. Israel anchor: annual risk premium ILS 4,518; PHINS take 25% and carrier share 75%; 2027 risk GWP ILS 54,216,000. Seed ILS 6,000,000; pre-money ILS 24,000,000; post-money ILS 30,000,000; dilution 20%. Use of seed: product and technology ILS 2,400,000; regulatory, actuarial and reinsurance ILS 1,200,000; distribution and local partnerships ILS 1,500,000; operations and reserve ILS 900,000; sum ILS 6,000,000. Series A indication ILS 18,000,000. Reinsurance plan defaults: quota-share cession 18% of risk GWP and ceding commission 25% of ceded premium; 2027 ceded premium 54,216,000 × 0.18 = ILS 9,758,880. Platform defaults: referral acquisition fee $650 per acquired customer across up to three layers, held 3 months; health-wallet withdrawal retention 3 days. Dates: 25 October 2026 introduction meeting; 12 October 2026 pre-ruling track; 22 November 2026 this meeting; 8 December 2026 Swiss Re Israel meeting; 1 January 2027 Gate 5. No legal conclusion, tax rate, fee, or engagement is recorded. A live factor edit on the plan page is a scenario and does not rewrite this brief. This brief does not write the platform ledger, the actuarial store, or public evidence.</p>
+  </div>
+  <footer class="phins-doc-foot">PHINS · Confidential · NBA Law legal agenda · 22 November 2026 · canonical defaults of unified-2026.10-v1</footer>
+</article>
+</body>
+</html>

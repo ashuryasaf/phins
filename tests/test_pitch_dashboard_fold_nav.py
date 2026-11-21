@@ -30,6 +30,7 @@ SECTION_IDS = [
     "uzan-followup-meeting-28oct",
     "dnr-benzvi-meeting-12nov",
     "reinsurer-ceo-assessment-nov2026",
+    "nba-law-meeting-22nov",
     "exec-summary-section",
     "scenario-assessment-section",
     "techno-yes-section",
@@ -78,6 +79,7 @@ def test_pitch_fold_script_registers_sections():
         "uzan-followup-meeting-28oct",
         "dnr-benzvi-meeting-12nov",
         "reinsurer-ceo-assessment-nov2026",
+        "nba-law-meeting-22nov",
         "scenario-assessment-section",
         "techno-yes-section",
     ):
@@ -296,7 +298,7 @@ def test_oct2026_diary_seed_and_designed_briefs():
     import importlib.util
 
     html = _html()
-    assert 'var STORAGE_ID = "phins.il.meeting.diary.v10"' in html
+    assert 'var STORAGE_ID = "phins.il.meeting.diary.v11"' in html
     for date, person in (
         ("2026-10-25", "Keshet Sirota-Leviner"),
         ("2026-10-26", "Eyal Ohayun"),
