@@ -173,6 +173,10 @@ DOCUMENTS = [
      'investor-docs/reinsurer-group-ceo-assessment-nov2026-brief.pdf',
      'PHINS — Global Reinsurer Group CEO Assessment (7 November 2026) · '
      'Risk appetite, InsurTech openness and venture exposure'),
+    ('investor-docs/nba-law-meeting-22nov-brief.md',
+     'investor-docs/nba-law-meeting-22nov-brief.pdf',
+     'PHINS — NBA Law Legal Agenda (22 November 2026) · '
+     'Naschitz Brandes Amir, introduced by Adv. Keshet Sirota-Leviner'),
     ('investor-docs/swiss-re-israel-meeting-8dec2026-deck.md',
      'investor-docs/swiss-re-israel-meeting-8dec2026-deck.pdf',
      'PHINS × Swiss Re Israel — Meeting Deck and Film Script (8 December 2026) · '
@@ -216,6 +220,12 @@ DESIGNED_BRIEFS = {
         'eyebrow': 'Reinsurer assessment · 7 November 2026',
         'subtitle': 'Group CEO seat · regional CEO escalation · all options on the table',
         'footer': 'PHINS · Confidential · Global reinsurer Group CEO assessment · 7 November 2026 · canonical defaults of unified-2026.10-v1',
+    },
+    'investor-docs/nba-law-meeting-22nov-brief.md': {
+        'html': 'investor-docs/nba-law-meeting-22nov-brief.html',
+        'eyebrow': 'Legal agenda · 22 November 2026 · 12:00–13:00',
+        'subtitle': 'NBA Law · introduced by Adv. Keshet Sirota-Leviner · five legal issues',
+        'footer': 'PHINS · Confidential · NBA Law legal agenda · 22 November 2026 · canonical defaults of unified-2026.10-v1',
     },
     'investor-docs/swiss-re-israel-meeting-8dec2026-deck.md': {
         'html': 'investor-docs/swiss-re-israel-meeting-8dec2026-deck.html',
