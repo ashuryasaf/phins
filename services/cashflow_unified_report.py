@@ -675,6 +675,7 @@ def unified_cashflow_report(
                 "name": name,
                 "premiums_collected": _f(own_collected),
                 "risk": _f(own["risk"]),
+                "without_kernel_pin": _f(own["without_kernel_pin"]),
                 "underwriting_fee": _f(own["underwriting_fee"]),
                 "expense_loading": _f(own["expense_loading"]),
                 "profit": _f(own["profit"]),

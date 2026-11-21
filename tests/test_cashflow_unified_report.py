@@ -173,6 +173,8 @@ def test_premium_with_no_kernel_pin_is_held_on_the_risk_book_and_is_not_company_
     # The company keeps its loading and margin on the pinned policy only.
     assert report["company"]["premium_income"] == 117.25
     assert report["underwriting"]["premium_without_kernel_pin"] == 175.05
+    row = next(row for row in report["customers"] if row["customer_id"] == "CUST-U2")
+    assert (row["premiums_collected"], row["risk"], row["without_kernel_pin"]) == (175.05, 0.0, 175.05)
     # The balance sheet holds the same cash in the claims reserve, so the two tie.
     balance = report["balance_sheet"]
     assert balance["ties"] is True

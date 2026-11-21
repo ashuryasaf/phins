@@ -111,7 +111,7 @@
                 + ', held for customers, the carrier, and reinsurance ' + money(balance.held_for_others)
                 + ', together ' + money(balance.total) + ' against premium cash less claims paid of ' + money(balance.net_cash) + '.';
             el('unified-balance').innerHTML = table(
-                ['Line', 'This statement', 'Balance sheet', 'Difference', ''],
+                ['Line', 'This statement', 'Balance sheet', 'Difference', 'Result'],
                 (balance.compared || []).map(function (row) {
                     return [
                         esc(row.label), money(row.statement), money(row.balance_sheet), money(row.difference),
@@ -176,11 +176,12 @@
             + ') belong to the referral book and are not added to agent commission.</p>';
 
         el('unified-customers').innerHTML = table(
-            ['Customer', 'Premiums', 'Risk', 'Fee', 'Expense', 'Profit', 'Savings', 'Wallet', 'Investments', 'Algo'],
+            ['Customer', 'Premiums', 'Risk', 'No pin', 'Fee', 'Expense', 'Profit', 'Savings', 'Wallet', 'Investments', 'Algo'],
             (report.customers || []).slice(0, 100).map(function (row) {
                 return [
                     '<strong>' + esc(row.name || row.customer_id) + '</strong> <span class="note">' + esc(row.customer_id) + '</span>',
-                    money(row.premiums_collected), money(row.risk), money(row.underwriting_fee), money(row.expense_loading),
+                    money(row.premiums_collected), money(row.risk), money(row.without_kernel_pin),
+                    money(row.underwriting_fee), money(row.expense_loading),
                     money(row.profit), money(row.savings), money(row.health_wallet), money(row.investments), money(row.algo)
                 ];
             })
