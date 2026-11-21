@@ -754,3 +754,10 @@ def test_balance_sheet_holds_premium_cash_on_the_lines_the_statement_reports(liv
     compared = {row["key"]: row for row in body["report"]["balance_sheet"]["compared"]}
     assert compared["claims_reserve"]["balance_sheet"] == sheet["claims_reserve"]
     assert compared["customer_savings"]["balance_sheet"] == position["customer_savings"]
+
+    # The tie-out sheet shows the cash net position beside who it belongs to.
+    status, body = _http("GET", "/api/admin/balance-sheet/reconcile?auto_correct=false", admin)
+    assert status == 200, body
+    totals = body["summary_totals"]
+    assert (totals["own_funds"], totals["held_for_others"]) == (position["own_funds"], position["held_for_others"])
+    assert round(totals["own_funds"] + totals["held_for_others"], 2) == round(totals["net_position"], 2) == paid

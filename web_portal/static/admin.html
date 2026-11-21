@@ -6593,7 +6593,12 @@
           message += `• Medical Services: ${fmt(data.summary_totals?.total_medical_services)}\n`;
           message += `• Wallet Deposits: ${fmt(data.summary_totals?.total_wallet_deposits)}\n`;
           message += `• Investments: ${fmt(data.summary_totals?.total_investments)}\n`;
-          message += `• Net Position: ${fmt(data.summary_totals?.net_position)}\n\n`;
+          message += `• Net cash position (premiums less claims and medical services): ${fmt(data.summary_totals?.net_position)}\n`;
+          if (data.summary_totals?.own_funds != null) {
+              message += `• Own funds (claims reserve and operating reserve): ${fmt(data.summary_totals.own_funds)}\n`;
+              message += `• Held for customers, the carrier, and reinsurance: ${fmt(data.summary_totals.held_for_others)}\n`;
+          }
+          message += `\n`;
           
           message += ` MEDICAL SERVICES:\n`;
           message += `• Total: ${fmt(data.medical_services?.total_amount)} (${data.medical_services?.total_transactions || 0} transactions)\n`;

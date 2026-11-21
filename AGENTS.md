@@ -240,7 +240,9 @@ PHINS is a Python platform built around:
  the ledger cash. The statement compares itself with those lines under
  `balance_sheet` and fails `balance_sheet_ties` on a difference (cash totals
  to the cent, split lines one cent per paid month). Both leave out the same
- suspended accounts (`is_suspended_account`)
+ suspended accounts (`is_suspended_account`). The tie-out sheet
+ (`/api/admin/balance-sheet/reconcile`) keeps `net_position` as net cash
+ and adds `own_funds` and `held_for_others` beside it
 - health wallet withdrawal (`services/wallet_withdrawal_service.py`,
  `web_portal/api_wallet_withdrawal.py`, `/wallet-withdraw-chat.html`): the
  Withdraw tile on the customer dashboard opens a chat that starts from the

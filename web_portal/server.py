@@ -41543,6 +41543,14 @@ For claims or questions, please contact:
             save_ledger_data()
             
             is_valid = len(discrepancies) == 0
+
+            # The cash net position beside the lines it sits on, so the
+            # tie-out sheet agrees with the balance sheet and the statement.
+            try:
+                tie_out_position = build_premium_cash_position()
+            except Exception as _pos_err:
+                print(f"[FINANCIAL_UNIFICATION] tie-out premium position skipped: {_pos_err}")
+                tie_out_position = None
             
             # ========== COMPREHENSIVE REPORT ==========
             self._set_json_headers()
@@ -41631,7 +41639,10 @@ For claims or questions, please contact:
                     'total_medical_services': total_medical_purchases,
                     'total_wallet_deposits': total_wallet_deposits,
                     'total_investments': total_investment_balance,
-                    'net_position': expected_premium_income - expected_claims_paid - total_medical_purchases
+                    'net_position': expected_premium_income - expected_claims_paid - total_medical_purchases,
+                    # Premium cash less claims, by who it belongs to.
+                    'own_funds': tie_out_position['own_funds'] if tie_out_position else None,
+                    'held_for_others': tie_out_position['held_for_others'] if tie_out_position else None,
                 },
                 
                 # Bills vs Billing vs Autopay reconciliation summary
