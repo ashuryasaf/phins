@@ -289,6 +289,46 @@ def _sum_kernel(policies: Iterable[Mapping[str, Any]], month: str) -> Dict[str, 
     }
 
 
+def _policy_has_no_kernel_stack(policy: Mapping[str, Any]) -> bool:
+    """True when this policy adds nothing for the waterfall to fill.
+
+    Its premium stays on the risk book, where the cash writer holds a
+    policy with no kernel pin. A pinned stack, including an earlier risk
+    and savings contract, is not this case.
+    """
+    part = _kernel_month(policy)
+    stack = (
+        part["risk"]
+        + (part.get("underwriting_fee") or Decimal("0.00"))
+        + part["expense"]
+        + part["profit"]
+        + part["savings"]
+    )
+    return stack <= 0
+
+
+def _linked_policy_id(
+    record: Mapping[str, Any],
+    bills_by_id: Mapping[str, Mapping[str, Any]],
+) -> str:
+    """Policy named on this cash row, or on the bill the row points at."""
+    metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    policy_id = str(record.get("policy_id") or metadata.get("policy_id") or "").strip()
+    if policy_id:
+        return policy_id
+    bill_id = str(
+        record.get("bill_id")
+        or metadata.get("bill_id")
+        or record.get("transaction_id")
+        or record.get("id")
+        or ""
+    ).strip()
+    bill = bills_by_id.get(bill_id) if bill_id else None
+    if isinstance(bill, Mapping):
+        return str(bill.get("policy_id") or "").strip()
+    return ""
+
+
 def _owner(token: Mapping[str, Any]) -> str:
     return str(token.get("owner_id") or token.get("customer_id") or "")
 
@@ -767,9 +807,28 @@ def reconcile_customer(
         if isinstance(claim, Mapping) and str(claim.get("customer_id") or "") == customer_id
     ]
     tokens = _customer_tokens(ledger, customer_id)
+    policies_by_id = {
+        str(policy.get("id") or policy.get("policy_id") or "").strip(): policy
+        for policy in own_policies
+        if str(policy.get("id") or policy.get("policy_id") or "").strip()
+    }
+    bills_by_id = {
+        str(bill.get("id") or bill.get("bill_id") or "").strip(): bill
+        for bill in own_bills
+        if str(bill.get("id") or bill.get("bill_id") or "").strip()
+    }
+    unpinned_ids = {
+        policy_id
+        for policy_id, policy in policies_by_id.items()
+        if _policy_has_no_kernel_stack(policy)
+    }
+
+    def _cash_is_unpinned(record: Mapping[str, Any]) -> bool:
+        return _linked_policy_id(record, bills_by_id) in unpinned_ids
 
     withheld: List[Dict[str, str]] = []
     premium_by_month: Dict[str, Decimal] = {}
+    unpinned_nft_by_month: Dict[str, Decimal] = {}
     booked_by_month: Dict[str, Tuple[Optional[Decimal], Optional[Decimal]]] = {}
     for token in tokens:
         check = verify_token(token)
@@ -790,7 +849,10 @@ def reconcile_customer(
         tx_type = str(token.get("transaction_type") or "")
         if tx_type not in _PREMIUM_TYPES or not month:
             continue
-        premium_by_month[month] = (premium_by_month.get(month, Decimal("0.00")) + _token_amount(token)).quantize(_CENT)
+        amount = _token_amount(token)
+        premium_by_month[month] = (premium_by_month.get(month, Decimal("0.00")) + amount).quantize(_CENT)
+        if _cash_is_unpinned(token):
+            unpinned_nft_by_month[month] = (unpinned_nft_by_month.get(month, Decimal("0.00")) + amount).quantize(_CENT)
         risk_booked, savings_booked = _booked_split(token)
         if risk_booked is not None or savings_booked is not None:
             previous = booked_by_month.get(month, (None, None))
@@ -800,12 +862,18 @@ def reconcile_customer(
             )
 
     bill_cash_by_month: Dict[str, Decimal] = {}
+    unpinned_bill_by_month: Dict[str, Decimal] = {}
     bill_ids_by_month: Dict[str, List[str]] = {}
     for bill in own_bills:
         month = _bill_month(bill)
         if not month:
             continue
-        bill_cash_by_month[month] = (bill_cash_by_month.get(month, Decimal("0.00")) + _bill_cash(bill)).quantize(_CENT)
+        bill_cash = _bill_cash(bill)
+        bill_cash_by_month[month] = (bill_cash_by_month.get(month, Decimal("0.00")) + bill_cash).quantize(_CENT)
+        if _cash_is_unpinned(bill):
+            unpinned_bill_by_month[month] = (
+                unpinned_bill_by_month.get(month, Decimal("0.00")) + bill_cash
+            ).quantize(_CENT)
         bill_ids_by_month.setdefault(month, []).append(str(bill.get("id") or bill.get("bill_id") or ""))
         if month not in booked_by_month:
             booked_by_month[month] = _booked_split(bill)
@@ -831,11 +899,26 @@ def reconcile_customer(
         if nft_cash > 0:
             cash = nft_cash
             cash_source = "nft"
+            unpinned_cash = unpinned_nft_by_month.get(month, Decimal("0.00"))
         else:
             cash = bill_cash_by_month.get(month, Decimal("0.00"))
             cash_source = "bill" if cash > 0 else "none"
+            unpinned_cash = unpinned_bill_by_month.get(month, Decimal("0.00"))
+        if unpinned_cash > cash:
+            unpinned_cash = cash
+        # A pinned policy in the same month must not pull this cash into
+        # the stack or leave it as company income. It is held aside and
+        # told apart from cash paid above a stack that does exist.
+        if kernel["correct_total"] <= 0:
+            stack_cash = cash
+            held_unpinned = Decimal("0.00")
+        else:
+            held_unpinned = unpinned_cash
+            stack_cash = (cash - held_unpinned).quantize(_CENT)
         booked_risk, booked_savings = booked_by_month.get(month, (None, None))
-        landed = _waterfall(cash, kernel)
+        landed = _waterfall(stack_cash, kernel)
+        excess = (landed["overbooked_excess"] + held_unpinned).quantize(_CENT)
+        no_kernel_pin_cash = landed["overbooked_excess"] if kernel["correct_total"] <= 0 else held_unpinned
         savings_parts = _partition(landed["savings"], savings_split)
         landed_savings += landed["savings"]
         landed_wallet += _money(savings_parts["health_wallet"])
@@ -871,7 +954,10 @@ def reconcile_customer(
             "landed_expense": float(landed["expense"]),
             "landed_profit": float(landed["profit"]),
             "landed_savings": float(landed["savings"]),
-            "overbooked_excess": float(landed["overbooked_excess"]),
+            "overbooked_excess": float(excess),
+            # Cash on a policy with no kernel stack. A pinned policy beside
+            # it does not turn this into cash paid above a stack.
+            "no_kernel_pin_cash": float(no_kernel_pin_cash),
             "booked_risk": None if booked_risk is None else float(booked_risk),
             "booked_savings": None if booked_savings is None else float(booked_savings),
             "retired_50_50_risk": float(retired_half),
