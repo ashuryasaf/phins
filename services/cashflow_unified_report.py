@@ -637,8 +637,9 @@ def unified_cashflow_report(
             own["expense_loading"] += _dec(month.get("landed_expense"))
             own["profit"] += _dec(month.get("landed_profit"))
             own["savings"] += _dec(month.get("landed_savings"))
-            # Cash on a month with no kernel stack is held on the risk book,
-            # where the writer posts it. Cash above a pinned stack is not.
+            # Cash on a policy with no kernel stack is held on the risk book,
+            # where the writer posts it, even when another policy that month
+            # is pinned. Cash above a pinned stack is not.
             unpinned = _dec(month.get("no_kernel_pin_cash"))
             own["without_kernel_pin"] += unpinned
             own["above_stack"] += _dec(month.get("overbooked_excess")) - unpinned
@@ -977,6 +978,7 @@ def unified_cashflow_report(
             "claims_paid": _f(claims_once),
             "premium_without_kernel_pin": _f(landed["without_kernel_pin"]),
             "surplus": _f(surplus),
+            "surplus_label": surplus_label,
             "loss_ratio_pct": loss_ratio,
             "claims_reserve": _f(_dec(sheet.get("claims_reserve"))),
             "seed_claims_reserve": _f(_dec(sheet.get("seed_claims_reserve"))),
