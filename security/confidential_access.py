@@ -153,6 +153,14 @@ REINSURER_DECK_PAGES = (
     "/reinsurer-deck.he.html",
 )
 
+# Request for legal services sent to NBA Law. Staff read it with a session;
+# the HTML edition can be opened on a share link, the PDF stays staff-only.
+NBA_LEGAL_SERVICES_REQUEST_FILES = (
+    "/investor-docs/nba-law-legal-services-request-22nov2026.html",
+    "/investor-docs/nba-law-legal-services-request-22nov2026.pdf",
+    "/investor-docs/nba-law-legal-services-request-22nov2026.md",
+)
+
 # Individually confidential files that do not live under a gated prefix.
 DEFAULT_CONFIDENTIAL_FILES = (
     "/pitch-dashboard.html",
@@ -160,7 +168,7 @@ DEFAULT_CONFIDENTIAL_FILES = (
     "/phins_business_plan_executive.md",
     "/business-plan.html",
     "/business-plan.he.html",
-) + BUSINESS_PLAN_DOWNLOADS + CUSTOMER_COVER_SCOPE_PATHS + INVESTOR_DECK_PAGES + REINSURER_DECK_PAGES
+) + BUSINESS_PLAN_DOWNLOADS + CUSTOMER_COVER_SCOPE_PATHS + INVESTOR_DECK_PAGES + REINSURER_DECK_PAGES + NBA_LEGAL_SERVICES_REQUEST_FILES
 
 # API endpoints that expose anchored signatures + signed content snapshots,
 # plus the business-plan APIs (the model is the document).

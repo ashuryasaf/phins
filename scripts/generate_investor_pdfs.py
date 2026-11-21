@@ -177,6 +177,10 @@ DOCUMENTS = [
      'investor-docs/nba-law-meeting-22nov-brief.pdf',
      'PHINS — NBA Law Legal Agenda (22 November 2026) · '
      'Naschitz Brandes Amir, introduced by Adv. Keshet Sirota-Leviner'),
+    ('investor-docs/nba-law-legal-services-request-22nov2026.md',
+     'investor-docs/nba-law-legal-services-request-22nov2026.pdf',
+     'PHINS — Request for Legal Services · '
+     'Naschitz, Brandes, Amir & Co. (NBA Law) · 22 November 2026'),
     ('investor-docs/swiss-re-israel-meeting-8dec2026-deck.md',
      'investor-docs/swiss-re-israel-meeting-8dec2026-deck.pdf',
      'PHINS × Swiss Re Israel — Meeting Deck and Film Script (8 December 2026) · '
@@ -226,6 +230,12 @@ DESIGNED_BRIEFS = {
         'eyebrow': 'Legal agenda · 22 November 2026 · 12:00–13:00',
         'subtitle': 'NBA Law · introduced by Adv. Keshet Sirota-Leviner · five legal issues',
         'footer': 'PHINS · Confidential · NBA Law legal agenda · 22 November 2026 · canonical defaults of unified-2026.10-v1',
+    },
+    'investor-docs/nba-law-legal-services-request-22nov2026.md': {
+        'html': 'investor-docs/nba-law-legal-services-request-22nov2026.html',
+        'eyebrow': 'Request for legal services · 22 November 2026',
+        'subtitle': 'Naschitz, Brandes, Amir & Co. (NBA Law) · attention Adv. Keshet Sirota-Leviner',
+        'footer': 'PHINS · Confidential · Request for legal services · prepared for NBA Law · 22 November 2026 · not legal advice or an engagement letter',
     },
     'investor-docs/swiss-re-israel-meeting-8dec2026-deck.md': {
         'html': 'investor-docs/swiss-re-israel-meeting-8dec2026-deck.html',
