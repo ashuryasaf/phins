@@ -83,7 +83,14 @@
             card('Premiums collected', premiums.collected, (premiums.months || 0) + ' paid or billed months'),
             card('Kernel risk premium', landed.risk),
             card('Claims paid, counted once', claims.paid_once, (claims.paid_claims || 0) + ' claims'),
-            card('Underwriting surplus', underwriting.surplus, underwriting.loss_ratio_pct == null ? '' : 'loss ratio ' + underwriting.loss_ratio_pct + '%'),
+            card(
+                underwriting.surplus_label || 'Underwriting surplus',
+                underwriting.surplus,
+                underwriting.loss_ratio_pct == null
+                    ? ''
+                    : 'loss ratio ' + underwriting.loss_ratio_pct + '%'
+                        + (Number(underwriting.premium_without_kernel_pin) > 0 ? ' on kernel risk' : '')
+            ),
             card('Operational cost loading', landed.expense_loading),
             card('Savings add-on', landed.savings, '30 / 65 / 5'),
             card('Assets under management', funds.assets_under_management, 'investments and algo'),

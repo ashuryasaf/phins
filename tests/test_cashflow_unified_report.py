@@ -138,6 +138,7 @@ def test_the_statement_ties_to_the_balance_sheet_line_by_line():
     assert compared["claim_cash"]["balance_sheet"] == 150.00
     assert compared["claims_reserve"]["balance_sheet"] == 250.00
     assert compared["customer_savings"]["balance_sheet"] == 400.00
+    assert report["underwriting"]["surplus_label"] == "Underwriting surplus"
     # Own funds are the risk book and the company's premium income, nothing else.
     assert balance["own_funds"] == _section(report, "Risk book")["total"] + report["company"]["premium_income"]
     assert round(balance["own_funds"] + balance["held_for_others"], 2) == balance["net_cash"] == 796.00
@@ -182,6 +183,47 @@ def test_premium_with_no_kernel_pin_is_held_on_the_risk_book_and_is_not_company_
     compared = {row["key"]: row for row in balance["compared"]}
     assert compared["claims_reserve"]["statement"] == compared["claims_reserve"]["balance_sheet"] == 425.05
     assert compared["company_income"]["statement"] == compared["company_income"]["balance_sheet"] == 117.25
+    assert report["underwriting"]["surplus_label"] == "Held on the risk book, premium with no kernel pin included"
+    assert risk_book["lines"][-1]["label"] == report["underwriting"]["surplus_label"]
+    # Loss ratio stays on kernel risk. The surplus figure also holds the unpinned cash.
+    assert report["underwriting"]["loss_ratio_pct"] == 37.5
+
+
+def test_unpinned_cash_on_a_customer_who_also_has_a_pinned_policy_stays_on_the_risk_book():
+    policy, bills, claims, ledger = _books()
+    unpinned = {
+        "id": "POL-U1B", "customer_id": "CUST-U1", "status": "active", "start_date": "2026-01-01",
+        "annual_premium": 2100.60,
+    }
+    bills = bills + [{
+        "id": "BILL-U1B-01", "customer_id": "CUST-U1", "policy_id": "POL-U1B",
+        "payment_period": "2026-01", "status": "paid", "amount_paid": 175.05,
+    }]
+    transactions = _ledger_cash() + [{
+        "id": "TX-U1B-01", "customer_id": "CUST-U1", "type": "bill_payment", "amount": 175.05,
+        "metadata": {"bill_id": "BILL-U1B-01", "policy_id": "POL-U1B"},
+    }]
+    report = unified_cashflow_report(
+        policies=[policy, unpinned], bills=bills, claims=claims, nft_ledger=ledger, transactions=transactions,
+    )
+    landed = report["premiums"]["landed"]
+    assert landed["risk"] == 400.00
+    assert landed["without_kernel_pin"] == 175.05
+    assert landed["above_stack"] == 0.0
+    assert _check(report, "premium_waterfall_ties")["ok"] is True
+    assert report["company"]["premium_income"] == 117.25
+    assert report["underwriting"]["surplus"] == 425.05
+    assert report["underwriting"]["surplus_label"] == "Held on the risk book, premium with no kernel pin included"
+    assert report["underwriting"]["loss_ratio_pct"] == 37.5
+    row = next(row for row in report["customers"] if row["customer_id"] == "CUST-U1")
+    assert row["without_kernel_pin"] == 175.05 and row["risk"] == 400.00
+    balance = report["balance_sheet"]
+    assert balance["ties"] is True
+    assert balance["premium_without_kernel_pin"] == 175.05
+    compared = {row["key"]: row for row in balance["compared"]}
+    assert compared["claims_reserve"]["statement"] == compared["claims_reserve"]["balance_sheet"] == 425.05
+    assert compared["company_income"]["statement"] == compared["company_income"]["balance_sheet"] == 117.25
+    assert _check(report, "balance_sheet_ties")["ok"] is True
 
 
 def test_cash_the_customer_ledger_does_not_carry_fails_the_balance_sheet_tie():

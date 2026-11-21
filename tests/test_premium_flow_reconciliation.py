@@ -694,3 +694,36 @@ def test_customer_streams_name_premium_on_a_policy_with_no_pin():
     assert amounts == {"risk": 0.0, "not_split": 100.00}
     assert flow["ties"] is True
     assert flow["savings"]["on_accounts"] is None
+
+
+def test_unpinned_premium_stays_off_a_pinned_policy_in_the_same_month():
+    """One pinned stack must not classify the other policy's cash as above the stack."""
+    pinned = {
+        "id": "POL-MIX-P", "customer_id": "CUST-MIX", "start_date": "2026-01-01",
+        "risk_premium_annual": 2400.00, "savings_premium_annual": 2400.00,
+        "expense_loading_annual": 360.00, "profit_margin_annual": 516.00,
+        "annual_premium": 5676.00,
+    }
+    unpinned = {
+        "id": "POL-MIX-U", "customer_id": "CUST-MIX", "start_date": "2026-01-01",
+        "annual_premium": 1200.00,
+    }
+    bills = [
+        {"id": "BILL-MIX-P", "customer_id": "CUST-MIX", "policy_id": "POL-MIX-P",
+         "payment_period": "2026-01", "status": "paid", "amount_paid": 400.00},
+        {"id": "BILL-MIX-U", "customer_id": "CUST-MIX", "policy_id": "POL-MIX-U",
+         "payment_period": "2026-01", "status": "paid", "amount_paid": 100.00},
+    ]
+    row = reconcile_customer("CUST-MIX", policies=[pinned, unpinned], bills=bills)["months"][0]
+    assert row["correct_total"] == 473.00
+    assert row["collected"] == 500.00
+    # The short pinned payment fills its own stack. The unpinned 100 is not
+    # used to finish that stack, and it is not cash paid above it.
+    assert row["landed_risk"] == 200.00
+    assert row["landed_savings"] == 127.00
+    assert row["no_kernel_pin_cash"] == 100.00
+    assert row["overbooked_excess"] == 100.00
+    flow = customer_cash_flow_streams(
+        reconcile_customer("CUST-MIX", policies=[pinned, unpinned], bills=bills)
+    )
+    assert flow["ties"] is True and flow["collected"] == 500.00
