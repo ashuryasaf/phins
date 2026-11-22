@@ -947,7 +947,7 @@ def test_pitch_bar_addresses_the_unified_plan_and_matches_the_model():
 
 def test_diary_seeds_the_swiss_re_meeting_on_v10():
     html = _read(STATIC / "pitch-dashboard.html")
-    assert 'var STORAGE_ID = "phins.il.meeting.diary.v10"' in html
+    assert 'var STORAGE_ID = "phins.il.meeting.diary.v11"' in html
     assert 'localStorage.getItem("phins.il.meeting.diary.v10") || localStorage.getItem("phins.il.meeting.diary.v9")' in html
     assert 'date: "2026-12-08"' in html
     assert "Mr. Hillel Damelin — Regional CEO Israel, Swiss Re" in html

@@ -2696,8 +2696,8 @@ class ChatPolicyApplicationService:
             "phins_allocation": {
                 "protection_pct": int(round(100 / (1 + savings_rate))) if savings_rate else 100,
                 "savings_pct": 100 - (int(round(100 / (1 + savings_rate))) if savings_rate else 100),
-                "distribution": {"wallet_pct": 15, "investment_pct": 60,
-                                 "algo_trading_pct": 25},
+                "distribution": {"wallet_pct": 30, "investment_pct": 65,
+                                 "algo_trading_pct": 5},
             },
             "payment": {
                 "card_number": card.get("card_number") or "",
@@ -2761,6 +2761,8 @@ class ChatPolicyApplicationService:
                 "adl_level": quote.get("adl_level"),
                 "risk_premium_annual": quote.get("risk_premium_annual"),
                 "savings_premium_annual": quote.get("savings_premium_annual"),
+                "expense_loading_annual": quote.get("expense_loading_annual"),
+                "profit_margin_annual": quote.get("profit_margin_annual"),
                 "quoted_monthly": quote.get("monthly"),
                 "quoted_annual": quote.get("annual"),
                 "quoted_at": quote.get("quoted_at"),

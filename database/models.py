@@ -10,6 +10,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
+import hashlib
 import json
 
 Base = declarative_base()
@@ -159,6 +160,80 @@ class Customer(Base):
         return bool(self.password_hash and self.password_salt and self.portal_active)
 
 
+# Issued pricing identity that the cash-flow books read back on every premium.
+# These keys are not columns: they travel together in ``policies.kernel_pin``.
+POLICY_KERNEL_PIN_FIELDS = (
+    'pricing_source',
+    'integrity_hash',
+    'product_id',
+    'tables_version',
+    'config_version',
+    'risk_premium_annual',
+    'mortality_premium_annual',
+    'disability_premium_annual',
+    'savings_premium_annual',
+    'expense_loading_annual',
+    'profit_margin_annual',
+    'savings_rate_used',
+    'savings_formula',
+    'savings_addon',
+    'savings_rate',
+    'allocation_version',
+    'application_channel',
+    'underwriting_loading',
+    'underwriting_fee_annual',
+    'actuarial_annual_premium',
+    'premium_adjustment',
+    'risk_allocation',
+    'savings_allocation',
+    'life_sum_used',
+    'disability_sum_used',
+    'kernel_pin_source',
+    'kernel_pin_restored_at',
+)
+
+
+def _kernel_pin_digest(fields):
+    canonical = json.dumps(fields, sort_keys=True, separators=(',', ':'), default=str)
+    return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+
+
+def policy_kernel_pin_fields(record):
+    """The pin keys a policy record carries. Empty values are not a pin."""
+    if not isinstance(record, dict):
+        return {}
+    return {
+        key: record[key]
+        for key in POLICY_KERNEL_PIN_FIELDS
+        if record.get(key) is not None and record.get(key) != ''
+    }
+
+
+def pack_policy_kernel_pin(fields):
+    """Seal the pin as one JSON document with its SHA-256."""
+    clean = json.loads(json.dumps(policy_kernel_pin_fields(fields), default=str))
+    return json.dumps(
+        {'v': 1, 'fields': clean, 'sha256': _kernel_pin_digest(clean)},
+        sort_keys=True,
+    )
+
+
+def unpack_policy_kernel_pin(raw):
+    """Return ``(fields, intact)``. A pin whose checksum does not match is withheld."""
+    if raw in (None, ''):
+        return {}, True
+    try:
+        document = raw if isinstance(raw, dict) else json.loads(raw)
+        fields = document.get('fields')
+        if not isinstance(fields, dict):
+            return {}, False
+        if _kernel_pin_digest(fields) != str(document.get('sha256') or ''):
+            return {}, False
+        return {key: fields[key] for key in POLICY_KERNEL_PIN_FIELDS if key in fields}, True
+    except Exception:
+        return {}, False
+
+
 class Policy(Base):
     """Insurance policy master table"""
     __tablename__ = 'policies'
@@ -187,6 +262,9 @@ class Policy(Base):
     health_wallet = Column(Text)  # JSON string for health wallet config
     # Attached riders (PhinSafe and later endorsements). JSON object keyed by product id.
     riders = Column(Text)
+    # Issued kernel decomposition (risk, savings add-on, loadings, election),
+    # sealed with its SHA-256. See POLICY_KERNEL_PIN_FIELDS.
+    kernel_pin = Column(Text)
     
     # Relationships
     customer = relationship("Customer", back_populates="policies")
@@ -206,7 +284,7 @@ class Policy(Base):
             except:
                 return {}
         
-        return {
+        record = {
             'id': self.id,
             'customer_id': self.customer_id,
             'type': self.type,
@@ -227,6 +305,12 @@ class Policy(Base):
             'health_wallet': safe_json_loads(self.health_wallet),
             'riders': safe_json_loads(self.riders),
         }
+        pin, intact = unpack_policy_kernel_pin(self.kernel_pin)
+        for key, value in pin.items():
+            record.setdefault(key, value)
+        if not intact:
+            record['kernel_pin_intact'] = False
+        return record
 
 
 class Claim(Base):

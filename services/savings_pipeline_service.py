@@ -37,7 +37,8 @@ import math
 import random
 import hashlib
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Tuple
+import threading
+from typing import Callable, Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 import json
@@ -63,20 +64,404 @@ class RiskLevel(str, Enum):
 
 @dataclass
 class AllocationConfig:
-    """Configuration for fund allocation"""
-    wallet_pct: float = 15.0          # Emergency fund
-    investment_pct: float = 60.0       # Long-term investments
-    algo_trading_pct: float = 25.0     # Automated trading
+    """Configuration for fund allocation.
+
+    Defaults are the canonical savings distribution (30/65/5, then 60/30/10).
+    The moderate AI mix (15/60/25) is a recommendation only and is not applied
+    to a fresh deposit.
+    """
+    wallet_pct: float = 30.0          # Health wallet
+    investment_pct: float = 65.0      # Investment portfolio
+    algo_trading_pct: float = 5.0     # Algo trading
     
     # Investment breakdown
-    index_pct: float = 50.0           # Index funds (of investment)
+    index_pct: float = 60.0           # Index funds (of investment)
     bonds_pct: float = 30.0           # Bonds (of investment)
-    crypto_pct: float = 20.0          # Crypto (of investment)
-    
+    crypto_pct: float = 10.0          # Crypto (of investment)
+
     # Algo trading strategy preferences
     algo_momentum_pct: float = 40.0
     algo_mean_reversion_pct: float = 30.0
     algo_dca_pct: float = 30.0
+
+
+def _safe_amount(value: Any) -> float:
+    try:
+        amount = float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if amount != amount or amount == float('inf') or amount == float('-inf'):
+        return 0.0
+    return amount
+
+
+def _balance_includes_holdings(account: Dict[str, Any], cash: float, invested: float) -> bool:
+    """True when the sub-balances are already counted inside ``balance``."""
+    if invested <= 0 or invested > cash + 0.01:
+        return False
+    deposit_breakdown = 0.0
+    deposits = account.get('deposits') or []
+    if isinstance(deposits, list):
+        for row in deposits:
+            if not isinstance(row, dict):
+                continue
+            deposit_breakdown += (
+                _safe_amount(row.get('index_amount'))
+                + _safe_amount(row.get('bonds_amount'))
+                + _safe_amount(row.get('crypto_amount'))
+            )
+    if deposit_breakdown > 0 and abs(deposit_breakdown - invested) <= 0.01:
+        return True
+    if abs(invested - cash) > 0.01:
+        return False
+    allocated = 0.0
+    allocations = account.get('allocations') or []
+    if isinstance(allocations, list):
+        for row in allocations:
+            if not isinstance(row, dict):
+                continue
+            if row.get('total_amount') is not None:
+                allocated += _safe_amount(row.get('total_amount'))
+            elif row.get('index') is not None or row.get('index_amount') is not None:
+                allocated += _safe_amount(row.get('amount'))
+    if allocated > 0 and allocated + 0.01 >= invested:
+        return False
+    return True
+
+
+def investment_books(account: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Read an investment row without writing it.
+
+    A flagged row stores unallocated cash in ``balance`` and the holdings
+    beside it. The position is those two added. An older row stores the
+    position in ``balance`` and the sub-balances are the breakdown already
+    inside that total, so they are not added again.
+    """
+    account = account if isinstance(account, dict) else {}
+    cash_field = _safe_amount(account.get('balance'))
+    index = _safe_amount(account.get('index_balance'))
+    bonds = _safe_amount(account.get('bonds_balance'))
+    crypto = _safe_amount(account.get('crypto_balance'))
+    invested = index + bonds + crypto
+    flagged = bool(account.get('balance_is_unallocated_cash'))
+    if flagged:
+        cash = cash_field
+        position = cash + invested
+    else:
+        position = cash_field
+        cash = max(0.0, cash_field - invested)
+    return {
+        'cash': round(cash, 2),
+        'invested': round(invested, 2),
+        'position': round(position, 2),
+        'index': round(index, 2),
+        'bonds': round(bonds, 2),
+        'crypto': round(crypto, 2),
+        'unallocated_cash': flagged,
+    }
+
+
+def apply_investment_withdrawal(account: Dict[str, Any], amount: float) -> Dict[str, Any]:
+    """Move cash, then holdings, out of an investment row.
+
+    The amount cannot exceed the position, and neither cash nor a
+    sub-balance is taken below zero. A flagged row's ``balance`` stays
+    unallocated cash. An older row's ``balance`` stays the position.
+    """
+    if not isinstance(account, dict):
+        return {'applied': 0.0, 'cash_taken': 0.0, 'invested_taken': 0.0}
+    books = investment_books(account)
+    requested = _safe_amount(amount)
+    applied = min(requested, books['position'])
+    if applied <= 0:
+        return {'applied': 0.0, 'cash_taken': 0.0, 'invested_taken': 0.0}
+    cash_take = min(books['cash'], applied)
+    remaining = round(applied - cash_take, 2)
+    index = books['index']
+    bonds = books['bonds']
+    crypto = books['crypto']
+    invested = books['invested']
+    if remaining > 0 and invested > 0:
+        ratio = remaining / invested
+        index_take = round(index * ratio, 2)
+        bonds_take = round(bonds * ratio, 2)
+        crypto_take = round(remaining - index_take - bonds_take, 2)
+        if crypto_take < -0.001:
+            crypto_take = 0.0
+            bonds_take = round(remaining - index_take, 2)
+        account['index_balance'] = round(max(0.0, index - index_take), 2)
+        account['bonds_balance'] = round(max(0.0, bonds - bonds_take), 2)
+        account['crypto_balance'] = round(max(0.0, crypto - max(0.0, crypto_take)), 2)
+    if account.get('balance_is_unallocated_cash'):
+        account['balance'] = round(max(0.0, books['cash'] - cash_take), 2)
+    else:
+        account['balance'] = round(max(0.0, books['position'] - applied), 2)
+    return {
+        'applied': round(applied, 2),
+        'cash_taken': round(cash_take, 2),
+        'invested_taken': round(remaining, 2),
+    }
+
+
+def settle_investment_to_algo(
+    account: Dict[str, Any],
+    credited: float,
+    algo_bucket: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Keep an algo credit equal to the cash and holdings that actually moved.
+
+    ``credited`` is the amount already added to the algo available balance.
+    The investment row gives up at most its position. Any excess already
+    sitting in ``algo_bucket['available']`` is removed, and
+    ``algo_trading_profits`` grows only by the amount that left the row.
+    """
+    if not isinstance(account, dict):
+        return {'applied': 0.0, 'shortfall': round(_safe_amount(credited), 2)}
+    moved = apply_investment_withdrawal(account, credited)
+    applied = round(_safe_amount(moved.get('applied')), 2)
+    shortfall = round(_safe_amount(credited) - applied, 2)
+    if shortfall > 0 and isinstance(algo_bucket, dict):
+        algo_bucket['available'] = round(
+            max(0.0, _safe_amount(algo_bucket.get('available')) - shortfall),
+            2,
+        )
+    account['algo_trading_profits'] = round(
+        _safe_amount(account.get('algo_trading_profits')) + applied,
+        2,
+    )
+    return {'applied': applied, 'shortfall': max(0.0, shortfall)}
+
+
+_INVESTMENT_TRANSFER_FIELDS = (
+    'balance',
+    'index_balance',
+    'bonds_balance',
+    'crypto_balance',
+    'algo_trading_profits',
+)
+_investment_transfer_locks: Dict[int, threading.RLock] = {}
+_investment_transfer_guard = threading.Lock()
+
+
+def account_book_lock(account: Dict[str, Any]) -> threading.RLock:
+    """Lock for one live balance row.
+
+    Investment transfers and health-wallet debits that touch the same row
+    object take this lock, so one path cannot restore a snapshot over a
+    withdrawal the other path already credited. Re-entrant so a caller that
+    already holds the row can record the ledger.
+    """
+    key = id(account)
+    with _investment_transfer_guard:
+        lock = _investment_transfer_locks.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _investment_transfer_locks[key] = lock
+        return lock
+
+
+def _investment_row_lock(account: Dict[str, Any]) -> threading.RLock:
+    return account_book_lock(account)
+
+
+_named_row_locks: Dict[str, threading.RLock] = {}
+_named_row_guard = threading.Lock()
+
+
+def named_row_lock(name: str) -> threading.RLock:
+    """Lock for one bill or one savings account, keyed by name.
+
+    Callers that take several of these locks acquire them in sorted name
+    order. The lock is re-entrant.
+    """
+    key = str(name or "")
+    with _named_row_guard:
+        lock = _named_row_locks.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _named_row_locks[key] = lock
+        return lock
+
+
+def debit_account_balance(account: Dict[str, Any], amount: float) -> Optional[float]:
+    """Subtract ``amount`` from a row under its lock.
+
+    Returns the new balance. Returns None when the row is missing or the
+    live balance cannot cover the debit, and leaves that row unchanged.
+    The balance is not taken below zero.
+    """
+    if not isinstance(account, dict):
+        return None
+    needed = round(float(amount or 0), 2)
+    if needed <= 0:
+        return None
+    with account_book_lock(account):
+        live = round(float(account.get('balance', 0) or 0), 2)
+        if live + 1e-9 < needed:
+            return None
+        account['balance'] = round(live - needed, 2)
+        return account['balance']
+
+
+def credit_account_balance(account: Dict[str, Any], amount: float) -> Optional[float]:
+    """Add ``amount`` back to a row under its lock.
+
+    Used when a debit already landed and a later step in the same request
+    did not. The add is applied to the live balance.
+    """
+    if not isinstance(account, dict):
+        return None
+    credit = round(float(amount or 0), 2)
+    if credit <= 0:
+        return None
+    with account_book_lock(account):
+        account['balance'] = round(float(account.get('balance', 0) or 0) + credit, 2)
+        return account['balance']
+
+
+_algo_credit_locks: Dict[str, threading.RLock] = {}
+_algo_credit_guard = threading.Lock()
+
+
+def algo_credit_lock(customer_id: str) -> threading.RLock:
+    """Lock for one customer's algo available balance.
+
+    The source-row lock does not cover this bucket. A transfer from the
+    wallet and a transfer from investments can both seal while the other
+    has already read ``available``. Both must add to the live figure.
+    """
+    key = str(customer_id)
+    with _algo_credit_guard:
+        lock = _algo_credit_locks.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _algo_credit_locks[key] = lock
+        return lock
+
+
+def _snapshot_investment_transfer(account: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        field: account[field]
+        for field in _INVESTMENT_TRANSFER_FIELDS
+        if field in account
+    }
+
+
+def _restore_investment_transfer(account: Dict[str, Any], prior: Dict[str, Any]) -> None:
+    for field in _INVESTMENT_TRANSFER_FIELDS:
+        if field in prior:
+            account[field] = prior[field]
+        else:
+            account.pop(field, None)
+
+
+def credit_settled_investment(
+    account: Dict[str, Any],
+    amount: float,
+    credit: Callable[[float, float], Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Withdraw from one investment row, then credit algo for that amount.
+
+    The row lock covers the pre-image, the withdrawal, ``credit``, and any
+    restore. A second caller waits, so it cannot write an older snapshot
+    over a withdrawal that already stuck. ``credit(applied, remaining)``
+    runs after the withdrawal. If it raises, or returns a result that did
+    not succeed, this withdrawal is put back. A request that moves nothing
+    puts back only the state it observed while holding the lock.
+    """
+    if not isinstance(account, dict):
+        return {
+            'success': False,
+            'applied': 0.0,
+            'available_balance': 0.0,
+            'error': 'insufficient',
+        }
+    with _investment_row_lock(account):
+        position = investment_books(account)['position']
+        requested = float(amount)
+        if requested > position + 1e-9:
+            return {
+                'success': False,
+                'applied': 0.0,
+                'available_balance': position,
+                'error': 'insufficient',
+            }
+        prior = _snapshot_investment_transfer(account)
+        settled = settle_investment_to_algo(account, requested)
+        applied = round(_safe_amount(settled.get('applied')), 2)
+        if applied <= 0:
+            _restore_investment_transfer(account, prior)
+            return {
+                'success': False,
+                'applied': 0.0,
+                'available_balance': investment_books(account)['position'],
+                'error': 'insufficient',
+            }
+        remaining = investment_books(account)['position']
+        try:
+            result = credit(applied, remaining)
+        except Exception:
+            _restore_investment_transfer(account, prior)
+            raise
+        if not isinstance(result, dict) or not result.get('success'):
+            _restore_investment_transfer(account, prior)
+            available = investment_books(account)['position']
+            if isinstance(result, dict):
+                result = dict(result)
+                result['success'] = False
+                result.setdefault('available_balance', available)
+                return result
+            return {
+                'success': False,
+                'applied': 0.0,
+                'available_balance': available,
+                'error': 'insufficient',
+            }
+        return result
+
+
+def mark_unallocated_cash(account: Dict[str, Any]) -> None:
+    """Make a later sub-balance credit show up on an older investment row.
+
+    Readers add the index, bond, and crypto balances only when
+    ``balance_is_unallocated_cash`` is set. Peel a stored total once, so
+    ``balance`` becomes the unallocated cash and the reported position does
+    not change. A stored total repeats itself as the sub-balances, or repeats
+    the index, bond, and crypto amounts already on its deposits. Leftover
+    cash that already sits beside holdings is not part of that total, so it
+    is not subtracted. Holdings larger than ``balance`` are that same
+    side-by-side shape and are left there.
+    """
+    if not isinstance(account, dict) or account.get('balance_is_unallocated_cash'):
+        return
+    cash = float(account.get('balance', 0) or 0)
+    invested = (
+        float(account.get('index_balance', 0) or 0)
+        + float(account.get('bonds_balance', 0) or 0)
+        + float(account.get('crypto_balance', 0) or 0)
+    )
+    if _balance_includes_holdings(account, cash, invested):
+        account['balance'] = round(max(0.0, cash - invested), 2)
+    account['balance_is_unallocated_cash'] = True
+
+
+def bounded_distribution(wallet_pct: Any, investment_pct: Any, algo_pct: Any):
+    """Return a split only when it cannot mint more than the cash collected.
+
+    Each percent must be finite and between 0 and 100, and the three must
+    sum to 100. A caller value such as 10000 is refused.
+    """
+    try:
+        parts = (float(wallet_pct), float(investment_pct), float(algo_pct))
+    except (TypeError, ValueError):
+        return None
+    if any(part != part or part == float('inf') or part == float('-inf') for part in parts):
+        return None
+    if any(part < 0.0 or part > 100.0 for part in parts):
+        return None
+    if abs((parts[0] + parts[1] + parts[2]) - 100.0) > 0.05:
+        return None
+    return parts
 
 
 @dataclass
@@ -201,8 +586,9 @@ class SavingsPipelineService:
         """Create a new savings pipeline account for a customer."""
         account_id = f"PIPE-{customer_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         
-        # Get AI-recommended allocation based on risk level
-        config = self._get_ai_allocation_config(risk_level, strategy)
+        # Fresh accounts take the canonical 30/65/5 split. An explicit CUSTOM
+        # allocation is the only one a later deposit will keep.
+        config = AllocationConfig()
         
         account = SavingsPipelineAccount(
             customer_id=customer_id,
@@ -268,8 +654,12 @@ class SavingsPipelineService:
                 'bonds_balance': 0,
                 'crypto_balance': 0,
                 'deposits': [],
-                'created_at': datetime.now().isoformat()
+                'created_at': datetime.now().isoformat(),
+                'balance_is_unallocated_cash': True,
             }
+        else:
+            # Peel a stored-total breakdown before this deposit is added as cash.
+            mark_unallocated_cash(self.investment_accounts[customer_id])
         
         # Update investment account balance (cash portion)
         self.investment_accounts[customer_id]['balance'] = \
@@ -377,21 +767,34 @@ class SavingsPipelineService:
         if allocate_amount > account.cash_balance:
             return {'success': False, 'error': 'Insufficient cash balance'}
         
-        # Get allocation config (AI-optimized or user-defined)
-        if use_ai and account.allocation_strategy == AllocationStrategy.AI_OPTIMIZED:
-            config = self._get_ai_allocation_config(account.risk_level, account.allocation_strategy)
-        else:
-            config = account.allocation_config
+        # Cash moves on the canonical 30/65/5 split unless the customer
+        # already has an explicit CUSTOM allocation. The AI mix stays on
+        # the recommendation path and does not move this deposit.
+        config = AllocationConfig()
+        if account.allocation_strategy == AllocationStrategy.CUSTOM:
+            custom = bounded_distribution(
+                account.allocation_config.wallet_pct,
+                account.allocation_config.investment_pct,
+                account.allocation_config.algo_trading_pct,
+            )
+            if custom is not None:
+                config = account.allocation_config
+        use_ai = False
         
         # Calculate allocations
         wallet_amount = allocate_amount * (config.wallet_pct / 100)
         investment_amount = allocate_amount * (config.investment_pct / 100)
         algo_amount = allocate_amount * (config.algo_trading_pct / 100)
         
-        # Investment breakdown
-        index_amount = investment_amount * (config.index_pct / 100)
-        bonds_amount = investment_amount * (config.bonds_pct / 100)
-        crypto_amount = investment_amount * (config.crypto_pct / 100)
+        # Investment breakdown. An unbounded sub-split cannot enlarge the slice.
+        detail = bounded_distribution(config.index_pct, config.bonds_pct, config.crypto_pct)
+        if detail is None:
+            index_pct, bonds_pct, crypto_pct = 60.0, 30.0, 10.0
+        else:
+            index_pct, bonds_pct, crypto_pct = detail
+        index_amount = investment_amount * (index_pct / 100)
+        bonds_amount = investment_amount * (bonds_pct / 100)
+        crypto_amount = investment_amount * (crypto_pct / 100)
         
         # Deduct from cash balance
         account.cash_balance -= allocate_amount
@@ -423,8 +826,8 @@ class SavingsPipelineService:
             amount=allocate_amount,
             source="cash_balance",
             destination="multi",
-            description=f"AI-optimized allocation: ${allocate_amount:.2f}",
-            ai_recommended=use_ai,
+            description=f"Savings allocation: ${allocate_amount:.2f}",
+            ai_recommended=account.allocation_strategy == AllocationStrategy.CUSTOM and use_ai,
             allocation_breakdown=allocation_breakdown
         )
         self.transactions.append(tx)
@@ -439,8 +842,13 @@ class SavingsPipelineService:
         algo_balances = self.unified_balance.algo_trading_balances if self.unified_balance else {}
         
         # CRITICAL: Deduct total allocation from INVESTMENT_ACCOUNTS cash balance
-        # Since deposit added to this balance, allocation must deduct from it
+        # Since deposit added to this balance, allocation must deduct from it.
+        # Mark the row first so a contained breakdown becomes unallocated cash
+        # and a pipeline row that already keeps invested money beside cash is
+        # not peeled. The new sub-balance credit then shows up for flag-aware
+        # readers.
         if customer_id in investments:
+            mark_unallocated_cash(investments[customer_id])
             old_balance = float(investments[customer_id].get('balance', 0) or 0)
             # Deduct full allocation (we'll add back investment portion to sub-balances)
             investments[customer_id]['balance'] = max(0, old_balance - allocate_amount)
@@ -487,7 +895,8 @@ class SavingsPipelineService:
                         'crypto_balance': 0,  # Invested in crypto
                         'deposits': [],
                         'allocations': [],
-                        'created_at': datetime.now().isoformat()
+                        'created_at': datetime.now().isoformat(),
+                        'balance_is_unallocated_cash': True,
                     }
                 inv_acc = investments[customer_id]
                 # NOTE: Don't add to 'balance' - that's cash. Add to sub-balances only.

@@ -8,19 +8,19 @@ override this document.
 
 PHINS is a Python platform built around:
 
-- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~67k lines)
+- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~69k lines)
 - optional extension routing in `web_portal/api_extensions.py` (~5150 lines)
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
   `api_assessment_center.py`, `api_chat_application.py` (chat-style policy
   intake / "Phin"), `api_claims_chat.py` (public claims chat), and
   `api_customer_identity.py` (ID + nationality master))
-- service-layer logic in `services/` (159 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
+- service-layer logic in `services/` (163 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (288 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (294 files) and root-level `test_*.py` (11 files)
 - one generalized job queue (`services/agent_job_queue.py`, table
  `document_processing_jobs`, rows keyed by `subject_type`/`subject_id` and
  `submitted_by`; retries, dead-letter, idempotency keys, handler registry —
@@ -168,6 +168,104 @@ PHINS is a Python platform built around:
  block) and the claim model (`MUTUALLY_EXCLUSIVE` default, `INDEPENDENT`) are
  parameters. Sandbox, simulator, IFRS 17 waterfall and the actuary dashboard
  all reprice through it — never through a parallel path
+- cash-flow integrity (`services/financial_unification_service.py`
+ `resolve_premium_split`, read side `services/premium_flow_reconciliation.py`):
+ kernel risk is filled first and is never credited as savings. Only a savings
+ pin, `savings_addon` (light/balanced/growth), or `savings_rate` is savings;
+ no election means the whole collected premium is risk. Savings destinations
+ stay 30% health wallet / 65% investments / 5% algo. Paid claims stay on the
+ claims book; `POST /api/admin/cashflow/post-claim-transfers` moves an
+ unposted amount from the reserve to the health wallet and does not rewrite
+ the claim or a broken NFT seal. `GET /api/admin/cashflow/monitoring`
+ (admin, accountant, actuary, claims) is the roster on
+ `/cashflow-integrity.html`: standing watch is Asaf Assurance
+ (`CUST-ASAF-001`), Efrat PHINS (`CUST-EFRAT-001`), Asi PHINS
+ (`CUST-ASI-001`), and Shosh PHINS (`CUST-SHOSH-001`), plus anyone else
+ learned from policies, bills, claims, wallets, or NFT seals. Platform ids
+ (`PHINS-CORPORATE`, `SYSTEM`) are not customers. A customer reads only their
+ own picture at `GET /api/customer/premium-picture`. The page is a live
+ dashboard (`data-phins-letterhead="off"`); the return bar stays. A policy
+ is issued with the whole kernel stack pinned (risk, underwriting fee,
+ expense loading, profit, savings), which adds up to the annual premium to
+ the cent. With the database on, those pins are the checksummed
+ `policies.kernel_pin` column (`POLICY_KERNEL_PIN_FIELDS` in
+ `database/models.py`); add a new pin to that tuple or it is dropped on
+ save. A pin whose checksum fails is not applied and is not overwritten.
+ `GET /api/finance/reconcile` reports premium cash by stream
+ (`premium_streams`), counts savings as landed per customer, and lists
+ premium on a policy with no pin under `warnings`. It fails
+ `accounting_book_split_vs_kernel_pins` when the accounting book's risk and
+ savings split differs from the pins now on the policies; the pin restore
+ and `POST /api/finance/repair` re-book that split with a reversal and a
+ new posting (`resplit_accounting_book_premiums`), on the book only.
+ `GET /api/admin/cashflow/kernel-pins` (admin, accountant, actuary) previews
+ and `POST /api/admin/cashflow/restore-kernel-pins` restores a missing pin.
+ The restore reprices the stored application and pins only when exactly one
+ decomposition reproduces the billed premium to the cent; a discount, no
+ match, or two matches is refused and listed. It writes the before/after
+ journal first, does not change a premium, a bill, or a ledger row, and
+ leaves crediting unlanded savings to the claim-transfer repair. The
+ customer dashboard card "Where my premium goes" reads `cash_flow` on the
+ premium picture and writes nothing
+- unified cash flow statement (`services/cashflow_unified_report.py`,
+ `GET /api/admin/cashflow/unified-report`, same four roles, shown on
+ `/cashflow-integrity.html` by `cashflow-unified-report.js`): one read of
+ premiums, claims, customer money, the marketplace, suppliers, agents, and
+ the referral book. It writes nothing. Collected premium is split by the
+ kernel pins on the policy (risk first, then the underwriting fee, expense
+ loading, profit, and the elected savings add-on 30 / 65 / 5). A claim is
+ counted once at the amount the claims book paid; a second line for the same
+ claim on the ledger, wallet, or balance sheet is listed under
+ `claims.repeated_by_book` and fails `claims_counted_once`, and is not added
+ (`claim_cash_books` in `premium_flow_reconciliation.py`). Underwriting
+ surplus is risk premium less those claims. The management fee is an accrual
+ on investments and algo (`management_fee_pct`, default 1%, 0–10) and is not
+ charged. A marketplace bid is the customer price: commission plus supplier
+ payout. Agent commission omits `REF-` rows, which stay on the referral
+ book. `integrity.checks` names every identity that does not tie. Premium
+ on a policy with no kernel pin is held on the risk book, as the writer books
+ it, and is not company income; `kernel_pins_present` still fails for it
+- balance sheet and statement tie (`premium_cash_position` in
+ `financial_unification_service.py`): every premium dollar sits on one
+ balance line — claims reserve (kernel risk, premium with no pin included,
+ less claims paid), operating reserve (underwriting fee, PHINS share of the
+ expense loading, profit), and three held lines (customer savings, carrier
+ share, reinsurance ceding reserve). Own funds plus held equals premium cash
+ less claim cash. `GET /api/admin/balance-sheet` serves the operating
+ reserve restated (stored counter, less the premium rows it took in whole,
+ plus the company's part), `held_for_others`, `total_balance` as own funds,
+ and `net_income` after the held amounts; `premium_position` carries the
+ lines and `stored_operating_reserve` the counter as stored. The GET does
+ not write the stored sheet, and `revenue_breakdown.premium_income` stays
+ the ledger cash. The statement compares itself with those lines under
+ `balance_sheet` and fails `balance_sheet_ties` on a difference (cash totals
+ to the cent, split lines one cent per paid month). Both leave out the same
+ suspended accounts (`is_suspended_account`). The tie-out sheet
+ (`/api/admin/balance-sheet/reconcile`) keeps `net_position` as net cash
+ and adds `own_funds` and `held_for_others` beside it
+- health wallet withdrawal (`services/wallet_withdrawal_service.py`,
+ `web_portal/api_wallet_withdrawal.py`, `/wallet-withdraw-chat.html`): the
+ Withdraw tile on the customer dashboard opens a chat that starts from the
+ customer record and asks for the amount, the reason, the bank account, an
+ identity document, a portrait cut from it (`services/id_photo_crop.py`,
+ Pillow only; the customer can move the frame), a bank document, and a drawn
+ signature. Filing holds the amount on the wallet (`withdrawal_hold`),
+ anchors the signature through `_legal_doc_sign` (`wallet_withdrawal`,
+ `LGL-<id>`), and mints the wallet NFT `wallet_withdrawal_request` with the
+ document SHA-256; a failed step returns the hold. The document is the
+ letterhead render of that sealed record and is withheld when the seal or a
+ picture checksum does not match. The bank account number is vaulted and
+ shown as its last four; the national ID is the master's reference only. The
+ hold waits `PHINS_WITHDRAWAL_RETENTION_DAYS` (default 3, 0–14). The
+ customer-relations bar on `/customer-management.html`
+ (`withdrawal-retention-bar.js`, `/api/admin/wallet-withdrawals`) lists each
+ flagged customer with the retention methods (call, message, keep / withdraw
+ less / move to savings / use for premiums offers, one extension of up to
+ four days, escalation, note) on a checksummed trail. Only the customer
+ reverses, by cancelling or accepting an offer. Staff do not move the money:
+ admin or accountant release after the window or decline, and a decline
+ returns the hold to the same wallet. Requests persist with the wallet
+ snapshot (`WALLET_WITHDRAWALS`)
 - chat intake (Phin) is a parallel surface to the classic forms.
   Any committed answer on `/apply-chat.html` and `/file-a-claim.html` can be
   edited until filing. Edits are an append-only checksum chain
@@ -349,6 +447,63 @@ PHINS is a Python platform built around:
  through `/document-viewer.html` (`phins-doc-open.js`). Do not change
  figures, checksums, or stored records when adding chrome
 
+Active software agents are the fifteen ids that register an
+`AgentDescriptor` in `services/agent_runtime.py`.
+`services/ai_capabilities.py` keeps that list in `AGENT_MODULES` and
+imports each module before the catalog is read.
+`GET /api/admin/ai-agents/health` (admin) returns the descriptor, health,
+and metrics. Human-broker AgentOS stays on `/api/admin/agents*`. A new
+or retired id is edited in `AGENT_MODULES` and in `EXPECTED_AGENT_IDS`
+(`tests/test_agent_runtime.py`) in the same change. `ai_trading_engine`
+is the agent that sets `moves_money`. `video_agents` and
+`document_intelligence` set `executes_async`.
+
+- `underwriting_bot` — `services/underwriting_bot_service.py` (package
+  `services/underwriting_bot/`). `POST /api/risk-dashboard/ai-assess`.
+  Scores evidence and recommends. It does not modify customer data.
+- `claims_bot` — `services/claims_bot_service.py`.
+  `POST /api/claims/probability-report`.
+- `ai_automation_controller` — `ai_automation_controller.py`, rules in
+  `services/automation/`. Library only. A registered model may inform a
+  score and does not decide.
+- `underwriting_assistant` — `underwriting_assistant.py`. Library
+  workflow (questionnaire, health score, document verification,
+  delivery). `service_agent.py` uses its delivery types. Entry
+  `/underwriter-dashboard.html`.
+- `assessment_ai` — `services/assessment_ai_service.py`.
+  `POST /api/assessment-center/analysis`. Advisory narrative. A
+  schema-invalid reply falls back to the deterministic narrative.
+- `pension_data_agent` — facade `services/pension_data_agent.py`.
+  `POST /api/mislaka/import`.
+- `document_intelligence` — `services/document_processing_service.py`.
+  `GET /api/doc-service/jobs`. Async queue with retries and a dead-letter.
+- `customer_communication` — `services/customer_agent/communication.py`
+  (shim `services/customer_communication_agent.py`).
+  `POST /api/security/communications/welcome-report`. Consent, the daily
+  cap, and the interaction log apply.
+- `customer_service` — `services/customer_agent/service_desk.py` (shim
+  `service_agent.py`). Library. Escalations go through `EscalationDesk`.
+- `marketing_sales` — `services/marketing_sales_agent_service.py`.
+  `GET /api/admin/marketing-sales-agent`. Signed campaign plans. A video
+  send from that desk runs as `video_agents`.
+- `video_agents` — `services/video_agents_service.py`.
+  `POST /api/admin/media/video-jobs/batch`. The growth-agent media job
+  is this agent.
+- `ai_risk_reports` — facade `services/ai_risk_reports_service.py`.
+  `POST /api/reports/generate`.
+- `bi_analytics` — `services/bi_analytics_service.py`.
+  `GET /api/bi/insights`.
+- `delivery_bidding` — `services/delivery_bidding_service.py`.
+  `POST /api/delivery/evaluate-bids`. Elapsed windows close on the
+  `delivery_bidding_sla_tick` queue row.
+- `ai_trading_engine` — `services/ai_trading_engine.py`.
+  `GET /api/terminal/copilot`. `PHINS_TRADING_HALT` is read on every
+  execution and stays an operator switch.
+
+Phin chat, the Admin AI Mic desk, the document durability probe, and the
+investor-deck lab keep their own sections. They do not register an
+`AgentDescriptor`.
+
 Runtime defaults are important:
 
 - `web_portal/server.py` defaults to `USE_DATABASE=true`
@@ -379,6 +534,8 @@ Preferred file-by-task:
 | Customer identity (ID + nationality) | `services/customer_identity_service.py` (one writer), `web_portal/api_customer_identity.py` |
 | Admin desk (mailboxes, diary, letters, tables, pipeline shares) | `services/admin_desk_service.py`, `services/admin_desk_network.py` (pipeline map, share-to-desk, meeting next move), `services/admin_desk_mail.py`, `web_portal/api_admin_desk.py`, `/admin-desk.html` |
 | Referral CAC / professional roles | `services/referral_reward_service.py`, `web_portal/api_referral_rewards.py`, `database/repositories/referral_reward_repository.py` |
+| Unified cash flow statement | `services/cashflow_unified_report.py`, `services/premium_flow_reconciliation.py` (`claim_cash_books`), `web_portal/static/cashflow-unified-report.js`; tests in `tests/test_cashflow_unified_report.py` |
+| Health wallet withdrawal / retention bar | `services/wallet_withdrawal_service.py`, `services/id_photo_crop.py`, `web_portal/api_wallet_withdrawal.py`, `web_portal/static/wallet-withdraw-chat.{html,js}`, `web_portal/static/withdrawal-retention-bar.js`; tests in `tests/test_wallet_withdrawal.py` |
 | Customer intro / invitation landing | `web_portal/static/join.html`; films `join_intro_*` on the media Customer relations tab; briefs in `services/solution_video_blueprints.py` (`JOIN_INTRO_OUTLINES`, `JOIN-` campaigns) |
 | Document archive / durability probe | `services/customer_document_vault_service.py`, `services/document_durability_agent.py` |
 | Unified business plan / investor deck (`/business-plan.html`) | `services/business_plan_model.py` (factor register, `compute_plan`, `ROUND_SEED_ILS` / `ROUND_PRE_MONEY_ILS` — the one writer for seed / pre-money; `appraisal.sensitivity` grid), `services/business_plan_document.py` (narrative, placeholders, founder block, HTML/Markdown renderers), `services/business_plan_charts.py` (chart + Gantt specs read from the plan dict; one layout engine → inline SVG for HTML and `?charts=1`, reportlab Drawing for the PDF; Markdown carries `<!-- phins-chart {json} -->` directives plus a data table), `services/business_plan_sources.py` (figure lineage + research registry kept byte-equal with the pitch-dashboard `sourceRegistry`), `services/business_plan_portrait.py` (Pillow-processed founder portrait), `services/investor_deck_video.py` (Part II paragraph scenes; the plan is not written), `web_portal/server.py` (`GET /api/business-plan/model[?charts=1]`, `GET /api/business-plan/founder-portrait`); then `python3 scripts/build_business_plan.py` and `python3 scripts/generate_investor_pdfs.py --only unified-business-plan`; tests in `tests/test_business_plan.py` |
@@ -397,6 +554,11 @@ Preferred file-by-task:
 | Storyboard / longer media | `services/storyboard_editor.py`, `web_portal/static/storyboard-editor.html`, `web_portal/api_extensions.py` (`/api/admin/media/storyboards`); tests in `tests/test_storyboard_editor.py` |
 | Mislaka / pension parsing | `services/pension/{schema,parsers,cache,agent}.py` (facade `services/pension_data_agent.py`); tests in `tests/test_pension_agent.py` |
 | Risk Reports intake / analysis / report text | `services/risk_reports/{parsers,analysis,render,charts,service}.py` (facade `services/ai_risk_reports_service.py`); tests in `tests/test_risk_reports_package.py`, `tests/test_ai_risk_reports.py` |
+| Underwriting Assistant | `underwriting_assistant.py` (library; `service_agent.py` uses its delivery types). Registered id `underwriting_assistant` |
+| Document Intelligence | `services/document_processing_service.py`, `services/document_job_worker.py`; `GET /api/doc-service/jobs` |
+| Marketing / Sales plans | `services/marketing_sales_agent_service.py`; `GET /api/admin/marketing-sales-agent`. A video send from that desk is Video Agents |
+| Video Agents | `services/video_agents_service.py`, `services/jobs/video_job.py`; `POST /api/admin/media/video-jobs/batch` |
+| AI Trading / AutoPilot | `services/ai_trading_engine.py`; `GET /api/terminal/copilot`. Halt is `PHINS_TRADING_HALT` |
 
 ## 2) High-Value Paths
 
@@ -425,14 +587,18 @@ Preferred file-by-task:
 |  |- api_claims_chat.py               # public claims chat (loopback into /api/claims/create)
 |  |- api_customer_identity.py         # ID + nationality master surface
 |  |- api_referral_rewards.py          # referral CAC, accept, professional role, role switch
+|  |- api_wallet_withdrawal.py         # health wallet withdrawal chat + retention desk
 |  |- connectors.py
 |  `- static/                           # HTML/JS/CSS dashboards and assets
 |                                        # (includes `static/locales/he.json` Hebrew i18n)
 |- ai_automation_controller.py          # orchestration only; rules in services/automation/
+|- underwriting_assistant.py            # guided underwriting workflow (registered agent)
 |- prompts/                             # versioned LLM prompt templates (sha256 provenance)
 |  `- assessment/                       # narrative v1 (free text) + v2 (structured); onboarding/service/termination v1
 |- schemas/                             # JSON schemas for structured LLM output
-|- services/                            # 159 service modules
+|- services/                            # 163 service modules
+|  |- agent_runtime.py                  # AgentDescriptor registry (discovery, health, metrics)
+|  |- ai_capabilities.py                # catalog = static entries union the registry
 |  |- agent_eval.py                     # A6 replay / propose_thresholds / golden sets
 |  |- automation/                       # B2 pure rules: quoting, underwriting_gate, fraud, claims_gate, billing_schedule
 |  |- pricing_kernel.py                 # single writer for premium decomposition (PremiumComponents)
@@ -493,7 +659,7 @@ Preferred file-by-task:
 |- scripts/                             # operational utilities
 |  |- run_agent_eval.py                 # golden sets + decision replay CLI
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
-|- tests/                               # 288 test files
+|- tests/                               # 294 test files
 |  `- golden/<agent>/*.json             # frozen agent outputs ({name, input, expected})
 |- docs/
 |  |- platform_data_architecture.md
@@ -969,6 +1135,9 @@ Environment variables commonly used:
  `PHINS_CUSTOMER_MESSAGING_CONSENT_ENFORCED` (default on; off skips only the
  consent check for relational copy — an explicit opt-out and the cap still
  apply)
+- **Wallet withdrawal:** `PHINS_WITHDRAWAL_RETENTION_DAYS` (days a filed
+ health wallet withdrawal is held for customer relations before payout,
+ default 3, range 0–14)
 - **Delivery bidding (B11):** `PHINS_DELIVERY_SLA_TICK_SECONDS` (SLA clock
  interval for closing elapsed bidding windows, default 60)
 - **Admin desk:** an admin saves a mailbox password once on
@@ -1159,7 +1328,7 @@ Important test harness facts:
   change re-renders them (the page fetches `?charts=1` and swaps the SVG).
   `RESEARCH_SOURCES` must stay identical to the pitch-dashboard
   `sourceRegistry`; the test parses both
-- 288 test files under `tests/`, 11 root-level `test_*.py` files
+- 294 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -1282,4 +1451,4 @@ If you update this file again:
 
 ---
 
-Last updated: November 16, 2026
+Last updated: November 22, 2026

@@ -18,7 +18,9 @@ from services.nft_ledger import (
     amount_number,
     cash_direction,
     collect_integrity_issues,
+    merge_nft_flows,
     mint_token,
+    nft_purchase_rows,
     present_customer_ledger,
     verify_token,
 )
@@ -430,3 +432,57 @@ def test_allocation_read_does_not_mint_and_save_does(nft_customer):
     assert row["amount"] == 0
     assert row["direction"] == "neutral"
     assert row["integrity"]["valid"] is True
+
+
+def test_registered_nfts_restore_flows_without_rewriting_seals():
+    ledger = {}
+    premium = _mint(ledger, "CUST-1", "premium_payment", 200, "TX-PREM", description="Premium collected")
+    allocation = _mint(
+        ledger, "CUST-1", "pipeline_allocation", 65, "TX-ALLOC",
+        description="Investment allocation",
+        metadata={"internal": True, "cash_event": False},
+    )
+    purchase = _mint(ledger, "CUST-1", "medical_purchase", 40, "TX-MED", description="Clinic visit")
+    referral = _mint(ledger, "CUST-1", "referral_reward", 25, "TX-REF", description="Referral share")
+    sealed = premium["verification_hash"]
+    broken = _mint(ledger, "CUST-1", "wallet_deposit", 999, "TX-BROKEN", description="Do not restore")
+    broken["amount"] = 1
+    assert verify_token(broken)["valid"] is False
+
+    already = [{
+        "id": "TX-PREM",
+        "type": "premium_payment",
+        "amount": -200,
+        "nft_token_id": premium["token_id"],
+    }]
+    restored = merge_nft_flows(already, ledger.values())
+    ids = {row["id"] for row in restored}
+    assert "TX-PREM" in ids
+    assert "TX-ALLOC" in ids
+    assert "TX-MED" in ids
+    assert "TX-REF" in ids
+    assert "TX-BROKEN" not in ids
+    assert len([row for row in restored if row["id"] == "TX-PREM"]) == 1
+    medical = next(row for row in restored if row["id"] == "TX-MED")
+    assert medical["amount"] == -40
+    assert medical["category"] == "medical"
+    referred = next(row for row in restored if row["id"] == "TX-REF")
+    assert referred["category"] == "referral"
+    assert ledger[premium["token_id"]]["verification_hash"] == sealed
+    assert ledger[allocation["token_id"]]["verification_hash"]
+
+    purchases = nft_purchase_rows(ledger.values(), [])
+    assert len(purchases) == 1
+    assert purchases[0]["amount"] == 40
+    assert purchases[0]["nft_token_id"] == purchase["token_id"]
+    assert nft_purchase_rows(ledger.values(), [purchase["token_id"]]) == []
+
+    linked = [{
+        "id": "PUR-1",
+        "type": "medical_purchase",
+        "amount": -40,
+        "ledger_tx_id": "TX-MED",
+    }]
+    once = merge_nft_flows(linked, ledger.values())
+    assert len([row for row in once if row.get("ledger_tx_id") == "TX-MED" or row.get("id") == "TX-MED"]) == 1
+    assert nft_purchase_rows(ledger.values(), ["PUR-1", "TX-MED"]) == []

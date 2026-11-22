@@ -1043,12 +1043,12 @@
                 </div>
                 <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
                     <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Risk Coverage</div>
-                    <div id="actuarialRiskPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">50%</div>
+                    <div id="actuarialRiskPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">100%</div>
                     <div id="actuarialRiskAmt" style="font-size: 0.75rem; color: var(--text-secondary);">$0.00</div>
                 </div>
                 <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
                     <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Savings Portion</div>
-                    <div id="actuarialSavingsPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">50%</div>
+                    <div id="actuarialSavingsPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">0%</div>
                     <div id="actuarialSavingsAmt" style="font-size: 0.75rem; color: var(--text-secondary);">$0.00</div>
                 </div>
                 <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
@@ -1094,7 +1094,7 @@
                             <div style="font-size: 0.7rem; color: var(--text-secondary);">Emergency Fund</div>
                         </div>
                         <div style="text-align: right;">
-                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineWalletPct">15%</div>
+                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineWalletPct">30%</div>
                             <div style="font-size: 0.7rem; color: var(--success);" id="pipelineWalletBal">$0</div>
                         </div>
                     </div>
@@ -1106,7 +1106,7 @@
                             <div style="font-size: 0.7rem; color: var(--text-secondary);">Index • Bonds • Crypto</div>
                         </div>
                         <div style="text-align: right;">
-                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineInvestPct">60%</div>
+                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineInvestPct">65%</div>
                             <div style="font-size: 0.7rem; color: var(--info);" id="pipelineInvestBal">$0</div>
                         </div>
                     </div>
@@ -1118,7 +1118,7 @@
                             <div style="font-size: 0.7rem; color: var(--text-secondary);">Automated Strategies</div>
                         </div>
                         <div style="text-align: right;">
-                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineAlgoPct">25%</div>
+                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineAlgoPct">5%</div>
                             <div style="font-size: 0.7rem; color: var(--secondary);" id="pipelineAlgoBal">$0</div>
                         </div>
                     </div>
@@ -3305,8 +3305,8 @@
             const dist = unified.monthly_distribution || {};
             const alloc = dist.allocation_pct || {};
             const actuarial = dist.actuarial_data || {};
-            const savingsPct = Number(alloc.savings_pct != null ? alloc.savings_pct : 50);
-            const riskPct = Number(alloc.risk_pct != null ? alloc.risk_pct : 50);
+            const savingsPct = Number(alloc.savings_pct != null ? alloc.savings_pct : 0);
+            const riskPct = Number(alloc.risk_pct != null ? alloc.risk_pct : 100);
             const premium = Number(dist.total_premium || 0);
             const riskAmt = Number(dist.risk_coverage != null ? dist.risk_coverage : premium * riskPct / 100);
             const savingsAmt = Number(
@@ -3344,9 +3344,9 @@
                 
                 // Update allocation percentages
                 if (analytics.allocation) {
-                    setPipelineText('pipelineWalletPct', `${(analytics.allocation.wallet || 15).toFixed(0)}%`);
-                    setPipelineText('pipelineInvestPct', `${(analytics.allocation.investment || 60).toFixed(0)}%`);
-                    setPipelineText('pipelineAlgoPct', `${(analytics.allocation.algo_trading || 25).toFixed(0)}%`);
+                    setPipelineText('pipelineWalletPct', `${(analytics.allocation.wallet || 30).toFixed(0)}%`);
+                    setPipelineText('pipelineInvestPct', `${(analytics.allocation.investment || 65).toFixed(0)}%`);
+                    setPipelineText('pipelineAlgoPct', `${(analytics.allocation.algo_trading || 5).toFixed(0)}%`);
                 }
                 
                 // Update health indicator

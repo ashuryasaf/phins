@@ -290,6 +290,7 @@
                 <a href="/underwriter-dashboard.html">Underwriting</a>
                 <a href="/billing.html">Billing</a>
                 <a href="/accountant-dashboard.html" class="active">Accounting</a>
+                <a href="/cashflow-integrity.html">Cash flow</a>
                 <a href="/documents.html#archive">Documents</a>
                 <a href="/savings-portfolio.html">Investments</a>
                 <a href="/login.html" class="btn-logout">Logout</a>
@@ -682,6 +683,7 @@
                                 <div class="ifrs-row"><span>Investment earnings</span><strong id="bs-investment-earnings">$0</strong></div>
                                 <div class="ifrs-row"><span>Late fees</span><strong id="bs-late-fees">$0</strong></div>
                                 <div class="ifrs-row"><span>Other income</span><strong id="bs-other-income">$0</strong></div>
+                                <div class="ifrs-row" title="Savings add-on owed to customers, the carrier share, and the reinsurance ceding reserve. Premium cash, not income."><span>Less premium held for customers, the carrier, and reinsurance</span><strong id="bs-held-for-others">$0</strong></div>
                             </div>
                         </div>
                         <div class="ifrs-col">
@@ -695,6 +697,12 @@
                                 <div class="ifrs-row"><span>Customer acquisition</span><strong id="bs-customer-acquisition">$0</strong></div>
                             </div>
                         </div>
+                    </div>
+                    <div class="ifrs-col" style="margin-top:20px;">
+                        <h3>Where the premium cash sits</h3>
+                        <p id="bs-position-note" style="color:#5b6d8a;font-size:13px;margin:0 0 10px;">Reading the premium cash…</p>
+                        <div id="bs-position-lines"></div>
+                        <p id="bs-position-operating" style="color:#5b6d8a;font-size:13px;margin:10px 0 0;"></p>
                     </div>
                     <div style="margin-top:20px;padding:16px;background:#f6f8fc;border-radius:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
                         <div style="font-size:13px;color:#5b6d8a;">Last updated: <strong id="bs-last-updated">Never</strong></div>
@@ -935,6 +943,38 @@
                 { label: 'Economic reserve', value: economic, display: formatCurrency(economic), color: economic < 0 ? '#b42318' : '#0f766e' },
                 { label: 'Seed capital', value: seed, display: formatCurrency(seed), color: '#8a7340' },
             ];
+            const streams = rec.premium_streams || sav.streams || {};
+            const streamSeries = [
+                { label: 'Kernel risk premium', key: 'risk', color: '#1a3a78' },
+                { label: 'Underwriting fee', key: 'underwriting_fee', color: '#0a1630' },
+                { label: 'Expense loading', key: 'expense_loading', color: '#8a7340' },
+                { label: 'Profit margin', key: 'profit', color: '#b45309' },
+                { label: 'Savings add-on', key: 'savings', color: '#0f766e' },
+                { label: 'Above the kernel stack', key: 'above_kernel_stack', color: '#b42318' },
+                { label: 'No kernel pin', key: 'without_kernel_pin', color: '#7a271a' },
+            ].map(row => ({
+                label: row.label,
+                value: Number(streams[row.key] || 0),
+                display: formatCurrency(streams[row.key] || 0),
+                color: row.color,
+            }));
+            const streamTotal = streamSeries.reduce((sum, row) => sum + row.value, 0);
+            const landedNote = sav.savings_landed_basis === 'customer_books'
+                ? "Landed is what each customer's health wallet, investments, and algo hold from premium savings."
+                : 'Landed is investment allocations plus pipeline cash.';
+            const escBooks = value => String(value == null ? '' : value).replace(/[&<>"']/g, ch => (
+                { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+            ));
+            const warnings = rec.warnings || [];
+            let warningPaper = '';
+            if (warnings.length) {
+                warningPaper = '<h3>Unexplained premium</h3><table><thead><tr><th>Item</th><th>Amount</th><th>Policies</th></tr></thead><tbody>';
+                warnings.forEach(w => {
+                    const ids = (w.policy_ids || []).map(escBooks).join(', ');
+                    warningPaper += `<tr><td>${escBooks(w.check)}<br><span class="acct-note">${escBooks(w.description)}</span></td><td>${formatCurrency(w.amount)}</td><td>${w.policy_count != null ? escBooks(w.policy_count) : '—'}${ids ? `<br><span class="acct-note">${ids}</span>` : ''}</td></tr>`;
+                });
+                warningPaper += '</tbody></table><p class="acct-note">The cash totals tie. These premiums are not split by the kernel and sit on the risk book until the policy carries a pin. Restore the pins on the <a href="/cashflow-integrity.html">cash flow page</a>.</p>';
+            }
             const discrepancies = rec.discrepancies || [];
             let paper = '';
             if (discrepancies.length) {
@@ -943,7 +983,8 @@
                     const left = d.left != null ? formatCurrency(d.left) : '—';
                     const right = d.right != null ? formatCurrency(d.right) : '—';
                     const diff = d.difference != null ? formatCurrency(d.difference) : (d.count != null ? String(d.count) : '—');
-                    paper += `<tr><td>${d.check || ''}<br><span class="acct-note">${d.description || ''}</span></td><td>${left}</td><td>${right}</td><td>${diff}</td></tr>`;
+                    const owed = (d.customers || []).map(c => `${escBooks(c.customer_id)}: ${formatCurrency(c.not_landed)}`).join(', ');
+                    paper += `<tr><td>${d.check || ''}<br><span class="acct-note">${d.description || ''}${owed ? '<br>' + owed : ''}</span></td><td>${left}</td><td>${right}</td><td>${diff}</td></tr>`;
                 });
                 paper += '</tbody></table>';
             } else {
@@ -958,6 +999,11 @@
                         ${renderScaledBars(cashSeries)}
                     </div>
                     <div>
+                        <h4>Premium cash by kernel stream</h4>
+                        <p class="acct-note">Every premium dollar on the customer ledger lands on one stream. The streams add up to ${formatCurrency(streamTotal)}.</p>
+                        ${renderScaledBars(streamSeries)}
+                    </div>
+                    <div>
                         <h4>Annual premium identity</h4>
                         ${renderScaledBars(annualSeries)}
                     </div>
@@ -967,7 +1013,7 @@
                     </div>
                     <div>
                         <h4>Savings rollforward</h4>
-                        <p class="acct-note">Landed is investment allocations plus pipeline cash. Unlanded savings cash: ${formatCurrency(sav.unlanded_savings_cash)}.</p>
+                        <p class="acct-note">${landedNote} Unlanded savings cash: ${formatCurrency(sav.unlanded_savings_cash)}.</p>
                         ${renderScaledBars(savingsSeries)}
                     </div>
                     <div>
@@ -976,6 +1022,7 @@
                         ${renderScaledBars(reserveSeries)}
                     </div>
                 </div>
+                ${warningPaper}
                 ${paper}
             `;
         }
@@ -2491,12 +2538,17 @@
                     setText('ctl-seed-reserve', formatCurrency(reserves.seed_claims_reserve));
                     setText('sv-seed-capital', formatCurrency(reserves.seed_claims_reserve));
                 }
+                const unexplained = (rec.warnings || []).reduce((sum, w) => sum + Number(w.amount || 0), 0);
+                const booksTone = !ok ? 'integrity-issues' : (unexplained > 0 ? 'integrity-warnings' : 'integrity-healthy');
+                const booksHeadline = !ok ? 'have discrepancies' : (unexplained > 0 ? 'tie, with premium not split by the kernel' : 'in balance');
                 const statusEl = document.getElementById('ctl-books-status');
                 if (statusEl) {
-                    statusEl.className = 'integrity-status phins-books-note ' + (ok ? 'integrity-healthy' : 'integrity-issues');
-                    statusEl.textContent = ok
-                        ? 'Financial books are in balance. Cash identity is the customer ledger; premium identity is the actuarial kernel pin.'
-                        : 'Financial books have discrepancies. Review the Integrity tab — amounts are not silently rewritten.';
+                    statusEl.className = 'integrity-status phins-books-note ' + booksTone + (booksTone === 'integrity-healthy' ? '' : ' gap');
+                    statusEl.textContent = !ok
+                        ? 'Financial books have discrepancies. Review the Integrity tab — amounts are not silently rewritten.'
+                        : (unexplained > 0
+                            ? `The cash totals tie, and ${formatCurrency(unexplained)} of premium is not split by the kernel. See Unexplained premium in the pipeline books.`
+                            : 'Financial books are in balance. Cash identity is the customer ledger; premium identity is the actuarial kernel pin.');
                 }
                 const flowHtml = renderBooksFlow(rec);
                 const flowHost = document.getElementById('ctl-books-flow');
@@ -2506,8 +2558,8 @@
                     return;
                 }
                 let html = `
-                    <div class="integrity-status ${ok ? 'integrity-healthy' : 'integrity-issues'}">
-                        <h3 style="margin:0;">Financial books ${ok ? 'in balance' : 'have discrepancies'}</h3>
+                    <div class="integrity-status ${booksTone}">
+                        <h3 style="margin:0;">Financial books ${booksHeadline}</h3>
                         <p style="margin:5px 0 0 0;">Cash identity is the customer ledger. Premium identity is the actuarial kernel pin.</p>
                     </div>
                     <div class="stats-grid">
@@ -3471,6 +3523,63 @@
             }
         };
         
+        // Premium cash by the balance sheet line that holds it. The same
+        // lines close the cash flow statement on /cashflow-integrity.html.
+        function renderPremiumPosition(bs, fmt) {
+            const note = document.getElementById('bs-position-note');
+            const linesEl = document.getElementById('bs-position-lines');
+            const operatingEl = document.getElementById('bs-position-operating');
+            if (!note || !linesEl) return;
+            const position = bs.premium_position;
+            if (!position) {
+                note.textContent = 'The premium cash could not be read through the kernel pins.';
+                linesEl.textContent = '';
+                if (operatingEl) operatingEl.textContent = '';
+                return;
+            }
+            const signed = (value) => (Number(value) < 0 ? '−' : '') + fmt(Math.abs(Number(value) || 0));
+            linesEl.textContent = '';
+            const addRow = (label, amount, strong) => {
+                const row = document.createElement('div');
+                row.className = 'ifrs-row';
+                const name = document.createElement('span');
+                name.textContent = label;
+                const value = document.createElement('strong');
+                value.textContent = signed(amount);
+                if (strong) { name.style.fontWeight = '700'; }
+                row.appendChild(name);
+                row.appendChild(value);
+                linesEl.appendChild(row);
+            };
+            (position.lines || []).forEach((line) => addRow(line.label, line.amount, false));
+            addRow('Own funds · claims reserve and operating reserve', position.own_funds, true);
+            addRow('Held for customers, the carrier, and reinsurance', position.held_for_others, true);
+            addRow('Premium cash less claims paid', position.total, true);
+            let text = 'Premium cash ' + fmt(position.premium_cash) + ' less claims paid ' + fmt(position.claim_cash)
+                + ' is ' + fmt(position.net_cash) + '. ';
+            text += position.ties_to_cash
+                ? 'The lines add up to it.'
+                : 'The lines differ from it by ' + signed(position.difference) + '.';
+            if (Number(position.premium_without_kernel_pin) > 0) {
+                text += ' ' + fmt(position.premium_without_kernel_pin)
+                    + ' is premium on a policy with no kernel pin and is held in the claims reserve until the policy is pinned.';
+            }
+            if (position.reserve_ties_to_book === false) {
+                text += ' The accounting book carries a claims reserve of ' + signed(position.accounting_book_claims_reserve)
+                    + ', ' + signed(position.reserve_difference) + ' from the kernel pins. Repair books re-books the split.';
+            }
+            note.textContent = text;
+            note.style.color = (position.ties_to_cash && position.reserve_ties_to_book !== false) ? '#5b6d8a' : '#b42318';
+            const operating = position.operating_reserve;
+            if (operatingEl) {
+                operatingEl.textContent = operating
+                    ? 'Operating reserve: the stored counter reads ' + signed(operating.stored) + ' and took in '
+                        + fmt(operating.premium_taken_in_whole) + ' of premium whole. ' + fmt(operating.company_part_of_premium)
+                        + ' of the premium is the company\'s, so the reserve shown is ' + signed(operating.restated) + '.'
+                    : '';
+            }
+        }
+
         // Load PHINS Balance Sheet (General Reserves)
         async function loadBalanceSheet() {
             try {
@@ -3522,6 +3631,8 @@
                         document.getElementById('bs-late-fees').textContent = fmt(bs.revenue_breakdown.late_fees);
                         document.getElementById('bs-other-income').textContent = fmt(bs.revenue_breakdown.other_income);
                     }
+                    setText('bs-held-for-others', '−' + fmt(bs.held_for_others || 0));
+                    renderPremiumPosition(bs, fmt);
                     
                     // Expense breakdown
                     if (bs.expense_breakdown) {
@@ -3599,7 +3710,12 @@
                     message += `• Medical Services: ${fmt(data.summary_totals?.total_medical_services)}\n`;
                     message += `• Wallet Deposits: ${fmt(data.summary_totals?.total_wallet_deposits)}\n`;
                     message += `• Investments: ${fmt(data.summary_totals?.total_investments)}\n`;
-                    message += `• Net Position: ${fmt(data.summary_totals?.net_position)}\n\n`;
+                    message += `• Net cash position (premiums less claims and medical services): ${fmt(data.summary_totals?.net_position)}\n`;
+                    if (data.summary_totals?.own_funds != null) {
+                        message += `• Own funds (claims reserve and operating reserve): ${fmt(data.summary_totals.own_funds)}\n`;
+                        message += `• Held for customers, the carrier, and reinsurance: ${fmt(data.summary_totals.held_for_others)}\n`;
+                    }
+                    message += `\n`;
                     
                     message += `MEDICAL SERVICES:\n`;
                     message += `• Total: ${fmt(data.medical_services?.total_amount)} (${data.medical_services?.total_transactions || 0} transactions)\n`;

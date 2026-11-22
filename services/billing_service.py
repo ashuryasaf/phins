@@ -7,7 +7,8 @@ When a bill is paid, the premium is automatically split into:
 - Risk Premium: Goes to company risk reserves (covers claims)
 - Savings Premium: Goes to customer's savings (wallet/investment)
 
-Default split is 50% risk / 50% savings (kernel-aligned; configurable per policy).
+When the caller does not pass a split, the pricing kernel decides it.
+The risk premium is not savings. Only a savings add-on or growth add is.
 """
 
 from datetime import datetime, timedelta
@@ -44,9 +45,10 @@ class BillingService:
         self._policies = policies or {}
         self._allocation_tracker = premium_allocation_tracker
         
-        # Default allocation percentages — kernel-aligned (retired 75/25)
-        self.default_risk_pct = 50.0
-        self.default_savings_pct = 50.0
+        # Used only when a caller passes one side of an explicit split.
+        # A missing election is all risk. It is not 50/50.
+        self.default_risk_pct = 100.0
+        self.default_savings_pct = 0.0
 
     def create_bill(self, 
                     policy_id: str, 
@@ -64,8 +66,8 @@ class BillingService:
             amount_due: Total amount due
             due_days: Days until due
             customer_id: Customer ID (will be looked up from policy if not provided)
-            risk_pct: Risk allocation percentage (default 50%)
-            savings_pct: Savings allocation percentage (default 50%)
+            risk_pct: Risk allocation percentage. Omit both sides for the kernel waterfall.
+            savings_pct: Savings allocation percentage. Omit both sides for the kernel waterfall.
             description: Bill description
         
         Returns:
@@ -78,18 +80,24 @@ class BillingService:
             policy = self._policies.get(policy_id, {})
             customer_id = policy.get('customer_id', '')
         
-        # Set allocation percentages
-        risk_pct = risk_pct if risk_pct is not None else self.default_risk_pct
-        savings_pct = savings_pct if savings_pct is not None else self.default_savings_pct
-        
-        # Ensure they sum to 100
-        if risk_pct + savings_pct != 100:
-            savings_pct = 100 - risk_pct
-        
-        # Calculate allocation amounts
         amount = float(amount_due)
-        risk_amount = round(amount * risk_pct / 100, 2)
-        savings_amount = round(amount * savings_pct / 100, 2)
+        if risk_pct is None and savings_pct is None:
+            from services.financial_unification_service import resolve_premium_split
+            policy = self._policies.get(policy_id, {}) if policy_id else None
+            split = resolve_premium_split(amount, policy or None)
+            risk_pct = split["risk_percentage"]
+            savings_pct = split["savings_percentage"]
+            risk_amount = split["risk_amount"]
+            savings_amount = split["savings_amount"]
+            split_source = split["split_source"]
+        else:
+            risk_pct = risk_pct if risk_pct is not None else self.default_risk_pct
+            savings_pct = savings_pct if savings_pct is not None else self.default_savings_pct
+            if risk_pct + savings_pct != 100:
+                savings_pct = 100 - risk_pct
+            savings_amount = round(amount * savings_pct / 100, 2)
+            risk_amount = round(amount - savings_amount, 2)
+            split_source = "explicit"
         
         bill = {
             'bill_id': bill_id,
@@ -109,6 +117,7 @@ class BillingService:
                 'savings_amount_due': savings_amount,
                 'risk_amount_paid': 0.0,
                 'savings_amount_paid': 0.0,
+                'split_source': split_source,
                 'allocated': False,
                 'allocation_id': None
             },
@@ -121,6 +130,39 @@ class BillingService:
         logger.info(f"Created bill {bill_id}: ${amount:.2f} ({risk_pct}% risk / {savings_pct}% savings)")
         
         return bill
+
+    def _layers_for_amount(self, bill: Dict[str, Any], amount: float, allocation: Dict[str, Any]):
+        """Dollar layers for the cash collected so far.
+
+        An explicit caller split stays proportional, and the remainder stays
+        on risk. A kernel bill uses the waterfall of this total. A later
+        installment is the difference from the previous total, so two halves
+        of one month still reach the add-on. Rebuilding a slice from rounded
+        percentages puts a dollar over a finished month onto savings.
+        """
+        amount = round(float(amount), 2)
+        source = allocation.get('split_source')
+        percentages_missing = (
+            allocation.get('risk_percentage') is None
+            and allocation.get('savings_percentage') is None
+        )
+        if source != 'explicit' and (source or percentages_missing):
+            from services.financial_unification_service import resolve_premium_split
+            policy = self._policies.get(bill.get('policy_id') or '', {}) if bill.get('policy_id') else None
+            split = resolve_premium_split(amount, policy or None)
+            return (
+                split['risk_amount'],
+                split['savings_amount'],
+                split['risk_percentage'],
+                split['savings_percentage'],
+            )
+        risk_pct = allocation.get('risk_percentage', self.default_risk_pct)
+        savings_pct = allocation.get('savings_percentage', self.default_savings_pct)
+        if risk_pct + savings_pct != 100:
+            savings_pct = 100 - risk_pct
+        payment_savings = round(amount * float(savings_pct) / 100, 2)
+        payment_risk = round(amount - payment_savings, 2)
+        return payment_risk, payment_savings, risk_pct, savings_pct
 
     def record_payment(self, 
                        bill_id: str, 
@@ -145,6 +187,17 @@ class BillingService:
         prev_paid = float(b.get('amount_paid', 0.0))
         was_already_paid = b.get('status') == 'paid'
         b['amount_paid'] = round(prev_paid + float(amount), 2)
+
+        # Paid layers are the waterfall of cash collected so far. A fresh
+        # waterfall of each installment would fill risk twice and skip the add-on.
+        allocation = b.get('premium_allocation', {})
+        total_risk, total_savings, risk_pct, savings_pct = self._layers_for_amount(
+            b, b['amount_paid'], allocation
+        )
+        prior_risk = round(float(allocation.get('risk_amount_paid') or 0), 2)
+        prior_savings = round(float(allocation.get('savings_amount_paid') or 0), 2)
+        slice_risk = round(total_risk - prior_risk, 2)
+        slice_savings = round(total_savings - prior_savings, 2)
         
         # Update status
         if b['amount_paid'] >= b['amount_due']:
@@ -185,52 +238,51 @@ class BillingService:
                     amount=float(amount),
                     description=f"Premium payment for bill {bill_id}"
                 )
+                slice_amount = float(amount)
                 record_premium_cash_books(
                     customer_id=b.get('customer_id', ''),
                     policy_id=b.get('policy_id', ''),
-                    amount=float(amount),
+                    amount=slice_amount,
                     bills_paid=[str(bill_id)],
                     source_tx_id=str((ledger_tx or {}).get('id') or ''),
+                    risk_percentage=(round(slice_risk / slice_amount * 100, 2) if slice_amount else risk_pct),
+                    savings_percentage=(round(slice_savings / slice_amount * 100, 2) if slice_amount else savings_pct),
                 )
             except (ImportError, AttributeError, Exception) as e:
                 logger.warning(f"Could not update books for bill {bill_id}: {e}")
         
         b['updated_at'] = datetime.now().isoformat()
-        
-        # Calculate allocation amounts for this payment
-        allocation = b.get('premium_allocation', {})
-        risk_pct = allocation.get('risk_percentage', self.default_risk_pct)
-        savings_pct = allocation.get('savings_percentage', self.default_savings_pct)
-        
-        payment_risk = round(float(amount) * risk_pct / 100, 2)
-        payment_savings = round(float(amount) * savings_pct / 100, 2)
-        
-        # Update allocation tracking on the bill
-        allocation['risk_amount_paid'] = round(
-            float(allocation.get('risk_amount_paid', 0)) + payment_risk, 2)
-        allocation['savings_amount_paid'] = round(
-            float(allocation.get('savings_amount_paid', 0)) + payment_savings, 2)
+
+        # The running total is the waterfall of every dollar received, not the
+        # sum of a fresh waterfall on each installment.
+        allocation['risk_amount_paid'] = total_risk
+        allocation['savings_amount_paid'] = total_savings
         
         b['premium_allocation'] = allocation
         
         # Record in premium allocation tracker if available and bill is fully paid
         if auto_allocate and self._allocation_tracker and b['status'] == 'paid':
             try:
+                paid_total = float(b['amount_paid'])
+                risk_paid = float(allocation['risk_amount_paid'])
+                savings_paid = float(allocation['savings_amount_paid'])
                 alloc_record = self._allocation_tracker.record_bill_allocation(
                     bill_id=bill_id,
                     policy_id=b.get('policy_id', ''),
                     customer_id=b.get('customer_id', ''),
-                    bill_amount=b['amount_paid'],
+                    bill_amount=paid_total,
                     payment_date=datetime.now().isoformat(),
-                    risk_percentage=risk_pct,
-                    savings_percentage=savings_pct,
+                    risk_percentage=(round(risk_paid / paid_total * 100, 2) if paid_total else risk_pct),
+                    savings_percentage=(round(savings_paid / paid_total * 100, 2) if paid_total else savings_pct),
+                    risk_amount=risk_paid,
+                    savings_amount=savings_paid,
                     auto_allocate_savings=True
                 )
                 allocation['allocated'] = True
                 allocation['allocation_id'] = alloc_record.allocation_id
                 b['premium_allocation'] = allocation
                 
-                logger.info(f"Recorded allocation for bill {bill_id}: ${payment_risk:.2f} risk, ${payment_savings:.2f} savings")
+                logger.info(f"Recorded allocation for bill {bill_id}: ${risk_paid:.2f} risk, ${savings_paid:.2f} savings")
             except Exception as e:
                 logger.error(f"Failed to record allocation for bill {bill_id}: {e}")
         
@@ -263,12 +315,16 @@ class BillingService:
             b['status'] = 'overdue'
             b['updated_at'] = datetime.now().isoformat()
             
-            # Recalculate allocation amounts
+            # The fee is more cash on the same split. A kernel bill waterfalls
+            # the new total so the fee is not turned into savings.
             allocation = b.get('premium_allocation', {})
-            risk_pct = allocation.get('risk_percentage', self.default_risk_pct)
-            savings_pct = allocation.get('savings_percentage', self.default_savings_pct)
-            allocation['risk_amount_due'] = round(b['amount_due'] * risk_pct / 100, 2)
-            allocation['savings_amount_due'] = round(b['amount_due'] * savings_pct / 100, 2)
+            risk_due, savings_due, risk_pct, savings_pct = self._layers_for_amount(
+                b, b['amount_due'], allocation
+            )
+            allocation['risk_percentage'] = risk_pct
+            allocation['savings_percentage'] = savings_pct
+            allocation['risk_amount_due'] = risk_due
+            allocation['savings_amount_due'] = savings_due
             b['premium_allocation'] = allocation
             
             # Track fee applied

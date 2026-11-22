@@ -189,9 +189,15 @@ def test_supply_chain_invitation_to_purchase_pipeline_with_ledger_integrity():
         )
         assert status == 200
         assert wallet_purchase.get("success") is True
-        assert wallet_purchase.get("pricing_plan", {}).get("expense_loading_amount", 0) > 0
-        assert wallet_purchase.get("pricing_plan", {}).get("profit_margin_amount", 0) > 0
-        assert wallet_purchase.get("purchase", {}).get("wallet_deduction", 0) > 0
+        plan = wallet_purchase.get("pricing_plan") or {}
+        assert plan.get("markup_applied") is False
+        assert plan.get("final_customer_amount") == 160.0
+        assert plan.get("expense_loading_amount") == 0
+        assert plan.get("profit_margin_amount") == 0
+        assert plan.get("commission", 0) > 0
+        assert round(plan.get("commission", 0) + plan.get("supplier_payout", 0), 2) == 160.0
+        assert wallet_purchase.get("purchase", {}).get("amount") == 160.0
+        assert wallet_purchase.get("purchase", {}).get("wallet_deduction") == 160.0
 
         # 7) Buy using card path (no wallet deduction expected).
         card_purchase, status = _post(

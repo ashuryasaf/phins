@@ -164,19 +164,19 @@ def test_savings_portfolio_preserves_live_apis():
 def test_savings_portfolio_preserves_pipeline_and_allocation_defaults():
     html = _html()
     # Savings-pipeline HW / INV / ALGO defaults (AllocationConfig)
-    assert 'id="pipelineWalletPct">15%</div>' in html
-    assert 'id="pipelineInvestPct">60%</div>' in html
-    assert 'id="pipelineAlgoPct">25%</div>' in html
-    assert "(analytics.allocation.wallet || 15)" in html
-    assert "(analytics.allocation.investment || 60)" in html
-    assert "(analytics.allocation.algo_trading || 25)" in html
+    assert 'id="pipelineWalletPct">30%</div>' in html
+    assert 'id="pipelineInvestPct">65%</div>' in html
+    assert 'id="pipelineAlgoPct">5%</div>' in html
+    assert "(analytics.allocation.wallet || 30)" in html
+    assert "(analytics.allocation.investment || 65)" in html
+    assert "(analytics.allocation.algo_trading || 5)" in html
     # Customer-allocation premium + savings-destination fallbacks
-    assert 'id="actuarialRiskPct"' in html and ">50%</div>" in html
-    assert 'id="actuarialSavingsPct"' in html and ">50%</div>" in html
-    assert "alloc.savings_pct != null ? alloc.savings_pct : 50" in html
-    assert "alloc.risk_pct != null ? alloc.risk_pct : 50" in html
-    assert "alloc.savings_pct || 50" in html
-    assert "alloc.risk_pct || 50" in html
+    assert 'id="actuarialRiskPct"' in html and ">100%</div>" in html
+    assert 'id="actuarialSavingsPct"' in html and ">0%</div>" in html
+    assert "alloc.savings_pct != null ? alloc.savings_pct : 0" in html
+    assert "alloc.risk_pct != null ? alloc.risk_pct : 100" in html
+    assert "alloc.savings_pct || 0" in html
+    assert "alloc.risk_pct != null ? alloc.risk_pct : 100" in html
     assert "alloc.wallet_pct || 30" in html
     assert "alloc.investment_pct || 65" in html
     assert "alloc.algo_pct || 5" in html

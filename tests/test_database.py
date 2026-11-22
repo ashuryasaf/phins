@@ -311,5 +311,101 @@ def test_database_dict_interface():
     assert 'TEST-CUST-400' not in customers
 
 
+_KERNEL_PIN = {
+    'pricing_source': 'pricing_kernel',
+    'integrity_hash': 'pin-hash-1',
+    'risk_premium_annual': 1960.15,
+    'savings_premium_annual': 980.08,
+    'expense_loading_annual': 294.02,
+    'profit_margin_annual': 323.43,
+    'savings_addon': 'balanced',
+}
+
+
+def _pin_policy_store(policy_id, customer_id):
+    from database import init_database
+    from database.data_access import DatabaseDict
+
+    init_database()
+    customers = DatabaseDict('customers')
+    policies = DatabaseDict('policies')
+    if policy_id in policies:
+        del policies[policy_id]
+    if customer_id not in customers:
+        customers[customer_id] = {
+            'id': customer_id, 'name': 'Pin Test', 'email': f'{customer_id.lower()}@test.com',
+        }
+    return customers, policies
+
+
+def test_policy_kernel_pin_survives_the_database_round_trip():
+    """The pin keys are not columns. They are sealed together and read back."""
+    customers, policies = _pin_policy_store('TEST-POL-PIN-1', 'TEST-CUST-PIN-1')
+    try:
+        policies['TEST-POL-PIN-1'] = {
+            'id': 'TEST-POL-PIN-1', 'customer_id': 'TEST-CUST-PIN-1', 'type': 'life',
+            'coverage_amount': 500000, 'annual_premium': 3557.68, 'monthly_premium': 296.47,
+            'status': 'active', **_KERNEL_PIN,
+        }
+        stored = policies['TEST-POL-PIN-1']
+        for key, value in _KERNEL_PIN.items():
+            assert stored[key] == value
+        assert 'kernel_pin_intact' not in stored
+
+        # A later write that names no pin key keeps the pin.
+        policies['TEST-POL-PIN-1'] = {'id': 'TEST-POL-PIN-1', 'status': 'lapsed'}
+        stored = policies['TEST-POL-PIN-1']
+        assert stored['status'] == 'lapsed'
+        assert stored['risk_premium_annual'] == 1960.15
+
+        # One key replaced, one cleared, the rest kept.
+        policies['TEST-POL-PIN-1'] = {
+            'id': 'TEST-POL-PIN-1', 'underwriting_fee_annual': 120.0, 'savings_addon': None,
+        }
+        stored = policies['TEST-POL-PIN-1']
+        assert stored['underwriting_fee_annual'] == 120.0
+        assert stored.get('savings_addon') is None
+        assert stored['savings_premium_annual'] == 980.08
+
+        from services.financial_unification_service import resolve_premium_split
+        split = resolve_premium_split(296.47, stored)
+        assert split['risk_amount'] > 0 and split['savings_amount'] > 0
+    finally:
+        del policies['TEST-POL-PIN-1']
+        del customers['TEST-CUST-PIN-1']
+
+
+def test_policy_kernel_pin_with_a_bad_checksum_is_withheld_and_not_overwritten():
+    import json
+    from database.manager import DatabaseManager
+
+    customers, policies = _pin_policy_store('TEST-POL-PIN-2', 'TEST-CUST-PIN-2')
+    try:
+        policies['TEST-POL-PIN-2'] = {
+            'id': 'TEST-POL-PIN-2', 'customer_id': 'TEST-CUST-PIN-2', 'type': 'life',
+            'coverage_amount': 500000, 'annual_premium': 3557.68, 'status': 'active', **_KERNEL_PIN,
+        }
+        with DatabaseManager() as db:
+            row = db.policies.get_by_id('TEST-POL-PIN-2')
+            document = json.loads(row.kernel_pin)
+            document['fields']['savings_premium_annual'] = 3000.00
+            tampered = json.dumps(document, sort_keys=True)
+            db.policies.update('TEST-POL-PIN-2', kernel_pin=tampered)
+
+        stored = policies['TEST-POL-PIN-2']
+        assert stored['kernel_pin_intact'] is False
+        assert stored.get('savings_premium_annual') is None
+        assert stored.get('risk_premium_annual') is None
+
+        # A write over the broken seal does not replace it.
+        policies['TEST-POL-PIN-2'] = {'id': 'TEST-POL-PIN-2', **_KERNEL_PIN}
+        with DatabaseManager() as db:
+            assert db.policies.get_by_id('TEST-POL-PIN-2').kernel_pin == tampered
+        assert policies['TEST-POL-PIN-2']['kernel_pin_intact'] is False
+    finally:
+        del policies['TEST-POL-PIN-2']
+        del customers['TEST-CUST-PIN-2']
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

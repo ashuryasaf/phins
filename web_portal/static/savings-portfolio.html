@@ -962,12 +962,12 @@
                 </div>
                 <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
                     <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Risk Coverage</div>
-                    <div id="actuarialRiskPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">50%</div>
+                    <div id="actuarialRiskPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">100%</div>
                     <div id="actuarialRiskAmt" style="font-size: 0.75rem; color: var(--text-secondary);">$0.00</div>
                 </div>
                 <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
                     <div style="font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);">Savings Portion</div>
-                    <div id="actuarialSavingsPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">50%</div>
+                    <div id="actuarialSavingsPct" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; font-weight: 600;">0%</div>
                     <div id="actuarialSavingsAmt" style="font-size: 0.75rem; color: var(--text-secondary);">$0.00</div>
                 </div>
                 <div style="background: rgba(0,0,0,0.2); border-radius: 10px; padding: 0.85rem 1rem;">
@@ -1001,7 +1001,7 @@
                             <div style="font-size: 0.7rem; color: var(--text-secondary);">Emergency Fund</div>
                         </div>
                         <div style="text-align: right;">
-                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineWalletPct">15%</div>
+                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineWalletPct">30%</div>
                             <div style="font-size: 0.7rem; color: var(--success);" id="pipelineWalletBal">$0</div>
                         </div>
                     </div>
@@ -1012,7 +1012,7 @@
                             <div style="font-size: 0.7rem; color: var(--text-secondary);">Index • Bonds • Crypto</div>
                         </div>
                         <div style="text-align: right;">
-                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineInvestPct">60%</div>
+                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineInvestPct">65%</div>
                             <div style="font-size: 0.7rem; color: var(--info);" id="pipelineInvestBal">$0</div>
                         </div>
                     </div>
@@ -1023,7 +1023,7 @@
                             <div style="font-size: 0.7rem; color: var(--text-secondary);">Automated Strategies</div>
                         </div>
                         <div style="text-align: right;">
-                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineAlgoPct">25%</div>
+                            <div style="font-size: 0.85rem; font-weight: 600;" id="pipelineAlgoPct">5%</div>
                             <div style="font-size: 0.7rem; color: var(--secondary);" id="pipelineAlgoBal">$0</div>
                         </div>
                     </div>
@@ -1627,12 +1627,10 @@
                     }
                     
                     // Calculate total account value from unified source
-                    const unifiedTotal = unifiedData.total_value || 0;
-                    if (unifiedTotal > 0) {
-                        // Keep market value from portfolio service (has real-time prices)
-                        // but ensure cash balance syncs with INVESTMENT_ACCOUNTS
-                        portfolioData.total_account_value = Math.max(portfolioData.total_market_value || 0, 0) + (unifiedData.cash_balance || 0);
-                    }
+                    const unifiedCash = Math.max(Number(unifiedData.cash_balance || 0), 0);
+                    const unifiedInvested = Math.max(Number(unifiedData.invested_assets || 0), 0);
+                    const marketValue = Math.max(Number(portfolioData.total_market_value || 0), unifiedInvested);
+                    portfolioData.total_account_value = marketValue + unifiedCash;
                 }
                 
                 updatePortfolioDisplay();
@@ -1683,8 +1681,8 @@
             const dist = unified.monthly_distribution || {};
             const alloc = dist.allocation_pct || {};
             const actuarial = dist.actuarial_data || {};
-            const savingsPct = Number(alloc.savings_pct != null ? alloc.savings_pct : 50);
-            const riskPct = Number(alloc.risk_pct != null ? alloc.risk_pct : 50);
+            const savingsPct = Number(alloc.savings_pct != null ? alloc.savings_pct : 0);
+            const riskPct = Number(alloc.risk_pct != null ? alloc.risk_pct : 100);
             const premium = Number(dist.total_premium || 0);
             const riskAmt = Number(dist.risk_coverage != null ? dist.risk_coverage : premium * riskPct / 100);
             const savingsAmt = Number(
@@ -1717,9 +1715,9 @@
                     setPipelineText('pipelineAlgoBal', `$${(analytics.balances.algo_trading_balance || 0).toLocaleString('en-US', {minimumFractionDigits: 0})}`);
                 }
                 if (analytics.allocation) {
-                    setPipelineText('pipelineWalletPct', `${(analytics.allocation.wallet || 15).toFixed(0)}%`);
-                    setPipelineText('pipelineInvestPct', `${(analytics.allocation.investment || 60).toFixed(0)}%`);
-                    setPipelineText('pipelineAlgoPct', `${(analytics.allocation.algo_trading || 25).toFixed(0)}%`);
+                    setPipelineText('pipelineWalletPct', `${(analytics.allocation.wallet || 30).toFixed(0)}%`);
+                    setPipelineText('pipelineInvestPct', `${(analytics.allocation.investment || 65).toFixed(0)}%`);
+                    setPipelineText('pipelineAlgoPct', `${(analytics.allocation.algo_trading || 5).toFixed(0)}%`);
                 }
                 if (analytics.pipeline_health) {
                     applyPipelineHealth(analytics.pipeline_health);
@@ -1858,7 +1856,7 @@
                 const breakdownEl = document.getElementById('monthlyBreakdown');
                 const alloc = dist.allocation_pct || {};
                 breakdownEl.innerHTML = `
-                    <span style="color: var(--success);">${alloc.savings_pct || 50}% of $${(dist.total_premium || 0).toLocaleString()}</span>
+                    <span style="color: var(--success);">${alloc.savings_pct || 0}% of $${(dist.total_premium || 0).toLocaleString()}</span>
                 `;
                 
                 // Populate distribution tooltip
@@ -1870,10 +1868,10 @@
                         <span style="font-weight: 600;">${formatCurrency(dist.total_premium)}</span>
                     </div>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px; color: var(--text-secondary);">
-                        <span>→ Risk Coverage (${alloc.risk_pct || 50}%):</span>
+                        <span>→ Risk Coverage (${alloc.risk_pct != null ? alloc.risk_pct : 100}%):</span>
                         <span>${formatCurrency(dist.risk_coverage || 0)}</span>
                     </div>
-                    <div style="margin-bottom: 6px;"><strong>Savings Distribution (${alloc.savings_pct || 50}%):</strong></div>
+                    <div style="margin-bottom: 6px;"><strong>Savings Distribution (${alloc.savings_pct || 0}%):</strong></div>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
                         <span>Health Wallet (${alloc.wallet_pct || 30}%):</span>
                         <span style="color: #10b981;">${formatCurrency(dist.to_wallet || 0)}</span>

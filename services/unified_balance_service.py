@@ -95,15 +95,18 @@ class UnifiedBalanceService:
         
         # 2. Investment Account (Savings) Balance
         inv_account = self.investment_accounts.get(customer_id, {})
-        inv_balance = float(inv_account.get('balance', 0))
+        from services.savings_pipeline_service import investment_books
+        books = investment_books(inv_account)
+        investment_position = books['position']
         result['balances']['investment_account'] = {
-            'total_balance': inv_balance,
+            'total_balance': investment_position,
+            'unallocated_cash': books['cash'] if books['unallocated_cash'] else None,
             'index_balance': inv_account.get('index_balance', 0),
             'bonds_balance': inv_account.get('bonds_balance', 0),
             'crypto_balance': inv_account.get('crypto_balance', 0),
             'deposits_count': len(inv_account.get('deposits', []))
         }
-        result['total_assets'] += inv_balance
+        result['total_assets'] += investment_position
         
         # 3. Algo Trading Balance
         algo_balance = self.algo_trading_balances.get(customer_id, {})
@@ -138,7 +141,7 @@ class UnifiedBalanceService:
         result['summary'] = {
             'total_liquid_assets': result['total_assets'],
             'health_wallet_pct': (wallet_balance / result['total_assets'] * 100) if result['total_assets'] > 0 else 0,
-            'investment_pct': (inv_balance / result['total_assets'] * 100) if result['total_assets'] > 0 else 0,
+            'investment_pct': (investment_position / result['total_assets'] * 100) if result['total_assets'] > 0 else 0,
             'algo_trading_pct': (algo_total / result['total_assets'] * 100) if result['total_assets'] > 0 else 0
         }
         
@@ -159,93 +162,195 @@ class UnifiedBalanceService:
         Returns:
             Transfer result with transaction details and NFT token
         """
-        # Validate source and get balance
         if source == 'health_wallet':
             wallet = self.health_wallets.get(customer_id)
-            if not wallet:
+            if not isinstance(wallet, dict):
                 return {'success': False, 'error': 'Health wallet not found'}
-            if wallet.get('balance', 0) < amount:
-                return {'success': False, 'error': 'Insufficient health wallet balance'}
-            source_balance = wallet['balance']
+            book = wallet
         elif source == 'investment_account':
             inv_acc = self.investment_accounts.get(customer_id)
-            if not inv_acc:
+            if not isinstance(inv_acc, dict):
                 return {'success': False, 'error': 'Investment account not found'}
-            if inv_acc.get('balance', 0) < amount:
-                return {'success': False, 'error': 'Insufficient investment balance'}
-            source_balance = inv_acc['balance']
+            book = inv_acc
         else:
             return {'success': False, 'error': f'Invalid source: {source}'}
-        
-        # Initialize algo trading balance if needed
-        if customer_id not in self.algo_trading_balances:
-            self.algo_trading_balances[customer_id] = {
-                'available': 0.0,
-                'in_positions': 0.0,
-                'total_pnl': 0.0,
-                'active_bots': 0,
-                'transfers': [],
-                'created_at': datetime.now().isoformat()
-            }
-        
-        # Perform transfer
-        transfer_id = f"TRF-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
-        
-        # Deduct from source
-        if source == 'health_wallet':
-            self.health_wallets[customer_id]['balance'] -= amount
-            # Record wallet transaction
-            self.health_wallets[customer_id].setdefault('transactions', []).append({
-                'id': transfer_id,
-                'type': 'transfer_out',
-                'amount': -amount,
-                'description': f'Transfer to Algo Trading',
-                'timestamp': datetime.now().isoformat()
-            })
-        else:  # investment_account
-            self.investment_accounts[customer_id]['balance'] -= amount
-            # Proportionally reduce balances
-            total = self.investment_accounts[customer_id]['balance'] + amount
-            if total > 0:
-                ratio = self.investment_accounts[customer_id]['balance'] / total
-                for key in ['index_balance', 'bonds_balance', 'crypto_balance']:
-                    if key in self.investment_accounts[customer_id]:
-                        self.investment_accounts[customer_id][key] *= ratio
-        
-        # Add to algo trading
-        self.algo_trading_balances[customer_id]['available'] += amount
-        self.algo_trading_balances[customer_id]['transfers'].append({
-            'id': transfer_id,
-            'type': 'deposit',
-            'source': source,
-            'amount': amount,
-            'bot_id': bot_id,
-            'timestamp': datetime.now().isoformat()
-        })
-        
-        # Record in transaction ledger
-        tx = self.record_transaction(
-            customer_id=customer_id,
-            tx_type='algo_trading_deposit',
-            amount=amount,
-            description=f'Transfer ${amount:.2f} from {source} to Algo Trading',
-            metadata={
-                'transfer_id': transfer_id,
-                'source': source,
-                'source_balance_before': source_balance,
-                'source_balance_after': source_balance - amount,
-                'algo_balance_after': self.algo_trading_balances[customer_id]['available'],
-                'bot_id': bot_id
-            }
+
+        from services.savings_pipeline_service import (
+            account_book_lock,
+            algo_credit_lock,
+            apply_investment_withdrawal,
+            investment_books,
+            named_row_lock,
+            _restore_investment_transfer,
+            _snapshot_investment_transfer,
         )
-        
+
+        # A savings withdraw pays portfolio cash under the savings-account
+        # lock. Hold that lock across the investment debit and the portfolio
+        # publish, or the withdraw pays the pre-transfer cash.
+        savings_locks = []
+        portfolio_accounts = []
+        if source == 'investment_account' and self.portfolio_service is not None:
+            try:
+                portfolio_accounts = list(
+                    self.portfolio_service.get_customer_accounts(customer_id) or []
+                )
+            except Exception:
+                portfolio_accounts = []
+            for portfolio_account in sorted(
+                portfolio_accounts,
+                key=lambda item: str(getattr(item, 'account_id', '')),
+            ):
+                savings_id = getattr(portfolio_account, 'account_id', None)
+                if not savings_id:
+                    continue
+                savings_lock = named_row_lock(f"savings:{savings_id}")
+                if savings_lock not in savings_locks:
+                    savings_locks.append(savings_lock)
+        acquired_savings = 0
+        try:
+            for savings_lock in savings_locks:
+                savings_lock.acquire()
+                acquired_savings += 1
+
+            # Same row lock as the portfolio deposit path. The check, the
+            # withdrawal, the seal, and the algo credit stay inside it.
+            with account_book_lock(book):
+                wallet_reserved = False
+                if source == 'health_wallet':
+                    source_balance = float(book.get('balance', 0) or 0)
+                    if source_balance + 1e-9 < float(amount):
+                        return {'success': False, 'error': 'Insufficient health wallet balance'}
+                    # Reserve the cash before the seal. A bill that waits on this
+                    # row then sees the reduced balance and cannot spend it too.
+                    book['balance'] = round(source_balance - float(amount), 2)
+                    wallet_reserved = True
+                else:
+                    source_balance = investment_books(book)['position']
+                    if float(amount) > source_balance + 1e-9:
+                        return {
+                            'success': False,
+                            'error': 'Insufficient investment balance',
+                            'available_balance': source_balance,
+                        }
+
+                transfer_id = f"TRF-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(1000, 9999)}"
+                prior = None
+                portfolio_cash_taken = 0.0
+                if source != 'health_wallet':
+                    prior = _snapshot_investment_transfer(book)
+                    moved = apply_investment_withdrawal(book, amount)
+                    applied = round(float(moved.get('applied') or 0), 2)
+                    if applied <= 0:
+                        _restore_investment_transfer(book, prior)
+                        return {
+                            'success': False,
+                            'error': 'Insufficient investment balance',
+                            'available_balance': investment_books(book)['position'],
+                        }
+                    amount = applied
+                    portfolio_cash_taken = round(float(moved.get('cash_taken') or 0), 2)
+                    source_balance = investment_books(book)['position'] + amount
+
+                with algo_credit_lock(customer_id):
+                    bucket = self.algo_trading_balances.get(customer_id)
+                    if not isinstance(bucket, dict):
+                        bucket = {
+                            'available': 0.0,
+                            'in_positions': 0.0,
+                            'total_pnl': 0.0,
+                            'active_bots': 0,
+                            'transfers': [],
+                            'created_at': datetime.now().isoformat()
+                        }
+                        self.algo_trading_balances[customer_id] = bucket
+                    algo_after = round(
+                        float(bucket.get('available', 0) or 0) + amount,
+                        2,
+                    )
+                    try:
+                        tx = self.record_transaction(
+                            customer_id=customer_id,
+                            tx_type='algo_trading_deposit',
+                            amount=amount,
+                            description=f'Transfer ${amount:.2f} from {source} to Algo Trading',
+                            metadata={
+                                'transfer_id': transfer_id,
+                                'source': source,
+                                'source_balance_before': source_balance,
+                                'source_balance_after': source_balance - amount,
+                                'algo_balance_after': algo_after,
+                                'bot_id': bot_id
+                            }
+                        )
+                    except Exception:
+                        if wallet_reserved:
+                            book['balance'] = round(
+                                float(book.get('balance', 0) or 0) + amount, 2,
+                            )
+                        if prior is not None:
+                            _restore_investment_transfer(book, prior)
+                        raise
+
+                    if source == 'health_wallet':
+                        # The reservation already left. A credit that arrived
+                        # during the seal stays on the row.
+                        book.setdefault('transactions', []).append({
+                            'id': transfer_id,
+                            'type': 'transfer_out',
+                            'amount': -amount,
+                            'description': 'Transfer to Algo Trading',
+                            'timestamp': datetime.now().isoformat()
+                        })
+                        reported_source = round(float(book.get('balance', 0) or 0), 2)
+                    else:
+                        reported_source = round(source_balance - amount, 2)
+
+                    # The seal can replace this customer's algo row. Credit the
+                    # row now in the map, not the dict captured before the call.
+                    live_bucket = self.algo_trading_balances.get(customer_id)
+                    if not isinstance(live_bucket, dict):
+                        live_bucket = bucket
+                        self.algo_trading_balances[customer_id] = live_bucket
+                    live_bucket['available'] = round(
+                        float(live_bucket.get('available', 0) or 0) + amount,
+                        2,
+                    )
+                    live_bucket.setdefault('transfers', []).append({
+                        'id': transfer_id,
+                        'type': 'deposit',
+                        'source': source,
+                        'amount': amount,
+                        'bot_id': bot_id,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    # Peel only the cash that left the row. The row's balance
+                    # on an older book is the whole position, and copying it
+                    # onto the first savings account would make those holdings
+                    # withdrawable while the other accounts keep their cash.
+                    if source == 'investment_account' and portfolio_cash_taken > 0:
+                        left = portfolio_cash_taken
+                        for portfolio_account in portfolio_accounts:
+                            if left <= 0:
+                                break
+                            live_cash = round(
+                                float(getattr(portfolio_account, 'balance', 0) or 0), 2,
+                            )
+                            spend = min(live_cash, left)
+                            if spend > 0:
+                                portfolio_account.balance = round(live_cash - spend, 2)
+                                left = round(left - spend, 2)
+        finally:
+            for savings_lock in reversed(savings_locks[:acquired_savings]):
+                savings_lock.release()
+
         return {
             'success': True,
             'transfer_id': transfer_id,
             'amount': amount,
             'source': source,
             'new_algo_balance': self.algo_trading_balances[customer_id]['available'],
-            'new_source_balance': source_balance - amount,
+            'new_source_balance': reported_source,
             'transaction': tx,
             'nft_token_id': tx.get('nft_token_id')
         }
@@ -295,7 +400,10 @@ class UnifiedBalanceService:
         
         # Add to destination
         if destination == 'health_wallet':
-            self.health_wallets[customer_id]['balance'] += amount
+            from services.savings_pipeline_service import credit_account_balance
+            credited = credit_account_balance(
+                self.health_wallets[customer_id], amount,
+            )
             self.health_wallets[customer_id].setdefault('transactions', []).append({
                 'id': withdrawal_id,
                 'type': 'transfer_in',
@@ -303,16 +411,64 @@ class UnifiedBalanceService:
                 'description': 'Transfer from Algo Trading',
                 'timestamp': datetime.now().isoformat()
             })
-            new_dest_balance = self.health_wallets[customer_id]['balance']
+            new_dest_balance = credited if credited is not None else round(
+                float(self.health_wallets[customer_id].get('balance', 0) or 0), 2,
+            )
         else:
-            self.investment_accounts[customer_id]['balance'] += amount
-            self.investment_accounts[customer_id].setdefault('deposits', []).append({
+            # Add to the live row under the same lock an invest holds.
+            # A captured balance plus this amount would put back cash the
+            # invest already reserved. Savings locks come first so the new
+            # cash can be mirrored without inverting that order.
+            from services.savings_pipeline_service import (
+                credit_account_balance,
+                named_row_lock,
+            )
+            row = self.investment_accounts[customer_id]
+            portfolio_accounts = []
+            if self.portfolio_service is not None:
+                try:
+                    portfolio_accounts = list(
+                        self.portfolio_service.get_customer_accounts(customer_id) or []
+                    )
+                except Exception:
+                    portfolio_accounts = []
+            savings_locks = []
+            ordered_accounts = []
+            for portfolio_account in sorted(
+                portfolio_accounts,
+                key=lambda item: str(getattr(item, 'account_id', '')),
+            ):
+                savings_id = getattr(portfolio_account, 'account_id', None)
+                if not savings_id:
+                    continue
+                savings_lock = named_row_lock(f"savings:{savings_id}")
+                if savings_lock not in savings_locks:
+                    savings_locks.append(savings_lock)
+                    ordered_accounts.append(portfolio_account)
+            acquired_savings = 0
+            try:
+                for savings_lock in savings_locks:
+                    savings_lock.acquire()
+                    acquired_savings += 1
+                credited = credit_account_balance(row, amount)
+                if ordered_accounts and credited is not None:
+                    target = ordered_accounts[0]
+                    target.balance = round(
+                        float(getattr(target, 'balance', 0) or 0) + float(amount),
+                        2,
+                    )
+            finally:
+                for savings_lock in reversed(savings_locks[:acquired_savings]):
+                    savings_lock.release()
+            row.setdefault('deposits', []).append({
                 'id': withdrawal_id,
                 'type': 'algo_trading_withdrawal',
                 'amount': amount,
                 'timestamp': datetime.now().isoformat()
             })
-            new_dest_balance = self.investment_accounts[customer_id]['balance']
+            new_dest_balance = credited if credited is not None else round(
+                float(row.get('balance', 0) or 0), 2,
+            )
         
         # Record transaction
         tx = self.record_transaction(

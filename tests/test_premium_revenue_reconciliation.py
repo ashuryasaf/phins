@@ -21,6 +21,7 @@ from services.financial_unification_service import (
     money,
     money_float,
     reconcile_premium_run_rate,
+    resolve_premium_split,
 )
 
 
@@ -323,6 +324,8 @@ def test_policy_create_keeps_monthly_and_annual_premium_as_one_identity():
         assert pol.get("risk_allocation") != 75
         assert pol.get("savings_allocation") != 25
         assert abs(float(pol.get("risk_allocation") or 0) + float(pol.get("savings_allocation") or 0) - 100.0) < 0.02
+        split = resolve_premium_split(pol["annual_premium"], pol)
+        assert abs(float(pol["savings_allocation"]) - split["savings_percentage"]) < 0.02
     finally:
         for pid in created:
             portal.POLICIES.pop(pid, None)

@@ -82,8 +82,9 @@ class BillPremiumAllocation:
         if not self.created_at:
             self.created_at = datetime.now().isoformat()
         
-        # Calculate amounts from percentages
-        if self.risk_amount == Decimal(0) and self.bill_amount > 0:
+        # Amounts supplied by the waterfall are kept. Percentages are only
+        # a fallback when neither dollar layer was given.
+        if self.bill_amount > 0 and self.risk_amount == Decimal(0) and self.savings_amount == Decimal(0):
             self.risk_amount = (self.bill_amount * self.risk_percentage / Decimal(100)).quantize(
                 Decimal('0.01'), rounding=ROUND_HALF_UP)
             self.savings_amount = (self.bill_amount * self.savings_percentage / Decimal(100)).quantize(
@@ -280,6 +281,8 @@ class PremiumAllocationTracker:
                                payment_date: str = None,
                                risk_percentage: float = None,
                                savings_percentage: float = None,
+                               risk_amount: float = None,
+                               savings_amount: float = None,
                                auto_allocate_savings: bool = True) -> BillPremiumAllocation:
         """
         Record a premium allocation when a bill is paid.
@@ -304,8 +307,11 @@ class PremiumAllocationTracker:
         risk_pct = Decimal(str(risk_percentage)) if risk_percentage is not None else self.default_risk_percentage
         savings_pct = Decimal(str(savings_percentage)) if savings_percentage is not None else self.default_savings_percentage
         
-        # Ensure they sum to 100
-        if risk_pct + savings_pct != Decimal('100'):
+        amounts_given = risk_amount is not None or savings_amount is not None
+        # An explicit percentage split sums to 100. Waterfall amounts do not
+        # when expense or profit sits between risk and the add-on, and that
+        # gap is not savings.
+        if not amounts_given and risk_pct + savings_pct != Decimal('100'):
             savings_pct = Decimal('100') - risk_pct
         
         allocation = BillPremiumAllocation(
@@ -316,7 +322,9 @@ class PremiumAllocationTracker:
             bill_amount=Decimal(str(bill_amount)),
             payment_date=payment_date or datetime.now().isoformat(),
             risk_percentage=risk_pct,
-            savings_percentage=savings_pct
+            savings_percentage=savings_pct,
+            risk_amount=Decimal(str(risk_amount if risk_amount is not None else 0)),
+            savings_amount=Decimal(str(savings_amount if savings_amount is not None else 0)),
         )
         
         # Auto-allocate savings if requested

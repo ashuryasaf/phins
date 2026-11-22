@@ -495,6 +495,9 @@
         </div>
         <p class="page-intro">Monitor all registered customers, validate their pipeline status, and reach them by email or WhatsApp with messages, new offers, and bills.</p>
 
+        <!-- Flagged customers with a health-wallet withdrawal on hold -->
+        <div id="withdrawal-retention-bar"></div>
+
         <!-- Pipeline Stats -->
         <div class="stats-grid dashboard-stats phins-spectrum-stats" id="stats-grid">
             <div class="stat-card stat-box primary">
@@ -1137,6 +1140,7 @@
             setInterval(() => { loadStats(); loadCustomers(); }, 30000);
         });
     </script>
+  <script src="/withdrawal-retention-bar.js"></script>
   <script src="/ui-clarity.js"></script>
 </body>
 </html>

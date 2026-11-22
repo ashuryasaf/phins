@@ -397,6 +397,10 @@ def price_application_with_kernel(payload: Dict[str, Any]) -> Optional[Dict[str,
             "risk_premium_annual": components.risk_premium_annual,
             "mortality_premium_annual": components.mortality_premium_annual,
             "disability_premium_annual": components.disability_premium_annual,
+            # The kernel cents close: risk + savings + expense + profit is the
+            # annual premium. Issuance pins all four so no cash is left over.
+            "expense_loading_annual": components.expense_loading_annual,
+            "profit_margin_annual": components.profit_margin_annual,
             "adl_level": components.adl_level,
             "adl_clinical_level": inputs.get("adl_clinical_level"),
             "adl_level_source": inputs.get("adl_level_source"),

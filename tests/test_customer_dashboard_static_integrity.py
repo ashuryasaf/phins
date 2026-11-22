@@ -61,14 +61,14 @@ def test_customer_tabs_use_unified_brand_chrome():
 
 def test_dashboard_uses_kernel_allocation_defaults_not_legacy_25_75():
     html = _html()
-    assert "savings_pct: 50" in html
-    assert "risk_pct: 50" in html
+    assert "savings_pct: 0" in html
+    assert "risk_pct: 100" in html
     assert "DEFAULT_CUSTOMER_ALLOCATION" in html
-    assert "50% → Investments" in html
-    assert "50% → Coverage" in html
+    assert "0% add-on" in html
+    assert "100% risk" in html
     assert "function allocationForPolicy(" in html
     assert "function resolveCustomerHashTarget(" in html
-    assert "retiredDefault" in html
+    assert "retiredHalf" in html
     assert "function bookAuthHeaders(" in html
     assert "bookAuthHeaders()" in html
     assert "function syncCustomerBookDisplays()" in html

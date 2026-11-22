@@ -145,20 +145,29 @@ class ProcessPipelineOrchestrator:
                  billing_service=None,
                  data_integrity_service=None,
                  savings_pipeline_service=None,
+                 algo_balances: Dict = None,
                  claim_payout_fn=None):
 
-        self.policies = policies or {}
-        self.customers = customers or {}
-        self.claims = claims or {}
-        self.billing = billing or {}
-        self.health_wallets = health_wallets or {}
-        self.investment_accounts = investment_accounts or {}
-        self.transaction_ledger = transaction_ledger or {}
-        self.suppliers = suppliers or {}
-        self.supplier_offers = supplier_offers or {}
-        self.supplier_orders = supplier_orders or {}
-        self.supply_chain_ledger = supply_chain_ledger or {}
-        self.nft_ledger = nft_ledger or {}
+        self.policies = {} if policies is None else policies
+        self.customers = {} if customers is None else customers
+        self.claims = {} if claims is None else claims
+        self.billing = {} if billing is None else billing
+        self.health_wallets = {} if health_wallets is None else health_wallets
+        self.investment_accounts = {} if investment_accounts is None else investment_accounts
+        self.transaction_ledger = {} if transaction_ledger is None else transaction_ledger
+        self.suppliers = {} if suppliers is None else suppliers
+        self.supplier_offers = {} if supplier_offers is None else supplier_offers
+        self.supplier_orders = {} if supplier_orders is None else supplier_orders
+        self.supply_chain_ledger = {} if supply_chain_ledger is None else supply_chain_ledger
+        self.nft_ledger = {} if nft_ledger is None else nft_ledger
+        if algo_balances is not None:
+            self.algo_balances = algo_balances
+        else:
+            shared_algo = None
+            unified = getattr(savings_pipeline_service, 'unified_balance', None)
+            if unified is not None:
+                shared_algo = getattr(unified, 'algo_trading_balances', None)
+            self.algo_balances = shared_algo if isinstance(shared_algo, dict) else {}
         self.underwriting_apps = underwriting_apps or {}
 
         self.pipeline_integrity = pipeline_integrity_service
@@ -601,7 +610,8 @@ class ProcessPipelineOrchestrator:
         if destination == 'health_wallet':
             wallet = self.health_wallets.get(customer_id)
             if wallet:
-                wallet['balance'] = float(wallet.get('balance', 0)) + amount
+                from services.savings_pipeline_service import credit_account_balance
+                credit_account_balance(wallet, amount)
                 wallet.setdefault('transactions', []).append({
                     'id': f"CLM-PAY-{claim.get('id', claim.get('claim_id', 'unknown'))}",
                     'type': 'claim_payout',
@@ -648,17 +658,10 @@ class ProcessPipelineOrchestrator:
         annual_premium = float(policy.get('annual_premium', 0))
         monthly_premium = float(policy.get('monthly_premium', annual_premium / 12 if annual_premium else 0))
 
-        hw = policy.get('health_wallet', {})
-        if isinstance(hw, str):
-            try:
-                hw = json.loads(hw)
-            except Exception:
-                hw = {}
-        savings_pct = float(hw.get('allocation_percentage', 25)) / 100.0
-        risk_pct = 1.0 - savings_pct
-
-        risk_amount = round(monthly_premium * risk_pct, 2)
-        savings_amount = round(monthly_premium * savings_pct, 2)
+        split = self._premium_split(policy, monthly_premium)
+        risk_amount = split['risk_amount']
+        savings_amount = split['savings_amount']
+        fanout = self._fan_out_savings(savings_amount)
 
         bill_id = f"BILL-AUTO-{datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}"
         now = datetime.now(timezone.utc)
@@ -674,10 +677,20 @@ class ProcessPipelineOrchestrator:
             'created_date': now.isoformat(),
             'premium_breakdown': {
                 'risk_amount': risk_amount,
-                'risk_percentage': round(risk_pct * 100, 2),
+                'risk_percentage': split['risk_percentage'],
                 'savings_amount': savings_amount,
-                'savings_percentage': round(savings_pct * 100, 2),
-                'health_wallet_amount': savings_amount
+                'savings_percentage': split['savings_percentage'],
+                'expense_amount': split['expense_amount'],
+                'profit_amount': split['profit_amount'],
+                'company_remainder': split['company_remainder'],
+                'split_source': split['split_source'],
+                'split_label': split['split_label'],
+                'health_wallet_amount': fanout['wallet'],
+                'investment_amount': fanout['investment'],
+                'algo_amount': fanout['algo'],
+                'index_amount': fanout['index'],
+                'bonds_amount': fanout['bonds'],
+                'crypto_amount': fanout['crypto'],
             },
             'automation': {
                 'auto_generated': True,
@@ -746,11 +759,36 @@ class ProcessPipelineOrchestrator:
         customer_id = bill.get('customer_id', '')
 
         wallet_credit = None
+        investment_credit = None
+        algo_credit = None
+        seals = []
         if savings_amount > 0 and customer_id and bill['status'] == 'paid':
+            fanout = {
+                'wallet': float(breakdown.get('health_wallet_amount', 0) or 0),
+                'investment': float(breakdown.get('investment_amount', 0) or 0),
+                'algo': float(breakdown.get('algo_amount', 0) or 0),
+                'index': float(breakdown.get('index_amount', 0) or 0),
+                'bonds': float(breakdown.get('bonds_amount', 0) or 0),
+                'crypto': float(breakdown.get('crypto_amount', 0) or 0),
+            }
+            if fanout['wallet'] <= 0 and fanout['investment'] <= 0 and fanout['algo'] <= 0:
+                fanout = self._fan_out_savings(savings_amount)
             wallet_credit = self._credit_health_wallet(
-                customer_id, savings_amount,
+                customer_id, fanout['wallet'],
                 source='premium_savings',
                 reference_id=bill_id
+            )
+            investment_credit = self._credit_investment_slice(
+                customer_id, fanout, reference_id=bill_id
+            )
+            algo_credit = self._credit_algo(customer_id, fanout['algo'], reference_id=bill_id)
+            seals = self._append_savings_seals(
+                customer_id,
+                amount_paid=float(bill.get('amount_paid') or amount),
+                savings_amount=savings_amount,
+                fanout=fanout,
+                reference_id=bill_id,
+                split_label=str(breakdown.get('split_label') or 'default'),
             )
 
         phinsafe_savings = float(breakdown.get('phinsafe_savings_amount') or 0)
@@ -781,8 +819,135 @@ class ProcessPipelineOrchestrator:
             'status': bill['status'],
             'amount_paid': bill['amount_paid'],
             'wallet_credit': wallet_credit,
+            'investment_credit': investment_credit,
+            'algo_credit': algo_credit,
+            'savings_seals': seals,
             'phinsafe_savings_deposit': pipeline_deposit,
         }
+
+    def _premium_split(self, policy: Dict[str, Any], amount: float) -> Dict[str, Any]:
+        """Kernel risk first. Only a savings add-on or growth add is savings."""
+        from services.financial_unification_service import resolve_premium_split
+        return resolve_premium_split(amount, policy)
+
+    def _fan_out_savings(self, savings_amount: float) -> Dict[str, float]:
+        """30% wallet, 65% investments, 5% algo. Investments then 60/30/10."""
+        wallet = round(savings_amount * 0.30, 2)
+        investment = round(savings_amount * 0.65, 2)
+        algo = round(savings_amount - wallet - investment, 2)
+        index = round(investment * 0.60, 2)
+        bonds = round(investment * 0.30, 2)
+        crypto = round(investment - index - bonds, 2)
+        return {
+            'wallet': wallet,
+            'investment': investment,
+            'algo': algo,
+            'index': index,
+            'bonds': bonds,
+            'crypto': crypto,
+        }
+
+    def _credit_investment_slice(self, customer_id: str, fanout: Dict[str, float],
+                                 reference_id: str) -> Dict[str, Any]:
+        created = customer_id not in self.investment_accounts
+        if created:
+            self.investment_accounts[customer_id] = {
+                'customer_id': customer_id,
+                'balance': 0.0,
+                'index_balance': 0.0,
+                'bonds_balance': 0.0,
+                'crypto_balance': 0.0,
+                'allocations': [],
+                'created_at': datetime.now(timezone.utc).isoformat(),
+                'balance_is_unallocated_cash': True,
+            }
+        account = self.investment_accounts[customer_id]
+        if not created:
+            from services.savings_pipeline_service import mark_unallocated_cash
+            mark_unallocated_cash(account)
+        account['index_balance'] = float(account.get('index_balance', 0) or 0) + fanout['index']
+        account['bonds_balance'] = float(account.get('bonds_balance', 0) or 0) + fanout['bonds']
+        account['crypto_balance'] = float(account.get('crypto_balance', 0) or 0) + fanout['crypto']
+        account.setdefault('allocations', []).append({
+            'type': 'premium_savings',
+            'reference_id': reference_id,
+            'amount': fanout['investment'],
+            'index': fanout['index'],
+            'bonds': fanout['bonds'],
+            'crypto': fanout['crypto'],
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+        })
+        return {
+            'credited': True,
+            'amount': fanout['investment'],
+            'unallocated_cash': float(account.get('balance', 0) or 0),
+        }
+
+    def _credit_algo(self, customer_id: str, amount: float, reference_id: str) -> Dict[str, Any]:
+        row = self.algo_balances.get(customer_id)
+        if not isinstance(row, dict):
+            row = {'available': 0.0, 'in_positions': 0.0, 'transfers': []}
+            self.algo_balances[customer_id] = row
+        row['available'] = float(row.get('available', 0) or 0) + amount
+        row.setdefault('transfers', []).append({
+            'type': 'premium_savings',
+            'amount': amount,
+            'reference_id': reference_id,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+        })
+        return {'credited': True, 'amount': amount, 'available': row['available']}
+
+    def _append_savings_seals(self, customer_id: str, *, amount_paid: float,
+                              savings_amount: float, fanout: Dict[str, float],
+                              reference_id: str, split_label: str) -> List[str]:
+        """Append PHINS-CHAIN seals. Existing verification hashes are not edited."""
+        from services.nft_ledger import mint_token
+
+        stages = [
+            ('premium_payment', amount_paid, False, 'Premium collected'),
+            ('savings_addressed', savings_amount, True, 'Amount addressed to savings'),
+            ('pipeline_allocation', fanout['investment'], True, 'Investment allocation'),
+            ('health_wallet_allocation', fanout['wallet'], True, 'Health wallet allocation'),
+            ('algo_allocation', fanout['algo'], True, 'Algo allocation'),
+        ]
+        sealed: List[str] = []
+        for tx_type, stage_amount, internal, description in stages:
+            if stage_amount <= 0:
+                continue
+            tx_id = f"{tx_type}-{reference_id}-{secrets.token_hex(3)}"
+            metadata = {
+                'reference_id': reference_id,
+                'split_label': split_label,
+                'internal': internal,
+                'cash_event': not internal,
+            }
+            if internal:
+                metadata['cash_event'] = False
+            try:
+                token = mint_token(
+                    self.nft_ledger,
+                    owner_id=customer_id,
+                    transaction_type=tx_type,
+                    transaction_id=tx_id,
+                    amount=stage_amount,
+                    description=description,
+                    metadata=metadata,
+                )
+            except Exception:
+                continue
+            sealed.append(str(token.get('token_id') or ''))
+            if tx_id not in self.transaction_ledger:
+                self.transaction_ledger[tx_id] = {
+                    'id': tx_id,
+                    'customer_id': customer_id,
+                    'type': tx_type,
+                    'amount': stage_amount,
+                    'description': description,
+                    'metadata': metadata,
+                    'nft_token_id': token.get('token_id'),
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                }
+        return sealed
 
     def _credit_health_wallet(self, customer_id: str, amount: float,
                                source: str, reference_id: str) -> Dict[str, Any]:
@@ -795,7 +960,8 @@ class ProcessPipelineOrchestrator:
             }
 
         wallet = self.health_wallets[customer_id]
-        wallet['balance'] = float(wallet.get('balance', 0)) + amount
+        from services.savings_pipeline_service import credit_account_balance
+        credit_account_balance(wallet, amount)
         wallet.setdefault('transactions', []).append({
             'id': f"PIPE-{secrets.token_hex(4).upper()}",
             'type': source,
