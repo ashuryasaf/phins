@@ -841,6 +841,30 @@ Environment variables commonly used:
  **Staff · Share links** list (English and Hebrew). NDA stays optional.
  The published rate table stays public. A share of either language opens
  the other through the page's language switch.
+- **Legal & Funding Center link (legal advisers):**
+  `/corporate-legal-dashboard.html` is confidential. A share minted for it
+  (pitch-dashboard **Staff · Share links**, label = the adviser or firm,
+  required) opens the hub and the fifteen `/legal/*.html` pages it lists
+  (`LEGAL_CENTER_DOCUMENTS`, kept equal to the hub's cards) as a reading
+  copy. The cover is one-way (`confidential_access.share_covers`): a share
+  minted for one `/legal/` page still opens only that page. The server marks
+  the page `data-phins-share-view="legal-center"` and removes
+  `data-phins-staff-only` elements (`legal_center_share_html`; a staff link
+  that survives closes the page). `legal-docs.js` then shows no signing
+  controls, and `/api/legal-docs/{sign,verify,registry}`, downloads, and
+  every other confidential page stay closed to that link. The link is not a
+  session and adds nothing outside that scope. The NBA Law request for
+  legal services (`investor-docs/nba-law-legal-services-request-22nov2026`)
+  has an English and a Hebrew edition (`.he.md`, right-to-left PDF); each
+  HTML edition is its own share and the PDF and Markdown stay staff-only.
+- **Hebrew PDFs (`scripts/generate_investor_pdfs.py`):** a right-to-left
+  line is wrapped by the script and then reordered, so it must fit the
+  width reportlab lays it in (`_rtl_width_for` allows for the frame's
+  padding). A line that does not fit is wrapped again in visual order and
+  its first words drop to the next row. In Hebrew copy, do not follow a
+  Latin word with a number or a closing bracket (`(NBA Law) · 22 …`): the
+  number joins the Latin run. `tests/test_nba_law_legal_services_request.py`
+  checks both for that document.
 - **Business-plan open links (NDA, protected view, saved factors):**
  `/business-plan.html`, `/business-plan.he.html` and `/api/business-plan/*`
  are one confidential share scope (`confidential_access.share_scope_root`);
@@ -1386,4 +1410,4 @@ If you update this file again:
 
 ---
 
-Last updated: November 20, 2026
+Last updated: November 22, 2026
