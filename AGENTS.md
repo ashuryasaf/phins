@@ -444,7 +444,11 @@ PHINS is a Python platform built around:
  The Go back / Close bar is chrome only (hidden in print and when framed);
  role homes live in `PIPELINE_DOCUMENT_HOMES` and must stay aligned with
  `PHINS_DOCUMENT_HOMES`. Same-origin PDF/Markdown opens in a new tab go
- through `/document-viewer.html` (`phins-doc-open.js`). Do not change
+ through `/document-viewer.html` (`phins-doc-open.js`). Every PHINS
+ wordmark (headers, login, letterheads) is set as `PHINS©` over an
+ "All rights reserved" line tracked to the wordmark width by
+ `phins-brand-mark.js` (loaded by `ui-clarity.js`, inlined into generated
+ documents; `data-phins-mark="off"` opts a subtree out). Do not change
  figures, checksums, or stored records when adding chrome
 
 Runtime defaults are important:

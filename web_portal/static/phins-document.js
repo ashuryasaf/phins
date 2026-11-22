@@ -8,10 +8,11 @@
     let cssText = '';
     let logoText = '';
     let returnJs = '';
+    let brandMarkJs = '';
 
     async function assets() {
-        if (!cssText || !logoText || !returnJs) {
-            const [css, logo, ret] = await Promise.all([
+        if (!cssText || !logoText || !returnJs || !brandMarkJs) {
+            const [css, logo, ret, mark] = await Promise.all([
                 fetch('/phins-document.css').then((r) => {
                     if (!r.ok) throw new Error('PHINS document style is unavailable');
                     return r.text();
@@ -24,12 +25,17 @@
                     if (!r.ok) throw new Error('PHINS document return bar is unavailable');
                     return r.text();
                 }),
+                fetch('/phins-brand-mark.js').then((r) => {
+                    if (!r.ok) throw new Error('PHINS brand mark is unavailable');
+                    return r.text();
+                }),
             ]);
             cssText = css;
             logoText = logo;
             returnJs = ret;
+            brandMarkJs = mark;
         }
-        return { css: cssText, logo: logoText, returnJs: returnJs };
+        return { css: cssText, logo: logoText, returnJs: returnJs + '\n' + brandMarkJs };
     }
 
     function esc(value) {
