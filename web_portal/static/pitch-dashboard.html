@@ -2919,6 +2919,9 @@
               <option value="/phins-customer-150k-one-pager.he.html">Customer cover · US$150,000 · גיל 42 — עברית</option>
               <option value="/investor-deck.html">Investor deck — 13 slides — English (NDA, protected view)</option>
               <option value="/investor-deck.he.html">Investor deck — 13 שקפים — עברית (NDA, protected view)</option>
+              <option value="/corporate-legal-dashboard.html">Corporate, Legal &amp; Funding Center — for legal advisers (hub + 15 documents, reading copy)</option>
+              <option value="/investor-docs/nba-law-legal-services-request-22nov2026.html">NBA Law · Request for legal services — English</option>
+              <option value="/investor-docs/nba-law-legal-services-request-22nov2026.he.html">NBA Law · בקשה לשירותים משפטיים — עברית</option>
             </select>
           </label>
           <label style="font-size:8.5pt;grid-column:1/-1;">Label <span id="share-label-hint" style="color:var(--text-sub);font-weight:400;">(the party the NDA is addressed to)</span>
@@ -2957,6 +2960,7 @@
         </form>
         <p id="confidential-share-msg" style="font-size:9pt;margin:10px 0 0;min-height:1.2em;color:var(--text-sub);"></p>
         <div id="confidential-share-result" style="display:none;margin-top:10px;padding:10px;border-radius:8px;background:#f4f7fb;font-size:9.5pt;word-break:break-all;"></div>
+        <p id="share-legal-center-note" style="font-size:8.5pt;color:var(--text-sub);margin:8px 0 0;">A <strong>Corporate, Legal &amp; Funding Center</strong> link is for legal advisers. It opens <a href="/corporate-legal-dashboard.html">the hub</a> and the fifteen documents it lists as a reading copy: signing, the signature registry, and downloads stay closed, and it does not open the pitch dashboard, the NDA Center, the admin dashboard, or any other staff page. The label names the adviser or firm that holds the link.</p>
         <p style="font-size:8.5pt;color:var(--text-sub);margin:8px 0 0;">A business-plan link freezes the document structure and the adjustable factors saved in <a href="/business-plan.html#bp-factor-panel">Admin tools</a> at the moment it is created. An investor-deck link freezes that same factor set onto the 13 slides (English or Hebrew). A later edit does not change a link already sent, and each link needs its own signature — opening one does not open the next.</p>
       </div>
 
@@ -3166,6 +3170,8 @@
             <a href="/investor-docs/nba-law-meeting-22nov-brief.pdf" target="_blank" rel="noopener" class="exec-dl-btn" download>Legal agenda (PDF)</a>
             <a href="/investor-docs/nba-law-legal-services-request-22nov2026.html" target="_blank" rel="noopener" class="exec-dl-btn">Request for legal services · for NBA Law</a>
             <a href="/investor-docs/nba-law-legal-services-request-22nov2026.pdf" target="_blank" rel="noopener" class="exec-dl-btn" download>Request for legal services (PDF)</a>
+            <a href="/investor-docs/nba-law-legal-services-request-22nov2026.he.html" target="_blank" rel="noopener" class="exec-dl-btn" lang="he" dir="rtl">בקשה לשירותים משפטיים · עברית</a>
+            <a href="/investor-docs/nba-law-legal-services-request-22nov2026.he.pdf" target="_blank" rel="noopener" class="exec-dl-btn" download>Request for legal services · Hebrew (PDF)</a>
           </div>
           <p style="font-size:8.6pt;color:var(--text-soft);margin:10px 0 0 0;">The agenda brief is internal preparation. The request for legal services is the document to send to NBA Law: services, deliverables, timing, and capacity per area, without preparation notes. The request is confidential: staff download it, and a share link opens only its HTML edition.</p>
         </div>
@@ -6237,6 +6243,8 @@
           <a href="/investor-docs/nba-law-meeting-22nov-brief.pdf" target="_blank" rel="noopener" class="exec-dl-btn" download>Download brief (PDF)</a>
           <a href="/investor-docs/nba-law-legal-services-request-22nov2026.html" target="_blank" rel="noopener" class="exec-dl-btn" style="background:linear-gradient(180deg,#f7e2a0 0%,#e3bf6f 100%);color:#071022;border-color:transparent;font-weight:800;">For NBA Law · request for legal services</a>
           <a href="/investor-docs/nba-law-legal-services-request-22nov2026.pdf" target="_blank" rel="noopener" class="exec-dl-btn" download>Download request for NBA Law (PDF)</a>
+          <a href="/investor-docs/nba-law-legal-services-request-22nov2026.he.html" target="_blank" rel="noopener" class="exec-dl-btn" lang="he" dir="rtl">ל-NBA Law · בקשה לשירותים משפטיים (עברית)</a>
+          <a href="/investor-docs/nba-law-legal-services-request-22nov2026.he.pdf" target="_blank" rel="noopener" class="exec-dl-btn" download>Download request for NBA Law · Hebrew (PDF)</a>
           <a href="#nba-law-meeting-25oct" class="exec-dl-btn">NBA Law 25.10 · introduction</a>
           <a href="#unified-business-plan-card" class="exec-dl-btn">One standard</a>
           <a href="/business-plan.html" class="exec-dl-btn">Unified plan</a>
@@ -13597,6 +13605,7 @@
         var docPath = docSel ? docSel.value : "/pitch-dashboard.html";
         var isPlan = docPath.indexOf("/business-plan") === 0;
         var isDeck = docPath.indexOf("/investor-deck") === 0;
+        var isLegalCenter = docPath === "/corporate-legal-dashboard.html";
         var ndaBox = document.getElementById("share-nda");
         var windowHours = parseInt((document.getElementById("share-window") || {}).value || "3", 10) || 3;
         if (mode === "single" && windowHours > 3) windowHours = 3;
@@ -13613,6 +13622,10 @@
         };
         if (body.nda_required && body.label.trim().length < 2) {
           msg.textContent = "An NDA link needs the recipient's name or organisation as its label.";
+          return;
+        }
+        if (isLegalCenter && body.label.trim().length < 2) {
+          msg.textContent = "A Legal & Funding Center link needs the adviser's name or firm as its label.";
           return;
         }
         if (mode === "multi") body.max_uses = 5;
@@ -13657,6 +13670,10 @@
                   ? "<br><strong>Frozen for this link:</strong> " + partCount + " chapters · " + factorCount + " adjustable factor" + (factorCount === 1 ? "" : "s")
                   : "")
               : "") +
+            (isLegalCenter
+              ? "<br><strong>Legal &amp; Funding Center:</strong> held by " + String(share.label || "").replace(/</g, "&lt;") +
+                " · the hub and its fifteen documents, reading copy · signing closed · no staff page"
+              : "") +
             "<br><span style=\"color:#666\">Copied to clipboard when supported. Downloads stay excluded.</span>";
           if (window.phinsSetSignedUseOpen) window.phinsSetSignedUseOpen(true);
           loadSignedDesk(token);
@@ -13678,8 +13695,14 @@
         var isPlan = docSel.value.indexOf("/business-plan") === 0;
         var isDeck = docSel.value.indexOf("/investor-deck") === 0;
         var ndaLocked = isPlan || isDeck;
+        var isLegalCenter = docSel.value === "/corporate-legal-dashboard.html";
         if (ndaLocked) { ndaBox.checked = true; ndaBox.disabled = true; } else { ndaBox.disabled = false; }
-        if (hint) hint.style.display = (ndaLocked || ndaBox.checked) ? "" : "none";
+        if (hint) {
+          hint.textContent = (ndaLocked || ndaBox.checked)
+            ? "(the party the NDA is addressed to)"
+            : "(the adviser or firm that holds the link)";
+          hint.style.display = (ndaLocked || ndaBox.checked || isLegalCenter) ? "" : "none";
+        }
         var single = modeSel.value === "single";
         for (var i = 0; i < winSel.options.length; i++) {
           var hrs = parseInt(winSel.options[i].value, 10);

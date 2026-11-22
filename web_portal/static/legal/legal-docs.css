@@ -128,6 +128,15 @@ body {
 }
 .ld-locknote.show { display: block; }
 
+/* ── SHARED READING COPY (Legal & Funding Center link) ──
+   The letterhead frame is narrower than the two-column layout needs, so the
+   reader gets the document first at the full width and the fields after it. */
+html[data-phins-share-view="legal-center"] .ld-shell { grid-template-columns: minmax(0, 1fr); }
+html[data-phins-share-view="legal-center"] .ld-doc-wrap { order: 1; }
+html[data-phins-share-view="legal-center"] .ld-controls { order: 2; position: static; max-height: none; }
+.ld-share-chip { cursor: default; border-color: rgba(227,191,111,.7); color: #f7e2a0; }
+.ld-share-chip:hover { background: rgba(255,255,255,.08); }
+
 /* ── DOCUMENT (A4 page) ── */
 .ld-doc-wrap { display: flex; flex-direction: column; align-items: center; gap: 18px; }
 .ld-page {

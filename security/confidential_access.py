@@ -51,11 +51,13 @@ import hashlib
 import hmac
 import json
 import os
+import posixpath
+import re
 import time
 from dataclasses import dataclass, field
 from http.cookies import SimpleCookie
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin, urlsplit
 
 # Cookie/query names for the shared-token exchange.
 ACCESS_COOKIE_NAME = "phins_confidential_access"
@@ -153,12 +155,49 @@ REINSURER_DECK_PAGES = (
     "/reinsurer-deck.he.html",
 )
 
-# Request for legal services sent to NBA Law. Staff read it with a session;
-# the HTML edition can be opened on a share link, the PDF stays staff-only.
+# Request for legal services sent to NBA Law, English and Hebrew. Staff read
+# it with a session; an HTML edition can be opened on a share link, the PDF
+# and Markdown stay staff-only.
 NBA_LEGAL_SERVICES_REQUEST_FILES = (
     "/investor-docs/nba-law-legal-services-request-22nov2026.html",
     "/investor-docs/nba-law-legal-services-request-22nov2026.pdf",
     "/investor-docs/nba-law-legal-services-request-22nov2026.md",
+    "/investor-docs/nba-law-legal-services-request-22nov2026.he.html",
+    "/investor-docs/nba-law-legal-services-request-22nov2026.he.pdf",
+    "/investor-docs/nba-law-legal-services-request-22nov2026.he.md",
+)
+
+# Corporate, Legal & Funding Document Center: the hub and the instruments it
+# lists under /legal/. A share minted for the hub opens the hub and these
+# pages for reading. It does not open a signing or registry API, a download,
+# the pitch dashboard, the NDA Center, or any staff dashboard. A share minted
+# for one instrument keeps covering that instrument only.
+LEGAL_CENTER_PATH = "/corporate-legal-dashboard.html"
+LEGAL_CENTER_DOCUMENTS = (
+    "/legal/incorporation-delaware.html",
+    "/legal/founder-agreement.html",
+    "/legal/cofounder-exit-clause.html",
+    "/legal/shareholders-agreement.html",
+    "/legal/cap-table.html",
+    "/legal/esop-agreement.html",
+    "/legal/employment-agreement.html",
+    "/legal/offer-letter.html",
+    "/legal/hr-policies.html",
+    "/legal/ip-assignment.html",
+    "/legal/trademark-ip.html",
+    "/legal/legal-compliance.html",
+    "/legal/nda.html",
+    "/legal/term-sheet.html",
+    "/legal/financial-model.html",
+)
+LEGAL_CENTER_SHARE_VIEW = "legal-center"
+LEGAL_CENTER_SHARE_HOME_ATTR = "data-phins-share-home"
+# Where the hub and the instrument header send staff. None of these may be
+# left in a page served to a share viewer.
+LEGAL_CENTER_STAFF_LINK_PREFIXES = (
+    "/admin",
+    "/pitch-dashboard.html",
+    "/nda-dashboard.html",
 )
 
 # Individually confidential files that do not live under a gated prefix.
@@ -168,6 +207,7 @@ DEFAULT_CONFIDENTIAL_FILES = (
     "/phins_business_plan_executive.md",
     "/business-plan.html",
     "/business-plan.he.html",
+    LEGAL_CENTER_PATH,
 ) + BUSINESS_PLAN_DOWNLOADS + CUSTOMER_COVER_SCOPE_PATHS + INVESTOR_DECK_PAGES + REINSURER_DECK_PAGES + NBA_LEGAL_SERVICES_REQUEST_FILES
 
 # API endpoints that expose anchored signatures + signed content snapshots,
@@ -312,13 +352,22 @@ def is_shared_asset(path: str) -> bool:
 
 def is_downloadable_document(path: str) -> bool:
     """True for export/download artefacts that share links must not unlock."""
-    normalized = str(path or "").split("?", 1)[0].split("#", 1)[0].lower()
+    normalized = normalize_request_path(path)
     return any(normalized.endswith(suffix) for suffix in _DOWNLOAD_SUFFIXES)
 
 
 def normalize_request_path(path: str) -> str:
-    """Pathname only, lowercased, without query/fragment."""
-    return str(path or "").split("?", 1)[0].split("#", 1)[0].lower()
+    """Pathname only, lowercased, without query/fragment, as the file is named.
+
+    The static handler resolves a trailing slash, a repeated slash and dot
+    segments before it opens a file, so ``/plan.html/`` and ``/./plan.html``
+    are ``/plan.html`` to it. The gate reads the path the same way. A
+    backslash counts as a slash, which can only gate more.
+    """
+    raw = str(path or "").split("?", 1)[0].split("#", 1)[0].replace("\\", "/")
+    if not raw:
+        return ""
+    return posixpath.normpath("/" + raw.lstrip("/")).lower()
 
 
 def share_scope_root(path: str) -> str:
@@ -340,6 +389,124 @@ def share_scope_root(path: str) -> str:
     if normalized in REINSURER_DECK_SCOPE_PATHS:
         return REINSURER_DECK_SCOPE_ROOT
     return normalized
+
+
+def is_legal_center_path(path: str) -> bool:
+    """True for the legal hub and the instruments it lists."""
+    normalized = normalize_request_path(path).rstrip("/")
+    return normalized == LEGAL_CENTER_PATH or normalized in LEGAL_CENTER_DOCUMENTS
+
+
+def share_covers(share_path: str, requested_path: str) -> bool:
+    """True when a share minted for ``share_path`` may open ``requested_path``.
+
+    Two paths in one scope root cover each other. The legal hub is one-way:
+    a hub share also opens the listed instruments, and a share minted for a
+    single instrument does not open the hub or the other instruments.
+    """
+    share = normalize_request_path(share_path).rstrip("/")
+    requested = normalize_request_path(requested_path).rstrip("/")
+    if not share or not requested:
+        return False
+    if share_scope_root(share) == share_scope_root(requested):
+        return True
+    return share == LEGAL_CENTER_PATH and requested in LEGAL_CENTER_DOCUMENTS
+
+
+_STAFF_ONLY_ELEMENT = re.compile(
+    r"<(?P<tag>a|div|span|p|li|button|section)\b[^>]*\bdata-phins-staff-only\b[^>]*>.*?</(?P=tag)>",
+    re.IGNORECASE | re.DOTALL,
+)
+_STAFF_ONLY_TAG = re.compile(r"<[a-z][^<>]*\bdata-phins-staff-only\b[^<>]*>", re.IGNORECASE)
+_HTML_OPEN_TAG = re.compile(r"<html\b(?P<attrs>[^>]*)>", re.IGNORECASE)
+_HREF_VALUE = re.compile(
+    r"""\bhref\s*=\s*(?:"(?P<dq>[^"]*)"|'(?P<sq>[^']*)'|(?P<bare>[^\s"'<>]+))""",
+    re.IGNORECASE,
+)
+# Hosts whose links are this site's own pages.
+_OWN_LINK_HOSTS = frozenset({"phins.ai", "www.phins.ai"})
+_LINK_BASE_HOST = "legal-center.invalid"
+_LEGAL_HUB_CTA = re.compile(
+    r"(<div class=\"doc-cta\">)Open &amp; (?:sign|certify|acknowledge|attest) →(</div>)"
+)
+
+
+def _strip_staff_only(html: str) -> str:
+    """Remove every ``data-phins-staff-only`` element, or raise.
+
+    The pattern ends an element at its first closing tag, so an element that
+    holds another of its own kind would leave its tail on the page. That
+    case, and a mark on a tag the pattern does not remove, is refused.
+    """
+
+    def _drop(match: "re.Match[str]") -> str:
+        tag = match.group("tag")
+        inner = match.group(0)[1:]
+        if re.search(rf"<{tag}\b", inner, re.IGNORECASE):
+            raise ValueError("a staff-only element holds another of its own kind")
+        return ""
+
+    text = _STAFF_ONLY_ELEMENT.sub(_drop, html)
+    if _STAFF_ONLY_TAG.search(text):
+        raise ValueError("a staff-only element survived the legal center share view")
+    return text
+
+
+def _staff_link_survives(path: str, html: str) -> bool:
+    """True when a link on the page resolves to a staff dashboard.
+
+    Quoted and bare ``href`` values are read, and a relative value is
+    resolved against the page, so ``../admin.html`` on an instrument and
+    ``https://www.phins.ai/admin.html`` count the same as ``/admin.html``.
+    """
+    base = f"https://{_LINK_BASE_HOST}{normalize_request_path(path) or '/'}"
+    for found in _HREF_VALUE.finditer(html):
+        value = next(v for v in (found.group("dq"), found.group("sq"), found.group("bare")) if v is not None)
+        try:
+            target = urlsplit(urljoin(base, value.strip()))
+        except ValueError:
+            return True
+        host = (target.hostname or "").lower()
+        if host != _LINK_BASE_HOST and host not in _OWN_LINK_HOSTS:
+            continue
+        linked = normalize_request_path(target.path)
+        if any(linked.startswith(prefix) for prefix in LEGAL_CENTER_STAFF_LINK_PREFIXES):
+            return True
+    return False
+
+
+def legal_center_share_html(path: str, html: str, share_path: str = "") -> str:
+    """The legal hub or one of its instruments as a share viewer receives it.
+
+    The page is marked ``data-phins-share-view="legal-center"`` so the
+    instrument script renders a reading copy (no signing, no staff links).
+    ``share_path`` is the path the reader's link was minted for. Only a link
+    that opens the hub gets ``data-phins-share-home``, so a reader holding
+    one instrument is not offered a way back to a hub the link does not open.
+    Elements marked ``data-phins-staff-only`` are removed. Raises
+    ``ValueError`` when the page cannot be marked, a staff-only element
+    cannot be removed whole, or a staff link survives, so the caller serves
+    an error page and not the staff page.
+    """
+    if not is_legal_center_path(path):
+        return html
+    text = str(html or "")
+    match = _HTML_OPEN_TAG.search(text)
+    if not match:
+        raise ValueError("legal center page has no <html> element to mark")
+    attrs = match.group("attrs")
+    if "data-phins-share-view" in attrs or LEGAL_CENTER_SHARE_HOME_ATTR in attrs:
+        raise ValueError("legal center page already carries a share-view mark")
+    marked = f'<html{attrs} data-phins-share-view="{LEGAL_CENTER_SHARE_VIEW}"'
+    if share_path and share_covers(share_path, LEGAL_CENTER_PATH):
+        marked += f' {LEGAL_CENTER_SHARE_HOME_ATTR}="{LEGAL_CENTER_PATH}"'
+    text = text[: match.start()] + marked + ">" + text[match.end():]
+    text = _strip_staff_only(text)
+    if normalize_request_path(path).rstrip("/") == LEGAL_CENTER_PATH:
+        text = _LEGAL_HUB_CTA.sub(r"\1Open to read →\2", text)
+    if _staff_link_survives(path, text):
+        raise ValueError("a staff link survived the legal center share view")
+    return text
 
 
 def is_business_plan_path(path: str) -> bool:
@@ -542,15 +709,16 @@ def verify_share_cookie(
 ) -> Optional[Dict[str, Any]]:
     """Return share claims when the cookie is valid for ``path`` (HTML only).
 
-    The cookie's path and the requested path must share one scope root, so a
-    business-plan unlock also covers the Hebrew edition and the plan APIs.
+    The cookie's path must cover the requested path (``share_covers``), so a
+    business-plan unlock also covers the Hebrew edition and the plan APIs,
+    and a legal-hub unlock also covers the instruments the hub lists.
     """
     if is_downloadable_document(path):
         return None
     payload = _verify_signed_payload(cookie_value, signing_secret(environ))
     if not payload or payload.get("typ") != "share":
         return None
-    if share_scope_root(path) != share_scope_root(str(payload.get("p") or "")):
+    if not share_covers(str(payload.get("p") or ""), path):
         return None
     if not str(payload.get("sid") or "").strip():
         return None
@@ -704,18 +872,18 @@ def is_confidential_path(
     confidential content of their own and blocking them would break the
     rendering of a page the caller is authorised to read.
     """
-    normalized = str(path or "").split("?", 1)[0].split("#", 1)[0].lower()
+    normalized = normalize_request_path(path)
     if not normalized:
         return False
     prefixes, files, api_paths = _confidential_targets(environ)
-    # API endpoints are matched exactly, but a trailing slash must not skip the
-    # gate: ``/api/legal-docs/registry/`` is the same endpoint as
-    # ``/api/legal-docs/registry`` and stays confidential.
-    if normalized.rstrip("/") in api_paths:
+    # ``normalize_request_path`` has already dropped a trailing slash and dot
+    # segments, so ``/api/legal-docs/registry/`` and ``/plan.html/`` are the
+    # endpoint and the file they name and stay confidential.
+    if normalized in api_paths:
         return True
     if normalized in files:
         return True
-    if any(normalized.startswith(prefix) for prefix in prefixes):
+    if any(normalized.startswith(prefix) or normalized + "/" == prefix for prefix in prefixes):
         return not is_shared_asset(normalized)
     return False
 
@@ -769,6 +937,8 @@ class AccessDecision:
     downloadable: bool = False
     # Opening key bound into the share cookie (share_cookie decisions only).
     share_session_key: str = ""
+    # Path the share was minted for (share_cookie decisions only).
+    share_path: str = ""
 
     @property
     def is_staff(self) -> bool:
@@ -857,6 +1027,7 @@ def evaluate_access(
                     confidential=True,
                     share_id=sid,
                     share_session_key=session_key,
+                    share_path=normalize_request_path(str(share_claims.get("p") or "")),
                 )
 
     token = configured_access_token(env)

@@ -181,6 +181,12 @@ DOCUMENTS = [
      'investor-docs/nba-law-legal-services-request-22nov2026.pdf',
      'PHINS — Request for Legal Services · '
      'Naschitz, Brandes, Amir & Co. (NBA Law) · 22 November 2026'),
+    ('investor-docs/nba-law-legal-services-request-22nov2026.he.md',
+     'investor-docs/nba-law-legal-services-request-22nov2026.he.pdf',
+     # The date sits before the firm's name: a number that follows a Latin
+     # word joins that word's left-to-right run and would display inside it.
+     'PHINS — בקשה לשירותים משפטיים · 22 בנובמבר 2026 · '
+     "נשיץ, ברנדס, אמיר ושות' (NBA Law)"),
     ('investor-docs/swiss-re-israel-meeting-8dec2026-deck.md',
      'investor-docs/swiss-re-israel-meeting-8dec2026-deck.pdf',
      'PHINS × Swiss Re Israel — Meeting Deck and Film Script (8 December 2026) · '
@@ -237,6 +243,13 @@ DESIGNED_BRIEFS = {
         'subtitle': 'Naschitz, Brandes, Amir & Co. (NBA Law) · attention Adv. Keshet Sirota-Leviner',
         'footer': 'PHINS · Confidential · Request for legal services · prepared for NBA Law · 22 November 2026 · not legal advice or an engagement letter',
     },
+    'investor-docs/nba-law-legal-services-request-22nov2026.he.md': {
+        'html': 'investor-docs/nba-law-legal-services-request-22nov2026.he.html',
+        'eyebrow': 'בקשה לשירותים משפטיים · 22 בנובמבר 2026',
+        'subtitle': "נשיץ, ברנדס, אמיר ושות' (NBA Law) · לידי עו\"ד קשת סירוטה-לוינר",
+        'footer': 'PHINS · סודי · בקשה לשירותים משפטיים · 22 בנובמבר 2026 · הוכן עבור NBA Law · אינו ייעוץ משפטי או מכתב התקשרות',
+        'lang': 'he',
+    },
     'investor-docs/swiss-re-israel-meeting-8dec2026-deck.md': {
         'html': 'investor-docs/swiss-re-israel-meeting-8dec2026-deck.html',
         'eyebrow': 'Meeting deck and film script · 8 December 2026',
@@ -263,6 +276,7 @@ RTL_DOCUMENTS = {
     'investor-docs/aspire-invest-business-plan-sep2026-he.md',
     'investor-docs/aspire-invest-nda-sep2026-he.md',
     'investor-docs/swiss-re-israel-meeting-8dec2026-deck.he.md',
+    'investor-docs/nba-law-legal-services-request-22nov2026.he.md',
 }
 
 # Candidate Hebrew-capable fonts (first hit wins). DejaVu Sans covers the
@@ -437,11 +451,19 @@ def _rtl_paragraph(text: str, style, max_width: float) -> Paragraph:
     return Paragraph('<br/>'.join(visual), style)
 
 
+# reportlab's Frame keeps 6pt of padding on each side, so a top-level
+# flowable is laid out in FRAME_WIDTH less this. A pre-wrapped RTL line that
+# is measured against the full frame is wrapped a second time by reportlab,
+# and because the line is already in visual order its logical start drops to
+# the next row.
+_FRAME_PADDING = 12.0
+
+
 def _rtl_width_for(styles, key: str) -> float:
     """Usable width for a top-level RTL flowable of the given style key."""
     style = styles[key]
     pad = 2.0  # safety so measured lines never re-wrap inside reportlab
-    width = FRAME_WIDTH - style.leftIndent - style.rightIndent - pad
+    width = FRAME_WIDTH - _FRAME_PADDING - style.leftIndent - style.rightIndent - pad
     border = getattr(style, 'borderPadding', 0) or 0
     return width - 2 * border
 

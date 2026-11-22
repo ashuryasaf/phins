@@ -1126,3 +1126,580 @@ def test_stale_worker_reloads_before_unlock(tmp_path):
     with pytest.raises(ShareError):
         worker_b.unlock(created["id"], "relay")
     assert worker_b.get_share(created["id"])["used_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Corporate, Legal & Funding Center: a link for legal advisers
+# ---------------------------------------------------------------------------
+
+_STATIC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web_portal", "static")
+_PROD = {"PHINS_ENVIRONMENT": "production", "SESSION_SECRET_KEY": "s" * 32}
+_STAFF_HREFS = ('href="/admin', 'href="/pitch-dashboard.html', 'href="/nda-dashboard.html')
+
+
+def _static_text(rel):
+    with open(os.path.join(_STATIC, rel), "r", encoding="utf-8") as fh:
+        return fh.read()
+
+
+def test_legal_center_scope_is_the_hub_and_exactly_the_documents_it_lists():
+    import re
+
+    hub = _static_text("corporate-legal-dashboard.html")
+    listed = re.findall(r'<a href="(/legal/[a-z0-9-]+\.html)" class="doc-card', hub)
+    on_disk = sorted(
+        "/legal/" + name for name in os.listdir(os.path.join(_STATIC, "legal")) if name.endswith(".html")
+    )
+    assert len(listed) == 15 and len(set(listed)) == 15
+    assert tuple(listed) == ca.LEGAL_CENTER_DOCUMENTS
+    assert sorted(listed) == on_disk
+    assert '<div class="stat-val">15</div><div class="stat-lbl">Document Templates</div>' in hub
+    assert ca.is_confidential_path(ca.LEGAL_CENTER_PATH, {}) is True
+    for path in listed:
+        assert ca.is_confidential_path(path, {}) is True
+        assert ca.is_legal_center_path(path) is True
+        # Each instrument stays its own scope root: the hub covers it one-way.
+        assert ca.share_scope_root(path) == path
+    assert ca.is_legal_center_path("/legal/legal-docs.js") is False
+    assert ca.is_legal_center_path("/pitch-dashboard.html") is False
+
+
+def test_legal_center_share_opens_the_hub_and_documents_and_nothing_else():
+    denied = ca.evaluate_access(ca.LEGAL_CENTER_PATH, environ=_PROD)
+    assert denied.allowed is False
+    cookie = ca.mint_share_cookie(share_id="shr_legal", path=ca.LEGAL_CENTER_PATH, environ=_PROD)
+    header = f"{ca.SHARE_COOKIE_NAME}={cookie}"
+    for path in (ca.LEGAL_CENTER_PATH,) + ca.LEGAL_CENTER_DOCUMENTS:
+        decision = ca.evaluate_access(path, cookie_header=header, environ=_PROD)
+        assert decision.allowed is True, path
+        assert decision.reason == "share_cookie"
+        assert decision.is_share_viewer is True
+    for path in (
+        "/pitch-dashboard.html",
+        "/business-plan.html",
+        "/business-plan.he.html",
+        "/investor-deck.html",
+        "/reinsurer-deck.html",
+        "/phins-customer-150k-one-pager.html",
+        "/internal/phins-investor-business-plan.html",
+        "/legal/not-on-the-hub.html",
+        "/api/legal-docs/sign",
+        "/api/legal-docs/verify",
+        "/api/legal-docs/registry",
+        "/api/business-plan/model",
+        "/investor-docs/nba-law-legal-services-request-22nov2026.html",
+        "/investor-docs/nba-law-legal-services-request-22nov2026.he.html",
+        "/investor-docs/nba-law-legal-services-request-22nov2026.pdf",
+        "/investor-docs/nba-law-legal-services-request-22nov2026.he.pdf",
+        "/investor-docs/phins-unified-business-plan.pdf",
+    ):
+        decision = ca.evaluate_access(path, cookie_header=header, environ=_PROD)
+        assert decision.allowed is False, path
+    # The share cookie is not a staff credential.
+    assert ca.verify_staff_unlock_cookie(cookie, _PROD) is None
+    staff_jar = f"{ca.STAFF_UNLOCK_COOKIE_NAME}={cookie}"
+    assert ca.evaluate_access("/pitch-dashboard.html", cookie_header=staff_jar, environ=_PROD).allowed is False
+
+
+def test_a_single_instrument_share_does_not_grow_into_the_legal_center():
+    cookie = ca.mint_share_cookie(share_id="shr_cap", path="/legal/cap-table.html", environ=_PROD)
+    header = f"{ca.SHARE_COOKIE_NAME}={cookie}"
+    assert ca.evaluate_access("/legal/cap-table.html", cookie_header=header, environ=_PROD).allowed is True
+    for path in (ca.LEGAL_CENTER_PATH, "/legal/term-sheet.html", "/legal/nda.html"):
+        assert ca.evaluate_access(path, cookie_header=header, environ=_PROD).allowed is False, path
+    assert ca.share_covers(ca.LEGAL_CENTER_PATH, "/legal/cap-table.html") is True
+    assert ca.share_covers("/legal/cap-table.html", ca.LEGAL_CENTER_PATH) is False
+    assert ca.share_covers("/legal/cap-table.html", "/legal/term-sheet.html") is False
+    assert ca.share_covers(ca.LEGAL_CENTER_PATH, "/pitch-dashboard.html") is False
+    assert ca.share_covers("/pitch-dashboard.html", ca.LEGAL_CENTER_PATH) is False
+    # The scopes that existed before are unchanged.
+    assert ca.share_covers("/business-plan.html", "/business-plan.he.html") is True
+    assert ca.share_covers("/investor-deck.he.html", "/investor-deck.html") is True
+    assert ca.share_covers("/business-plan.html", "/investor-deck.html") is False
+
+
+def test_legal_center_share_view_is_a_reading_copy_without_staff_links():
+    hub = _static_text("corporate-legal-dashboard.html")
+    # The stored page is the staff page: its three staff links are intact.
+    for href in _STAFF_HREFS:
+        assert href in hub
+    assert hub.count("data-phins-staff-only>") == 3
+    shared = ca.legal_center_share_html(ca.LEGAL_CENTER_PATH, hub, share_path=ca.LEGAL_CENTER_PATH)
+    home = f' data-phins-share-home="{ca.LEGAL_CENTER_PATH}"'
+    assert f'<html lang="en" data-phins-share-view="legal-center"{home}>' in shared
+    for href in _STAFF_HREFS:
+        assert href not in shared
+    assert "Back to Admin" not in shared and "NDA Center" not in shared
+    for path in ca.LEGAL_CENTER_DOCUMENTS:
+        assert f'href="{path}"' in shared
+    assert shared.count("Open to read →") == 15
+    assert "Open &amp; sign" not in shared and "Open &amp; certify" not in shared
+    assert "Signing is closed on this link" in shared
+    # Figures and names on the hub are not rewritten.
+    for kept in ("PHINS-grounded multi-year model", "Certificate of Incorporation", ">15<"):
+        assert kept in shared
+    for path in ca.LEGAL_CENTER_DOCUMENTS:
+        page = _static_text(path.lstrip("/"))
+        marked = ca.legal_center_share_html(path, page, share_path=ca.LEGAL_CENTER_PATH)
+        assert marked.replace(' data-phins-share-view="legal-center"' + home, "", 1) == page
+        # A link to this one instrument, or a reader whose link is unknown,
+        # gets the reading copy and no way back to a hub it does not open.
+        for own in (path, "", "/pitch-dashboard.html", "/legal/not-on-the-hub.html"):
+            single = ca.legal_center_share_html(path, page, share_path=own)
+            assert "data-phins-share-home" not in single, (path, own)
+            assert single.replace(' data-phins-share-view="legal-center"', "", 1) == page
+    # A page that already carries a mark is refused, not trusted.
+    for forged in ('<html data-phins-share-home="/corporate-legal-dashboard.html">',
+                   '<html data-phins-share-view="legal-center">'):
+        with pytest.raises(ValueError):
+            ca.legal_center_share_html("/legal/nda.html", forged + "<body></body></html>", share_path="/legal/nda.html")
+    # A page outside the legal center is returned as it is.
+    assert ca.legal_center_share_html("/pitch-dashboard.html", "<html><a href='/admin.html'>x</a></html>") == (
+        "<html><a href='/admin.html'>x</a></html>"
+    )
+    # Fail closed: an unmarked staff link, or a page that cannot be marked.
+    with pytest.raises(ValueError):
+        ca.legal_center_share_html(
+            ca.LEGAL_CENTER_PATH, '<html lang="en"><a href="/admin.html">Admin</a></html>'
+        )
+    with pytest.raises(ValueError):
+        ca.legal_center_share_html(ca.LEGAL_CENTER_PATH, "<body>no root element</body>")
+
+
+def test_legal_document_script_closes_signing_on_a_shared_reading_copy():
+    js = _static_text("legal/legal-docs.js")
+    assert "getAttribute('data-phins-share-view') === 'legal-center'" in js
+    assert "this._needsRegistryHydration = !!id && !SHARE_VIEW;" in js
+    for guarded in ("commitSignature", "anchor", "voidSignatures", "verify"):
+        body = js.split(f"LegalDoc.prototype.{guarded} = function", 1)[1].split("LegalDoc.prototype.", 1)[0]
+        assert "if (SHARE_VIEW)" in body, guarded
+    header = js.split("LegalDoc.prototype.buildHeader = function", 1)[1].split("LegalDoc.prototype.", 1)[0]
+    assert "(SHARE_VIEW" in header
+    assert header.index("(SHARE_VIEW") < header.index('href="/admin.html"')
+    assert header.index("(SHARE_VIEW") < header.index('href="/pitch-dashboard.html"')
+    # The return bar leads back to the hub, and the shared script that every
+    # generated document inlines is left as it is.
+    init = js.split("window.PhinsLegalDoc = {", 1)[1]
+    assert "if (SHARE_VIEW_HOME) { window.location.href = SHARE_VIEW_HOME; return; }" in init
+    assert "getAttribute('data-phins-share-home') === '/corporate-legal-dashboard.html'" in js
+    # A reader whose link does not open the hub is not sent or linked there.
+    assert "(SHARE_VIEW && !SHARE_VIEW_HOME\n        ? ''" in header
+    assert js.count("window.location.href = SHARE_VIEW_HOME") == 1
+    assert "legal-center" not in _static_text("phins-doc-return.js")
+    # The reader gets the document at the full width of the letterhead frame.
+    css = _static_text("legal/legal-docs.css")
+    scope = 'html[data-phins-share-view="legal-center"]'
+    assert scope + " .ld-shell { grid-template-columns: minmax(0, 1fr); }" in css
+    assert scope + " .ld-doc-wrap { order: 1; }" in css
+    assert scope + " .ld-controls { order: 2; position: static; max-height: none; }" in css
+    assert ".ld-shell {\n  max-width: 1400px; margin: 0 auto; padding: 22px 18px 60px;\n" \
+           "  display: grid; grid-template-columns: 340px 1fr;" in css
+
+
+def test_share_service_legal_center_link_needs_a_holder_and_keeps_its_scope(share_store):
+    from services.confidential_share_service import ShareError
+
+    with pytest.raises(ShareError) as unnamed:
+        share_store.create_share(path=ca.LEGAL_CENTER_PATH, password="counsel-open", max_uses=None)
+    assert "adviser" in str(unnamed.value)
+    created = share_store.create_share(
+        path=ca.LEGAL_CENTER_PATH, password="counsel-open", max_uses=None, label="NBA Law — advisers",
+    )
+    assert created["path"] == ca.LEGAL_CENTER_PATH
+    assert created["scope"] == ca.LEGAL_CENTER_PATH
+    assert created["nda_required"] is False
+    public, target = share_store.unlock(
+        created["id"], "counsel-open", requested_path="/legal/founder-agreement.html"
+    )
+    assert target == ca.LEGAL_CENTER_PATH
+    for path in (ca.LEGAL_CENTER_PATH,) + ca.LEGAL_CENTER_DOCUMENTS:
+        assert share_store.share_is_active_for_path(created["id"], path) is True, path
+    for path in ("/pitch-dashboard.html", "/business-plan.html", "/legal/not-on-the-hub.html",
+                 "/investor-docs/nba-law-legal-services-request-22nov2026.pdf"):
+        assert share_store.share_is_active_for_path(created["id"], path) is False, path
+    with pytest.raises(ShareError):
+        share_store.unlock(created["id"], "counsel-open", requested_path="/pitch-dashboard.html")
+    single = share_store.create_share(path="/legal/cap-table.html", password="one-doc", max_uses=3)
+    share_store.unlock(single["id"], "one-doc")
+    assert share_store.share_is_active_for_path(single["id"], "/legal/cap-table.html") is True
+    assert share_store.share_is_active_for_path(single["id"], ca.LEGAL_CENTER_PATH) is False
+    assert share_store.share_is_active_for_path(single["id"], "/legal/term-sheet.html") is False
+    with pytest.raises(ShareError):
+        share_store.unlock(single["id"], "one-doc", requested_path=ca.LEGAL_CENTER_PATH)
+
+
+def test_http_legal_center_link_for_advisers(gate_token, share_store, monkeypatch):
+    """Staff mint the link; the adviser reads the hub and documents and nothing else."""
+    monkeypatch.setenv("PHINS_ENVIRONMENT", "production")
+    monkeypatch.setenv("SESSION_SECRET_KEY", SECRET)
+    monkeypatch.setenv("PHINS_CONFIDENTIAL_ACCESS_TOKEN", TOKEN)
+    hub_url = f"{BASE_URL}{ca.LEGAL_CENTER_PATH}"
+
+    anonymous = requests.get(hub_url, timeout=10, allow_redirects=False)
+    assert anonymous.status_code == 401
+    assert "Founder Agreement" not in anonymous.text
+
+    unlock = requests.post(
+        f"{BASE_URL}/api/confidential/admin-unlock",
+        json={"username": "admin", "password": "admin123", "next": ca.LEGAL_CENTER_PATH},
+        timeout=10,
+    )
+    assert unlock.status_code == 200, unlock.text
+    admin = requests.Session()
+    admin.headers["Authorization"] = f"Bearer {unlock.json()['token']}"
+    admin.cookies.update(unlock.cookies)
+
+    staff_view = admin.get(hub_url, timeout=10)
+    assert staff_view.status_code == 200
+    assert "data-phins-share-view" not in staff_view.text.split("<head>", 1)[0]
+    for href in _STAFF_HREFS:
+        assert href in staff_view.text
+
+    unnamed = admin.post(
+        f"{BASE_URL}/api/confidential/shares",
+        json={"path": ca.LEGAL_CENTER_PATH, "password": "counsel-open", "mode": "unlimited"},
+        timeout=10,
+    )
+    assert unnamed.status_code == 400
+    assert "adviser" in unnamed.json()["error"]
+    create = admin.post(
+        f"{BASE_URL}/api/confidential/shares",
+        json={
+            "path": ca.LEGAL_CENTER_PATH,
+            "password": "counsel-open",
+            "mode": "unlimited",
+            "label": "NBA Law — advisers",
+            "access_window_seconds": 8 * 3600,
+        },
+        timeout=10,
+    )
+    assert create.status_code == 201, create.text
+    share = create.json()["share"]
+    assert share["scope"] == ca.LEGAL_CENTER_PATH
+    assert share["share_url_path"] == f"{ca.LEGAL_CENTER_PATH}?share={share['id']}"
+    assert "password" not in share
+
+    gate = requests.get(hub_url, params={"share": share["id"]}, timeout=10, allow_redirects=False)
+    assert gate.status_code == 401
+    assert "share-unlock-form" in gate.text
+    assert "Founder Agreement" not in gate.text
+
+    adviser = requests.Session()
+    wrong = adviser.post(
+        f"{BASE_URL}/api/confidential/share-unlock",
+        json={"share_id": share["id"], "password": "not-it", "path": ca.LEGAL_CENTER_PATH},
+        timeout=10,
+    )
+    assert wrong.status_code == 401
+    opened = adviser.post(
+        f"{BASE_URL}/api/confidential/share-unlock",
+        json={"share_id": share["id"], "password": "counsel-open", "path": ca.LEGAL_CENTER_PATH},
+        timeout=10,
+    )
+    assert opened.status_code == 200, opened.text
+    assert opened.json()["redirect_to"] == f"{ca.LEGAL_CENTER_PATH}?share={share['id']}"
+    set_cookie = opened.headers.get("Set-Cookie", "")
+    assert ca.SHARE_COOKIE_NAME in set_cookie
+    assert ca.STAFF_UNLOCK_COOKIE_NAME not in set_cookie
+    assert ca.ACCESS_COOKIE_NAME not in set_cookie
+
+    hub = adviser.get(hub_url, timeout=10)
+    assert hub.status_code == 200
+    assert 'data-phins-share-view="legal-center"' in hub.text
+    for href in _STAFF_HREFS:
+        assert href not in hub.text
+    assert hub.text.count("Open to read →") == 15
+    for path in ca.LEGAL_CENTER_DOCUMENTS:
+        page = adviser.get(f"{BASE_URL}{path}", timeout=10)
+        assert page.status_code == 200, path
+        assert 'data-phins-share-view="legal-center"' in page.text, path
+        assert f'data-phins-share-home="{ca.LEGAL_CENTER_PATH}"' in page.text, path
+        for href in _STAFF_HREFS:
+            assert href not in page.text, path
+
+    # Nothing else opens: other confidential pages, downloads, the signature
+    # APIs, share management, and the admin API.
+    for path in (
+        "/pitch-dashboard.html",
+        "/business-plan.html",
+        "/investor-deck.html",
+        "/internal/phins-investor-business-plan.html",
+        "/investor-docs/nba-law-legal-services-request-22nov2026.html",
+        "/investor-docs/nba-law-legal-services-request-22nov2026.he.pdf",
+        "/investor-docs/phins-unified-business-plan.pdf",
+    ):
+        blocked = adviser.get(f"{BASE_URL}{path}", timeout=10, allow_redirects=False)
+        assert blocked.status_code == 401, path
+    registry = adviser.get(
+        f"{BASE_URL}/api/legal-docs/registry", params={"doc_id": "LGL-NDA-ANY"}, timeout=10
+    )
+    assert registry.status_code == 401
+    before = admin.get(f"{BASE_URL}/api/confidential/document-ledger", timeout=10).json()
+    assert before["intact"] is True
+    assert before["total"] >= 1  # the link itself was recorded as sent and opened
+    signed = adviser.post(
+        f"{BASE_URL}/api/legal-docs/sign",
+        json={
+            "docType": "founder-agreement",
+            "docInstanceId": "LGL-FOUNDER-AGREEMENT-ADVISER",
+            "role": "Founder",
+            "signerName": "Adviser",
+            "documentHash": "b" * 64,
+        },
+        timeout=10,
+    )
+    assert signed.status_code == 401
+    verify = adviser.post(
+        f"{BASE_URL}/api/legal-docs/verify",
+        json={"docInstanceId": "LGL-FOUNDER-AGREEMENT-ADVISER", "documentHash": "b" * 64},
+        timeout=10,
+    )
+    assert verify.status_code == 401
+    after_registry = admin.get(
+        f"{BASE_URL}/api/legal-docs/registry", params={"doc_id": "LGL-FOUNDER-AGREEMENT-ADVISER"}, timeout=10
+    )
+    assert after_registry.status_code == 200
+    assert after_registry.json()["total"] == 0
+    # The refused calls wrote nothing: the use ledger is the same chain.
+    after = admin.get(f"{BASE_URL}/api/confidential/document-ledger", timeout=10).json()
+    assert after["intact"] is True
+    assert after["total"] == before["total"]
+    assert after["items"] == before["items"]
+    assert adviser.get(f"{BASE_URL}/api/confidential/shares", timeout=10).status_code == 401
+    assert adviser.get(f"{BASE_URL}/api/confidential/signed-documents", timeout=10).status_code == 401
+    assert adviser.get(f"{BASE_URL}/api/admin/wallet-withdrawals", timeout=10).status_code == 401
+    assert adviser.get(f"{BASE_URL}/api/admin/cashflow/monitoring", timeout=10).status_code == 403
+    # The share cookie is not a session: outside its scope the adviser is
+    # answered exactly as a visitor who holds no cookie at all.
+    for path in (
+        "/api/admin/customers",
+        "/api/admin/wallet-withdrawals",
+        "/api/admin/cashflow/monitoring",
+        "/api/admin/cashflow/unified-report",
+        "/api/access/surface",
+        "/admin.html",
+        "/customer-management.html",
+    ):
+        with_link = adviser.get(f"{BASE_URL}{path}", timeout=10, allow_redirects=False)
+        without = requests.get(f"{BASE_URL}{path}", timeout=10, allow_redirects=False)
+        assert with_link.status_code == without.status_code, path
+        assert with_link.content == without.content, path
+
+    # Revoking the link closes the hub and the documents for that reader.
+    revoke = admin.delete(f"{BASE_URL}/api/confidential/shares/{share['id']}", timeout=10)
+    assert revoke.status_code == 200, revoke.text
+    assert adviser.get(hub_url, timeout=10, allow_redirects=False).status_code == 401
+    assert adviser.get(f"{BASE_URL}/legal/term-sheet.html", timeout=10, allow_redirects=False).status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# The gate reads a path the way the file server resolves it
+# ---------------------------------------------------------------------------
+
+# Spellings the static handler resolves to the same file as the plain URL.
+_OTHER_SPELLINGS = (
+    "{path}/",
+    "{path}//",
+    "{path}/.",
+    "/.{path}",
+    "/.//{name}",
+    "/x/..{path}",
+    "//{name}",
+    "/.\\{name}",
+)
+
+
+def _spellings(path):
+    return [form.format(path=path, name=path.lstrip("/")) for form in _OTHER_SPELLINGS]
+
+
+def _raw_get(path, headers=None):
+    """GET ``path`` exactly as written: ``requests`` would tidy dot segments away."""
+    import http.client
+    from urllib.parse import urlsplit
+
+    target = urlsplit(BASE_URL)
+    conn = http.client.HTTPConnection(target.hostname, target.port, timeout=15)
+    try:
+        conn.putrequest("GET", path)
+        for name, value in (headers or {}).items():
+            conn.putheader(name, value)
+        conn.endheaders()
+        response = conn.getresponse()
+        return response.status, response.read()
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/pitch-dashboard.html",
+        "/business-plan.html",
+        "/corporate-legal-dashboard.html",
+        "/legal/cap-table.html",
+        "/internal/phins-investor-business-plan.html",
+        "/investor-docs/phins-unified-business-plan.pdf",
+        "/api/legal-docs/registry",
+        "/api/business-plan/model",
+    ],
+)
+def test_another_spelling_of_a_confidential_path_is_still_confidential(path):
+    assert ca.is_confidential_path(path) is True
+    for spelled in _spellings(path):
+        assert ca.normalize_request_path(spelled) == path, spelled
+        assert ca.is_confidential_path(spelled) is True, spelled
+        assert ca.is_downloadable_document(spelled) is ca.is_downloadable_document(path), spelled
+        denied = ca.evaluate_access(spelled, environ=_PROD)
+        assert denied.allowed is False and denied.confidential is True, spelled
+
+
+def test_path_spelling_does_not_gate_a_public_page_or_widen_a_share():
+    for path in ("/join.html", "/index.html", "/legal/legal-docs.js", "/legal/legal-docs.css"):
+        for spelled in [path] + _spellings(path):
+            assert ca.is_confidential_path(spelled) is False, spelled
+    assert ca.normalize_request_path("") == ""
+    assert ca.normalize_request_path("/") == "/"
+    assert ca.normalize_request_path("/Legal/Cap-Table.html?share=x#top") == "/legal/cap-table.html"
+    # A path cannot climb out of the legal center into another document.
+    cookie = ca.mint_share_cookie(share_id="shr_legal", path=ca.LEGAL_CENTER_PATH, environ=_PROD)
+    header = f"{ca.SHARE_COOKIE_NAME}={cookie}"
+    for climbed in (
+        "/corporate-legal-dashboard.html/../pitch-dashboard.html",
+        "/corporate-legal-dashboard.html/../business-plan.html",
+        "/legal/../pitch-dashboard.html",
+        "/legal/cap-table.html/../../pitch-dashboard.html",
+        "/legal/cap-table.html/../../investor-docs/phins-unified-business-plan.pdf",
+        "/legal/cap-table.html/../not-on-the-hub.html",
+        "/legal/./../internal/phins-investor-business-plan.html",
+        "/legal/cap-table.html/../../api/legal-docs/sign",
+    ):
+        assert ca.share_covers(ca.LEGAL_CENTER_PATH, climbed) is False, climbed
+        assert ca.evaluate_access(climbed, cookie_header=header, environ=_PROD).allowed is False, climbed
+    # A download stays a download however it is spelled, so no share opens it.
+    pdf = "/investor-docs/nba-law-legal-services-request-22nov2026.pdf"
+    for spelled in _spellings(pdf):
+        assert ca.is_downloadable_document(spelled) is True, spelled
+        assert ca.evaluate_access(spelled, cookie_header=header, environ=_PROD).allowed is False, spelled
+
+
+def test_legal_center_share_view_refuses_what_it_cannot_remove_whole():
+    page = '<html lang="en"><body>{body}</body></html>'
+    refused = (
+        # An element that holds another of its own kind would leave its tail.
+        '<div data-phins-staff-only><div>inner</div><p>Staff note</p></div>',
+        # A mark on a tag the filter does not remove.
+        '<nav data-phins-staff-only><span>Staff</span></nav>',
+        # Links to a staff dashboard that carry no mark.
+        '<a href=/admin.html>Admin</a>',
+        "<a href='/pitch-dashboard.html#investor-documents-section'>Documents</a>",
+        '<a href="admin-media.html">Media</a>',
+        '<a href="./nda-dashboard.html">NDA</a>',
+        '<a href="/x/../admin.html">Admin</a>',
+        '<a href="https://www.phins.ai/admin.html">Admin</a>',
+        '<a href="//phins.ai/pitch-dashboard.html">Pitch</a>',
+        '<a HREF = "/Admin.html">Admin</a>',
+    )
+    for body in refused:
+        with pytest.raises(ValueError):
+            ca.legal_center_share_html(ca.LEGAL_CENTER_PATH, page.format(body=body))
+    # From an instrument, one level up is the site root.
+    with pytest.raises(ValueError):
+        ca.legal_center_share_html("/legal/nda.html", page.format(body='<a href="../admin.html">Admin</a>'))
+    kept = (
+        '<a href="/legal/nda.html">NDA</a>',
+        '<a href="/privacy-policy.html">Privacy</a>',
+        '<a href="https://example.com/admin.html">Another site</a>',
+        '<a href="mailto:admin@phins.ai">Write</a>',
+        '<span data-phins-staff-only>Staff</span><p>Reader</p>',
+    )
+    for body in kept:
+        shared = ca.legal_center_share_html(ca.LEGAL_CENTER_PATH, page.format(body=body))
+        assert 'data-phins-share-view="legal-center"' in shared
+        assert "data-phins-staff-only" not in shared
+    assert "<p>Reader</p>" in ca.legal_center_share_html(ca.LEGAL_CENTER_PATH, page.format(body=kept[-1]))
+
+
+# Marker bytes that are in the file and not on the gate page.
+_PLAIN_FILES = {
+    "/pitch-dashboard.html": b'id="investor-documents-section"',
+    "/legal/cap-table.html": b"/legal/legal-docs.js",
+    "/investor-docs/phins-unified-business-plan.pdf": b"%PDF-",
+}
+
+
+def test_http_another_spelling_does_not_open_a_confidential_file(gate_token):
+    """A trailing slash or dot segment names the same file and meets the same gate."""
+    for path, marker in _PLAIN_FILES.items():
+        status, body = _raw_get(path)
+        assert status == 401 and marker not in body, path
+        for spelled in _spellings(path):
+            status, body = _raw_get(spelled)
+            assert status in (401, 404), (spelled, status)
+            assert marker not in body, spelled
+        # Leaving the static root and coming back in is the same file again.
+        status, body = _raw_get("/x/../../static" + path)
+        assert status in (401, 404), (path, status)
+        assert marker not in body, path
+    # Public pages and the shared legal assets answer as they did.
+    for path in ("/join.html", "/join.html/", "/./join.html", "/legal/legal-docs.js", "/"):
+        assert _raw_get(path)[0] == 200, path
+
+
+def test_http_a_confidential_file_is_served_only_at_its_own_url(gate_token):
+    """A reader the gate admits cannot step around a filter keyed on the URL."""
+    holder = {"Cookie": f"{ca.ACCESS_COOKIE_NAME}={ca.cookie_value_for_token(TOKEN)}"}
+    for path in ("/pitch-dashboard.html", "/legal/cap-table.html"):
+        marker = _PLAIN_FILES[path]
+        status, body = _raw_get(path, holder)
+        assert status == 200 and marker in body, path
+        for spelled in _spellings(path) + ["/x/../../static" + path]:
+            status, body = _raw_get(spelled, holder)
+            if spelled.startswith("//"):
+                # The HTTP server reads leading slashes as one before any
+                # handler runs, so this one is the plain URL to the gate too.
+                assert status == 200, spelled
+                continue
+            assert status in (401, 404), (spelled, status)
+            assert marker not in body, spelled
+    # The Hebrew deck pages are served from the one deck file, as before.
+    for alias in ("/investor-deck.he.html", "/reinsurer-deck.he.html"):
+        assert _raw_get(alias)[0] == 401, alias
+        assert _raw_get(alias, holder)[0] == 200, alias
+
+
+def test_http_single_instrument_link_is_not_offered_the_hub(gate_token, share_store, monkeypatch):
+    """A link to one instrument reads that instrument and is not led to a closed hub."""
+    monkeypatch.setenv("PHINS_ENVIRONMENT", "production")
+    monkeypatch.setenv("SESSION_SECRET_KEY", SECRET)
+    monkeypatch.setenv("PHINS_CONFIDENTIAL_ACCESS_TOKEN", TOKEN)
+    unlock = requests.post(
+        f"{BASE_URL}/api/confidential/admin-unlock",
+        json={"username": "admin", "password": "admin123", "next": "/pitch-dashboard.html"},
+        timeout=10,
+    )
+    assert unlock.status_code == 200, unlock.text
+    admin = requests.Session()
+    admin.headers["Authorization"] = f"Bearer {unlock.json()['token']}"
+    admin.cookies.update(unlock.cookies)
+    create = admin.post(
+        f"{BASE_URL}/api/confidential/shares",
+        json={"path": "/legal/cap-table.html", "password": "one-doc-open", "mode": "multi", "max_uses": 3},
+        timeout=10,
+    )
+    assert create.status_code == 201, create.text
+    share = create.json()["share"]
+    reader = requests.Session()
+    opened = reader.post(
+        f"{BASE_URL}/api/confidential/share-unlock",
+        json={"share_id": share["id"], "password": "one-doc-open", "path": "/legal/cap-table.html"},
+        timeout=10,
+    )
+    assert opened.status_code == 200, opened.text
+    page = reader.get(f"{BASE_URL}/legal/cap-table.html", timeout=10, allow_redirects=False)
+    assert page.status_code == 200
+    root = page.text.split("<head>", 1)[0]
+    assert 'data-phins-share-view="legal-center"' in root
+    assert "data-phins-share-home" not in page.text
+    for closed in (ca.LEGAL_CENTER_PATH, "/legal/term-sheet.html", "/pitch-dashboard.html"):
+        assert reader.get(f"{BASE_URL}{closed}", timeout=10, allow_redirects=False).status_code == 401, closed

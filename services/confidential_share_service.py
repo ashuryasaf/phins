@@ -432,12 +432,27 @@ def _scope_root(path: str) -> str:
     return share_scope_root(path)
 
 
+def _is_legal_center_hub(path: str) -> bool:
+    try:
+        from security.confidential_access import LEGAL_CENTER_PATH
+    except Exception:  # pragma: no cover - security package always present
+        return False
+    return str(path or "").split("?", 1)[0].split("#", 1)[0].lower() == LEGAL_CENTER_PATH
+
+
 def _same_scope(requested: str, target: str) -> bool:
+    """True when a share minted for ``target`` may open ``requested``."""
     req = str(requested or "").split("?", 1)[0].split("#", 1)[0].lower()
     tgt = str(target or "").lower()
     if not req or not tgt:
         return False
-    return req == tgt or _scope_root(req) == _scope_root(tgt)
+    if req == tgt:
+        return True
+    try:
+        from security.confidential_access import share_covers
+    except Exception:  # pragma: no cover - security package always present
+        return _scope_root(req) == _scope_root(tgt)
+    return share_covers(tgt, req)
 
 
 def _bounded_int(value: Any, *, name: str, lo: int, hi: int) -> int:
@@ -713,6 +728,12 @@ class ConfidentialShareService:
         nda_required = bool(nda_required)
         if nda_required and len(clean_label) < 2:
             raise ShareError("An NDA link needs the recipient's name or organisation as its label.")
+        if _is_legal_center_hub(target) and len(clean_label) < 2:
+            # One link opens the hub and every instrument it lists, so the
+            # address book must say who holds it.
+            raise ShareError(
+                "A Legal & Funding Center link needs the adviser's name or firm as its label."
+            )
 
         window_cap = MAX_SINGLE_USE_WINDOW_SECONDS if max_uses_int == 1 else MAX_ACCESS_WINDOW_SECONDS
         if access_window_seconds in (None, ""):
