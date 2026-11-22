@@ -34,7 +34,14 @@
     catch (e) { return false; }
   })();
   var SHARE_VIEW_CLOSED = 'Signing is closed on this shared reading copy.';
-  var SHARE_VIEW_HOME = '/corporate-legal-dashboard.html';
+  // The hub, when the reader's link opens it. A link to one instrument does
+  // not, and the server then leaves the mark off.
+  var SHARE_VIEW_HOME = (function () {
+    try {
+      return document.documentElement.getAttribute('data-phins-share-home') === '/corporate-legal-dashboard.html'
+        ? '/corporate-legal-dashboard.html' : '';
+    } catch (e) { return ''; }
+  })();
 
   // ---------------------------------------------------------------- helpers
   function $(sel, root) { return (root || document).querySelector(sel); }
@@ -402,7 +409,9 @@
       '<div><div class="ld-logo-text">PHINS</div>' +
       '<div class="ld-logo-tagline">Personal Health Insurance &amp; Savings</div></div></div>' +
       '<div class="ld-header-links">' +
-      '<a class="ld-link" href="/corporate-legal-dashboard.html">← Legal &amp; Funding Center</a>' +
+      (SHARE_VIEW && !SHARE_VIEW_HOME
+        ? ''
+        : '<a class="ld-link" href="/corporate-legal-dashboard.html">← Legal &amp; Funding Center</a>') +
       (SHARE_VIEW
         ? '<span class="ld-link ld-share-chip">Shared reading copy</span>'
         : '<a class="ld-link" href="/pitch-dashboard.html"> Investor Documents</a>' +
@@ -1207,15 +1216,20 @@
         inst.boot();
       }
       if (SHARE_VIEW && !window.__phinsLegalShareReturn) {
-        // The link opens the hub and its documents only, so the return bar
-        // leads back to the hub and not to a role home outside the link.
+        // The return bar never leaves the link. A hub link goes back to the
+        // hub. A link to one instrument steps back in the tab's own history
+        // or closes the tab, and otherwise stays on the document.
         window.__phinsLegalShareReturn = true;
         document.addEventListener('click', function (ev) {
           var el = ev.target && ev.target.closest ? ev.target.closest('.phins-doc-back, .phins-doc-close') : null;
           if (!el) return;
           ev.preventDefault();
           ev.stopImmediatePropagation();
-          window.location.href = SHARE_VIEW_HOME;
+          if (SHARE_VIEW_HOME) { window.location.href = SHARE_VIEW_HOME; return; }
+          try {
+            if (el.classList.contains('phins-doc-close')) window.close();
+            else if (window.history.length > 1) window.history.back();
+          } catch (e) { /* stay on the document */ }
         }, true);
       }
       if (!document.querySelector('script[data-phins-return-src]')) {

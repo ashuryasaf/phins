@@ -191,6 +191,7 @@ LEGAL_CENTER_DOCUMENTS = (
     "/legal/financial-model.html",
 )
 LEGAL_CENTER_SHARE_VIEW = "legal-center"
+LEGAL_CENTER_SHARE_HOME_ATTR = "data-phins-share-home"
 # Where the hub and the instrument header send staff. None of these may be
 # left in a page served to a share viewer.
 LEGAL_CENTER_STAFF_LINK_PREFIXES = (
@@ -474,11 +475,14 @@ def _staff_link_survives(path: str, html: str) -> bool:
     return False
 
 
-def legal_center_share_html(path: str, html: str) -> str:
+def legal_center_share_html(path: str, html: str, share_path: str = "") -> str:
     """The legal hub or one of its instruments as a share viewer receives it.
 
     The page is marked ``data-phins-share-view="legal-center"`` so the
     instrument script renders a reading copy (no signing, no staff links).
+    ``share_path`` is the path the reader's link was minted for. Only a link
+    that opens the hub gets ``data-phins-share-home``, so a reader holding
+    one instrument is not offered a way back to a hub the link does not open.
     Elements marked ``data-phins-staff-only`` are removed. Raises
     ``ValueError`` when the page cannot be marked, a staff-only element
     cannot be removed whole, or a staff link survives, so the caller serves
@@ -490,9 +494,13 @@ def legal_center_share_html(path: str, html: str) -> str:
     match = _HTML_OPEN_TAG.search(text)
     if not match:
         raise ValueError("legal center page has no <html> element to mark")
-    if "data-phins-share-view" not in match.group("attrs"):
-        marked = f'<html{match.group("attrs")} data-phins-share-view="{LEGAL_CENTER_SHARE_VIEW}">'
-        text = text[: match.start()] + marked + text[match.end():]
+    attrs = match.group("attrs")
+    if "data-phins-share-view" in attrs or LEGAL_CENTER_SHARE_HOME_ATTR in attrs:
+        raise ValueError("legal center page already carries a share-view mark")
+    marked = f'<html{attrs} data-phins-share-view="{LEGAL_CENTER_SHARE_VIEW}"'
+    if share_path and share_covers(share_path, LEGAL_CENTER_PATH):
+        marked += f' {LEGAL_CENTER_SHARE_HOME_ATTR}="{LEGAL_CENTER_PATH}"'
+    text = text[: match.start()] + marked + ">" + text[match.end():]
     text = _strip_staff_only(text)
     if normalize_request_path(path).rstrip("/") == LEGAL_CENTER_PATH:
         text = _LEGAL_HUB_CTA.sub(r"\1Open to read →\2", text)
@@ -929,6 +937,8 @@ class AccessDecision:
     downloadable: bool = False
     # Opening key bound into the share cookie (share_cookie decisions only).
     share_session_key: str = ""
+    # Path the share was minted for (share_cookie decisions only).
+    share_path: str = ""
 
     @property
     def is_staff(self) -> bool:
@@ -1017,6 +1027,7 @@ def evaluate_access(
                     confidential=True,
                     share_id=sid,
                     share_session_key=session_key,
+                    share_path=normalize_request_path(str(share_claims.get("p") or "")),
                 )
 
     token = configured_access_token(env)

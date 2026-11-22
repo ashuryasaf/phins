@@ -1224,8 +1224,9 @@ def test_legal_center_share_view_is_a_reading_copy_without_staff_links():
     for href in _STAFF_HREFS:
         assert href in hub
     assert hub.count("data-phins-staff-only>") == 3
-    shared = ca.legal_center_share_html(ca.LEGAL_CENTER_PATH, hub)
-    assert '<html lang="en" data-phins-share-view="legal-center">' in shared
+    shared = ca.legal_center_share_html(ca.LEGAL_CENTER_PATH, hub, share_path=ca.LEGAL_CENTER_PATH)
+    home = f' data-phins-share-home="{ca.LEGAL_CENTER_PATH}"'
+    assert f'<html lang="en" data-phins-share-view="legal-center"{home}>' in shared
     for href in _STAFF_HREFS:
         assert href not in shared
     assert "Back to Admin" not in shared and "NDA Center" not in shared
@@ -1239,9 +1240,19 @@ def test_legal_center_share_view_is_a_reading_copy_without_staff_links():
         assert kept in shared
     for path in ca.LEGAL_CENTER_DOCUMENTS:
         page = _static_text(path.lstrip("/"))
-        marked = ca.legal_center_share_html(path, page)
-        assert 'data-phins-share-view="legal-center"' in marked
-        assert marked.replace(' data-phins-share-view="legal-center"', "", 1) == page
+        marked = ca.legal_center_share_html(path, page, share_path=ca.LEGAL_CENTER_PATH)
+        assert marked.replace(' data-phins-share-view="legal-center"' + home, "", 1) == page
+        # A link to this one instrument, or a reader whose link is unknown,
+        # gets the reading copy and no way back to a hub it does not open.
+        for own in (path, "", "/pitch-dashboard.html", "/legal/not-on-the-hub.html"):
+            single = ca.legal_center_share_html(path, page, share_path=own)
+            assert "data-phins-share-home" not in single, (path, own)
+            assert single.replace(' data-phins-share-view="legal-center"', "", 1) == page
+    # A page that already carries a mark is refused, not trusted.
+    for forged in ('<html data-phins-share-home="/corporate-legal-dashboard.html">',
+                   '<html data-phins-share-view="legal-center">'):
+        with pytest.raises(ValueError):
+            ca.legal_center_share_html("/legal/nda.html", forged + "<body></body></html>", share_path="/legal/nda.html")
     # A page outside the legal center is returned as it is.
     assert ca.legal_center_share_html("/pitch-dashboard.html", "<html><a href='/admin.html'>x</a></html>") == (
         "<html><a href='/admin.html'>x</a></html>"
@@ -1269,8 +1280,11 @@ def test_legal_document_script_closes_signing_on_a_shared_reading_copy():
     # The return bar leads back to the hub, and the shared script that every
     # generated document inlines is left as it is.
     init = js.split("window.PhinsLegalDoc = {", 1)[1]
-    assert "window.location.href = SHARE_VIEW_HOME;" in init
-    assert "var SHARE_VIEW_HOME = '/corporate-legal-dashboard.html';" in js
+    assert "if (SHARE_VIEW_HOME) { window.location.href = SHARE_VIEW_HOME; return; }" in init
+    assert "getAttribute('data-phins-share-home') === '/corporate-legal-dashboard.html'" in js
+    # A reader whose link does not open the hub is not sent or linked there.
+    assert "(SHARE_VIEW && !SHARE_VIEW_HOME\n        ? ''" in header
+    assert js.count("window.location.href = SHARE_VIEW_HOME") == 1
     assert "legal-center" not in _static_text("phins-doc-return.js")
     # The reader gets the document at the full width of the letterhead frame.
     css = _static_text("legal/legal-docs.css")
@@ -1399,6 +1413,7 @@ def test_http_legal_center_link_for_advisers(gate_token, share_store, monkeypatc
         page = adviser.get(f"{BASE_URL}{path}", timeout=10)
         assert page.status_code == 200, path
         assert 'data-phins-share-view="legal-center"' in page.text, path
+        assert f'data-phins-share-home="{ca.LEGAL_CENTER_PATH}"' in page.text, path
         for href in _STAFF_HREFS:
             assert href not in page.text, path
 
@@ -1651,3 +1666,40 @@ def test_http_a_confidential_file_is_served_only_at_its_own_url(gate_token):
     for alias in ("/investor-deck.he.html", "/reinsurer-deck.he.html"):
         assert _raw_get(alias)[0] == 401, alias
         assert _raw_get(alias, holder)[0] == 200, alias
+
+
+def test_http_single_instrument_link_is_not_offered_the_hub(gate_token, share_store, monkeypatch):
+    """A link to one instrument reads that instrument and is not led to a closed hub."""
+    monkeypatch.setenv("PHINS_ENVIRONMENT", "production")
+    monkeypatch.setenv("SESSION_SECRET_KEY", SECRET)
+    monkeypatch.setenv("PHINS_CONFIDENTIAL_ACCESS_TOKEN", TOKEN)
+    unlock = requests.post(
+        f"{BASE_URL}/api/confidential/admin-unlock",
+        json={"username": "admin", "password": "admin123", "next": "/pitch-dashboard.html"},
+        timeout=10,
+    )
+    assert unlock.status_code == 200, unlock.text
+    admin = requests.Session()
+    admin.headers["Authorization"] = f"Bearer {unlock.json()['token']}"
+    admin.cookies.update(unlock.cookies)
+    create = admin.post(
+        f"{BASE_URL}/api/confidential/shares",
+        json={"path": "/legal/cap-table.html", "password": "one-doc-open", "mode": "multi", "max_uses": 3},
+        timeout=10,
+    )
+    assert create.status_code == 201, create.text
+    share = create.json()["share"]
+    reader = requests.Session()
+    opened = reader.post(
+        f"{BASE_URL}/api/confidential/share-unlock",
+        json={"share_id": share["id"], "password": "one-doc-open", "path": "/legal/cap-table.html"},
+        timeout=10,
+    )
+    assert opened.status_code == 200, opened.text
+    page = reader.get(f"{BASE_URL}/legal/cap-table.html", timeout=10, allow_redirects=False)
+    assert page.status_code == 200
+    root = page.text.split("<head>", 1)[0]
+    assert 'data-phins-share-view="legal-center"' in root
+    assert "data-phins-share-home" not in page.text
+    for closed in (ca.LEGAL_CENTER_PATH, "/legal/term-sheet.html", "/pitch-dashboard.html"):
+        assert reader.get(f"{BASE_URL}{closed}", timeout=10, allow_redirects=False).status_code == 401, closed

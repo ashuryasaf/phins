@@ -23489,7 +23489,9 @@ class PortalHandler(BaseHTTPRequestHandler):
         if decision is None or not getattr(decision, 'is_share_viewer', False):
             return html
         try:
-            return confidential_access.legal_center_share_html(url_path, html)
+            return confidential_access.legal_center_share_html(
+                url_path, html, share_path=getattr(decision, 'share_path', '') or '',
+            )
         except Exception as exc:
             # A filter failure must not fall open to the staff page.
             print(f"⚠️  [LEGAL CENTER] share view failed for {url_path}: {exc}")

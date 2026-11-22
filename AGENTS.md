@@ -855,7 +855,9 @@ Environment variables commonly used:
   the page `data-phins-share-view="legal-center"` and removes
   `data-phins-staff-only` elements (`legal_center_share_html`; a staff link
   that survives, or a staff-only element it cannot remove whole, closes the
-  page). `legal-docs.js` then shows no signing
+  page). Only a link that opens the hub is marked
+  `data-phins-share-home`; a reader holding one instrument is not linked or
+  returned to the hub. `legal-docs.js` then shows no signing
   controls, and `/api/legal-docs/{sign,verify,registry}`, downloads, and
   every other confidential page stay closed to that link. The link is not a
   session and adds nothing outside that scope. The NBA Law request for
