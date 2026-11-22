@@ -959,7 +959,15 @@ Environment variables commonly used:
   A browser that is handed the shell continues to the unlock page. The
   title is a known name or the name of a file that exists; an unknown path
   stays `PHINS`. `robots.txt` allows `/link-preview.png` and
-  `/link-preview/`.
+  `/link-preview/`. The pitch-dashboard **Staff · Share links** card shows
+  that card as the banner of a new link, and the new link and each
+  address-book row have **Copy link with banner** (rich text for email:
+  the card image and the link, never the password). The card address is
+  built in the page as `/link-preview` + path + `.png`, the same as
+  `image_path_for`. The Legal & Funding Center hub carries the letterhead
+  banner (`.lc-banner`): its gradient and gold rule are the ones in
+  `phins-document.css`, and the gradient stops are the card's palette
+  (`tests/test_document_branding.py`).
 - **Video agents (B8):** `REPLICATE_API_TOKEN` enables Replicate beside
  Gemini and Kling (Growth Agent and Video Agents). Optional
  `REPLICATE_VIDEO_MODELS` (comma-separated `owner/name`) and
