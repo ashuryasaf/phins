@@ -437,11 +437,19 @@ def _rtl_paragraph(text: str, style, max_width: float) -> Paragraph:
     return Paragraph('<br/>'.join(visual), style)
 
 
+# reportlab's Frame keeps 6pt of padding on each side, so a top-level
+# flowable is laid out in FRAME_WIDTH less this. A pre-wrapped RTL line that
+# is measured against the full frame is wrapped a second time by reportlab,
+# and because the line is already in visual order its logical start drops to
+# the next row.
+_FRAME_PADDING = 12.0
+
+
 def _rtl_width_for(styles, key: str) -> float:
     """Usable width for a top-level RTL flowable of the given style key."""
     style = styles[key]
     pad = 2.0  # safety so measured lines never re-wrap inside reportlab
-    width = FRAME_WIDTH - style.leftIndent - style.rightIndent - pad
+    width = FRAME_WIDTH - _FRAME_PADDING - style.leftIndent - style.rightIndent - pad
     border = getattr(style, 'borderPadding', 0) or 0
     return width - 2 * border
 
