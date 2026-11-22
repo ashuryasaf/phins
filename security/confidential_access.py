@@ -51,12 +51,13 @@ import hashlib
 import hmac
 import json
 import os
+import posixpath
 import re
 import time
 from dataclasses import dataclass, field
 from http.cookies import SimpleCookie
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin, urlsplit
 
 # Cookie/query names for the shared-token exchange.
 ACCESS_COOKIE_NAME = "phins_confidential_access"
@@ -350,13 +351,22 @@ def is_shared_asset(path: str) -> bool:
 
 def is_downloadable_document(path: str) -> bool:
     """True for export/download artefacts that share links must not unlock."""
-    normalized = str(path or "").split("?", 1)[0].split("#", 1)[0].lower()
+    normalized = normalize_request_path(path)
     return any(normalized.endswith(suffix) for suffix in _DOWNLOAD_SUFFIXES)
 
 
 def normalize_request_path(path: str) -> str:
-    """Pathname only, lowercased, without query/fragment."""
-    return str(path or "").split("?", 1)[0].split("#", 1)[0].lower()
+    """Pathname only, lowercased, without query/fragment, as the file is named.
+
+    The static handler resolves a trailing slash, a repeated slash and dot
+    segments before it opens a file, so ``/plan.html/`` and ``/./plan.html``
+    are ``/plan.html`` to it. The gate reads the path the same way. A
+    backslash counts as a slash, which can only gate more.
+    """
+    raw = str(path or "").split("?", 1)[0].split("#", 1)[0].replace("\\", "/")
+    if not raw:
+        return ""
+    return posixpath.normpath("/" + raw.lstrip("/")).lower()
 
 
 def share_scope_root(path: str) -> str:
@@ -406,11 +416,62 @@ _STAFF_ONLY_ELEMENT = re.compile(
     r"<(?P<tag>a|div|span|p|li|button|section)\b[^>]*\bdata-phins-staff-only\b[^>]*>.*?</(?P=tag)>",
     re.IGNORECASE | re.DOTALL,
 )
+_STAFF_ONLY_TAG = re.compile(r"<[a-z][^<>]*\bdata-phins-staff-only\b[^<>]*>", re.IGNORECASE)
 _HTML_OPEN_TAG = re.compile(r"<html\b(?P<attrs>[^>]*)>", re.IGNORECASE)
-_HREF_VALUE = re.compile(r"""href\s*=\s*["'](?P<href>[^"']*)["']""", re.IGNORECASE)
+_HREF_VALUE = re.compile(
+    r"""\bhref\s*=\s*(?:"(?P<dq>[^"]*)"|'(?P<sq>[^']*)'|(?P<bare>[^\s"'<>]+))""",
+    re.IGNORECASE,
+)
+# Hosts whose links are this site's own pages.
+_OWN_LINK_HOSTS = frozenset({"phins.ai", "www.phins.ai"})
+_LINK_BASE_HOST = "legal-center.invalid"
 _LEGAL_HUB_CTA = re.compile(
     r"(<div class=\"doc-cta\">)Open &amp; (?:sign|certify|acknowledge|attest) →(</div>)"
 )
+
+
+def _strip_staff_only(html: str) -> str:
+    """Remove every ``data-phins-staff-only`` element, or raise.
+
+    The pattern ends an element at its first closing tag, so an element that
+    holds another of its own kind would leave its tail on the page. That
+    case, and a mark on a tag the pattern does not remove, is refused.
+    """
+
+    def _drop(match: "re.Match[str]") -> str:
+        tag = match.group("tag")
+        inner = match.group(0)[1:]
+        if re.search(rf"<{tag}\b", inner, re.IGNORECASE):
+            raise ValueError("a staff-only element holds another of its own kind")
+        return ""
+
+    text = _STAFF_ONLY_ELEMENT.sub(_drop, html)
+    if _STAFF_ONLY_TAG.search(text):
+        raise ValueError("a staff-only element survived the legal center share view")
+    return text
+
+
+def _staff_link_survives(path: str, html: str) -> bool:
+    """True when a link on the page resolves to a staff dashboard.
+
+    Quoted and bare ``href`` values are read, and a relative value is
+    resolved against the page, so ``../admin.html`` on an instrument and
+    ``https://www.phins.ai/admin.html`` count the same as ``/admin.html``.
+    """
+    base = f"https://{_LINK_BASE_HOST}{normalize_request_path(path) or '/'}"
+    for found in _HREF_VALUE.finditer(html):
+        value = next(v for v in (found.group("dq"), found.group("sq"), found.group("bare")) if v is not None)
+        try:
+            target = urlsplit(urljoin(base, value.strip()))
+        except ValueError:
+            return True
+        host = (target.hostname or "").lower()
+        if host != _LINK_BASE_HOST and host not in _OWN_LINK_HOSTS:
+            continue
+        linked = normalize_request_path(target.path)
+        if any(linked.startswith(prefix) for prefix in LEGAL_CENTER_STAFF_LINK_PREFIXES):
+            return True
+    return False
 
 
 def legal_center_share_html(path: str, html: str) -> str:
@@ -419,8 +480,9 @@ def legal_center_share_html(path: str, html: str) -> str:
     The page is marked ``data-phins-share-view="legal-center"`` so the
     instrument script renders a reading copy (no signing, no staff links).
     Elements marked ``data-phins-staff-only`` are removed. Raises
-    ``ValueError`` when the page cannot be marked or a staff link survives,
-    so the caller serves an error page and not the staff page.
+    ``ValueError`` when the page cannot be marked, a staff-only element
+    cannot be removed whole, or a staff link survives, so the caller serves
+    an error page and not the staff page.
     """
     if not is_legal_center_path(path):
         return html
@@ -431,13 +493,11 @@ def legal_center_share_html(path: str, html: str) -> str:
     if "data-phins-share-view" not in match.group("attrs"):
         marked = f'<html{match.group("attrs")} data-phins-share-view="{LEGAL_CENTER_SHARE_VIEW}">'
         text = text[: match.start()] + marked + text[match.end():]
-    text = _STAFF_ONLY_ELEMENT.sub("", text)
+    text = _strip_staff_only(text)
     if normalize_request_path(path).rstrip("/") == LEGAL_CENTER_PATH:
         text = _LEGAL_HUB_CTA.sub(r"\1Open to read →\2", text)
-    for found in _HREF_VALUE.finditer(text):
-        href = found.group("href").strip().lower()
-        if any(href.startswith(prefix) for prefix in LEGAL_CENTER_STAFF_LINK_PREFIXES):
-            raise ValueError("a staff link survived the legal center share view")
+    if _staff_link_survives(path, text):
+        raise ValueError("a staff link survived the legal center share view")
     return text
 
 
@@ -804,18 +864,18 @@ def is_confidential_path(
     confidential content of their own and blocking them would break the
     rendering of a page the caller is authorised to read.
     """
-    normalized = str(path or "").split("?", 1)[0].split("#", 1)[0].lower()
+    normalized = normalize_request_path(path)
     if not normalized:
         return False
     prefixes, files, api_paths = _confidential_targets(environ)
-    # API endpoints are matched exactly, but a trailing slash must not skip the
-    # gate: ``/api/legal-docs/registry/`` is the same endpoint as
-    # ``/api/legal-docs/registry`` and stays confidential.
-    if normalized.rstrip("/") in api_paths:
+    # ``normalize_request_path`` has already dropped a trailing slash and dot
+    # segments, so ``/api/legal-docs/registry/`` and ``/plan.html/`` are the
+    # endpoint and the file they name and stay confidential.
+    if normalized in api_paths:
         return True
     if normalized in files:
         return True
-    if any(normalized.startswith(prefix) for prefix in prefixes):
+    if any(normalized.startswith(prefix) or normalized + "/" == prefix for prefix in prefixes):
         return not is_shared_asset(normalized)
     return False
 

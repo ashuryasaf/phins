@@ -1475,3 +1475,179 @@ def test_http_legal_center_link_for_advisers(gate_token, share_store, monkeypatc
     assert revoke.status_code == 200, revoke.text
     assert adviser.get(hub_url, timeout=10, allow_redirects=False).status_code == 401
     assert adviser.get(f"{BASE_URL}/legal/term-sheet.html", timeout=10, allow_redirects=False).status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# The gate reads a path the way the file server resolves it
+# ---------------------------------------------------------------------------
+
+# Spellings the static handler resolves to the same file as the plain URL.
+_OTHER_SPELLINGS = (
+    "{path}/",
+    "{path}//",
+    "{path}/.",
+    "/.{path}",
+    "/.//{name}",
+    "/x/..{path}",
+    "//{name}",
+    "/.\\{name}",
+)
+
+
+def _spellings(path):
+    return [form.format(path=path, name=path.lstrip("/")) for form in _OTHER_SPELLINGS]
+
+
+def _raw_get(path, headers=None):
+    """GET ``path`` exactly as written: ``requests`` would tidy dot segments away."""
+    import http.client
+    from urllib.parse import urlsplit
+
+    target = urlsplit(BASE_URL)
+    conn = http.client.HTTPConnection(target.hostname, target.port, timeout=15)
+    try:
+        conn.putrequest("GET", path)
+        for name, value in (headers or {}).items():
+            conn.putheader(name, value)
+        conn.endheaders()
+        response = conn.getresponse()
+        return response.status, response.read()
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/pitch-dashboard.html",
+        "/business-plan.html",
+        "/corporate-legal-dashboard.html",
+        "/legal/cap-table.html",
+        "/internal/phins-investor-business-plan.html",
+        "/investor-docs/phins-unified-business-plan.pdf",
+        "/api/legal-docs/registry",
+        "/api/business-plan/model",
+    ],
+)
+def test_another_spelling_of_a_confidential_path_is_still_confidential(path):
+    assert ca.is_confidential_path(path) is True
+    for spelled in _spellings(path):
+        assert ca.normalize_request_path(spelled) == path, spelled
+        assert ca.is_confidential_path(spelled) is True, spelled
+        assert ca.is_downloadable_document(spelled) is ca.is_downloadable_document(path), spelled
+        denied = ca.evaluate_access(spelled, environ=_PROD)
+        assert denied.allowed is False and denied.confidential is True, spelled
+
+
+def test_path_spelling_does_not_gate_a_public_page_or_widen_a_share():
+    for path in ("/join.html", "/index.html", "/legal/legal-docs.js", "/legal/legal-docs.css"):
+        for spelled in [path] + _spellings(path):
+            assert ca.is_confidential_path(spelled) is False, spelled
+    assert ca.normalize_request_path("") == ""
+    assert ca.normalize_request_path("/") == "/"
+    assert ca.normalize_request_path("/Legal/Cap-Table.html?share=x#top") == "/legal/cap-table.html"
+    # A path cannot climb out of the legal center into another document.
+    cookie = ca.mint_share_cookie(share_id="shr_legal", path=ca.LEGAL_CENTER_PATH, environ=_PROD)
+    header = f"{ca.SHARE_COOKIE_NAME}={cookie}"
+    for climbed in (
+        "/corporate-legal-dashboard.html/../pitch-dashboard.html",
+        "/corporate-legal-dashboard.html/../business-plan.html",
+        "/legal/../pitch-dashboard.html",
+        "/legal/cap-table.html/../../pitch-dashboard.html",
+        "/legal/cap-table.html/../../investor-docs/phins-unified-business-plan.pdf",
+        "/legal/cap-table.html/../not-on-the-hub.html",
+        "/legal/./../internal/phins-investor-business-plan.html",
+        "/legal/cap-table.html/../../api/legal-docs/sign",
+    ):
+        assert ca.share_covers(ca.LEGAL_CENTER_PATH, climbed) is False, climbed
+        assert ca.evaluate_access(climbed, cookie_header=header, environ=_PROD).allowed is False, climbed
+    # A download stays a download however it is spelled, so no share opens it.
+    pdf = "/investor-docs/nba-law-legal-services-request-22nov2026.pdf"
+    for spelled in _spellings(pdf):
+        assert ca.is_downloadable_document(spelled) is True, spelled
+        assert ca.evaluate_access(spelled, cookie_header=header, environ=_PROD).allowed is False, spelled
+
+
+def test_legal_center_share_view_refuses_what_it_cannot_remove_whole():
+    page = '<html lang="en"><body>{body}</body></html>'
+    refused = (
+        # An element that holds another of its own kind would leave its tail.
+        '<div data-phins-staff-only><div>inner</div><p>Staff note</p></div>',
+        # A mark on a tag the filter does not remove.
+        '<nav data-phins-staff-only><span>Staff</span></nav>',
+        # Links to a staff dashboard that carry no mark.
+        '<a href=/admin.html>Admin</a>',
+        "<a href='/pitch-dashboard.html#investor-documents-section'>Documents</a>",
+        '<a href="admin-media.html">Media</a>',
+        '<a href="./nda-dashboard.html">NDA</a>',
+        '<a href="/x/../admin.html">Admin</a>',
+        '<a href="https://www.phins.ai/admin.html">Admin</a>',
+        '<a href="//phins.ai/pitch-dashboard.html">Pitch</a>',
+        '<a HREF = "/Admin.html">Admin</a>',
+    )
+    for body in refused:
+        with pytest.raises(ValueError):
+            ca.legal_center_share_html(ca.LEGAL_CENTER_PATH, page.format(body=body))
+    # From an instrument, one level up is the site root.
+    with pytest.raises(ValueError):
+        ca.legal_center_share_html("/legal/nda.html", page.format(body='<a href="../admin.html">Admin</a>'))
+    kept = (
+        '<a href="/legal/nda.html">NDA</a>',
+        '<a href="/privacy-policy.html">Privacy</a>',
+        '<a href="https://example.com/admin.html">Another site</a>',
+        '<a href="mailto:admin@phins.ai">Write</a>',
+        '<span data-phins-staff-only>Staff</span><p>Reader</p>',
+    )
+    for body in kept:
+        shared = ca.legal_center_share_html(ca.LEGAL_CENTER_PATH, page.format(body=body))
+        assert 'data-phins-share-view="legal-center"' in shared
+        assert "data-phins-staff-only" not in shared
+    assert "<p>Reader</p>" in ca.legal_center_share_html(ca.LEGAL_CENTER_PATH, page.format(body=kept[-1]))
+
+
+# Marker bytes that are in the file and not on the gate page.
+_PLAIN_FILES = {
+    "/pitch-dashboard.html": b'id="investor-documents-section"',
+    "/legal/cap-table.html": b"/legal/legal-docs.js",
+    "/investor-docs/phins-unified-business-plan.pdf": b"%PDF-",
+}
+
+
+def test_http_another_spelling_does_not_open_a_confidential_file(gate_token):
+    """A trailing slash or dot segment names the same file and meets the same gate."""
+    for path, marker in _PLAIN_FILES.items():
+        status, body = _raw_get(path)
+        assert status == 401 and marker not in body, path
+        for spelled in _spellings(path):
+            status, body = _raw_get(spelled)
+            assert status in (401, 404), (spelled, status)
+            assert marker not in body, spelled
+        # Leaving the static root and coming back in is the same file again.
+        status, body = _raw_get("/x/../../static" + path)
+        assert status in (401, 404), (path, status)
+        assert marker not in body, path
+    # Public pages and the shared legal assets answer as they did.
+    for path in ("/join.html", "/join.html/", "/./join.html", "/legal/legal-docs.js", "/"):
+        assert _raw_get(path)[0] == 200, path
+
+
+def test_http_a_confidential_file_is_served_only_at_its_own_url(gate_token):
+    """A reader the gate admits cannot step around a filter keyed on the URL."""
+    holder = {"Cookie": f"{ca.ACCESS_COOKIE_NAME}={ca.cookie_value_for_token(TOKEN)}"}
+    for path in ("/pitch-dashboard.html", "/legal/cap-table.html"):
+        marker = _PLAIN_FILES[path]
+        status, body = _raw_get(path, holder)
+        assert status == 200 and marker in body, path
+        for spelled in _spellings(path) + ["/x/../../static" + path]:
+            status, body = _raw_get(spelled, holder)
+            if spelled.startswith("//"):
+                # The HTTP server reads leading slashes as one before any
+                # handler runs, so this one is the plain URL to the gate too.
+                assert status == 200, spelled
+                continue
+            assert status in (401, 404), (spelled, status)
+            assert marker not in body, spelled
+    # The Hebrew deck pages are served from the one deck file, as before.
+    for alias in ("/investor-deck.he.html", "/reinsurer-deck.he.html"):
+        assert _raw_get(alias)[0] == 401, alias
+        assert _raw_get(alias, holder)[0] == 200, alias

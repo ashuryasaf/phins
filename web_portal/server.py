@@ -42497,6 +42497,9 @@ For claims or questions, please contact:
                 self.wfile.write(payload)
             return
 
+        # The static URL this request is expected to open. The gate above
+        # decided on ``path``; the two deck aliases are the only renames.
+        static_url = None
         if path.startswith('/media-files/'):
             rel = path[len('/media-files/'):].lstrip('/')
             file_path = os.path.join(MEDIA_STORAGE_DIR, rel)
@@ -42505,12 +42508,16 @@ For claims or questions, please contact:
         elif path == '/' or path == '/index.html':
             file_path = os.path.join(ROOT, 'index.html')
             allowed_root = ROOT
+            static_url = '/index.html'
         else:
             rel = path.lstrip('/')
+            static_url = path
             if path == '/investor-deck.he.html':
                 rel = 'investor-deck.html'
+                static_url = '/investor-deck.html'
             elif path == '/reinsurer-deck.he.html':
                 rel = 'reinsurer-deck.html'
+                static_url = '/reinsurer-deck.html'
             file_path = os.path.join(ROOT, rel)
             allowed_root = ROOT
         
@@ -42529,6 +42536,16 @@ For claims or questions, please contact:
         except Exception as e:
             self.send_error(400, 'Invalid path')
             return
+
+        # A confidential file is served only under its own URL. normpath
+        # above also resolves a trailing slash, dot segments and a route that
+        # leaves the root and re-enters it, and each of those spells a path
+        # the gate and the share filters did not read as this file.
+        if static_url is not None and _confidential_access_enabled and confidential_access is not None:
+            served_url = '/' + os.path.relpath(abs_file_path, abs_root).replace(os.sep, '/')
+            if served_url != static_url and confidential_access.is_confidential_path(served_url):
+                self.send_error(404, 'Not Found')
+                return
 
         library_mime = ''
         if path.startswith('/media-files/'):
