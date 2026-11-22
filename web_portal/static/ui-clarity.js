@@ -7,6 +7,14 @@
     (document.head || document.documentElement).appendChild(openScript);
   }
 
+  // Every PHINS wordmark carries the copyright mark and "All rights reserved".
+  if (typeof document !== "undefined" && !document.querySelector('script[src="/phins-brand-mark.js"]')) {
+    const markScript = document.createElement("script");
+    markScript.src = "/phins-brand-mark.js";
+    markScript.async = true;
+    (document.head || document.documentElement).appendChild(markScript);
+  }
+
   // ── Defensive auth-fetch shim ───────────────────────────────────────────
   //
   // Several pages (dashboard.html, etc.) issue raw `fetch('/api/...')` calls

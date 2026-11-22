@@ -60,11 +60,17 @@ def document_return_script() -> str:
     return (_STATIC / "phins-doc-return.js").read_text(encoding="utf-8")
 
 
+@lru_cache(maxsize=1)
+def brand_mark_script() -> str:
+    return (_STATIC / "phins-brand-mark.js").read_text(encoding="utf-8")
+
+
 def document_return_markup() -> str:
-    """Sticky Go back / Close chrome plus the return script.
+    """Sticky Go back / Close chrome plus the return and brand-mark scripts.
 
     Safe to prepend to a document body. Hidden when the file is framed and
-    hidden in print. Does not wrap or alter the caller's body HTML.
+    hidden in print. Does not wrap or alter the caller's body HTML; the brand
+    mark only sets "PHINS©" and "All rights reserved" on the letterhead.
     """
     return (
         '<nav class="phins-doc-return" aria-label="Leave this document">'
@@ -74,6 +80,8 @@ def document_return_markup() -> str:
         '<button type="button" class="phins-doc-close">Close</button>'
         "</span></nav>\n<script>\n"
         + document_return_script()
+        + "\n"
+        + brand_mark_script()
         + "\n</script>\n"
     )
 
