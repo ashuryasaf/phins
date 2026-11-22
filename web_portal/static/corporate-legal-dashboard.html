@@ -53,6 +53,13 @@
     .intro-note strong{color:var(--blue-dark);}
     .site-footer{background:var(--blue-dark);color:rgba(255,255,255,.7);text-align:center;padding:18px 32px;font-size:8pt;}
     .site-footer a{color:inherit;text-decoration:underline;}
+    .share-view-only{display:none;}
+    html[data-phins-share-view="legal-center"] .share-view-only{display:block;}
+    html[data-phins-share-view="legal-center"] span.share-view-only{display:inline-block;}
+    html[data-phins-share-view="legal-center"] [data-phins-staff-only]{display:none !important;}
+    .share-view-chip{color:#fff;font-size:8.5pt;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border:1px solid rgba(255,255,255,.45);border-radius:20px;padding:6px 14px;}
+    .share-view-note{background:#fffaf0;border:1px solid #e3bf6f;border-left:4px solid #c9a04e;border-radius:14px;padding:14px 18px;margin-bottom:22px;font-size:9pt;color:var(--text-sub);line-height:1.6;}
+    .share-view-note strong{color:var(--blue-dark);}
   </style>
   <link rel="stylesheet" href="/phins-theme.css">
 </head>
@@ -63,9 +70,10 @@
     <div><div class="logo-text">PHINS</div><div class="logo-tagline">Personal Health Insurance &amp; Savings</div></div>
   </div>
   <div class="header-links">
-    <a href="/pitch-dashboard.html#investor-documents-section" class="back-link"> Investor Documents</a>
-    <a href="/nda-dashboard.html" class="back-link"> NDA Center</a>
-    <a href="/admin.html" class="back-link">← Back to Admin</a>
+    <a href="/pitch-dashboard.html#investor-documents-section" class="back-link" data-phins-staff-only> Investor Documents</a>
+    <a href="/nda-dashboard.html" class="back-link" data-phins-staff-only> NDA Center</a>
+    <a href="/admin.html" class="back-link" data-phins-staff-only>← Back to Admin</a>
+    <span class="share-view-chip share-view-only">Shared reading copy · legal advisers</span>
   </div>
 </header>
 
@@ -83,6 +91,15 @@
     <div class="stat-box"><div class="stat-val">Live</div><div class="stat-lbl">Draw / Type Signatures</div></div>
     <div class="stat-box"><div class="stat-val">SHA-256</div><div class="stat-lbl">Content Integrity Hash</div></div>
     <div class="stat-box"><div class="stat-val">Ledger</div><div class="stat-lbl">Append-only Anchoring</div></div>
+  </div>
+
+  <div class="share-view-note share-view-only">
+    <strong>Shared with PHINS's legal advisers for review.</strong> This link opens this page and the
+    fifteen document templates listed here, to read. Signing is closed on this link: nothing you open or
+    edit here is signed, anchored, or stored by PHINS. The signature panels this page describes are how
+    PHINS and the signing parties execute a document, and they are not shown on this link. Field edits
+    stay in your own browser. The link does not open any other PHINS page. These are drafts for counsel's
+    markup, not executed instruments.
   </div>
 
   <div class="intro-note">

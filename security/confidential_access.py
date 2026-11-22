@@ -51,6 +51,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from http.cookies import SimpleCookie
@@ -153,12 +154,48 @@ REINSURER_DECK_PAGES = (
     "/reinsurer-deck.he.html",
 )
 
-# Request for legal services sent to NBA Law. Staff read it with a session;
-# the HTML edition can be opened on a share link, the PDF stays staff-only.
+# Request for legal services sent to NBA Law, English and Hebrew. Staff read
+# it with a session; an HTML edition can be opened on a share link, the PDF
+# and Markdown stay staff-only.
 NBA_LEGAL_SERVICES_REQUEST_FILES = (
     "/investor-docs/nba-law-legal-services-request-22nov2026.html",
     "/investor-docs/nba-law-legal-services-request-22nov2026.pdf",
     "/investor-docs/nba-law-legal-services-request-22nov2026.md",
+    "/investor-docs/nba-law-legal-services-request-22nov2026.he.html",
+    "/investor-docs/nba-law-legal-services-request-22nov2026.he.pdf",
+    "/investor-docs/nba-law-legal-services-request-22nov2026.he.md",
+)
+
+# Corporate, Legal & Funding Document Center: the hub and the instruments it
+# lists under /legal/. A share minted for the hub opens the hub and these
+# pages for reading. It does not open a signing or registry API, a download,
+# the pitch dashboard, the NDA Center, or any staff dashboard. A share minted
+# for one instrument keeps covering that instrument only.
+LEGAL_CENTER_PATH = "/corporate-legal-dashboard.html"
+LEGAL_CENTER_DOCUMENTS = (
+    "/legal/incorporation-delaware.html",
+    "/legal/founder-agreement.html",
+    "/legal/cofounder-exit-clause.html",
+    "/legal/shareholders-agreement.html",
+    "/legal/cap-table.html",
+    "/legal/esop-agreement.html",
+    "/legal/employment-agreement.html",
+    "/legal/offer-letter.html",
+    "/legal/hr-policies.html",
+    "/legal/ip-assignment.html",
+    "/legal/trademark-ip.html",
+    "/legal/legal-compliance.html",
+    "/legal/nda.html",
+    "/legal/term-sheet.html",
+    "/legal/financial-model.html",
+)
+LEGAL_CENTER_SHARE_VIEW = "legal-center"
+# Where the hub and the instrument header send staff. None of these may be
+# left in a page served to a share viewer.
+LEGAL_CENTER_STAFF_LINK_PREFIXES = (
+    "/admin",
+    "/pitch-dashboard.html",
+    "/nda-dashboard.html",
 )
 
 # Individually confidential files that do not live under a gated prefix.
@@ -168,6 +205,7 @@ DEFAULT_CONFIDENTIAL_FILES = (
     "/phins_business_plan_executive.md",
     "/business-plan.html",
     "/business-plan.he.html",
+    LEGAL_CENTER_PATH,
 ) + BUSINESS_PLAN_DOWNLOADS + CUSTOMER_COVER_SCOPE_PATHS + INVESTOR_DECK_PAGES + REINSURER_DECK_PAGES + NBA_LEGAL_SERVICES_REQUEST_FILES
 
 # API endpoints that expose anchored signatures + signed content snapshots,
@@ -340,6 +378,67 @@ def share_scope_root(path: str) -> str:
     if normalized in REINSURER_DECK_SCOPE_PATHS:
         return REINSURER_DECK_SCOPE_ROOT
     return normalized
+
+
+def is_legal_center_path(path: str) -> bool:
+    """True for the legal hub and the instruments it lists."""
+    normalized = normalize_request_path(path).rstrip("/")
+    return normalized == LEGAL_CENTER_PATH or normalized in LEGAL_CENTER_DOCUMENTS
+
+
+def share_covers(share_path: str, requested_path: str) -> bool:
+    """True when a share minted for ``share_path`` may open ``requested_path``.
+
+    Two paths in one scope root cover each other. The legal hub is one-way:
+    a hub share also opens the listed instruments, and a share minted for a
+    single instrument does not open the hub or the other instruments.
+    """
+    share = normalize_request_path(share_path).rstrip("/")
+    requested = normalize_request_path(requested_path).rstrip("/")
+    if not share or not requested:
+        return False
+    if share_scope_root(share) == share_scope_root(requested):
+        return True
+    return share == LEGAL_CENTER_PATH and requested in LEGAL_CENTER_DOCUMENTS
+
+
+_STAFF_ONLY_ELEMENT = re.compile(
+    r"<(?P<tag>a|div|span|p|li|button|section)\b[^>]*\bdata-phins-staff-only\b[^>]*>.*?</(?P=tag)>",
+    re.IGNORECASE | re.DOTALL,
+)
+_HTML_OPEN_TAG = re.compile(r"<html\b(?P<attrs>[^>]*)>", re.IGNORECASE)
+_HREF_VALUE = re.compile(r"""href\s*=\s*["'](?P<href>[^"']*)["']""", re.IGNORECASE)
+_LEGAL_HUB_CTA = re.compile(
+    r"(<div class=\"doc-cta\">)Open &amp; (?:sign|certify|acknowledge|attest) →(</div>)"
+)
+
+
+def legal_center_share_html(path: str, html: str) -> str:
+    """The legal hub or one of its instruments as a share viewer receives it.
+
+    The page is marked ``data-phins-share-view="legal-center"`` so the
+    instrument script renders a reading copy (no signing, no staff links).
+    Elements marked ``data-phins-staff-only`` are removed. Raises
+    ``ValueError`` when the page cannot be marked or a staff link survives,
+    so the caller serves an error page and not the staff page.
+    """
+    if not is_legal_center_path(path):
+        return html
+    text = str(html or "")
+    match = _HTML_OPEN_TAG.search(text)
+    if not match:
+        raise ValueError("legal center page has no <html> element to mark")
+    if "data-phins-share-view" not in match.group("attrs"):
+        marked = f'<html{match.group("attrs")} data-phins-share-view="{LEGAL_CENTER_SHARE_VIEW}">'
+        text = text[: match.start()] + marked + text[match.end():]
+    text = _STAFF_ONLY_ELEMENT.sub("", text)
+    if normalize_request_path(path).rstrip("/") == LEGAL_CENTER_PATH:
+        text = _LEGAL_HUB_CTA.sub(r"\1Open to read →\2", text)
+    for found in _HREF_VALUE.finditer(text):
+        href = found.group("href").strip().lower()
+        if any(href.startswith(prefix) for prefix in LEGAL_CENTER_STAFF_LINK_PREFIXES):
+            raise ValueError("a staff link survived the legal center share view")
+    return text
 
 
 def is_business_plan_path(path: str) -> bool:
@@ -542,15 +641,16 @@ def verify_share_cookie(
 ) -> Optional[Dict[str, Any]]:
     """Return share claims when the cookie is valid for ``path`` (HTML only).
 
-    The cookie's path and the requested path must share one scope root, so a
-    business-plan unlock also covers the Hebrew edition and the plan APIs.
+    The cookie's path must cover the requested path (``share_covers``), so a
+    business-plan unlock also covers the Hebrew edition and the plan APIs,
+    and a legal-hub unlock also covers the instruments the hub lists.
     """
     if is_downloadable_document(path):
         return None
     payload = _verify_signed_payload(cookie_value, signing_secret(environ))
     if not payload or payload.get("typ") != "share":
         return None
-    if share_scope_root(path) != share_scope_root(str(payload.get("p") or "")):
+    if not share_covers(str(payload.get("p") or ""), path):
         return None
     if not str(payload.get("sid") or "").strip():
         return None

@@ -26,6 +26,16 @@
     registry: '/api/legal-docs/registry'
   };
 
+  // A Legal & Funding Center share link is a reading copy. The server marks
+  // the page and keeps the signing, verify and registry APIs closed to that
+  // link; this script then shows no staff links and no signing controls.
+  var SHARE_VIEW = (function () {
+    try { return document.documentElement.getAttribute('data-phins-share-view') === 'legal-center'; }
+    catch (e) { return false; }
+  })();
+  var SHARE_VIEW_CLOSED = 'Signing is closed on this shared reading copy.';
+  var SHARE_VIEW_HOME = '/corporate-legal-dashboard.html';
+
   // ---------------------------------------------------------------- helpers
   function $(sel, root) { return (root || document).querySelector(sel); }
   function el(tag, cls, html) {
@@ -223,7 +233,8 @@
     // another session would otherwise stay invisible, leaving cached
     // signed/locked state on screen. Only a freshly minted instance (no id yet)
     // skips hydration, since it has nothing anchored to reconcile with.
-    this._needsRegistryHydration = !!id;
+    // A reading copy never asks the registry: that API is closed to the link.
+    this._needsRegistryHydration = !!id && !SHARE_VIEW;
     if (!this.docInstanceId) {
       var stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       this.docInstanceId = 'LGL-' + this.cfg.docType.toUpperCase().replace(/[^A-Z0-9]+/g, '-') +
@@ -392,8 +403,10 @@
       '<div class="ld-logo-tagline">Personal Health Insurance &amp; Savings</div></div></div>' +
       '<div class="ld-header-links">' +
       '<a class="ld-link" href="/corporate-legal-dashboard.html">← Legal &amp; Funding Center</a>' +
-      '<a class="ld-link" href="/pitch-dashboard.html"> Investor Documents</a>' +
-      '<a class="ld-link" href="/admin.html">← Admin</a>' +
+      (SHARE_VIEW
+        ? '<span class="ld-link ld-share-chip">Shared reading copy</span>'
+        : '<a class="ld-link" href="/pitch-dashboard.html"> Investor Documents</a>' +
+          '<a class="ld-link" href="/admin.html">← Admin</a>') +
       '</div>';
     return h;
   };
@@ -768,6 +781,22 @@
     var wrap = $('#ld-sign-wrap');
     if (!wrap) return;
     var sigs = this.activeSignatories();
+    if (SHARE_VIEW) {
+      var ro = '<h2>Signatories</h2>' +
+        '<div class="ld-sign-intro">' + SHARE_VIEW_CLOSED + ' The parties who would sign this document are listed ' +
+        'for review. Nothing opened or edited on this link is signed, anchored, or stored by PHINS.</div>' +
+        '<div class="ld-sign-grid">';
+      sigs.forEach(function (s) {
+        ro += '<div class="ld-sig-panel" data-sigpanel="' + esc(self.sigRoleId(s)) + '">' +
+          '<span class="ld-sig-badge unsigned">Reading copy</span>' +
+          '<div class="ld-sig-role">' + esc(s.role) + '</div>' +
+          '<div class="ld-sig-party">' + esc(self.resolveParty(s)) + '</div>' +
+          '</div>';
+      });
+      wrap.innerHTML = ro + '</div>';
+      this.applyLockUI();
+      return;
+    }
     var html = '<h2>️ Signatures</h2>' +
       '<div class="ld-sign-intro">Each party signs below (draw or type). On signing, the signature, signer, and ' +
       'date/time are locked and the document content hash is anchored to the PHINS tamper-evident ledger.</div>' +
@@ -904,6 +933,7 @@
 
   LegalDoc.prototype.commitSignature = function (panel, s, rid, mode, canvas) {
     var self = this;
+    if (SHARE_VIEW) { this.flash(SHARE_VIEW_CLOSED, 'err'); return; }
     // Block signing until a shared link finishes loading anchored state, so a
     // new signature can't be captured over content that doesn't yet match the
     // already-anchored document hash.
@@ -955,6 +985,7 @@
     var self = this;
     var sig = this.signatures[rid];
     if (!sig) return;
+    if (SHARE_VIEW) { this.flash(SHARE_VIEW_CLOSED, 'err'); return; }
     postJSON(API.sign, {
       docType: this.cfg.docType, docInstanceId: this.docInstanceId, context: this.context,
       role: sig.role, signerName: sig.signerName, signerTitle: sig.signerTitle,
@@ -1052,6 +1083,7 @@
   };
 
   LegalDoc.prototype.voidSignatures = function () {
+    if (SHARE_VIEW) { this.flash(SHARE_VIEW_CLOSED, 'err'); return; }
     if (!confirm('Void ALL signatures on this document? This records a void event in the ledger and unlocks editing. This cannot be undone.')) return;
     var self = this;
     var roles = Object.keys(this.signatures);
@@ -1130,6 +1162,7 @@
 
   LegalDoc.prototype.verify = function () {
     var self = this;
+    if (SHARE_VIEW) { this.flash('This is a shared reading copy. Nothing is signed on this link.', 'err'); return; }
     if (!this.lockedHash) { this.flash('Nothing signed yet to verify.', 'err'); return; }
     sha256Hex(stableStringify(this.contentState())).then(function (live) {
       postJSON(API.verify, { docInstanceId: self.docInstanceId, documentHash: self.lockedHash })
@@ -1172,6 +1205,18 @@
         var inst = new LegalDoc(cfg);
         window.__phinsLegalDoc = inst;
         inst.boot();
+      }
+      if (SHARE_VIEW && !window.__phinsLegalShareReturn) {
+        // The link opens the hub and its documents only, so the return bar
+        // leads back to the hub and not to a role home outside the link.
+        window.__phinsLegalShareReturn = true;
+        document.addEventListener('click', function (ev) {
+          var el = ev.target && ev.target.closest ? ev.target.closest('.phins-doc-back, .phins-doc-close') : null;
+          if (!el) return;
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          window.location.href = SHARE_VIEW_HOME;
+        }, true);
       }
       if (!document.querySelector('script[data-phins-return-src]')) {
         var ret = document.createElement('script');

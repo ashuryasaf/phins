@@ -23476,6 +23476,25 @@ class PortalHandler(BaseHTTPRequestHandler):
             print(f"⚠️  [BUSINESS PLAN] share HTML filter failed: {exc}")
             return self._share_document_unavailable()
 
+    def _filter_shared_legal_center(self, url_path: str, html: str) -> str:
+        """Reading copy of the legal hub or an instrument for a share viewer.
+
+        Staff and every other reader get the page as stored.
+        """
+        if not _confidential_access_enabled or confidential_access is None:
+            return html
+        if not confidential_access.is_legal_center_path(url_path):
+            return html
+        decision = getattr(self, '_confidential_decision', None)
+        if decision is None or not getattr(decision, 'is_share_viewer', False):
+            return html
+        try:
+            return confidential_access.legal_center_share_html(url_path, html)
+        except Exception as exc:
+            # A filter failure must not fall open to the staff page.
+            print(f"⚠️  [LEGAL CENTER] share view failed for {url_path}: {exc}")
+            return self._share_document_unavailable()
+
     @staticmethod
     def _business_plan_link_composition(body_data: Dict[str, Any]) -> Dict[str, Any]:
         """Snapshot of what the next open link may show, taken at send time."""
@@ -24273,8 +24292,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             if requested_path:
                 req_norm = confidential_access.normalize_request_path(requested_path)
                 if (req_norm and req_norm != target_path
-                        and confidential_access.share_scope_root(req_norm)
-                        == confidential_access.share_scope_root(target_path)
+                        and confidential_access.share_covers(target_path, req_norm)
                         and not confidential_access.is_downloadable_document(req_norm)):
                     open_path = req_norm
             redirect_to = f"{open_path}?share={public_share['id']}"
@@ -42572,6 +42590,7 @@ For claims or questions, please contact:
                         html_content = fh.read()
                     html_content = _inject_ui_clarity_script(html_content)
                     html_content = self._filter_shared_business_plan(path, html_content)
+                    html_content = self._filter_shared_legal_center(path, html_content)
                     html_content = _inject_link_preview_tags(self, path, html_content)
                     html_content = _inject_capture_guard(self, path, html_content)
                     decision = getattr(self, '_confidential_decision', None)
