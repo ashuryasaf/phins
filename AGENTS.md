@@ -854,7 +854,8 @@ Environment variables commonly used:
   minted for one `/legal/` page still opens only that page. The server marks
   the page `data-phins-share-view="legal-center"` and removes
   `data-phins-staff-only` elements (`legal_center_share_html`; a staff link
-  that survives closes the page). `legal-docs.js` then shows no signing
+  that survives, or a staff-only element it cannot remove whole, closes the
+  page). `legal-docs.js` then shows no signing
   controls, and `/api/legal-docs/{sign,verify,registry}`, downloads, and
   every other confidential page stay closed to that link. The link is not a
   session and adds nothing outside that scope. The NBA Law request for
@@ -1344,6 +1345,11 @@ referenced files, commands, paths, and ports still exist.
   (`/internal/` investor plans, `/legal/` corporate instruments) goes through
   `security/confidential_access.py`; add new confidential paths there (or via
   `PHINS_CONFIDENTIAL_PATHS`) rather than relying on an obscure filename.
+  The gate reads a path the way the file is named
+  (`normalize_request_path`: a trailing slash, a repeated slash and dot
+  segments are resolved first), and the static handler serves a confidential
+  file only at its own URL, so another spelling is refused (401 or 404). Keep
+  any new path check on `normalize_request_path`, never on the raw path.
 - Never return a live OTP to a caller. `PHINS_EXPOSE_DEMO_OTP` is a
   non-production aid and is refused in production; route any new OTP surface
   through `_demo_otp_exposure_allowed()`.
