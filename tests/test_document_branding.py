@@ -221,6 +221,44 @@ def test_corporate_legal_dashboard_header_uses_logo():
     assert "/phins-logo.svg" in html
 
 
+def test_legal_center_banner_is_the_letterhead_and_matches_the_link_card():
+    """The hub a shared link opens carries the letterhead banner.
+
+    The gradient and the gold rule are read from the shared letterhead
+    stylesheet, and the gradient stops are the link-preview card's palette, so
+    the card that travels with a link and the page it opens cannot drift apart.
+    """
+    import re
+
+    from services import link_preview as lp
+
+    hub = _read(STATIC / "corporate-legal-dashboard.html")
+    letterhead = _read(STATIC / "phins-document.css")
+    gradient = re.search(r"\.phins-doc-banner \{\s*background: (linear-gradient\([^;]+\));", letterhead).group(1)
+    gold_rule = re.search(r"\.phins-doc-gold \{[^}]*?background: (linear-gradient\([^;]+\));", letterhead).group(1)
+    assert f"--gradient-hdr:{gradient};" in hub
+    assert f"--gold-rule:{gold_rule};" in hub
+    assert ".lc-banner{background:var(--gradient-hdr);" in hub
+    assert ".lc-banner::after{content:'';display:block;height:4px;background:var(--gold-rule);}" in hub
+    assert "print-color-adjust:exact" in hub
+    # The gold-to-blue header this page had before is gone.
+    assert "var(--phins-gold) 50%" not in hub
+    assert "--gradient-logo" not in hub.split("</style>", 1)[1]
+
+    stops = [tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)) for h in re.findall(r"#([0-9a-f]{6})", gradient)]
+    assert stops == [lp._NAVY, lp._NAVY_MID, lp._NAVY_LIFT]
+
+    # One banner: brand row, then the page title, in the stored words.
+    assert hub.count('<div class="lc-banner">') == 1
+    banner = hub[hub.index('<div class="lc-banner">'):hub.index('<div class="container">')]
+    assert banner.count("<div") == banner.count("</div>")
+    assert banner.index('<header class="site-header">') < banner.index('<div class="hero">')
+    assert '<img src="/phins-logo.svg" alt="PHINS emblem">' in banner
+    assert '<div class="logo-text">PHINS</div><div class="logo-tagline">Personal Health Insurance &amp; Savings</div>' in banner
+    assert "Corporate, Legal &amp; Funding Document Center</h1>" in banner
+    assert "Space+Grotesk" in hub
+
+
 # ---------------------------------------------------------------------------
 # Internal print documents (partner meetings + investor meeting + briefing)
 # ---------------------------------------------------------------------------
