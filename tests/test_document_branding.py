@@ -243,7 +243,7 @@ def test_legal_center_banner_is_the_letterhead_and_matches_the_link_card():
     assert "print-color-adjust:exact" in hub
     # The gold-to-blue header this page had before is gone.
     assert "var(--phins-gold) 50%" not in hub
-    assert "--gradient-logo" not in hub.split("</style>", 1)[1]
+    assert "--gradient-logo" not in hub
 
     stops = [tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)) for h in re.findall(r"#([0-9a-f]{6})", gradient)]
     assert stops == [lp._NAVY, lp._NAVY_MID, lp._NAVY_LIFT]
