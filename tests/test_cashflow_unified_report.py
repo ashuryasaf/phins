@@ -787,6 +787,13 @@ def test_balance_sheet_holds_premium_cash_on_the_lines_the_statement_reports(liv
     ) == position["held_for_others"]
     # Premium income stays the ledger cash identity.
     assert sheet["revenue_breakdown"]["premium_income"] == paid
+    # Wallet-credit classification is a read. It is not added to reserves or Claims Paid.
+    aum = sheet["accumulated_aum"]
+    assert aum["writes"] is False
+    assert aum["retired_allocations_included"] is False
+    assert aum["not_added_to_balance_sheet_totals"] is True
+    assert "accumulated_aum" not in portal.PHINS_BALANCE_SHEET
+    assert sheet["ledger_claims_paid"] == position["claim_cash"]
 
     status, body = _http("GET", "/api/admin/cashflow/unified-report", admin)
     assert status == 200, body

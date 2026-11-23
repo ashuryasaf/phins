@@ -242,7 +242,16 @@ PHINS is a Python platform built around:
  to the cent, split lines one cent per paid month). Both leave out the same
  suspended accounts (`is_suspended_account`). The tie-out sheet
  (`/api/admin/balance-sheet/reconcile`) keeps `net_position` as net cash
- and adds `own_funds` and `held_for_others` beside it
+ and adds `own_funds` and `held_for_others` beside it.
+ The same GET carries `accumulated_aum`: credits still in the live health
+ wallet, other than claim postings, split by the written mix on the original
+ application (`health_wallet.written_distribution` or
+ `phins_allocation.distribution`, else the nested `distribution` the
+ application create stored). Each percent must be in 0–100 and the three
+ must sum to 100. A missing mix, an invalid mix, and a stored 30/65/5,
+ 15/60/25, or 75/25 template stay unallocated and are named on the row.
+ Retired allocation rows are not added. The block is not added to reserves,
+ income, or Claims Paid, and the GET does not write a ledger row.
 - health wallet withdrawal (`services/wallet_withdrawal_service.py`,
  `web_portal/api_wallet_withdrawal.py`, `/wallet-withdraw-chat.html`): the
  Withdraw tile on the customer dashboard opens a chat that starts from the

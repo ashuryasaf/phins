@@ -3053,3 +3053,295 @@ def kernel_pin_restore_candidate(
     result["reason"] = "one_decomposition_reproduces_the_premium"
     result["pins"] = pins
     return result
+
+
+# Read-time classification of credits that still sit in the live health wallet.
+# Nothing here writes a ledger row, a wallet, an application, or a seal.
+_WALLET_CLAIM_TYPES = CLAIM_CASH_TYPES | frozenset({"claim_payout"})
+_AUM_PLATFORM_IDS = frozenset({"PHINS-CORPORATE", "PHINS", "SYSTEM"})
+_CENT = Decimal("0.01")
+# Percents the code stamps itself. They are not a customer-written mix.
+_KNOWN_ALLOCATION_TEMPLATES = (
+    (Decimal("30"), Decimal("65"), Decimal("5")),    # later savings default
+    (Decimal("15"), Decimal("60"), Decimal("25")),   # AI recommendation
+    (Decimal("75"), Decimal("25"), Decimal("0")),    # retired 75/25 card
+)
+
+
+def submitted_savings_distribution(phins_allocation: Any) -> Optional[Dict[str, Any]]:
+    """The distribution object the application sent, with no percent filled in.
+
+    A missing key stays missing. This does not substitute 30/65/5, 15/60/25,
+    or 75/25.
+    """
+    if not isinstance(phins_allocation, Mapping):
+        return None
+    dist = phins_allocation.get("distribution")
+    if not isinstance(dist, Mapping):
+        return None
+    if "wallet_pct" not in dist or "investment_pct" not in dist:
+        return None
+    if "algo_trading_pct" not in dist and "algo_pct" not in dist:
+        return None
+    algo = dist.get("algo_trading_pct", dist.get("algo_pct"))
+    return {
+        "wallet_pct": dist.get("wallet_pct"),
+        "investment_pct": dist.get("investment_pct"),
+        "algo_trading_pct": algo,
+    }
+
+
+def _as_mapping(value: Any) -> Optional[Mapping[str, Any]]:
+    if isinstance(value, Mapping):
+        return value
+    if isinstance(value, str) and value.strip().startswith("{"):
+        try:
+            import json
+            parsed = json.loads(value)
+        except Exception:
+            return None
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _distribution_on_application(application: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+    """A distribution object the application itself carries, if any."""
+    health = _as_mapping(application.get("health_wallet"))
+    if health is not None and isinstance(health.get("written_distribution"), Mapping):
+        return health["written_distribution"]
+    allocation = _as_mapping(application.get("phins_allocation"))
+    if allocation is not None and isinstance(allocation.get("distribution"), Mapping):
+        return allocation["distribution"]
+    questionnaire = _as_mapping(application.get("questionnaire_responses"))
+    if questionnaire is not None and isinstance(questionnaire.get("savings_distribution"), Mapping):
+        return questionnaire["savings_distribution"]
+    return None
+
+
+def _percent_triple(distribution: Mapping[str, Any]) -> Tuple[str, Optional[Tuple[Decimal, Decimal, Decimal]]]:
+    """Three percents. ``missing`` when a key was not written, ``invalid`` when it does not parse."""
+    if "wallet_pct" not in distribution or "investment_pct" not in distribution:
+        return "missing", None
+    if "algo_trading_pct" not in distribution and "algo_pct" not in distribution:
+        return "missing", None
+    try:
+        wallet = Decimal(str(distribution.get("wallet_pct")))
+        investment = Decimal(str(distribution.get("investment_pct")))
+        algo_raw = distribution.get("algo_trading_pct", distribution.get("algo_pct"))
+        algo = Decimal(str(algo_raw))
+    except Exception:
+        return "invalid", None
+    parts = (wallet, investment, algo)
+    if any(part != part or part == Decimal("Infinity") or part == Decimal("-Infinity") for part in parts):
+        return "invalid", None
+    return "ok", parts
+
+
+def _is_known_template(parts: Tuple[Decimal, Decimal, Decimal]) -> bool:
+    for template in _KNOWN_ALLOCATION_TEMPLATES:
+        if all(abs(part - expected) <= Decimal("0.05") for part, expected in zip(parts, template)):
+            return True
+    return False
+
+
+def _judge_mix(distribution: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
+    """Decide whether a stored distribution is a written custom mix."""
+    if not isinstance(distribution, Mapping):
+        return {"status": "no_written_mix", "parts": None}
+    state, parts = _percent_triple(distribution)
+    if state == "missing":
+        return {"status": "no_written_mix", "parts": None}
+    if state != "ok" or parts is None:
+        return {"status": "mix_not_valid", "parts": None}
+    wallet, investment, algo = parts
+    if any(part < 0 or part > 100 for part in parts):
+        return {"status": "mix_not_valid", "parts": None}
+    if abs((wallet + investment + algo) - Decimal("100")) > Decimal("0.05"):
+        return {"status": "mix_not_valid", "parts": None}
+    if _is_known_template(parts):
+        return {"status": "known_template", "parts": None}
+    return {"status": "ok", "parts": parts}
+
+
+_MIX_REASONS = {
+    "no_written_mix": "No written mix on the original application. Left unallocated.",
+    "mix_not_valid": (
+        "The written mix is not each percent in 0–100 summing to 100. Left unallocated."
+    ),
+    "known_template": (
+        "The stored percents are the 30/65/5 default, the 15/60/25 recommendation, "
+        "or the retired 75/25 card. Left unallocated."
+    ),
+}
+
+
+def _application_rows(applications: Any) -> List[Mapping[str, Any]]:
+    if isinstance(applications, Mapping):
+        values = list(applications.values())
+    else:
+        values = list(applications or [])
+    return [row for row in values if isinstance(row, Mapping)]
+
+
+def _original_application(customer_id: str, applications: Any) -> Optional[Mapping[str, Any]]:
+    rows = [
+        row for row in _application_rows(applications)
+        if str(row.get("customer_id") or "") == customer_id
+    ]
+    if not rows:
+        return None
+
+    def _when(row: Mapping[str, Any]) -> str:
+        return str(
+            row.get("submitted_date")
+            or row.get("created_date")
+            or row.get("application_date")
+            or row.get("id")
+            or ""
+        )
+
+    rows.sort(key=_when)
+    return rows[0]
+
+
+def _allocation_distribution(customer_id: str, allocations: Any) -> Optional[Mapping[str, Any]]:
+    """Nested distribution the application create path stored.
+
+    A later flat preference (wallet_pct on the row itself) and a reconciled
+    default row are not the original application.
+    """
+    if not isinstance(allocations, Mapping):
+        return None
+    row = allocations.get(customer_id)
+    if not isinstance(row, Mapping) or row.get("_reconciled"):
+        return None
+    dist = row.get("distribution")
+    if isinstance(dist, Mapping):
+        return dist
+    return None
+
+
+def non_claim_wallet_credit(wallet: Any) -> Decimal:
+    """Health-wallet cash that is not a claim posting and is still in the balance.
+
+    Claim lines are left as they are. A claim amount is not subtracted past
+    the live balance, and a negative claim line is not used to enlarge the credit.
+    """
+    if not isinstance(wallet, Mapping):
+        return Decimal("0.00")
+    balance = money(wallet.get("balance"))
+    if balance <= 0:
+        return Decimal("0.00")
+    claim = Decimal("0.00")
+    for tx in wallet.get("transactions") or []:
+        if not isinstance(tx, Mapping):
+            continue
+        if str(tx.get("type") or "") not in _WALLET_CLAIM_TYPES:
+            continue
+        amount = money(tx.get("amount"))
+        if amount > 0:
+            claim += amount
+    if claim > balance:
+        claim = balance
+    return (balance - claim).quantize(_CENT)
+
+
+def _split_credit(credit: Decimal, parts: Tuple[Decimal, Decimal, Decimal]) -> Tuple[Decimal, Decimal, Decimal]:
+    wallet = (credit * parts[0] / Decimal("100")).quantize(_CENT, rounding=ROUND_HALF_UP)
+    investment = (credit * parts[1] / Decimal("100")).quantize(_CENT, rounding=ROUND_HALF_UP)
+    algo = (credit - wallet - investment).quantize(_CENT)
+    return wallet, investment, algo
+
+
+def classify_legacy_wallet_credits(
+    wallets: Optional[Mapping[str, Any]] = None,
+    applications: Any = (),
+    allocations: Optional[Mapping[str, Any]] = None,
+    *,
+    exclude_customer: Optional[Any] = None,
+    retired_allocations: Any = None,
+    recommendations: Any = None,
+) -> Dict[str, Any]:
+    """Split live health-wallet credits by the original application's written mix.
+
+    Read-time only. Retired allocation rows and an AI or default recommendation
+    passed in are not added. A credit with no valid custom mix stays unallocated.
+    """
+    del retired_allocations, recommendations
+    wallets_map = wallets if isinstance(wallets, Mapping) else {}
+    rows: List[Dict[str, Any]] = []
+    totals = {
+        "wallets": Decimal("0.00"),
+        "investments": Decimal("0.00"),
+        "algo": Decimal("0.00"),
+        "unallocated": Decimal("0.00"),
+    }
+    for key, wallet in wallets_map.items():
+        if not isinstance(wallet, Mapping):
+            continue
+        customer_id = str(wallet.get("customer_id") or key or "")
+        if not customer_id or customer_id in _AUM_PLATFORM_IDS:
+            continue
+        if exclude_customer is not None:
+            try:
+                if exclude_customer(customer_id):
+                    continue
+            except Exception:
+                continue
+        credit = non_claim_wallet_credit(wallet)
+        if credit <= 0:
+            continue
+        application = _original_application(customer_id, applications)
+        distribution = _distribution_on_application(application) if application else None
+        source = "application"
+        if distribution is None:
+            distribution = _allocation_distribution(customer_id, allocations)
+            source = "application_allocation"
+        judged = _judge_mix(distribution)
+        if judged["status"] == "ok" and judged["parts"] is not None:
+            wallet_amt, investment_amt, algo_amt = _split_credit(credit, judged["parts"])
+            unallocated = Decimal("0.00")
+            basis = "application_distribution" if source == "application" else "application_allocation"
+            reason = None
+        else:
+            wallet_amt = investment_amt = algo_amt = Decimal("0.00")
+            unallocated = credit
+            basis = "unallocated"
+            reason = _MIX_REASONS[judged["status"]]
+        totals["wallets"] += wallet_amt
+        totals["investments"] += investment_amt
+        totals["algo"] += algo_amt
+        totals["unallocated"] += unallocated
+        rows.append({
+            "customer_id": customer_id,
+            "application_id": None if application is None else application.get("id"),
+            "credit": float(credit),
+            "wallets": float(wallet_amt),
+            "investments": float(investment_amt),
+            "algo": float(algo_amt),
+            "unallocated": float(unallocated),
+            "basis": basis,
+            "reason": reason,
+        })
+    rows.sort(key=lambda row: row["customer_id"])
+    allocated = totals["wallets"] + totals["investments"] + totals["algo"]
+    return {
+        "writes": False,
+        "wallets": float(totals["wallets"]),
+        "investments": float(totals["investments"]),
+        "algo": float(totals["algo"]),
+        "allocated": float(allocated),
+        "unallocated": float(totals["unallocated"]),
+        "credits": float(allocated + totals["unallocated"]),
+        "unallocated_count": sum(1 for row in rows if row["unallocated"]),
+        "rows": rows,
+        "not_added_to_balance_sheet_totals": True,
+        "retired_allocations_included": False,
+        "note": (
+            "Live health-wallet credits other than claim postings, split by the "
+            "written mix on the original application. A missing, invalid, or "
+            "template mix stays unallocated. Retired allocation rows are not added. "
+            "No historical row is rewritten."
+        ),
+    }
