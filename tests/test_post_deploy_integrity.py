@@ -167,6 +167,27 @@ def test_access_log_redacts_customer_id_and_email():
     assert "email=REDACTED" in redacted
 
 
+def test_access_log_redacts_the_terminal_key_and_the_terminal_page_sends_it_as_a_header():
+    line = "GET /api/terminal/positions?api_key=assurance&symbol=AAPL HTTP/1.1"
+    redacted = portal._redact_access_log_line(line)
+    assert "assurance" not in redacted
+    assert "api_key=REDACTED" in redacted
+    assert "symbol=AAPL" in redacted
+
+    page = (Path(__file__).resolve().parents[1] / "web_portal" / "static" / "trading-terminal.html").read_text()
+    assert "'api_key=' +" not in page
+    assert "'X-Terminal-Key': apiKey" in page
+
+
+def test_accountant_dashboard_stops_polling_on_a_refused_or_replaced_session():
+    page = (Path(__file__).resolve().parents[1] / "web_portal" / "static" / "accountant-dashboard.html").read_text()
+    assert "setInterval(loadQuickStats, 60000)" not in page
+    assert "setInterval(loadBalanceSheet, 60000)" not in page
+    assert "response.status === 401 || response.status === 403" in page
+    assert "localStorage.getItem('phins_token') !== token" in page
+    assert "clearInterval(autoRefreshTimer)" in page
+
+
 def test_init_claims_bot_reuses_singleton(monkeypatch):
     import services.claims_bot_service as claims_bot
 
@@ -209,3 +230,11 @@ def test_admin_dashboard_coalesces_customer_fetches():
     assert "function fetchAdminCustomers()" in content
     assert content.count("await fetchAdminCustomers()") >= 8
     assert content.count("fetch('/api/admin/customers'") == 1
+
+
+def test_accountant_kpis_are_not_painted_as_zero_from_an_error_body():
+    page = (Path(__file__).resolve().parents[1] / "web_portal" / "static" / "accountant-dashboard.html").read_text()
+    body = page.split("async function loadQuickStats()", 1)[1].split("const data = await response.json();", 1)[0]
+    assert "if (!response.ok)" in body
+    assert "setText(id, '—')" in body
+    assert 'id="total-revenue">—<' in page
