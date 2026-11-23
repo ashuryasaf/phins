@@ -9794,9 +9794,13 @@ def _ledger_saved_at(snapshot) -> Optional[datetime]:
     if not isinstance(snapshot, dict):
         return None
     try:
-        return datetime.fromisoformat(str(snapshot.get('saved_at')))
+        stamp = datetime.fromisoformat(str(snapshot.get('saved_at')))
     except (TypeError, ValueError):
         return None
+    # The writer stamps naive times; a stamp with an offset is compared in UTC.
+    if stamp.tzinfo is not None:
+        stamp = stamp.astimezone(timezone.utc).replace(tzinfo=None)
+    return stamp
 
 
 def _resume_stale_ledger_snapshot_copy(file_data) -> None:

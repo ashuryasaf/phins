@@ -296,6 +296,11 @@ def test_the_newer_of_file_and_database_copy_is_restored(sqlite_db, portal_state
     assert portal.HEALTH_WALLETS["CUST-1"]["balance"] == 20.0
 
     _db_boot(monkeypatch)
+    _write_file(_snapshot(25.0, saved_at="2026-11-23T15:00:00+00:00"))
+    assert portal.load_ledger_data(allow_db_snapshot=True) is True
+    assert portal._LEDGER_LOAD_SOURCE == "database"
+
+    _db_boot(monkeypatch)
     _write_file(_snapshot(30.0, saved_at="not a timestamp"))
     assert portal.load_ledger_data(allow_db_snapshot=True) is True
     assert portal._LEDGER_LOAD_SOURCE == "file"
