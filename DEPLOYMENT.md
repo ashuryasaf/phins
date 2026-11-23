@@ -271,7 +271,12 @@ variables in Railway (or Render / your hosting platform):
 `ALPACA_PAPER=false`. The terminal will show "Paper" or "Live" in the header.
 
 The trading terminal is accessible at `/trading-terminal.html` and requires the
-Investment AI access key to authenticate API calls.
+terminal access key to authenticate API calls. The key alone reads the account
+and can halt AutoPilot. Placing, cancelling or closing an order, funding,
+creating or running a bot, resuming after a halt, and promoting a strategy
+version also need an admin sign-in: sign in as admin at `/login.html` in the
+same browser, then open the terminal. Generate the key with
+`python3 -c "import secrets; print('term_' + secrets.token_urlsafe(32))"`.
 
 ### Confidential document access (investor / corporate documents)
 

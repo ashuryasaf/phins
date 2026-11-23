@@ -829,7 +829,8 @@ Environment variables commonly used:
   only partly applied at boot blocks them too. A snapshot over the cap is
   not written and leaves the marker row `platform-ledger-snapshot-stale`:
   a later boot does not apply or overwrite a marked copy unless it restored
-  a whole file that is not older. `/api/health` `persistence` shows
+  a whole file that is not older. The marker names the copy it was set
+  against, so one left behind after a newer copy is ignored. `/api/health` `persistence` shows
   `file_on_volume` and the copy's state
 - **Media:** `MEDIA_PROVIDER_WEBHOOK_SECRET`, `DEFAULT_MEDIA_SUBTITLE_PROVIDER`,
  `DEFAULT_MEDIA_VIDEO_PROVIDER`, `PHINS_MEDIA_INLINE_MAX_BYTES`,
@@ -1198,6 +1199,15 @@ Environment variables commonly used:
   `PHINS_TRADING_GLOBAL_DAILY_LOSS_PCT` (default `0.05` of portfolio),
   `PHINS_TRADING_GLOBAL_DAILY_LOSS_ABS` (currency amount, `0` = off);
   runtime halt/resume/promote via `/api/terminal/autopilot/{halt,resume,promote}`
+- **Trading terminal access:** `TERMINAL_ACCESS_KEY` (legacy
+  `INVESTMENT_AI_ACCESS_KEY`) opens the `/api/terminal/*` read routes, the
+  backtest, and the AutoPilot halt. Every POST that sends an order or a
+  money instruction to the broker, creates, runs or controls a bot, lifts a
+  halt, or promotes a strategy version is in `ADMIN_SESSION_POST_ROUTES`
+  (`services/terminal_access_service.py`) and needs an admin session as
+  well; it is refused (401 no session, 403 not admin) before the key is
+  read. Add a new order route to that set
+  (`tests/test_autopilot_safety_routes.py` compares it with the handlers)
 - **Regulation viewer:** username `regulator`, role `regulator`. Demo
   password `regulator123` works until `PHINS_REGULATOR_PASSWORD` is set or
   the password is changed in the regulation view. `GET /api/regulator/outline`
@@ -1422,7 +1432,10 @@ referenced files, commands, paths, and ports still exist.
   Assessments, reports, billing, documents, and claims review stay shared;
   row scope is still the caller's own customer id unless the role is
   operational staff. `/api/access/surface` is what the injected
-  `ui-clarity.js` consults before it renders a dashboard.
+  `ui-clarity.js` consults before it renders a dashboard. The one exception
+  is `/trading-terminal.html` (`ADMIN_OPEN_CUSTOMER_PAGES`): it trades the
+  platform's broker account and its order routes need an admin session, so
+  admin opens it too. Other staff roles do not.
 - A customer's personal ID number has exactly one writer:
   `services/customer_identity_service.py` (`set_identity` /
   `reconcile_pipeline_identity`). Records, responses, audit rows and ledger
