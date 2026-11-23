@@ -8,7 +8,7 @@ override this document.
 
 PHINS is a Python platform built around:
 
-- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~65k lines)
+- a large `BaseHTTPRequestHandler` app in `web_portal/server.py` (~69k lines)
 - optional extension routing in `web_portal/api_extensions.py` (~5150 lines)
   and domain-specific API modules (`api_bi_analytics.py`,
   `api_delivery_bidding.py`, `api_agent_ecosystem.py`,
@@ -20,7 +20,7 @@ PHINS is a Python platform built around:
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (292 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (294 files) and root-level `test_*.py` (11 files)
 - one generalized job queue (`services/agent_job_queue.py`, table
  `document_processing_jobs`, rows keyed by `subject_type`/`subject_id` and
  `submitted_by`; retries, dead-letter, idempotency keys, handler registry —
@@ -451,6 +451,63 @@ PHINS is a Python platform built around:
  documents; `data-phins-mark="off"` opts a subtree out). Do not change
  figures, checksums, or stored records when adding chrome
 
+Active software agents are the fifteen ids that register an
+`AgentDescriptor` in `services/agent_runtime.py`.
+`services/ai_capabilities.py` keeps that list in `AGENT_MODULES` and
+imports each module before the catalog is read.
+`GET /api/admin/ai-agents/health` (admin) returns the descriptor, health,
+and metrics. Human-broker AgentOS stays on `/api/admin/agents*`. A new
+or retired id is edited in `AGENT_MODULES` and in `EXPECTED_AGENT_IDS`
+(`tests/test_agent_runtime.py`) in the same change. `ai_trading_engine`
+is the agent that sets `moves_money`. `video_agents` and
+`document_intelligence` set `executes_async`.
+
+- `underwriting_bot` — `services/underwriting_bot_service.py` (package
+  `services/underwriting_bot/`). `POST /api/risk-dashboard/ai-assess`.
+  Scores evidence and recommends. It does not modify customer data.
+- `claims_bot` — `services/claims_bot_service.py`.
+  `POST /api/claims/probability-report`.
+- `ai_automation_controller` — `ai_automation_controller.py`, rules in
+  `services/automation/`. Library only. A registered model may inform a
+  score and does not decide.
+- `underwriting_assistant` — `underwriting_assistant.py`. Library
+  workflow (questionnaire, health score, document verification,
+  delivery). `service_agent.py` uses its delivery types. Entry
+  `/underwriter-dashboard.html`.
+- `assessment_ai` — `services/assessment_ai_service.py`.
+  `POST /api/assessment-center/analysis`. Advisory narrative. A
+  schema-invalid reply falls back to the deterministic narrative.
+- `pension_data_agent` — facade `services/pension_data_agent.py`.
+  `POST /api/mislaka/import`.
+- `document_intelligence` — `services/document_processing_service.py`.
+  `GET /api/doc-service/jobs`. Async queue with retries and a dead-letter.
+- `customer_communication` — `services/customer_agent/communication.py`
+  (shim `services/customer_communication_agent.py`).
+  `POST /api/security/communications/welcome-report`. Consent, the daily
+  cap, and the interaction log apply.
+- `customer_service` — `services/customer_agent/service_desk.py` (shim
+  `service_agent.py`). Library. Escalations go through `EscalationDesk`.
+- `marketing_sales` — `services/marketing_sales_agent_service.py`.
+  `GET /api/admin/marketing-sales-agent`. Signed campaign plans. A video
+  send from that desk runs as `video_agents`.
+- `video_agents` — `services/video_agents_service.py`.
+  `POST /api/admin/media/video-jobs/batch`. The growth-agent media job
+  is this agent.
+- `ai_risk_reports` — facade `services/ai_risk_reports_service.py`.
+  `POST /api/reports/generate`.
+- `bi_analytics` — `services/bi_analytics_service.py`.
+  `GET /api/bi/insights`.
+- `delivery_bidding` — `services/delivery_bidding_service.py`.
+  `POST /api/delivery/evaluate-bids`. Elapsed windows close on the
+  `delivery_bidding_sla_tick` queue row.
+- `ai_trading_engine` — `services/ai_trading_engine.py`.
+  `GET /api/terminal/copilot`. `PHINS_TRADING_HALT` is read on every
+  execution and stays an operator switch.
+
+Phin chat, the Admin AI Mic desk, the document durability probe, and the
+investor-deck lab keep their own sections. They do not register an
+`AgentDescriptor`.
+
 Runtime defaults are important:
 
 - `web_portal/server.py` defaults to `USE_DATABASE=true`
@@ -501,6 +558,11 @@ Preferred file-by-task:
 | Storyboard / longer media | `services/storyboard_editor.py`, `web_portal/static/storyboard-editor.html`, `web_portal/api_extensions.py` (`/api/admin/media/storyboards`); tests in `tests/test_storyboard_editor.py` |
 | Mislaka / pension parsing | `services/pension/{schema,parsers,cache,agent}.py` (facade `services/pension_data_agent.py`); tests in `tests/test_pension_agent.py` |
 | Risk Reports intake / analysis / report text | `services/risk_reports/{parsers,analysis,render,charts,service}.py` (facade `services/ai_risk_reports_service.py`); tests in `tests/test_risk_reports_package.py`, `tests/test_ai_risk_reports.py` |
+| Underwriting Assistant | `underwriting_assistant.py` (library; `service_agent.py` uses its delivery types). Registered id `underwriting_assistant` |
+| Document Intelligence | `services/document_processing_service.py`, `services/document_job_worker.py`; `GET /api/doc-service/jobs` |
+| Marketing / Sales plans | `services/marketing_sales_agent_service.py`; `GET /api/admin/marketing-sales-agent`. A video send from that desk is Video Agents |
+| Video Agents | `services/video_agents_service.py`, `services/jobs/video_job.py`; `POST /api/admin/media/video-jobs/batch` |
+| AI Trading / AutoPilot | `services/ai_trading_engine.py`; `GET /api/terminal/copilot`. Halt is `PHINS_TRADING_HALT` |
 
 ## 2) High-Value Paths
 
@@ -534,10 +596,13 @@ Preferred file-by-task:
 |  `- static/                           # HTML/JS/CSS dashboards and assets
 |                                        # (includes `static/locales/he.json` Hebrew i18n)
 |- ai_automation_controller.py          # orchestration only; rules in services/automation/
+|- underwriting_assistant.py            # guided underwriting workflow (registered agent)
 |- prompts/                             # versioned LLM prompt templates (sha256 provenance)
 |  `- assessment/                       # narrative v1 (free text) + v2 (structured); onboarding/service/termination v1
 |- schemas/                             # JSON schemas for structured LLM output
-|- services/                            # 139 service modules
+|- services/                            # 163 service modules
+|  |- agent_runtime.py                  # AgentDescriptor registry (discovery, health, metrics)
+|  |- ai_capabilities.py                # catalog = static entries union the registry
 |  |- agent_eval.py                     # A6 replay / propose_thresholds / golden sets
 |  |- automation/                       # B2 pure rules: quoting, underwriting_gate, fraud, claims_gate, billing_schedule
 |  |- pricing_kernel.py                 # single writer for premium decomposition (PremiumComponents)
@@ -598,7 +663,7 @@ Preferred file-by-task:
 |- scripts/                             # operational utilities
 |  |- run_agent_eval.py                 # golden sets + decision replay CLI
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
-|- tests/                               # 292 test files
+|- tests/                               # 294 test files
 |  `- golden/<agent>/*.json             # frozen agent outputs ({name, input, expected})
 |- docs/
 |  |- platform_data_architecture.md
@@ -1302,7 +1367,7 @@ Important test harness facts:
   change re-renders them (the page fetches `?charts=1` and swaps the SVG).
   `RESEARCH_SOURCES` must stay identical to the pitch-dashboard
   `sourceRegistry`; the test parses both
-- 292 test files under `tests/`, 11 root-level `test_*.py` files
+- 294 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
