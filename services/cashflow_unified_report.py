@@ -967,7 +967,7 @@ def unified_cashflow_report(
             "The kernel risk premium is filled first and is never credited to savings.",
             "An underwriting decision fee, the expense loading, and the profit margin stay on company and carrier books.",
             "Only an elected savings add-on reaches the health wallet, investments, and algo, 30 / 65 / 5.",
-            "Old credits still in the health wallet are classified on accumulated_aum from the original application's written mix. A missing or invalid mix stays unallocated. Retired allocation rows are not added to that total.",
+            "Old credits still in the health wallet are classified on accumulated_aum from the original application's written mix. A missing mix, an invalid mix, or a stored template stays unallocated. A later customer-allocation row is not used. Retired allocation rows are not added to that total.",
             "A claim is counted once, at the amount the claims book paid. A second line on any book is listed and not added.",
             "A marketplace bid is the customer price. Commission is taken out of it and the rest is the supplier payout.",
             "The management fee is an accrual on investments and algo. This report does not charge it.",

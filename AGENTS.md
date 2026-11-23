@@ -246,8 +246,9 @@ PHINS is a Python platform built around:
  The same GET carries `accumulated_aum`: credits still in the live health
  wallet, other than claim postings, split by the written mix on the original
  application (`health_wallet.written_distribution` or
- `phins_allocation.distribution`, else the nested `distribution` the
- application create stored). Create copies a submitted triple onto that
+ `phins_allocation.distribution` on that application). The current
+ `CUSTOMER_ALLOCATIONS` row is not a source, because a later application
+ replaces it. Create copies a submitted triple onto that
  health-wallet field and does not replace `phins_allocation`, so approval
  still reads the protection and savings shares on `CUSTOMER_ALLOCATIONS`.
  Each percent must be in 0–100 and the three must sum to 100. A missing mix,

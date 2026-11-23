@@ -1466,10 +1466,10 @@
         <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
           <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">Unallocated</div>
           <div style="font-size: 28px; font-weight: bold;" id="bs-aum-unallocated">$0</div>
-          <div style="font-size: 11px; color: rgba(255,255,255,0.7);" id="bs-aum-unallocated-note">No written mix</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.7);" id="bs-aum-unallocated-note">Left unallocated</div>
         </div>
       </div>
-      <p id="bs-aum-note" style="font-size: 12px; color: rgba(255,255,255,0.75); margin: 0 0 20px 0;">Old credits still in the health wallet, split by the mix written on the original application. A missing or invalid mix stays here as unallocated. This is not added to reserves or to Claims Paid.</p>
+      <p id="bs-aum-note" style="font-size: 12px; color: rgba(255,255,255,0.75); margin: 0 0 20px 0;">Old credits still in the health wallet, split by the mix written on the original application. A missing mix, an invalid mix, or a stored template stays here as unallocated. This is not added to reserves or to Claims Paid.</p>
       
       <!-- Revenue & Expense Breakdown -->
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px;">
@@ -6532,7 +6532,7 @@
           const aumUnallocated = document.getElementById('bs-aum-unallocated');
           if (aumUnallocated) aumUnallocated.textContent = fmt(aum.unallocated || 0);
           const aumNote = document.getElementById('bs-aum-unallocated-note');
-          if (aumNote) aumNote.textContent = (aum.unallocated_count || 0) + ' without a written mix';
+          if (aumNote) aumNote.textContent = (aum.unallocated_count || 0) + ' left unallocated';
           
           // Revenue breakdown — premium identity is customer-ledger cash
           if (bs.revenue_breakdown) {

@@ -2073,7 +2073,7 @@ def test_later_flat_preference_is_not_the_original_mix():
     assert report["wallets"] == 0.00
 
 
-def test_nested_application_distribution_is_used_when_the_application_has_none():
+def test_later_allocation_row_is_not_the_original_mix():
     from services.financial_unification_service import classify_legacy_wallet_credits
 
     report = classify_legacy_wallet_credits(
@@ -2081,10 +2081,12 @@ def test_nested_application_distribution_is_used_when_the_application_has_none()
         [{"id": "UW-BARE", "customer_id": "CUST-OLD", "submitted_date": "2024-01-01"}],
         {"CUST-OLD": {"distribution": {"wallet_pct": 20, "investment_pct": 70, "algo_trading_pct": 10}}},
     )
-    assert report["wallets"] == 20.00
-    assert report["investments"] == 70.00
-    assert report["algo"] == 10.00
-    assert report["rows"][0]["basis"] == "application_allocation"
+    row = report["rows"][0]
+    assert row["unallocated"] == 100.00
+    assert row["wallets"] == 0.00
+    assert row["investments"] == 0.00
+    assert row["basis"] == "unallocated"
+    assert "No written mix" in row["reason"]
 
 
 def test_earliest_application_is_the_one_that_writes_the_mix():

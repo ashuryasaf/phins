@@ -3205,23 +3205,6 @@ def _original_application(customer_id: str, applications: Any) -> Optional[Mappi
     return rows[0]
 
 
-def _allocation_distribution(customer_id: str, allocations: Any) -> Optional[Mapping[str, Any]]:
-    """Nested distribution the application create path stored.
-
-    A later flat preference (wallet_pct on the row itself) and a reconciled
-    default row are not the original application.
-    """
-    if not isinstance(allocations, Mapping):
-        return None
-    row = allocations.get(customer_id)
-    if not isinstance(row, Mapping) or row.get("_reconciled"):
-        return None
-    dist = row.get("distribution")
-    if isinstance(dist, Mapping):
-        return dist
-    return None
-
-
 def non_claim_wallet_credit(wallet: Any) -> Decimal:
     """Health-wallet cash that is not a claim posting and is still in the balance.
 
@@ -3265,10 +3248,13 @@ def classify_legacy_wallet_credits(
 ) -> Dict[str, Any]:
     """Split live health-wallet credits by the original application's written mix.
 
-    Read-time only. Retired allocation rows and an AI or default recommendation
-    passed in are not added. A credit with no valid custom mix stays unallocated.
+    Read-time only. The current customer-allocation row is not a source: a
+    later application replaces it, so it is not the original mix. Retired
+    allocation rows and an AI or default recommendation passed in are not
+    added. A credit with no valid custom mix on the original application
+    stays unallocated.
     """
-    del retired_allocations, recommendations
+    del allocations, retired_allocations, recommendations
     wallets_map = wallets if isinstance(wallets, Mapping) else {}
     rows: List[Dict[str, Any]] = []
     totals = {
@@ -3294,15 +3280,11 @@ def classify_legacy_wallet_credits(
             continue
         application = _original_application(customer_id, applications)
         distribution = _distribution_on_application(application) if application else None
-        source = "application"
-        if distribution is None:
-            distribution = _allocation_distribution(customer_id, allocations)
-            source = "application_allocation"
         judged = _judge_mix(distribution)
         if judged["status"] == "ok" and judged["parts"] is not None:
             wallet_amt, investment_amt, algo_amt = _split_credit(credit, judged["parts"])
             unallocated = Decimal("0.00")
-            basis = "application_distribution" if source == "application" else "application_allocation"
+            basis = "application_distribution"
             reason = None
         else:
             wallet_amt = investment_amt = algo_amt = Decimal("0.00")
