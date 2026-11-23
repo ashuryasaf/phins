@@ -221,6 +221,28 @@ def test_a_marker_left_behind_after_a_newer_copy_does_not_refuse_that_copy(sqlit
     assert not _marker_exists()
 
 
+def test_a_leftover_marker_is_rewritten_when_the_copy_stops_updating_again(sqlite_db, monkeypatch):
+    store = _store()
+    assert store.offer(_snapshot(1.0, saved_at="2026-11-23T15:00:00")) == "written"
+    store.max_bytes = 64
+    assert store.offer(_snapshot(2.0, saved_at="2026-11-23T15:05:00"), force=True) == "too_large"
+    store.max_bytes = lss.DEFAULT_MAX_BYTES
+    monkeypatch.setattr(store, "_clear_stale", lambda: None)
+    assert store.offer(_snapshot(3.0, saved_at="2026-11-23T15:10:00"), force=True) == "written"
+
+    # A later boot ignores the leftover marker, then its own snapshot does not fit.
+    second = _store()
+    assert second.load()[0] == "ok"
+    before = _row()
+    second.max_bytes = 64
+    assert second.offer(_snapshot(4.0, saved_at="2026-11-23T15:20:00"), force=True) == "too_large"
+
+    third = _store()
+    assert third.load()[0] == "stale"
+    assert third.offer(_snapshot(0.0), force=True) == "blocked"
+    assert _row() == before
+
+
 def test_a_marker_that_cannot_be_read_keeps_the_copy_refused(sqlite_db):
     from database.manager import DatabaseManager
     from database.models import AgentArtifact

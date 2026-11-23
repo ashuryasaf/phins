@@ -123,7 +123,11 @@ class LedgerSnapshotStore:
         self.last_saved_at: Optional[str] = None
         self.last_sha256: Optional[str] = None
         self.last_bytes = 0
-        self._stale_marked = False
+        # A marker row exists (to be removed after the next write), and the
+        # copy it names. One that names an earlier copy is rewritten if the
+        # copy stops following the live state again.
+        self._marker_present = False
+        self._marker_names: Optional[str] = None
         self.stale = False
 
     def enable(self) -> None:
@@ -156,9 +160,12 @@ class LedgerSnapshotStore:
             # marker's removal did not complete. The copy is current; the
             # marker goes with the next write.
             logger.warning("ledger snapshot stale marker is older than the stored copy; ignored")
-            self._stale_marked = True
+            self._marker_present = True
+            self._marker_names = stale.get('last_copy_saved_at')
         elif stale_status != 'missing':
             since = stale.get('since') if isinstance(stale, dict) else None
+            self._marker_present = True
+            self._marker_names = stale.get('last_copy_saved_at') if isinstance(stale, dict) else None
             result = self._block(
                 'stale',
                 f"the copy stopped following the live state (since {since or 'unknown'})",
@@ -197,7 +204,6 @@ class LedgerSnapshotStore:
         self.stale = False
         self.blocked_reason = None
         self.last_status = None
-        self._stale_marked = True
         return True
 
     def block(self, reason: str) -> None:
@@ -289,31 +295,33 @@ class LedgerSnapshotStore:
 
     def _mark_stale(self, since: Any) -> None:
         """Record durably that the stored copy no longer follows the live state."""
-        if self._stale_marked:
-            return
         try:
             with self._db_factory() as db:
                 status, copy = db.agent_artifacts.load_checked(ARTIFACT_ID)
                 if status == 'missing':
                     return  # nothing stored, so nothing a later boot could restore
                 copy_saved_at = copy.get('saved_at') if isinstance(copy, dict) else None
+                if self._marker_present and self._marker_names == copy_saved_at:
+                    return
                 db.agent_artifacts.upsert(
                     STALE_ARTIFACT_ID, agent_id=AGENT_ID, kind=STALE_KIND,
                     payload={'reason': 'too_large', 'since': since,
                              'last_copy_saved_at': copy_saved_at},
                     subject_type='platform', subject_id='ledger',
                 )
-            self._stale_marked = True
+            self._marker_present = True
+            self._marker_names = copy_saved_at
         except Exception as exc:
             logger.error("ledger snapshot stale marker not written: %s", type(exc).__name__)
 
     def _clear_stale(self) -> None:
-        if not self._stale_marked:
+        if not self._marker_present:
             return
         try:
             with self._db_factory() as db:
                 db.agent_artifacts.delete_artifact(STALE_ARTIFACT_ID)
-            self._stale_marked = False
+            self._marker_present = False
+            self._marker_names = None
         except Exception as exc:
             logger.error("ledger snapshot stale marker not cleared: %s", type(exc).__name__)
 
