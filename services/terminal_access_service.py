@@ -47,4 +47,21 @@ def get_access_key_display() -> str:
     return _get_or_create_access_key()
 
 
-__all__ = ["validate_terminal_access", "get_access_key_display"]
+MIN_ACCESS_KEY_LENGTH = 24
+
+
+def access_key_weakness(key: Optional[str] = None) -> Optional[str]:
+    """Why the access key is too easy to guess, or ``None`` when it is not.
+
+    The key alone authorises the order routes, so a short or single-word key
+    is reported at boot. It is only reported: the key keeps working.
+    """
+    value = _get_or_create_access_key() if key is None else str(key or "")
+    if len(value) < MIN_ACCESS_KEY_LENGTH:
+        return f"shorter than {MIN_ACCESS_KEY_LENGTH} characters"
+    if value.isalpha() or value.isdigit():
+        return "only letters or only digits"
+    return None
+
+
+__all__ = ["validate_terminal_access", "get_access_key_display", "access_key_weakness"]

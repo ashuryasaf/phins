@@ -14576,6 +14576,18 @@ try:
             f"(source={_term_key_source}, length={len(_term_key)}, "
             f"fingerprint=sha256:{_term_key_fp})"
         )
+        try:
+            from services.terminal_access_service import access_key_weakness
+            _term_key_weak = access_key_weakness(_term_key)
+        except Exception:
+            _term_key_weak = None
+        if _term_key_weak:
+            print(
+                f"⚠️  [SECURITY] Terminal access key is weak ({_term_key_weak}). "
+                "It alone authorises /api/terminal order routes. Set "
+                "TERMINAL_ACCESS_KEY to a random value, e.g. python3 -c "
+                "\"import secrets; print('term_' + secrets.token_urlsafe(32))\""
+            )
     else:
         print("  Terminal Access Key: not configured")
 except ImportError as e:

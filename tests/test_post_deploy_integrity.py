@@ -238,3 +238,28 @@ def test_accountant_kpis_are_not_painted_as_zero_from_an_error_body():
     assert "if (!response.ok)" in body
     assert "setText(id, '—')" in body
     assert 'id="total-revenue">—<' in page
+
+
+def test_billing_mail_links_point_at_the_host_that_serves_the_site(monkeypatch):
+    import importlib
+    import services.billing_credit_service as bcs
+
+    for var in ("BILLING_PORTAL_URL", "DASHBOARD_URL", "BASE_URL"):
+        monkeypatch.delenv(var, raising=False)
+    assert bcs._portal_origin() == "https://www.phins.ai"
+    monkeypatch.setenv("BASE_URL", "https://staging.example.com/")
+    assert bcs._portal_origin() == "https://staging.example.com"
+    monkeypatch.setenv("BASE_URL", "not-a-url")
+    assert bcs._portal_origin() == "https://www.phins.ai"
+
+    source = Path(importlib.util.find_spec("services.billing_credit_service").origin).read_text()
+    assert "https://phins.ai/" not in source
+
+
+def test_weak_terminal_key_is_reported_and_a_generated_key_is_not():
+    import secrets
+    from services.terminal_access_service import access_key_weakness
+
+    assert access_key_weakness("ninechars") == "shorter than 24 characters"
+    assert access_key_weakness("a" * 40) == "only letters or only digits"
+    assert access_key_weakness("term_" + secrets.token_urlsafe(32)) is None
