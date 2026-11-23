@@ -515,7 +515,7 @@ function promptKey() {
 
 async function apiFetch(path) {
     try {
-        const res = await fetch(path + (path.includes('?') ? '&' : '?') + 'api_key=' + encodeURIComponent(apiKey), {
+        const res = await fetch(path, {
             headers: { 'X-Terminal-Key': apiKey }
         });
         if (!res.ok && res.status === 401) {

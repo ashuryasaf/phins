@@ -22661,6 +22661,8 @@ _ACCESS_LOG_PII_QUERY_KEYS = frozenset({
     'password',
     'ssn',
     'id_num',
+    # Trading terminal access key; older clients still send it in the URL.
+    'api_key',
 })
 # The inquiry email token travels as ``t`` on these pages and on the API.
 # ``token`` and ``resume_code`` are already masked. ``t`` is not a global key.
