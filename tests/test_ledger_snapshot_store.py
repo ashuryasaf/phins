@@ -193,6 +193,53 @@ def test_a_copy_that_stopped_updating_is_not_restored_by_a_later_boot(sqlite_db)
     assert status == "ok" and data["health_wallets"]["CUST-1"]["balance"] == 4.0
 
 
+def _marker_exists():
+    from database.manager import DatabaseManager
+    from database.models import AgentArtifact
+    with DatabaseManager() as db:
+        return db.agent_artifacts.session.get(AgentArtifact, lss.STALE_ARTIFACT_ID) is not None
+
+
+def test_a_marker_left_behind_after_a_newer_copy_does_not_refuse_that_copy(sqlite_db, monkeypatch):
+    store = _store()
+    assert store.offer(_snapshot(1.0, saved_at="2026-11-23T15:00:00")) == "written"
+    store.max_bytes = 64
+    assert store.offer(_snapshot(2.0, saved_at="2026-11-23T15:05:00"), force=True) == "too_large"
+    assert _marker_exists()
+
+    # The next snapshot fits and is written, but the marker's removal does not complete.
+    store.max_bytes = lss.DEFAULT_MAX_BYTES
+    monkeypatch.setattr(store, "_clear_stale", lambda: None)
+    assert store.offer(_snapshot(3.0, saved_at="2026-11-23T15:10:00"), force=True) == "written"
+    assert _marker_exists()
+
+    later_boot = _store()
+    status, data = later_boot.load()
+    assert status == "ok" and data["health_wallets"]["CUST-1"]["balance"] == 3.0
+    assert later_boot.blocked_reason is None
+    assert later_boot.offer(_snapshot(4.0, saved_at="2026-11-23T15:15:00"), force=True) == "written"
+    assert not _marker_exists()
+
+
+def test_a_marker_that_cannot_be_read_keeps_the_copy_refused(sqlite_db):
+    from database.manager import DatabaseManager
+    from database.models import AgentArtifact
+    store = _store()
+    assert store.offer(_snapshot(1.0)) == "written"
+    store.max_bytes = 64
+    assert store.offer(_snapshot(2.0), force=True) == "too_large"
+    before = _row()
+    with DatabaseManager() as db:
+        session = db.agent_artifacts.session
+        session.get(AgentArtifact, lss.STALE_ARTIFACT_ID).checksum = "0" * 64
+        session.commit()
+
+    later_boot = _store()
+    assert later_boot.load()[0] == "stale"
+    assert later_boot.offer(_snapshot(0.0), force=True) == "blocked"
+    assert _row() == before
+
+
 def test_a_failed_write_is_kept_and_retried_after_the_window(sqlite_db):
     from database.manager import DatabaseManager
     clock = _Clock()

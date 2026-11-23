@@ -25,8 +25,10 @@ Rules:
 * A snapshot above ``PHINS_LEDGER_SNAPSHOT_DB_MAX_BYTES`` (default 64 MiB) is
   not written and is reported. The copy then no longer follows the live
   state, so a small marker row records that. A later boot does not apply a
-  marked copy and does not write over it; the marker is cleared by the next
-  snapshot that fits, in the process that set it.
+  marked copy and does not write over it. The marker names the copy it was
+  set against and is removed after the next snapshot that fits; a marker
+  left behind by a removal that did not complete names an earlier copy and
+  is ignored.
 * Every attempt, written or not, starts the throttle window.
 """
 
@@ -149,7 +151,13 @@ class LedgerSnapshotStore:
         if (not isinstance(payload, dict) or payload.get('format') != FORMAT
                 or not isinstance(payload.get('data'), dict)):
             return self._block('unsupported', 'stored row is not a ledger snapshot')
-        if stale_status != 'missing':
+        if stale_status != 'missing' and self._marker_is_leftover(stale, payload):
+            # The copy was written again after the marker was set, and the
+            # marker's removal did not complete. The copy is current; the
+            # marker goes with the next write.
+            logger.warning("ledger snapshot stale marker is older than the stored copy; ignored")
+            self._stale_marked = True
+        elif stale_status != 'missing':
             since = stale.get('since') if isinstance(stale, dict) else None
             result = self._block(
                 'stale',
@@ -161,6 +169,17 @@ class LedgerSnapshotStore:
         self.checked = True
         self.last_saved_at = payload.get('saved_at')
         return 'ok', payload['data']
+
+    @staticmethod
+    def _marker_is_leftover(marker: Any, copy: Dict[str, Any]) -> bool:
+        """True when the marker names an earlier copy than the one stored.
+
+        A marker that cannot be read, or that names no copy, is not leftover:
+        the copy stays refused.
+        """
+        if not isinstance(marker, dict) or not marker.get('last_copy_saved_at'):
+            return False
+        return marker['last_copy_saved_at'] != copy.get('saved_at')
 
     def _block(self, status: str, reason: str) -> Tuple[str, None]:
         self.block(reason)
@@ -274,12 +293,14 @@ class LedgerSnapshotStore:
             return
         try:
             with self._db_factory() as db:
-                if db.agent_artifacts.load_checked(ARTIFACT_ID)[0] == 'missing':
+                status, copy = db.agent_artifacts.load_checked(ARTIFACT_ID)
+                if status == 'missing':
                     return  # nothing stored, so nothing a later boot could restore
+                copy_saved_at = copy.get('saved_at') if isinstance(copy, dict) else None
                 db.agent_artifacts.upsert(
                     STALE_ARTIFACT_ID, agent_id=AGENT_ID, kind=STALE_KIND,
                     payload={'reason': 'too_large', 'since': since,
-                             'last_copy_saved_at': self.last_saved_at},
+                             'last_copy_saved_at': copy_saved_at},
                     subject_type='platform', subject_id='ledger',
                 )
             self._stale_marked = True
