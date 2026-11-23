@@ -822,11 +822,15 @@ Environment variables commonly used:
   (never a one-shot command) also keeps that snapshot as one checksummed
   `agent_artifacts` row (`services/ledger_snapshot_store.py`, id
   `platform-ledger-snapshot`; DB-authoritative stores such as the platform
-  ledger and media are left out) and restores it when the file is missing.
-  A checksum mismatch, unknown format, or failed read is not applied and
-  blocks writes for that process, so the row is never overwritten with a
-  fresh state. `/api/health` `persistence` shows `file_on_volume` and the
-  copy's state
+  ledger and media are left out) and restores it when the file is missing,
+  unreadable, or saved earlier than the copy. A checksum mismatch, unknown
+  format, or failed read is not applied and blocks writes for that process,
+  so the row is never overwritten with a fresh state; a snapshot that was
+  only partly applied at boot blocks them too. A snapshot over the cap is
+  not written and leaves the marker row `platform-ledger-snapshot-stale`:
+  a later boot does not apply or overwrite a marked copy unless it restored
+  a whole file that is not older. `/api/health` `persistence` shows
+  `file_on_volume` and the copy's state
 - **Media:** `MEDIA_PROVIDER_WEBHOOK_SECRET`, `DEFAULT_MEDIA_SUBTITLE_PROVIDER`,
  `DEFAULT_MEDIA_VIDEO_PROVIDER`, `PHINS_MEDIA_INLINE_MAX_BYTES`,
  `PHINS_MAX_MEDIA_UPLOAD_SIZE` (0 = no HTTP cap),

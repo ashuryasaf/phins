@@ -9780,12 +9780,46 @@ def _read_ledger_snapshot_from_db():
     return None
 
 
+def _ledger_snapshot_is_newer(candidate, reference) -> bool:
+    """True when ``candidate`` was saved strictly after ``reference``.
+
+    Both stamps come from the same writer. A missing or unreadable stamp on
+    either side is never "newer", so the file keeps precedence.
+    """
+    newer, older = _ledger_saved_at(candidate), _ledger_saved_at(reference)
+    return newer is not None and older is not None and newer > older
+
+
+def _ledger_saved_at(snapshot) -> Optional[datetime]:
+    if not isinstance(snapshot, dict):
+        return None
+    try:
+        return datetime.fromisoformat(str(snapshot.get('saved_at')))
+    except (TypeError, ValueError):
+        return None
+
+
+def _resume_stale_ledger_snapshot_copy(file_data) -> None:
+    """Let a whole file that is not older replace a copy that stopped updating."""
+    store = _ledger_snapshot_store
+    if store is None or not store.enabled or not store.stale:
+        return
+    file_at = _ledger_saved_at(file_data)
+    copy_at = _ledger_saved_at({'saved_at': store.last_saved_at})
+    if file_at is None or copy_at is None or file_at < copy_at:
+        return
+    if store.supersede_stale():
+        print("[PERSISTENCE] The database snapshot copy had stopped updating; "
+              "the file is whole and not older, so the next save replaces it")
+
+
 def load_ledger_data(allow_db_snapshot: bool = False):
     """Load ledger data from persistent storage on startup.
 
     The snapshot file is read first. With ``allow_db_snapshot`` (the
     long-running server), the checksummed database copy is verified and is
-    used when the file is missing, e.g. after a redeploy without a volume.
+    used when the file is missing, unreadable, or older than that copy
+    (a redeploy without a volume, a failed file write).
     """
     global HEALTH_WALLETS, MEDICAL_PURCHASES, NFT_LEDGER, CUSTOMER_ALLOCATIONS, INVESTMENT_ACCOUNTS, TRANSACTION_LEDGER
     global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS, PHINS_BALANCE_SHEET, CLAIMS, CLAIM_FILES, UNDERWRITING_FILES
@@ -9810,19 +9844,40 @@ def load_ledger_data(allow_db_snapshot: bool = False):
     if not file_present and db_data is None:
         print(f"[PERSISTENCE] No persistence file found at {LEDGER_PERSISTENCE_FILE}, starting fresh")
         return False
-    
-    try:
-        if file_present:
+
+    # Read the file before anything is applied, so an unreadable file can
+    # still fall back to the verified database copy.
+    file_data = None
+    if file_present:
+        try:
             with open(LEDGER_PERSISTENCE_FILE, 'r') as f:
-                data = json.load(f)
+                file_data = json.load(f)
+            if not isinstance(file_data, dict):
+                raise ValueError("snapshot file is not a JSON object")
+        except Exception as e:
+            file_data = None
+            print(f"[PERSISTENCE] Error loading ledger data: {e}")
+            if db_data is None:
+                return False
+
+    try:
+        if file_data is not None and not _ledger_snapshot_is_newer(db_data, file_data):
+            data = file_data
             source_label = LEDGER_PERSISTENCE_FILE
             _LEDGER_LOAD_SOURCE = 'file'
         else:
             data = db_data
             source_label = "the database snapshot copy"
             _LEDGER_LOAD_SOURCE = 'database'
-            print(f"[PERSISTENCE] No persistence file found at {LEDGER_PERSISTENCE_FILE}; "
-                  f"restoring the database snapshot copy (saved {data.get('saved_at', 'unknown')})")
+            if file_data is not None:
+                why = (f"the file at {LEDGER_PERSISTENCE_FILE} is older "
+                       f"(saved {file_data.get('saved_at', 'unknown')})")
+            elif file_present:
+                why = f"the file at {LEDGER_PERSISTENCE_FILE} could not be read"
+            else:
+                why = f"no persistence file found at {LEDGER_PERSISTENCE_FILE}"
+            print(f"[PERSISTENCE] Restoring the database snapshot copy "
+                  f"(saved {data.get('saved_at', 'unknown')}): {why}")
         
         # Load each data store
         HEALTH_WALLETS.update(data.get('health_wallets', {}))
@@ -9972,10 +10027,14 @@ def load_ledger_data(allow_db_snapshot: bool = False):
         if _loaded_trading_bots:
             print(f"  - Trading Bots: {len(_loaded_trading_bots)} bots (pending sync)")
         print(f"  - Saved at: {data.get('saved_at', 'unknown')}")
+        if _LEDGER_LOAD_SOURCE == 'file':
+            _resume_stale_ledger_snapshot_copy(data)
         return True
     except Exception as e:
-        if _LEDGER_LOAD_SOURCE == 'database' and _ledger_snapshot_store is not None:
-            _ledger_snapshot_store.block('restore from the database copy failed part-way')
+        # Part of the snapshot is now in memory. Saving that over the database
+        # copy would replace a whole record with a partial one.
+        if _ledger_snapshot_store is not None and _ledger_snapshot_store.enabled:
+            _ledger_snapshot_store.block('the ledger snapshot was only partly applied at boot')
         _LEDGER_LOAD_SOURCE = None
         print(f"[PERSISTENCE] Error loading ledger data: {e}")
         return False

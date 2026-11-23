@@ -23,7 +23,11 @@ Rules:
   (shutdown) ignores the throttle. An older snapshot never replaces a newer
   one.
 * A snapshot above ``PHINS_LEDGER_SNAPSHOT_DB_MAX_BYTES`` (default 64 MiB) is
-  not written and is reported.
+  not written and is reported. The copy then no longer follows the live
+  state, so a small marker row records that. A later boot does not apply a
+  marked copy and does not write over it; the marker is cleared by the next
+  snapshot that fits, in the process that set it.
+* Every attempt, written or not, starts the throttle window.
 """
 
 from __future__ import annotations
@@ -42,6 +46,8 @@ AGENT_ID = 'platform_persistence'
 KIND = 'ledger_snapshot'
 ARTIFACT_ID = 'platform-ledger-snapshot'
 FORMAT = 'phins-ledger-snapshot/1'
+STALE_ARTIFACT_ID = 'platform-ledger-snapshot-stale'
+STALE_KIND = 'ledger_snapshot_stale'
 
 DB_AUTHORITATIVE_KEYS = (
     'transaction_ledger',
@@ -115,13 +121,15 @@ class LedgerSnapshotStore:
         self.last_saved_at: Optional[str] = None
         self.last_sha256: Optional[str] = None
         self.last_bytes = 0
+        self._stale_marked = False
+        self.stale = False
 
     def enable(self) -> None:
         self.enabled = True
 
     # ------------------------------------------------------------------ read
     def load(self) -> Tuple[str, Optional[Dict[str, Any]]]:
-        """Read the stored copy: ``ok``, ``missing``, ``mismatch``, ``unsupported``, ``error``.
+        """Read the stored copy: ``ok``, ``missing``, ``mismatch``, ``unsupported``, ``stale``, ``error``.
 
         Anything other than ``ok`` / ``missing`` blocks later writes.
         """
@@ -130,6 +138,7 @@ class LedgerSnapshotStore:
         try:
             with self._db_factory() as db:
                 status, payload = db.agent_artifacts.load_checked(ARTIFACT_ID)
+                stale_status, stale = db.agent_artifacts.load_checked(STALE_ARTIFACT_ID)
         except Exception as exc:
             return self._block('error', f"read failed: {type(exc).__name__}")
         if status == 'mismatch':
@@ -140,6 +149,15 @@ class LedgerSnapshotStore:
         if (not isinstance(payload, dict) or payload.get('format') != FORMAT
                 or not isinstance(payload.get('data'), dict)):
             return self._block('unsupported', 'stored row is not a ledger snapshot')
+        if stale_status != 'missing':
+            since = stale.get('since') if isinstance(stale, dict) else None
+            result = self._block(
+                'stale',
+                f"the copy stopped following the live state (since {since or 'unknown'})",
+            )
+            self.stale = True
+            self.last_saved_at = payload.get('saved_at')
+            return result
         self.checked = True
         self.last_saved_at = payload.get('saved_at')
         return 'ok', payload['data']
@@ -149,9 +167,24 @@ class LedgerSnapshotStore:
         logger.error("ledger snapshot DB copy blocked (%s): %s", status, reason)
         return status, None
 
+    def supersede_stale(self) -> bool:
+        """Lift the block of a copy that stopped updating.
+
+        Only for a caller that has restored a whole snapshot which is not
+        older than that copy. The marker row goes with the next write.
+        """
+        if not self.stale:
+            return False
+        self.stale = False
+        self.blocked_reason = None
+        self.last_status = None
+        self._stale_marked = True
+        return True
+
     def block(self, reason: str) -> None:
         """Refuse every later write for this process; the stored row is kept."""
         self.checked = True
+        self.stale = False
         self.blocked_reason = reason
         self.last_status = 'blocked'
 
@@ -193,12 +226,13 @@ class LedgerSnapshotStore:
                 return 'idle'
             status = self._write(snapshot)
             with self._lock:
-                if status in ('written', 'unchanged', 'too_large'):
+                # A snapshot that does not fit will not fit on a retry; a
+                # failed write is kept and retried after the window.
+                if status in ('written', 'too_large'):
                     self._written_seq = max(self._written_seq, seq)
                     if self._pending is not None and self._pending[0] == seq:
                         self._pending = None
-                if status in ('written', 'unchanged'):
-                    self._last_write_at = self._clock()
+                self._last_write_at = self._clock()
             return status
         finally:
             self._write_lock.release()
@@ -212,6 +246,7 @@ class LedgerSnapshotStore:
             self.last_bytes = size
             logger.error("ledger snapshot DB copy skipped: %d bytes exceeds cap %d",
                          size, self.max_bytes)
+            self._mark_stale(payload.get('saved_at'))
             return 'too_large'
         # The repository serialises with default=str too; round-trip so the
         # stored text and the digest below describe the same document.
@@ -230,7 +265,36 @@ class LedgerSnapshotStore:
         self.last_saved_at = payload.get('saved_at')
         self.last_sha256 = hashlib.sha256(text.encode('utf-8')).hexdigest()
         self.last_bytes = size
+        self._clear_stale()
         return 'written'
+
+    def _mark_stale(self, since: Any) -> None:
+        """Record durably that the stored copy no longer follows the live state."""
+        if self._stale_marked:
+            return
+        try:
+            with self._db_factory() as db:
+                if db.agent_artifacts.load_checked(ARTIFACT_ID)[0] == 'missing':
+                    return  # nothing stored, so nothing a later boot could restore
+                db.agent_artifacts.upsert(
+                    STALE_ARTIFACT_ID, agent_id=AGENT_ID, kind=STALE_KIND,
+                    payload={'reason': 'too_large', 'since': since,
+                             'last_copy_saved_at': self.last_saved_at},
+                    subject_type='platform', subject_id='ledger',
+                )
+            self._stale_marked = True
+        except Exception as exc:
+            logger.error("ledger snapshot stale marker not written: %s", type(exc).__name__)
+
+    def _clear_stale(self) -> None:
+        if not self._stale_marked:
+            return
+        try:
+            with self._db_factory() as db:
+                db.agent_artifacts.delete_artifact(STALE_ARTIFACT_ID)
+            self._stale_marked = False
+        except Exception as exc:
+            logger.error("ledger snapshot stale marker not cleared: %s", type(exc).__name__)
 
     # ---------------------------------------------------------------- report
     def status(self) -> Dict[str, Any]:

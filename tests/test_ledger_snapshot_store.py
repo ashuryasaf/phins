@@ -20,8 +20,9 @@ def _purge():
     from database.models import AgentArtifact
     with DatabaseManager() as db:
         session = db.agent_artifacts.session
-        session.query(AgentArtifact).filter(AgentArtifact.id == ARTIFACT_ID).delete(
-            synchronize_session=False)
+        session.query(AgentArtifact).filter(
+            AgentArtifact.id.in_([ARTIFACT_ID, lss.STALE_ARTIFACT_ID])
+        ).delete(synchronize_session=False)
         session.commit()
 
 
@@ -164,6 +165,60 @@ def test_oversized_snapshot_is_reported_and_not_written(sqlite_db):
     assert store.status()["state"] == "too_large"
 
 
+def test_a_copy_that_stopped_updating_is_not_restored_by_a_later_boot(sqlite_db):
+    clock = _Clock()
+    store = _store(min_interval_seconds=60, clock=clock)
+    store.load()
+    assert store.offer(_snapshot(1.0)) == "written"
+    before = _row()
+
+    store.max_bytes = 64
+    clock.now += 61
+    assert store.offer(_snapshot(2.0)) == "too_large"
+    # The oversized snapshot is not serialised again inside the window.
+    assert store.offer(_snapshot(3.0)) == "throttled"
+    assert _row() == before
+
+    later_boot = _store()
+    status, data = later_boot.load()
+    assert status == "stale" and data is None
+    assert later_boot.offer(_snapshot(0.0), force=True) == "blocked"
+    assert _row() == before
+
+    # The process that set the marker clears it with the next snapshot that fits.
+    store.max_bytes = lss.DEFAULT_MAX_BYTES
+    clock.now += 61
+    assert store.offer(_snapshot(4.0)) == "written"
+    status, data = _store().load()
+    assert status == "ok" and data["health_wallets"]["CUST-1"]["balance"] == 4.0
+
+
+def test_a_failed_write_is_kept_and_retried_after_the_window(sqlite_db):
+    from database.manager import DatabaseManager
+    clock = _Clock()
+    failing = {"on": False}
+
+    class _Flaky:
+        def __enter__(self):
+            if failing["on"]:
+                raise RuntimeError("db down")
+            self._db = DatabaseManager()
+            return self._db.__enter__()
+
+        def __exit__(self, *exc):
+            return self._db.__exit__(*exc)
+
+    store = _store(db_factory=_Flaky, min_interval_seconds=60, clock=clock)
+    store.load()
+    failing["on"] = True
+    assert store.offer(_snapshot(5.0)) == "error"
+    assert store.flush() == "throttled"
+    failing["on"] = False
+    clock.now += 61
+    assert store.flush() == "written"
+    assert _store().load()[1]["health_wallets"]["CUST-1"]["balance"] == 5.0
+
+
 def test_disabled_store_never_touches_the_database():
     store = LedgerSnapshotStore(db_factory=lambda: pytest.fail("no DB access expected"))
     assert store.load() == ("disabled", None)
@@ -195,6 +250,102 @@ def test_boot_restores_the_database_copy_when_the_file_is_gone(sqlite_db, portal
     assert portal._LEDGER_LOAD_SOURCE == "database"
     assert portal.HEALTH_WALLETS["CUST-1"]["balance"] == 77.0
     assert portal.PHINS_BALANCE_SHEET["operating_reserve"] == 1234.56
+
+
+def _db_boot(monkeypatch):
+    monkeypatch.setattr(portal, "USE_DATABASE", True)
+    monkeypatch.setattr(portal, "database_enabled", True)
+    store = _store()
+    monkeypatch.setattr(portal, "_ledger_snapshot_store", store)
+    portal.HEALTH_WALLETS.pop("CUST-1", None)
+    return store
+
+
+def _write_file(snapshot):
+    import json
+    with open(portal.LEDGER_PERSISTENCE_FILE, "w") as fh:
+        json.dump(snapshot, fh)
+
+
+def test_an_unreadable_file_falls_back_to_the_database_copy(sqlite_db, portal_state, monkeypatch):
+    _store().offer(_snapshot(77.0))
+    before = _row()
+    store = _db_boot(monkeypatch)
+    with open(portal.LEDGER_PERSISTENCE_FILE, "w") as fh:
+        fh.write('{"health_wallets": {"CUST-1": ')
+
+    assert portal.load_ledger_data(allow_db_snapshot=True) is True
+    assert portal._LEDGER_LOAD_SOURCE == "database"
+    assert portal.HEALTH_WALLETS["CUST-1"]["balance"] == 77.0
+    assert store.blocked_reason is None and _row() == before
+
+
+def test_the_newer_of_file_and_database_copy_is_restored(sqlite_db, portal_state, monkeypatch):
+    _store().offer(_snapshot(77.0, saved_at="2026-11-23T15:27:00"))
+
+    _db_boot(monkeypatch)
+    _write_file(_snapshot(10.0, saved_at="2026-11-23T15:00:00"))
+    assert portal.load_ledger_data(allow_db_snapshot=True) is True
+    assert portal._LEDGER_LOAD_SOURCE == "database"
+    assert portal.HEALTH_WALLETS["CUST-1"]["balance"] == 77.0
+
+    _db_boot(monkeypatch)
+    _write_file(_snapshot(20.0, saved_at="2026-11-23T15:27:00"))
+    assert portal.load_ledger_data(allow_db_snapshot=True) is True
+    assert portal._LEDGER_LOAD_SOURCE == "file"
+    assert portal.HEALTH_WALLETS["CUST-1"]["balance"] == 20.0
+
+    _db_boot(monkeypatch)
+    _write_file(_snapshot(30.0, saved_at="not a timestamp"))
+    assert portal.load_ledger_data(allow_db_snapshot=True) is True
+    assert portal._LEDGER_LOAD_SOURCE == "file"
+
+
+def test_a_partly_applied_snapshot_blocks_the_database_copy(sqlite_db, portal_state, monkeypatch):
+    _store().offer(_snapshot(77.0))
+    before = _row()
+    store = _db_boot(monkeypatch)
+    broken = _snapshot(5.0, saved_at="2026-11-23T16:00:00")
+    broken["nft_ledger"] = ["not", "a", "mapping"]
+    _write_file(broken)
+
+    assert portal.load_ledger_data(allow_db_snapshot=True) is False
+    assert store.blocked_reason
+    assert portal.save_ledger_data(force_db=True) is True
+    assert _row() == before
+
+
+def _stale_copy(saved_at):
+    writer = _store()
+    assert writer.offer(_snapshot(77.0, saved_at=saved_at)) == "written"
+    writer.max_bytes = 64
+    assert writer.offer(_snapshot(78.0, saved_at=saved_at), force=True) == "too_large"
+
+
+def test_a_whole_file_that_is_not_older_replaces_a_copy_that_stopped_updating(
+        sqlite_db, portal_state, monkeypatch):
+    _stale_copy("2026-11-23T15:00:00")
+    store = _db_boot(monkeypatch)
+    _write_file(_snapshot(90.0, saved_at="2026-11-23T16:00:00"))
+
+    assert portal.load_ledger_data(allow_db_snapshot=True) is True
+    assert portal._LEDGER_LOAD_SOURCE == "file" and store.blocked_reason is None
+    assert portal.save_ledger_data(force_db=True) is True
+    status, data = _store().load()
+    assert status == "ok" and data["health_wallets"]["CUST-1"]["balance"] == 90.0
+
+
+def test_an_older_file_does_not_replace_a_copy_that_stopped_updating(
+        sqlite_db, portal_state, monkeypatch):
+    _stale_copy("2026-11-23T15:00:00")
+    before = _row()
+    store = _db_boot(monkeypatch)
+    _write_file(_snapshot(90.0, saved_at="2026-11-23T14:00:00"))
+
+    assert portal.load_ledger_data(allow_db_snapshot=True) is True
+    assert store.blocked_reason
+    assert portal.save_ledger_data(force_db=True) is True
+    assert _row() == before and _store().load()[0] == "stale"
 
 
 def test_one_shot_commands_do_not_read_the_database_copy(sqlite_db, portal_state, monkeypatch):
