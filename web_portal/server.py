@@ -14621,6 +14621,7 @@ terminal_access_enabled = False
 try:
     from services.terminal_access_service import (
         validate_terminal_access, get_access_key_display,
+        needs_admin_session as terminal_route_needs_admin,
     )
     terminal_access_enabled = True
     _term_key = get_access_key_display()
@@ -14647,7 +14648,8 @@ try:
         if _term_key_weak:
             print(
                 f"⚠️  [SECURITY] Terminal access key is weak ({_term_key_weak}). "
-                "It alone authorises /api/terminal order routes. Set "
+                "It alone opens the /api/terminal account, position and order "
+                "views and the AutoPilot halt. Set "
                 "TERMINAL_ACCESS_KEY to a random value, e.g. python3 -c "
                 "\"import secrets; print('term_' + secrets.token_urlsafe(32))\""
             )
@@ -23472,9 +23474,11 @@ class PortalHandler(BaseHTTPRequestHandler):
                                  qs: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Who may operate the AutoPilot safety controls (halt/resume/promote).
 
-        Either the terminal access key (the credential that can already create
-        and execute bots) or an admin session. Returns an actor label for the
-        audit row, or ``None`` when neither credential is valid.
+        Either the terminal access key or an admin session. Returns an actor
+        label for the audit row, or ``None`` when neither credential is valid.
+        Resume and promote are refused earlier without an admin session
+        (``_terminal_admin_denial``), so the key alone only reads the status
+        and halts.
         """
         session = self._get_session()
         if session and require_role(session, ['admin']):
@@ -23486,6 +23490,20 @@ class PortalHandler(BaseHTTPRequestHandler):
             ai_key = (qs.get('api_key', ['']) or [''])[0]
         if terminal_access_enabled and ai_key and validate_terminal_access(ai_key):
             return 'terminal_key'
+        return None
+
+    def _terminal_admin_denial(self) -> Optional[Tuple[int, str]]:
+        """Why this caller may not use an order route, or ``None``.
+
+        Decided before the access key is looked at, so these routes do not
+        tell an anonymous caller whether a key is right. The route still
+        checks the key afterwards.
+        """
+        session = self._get_session()
+        if not session:
+            return 401, 'Admin sign-in required'
+        if not require_role(session, ['admin']):
+            return 403, 'Admin access required'
         return None
 
     def _request_is_secure(self) -> bool:
@@ -47352,6 +47370,16 @@ For claims or questions, please contact:
                 return
 
         # ========== TRADING TERMINAL API (POST) ==========
+        # The access key alone does not send an order or a money instruction
+        # to the broker, create or run a bot, lift a halt, or promote a
+        # strategy version. Those need an admin session as well.
+        if terminal_access_enabled and terminal_route_needs_admin('POST', path):
+            _terminal_denial = self._terminal_admin_denial()
+            if _terminal_denial:
+                self._set_json_headers(_terminal_denial[0])
+                self.wfile.write(json.dumps({'error': _terminal_denial[1]}).encode('utf-8'))
+                return
+
         if path == '/api/terminal/order':
             if not trading_platform_enabled:
                 self._set_json_headers(503)
