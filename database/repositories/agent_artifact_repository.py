@@ -106,6 +106,20 @@ class AgentArtifactRepository(BaseRepository):
         row = self.session.get(AgentArtifact, artifact_id)
         return self._verified(row) if row is not None else None
 
+    def load_checked(self, artifact_id: str) -> Tuple[str, Optional[Any]]:
+        """``('ok', payload)``, ``('missing', None)`` or ``('mismatch', None)``.
+
+        Unlike :meth:`get_payload`, a row whose checksum fails is reported as
+        such, so a caller can refuse to write over it.
+        """
+        row = self.session.get(AgentArtifact, artifact_id)
+        if row is None:
+            return 'missing', None
+        payload = self._verified(row)
+        if payload is None:
+            return 'mismatch', None
+        return 'ok', payload
+
     def delete_artifact(self, artifact_id: str) -> bool:
         try:
             deleted = (self.session.query(AgentArtifact)
