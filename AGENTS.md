@@ -19,12 +19,12 @@ PHINS is a Python platform built around:
   `api_admin_desk.py` (admin desk / mailboxes / diary),
   `api_referral_rewards.py` (referral CAC + professional-role requests), and
   `api_wallet_withdrawal.py` (health-wallet withdrawal chat + retention desk))
-- service-layer logic in `services/` (163 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
+- service-layer logic in `services/` (164 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (294 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (295 files) and root-level `test_*.py` (11 files)
 - one generalized job queue (`services/agent_job_queue.py`, table
  `document_processing_jobs`, rows keyed by `subject_type`/`subject_id` and
  `submitted_by`; retries, dead-letter, idempotency keys, handler registry —
@@ -543,7 +543,7 @@ Preferred file-by-task:
 |- prompts/                             # versioned LLM prompt templates (sha256 provenance)
 |  `- assessment/                       # narrative v1 (free text) + v2 (structured); onboarding/service/termination v1
 |- schemas/                             # JSON schemas for structured LLM output
-|- services/                            # 163 top-level modules + six packages
+|- services/                            # 164 top-level modules + six packages
 |  |- agent_eval.py                     # A6 replay / propose_thresholds / golden sets
 |  |- automation/                       # B2 pure rules: quoting, underwriting_gate, fraud, claims_gate, billing_schedule
 |  |- pricing_kernel.py                 # single writer for premium decomposition (PremiumComponents)
@@ -604,7 +604,7 @@ Preferred file-by-task:
 |- scripts/                             # operational utilities
 |  |- run_agent_eval.py                 # golden sets + decision replay CLI
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
-|- tests/                               # 294 test files
+|- tests/                               # 295 test files
 |  `- golden/<agent>/*.json             # frozen agent outputs ({name, input, expected})
 |- docs/
 |  |- platform_data_architecture.md
@@ -812,7 +812,21 @@ Environment variables commonly used:
   `PHINS_ACTUARIAL_STATE_PATH`, `PHINS_INVITATION_CODES_PATH`,
   `PHINS_BI_SNAPSHOT_DIR`
 - **Ledger:** `ENABLE_LEDGER_PERSISTENCE`, `LEDGER_PERSISTENCE_VERBOSE`,
-  `LEDGER_PERSISTENCE_LOG_INTERVAL`, `PHINS_LEDGER_DB_AUTOREPAIR`
+  `LEDGER_PERSISTENCE_LOG_INTERVAL`, `PHINS_LEDGER_DB_AUTOREPAIR`,
+  `LEDGER_PERSISTENCE_FILE`, `PHINS_LEDGER_SNAPSHOT_DB_INTERVAL` (default 60),
+  `PHINS_LEDGER_SNAPSHOT_DB_MAX_BYTES` (default 64 MiB). The image creates
+  `/data`, so `phins_ledger_data.json` (health wallets, withdrawals, NFT
+  ledger, investment accounts, balance sheet, algo balances, policy
+  documents) is lost on redeploy unless a volume is mounted there; boot
+  warns when `/data` is not a mount point. With the database on, the server
+  (never a one-shot command) also keeps that snapshot as one checksummed
+  `agent_artifacts` row (`services/ledger_snapshot_store.py`, id
+  `platform-ledger-snapshot`; DB-authoritative stores such as the platform
+  ledger and media are left out) and restores it when the file is missing.
+  A checksum mismatch, unknown format, or failed read is not applied and
+  blocks writes for that process, so the row is never overwritten with a
+  fresh state. `/api/health` `persistence` shows `file_on_volume` and the
+  copy's state
 - **Media:** `MEDIA_PROVIDER_WEBHOOK_SECRET`, `DEFAULT_MEDIA_SUBTITLE_PROVIDER`,
  `DEFAULT_MEDIA_VIDEO_PROVIDER`, `PHINS_MEDIA_INLINE_MAX_BYTES`,
  `PHINS_MAX_MEDIA_UPLOAD_SIZE` (0 = no HTTP cap),
@@ -1312,7 +1326,7 @@ Important test harness facts:
   change re-renders them (the page fetches `?charts=1` and swaps the SVG).
   `RESEARCH_SOURCES` must stay identical to the pitch-dashboard
   `sourceRegistry`; the test parses both
-- 294 test files under `tests/`, 11 root-level `test_*.py` files
+- 295 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
