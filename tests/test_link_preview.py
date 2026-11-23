@@ -71,6 +71,45 @@ def test_card_is_a_branded_png_and_unknown_paths_share_one_image():
     assert generic != png
 
 
+def test_share_links_tab_shows_and_copies_the_card_of_the_page_it_shares():
+    """Staff · Share links shows the banner of a new link and can copy it.
+
+    The banner is the public card of the page, so it names the document and
+    carries neither the share id nor the password.
+    """
+    import re
+    from pathlib import Path
+
+    pitch = (Path(lp.__file__).resolve().parents[1] / "web_portal" / "static" / "pitch-dashboard.html").read_text(
+        encoding="utf-8"
+    )
+    select = pitch[pitch.index('<select id="share-document"'):]
+    paths = re.findall(r'<option value="(/[^"]+)">', select[:select.index("</select>")])
+    assert "/corporate-legal-dashboard.html" in paths and len(paths) == len(set(paths)) >= 10
+    assert 'return "/link-preview" + clean + ".png";' in pitch
+    for path in paths:
+        # The page builds the card address the way the server does.
+        assert lp.image_path_for(path) == "/link-preview" + path + ".png"
+        assert lp.image_path_for(path + "?share=shr_abc") == "/link-preview" + path + ".png"
+        assert lp.preview_target_from_image_route(lp.image_path_for(path)) == path
+        assert lp.preview_title(path) != lp.GENERIC_TITLE, path
+    assert lp.preview_title("/corporate-legal-dashboard.html") == "PHINS Legal and Funding Document Center"
+    assert lp.render_preview_png("/corporate-legal-dashboard.html") != lp.render_preview_png("/")
+
+    helpers = pitch[pitch.index("function bannerPath(pagePath)"):pitch.index("function openSeal(archiveId, button)")]
+    assert 'var clean = String(pagePath || "").split("#")[0].split("?")[0];' in helpers
+    assert '"text/html": new Blob([markup], { type: "text/html" })' in helpers
+    assert '"text/plain": new Blob([url], { type: "text/plain" })' in helpers
+    assert "password" not in helpers.lower()
+    # The new link and each address-book row offer the same copy.
+    assert "copyWithBanner(url, docPath, copyBanner);" in pitch
+    assert "copyWithBanner(url, item.share_url_path, copyBanner);" in pitch
+    assert 'card.id = "confidential-share-banner";' in pitch
+    assert "cardImage.src = banner;" in pitch
+    # The copy made when a link is created is the text it was before.
+    assert 'navigator.clipboard.writeText(url + "\\nPassword: " + body.password)' in pitch
+
+
 def test_page_url_drops_access_secrets_and_keeps_the_share():
     url = lp.canonical_page_url(
         "https://www.phins.ai",

@@ -1219,6 +1219,8 @@ def test_a_single_instrument_share_does_not_grow_into_the_legal_center():
 
 
 def test_legal_center_share_view_is_a_reading_copy_without_staff_links():
+    import re
+
     hub = _static_text("corporate-legal-dashboard.html")
     # The stored page is the staff page: its three staff links are intact.
     for href in _STAFF_HREFS:
@@ -1238,6 +1240,13 @@ def test_legal_center_share_view_is_a_reading_copy_without_staff_links():
     # Figures and names on the hub are not rewritten.
     for kept in ("PHINS-grounded multi-year model", "Certificate of Incorporation", ">15<"):
         assert kept in shared
+    # The reader gets the same banner the stored page has, less the staff links.
+    def banner(html):
+        return html[html.index('<div class="lc-banner">'):html.index('<div class="container">')]
+
+    expected = re.sub(r"<a [^>]*data-phins-staff-only>.*?</a>", "", banner(hub))
+    assert " ".join(banner(shared).split()) == " ".join(expected.split())
+    assert banner(shared).count('<img src="/phins-logo.svg" alt="PHINS emblem">') == 1
     for path in ca.LEGAL_CENTER_DOCUMENTS:
         page = _static_text(path.lstrip("/"))
         marked = ca.legal_center_share_html(path, page, share_path=ca.LEGAL_CENTER_PATH)
@@ -1409,6 +1418,7 @@ def test_http_legal_center_link_for_advisers(gate_token, share_store, monkeypatc
     for href in _STAFF_HREFS:
         assert href not in hub.text
     assert hub.text.count("Open to read →") == 15
+    assert hub.text.count('<div class="lc-banner">') == 1
     for path in ca.LEGAL_CENTER_DOCUMENTS:
         page = adviser.get(f"{BASE_URL}{path}", timeout=10)
         assert page.status_code == 200, path

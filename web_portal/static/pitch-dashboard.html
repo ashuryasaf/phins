@@ -13283,6 +13283,42 @@
         }).catch(function () { button.textContent = "Copy failed"; });
       }
 
+      /* The banner is the public link-preview card of the page a link opens.
+         It names the document only, so it carries no share id and no password. */
+      function bannerPath(pagePath) {
+        var clean = String(pagePath || "").split("#")[0].split("?")[0];
+        if (clean.indexOf("..") !== -1 || !/^\/[A-Za-z0-9._\/-]{1,180}$/.test(clean)) return "";
+        return "/link-preview" + clean + ".png";
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      }
+
+      function bannerMarkup(url, pagePath) {
+        var banner = bannerPath(pagePath);
+        if (!banner) return "";
+        var href = escapeHtml(url);
+        return "<a href=\"" + href + "\"><img src=\"" + escapeHtml(location.origin + banner) + "\" " +
+          "alt=\"PHINS \u00b7 Personal Health Insurance &amp; Savings\" width=\"480\" " +
+          "style=\"display:block;width:480px;max-width:100%;height:auto;border:0;border-radius:10px;\"></a>" +
+          "<br><a href=\"" + href + "\">" + href + "</a>";
+      }
+
+      function copyWithBanner(url, pagePath, button) {
+        var markup = bannerMarkup(url, pagePath);
+        if (!markup || !navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === "undefined") {
+          copyText(url, button, "Copied the link only");
+          return;
+        }
+        navigator.clipboard.write([new ClipboardItem({
+          "text/html": new Blob([markup], { type: "text/html" }),
+          "text/plain": new Blob([url], { type: "text/plain" })
+        })]).then(function () {
+          button.textContent = "Copied with banner";
+        }).catch(function () { copyText(url, button, "Copied the link only"); });
+      }
+
       function openSeal(archiveId, button) {
         fetch("/api/confidential/signed-documents/" + encodeURIComponent(archiveId) + "/html", {
           headers: staffHeaders(deskToken),
@@ -13399,6 +13435,15 @@
             copyLink.addEventListener("click", function () { copyText(url, copyLink, "Copied"); });
             linkCell.appendChild(document.createElement("br"));
             linkCell.appendChild(copyLink);
+            if (bannerPath(item.share_url_path)) {
+              var copyBanner = document.createElement("button");
+              copyBanner.type = "button";
+              copyBanner.className = "exec-dl-btn";
+              copyBanner.style.margin = "6px 0 0 6px";
+              copyBanner.textContent = "Copy link with banner";
+              copyBanner.addEventListener("click", function () { copyWithBanner(url, item.share_url_path, copyBanner); });
+              linkCell.appendChild(copyBanner);
+            }
           } else {
             linkCell.textContent = item.path || "";
           }
@@ -13675,6 +13720,31 @@
                 " · the hub and its fifteen documents, reading copy · signing closed · no staff page"
               : "") +
             "<br><span style=\"color:#666\">Copied to clipboard when supported. Downloads stay excluded.</span>";
+          var banner = bannerPath(docPath);
+          if (banner) {
+            var card = document.createElement("div");
+            card.id = "confidential-share-banner";
+            card.style.cssText = "max-width:360px;margin:0 0 10px;word-break:normal;";
+            var cardImage = document.createElement("img");
+            cardImage.src = banner;
+            cardImage.alt = "Banner sent with this link";
+            cardImage.width = 1200;
+            cardImage.height = 630;
+            cardImage.style.cssText = "display:block;width:100%;height:auto;border-radius:10px;border:1px solid #c9a04e;";
+            card.appendChild(cardImage);
+            var cardNote = document.createElement("div");
+            cardNote.style.cssText = "margin-top:6px;font-size:8.5pt;color:#666;";
+            cardNote.textContent = "Banner sent with this link. WhatsApp and other apps that preview links show it on their own. For email, copy the link with its banner; the password is not in that copy.";
+            card.appendChild(cardNote);
+            var copyBanner = document.createElement("button");
+            copyBanner.type = "button";
+            copyBanner.className = "exec-dl-btn";
+            copyBanner.style.marginTop = "6px";
+            copyBanner.textContent = "Copy link with banner";
+            copyBanner.addEventListener("click", function () { copyWithBanner(url, docPath, copyBanner); });
+            card.appendChild(copyBanner);
+            result.insertBefore(card, result.firstChild);
+          }
           if (window.phinsSetSignedUseOpen) window.phinsSetSignedUseOpen(true);
           loadSignedDesk(token);
           if (navigator.clipboard && navigator.clipboard.writeText) {
