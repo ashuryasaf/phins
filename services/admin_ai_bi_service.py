@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from security.access_hierarchy import (
+    ADMIN_OPEN_CUSTOMER_PAGES,
     CUSTOMER_PRIVATE_PAGES,
     PRIVATE_PORTAL_PAGES,
     SHARED_OPERATIONAL_PAGES,
@@ -187,6 +188,8 @@ _INTAKE_PAGES = frozenset({
 
 def _page_access(path: str) -> Tuple[bool, List[str]]:
     if path in CUSTOMER_PRIVATE_PAGES:
+        if path in ADMIN_OPEN_CUSTOMER_PAGES:
+            return True, ["admin", "customer"]
         return False, ["customer"]
     if path in PRIVATE_PORTAL_PAGES:
         return False, sorted(PRIVATE_PORTAL_PAGES[path])

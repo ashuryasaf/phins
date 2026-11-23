@@ -108,6 +108,13 @@ CUSTOMER_PRIVATE_PAGES: FrozenSet[str] = frozenset({
     "/wallet-withdraw-chat.html",
 })
 
+# The terminal trades the platform's one broker account, and its order routes
+# need an admin session, so an admin opens this page too. No other staff role
+# does, and the rest of the customer's pages stay closed to admin.
+ADMIN_OPEN_CUSTOMER_PAGES: FrozenSet[str] = frozenset({
+    "/trading-terminal.html",
+})
+
 # Both sides may open these. APIs still scope rows to the caller.
 SHARED_OPERATIONAL_PAGES: FrozenSet[str] = frozenset({
     "/assessment-center.html",
@@ -250,6 +257,8 @@ def surface_decision(role: Optional[str], path: Optional[str]) -> Dict[str, Opti
 
     if page in CUSTOMER_PRIVATE_PAGES:
         if normalized_role == "customer":
+            return {"allowed": True, "redirect": None, "surface": "customer", "role": normalized_role}
+        if normalized_role == "admin" and page in ADMIN_OPEN_CUSTOMER_PAGES:
             return {"allowed": True, "redirect": None, "surface": "customer", "role": normalized_role}
         return {
             "allowed": False,
