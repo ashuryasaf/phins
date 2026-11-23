@@ -810,3 +810,56 @@ def test_balance_sheet_holds_premium_cash_on_the_lines_the_statement_reports(liv
     totals = body["summary_totals"]
     assert (totals["own_funds"], totals["held_for_others"]) == (position["own_funds"], position["held_for_others"])
     assert round(totals["own_funds"] + totals["held_for_others"], 2) == round(totals["net_position"], 2) == paid
+
+
+def test_create_stores_the_written_mix_without_replacing_the_allocation():
+    """A submitted distribution is copied onto the application.
+
+    The allocation row keeps the protection and savings shares. Approval
+    reads that row when the application has no phins_allocation of its own.
+    """
+    import web_portal.server as portal
+
+    admin = _session(portal, "phins_aum-alloc-admin", "admin", "admin")
+    underwriter = _session(portal, "phins_aum-alloc-uw", "underwriter", "underwriter")
+    status, created = _http("POST", "/api/policies/create", body={
+        "customer_name": "Dana Levi",
+        "customer_email": "dana-aum-alloc@phins.test",
+        "customer_phone": "555-0199",
+        "type": "life",
+        "coverage_amount": 250000,
+        "risk_score": "medium",
+        "age": 42,
+        "phins_allocation": {
+            "protection_pct": 25,
+            "savings_pct": 75,
+            "distribution": {
+                "wallet_pct": 40,
+                "investment_pct": 50,
+                "algo_trading_pct": 10,
+            },
+        },
+    })
+    assert status in (200, 201), created
+    customer_id = created["customer"]["id"]
+    uw_id = created["underwriting"]["id"]
+    application = portal.UNDERWRITING_APPLICATIONS[uw_id]
+    assert "phins_allocation" not in application
+    assert application["health_wallet"]["written_distribution"] == {
+        "wallet_pct": 40,
+        "investment_pct": 50,
+        "algo_trading_pct": 10,
+    }
+    stored = portal.CUSTOMER_ALLOCATIONS[customer_id]
+    assert stored["protection_pct"] == 25
+    assert stored["savings_pct"] == 75
+    chosen = application.get("phins_allocation") or portal.CUSTOMER_ALLOCATIONS.get(customer_id)
+    assert chosen["protection_pct"] == 25
+    status, body = _http("POST", "/api/underwriting/approve", underwriter, {
+        "id": uw_id, "approved_by": "underwriter",
+    })
+    assert status == 200, body
+    assert portal.CUSTOMER_ALLOCATIONS[customer_id]["protection_pct"] == 25
+    assert "phins_allocation" not in portal.UNDERWRITING_APPLICATIONS[uw_id]
+    portal.SESSIONS.pop(admin, None)
+    portal.SESSIONS.pop("phins_aum-alloc-uw", None)

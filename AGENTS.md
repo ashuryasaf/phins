@@ -247,9 +247,12 @@ PHINS is a Python platform built around:
  wallet, other than claim postings, split by the written mix on the original
  application (`health_wallet.written_distribution` or
  `phins_allocation.distribution`, else the nested `distribution` the
- application create stored). Each percent must be in 0–100 and the three
- must sum to 100. A missing mix, an invalid mix, and a stored 30/65/5,
- 15/60/25, or 75/25 template stay unallocated and are named on the row.
+ application create stored). Create copies a submitted triple onto that
+ health-wallet field and does not replace `phins_allocation`, so approval
+ still reads the protection and savings shares on `CUSTOMER_ALLOCATIONS`.
+ Each percent must be in 0–100 and the three must sum to 100. A missing mix,
+ an invalid mix, and a stored 30/65/5, 15/60/25, or 75/25 template stay
+ unallocated and are named on the row.
  Retired allocation rows are not added. The block is not added to reserves,
  income, or Claims Paid, and the GET does not write a ledger row.
 - health wallet withdrawal (`services/wallet_withdrawal_service.py`,

@@ -56102,12 +56102,12 @@ For claims or questions, please contact:
                 from services.financial_unification_service import submitted_savings_distribution
                 _written_distribution = submitted_savings_distribution(phins_allocation)
                 if _written_distribution is not None:
+                    # The mix lives on the application. phins_allocation stays
+                    # unset here so approval still reads CUSTOMER_ALLOCATIONS,
+                    # which holds the protection and savings shares.
                     UNDERWRITING_APPLICATIONS[uw_id]['health_wallet']['written_distribution'] = (
                         _written_distribution
                     )
-                    UNDERWRITING_APPLICATIONS[uw_id]['phins_allocation'] = {
-                        'distribution': dict(_written_distribution),
-                    }
                 
                 # Application demographics for kernel pricing (smoking / sex / ethnicity)
                 try:
