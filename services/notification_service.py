@@ -4129,12 +4129,15 @@ def _select_sms_provider_type() -> str:
 
     detected = _detect_configured_sms_provider()
     if detected and detected != configured:
-        logger.warning(
-            "SMS_PROVIDER='%s' cannot deliver (missing credentials/SDK); "
-            "auto-selecting configured provider '%s' for SMS delivery.",
-            configured,
-            detected,
-        )
+        # An unset SMS_PROVIDER is only the 'twilio' default, not a
+        # misconfiguration: the caller logs the selection at INFO.
+        if (os.environ.get('SMS_PROVIDER') or '').strip():
+            logger.warning(
+                "SMS_PROVIDER='%s' cannot deliver (missing credentials/SDK); "
+                "auto-selecting configured provider '%s' for SMS delivery.",
+                configured,
+                detected,
+            )
         return detected
 
     return configured
@@ -4194,9 +4197,11 @@ def create_notification_service(
             provider_type = _select_email_provider_type()
             if provider_type != configured_provider:
                 logger.info(
-                    "Auto-selected email provider '%s' (configured '%s')",
+                    "Auto-selected email provider '%s' (%s)",
                     provider_type,
-                    configured_provider
+                    f"configured '{configured_provider}'"
+                    if (os.environ.get('EMAIL_PROVIDER') or '').strip()
+                    else "EMAIL_PROVIDER not set",
                 )
             email = _build_email_provider(provider_type)
         
@@ -4208,9 +4213,11 @@ def create_notification_service(
             provider_type = _select_sms_provider_type()
             if provider_type != configured_provider:
                 logger.info(
-                    "Auto-selected SMS provider '%s' (configured '%s')",
+                    "Auto-selected SMS provider '%s' (%s)",
                     provider_type,
-                    configured_provider,
+                    f"configured '{configured_provider}'"
+                    if (os.environ.get('SMS_PROVIDER') or '').strip()
+                    else "SMS_PROVIDER not set",
                 )
             if provider_type == 'sns':
                 sms = AWSSNSProvider()

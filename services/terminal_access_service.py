@@ -8,6 +8,10 @@ For backward compatibility with existing deployments, the legacy
 ``INVESTMENT_AI_ACCESS_KEY`` variable is honored when the new one is unset.
 When neither is configured, a persistent random key is generated at startup
 (retrievable by admins via ``/api/terminal/access-key``).
+
+The key opens the read routes, the backtest, and the AutoPilot halt. A route
+in ``ADMIN_SESSION_POST_ROUTES`` sends an order or a money instruction to the
+broker, or arms something that will, and needs an admin session as well.
 """
 
 import hmac
@@ -47,4 +51,50 @@ def get_access_key_display() -> str:
     return _get_or_create_access_key()
 
 
-__all__ = ["validate_terminal_access", "get_access_key_display"]
+# POST routes the key does not open on its own. Halting stays open to the key
+# so trading can always be stopped.
+ADMIN_SESSION_POST_ROUTES = frozenset({
+    "/api/terminal/order",
+    "/api/terminal/cancel-order",
+    "/api/terminal/close-position",
+    "/api/terminal/bracket-order",
+    "/api/terminal/oco-order",
+    "/api/terminal/options/order",
+    "/api/terminal/broker/create-account",
+    "/api/terminal/broker/fund",
+    "/api/terminal/broker/order",
+    "/api/terminal/autopilot/create",
+    "/api/terminal/autopilot/execute",
+    "/api/terminal/autopilot/control",
+    "/api/terminal/autopilot/resume",
+    "/api/terminal/autopilot/promote",
+})
+
+
+def needs_admin_session(method: str, path: str) -> bool:
+    """Whether this terminal route needs an admin session besides the key."""
+    return str(method or "").upper() == "POST" and path in ADMIN_SESSION_POST_ROUTES
+
+
+MIN_ACCESS_KEY_LENGTH = 24
+
+
+def access_key_weakness(key: Optional[str] = None) -> Optional[str]:
+    """Why the access key is too easy to guess, or ``None`` when it is not.
+
+    The key alone opens the terminal's read routes (account, positions,
+    orders), so a short or single-word key is reported at boot. It is only
+    reported: the key keeps working.
+    """
+    value = _get_or_create_access_key() if key is None else str(key or "")
+    if len(value) < MIN_ACCESS_KEY_LENGTH:
+        return f"shorter than {MIN_ACCESS_KEY_LENGTH} characters"
+    if value.isalpha() or value.isdigit():
+        return "only letters or only digits"
+    return None
+
+
+__all__ = [
+    "validate_terminal_access", "get_access_key_display", "access_key_weakness",
+    "ADMIN_SESSION_POST_ROUTES", "needs_admin_session",
+]

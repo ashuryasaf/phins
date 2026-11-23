@@ -176,6 +176,14 @@ class BillingNotificationResult:
 # CONFIGURATION
 # ============================================================================
 
+def _portal_origin() -> str:
+    """Origin for links in customer mail: ``BASE_URL`` when set, else www."""
+    base = (os.environ.get('BASE_URL') or '').strip().rstrip('/')
+    if base.startswith(('https://', 'http://')):
+        return base
+    return 'https://www.phins.ai'
+
+
 class BillingCreditConfig:
     """Configuration for billing credit service"""
     
@@ -196,9 +204,11 @@ class BillingCreditConfig:
     # Billing validation thresholds
     FUTURE_BILLING_THRESHOLD_DAYS = int(os.environ.get('FUTURE_BILLING_THRESHOLD_DAYS', '30'))
     
-    # Portal links
-    BILLING_PORTAL_URL = os.environ.get('BILLING_PORTAL_URL', 'https://phins.ai/billing.html')
-    DASHBOARD_URL = os.environ.get('DASHBOARD_URL', 'https://phins.ai/dashboard.html#billing')
+    # Portal links. The site is served on www; the bare domain does not
+    # reach the application, so a link to it is a dead link in an email.
+    PORTAL_ORIGIN = _portal_origin()
+    BILLING_PORTAL_URL = os.environ.get('BILLING_PORTAL_URL') or f'{PORTAL_ORIGIN}/billing.html'
+    DASHBOARD_URL = os.environ.get('DASHBOARD_URL') or f'{PORTAL_ORIGIN}/dashboard.html#billing'
 
 
 # ============================================================================

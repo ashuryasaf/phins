@@ -281,7 +281,8 @@ def test_dashboard_catalog_links_staff_pages_and_the_report_window():
     assert rows["/dashboard.html"]["admin_open"] is False
     assert rows["/foundation-dashboard.html"]["group"] == "customer"
     assert rows["/trading-terminal.html"]["group"] == "customer"
-    assert rows["/trading-terminal.html"]["admin_open"] is False
+    assert rows["/trading-terminal.html"]["admin_open"] is True
+    assert rows["/trading-terminal.html"]["roles"] == ["admin", "customer"]
     for path in (
         "/supplier-login.html",
         "/supplier-register.html",

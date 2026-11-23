@@ -2617,7 +2617,7 @@ def _legal_doc_sign(body_data: Dict[str, Any], client_ip: str,
     role = str(body_data.get('role') or '').strip()
     signer_name = str(body_data.get('signerName') or '').strip()
     document_hash = str(body_data.get('documentHash') or '').strip().lower()
-    signed_at = str(body_data.get('signedAt') or '').strip() or datetime.utcnow().isoformat()
+    signed_at = str(body_data.get('signedAt') or '').strip() or datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     signer_title = str(body_data.get('signerTitle') or '').strip()
     context = str(body_data.get('context') or '').strip()
     signature_method = str(body_data.get('signatureMethod') or '').strip()
@@ -9180,7 +9180,37 @@ if LEDGER_PERSISTENCE_FILE.startswith(tempfile.gettempdir()):
     print(f"⚠️  [PERSISTENCE] Using ephemeral path {LEDGER_PERSISTENCE_FILE} — "
           "data will be lost on container restart. Set LEDGER_PERSISTENCE_FILE "
           "or mount a volume at /data for durable storage.")
+
+
+def persistence_file_on_volume() -> bool:
+    """Whether the snapshot file survives a redeploy.
+
+    The Docker image creates ``/data`` itself, so the directory exists even
+    when no Railway volume is mounted there; only a mount point (or an
+    explicit path / Railway volume variable) is treated as durable.
+    """
+    if os.environ.get('LEDGER_PERSISTENCE_FILE'):
+        return True
+    directory = os.path.dirname(LEDGER_PERSISTENCE_FILE) or '.'
+    if directory.startswith(tempfile.gettempdir()):
+        return False
+    volume = os.environ.get('RAILWAY_VOLUME_MOUNT_PATH', '')
+    if volume and os.path.abspath(directory) == os.path.abspath(volume):
+        return True
+    try:
+        return os.path.ismount(directory)
+    except OSError:
+        return False
+
+
 PERSISTENCE_ENABLED = os.environ.get('ENABLE_LEDGER_PERSISTENCE', 'true').lower() == 'true'
+try:
+    from services.ledger_snapshot_store import LedgerSnapshotStore
+    _ledger_snapshot_store = LedgerSnapshotStore()
+except Exception as _snapshot_store_exc:  # pragma: no cover - defensive
+    _ledger_snapshot_store = None
+    print(f"[PERSISTENCE] Database snapshot copy unavailable: {type(_snapshot_store_exc).__name__}")
+_LEDGER_LOAD_SOURCE: Optional[str] = None
 # Verbose persistence logging emits one line per save; defaults OFF so Railway
 # logs are not flooded by the 70+ per-request save_ledger_data() call sites.
 # Operators can set LEDGER_PERSISTENCE_VERBOSE=true to re-enable per-save logs.
@@ -9305,18 +9335,64 @@ def _freeze_for_json(value, *, _depth: int = 0):
     return value
 
 
-def save_ledger_data(_periodic: bool = False):
+def _persistence_health() -> Dict[str, Any]:
+    """Public health view of where the ledger snapshot survives a redeploy."""
+    try:
+        store = _ledger_snapshot_store
+        return {
+            'enabled': PERSISTENCE_ENABLED,
+            'file_on_volume': persistence_file_on_volume(),
+            'database_copy': store.status()['state'] if store is not None else 'unavailable',
+        }
+    except Exception:
+        return {'enabled': PERSISTENCE_ENABLED}
+
+
+def _offer_ledger_snapshot_to_db(snapshot, *, periodic: bool, force: bool) -> None:
+    store = _ledger_snapshot_store
+    if store is None or not store.enabled:
+        return
+    try:
+        if snapshot is not None:
+            outcome = store.offer(snapshot, force=force)
+        elif periodic or force:
+            outcome = store.flush(force=force)
+        else:
+            return
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"[PERSISTENCE] Database snapshot copy failed: {type(exc).__name__}")
+        return
+    if outcome in ('error', 'too_large') and store.last_status == outcome:
+        print(f"[PERSISTENCE] Database snapshot copy not written ({outcome})")
+
+
+def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
     """Save all ledger data to persistent storage.
 
     Explicit calls from API write handlers always flush. The background
     periodic loop passes ``_periodic=True`` and skips disk writes when no
     mutation has marked persistence state dirty.
 
+    The same frozen snapshot is offered to the database copy
+    (``services.ledger_snapshot_store``) once the server has enabled it;
+    that write is throttled unless ``force_db`` (shutdown) is set.
+
     Returns ``True`` when the snapshot was written (or persistence is
     intentionally disabled / skipped as a no-op) and ``False`` when the
     write failed, so callers can surface a durability failure instead of
     silently reporting success.
     """
+    frozen: list = []
+    try:
+        return _save_ledger_data_file(_periodic, frozen)
+    finally:
+        if PERSISTENCE_ENABLED:
+            _offer_ledger_snapshot_to_db(
+                frozen[0] if frozen else None, periodic=_periodic, force=force_db,
+            )
+
+
+def _save_ledger_data_file(_periodic: bool, _snapshot_out: list):
     global _persistence_dirty
     # The design document has its own checksummed row. Seal it even when the
     # ledger file is disabled: that file is what a new deploy throws away.
@@ -9422,6 +9498,7 @@ def save_ledger_data(_periodic: bool = False):
                     freeze_err = exc
             if snapshot is None:
                 raise freeze_err or RuntimeError("ledger snapshot failed")
+            _snapshot_out.append(snapshot)
             temp_file = LEDGER_PERSISTENCE_FILE + '.tmp'
             with open(temp_file, 'w') as f:
                 json.dump(snapshot, f, default=str, indent=2)
@@ -9684,8 +9761,70 @@ def load_dynamic_customers():
         print(f"[DYNAMIC] Error loading dynamic customers: {e}")
         return 0
 
-def load_ledger_data():
-    """Load ledger data from persistent storage on startup"""
+def _read_ledger_snapshot_from_db():
+    """Check the database copy; returns its data only when it verified."""
+    store = _ledger_snapshot_store
+    if store is None or not store.enabled or not (USE_DATABASE and database_enabled):
+        return None
+    status, data = store.load()
+    if status == 'ok':
+        return data
+    if status == 'missing':
+        print("[PERSISTENCE] No database snapshot copy yet; the first save writes it")
+    elif status != 'disabled':
+        print(
+            f"⚠️  [PERSISTENCE] Database snapshot copy {status} "
+            f"({store.blocked_reason}); it is not applied and will not be "
+            f"overwritten by this process"
+        )
+    return None
+
+
+def _ledger_snapshot_is_newer(candidate, reference) -> bool:
+    """True when ``candidate`` was saved strictly after ``reference``.
+
+    Both stamps come from the same writer. A missing or unreadable stamp on
+    either side is never "newer", so the file keeps precedence.
+    """
+    newer, older = _ledger_saved_at(candidate), _ledger_saved_at(reference)
+    return newer is not None and older is not None and newer > older
+
+
+def _ledger_saved_at(snapshot) -> Optional[datetime]:
+    if not isinstance(snapshot, dict):
+        return None
+    try:
+        stamp = datetime.fromisoformat(str(snapshot.get('saved_at')))
+    except (TypeError, ValueError):
+        return None
+    # The writer stamps naive times; a stamp with an offset is compared in UTC.
+    if stamp.tzinfo is not None:
+        stamp = stamp.astimezone(timezone.utc).replace(tzinfo=None)
+    return stamp
+
+
+def _resume_stale_ledger_snapshot_copy(file_data) -> None:
+    """Let a whole file that is not older replace a copy that stopped updating."""
+    store = _ledger_snapshot_store
+    if store is None or not store.enabled or not store.stale:
+        return
+    file_at = _ledger_saved_at(file_data)
+    copy_at = _ledger_saved_at({'saved_at': store.last_saved_at})
+    if file_at is None or copy_at is None or file_at < copy_at:
+        return
+    if store.supersede_stale():
+        print("[PERSISTENCE] The database snapshot copy had stopped updating; "
+              "the file is whole and not older, so the next save replaces it")
+
+
+def load_ledger_data(allow_db_snapshot: bool = False):
+    """Load ledger data from persistent storage on startup.
+
+    The snapshot file is read first. With ``allow_db_snapshot`` (the
+    long-running server), the checksummed database copy is verified and is
+    used when the file is missing, unreadable, or older than that copy
+    (a redeploy without a volume, a failed file write).
+    """
     global HEALTH_WALLETS, MEDICAL_PURCHASES, NFT_LEDGER, CUSTOMER_ALLOCATIONS, INVESTMENT_ACCOUNTS, TRANSACTION_LEDGER
     global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS, PHINS_BALANCE_SHEET, CLAIMS, CLAIM_FILES, UNDERWRITING_FILES
     global MEDIA_ASSETS, DESIGN_SETTINGS, INVITATION_CODES, REGISTERED_CUSTOMERS
@@ -9693,22 +9832,56 @@ def load_ledger_data():
     global POLICY_DOCUMENTS
     global SANDBOX_PUSHED_CUSTOMERS
     global _loaded_algo_balances, _loaded_trading_bots
+    global _LEDGER_LOAD_SOURCE
     
     # Temporary storage for algo data until services are initialized
     _loaded_algo_balances = {}
     _loaded_trading_bots = {}
+    _LEDGER_LOAD_SOURCE = None
     
     if not PERSISTENCE_ENABLED:
         print("[PERSISTENCE] Persistence disabled, using in-memory storage only")
         return False
-    
-    if not os.path.exists(LEDGER_PERSISTENCE_FILE):
+
+    db_data = _read_ledger_snapshot_from_db() if allow_db_snapshot else None
+    file_present = os.path.exists(LEDGER_PERSISTENCE_FILE)
+    if not file_present and db_data is None:
         print(f"[PERSISTENCE] No persistence file found at {LEDGER_PERSISTENCE_FILE}, starting fresh")
         return False
-    
+
+    # Read the file before anything is applied, so an unreadable file can
+    # still fall back to the verified database copy.
+    file_data = None
+    if file_present:
+        try:
+            with open(LEDGER_PERSISTENCE_FILE, 'r') as f:
+                file_data = json.load(f)
+            if not isinstance(file_data, dict):
+                raise ValueError("snapshot file is not a JSON object")
+        except Exception as e:
+            file_data = None
+            print(f"[PERSISTENCE] Error loading ledger data: {e}")
+            if db_data is None:
+                return False
+
     try:
-        with open(LEDGER_PERSISTENCE_FILE, 'r') as f:
-            data = json.load(f)
+        if file_data is not None and not _ledger_snapshot_is_newer(db_data, file_data):
+            data = file_data
+            source_label = LEDGER_PERSISTENCE_FILE
+            _LEDGER_LOAD_SOURCE = 'file'
+        else:
+            data = db_data
+            source_label = "the database snapshot copy"
+            _LEDGER_LOAD_SOURCE = 'database'
+            if file_data is not None:
+                why = (f"the file at {LEDGER_PERSISTENCE_FILE} is older "
+                       f"(saved {file_data.get('saved_at', 'unknown')})")
+            elif file_present:
+                why = f"the file at {LEDGER_PERSISTENCE_FILE} could not be read"
+            else:
+                why = f"no persistence file found at {LEDGER_PERSISTENCE_FILE}"
+            print(f"[PERSISTENCE] Restoring the database snapshot copy "
+                  f"(saved {data.get('saved_at', 'unknown')}): {why}")
         
         # Load each data store
         HEALTH_WALLETS.update(data.get('health_wallets', {}))
@@ -9842,7 +10015,7 @@ def load_ledger_data():
             SUSPENDED_TEST_ACCOUNTS.update(loaded_sandbox_pushed)
             print(f"  - Sandbox Pushed Customers: {len(loaded_sandbox_pushed)} tracked IDs restored")
         
-        print(f"[PERSISTENCE] Loaded ledger data from {LEDGER_PERSISTENCE_FILE}")
+        print(f"[PERSISTENCE] Loaded ledger data from {source_label}")
         print(f"  - Health Wallets: {len(HEALTH_WALLETS)}")
         print(f"  - Medical Purchases: {len(MEDICAL_PURCHASES)}")
         print(f"  - NFT Ledger: {len(NFT_LEDGER)}")
@@ -9858,8 +10031,15 @@ def load_ledger_data():
         if _loaded_trading_bots:
             print(f"  - Trading Bots: {len(_loaded_trading_bots)} bots (pending sync)")
         print(f"  - Saved at: {data.get('saved_at', 'unknown')}")
+        if _LEDGER_LOAD_SOURCE == 'file':
+            _resume_stale_ledger_snapshot_copy(data)
         return True
     except Exception as e:
+        # Part of the snapshot is now in memory. Saving that over the database
+        # copy would replace a whole record with a partial one.
+        if _ledger_snapshot_store is not None and _ledger_snapshot_store.enabled:
+            _ledger_snapshot_store.block('the ledger snapshot was only partly applied at boot')
+        _LEDGER_LOAD_SOURCE = None
         print(f"[PERSISTENCE] Error loading ledger data: {e}")
         return False
 
@@ -9908,7 +10088,7 @@ def _graceful_shutdown(signum, frame):
     print(f"\n[SHUTDOWN] Received {sig_name}, flushing persistence...")
     try:
         mark_ledger_dirty()
-        save_ledger_data(_periodic=False)
+        save_ledger_data(_periodic=False, force_db=True)
         print("[SHUTDOWN] Ledger data flushed to disk successfully")
     except Exception as exc:
         print(f"[SHUTDOWN] Error flushing ledger: {exc}")
@@ -14459,6 +14639,7 @@ terminal_access_enabled = False
 try:
     from services.terminal_access_service import (
         validate_terminal_access, get_access_key_display,
+        needs_admin_session as terminal_route_needs_admin,
     )
     terminal_access_enabled = True
     _term_key = get_access_key_display()
@@ -14477,6 +14658,19 @@ try:
             f"(source={_term_key_source}, length={len(_term_key)}, "
             f"fingerprint=sha256:{_term_key_fp})"
         )
+        try:
+            from services.terminal_access_service import access_key_weakness
+            _term_key_weak = access_key_weakness(_term_key)
+        except Exception:
+            _term_key_weak = None
+        if _term_key_weak:
+            print(
+                f"⚠️  [SECURITY] Terminal access key is weak ({_term_key_weak}). "
+                "It alone opens the /api/terminal account, position and order "
+                "views and the AutoPilot halt. Set "
+                "TERMINAL_ACCESS_KEY to a random value, e.g. python3 -c "
+                "\"import secrets; print('term_' + secrets.token_urlsafe(32))\""
+            )
     else:
         print("  Terminal Access Key: not configured")
 except ImportError as e:
@@ -22562,6 +22756,8 @@ _ACCESS_LOG_PII_QUERY_KEYS = frozenset({
     'password',
     'ssn',
     'id_num',
+    # Trading terminal access key; older clients still send it in the URL.
+    'api_key',
 })
 # The inquiry email token travels as ``t`` on these pages and on the API.
 # ``token`` and ``resume_code`` are already masked. ``t`` is not a global key.
@@ -23296,9 +23492,11 @@ class PortalHandler(BaseHTTPRequestHandler):
                                  qs: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Who may operate the AutoPilot safety controls (halt/resume/promote).
 
-        Either the terminal access key (the credential that can already create
-        and execute bots) or an admin session. Returns an actor label for the
-        audit row, or ``None`` when neither credential is valid.
+        Either the terminal access key or an admin session. Returns an actor
+        label for the audit row, or ``None`` when neither credential is valid.
+        Resume and promote are refused earlier without an admin session
+        (``_terminal_admin_denial``), so the key alone only reads the status
+        and halts.
         """
         session = self._get_session()
         if session and require_role(session, ['admin']):
@@ -23310,6 +23508,20 @@ class PortalHandler(BaseHTTPRequestHandler):
             ai_key = (qs.get('api_key', ['']) or [''])[0]
         if terminal_access_enabled and ai_key and validate_terminal_access(ai_key):
             return 'terminal_key'
+        return None
+
+    def _terminal_admin_denial(self) -> Optional[Tuple[int, str]]:
+        """Why this caller may not use an order route, or ``None``.
+
+        Decided before the access key is looked at, so these routes do not
+        tell an anonymous caller whether a key is right. The route still
+        checks the key afterwards.
+        """
+        session = self._get_session()
+        if not session:
+            return 401, 'Admin sign-in required'
+        if not require_role(session, ['admin']):
+            return 403, 'Admin access required'
         return None
 
     def _request_is_secure(self) -> bool:
@@ -25512,6 +25724,7 @@ For claims or questions, please contact:
                 'notifications': notification_health,
                 'document_processing': document_processing,
                 'agent_jobs': agent_jobs_health,
+                'persistence': _persistence_health(),
                 'version': '2.0.0'
             }
             
@@ -47180,6 +47393,16 @@ For claims or questions, please contact:
                 return
 
         # ========== TRADING TERMINAL API (POST) ==========
+        # The access key alone does not send an order or a money instruction
+        # to the broker, create or run a bot, lift a halt, or promote a
+        # strategy version. Those need an admin session as well.
+        if terminal_access_enabled and terminal_route_needs_admin('POST', path):
+            _terminal_denial = self._terminal_admin_denial()
+            if _terminal_denial:
+                self._set_json_headers(_terminal_denial[0])
+                self.wfile.write(json.dumps({'error': _terminal_denial[1]}).encode('utf-8'))
+                return
+
         if path == '/api/terminal/order':
             if not trading_platform_enabled:
                 self._set_json_headers(503)
@@ -68077,7 +68300,7 @@ def _repair_hydrated_ledger_chain(
                 backup_path = os.path.join(
                     os.path.dirname(LEDGER_PERSISTENCE_FILE) or '.',
                     f"phins_ledger_chain_backup_"
-                    f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.json",
+                    f"{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.json",
                 )
                 db_summary = platform_event_ledger.persist_chain_to_db(
                     backup_path=backup_path
@@ -68685,7 +68908,18 @@ def run_server(port: int = PORT) -> None:
     # Load persisted ledger data first
     print("📂 Loading persisted ledger data...")
     verify_persistence_writable()
-    _ledger_loaded = load_ledger_data()
+    if PERSISTENCE_ENABLED and not persistence_file_on_volume():
+        print(
+            f"⚠️  [PERSISTENCE] {os.path.dirname(LEDGER_PERSISTENCE_FILE) or '.'} is not "
+            f"a mounted volume; {os.path.basename(LEDGER_PERSISTENCE_FILE)} is lost on "
+            f"every redeploy. Mount a Railway volume there (or set LEDGER_PERSISTENCE_FILE)."
+            + (" The database snapshot copy restores it meanwhile."
+               if USE_DATABASE and database_enabled and _ledger_snapshot_store is not None
+               else "")
+        )
+    if USE_DATABASE and database_enabled and _ledger_snapshot_store is not None:
+        _ledger_snapshot_store.enable()
+    _ledger_loaded = load_ledger_data(allow_db_snapshot=True)
     if _ledger_loaded:
         print("✓ Ledger data restored from persistent storage")
     else:
@@ -68930,8 +69164,11 @@ def run_server(port: int = PORT) -> None:
     for acc in SUSPENDED_TEST_ACCOUNTS:
         print(f"   • {acc}")
     
-    # When ledger started fresh but DB has data, reconcile in-memory stores
-    if not _ledger_loaded and USE_DATABASE and database_enabled:
+    # When ledger started fresh but DB has data, reconcile in-memory stores.
+    # The database copy can trail by one save interval, so a customer created
+    # in that window also gets the default (missing-only) rows.
+    if ((not _ledger_loaded or _LEDGER_LOAD_SOURCE == 'database')
+            and USE_DATABASE and database_enabled):
         reconcile_fresh_start_with_db()
 
     # Make the append-only AI decision log durable: mirror decisions/overrides

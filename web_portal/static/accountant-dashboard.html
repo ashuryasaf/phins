@@ -316,27 +316,27 @@
 
         <div class="stats-grid" id="quick-stats">
             <div class="stat-card">
-                <div class="stat-value" id="total-revenue">$0</div>
+                <div class="stat-value" id="total-revenue">—</div>
                 <div class="stat-label">Insurance revenue (annual)</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value" id="total-collected">$0</div>
+                <div class="stat-value" id="total-collected">—</div>
                 <div class="stat-label">Premium cash collected</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value warning" id="outstanding-ar">$0</div>
+                <div class="stat-value warning" id="outstanding-ar">—</div>
                 <div class="stat-label">Premiums receivable</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value negative" id="claims-liability">$0</div>
+                <div class="stat-value negative" id="claims-liability">—</div>
                 <div class="stat-label">Outstanding claims (LIC)</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value" id="loss-ratio">0%</div>
+                <div class="stat-value" id="loss-ratio">—</div>
                 <div class="stat-label">Loss ratio</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value" id="solvency-ratio">0</div>
+                <div class="stat-value" id="solvency-ratio">—</div>
                 <div class="stat-label">Solvency coverage</div>
             </div>
         </div>
@@ -775,6 +775,7 @@
 <script>
         const token = localStorage.getItem('phins_token');
         if (!token) window.location.href = '/login.html';
+        let authRefused = false;
         
         // Tab management
         function showTab(tabName, el) {
@@ -1055,6 +1056,13 @@
                 const response = await fetch('/api/financial/dashboard-summary?type=accountant', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
+                if (!response.ok) {
+                    // An error body has no figures; showing $0.00 would read as real books.
+                    if (response.status === 401 || response.status === 403) authRefused = true;
+                    ['total-revenue', 'total-collected', 'outstanding-ar', 'claims-liability',
+                     'loss-ratio', 'solvency-ratio'].forEach(id => setText(id, '—'));
+                    return;
+                }
                 const data = await response.json();
                 
                 document.getElementById('total-revenue').textContent = formatCurrency(data.total_revenue);
@@ -3653,7 +3661,8 @@
                     }
                     
                     console.log('Balance sheet loaded:', bs);
-                } else if (response.status === 403) {
+                } else if (response.status === 401 || response.status === 403) {
+                    authRefused = true;
                     document.getElementById('balance-sheet-content').innerHTML = 
                         '<div class="error" style="padding: 20px; background: #fef2f2; border-radius: 8px; color: #991b1b;">Access denied. Accountant or Admin role required.</div>';
                 } else {
@@ -3815,9 +3824,38 @@
         }
         loadPortfolioReport();
 
-        // Auto-refresh
-        setInterval(loadQuickStats, 60000);
-        setInterval(loadBalanceSheet, 60000);
+        // Auto-refresh. A refused session, or a newer sign-in in this browser,
+        // stops the polling instead of re-sending a dead token every minute.
+        function stopAutoRefresh(message) {
+            clearInterval(autoRefreshTimer);
+            if (document.getElementById('acct-refresh-stopped')) return;
+            const note = document.createElement('div');
+            note.id = 'acct-refresh-stopped';
+            note.setAttribute('role', 'status');
+            note.style.cssText = 'position:sticky;top:0;z-index:50;padding:10px 16px;background:#fef3c7;color:#92400e;border-bottom:1px solid #f59e0b;font-size:14px;';
+            note.textContent = message + ' ';
+            const reload = document.createElement('button');
+            reload.type = 'button';
+            reload.textContent = 'Reload';
+            reload.style.cssText = 'margin-left:8px;padding:4px 10px;border:1px solid #92400e;border-radius:6px;background:#fff;color:#92400e;cursor:pointer;';
+            reload.addEventListener('click', () => window.location.reload());
+            note.appendChild(reload);
+            document.body.prepend(note);
+        }
+        const autoRefreshTimer = setInterval(async () => {
+            if (localStorage.getItem('phins_token') !== token) {
+                stopAutoRefresh('Auto-refresh paused: this browser signed in again since the page opened.');
+                return;
+            }
+            if (authRefused) {
+                stopAutoRefresh('Auto-refresh paused: the session was refused (expired or not an accountant/admin).');
+                return;
+            }
+            await Promise.all([loadQuickStats(), loadBalanceSheet()]);
+            if (authRefused) {
+                stopAutoRefresh('Auto-refresh paused: the session was refused (expired or not an accountant/admin).');
+            }
+        }, 60000);
     </script>
   <script src="/phins-document.js"></script>
   <script src="/ui-clarity.js"></script>

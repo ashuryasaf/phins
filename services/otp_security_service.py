@@ -630,6 +630,14 @@ _CHALLENGE_PREFIX = "cchal1."
 _PROOF_PREFIX = "cproof1."
 
 
+def _audit_challenge_ref(challenge_id: Any) -> str:
+    """Audit form of a challenge id: a signed ticket is logged by fingerprint only."""
+    text = str(challenge_id or "")
+    if text.startswith(_CHALLENGE_PREFIX):
+        return "cchal1:sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return text
+
+
 def _captcha_key() -> bytes:
     """Shared HMAC key. Empty when this process cannot mint a portable ticket."""
     key = (os.environ.get("SESSION_SECRET_KEY") or "").encode("utf-8")
@@ -840,7 +848,7 @@ class OTPSecurityService:
         self._log_audit(
             action="captcha_created",
             ip_address=ip_address,
-            details={"challenge_id": challenge_id, "type": challenge_type, "purpose": action}
+            details={"challenge_id": _audit_challenge_ref(challenge_id), "type": challenge_type, "purpose": action}
         )
         
         return SecurityResult(
@@ -942,7 +950,7 @@ class OTPSecurityService:
             self._log_audit(
                 action="captcha_verified",
                 ip_address=ip_address,
-                details={"challenge_id": challenge_id},
+                details={"challenge_id": _audit_challenge_ref(challenge_id)},
                 success=True
             )
             proof = None
@@ -965,7 +973,7 @@ class OTPSecurityService:
             self._log_audit(
                 action="captcha_failed",
                 ip_address=ip_address,
-                details={"challenge_id": challenge_id},
+                details={"challenge_id": _audit_challenge_ref(challenge_id)},
                 success=False
             )
             return SecurityResult(

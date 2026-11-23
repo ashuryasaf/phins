@@ -368,7 +368,10 @@ def test_registered_operational_urls_stay_on_their_side():
     assert surface_decision("media", "/storyboard-editor.html")["allowed"] is True
     assert surface_decision("customer", "/storyboard-editor.html")["allowed"] is False
     assert surface_decision("customer", "/trading-terminal.html")["surface"] == "customer"
-    assert surface_decision("admin", "/trading-terminal.html")["redirect"] == "/admin.html"
+    # Order routes need an admin session, so admin opens the terminal as well.
+    assert surface_decision("admin", "/trading-terminal.html")["allowed"] is True
+    assert surface_decision("accountant", "/trading-terminal.html")["redirect"] == "/accountant-dashboard.html"
+    assert surface_decision("admin", "/algo-trading.html")["redirect"] == "/admin.html"
     assert surface_decision("customer", "/foundation-dashboard.html")["allowed"] is True
     assert surface_decision("admin", "/foundation-dashboard.html")["redirect"] == "/admin.html"
     assert surface_decision("claims_agent", "/chat-process-review.html")["allowed"] is True

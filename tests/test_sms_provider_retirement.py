@@ -192,3 +192,25 @@ def test_otp_sms_send_goes_through_infobip(_live_delivery_env):
 if __name__ == "__main__":
     import sys
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+def test_unset_sms_provider_selects_infobip_without_a_warning(_live_delivery_env, caplog):
+    """An unset SMS_PROVIDER is the default, not a misconfiguration."""
+    monkeypatch = _live_delivery_env
+    _configure_infobip(monkeypatch)
+
+    with caplog.at_level("INFO", logger=ns.logger.name):
+        assert ns._select_sms_provider_type() == "infobip"
+        ns.create_notification_service(use_mock=False)
+    assert not [r for r in caplog.records if r.levelname == "WARNING" and "SMS_PROVIDER" in r.getMessage()]
+    assert any("SMS_PROVIDER not set" in r.getMessage() for r in caplog.records)
+
+
+def test_explicit_sms_provider_that_cannot_deliver_still_warns(_live_delivery_env, caplog):
+    monkeypatch = _live_delivery_env
+    monkeypatch.setenv("SMS_PROVIDER", "twilio")
+    _configure_infobip(monkeypatch)
+
+    with caplog.at_level("INFO", logger=ns.logger.name):
+        assert ns._select_sms_provider_type() == "infobip"
+    assert any(r.levelname == "WARNING" and "cannot deliver" in r.getMessage() for r in caplog.records)
