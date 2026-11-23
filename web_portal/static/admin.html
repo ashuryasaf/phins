@@ -1446,6 +1446,30 @@
           <div style="font-size: 11px; color: rgba(255,255,255,0.7);">Total Paid Out</div>
         </div>
       </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 8px;">
+        <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
+          <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">Accumulated AUM</div>
+          <div style="font-size: 28px; font-weight: bold;" id="bs-aum-allocated">$0</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.7);">Wallet credits, written mix</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
+          <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">Wallets</div>
+          <div style="font-size: 28px; font-weight: bold;" id="bs-aum-wallets">$0</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.7);">Share of those credits</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
+          <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">Investments</div>
+          <div style="font-size: 28px; font-weight: bold;" id="bs-aum-investments">$0</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.7);">Share of those credits</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; text-align: center;">
+          <div style="font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;">Unallocated</div>
+          <div style="font-size: 28px; font-weight: bold;" id="bs-aum-unallocated">$0</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.7);" id="bs-aum-unallocated-note">Left unallocated</div>
+        </div>
+      </div>
+      <p id="bs-aum-note" style="font-size: 12px; color: rgba(255,255,255,0.75); margin: 0 0 20px 0;">Old credits still in the health wallet, split by the mix written on the original application. A missing mix, an invalid mix, or a stored template stays here as unallocated. This is not added to reserves or to Claims Paid.</p>
       
       <!-- Revenue & Expense Breakdown -->
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px;">
@@ -6498,6 +6522,17 @@
           document.getElementById('bs-claims-paid').textContent = fmt(
             bs.ledger_claims_paid != null ? bs.ledger_claims_paid : (bs.expense_breakdown?.claims_paid || 0)
           );
+          const aum = bs.accumulated_aum || {};
+          const aumAllocated = document.getElementById('bs-aum-allocated');
+          if (aumAllocated) aumAllocated.textContent = fmt(aum.allocated || 0);
+          const aumWallets = document.getElementById('bs-aum-wallets');
+          if (aumWallets) aumWallets.textContent = fmt(aum.wallets || 0);
+          const aumInvestments = document.getElementById('bs-aum-investments');
+          if (aumInvestments) aumInvestments.textContent = fmt(aum.investments || 0);
+          const aumUnallocated = document.getElementById('bs-aum-unallocated');
+          if (aumUnallocated) aumUnallocated.textContent = fmt(aum.unallocated || 0);
+          const aumNote = document.getElementById('bs-aum-unallocated-note');
+          if (aumNote) aumNote.textContent = (aum.unallocated_count || 0) + ' left unallocated';
           
           // Revenue breakdown — premium identity is customer-ledger cash
           if (bs.revenue_breakdown) {

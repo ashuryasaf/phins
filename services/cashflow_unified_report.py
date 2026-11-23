@@ -526,6 +526,17 @@ def _check(check_id: str, ok: bool, detail: str, amount: Any = None) -> Dict[str
     return row
 
 
+def _accumulated_wallet_aum(wallets, applications, allocations, exclude_customer) -> Dict[str, Any]:
+    """Wallet-credit classification. Retired rows are not an input."""
+    from services.financial_unification_service import classify_legacy_wallet_credits
+    return classify_legacy_wallet_credits(
+        wallets if isinstance(wallets, Mapping) else {},
+        applications,
+        allocations,
+        exclude_customer=exclude_customer,
+    )
+
+
 def unified_cashflow_report(
     *,
     customers: Optional[Mapping[str, Any]] = None,
@@ -548,6 +559,8 @@ def unified_cashflow_report(
     management_fee_pct: Any = None,
     exclude_customer: Optional[Callable[[str], bool]] = None,
     as_of: Optional[str] = None,
+    applications: Any = (),
+    allocations: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build the unified statement. Every figure is read; nothing is written.
 
@@ -954,6 +967,7 @@ def unified_cashflow_report(
             "The kernel risk premium is filled first and is never credited to savings.",
             "An underwriting decision fee, the expense loading, and the profit margin stay on company and carrier books.",
             "Only an elected savings add-on reaches the health wallet, investments, and algo, 30 / 65 / 5.",
+            "Old credits still in the health wallet are classified on accumulated_aum from the original application's written mix. A missing mix, an invalid mix, or a stored template stays unallocated. A later customer-allocation row is not used. Retired allocation rows are not added to that total.",
             "A claim is counted once, at the amount the claims book paid. A second line on any book is listed and not added.",
             "A marketplace bid is the customer price. Commission is taken out of it and the rest is the supplier payout.",
             "The management fee is an accrual on investments and algo. This report does not charge it.",
@@ -1017,4 +1031,7 @@ def unified_cashflow_report(
             "checks": checks,
         },
         "customers": customer_rows[:500],
+        "accumulated_aum": _accumulated_wallet_aum(
+            wallets, applications, allocations, exclude_customer
+        ),
     }

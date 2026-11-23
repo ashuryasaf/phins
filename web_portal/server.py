@@ -11735,6 +11735,7 @@ def build_cashflow_monitoring() -> Dict[str, Any]:
     )
     report['specimen'] = worked_specimen()
     report['claims_reserve'] = safe_float(PHINS_BALANCE_SHEET.get('claims_reserve'), 0.0)
+    report['accumulated_aum'] = build_accumulated_wallet_aum()
     return report
 
 
@@ -11775,6 +11776,21 @@ def build_premium_cash_position() -> Dict[str, Any]:
     )
 
 
+def build_accumulated_wallet_aum() -> Dict[str, Any]:
+    """Classify live wallet credits by the original application's written mix.
+
+    Reads the wallets and the applications. Writes nothing, and does not add
+    retired allocation rows.
+    """
+    from services.financial_unification_service import classify_legacy_wallet_credits
+    return classify_legacy_wallet_credits(
+        HEALTH_WALLETS,
+        UNDERWRITING_APPLICATIONS,
+        CUSTOMER_ALLOCATIONS,
+        exclude_customer=is_suspended_account,
+    )
+
+
 def build_cashflow_unified_report(management_fee_pct: Any = None) -> Dict[str, Any]:
     """One statement across premiums, claims, customer money, the marketplace,
     suppliers, and agents. Reads the live books and writes none of them."""
@@ -11792,6 +11808,8 @@ def build_cashflow_unified_report(management_fee_pct: Any = None) -> Dict[str, A
         wallets=HEALTH_WALLETS,
         investments=positions['investments'],
         algo=positions['algo'],
+        applications=UNDERWRITING_APPLICATIONS,
+        allocations=CUSTOMER_ALLOCATIONS,
         balance_sheet=PHINS_BALANCE_SHEET,
         orders=list(SUPPLIER_ORDERS.values()),
         suppliers=SUPPLIERS,
@@ -40741,6 +40759,11 @@ For claims or questions, please contact:
                     'net_income_before_amounts_held_for_others': round(
                         (display_total_revenue or 0) - (display_total_expenses or 0), 2
                     ),
+
+                    # Old credits still in the live health wallet, classified
+                    # from the original application's written mix. Not added
+                    # to reserves, income, or Claims Paid.
+                    'accumulated_aum': build_accumulated_wallet_aum(),
                     
                     # Transaction count
                     'transaction_count': len(PHINS_BALANCE_SHEET['transactions'])
@@ -56076,6 +56099,15 @@ For claims or questions, please contact:
                                                    data.get('payment_setup', {}).get('savings_percentage', 0))
                     }
                 }
+                from services.financial_unification_service import submitted_savings_distribution
+                _written_distribution = submitted_savings_distribution(phins_allocation)
+                if _written_distribution is not None:
+                    # The mix lives on the application. phins_allocation stays
+                    # unset here so approval still reads CUSTOMER_ALLOCATIONS,
+                    # which holds the protection and savings shares.
+                    UNDERWRITING_APPLICATIONS[uw_id]['health_wallet']['written_distribution'] = (
+                        _written_distribution
+                    )
                 
                 # Application demographics for kernel pricing (smoking / sex / ethnicity)
                 try:

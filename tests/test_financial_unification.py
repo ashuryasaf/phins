@@ -1943,3 +1943,192 @@ def test_premium_cash_position_names_a_reserve_the_book_has_not_re_split():
         transactions=transactions, policies=policies, billing=billing, with_accounting_book=False,
     )
     assert "reserve_ties_to_book" not in without_book
+
+
+def _wallet_credit(balance, transactions=None):
+    return {
+        "customer_id": "CUST-OLD",
+        "balance": balance,
+        "transactions": list(transactions or []),
+    }
+
+
+def _mix(wallet, investment, algo):
+    return {
+        "id": "UW-OLD",
+        "customer_id": "CUST-OLD",
+        "submitted_date": "2024-01-01T00:00:00",
+        "health_wallet": {
+            "written_distribution": {
+                "wallet_pct": wallet,
+                "investment_pct": investment,
+                "algo_trading_pct": algo,
+            }
+        },
+    }
+
+
+def test_wallet_credit_uses_the_written_mix_on_the_original_application():
+    from services.financial_unification_service import classify_legacy_wallet_credits
+
+    wallet = _wallet_credit(200)
+    before = copy.deepcopy(wallet)
+    report = classify_legacy_wallet_credits(
+        {"CUST-OLD": wallet},
+        [_mix(40, 50, 10)],
+        retired_allocations=[{"retired_75_25_savings": 9000, "retired_50_50_savings": 8000}],
+        recommendations={"wallet_pct": 15, "investment_pct": 60, "algo_trading_pct": 25},
+    )
+    assert wallet == before
+    assert report["writes"] is False
+    assert report["retired_allocations_included"] is False
+    assert report["wallets"] == 80.00
+    assert report["investments"] == 100.00
+    assert report["algo"] == 20.00
+    assert report["allocated"] == 200.00
+    assert report["unallocated"] == 0.00
+    assert report["rows"][0]["basis"] == "application_distribution"
+    assert report["rows"][0]["reason"] is None
+
+
+def test_wallet_credit_without_a_written_mix_stays_unallocated():
+    from services.financial_unification_service import classify_legacy_wallet_credits
+
+    bare = {"id": "UW-BARE", "customer_id": "CUST-OLD", "submitted_date": "2024-01-01"}
+    report = classify_legacy_wallet_credits(
+        {"CUST-OLD": _wallet_credit(100)},
+        [bare],
+        recommendations={"wallet_pct": 30, "investment_pct": 65, "algo_pct": 5},
+    )
+    row = report["rows"][0]
+    assert row["wallets"] == 0.00
+    assert row["investments"] == 0.00
+    assert row["algo"] == 0.00
+    assert row["unallocated"] == 100.00
+    assert "No written mix" in row["reason"]
+    assert report["allocated"] == 0.00
+
+
+def test_invalid_written_mix_is_not_replaced_with_30_65_5():
+    from services.financial_unification_service import classify_legacy_wallet_credits
+
+    report = classify_legacy_wallet_credits(
+        {"CUST-OLD": _wallet_credit(100)},
+        [_mix(40, 40, 40)],
+    )
+    row = report["rows"][0]
+    assert row["unallocated"] == 100.00
+    assert row["wallets"] == 0.00
+    assert row["investments"] == 0.00
+    assert "0–100" in row["reason"]
+
+    out_of_range = classify_legacy_wallet_credits(
+        {"CUST-OLD": _wallet_credit(100)},
+        [_mix(120, -10, -10)],
+    )
+    assert out_of_range["rows"][0]["unallocated"] == 100.00
+    assert out_of_range["rows"][0]["wallets"] == 0.00
+
+
+def test_known_allocation_templates_stay_unallocated():
+    from services.financial_unification_service import classify_legacy_wallet_credits
+
+    for mix in ((30, 65, 5), (15, 60, 25), (75, 25, 0)):
+        report = classify_legacy_wallet_credits(
+            {"CUST-OLD": _wallet_credit(100)},
+            [_mix(*mix)],
+        )
+        row = report["rows"][0]
+        assert row["unallocated"] == 100.00, mix
+        assert row["wallets"] == 0.00, mix
+        assert row["investments"] == 0.00, mix
+        assert "Left unallocated" in row["reason"]
+
+
+def test_claim_posting_in_the_wallet_is_not_classified_as_aum():
+    from services.financial_unification_service import classify_legacy_wallet_credits
+
+    wallet = _wallet_credit(500, [
+        {"type": "claim_payment", "amount": 300, "claim_id": "CLM-1"},
+        {"type": "premium_savings", "amount": 200},
+    ])
+    before = copy.deepcopy(wallet)
+    report = classify_legacy_wallet_credits({"CUST-OLD": wallet}, [_mix(40, 50, 10)])
+    assert wallet == before
+    assert report["credits"] == 200.00
+    assert report["wallets"] == 80.00
+    assert report["investments"] == 100.00
+    assert report["algo"] == 20.00
+
+
+def test_later_flat_preference_is_not_the_original_mix():
+    from services.financial_unification_service import classify_legacy_wallet_credits
+
+    report = classify_legacy_wallet_credits(
+        {"CUST-OLD": _wallet_credit(100)},
+        [{"id": "UW-BARE", "customer_id": "CUST-OLD", "submitted_date": "2024-01-01"}],
+        {"CUST-OLD": {"wallet_pct": 40, "investment_pct": 50, "algo_pct": 10, "updated_at": "2026-01-01"}},
+    )
+    assert report["rows"][0]["unallocated"] == 100.00
+    assert report["wallets"] == 0.00
+
+
+def test_later_allocation_row_is_not_the_original_mix():
+    from services.financial_unification_service import classify_legacy_wallet_credits
+
+    report = classify_legacy_wallet_credits(
+        {"CUST-OLD": _wallet_credit(100)},
+        [{"id": "UW-BARE", "customer_id": "CUST-OLD", "submitted_date": "2024-01-01"}],
+        {"CUST-OLD": {"distribution": {"wallet_pct": 20, "investment_pct": 70, "algo_trading_pct": 10}}},
+    )
+    row = report["rows"][0]
+    assert row["unallocated"] == 100.00
+    assert row["wallets"] == 0.00
+    assert row["investments"] == 0.00
+    assert row["basis"] == "unallocated"
+    assert "No written mix" in row["reason"]
+
+
+def test_earliest_application_is_the_one_that_writes_the_mix():
+    from services.financial_unification_service import classify_legacy_wallet_credits
+
+    later = _mix(10, 80, 10)
+    later["id"] = "UW-LATER"
+    later["submitted_date"] = "2025-06-01"
+    original = _mix(40, 50, 10)
+    report = classify_legacy_wallet_credits(
+        {"CUST-OLD": _wallet_credit(100)},
+        [later, original],
+    )
+    assert report["rows"][0]["application_id"] == "UW-OLD"
+    assert report["wallets"] == 40.00
+    assert report["investments"] == 50.00
+
+
+def test_submitted_distribution_does_not_invent_a_missing_percent():
+    from services.financial_unification_service import submitted_savings_distribution
+
+    assert submitted_savings_distribution({}) is None
+    assert submitted_savings_distribution({"distribution": {"wallet_pct": 40}}) is None
+    stored = submitted_savings_distribution({
+        "distribution": {"wallet_pct": 40, "investment_pct": 50, "algo_trading_pct": 10},
+    })
+    assert stored == {"wallet_pct": 40, "investment_pct": 50, "algo_trading_pct": 10}
+
+
+def test_unified_report_aum_does_not_add_retired_allocation_rows():
+    from services.cashflow_unified_report import unified_cashflow_report
+
+    report = unified_cashflow_report(
+        wallets={"CUST-OLD": _wallet_credit(100)},
+        investments={"CUST-OLD": {"position": 50}},
+        algo={"CUST-OLD": {"available": 10}},
+        applications=[_mix(40, 50, 10)],
+    )
+    assert report["customer_funds"]["assets_under_management"] == 60.00
+    assert report["customer_funds"]["health_wallet"] == 100.00
+    assert report["accumulated_aum"]["allocated"] == 100.00
+    assert report["accumulated_aum"]["wallets"] == 40.00
+    assert report["accumulated_aum"]["investments"] == 50.00
+    assert report["accumulated_aum"]["retired_allocations_included"] is False
+    assert report["accumulated_aum"]["allocated"] != 100.00 + 9000
