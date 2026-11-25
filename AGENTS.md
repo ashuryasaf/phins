@@ -19,12 +19,12 @@ PHINS is a Python platform built around:
   `api_admin_desk.py` (admin desk / mailboxes / diary),
   `api_referral_rewards.py` (referral CAC + professional-role requests), and
   `api_wallet_withdrawal.py` (health-wallet withdrawal chat + retention desk))
-- service-layer logic in `services/` (164 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
+- service-layer logic in `services/` (165 top-level modules plus the `automation/`, `customer_agent/`, `jobs/`, `underwriting_bot/`, `pension/` and `risk_reports/` packages)
 - database access in `database/`
 - security utilities in `security/`
 - scheduled tasks in `scheduler/`
 - operational scripts in `scripts/`
-- both `tests/test_*.py` (295 files) and root-level `test_*.py` (11 files)
+- both `tests/test_*.py` (296 files) and root-level `test_*.py` (11 files)
 - one generalized job queue (`services/agent_job_queue.py`, table
  `document_processing_jobs`, rows keyed by `subject_type`/`subject_id` and
  `submitted_by`; retries, dead-letter, idempotency keys, handler registry —
@@ -211,6 +211,30 @@ PHINS is a Python platform built around:
  leaves crediting unlanded savings to the claim-transfer repair. The
  customer dashboard card "Where my premium goes" reads `cash_flow` on the
  premium picture and writes nothing
+- ADL 3 premium release cost (`services/adl3_release_cost.py`,
+  `GET /api/actuarial/adl3-release-cost` for admin and actuary, the ADL 3
+  Release Cost section of `/actuary-dashboard.html`, `adl3-release-cost.js`):
+  a read-only assumption test. Release cost is the remaining years on the
+  `adl3_disabled_life_expectancy` table at the attained age (`male_years` or
+  `female_years`; `average_years` when the sex is not recorded or the records
+  disagree) times the policy's annual premium, rounded half-up to the cent.
+  `premium_payment_years` (1–110, blank is the whole expectancy) releases
+  only the years a premium is still due, counted from the policy start. The
+  book covers policies in force (`active`, `in_force`, `issued`, `approved`),
+  leaves out suspended accounts, and withholds a policy with no premium, no
+  age, or no table row. Age is the customer's date of birth, else the issue
+  or application age plus full years in force, else the recorded age. The
+  projection uses the active q(x) and i(x) at each attained age with no ADL
+  or demographic multiplier; a missing rate ends that policy's projection.
+  Adjusted risk adds the expected release cost to the pinned
+  `disability_premium_annual` / `risk_premium_annual`, and the release cost to
+  a pinned `disability_sum_used`; a missing pin or a broken seal is not
+  estimated. A customer reads only their own policies at
+  `GET /api/customer/adl3-release-cost` (release cost only), shown on the
+  dashboard card "Premium release cover (actuarial test)". Nothing is
+  written: `post_disability_premium_factor` and every premium, bill, pin,
+  and ledger row stay as they are. Each row and the result carry a SHA-256
+  seal; the table fingerprint is the registry's
 - unified cash flow statement (`services/cashflow_unified_report.py`,
  `GET /api/admin/cashflow/unified-report`, same four roles, shown on
  `/cashflow-integrity.html` by `cashflow-unified-report.js`): one read of
@@ -503,6 +527,7 @@ Preferred file-by-task:
 | Customer intro / invitation landing | `web_portal/static/join.html`; films `join_intro_*` on the media Customer relations tab; briefs in `services/solution_video_blueprints.py` (`JOIN_INTRO_OUTLINES`, `JOIN-` campaigns) |
 | Document archive / durability probe | `services/customer_document_vault_service.py`, `services/document_durability_agent.py` |
 | Unified business plan / investor deck (`/business-plan.html`) | `services/business_plan_model.py` (factor register, `compute_plan`, `ROUND_SEED_ILS` / `ROUND_PRE_MONEY_ILS` — the one writer for seed / pre-money; `appraisal.sensitivity` grid), `services/business_plan_document.py` (narrative, placeholders, founder block, HTML/Markdown renderers), `services/business_plan_charts.py` (chart + Gantt specs read from the plan dict; one layout engine → inline SVG for HTML and `?charts=1`, reportlab Drawing for the PDF; Markdown carries `<!-- phins-chart {json} -->` directives plus a data table), `services/business_plan_sources.py` (figure lineage + research registry kept byte-equal with the pitch-dashboard `sourceRegistry`), `services/business_plan_portrait.py` (Pillow-processed founder portrait), `services/investor_deck_video.py` (Part II paragraph scenes; the plan is not written), `web_portal/server.py` (`GET /api/business-plan/model[?charts=1]`, `GET /api/business-plan/founder-portrait`); then `python3 scripts/build_business_plan.py` and `python3 scripts/generate_investor_pdfs.py --only unified-business-plan`; tests in `tests/test_business_plan.py` |
+| ADL 3 premium release cost (hedge test) | `services/adl3_release_cost.py`, `web_portal/server.py` (`build_adl3_release_cost_book`), `web_portal/static/adl3-release-cost.js`; tests in `tests/test_adl3_release_cost.py` |
 | Premium / reserve / simulator pricing | `services/pricing_kernel.py` (sole writer), then `services/actuarial_service.py` and callers; refresh `tests/test_pricing_kernel.py`, `tests/test_actuarial_reserves.py`, `tests/test_ifrs17_waterfall_identities.py` deliberately |
 | Business rule/workflow | `services/`, then the route or engine that calls it |
 | Database/schema/repository | `database/models.py`, `database/manager.py`, `database/repositories/`, `database/config.py` |
@@ -556,7 +581,7 @@ Preferred file-by-task:
 |- prompts/                             # versioned LLM prompt templates (sha256 provenance)
 |  `- assessment/                       # narrative v1 (free text) + v2 (structured); onboarding/service/termination v1
 |- schemas/                             # JSON schemas for structured LLM output
-|- services/                            # 164 top-level modules + six packages
+|- services/                            # 165 top-level modules + six packages
 |  |- agent_eval.py                     # A6 replay / propose_thresholds / golden sets
 |  |- automation/                       # B2 pure rules: quoting, underwriting_gate, fraud, claims_gate, billing_schedule
 |  |- pricing_kernel.py                 # single writer for premium decomposition (PremiumComponents)
@@ -617,7 +642,7 @@ Preferred file-by-task:
 |- scripts/                             # operational utilities
 |  |- run_agent_eval.py                 # golden sets + decision replay CLI
 |  `- entrypoint.sh                     # container dispatcher (serve/cron/worker/db-init)
-|- tests/                               # 295 test files
+|- tests/                               # 296 test files
 |  `- golden/<agent>/*.json             # frozen agent outputs ({name, input, expected})
 |- docs/
 |  |- platform_data_architecture.md
@@ -1353,7 +1378,7 @@ Important test harness facts:
   change re-renders them (the page fetches `?charts=1` and swaps the SVG).
   `RESEARCH_SOURCES` must stay identical to the pitch-dashboard
   `sourceRegistry`; the test parses both
-- 295 test files under `tests/`, 11 root-level `test_*.py` files
+- 296 test files under `tests/`, 11 root-level `test_*.py` files
 
 Docs-only changes usually do not need tests, but they do require verifying that
 referenced files, commands, paths, and ports still exist.
@@ -1484,4 +1509,4 @@ If you update this file again:
 
 ---
 
-Last updated: November 23, 2026
+Last updated: November 25, 2026
