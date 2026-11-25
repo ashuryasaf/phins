@@ -1845,6 +1845,34 @@
         <p id="premium-cash-flow-note" style="color: #666; font-size: 0.85rem; margin: 12px 0 0 0;"></p>
       </div>
 
+      <!-- ADL 3 premium release test, from the actuarial table. Reads only. -->
+      <div id="premium-release-card" style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px;">
+          <h3 style="margin: 0; color: #333;">Premium release cover (actuarial test)</h3>
+          <span id="premium-release-tie" style="font-size: 0.8rem; font-weight: 600; padding: 4px 10px; border-radius: 12px; background: #eceff1; color: #546e7a;">Reading the table…</span>
+        </div>
+        <p id="premium-release-copy" style="color: #666; font-size: 0.9rem; margin: 8px 0 14px 0;">If a long-term care event (ADL 3) released you from paying your premium, this is the premium that would be covered for you. It is a test on the actuarial table. Your premium, your cover and your bills stay as they are.</p>
+        <div style="display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;">
+          <label for="premium-release-years" style="font-size: 0.85rem; color: #546e7a; display: flex; flex-direction: column; gap: 4px;">
+            Years of premium payment
+            <input id="premium-release-years" type="number" min="1" max="110" step="1" inputmode="numeric" placeholder="Whole table" style="width: 150px; padding: 8px 10px; border: 1px solid #cfd8dc; border-radius: 8px; font-size: 0.95rem;">
+          </label>
+          <button type="button" onclick="loadPremiumRelease()" style="background: #1565c0; color: white; border: none; padding: 9px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Recalculate</button>
+          <button type="button" onclick="resetPremiumRelease()" style="background: #eceff1; color: #37474f; border: none; padding: 9px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Whole table</button>
+        </div>
+        <div class="table-card" style="border-radius: 8px; overflow: hidden;">
+          <table class="data-table" style="margin: 0;">
+            <thead style="background: #f5f5f5;">
+              <tr><th>Policy</th><th style="text-align: right;">Annual premium</th><th style="text-align: right;">Age used</th><th style="text-align: right;">Years released</th><th style="text-align: right;">Premium released</th></tr>
+            </thead>
+            <tbody id="premium-release-rows">
+              <tr><td colspan="5" style="text-align: center; color: #666; padding: 24px;">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p id="premium-release-note" style="color: #666; font-size: 0.85rem; margin: 12px 0 0 0;"></p>
+      </div>
+
       <!-- Premium Allocation to Investments Table -->
       <div style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
         <h3 style="margin: 0 0 16px 0; color: #333;"> Premium Savings → Investment Allocation</h3>
@@ -9876,6 +9904,7 @@
       // Load premium allocations
       await loadPremiumAllocations();
       await loadPremiumCashFlow();
+      await loadPremiumRelease();
     }
 
     const PREMIUM_STREAM_COLORS = {
@@ -9988,6 +10017,107 @@
       }
     }
     
+    const PREMIUM_RELEASE_REASONS = {
+      no_annual_premium: 'No annual premium is recorded on this policy.',
+      no_age_on_record: 'Your date of birth is not on record, so the table cannot be read for you.',
+      age_outside_table: 'The table has no row for this age.',
+      no_expectancy_row: 'The table has no row for this age.'
+    };
+
+    function resetPremiumRelease() {
+      const input = document.getElementById('premium-release-years');
+      if (input) input.value = '';
+      loadPremiumRelease();
+    }
+
+    // ADL 3 premium release test for the customer's own policies. Reads only.
+    async function loadPremiumRelease() {
+      const tie = document.getElementById('premium-release-tie');
+      const rows = document.getElementById('premium-release-rows');
+      const note = document.getElementById('premium-release-note');
+      const input = document.getElementById('premium-release-years');
+      if (!tie || !rows) return;
+      const setTie = (label, background, color) => {
+        tie.textContent = label;
+        tie.style.background = background;
+        tie.style.color = color;
+      };
+      const empty = (message) => {
+        rows.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #666; padding: 24px;">${escapeHtml(message)}</td></tr>`;
+      };
+      const years = input ? String(input.value || '').trim() : '';
+      const query = years ? `?premium_payment_years=${encodeURIComponent(years)}` : '';
+      try {
+        const response = await fetch(`/api/customer/adl3-release-cost${query}`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const body = await response.json();
+        const book = body && body.release_cost;
+        if (!response.ok || !book) {
+          setTie('Not available', '#eceff1', '#546e7a');
+          empty(response.status === 400 && body && body.error
+            ? 'Years of premium payment must be a whole number between 1 and 110.'
+            : 'The premium release test could not be read just now.');
+          if (note) note.textContent = '';
+          return;
+        }
+        const policies = book.policies || [];
+        const withheld = book.withheld || [];
+        const totals = book.totals || {};
+        const term = (book.parameters || {}).premium_payment_years;
+        if (!policies.length && !withheld.length) {
+          setTie('No policy in force', '#eceff1', '#546e7a');
+          empty('You have no policy in force, so there is no premium to release.');
+          if (note) note.textContent = '';
+          return;
+        }
+        const ageLabel = (row) => row.attained_age == null ? '—' : String(row.attained_age);
+        rows.innerHTML = policies.map(row => `
+          <tr>
+            <td style="font-weight: 600;">${escapeHtml(row.policy_id)}</td>
+            <td style="text-align: right;">${formatCurrency(row.annual_premium)}</td>
+            <td style="text-align: right;">${escapeHtml(ageLabel(row))}</td>
+            <td style="text-align: right;">${Number(row.released_years || 0).toFixed(2)}</td>
+            <td style="text-align: right; font-weight: 600;">${formatCurrency(row.release_cost)}</td>
+          </tr>
+        `).join('') + withheld.map(row => `
+          <tr>
+            <td style="font-weight: 600;">${escapeHtml(row.policy_id)}</td>
+            <td style="text-align: right;">${row.annual_premium == null ? '—' : formatCurrency(row.annual_premium)}</td>
+            <td colspan="3" style="color: #b26a00; font-size: 0.85rem;">Not calculated. ${escapeHtml(PREMIUM_RELEASE_REASONS[row.reason] || 'A figure the table needs is not on record.')}</td>
+          </tr>
+        `).join('') + (policies.length ? `
+          <tr style="background: #fafafa;">
+            <td style="font-weight: 700;">Total</td>
+            <td style="text-align: right; font-weight: 700;">${formatCurrency(totals.annual_premium)}</td>
+            <td></td><td></td>
+            <td style="text-align: right; font-weight: 700;">${formatCurrency(totals.release_cost)}</td>
+          </tr>` : '');
+        if ((book.integrity || {}).ok) {
+          setTie(`Premium released ${formatCurrency(totals.release_cost)}`, '#e8f5e9', '#2e7d32');
+        } else {
+          setTie('Being checked', '#fff3e0', '#ef6c00');
+        }
+        if (note) {
+          const parts = [];
+          parts.push(term == null
+            ? 'Years released are the years on the ADL 3 table for your age.'
+            : `With ${term} year(s) of premium payment, only the years in which a premium is still due are released.`);
+          if (policies.some(row => String(row.sex_basis || '').indexOf('average') === 0)) {
+            parts.push('Where your record does not state male or female, the table average is used.');
+          }
+          const table = book.table || {};
+          const code = String((book.integrity || {}).result_hash || '').slice(0, 12);
+          parts.push(`Table version ${table.tables_version || '—'}, read on ${(book.parameters || {}).as_of || '—'}${code ? `, check code ${code}` : ''}.`);
+          note.textContent = parts.join(' ');
+        }
+      } catch (err) {
+        console.error('Error loading premium release test:', err);
+        setTie('Not available', '#eceff1', '#546e7a');
+        empty('The premium release test could not be read just now.');
+      }
+    }
+
     // Load and display premium allocations to investments (using customer's custom allocation)
     async function loadPremiumAllocations() {
       const cid = customerId || sessionStorage.getItem('customer_id');
