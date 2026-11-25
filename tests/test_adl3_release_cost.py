@@ -7,7 +7,7 @@ of them, and a figure it cannot read is withheld rather than filled in.
 import copy
 import json
 import os
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -430,6 +430,10 @@ def portal_books():
     import web_portal.server as portal
 
     policies, customers, applications = _books()
+    # The portal route reads UTC today. Hold POL-R1 at two full years in force
+    # so a four-year premium term still releases two years.
+    today = datetime.now(timezone.utc).date()
+    policies["POL-R1"]["start_date"] = date(today.year - 2, 1, 1).isoformat()
     for customer_id, customer in customers.items():
         portal.CUSTOMERS[customer_id] = customer
     for policy_id, policy in policies.items():
