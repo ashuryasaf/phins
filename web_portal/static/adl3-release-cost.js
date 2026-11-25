@@ -50,6 +50,28 @@
     adjusted_risk_is_priced_risk_plus_release_cost: 'Adjusted risk equals the priced risk plus the release cost',
   };
 
+  const FIELD_LABELS = {
+    premium_payment_years: 'years of premium payment',
+    projection_years: 'projection years',
+    reference_annual_premium: 'the reference annual premium',
+    case_annual_premium: 'the case annual premium',
+    case_years_paid: 'years already paid',
+    case_age: 'the case age',
+    case_sex: 'the case sex column',
+  };
+
+  function readable(message) {
+    let text = String(message || '');
+    Object.keys(FIELD_LABELS).forEach((name) => {
+      text = text.split(name).join(FIELD_LABELS[name]);
+    });
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function plural(count, one, many) {
+    return `${count} ${Number(count) === 1 ? one : many}`;
+  }
+
   function authHeaders() {
     const headers = {};
     if (typeof token === 'string' && token) {
@@ -138,7 +160,7 @@
     const response = await fetch(query ? `${ENDPOINT}?${query}` : ENDPOINT, { headers: authHeaders() });
     const body = await response.json().catch(() => ({}));
     if (!response.ok || !body.release_cost) {
-      throw new Error(body.error || `The test could not be read (${response.status}).`);
+      throw new Error(body.error ? readable(body.error) : `The test could not be read (${response.status}).`);
     }
     return body.release_cost;
   }
@@ -488,7 +510,7 @@
         <div style="font-size:0.85rem;color:var(--warning);margin-top:8px;">${html(row.policy_id)} is withheld: ${html(REASONS[row.reason] || row.reason)}.</div>`).join('');
       host.innerHTML = `
         <div class="alert alert-info" style="margin-bottom:0;">
-          <strong>${html(name)}</strong> (${html(customerId)}) — ${policies.length} policies assessed ·
+          <strong>${html(name)}</strong> (${html(customerId)}) — ${plural(policies.length, 'policy', 'policies')} assessed ·
           annual premium ${money(totals.annual_premium)} · release cost ${money(totals.release_cost)} ·
           expected next 12 months ${money(totals.expected_release_cost_year1)} · present value ${money(totals.expected_release_cost_pv)} ·
           checks ${(book.integrity || {}).ok ? 'pass' : 'do not tie'} · seal ${seal((book.integrity || {}).result_hash)}
