@@ -1590,6 +1590,9 @@
           <div class="nav-item" onclick="showSection('adl')">
             <span>ADL Multipliers</span>
           </div>
+          <div class="nav-item" onclick="showSection('adl3-release')">
+            <span>ADL 3 Release Cost</span>
+          </div>
         </div>
         
         <div class="nav-section">
@@ -1962,6 +1965,177 @@
           <div class="card" id="tables-registry-preview" style="display:none;">
             <div class="card-title">Preview</div>
             <div id="tables-registry-preview-body"></div>
+          </div>
+        </section>
+
+        <!-- ADL 3 premium release cost: read-only assumption test -->
+        <section id="section-adl3-release" class="section">
+          <h2 class="section-title">ADL 3 Premium Release Cost — Risk Hedge Test</h2>
+
+          <div class="alert alert-warning">
+            This test reads the table <strong>ADL 3 disabled life expectancy — Global (assumption)</strong>. For each registered
+            policy in force it takes the remaining years at the attained age, by <code>male_years</code> or <code>female_years</code>
+            (<code>average_years</code> when the sex is not recorded), and multiplies them by the annual premium. That product is the
+            <strong>release cost</strong>: the premium the company would give up if the life reached ADL 3 today. It is the amount to hedge.
+            The test changes no premium, bill, cover, kernel pin, or ledger row. A policy with no age, premium, or table row is
+            withheld and listed.
+          </div>
+
+          <div class="card">
+            <div class="card-title">Adjust</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="adl3rc-payment-years">Years of premium payment</label>
+                <input class="form-input" id="adl3rc-payment-years" type="number" min="1" max="110" step="1" placeholder="Whole expectancy">
+                <small style="color:var(--text-light);">Blank releases every year on the table. With a term, only years in which a premium is still due are released, counted from each policy's start.</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="adl3rc-projection-years">Projection years</label>
+                <input class="form-input" id="adl3rc-projection-years" type="number" min="1" max="60" step="1" value="30">
+                <small style="color:var(--text-light);">How far the expected cost is projected (1–60).</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="adl3rc-reference-premium">Reference annual premium</label>
+                <input class="form-input" id="adl3rc-reference-premium" type="number" min="0.01" step="0.01" placeholder="Book average">
+                <small style="color:var(--text-light);">Premium used for the by-age reference grid.</small>
+              </div>
+            </div>
+            <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+              <button class="btn btn-primary" onclick="PhinsAdl3ReleaseCost.load()">Run test</button>
+              <button class="btn btn-outline" onclick="PhinsAdl3ReleaseCost.reset()">Reset</button>
+              <span id="adl3rc-status" style="font-size:0.85rem;color:var(--text-light);"></span>
+            </div>
+          </div>
+
+          <div class="stats-grid" id="adl3rc-stats"></div>
+
+          <div class="card">
+            <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+              <span>Data integrity</span>
+              <span id="adl3rc-integrity-badge" class="badge-soft" style="margin-bottom:0;">—</span>
+            </div>
+            <div id="adl3rc-integrity"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Registered customers and policies</div>
+            <div id="adl3rc-summary"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Adjusted risk</div>
+            <p style="color:var(--text-light);font-size:0.85rem;margin:0 0 10px 0;">
+              The priced disability and risk premiums are the kernel pins on the policy. The adjusted figure adds the
+              expected release cost of the next 12 months. Where a disability sum is pinned, the release cost is added to it.
+              A policy with no pin is counted separately and is not estimated.
+            </p>
+            <div id="adl3rc-adjusted"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Projected release cost</div>
+            <p id="adl3rc-projection-basis" style="color:var(--text-light);font-size:0.85rem;margin:0 0 10px 0;"></p>
+            <div style="position:relative;height:260px;margin-bottom:14px;"><canvas id="adl3rc-projection-chart"></canvas></div>
+            <div style="max-height:360px;overflow:auto;">
+              <table class="data-table">
+                <thead><tr>
+                  <th>Year</th><th>Calendar year</th><th>Policies exposed</th><th>Release cost at risk</th>
+                  <th>Expected release cost</th><th>Discounted</th><th>Cumulative discounted</th>
+                </tr></thead>
+                <tbody id="adl3rc-projection-rows"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">By age band and sex</div>
+            <table class="data-table">
+              <thead><tr><th>Age band</th><th>Sex column used</th><th>Policies</th><th>Annual premium</th><th>Premium-weighted years released</th><th>Release cost</th></tr></thead>
+              <tbody id="adl3rc-band-rows"></tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+              <span>Customer books</span>
+              <span id="adl3rc-customers-count" style="font-size:0.85rem;font-weight:400;color:var(--text-light);"></span>
+            </div>
+            <div style="max-height:420px;overflow:auto;">
+              <table class="data-table">
+                <thead><tr><th>Customer</th><th>Policies</th><th>Annual premium</th><th>Release cost (hedge)</th><th>Expected, next 12 months</th><th>Expected, present value</th><th>Seal</th><th></th></tr></thead>
+                <tbody id="adl3rc-customer-rows"></tbody>
+              </table>
+            </div>
+            <div id="adl3rc-customer-book" style="margin-top:14px;"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+              <span>Policies</span>
+              <span id="adl3rc-policies-count" style="font-size:0.85rem;font-weight:400;color:var(--text-light);"></span>
+            </div>
+            <div style="max-height:480px;overflow:auto;">
+              <table class="data-table">
+                <thead><tr>
+                  <th>Policy</th><th>Customer</th><th>Age</th><th>Sex column</th><th>Annual premium</th><th>Years paid</th>
+                  <th>Table years</th><th>Years released</th><th>Release cost</th><th>i(x)</th><th>Expected, next 12 months</th>
+                  <th>Priced disability premium</th><th>With release cost</th><th>Uplift</th><th>Seal</th>
+                </tr></thead>
+                <tbody id="adl3rc-policy-rows"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Withheld</div>
+            <table class="data-table">
+              <thead><tr><th>Policy</th><th>Customer</th><th>Annual premium</th><th>Age</th><th>Reason</th></tr></thead>
+              <tbody id="adl3rc-withheld-rows"></tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+              <span>Release cost by age</span>
+              <span id="adl3rc-reference-note" style="font-size:0.85rem;font-weight:400;color:var(--text-light);"></span>
+            </div>
+            <table class="data-table">
+              <thead><tr>
+                <th>Age</th><th>male_years</th><th>Male release cost</th><th>female_years</th><th>Female release cost</th>
+                <th>average_years</th><th>Average release cost</th>
+              </tr></thead>
+              <tbody id="adl3rc-reference-rows"></tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Single case</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="adl3rc-case-age">Age</label>
+                <input class="form-input" id="adl3rc-case-age" type="number" min="1" max="110" step="1" placeholder="e.g. 45">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="adl3rc-case-sex">Sex column</label>
+                <select class="form-input" id="adl3rc-case-sex">
+                  <option value="average">average_years</option>
+                  <option value="male">male_years</option>
+                  <option value="female">female_years</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="adl3rc-case-premium">Annual premium</label>
+                <input class="form-input" id="adl3rc-case-premium" type="number" min="0.01" step="0.01" placeholder="e.g. 1200">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="adl3rc-case-paid">Years already paid</label>
+                <input class="form-input" id="adl3rc-case-paid" type="number" min="0" max="110" step="1" value="0">
+              </div>
+            </div>
+            <div style="margin-top:12px;">
+              <button class="btn btn-primary" onclick="PhinsAdl3ReleaseCost.load()">Calculate case</button>
+            </div>
+            <div id="adl3rc-case" style="margin-top:12px;"></div>
           </div>
         </section>
 
@@ -5283,6 +5457,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
         .find(n => (n.getAttribute('onclick') || '').includes(`showSection('${sectionId}')`));
       if (nav) nav.classList.add('active');
       section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (sectionId === 'adl3-release' && window.PhinsAdl3ReleaseCost) {
+        window.PhinsAdl3ReleaseCost.load();
+      }
       if (sectionId === 'ltc-life-research' && window.PhinsLtcLifeResearch) {
         window.PhinsLtcLifeResearch.load();
       }
@@ -5326,6 +5503,9 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
             if (chart) chart.resize();
           });
         }
+      }
+      if (sectionId === 'adl3-release' && window.PhinsAdl3ReleaseCost) {
+        window.PhinsAdl3ReleaseCost.load();
       }
       if (sectionId === 'ltc-life-research' && window.PhinsLtcLifeResearch) {
         window.PhinsLtcLifeResearch.load();
@@ -15620,6 +15800,7 @@ The undersigned Chief Executive Officer and Chief Financial Officer certify that
       } catch (e) { /* ignore — page may be partially loaded */ }
     });
   </script>
+  <script src="/adl3-release-cost.js"></script>
   <script src="/ltc-life-research.js"></script>
   <script src="/ltc-residential-research.js"></script>
   <script src="/ui-clarity.js"></script>
