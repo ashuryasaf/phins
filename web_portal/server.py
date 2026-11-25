@@ -11919,6 +11919,48 @@ def build_cashflow_monitoring() -> Dict[str, Any]:
     return report
 
 
+def build_adl3_release_cost_book(
+    *,
+    premium_payment_years: Optional[int] = None,
+    projection_years: Optional[int] = None,
+    customer_id: Optional[str] = None,
+    case: Optional[Dict[str, Any]] = None,
+    reference_annual_premium: Any = None,
+    exclude_suspended: bool = True,
+) -> Dict[str, Any]:
+    """ADL 3 premium release cost over the registered policies.
+
+    Reads the policies, the customers, the stored applications and the active
+    actuarial tables. Writes none of them.
+    """
+    from services.adl3_release_cost import (
+        PROJECTION_YEARS_DEFAULT,
+        build_release_cost_book,
+        load_actuarial_basis,
+    )
+    tables, tables_version, discount_rate = load_actuarial_basis()
+    if customer_id:
+        customer = CUSTOMERS.get(customer_id)
+        customers = {customer_id: customer} if isinstance(customer, dict) else {}
+    else:
+        customers = dict(CUSTOMERS.items())
+    return build_release_cost_book(
+        policies=dict(POLICIES.items()),
+        customers=customers,
+        applications=dict(UNDERWRITING_APPLICATIONS.items()),
+        tables=tables,
+        tables_version=tables_version,
+        discount_rate=discount_rate,
+        premium_payment_years=premium_payment_years,
+        projection_years=projection_years or PROJECTION_YEARS_DEFAULT,
+        exclude_customer=is_suspended_account if exclude_suspended else None,
+        only_customer_id=customer_id or None,
+        case=case,
+        reference_annual_premium=reference_annual_premium,
+        include_projections=bool(customer_id),
+    )
+
+
 def _cashflow_referral_book() -> Dict[str, Any]:
     """Stored acquisition settlements. The referral book is not refreshed."""
     try:
@@ -29712,6 +29754,54 @@ For claims or questions, please contact:
         # influences a quote (e.g. death table for Caucasian women,
         # disability table for Asian men).
         # =====================================================================
+        # =====================================================================
+        # ACTUARIAL: ADL 3 premium release cost (read-only assumption test)
+        # Query params (all optional):
+        #   premium_payment_years  1-110; blank releases the whole expectancy
+        #   projection_years       1-60, default 30
+        #   customer_id            one customer's book, with per-policy projection
+        #   reference_annual_premium, case_age, case_sex, case_annual_premium,
+        #   case_years_paid        the reference grid and the single-case calculator
+        # =====================================================================
+        if path == '/api/actuarial/adl3-release-cost':
+            if not require_role(session, ['admin', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Access denied. Admin or Actuary role required.'}).encode('utf-8'))
+                return
+            from services import adl3_release_cost as _adl3_release
+            try:
+                _release_years = _adl3_release.parse_premium_payment_years(
+                    (qs.get('premium_payment_years') or [None])[0])
+                _release_horizon = _adl3_release.parse_projection_years(
+                    (qs.get('projection_years') or [None])[0])
+                _release_reference = _adl3_release.parse_reference_premium(
+                    (qs.get('reference_annual_premium') or [None])[0])
+                _release_case = _adl3_release.parse_case(
+                    (qs.get('case_age') or [None])[0],
+                    (qs.get('case_sex') or [None])[0],
+                    (qs.get('case_annual_premium') or [None])[0],
+                    (qs.get('case_years_paid') or [None])[0],
+                )
+            except ValueError as exc:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return
+            _release_customer = str((qs.get('customer_id') or [''])[0] or '').strip()
+            try:
+                book = build_adl3_release_cost_book(
+                    premium_payment_years=_release_years,
+                    projection_years=_release_horizon,
+                    customer_id=_release_customer or None,
+                    case=_release_case,
+                    reference_annual_premium=_release_reference,
+                )
+            except Exception:
+                _write_cashflow_internal_error(self, "adl3 release cost book failed")
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'success': True, 'release_cost': book}, default=str).encode('utf-8'))
+            return
+
         if path == '/api/actuarial/tables/registry':
             if not require_role(session, ['admin', 'actuary']):
                 self._set_json_headers(403)
@@ -40827,6 +40917,37 @@ For claims or questions, please contact:
                 return
             self._set_json_headers()
             self.wfile.write(json.dumps({'success': True, 'picture': report}, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/customer/adl3-release-cost':
+            requested = (qs.get('customer_id') or [None])[0]
+            allowed, customer_id, auth_error = authorize_customer_data(session, requested, 'premium')
+            if not allowed or not customer_id:
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': auth_error or 'Unauthorized'}).encode('utf-8'))
+                return
+            from services import adl3_release_cost as _adl3_release
+            try:
+                _release_years = _adl3_release.parse_premium_payment_years(
+                    (qs.get('premium_payment_years') or [None])[0])
+            except ValueError as exc:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(exc)}).encode('utf-8'))
+                return
+            try:
+                # The customer's own policies only. A sandbox account still
+                # reads its own book, so the suspended filter is off here.
+                book = build_adl3_release_cost_book(
+                    premium_payment_years=_release_years,
+                    customer_id=str(customer_id),
+                    exclude_suspended=False,
+                )
+                own = _adl3_release.customer_release_cost(book, str(customer_id))
+            except Exception:
+                _write_cashflow_internal_error(self, "adl3 release cost failed for %s", customer_id)
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'success': True, 'release_cost': own}, default=str).encode('utf-8'))
             return
 
         if path == '/api/admin/balance-sheet':
