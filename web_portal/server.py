@@ -41355,6 +41355,21 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({'success': True, 'monitoring': report}, default=str).encode('utf-8'))
             return
 
+        if path == '/api/admin/cashflow/books-tied':
+            if not require_role(session, ['admin', 'accountant', 'actuary', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                from services.erp.books_tied import status_report as books_tied_status
+                status = books_tied_status(platform_event_ledger)
+            except Exception:
+                _write_cashflow_internal_error(self, "books-tied status failed")
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'success': True, 'books_tied': status}, default=str).encode('utf-8'))
+            return
+
         if path == '/api/admin/cashflow/kernel-pins':
             if not require_role(session, ['admin', 'accountant', 'actuary']):
                 self._set_json_headers(403)
@@ -55458,6 +55473,39 @@ For claims or questions, please contact:
             return
         
         # ========== PHINS BALANCE SHEET MANAGEMENT API (POST) ==========
+
+        if path == '/api/admin/cashflow/books-tied':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'accountant', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                from services.erp.books_tied import (
+                    issue_certificate as books_tied_issue,
+                    status_report as books_tied_status,
+                )
+                from services.erp.money_gate import evaluate_money_gate as _eval_gate
+                actor = str((session or {}).get('username') or 'accountant')
+                verdict = _eval_gate(operation='books_tied.issue')
+                issued = books_tied_issue(
+                    platform_event_ledger,
+                    verdict=verdict,
+                    actor=actor,
+                )
+                status = books_tied_status(platform_event_ledger)
+            except Exception:
+                _write_cashflow_internal_error(self, "books-tied issue failed")
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'certificate': issued,
+                'books_tied': status,
+            }, default=str).encode('utf-8'))
+            return
 
         if path == '/api/admin/cashflow/post-claim-transfers':
             auth_header = self.headers.get('Authorization', '')
@@ -69943,6 +69991,14 @@ def run_server(port: int = PORT) -> None:
                       f"(every {_sla_job.tick_seconds():g}s)")
             except Exception as _sla_exc:
                 print(f"   ⚠️  Delivery SLA clock not scheduled: {_sla_exc}")
+            # U6: once-per-UTC-day books-tied certificate (idempotent clock).
+            try:
+                from services.jobs import books_tied_job as _tied_job
+                _tied = _tied_job.ensure_daily_clock(_doc_worker)
+                print(f"📒 Books-tied daily clock: {_tied.get('id')} "
+                      f"(next UTC midnight +5m)")
+            except Exception as _tied_exc:
+                print(f"   ⚠️  Books-tied daily clock not scheduled: {_tied_exc}")
     except Exception as _worker_exc:
         print(f"   ⚠️  Async job queue not started: {_worker_exc}")
 

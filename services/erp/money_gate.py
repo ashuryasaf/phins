@@ -360,10 +360,39 @@ def authorize_money_move(
     When enforcement is off the verdict is returned with ``ok`` reflecting
     the books but the move is allowed. Break-glass requires ``role=admin``,
     a non-empty reason, and a successful forensic ledger append first.
+    High-value ops also need today's sealed ``finance.books_tied`` cert
+    (U6) unless ``PHINS_BOOKS_TIED_REQUIRE=0``.
     """
     verdict = evaluate_money_gate(
         books=books, books_provider=books_provider, operation=operation,
     )
+    # U6: fold certificate freshness into the same critical-check list.
+    ledger = platform_ledger
+    if ledger is _LEDGER_UNSET:
+        ledger = None
+        try:
+            import sys
+            portal = sys.modules.get('web_portal.server') or sys.modules.get('server')
+            ledger = getattr(portal, 'platform_event_ledger', None) if portal else None
+        except Exception:
+            ledger = None
+    try:
+        from services.erp.books_tied import freshness_failures
+
+        cert_failed = freshness_failures(ledger, operation=operation)
+    except Exception:
+        cert_failed = []
+    if cert_failed:
+        merged = sorted(set(list(verdict.failed_checks) + list(cert_failed)))
+        verdict = MoneyGateVerdict(
+            ok=False,
+            failed_checks=merged,
+            digest=digest_for(merged, ok=False),
+            enforced=verdict.enforced,
+            operation=verdict.operation,
+            evaluated_at=verdict.evaluated_at,
+            source=verdict.source,
+        )
     if verdict.ok or not verdict.enforced:
         return verdict
     if break_glass:

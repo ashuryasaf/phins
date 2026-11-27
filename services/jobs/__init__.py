@@ -22,8 +22,8 @@ from typing import Any, Callable, Dict, Optional
 from services.agent_job_queue import AgentJobQueue
 
 from . import (
-    books_integrity_job, claims_bot_job, delivery_sla_job, pension_import_job,
-    risk_report_job, underwriting_bot_job, video_job,
+    books_integrity_job, books_tied_job, claims_bot_job, delivery_sla_job,
+    pension_import_job, risk_report_job, underwriting_bot_job, video_job,
 )
 
 POLL_URL_PREFIX = '/api/jobs/'
@@ -75,6 +75,7 @@ def register_all(queue: AgentJobQueue, context: Optional[JobContext] = None) -> 
     video_job.register(queue)
     delivery_sla_job.register(queue)
     books_integrity_job.register(queue)
+    books_tied_job.register(queue)
     if context is not None:
         underwriting_bot_job.register(queue, context)
         claims_bot_job.register(queue, context)
@@ -112,6 +113,7 @@ __all__ = [
     'JobContext',
     'POLL_URL_PREFIX',
     'books_integrity_job',
+    'books_tied_job',
     'claims_bot_job',
     'pension_import_job',
     'public_job_view',

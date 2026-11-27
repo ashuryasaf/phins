@@ -1,11 +1,12 @@
 """ERP integrity package (CoA, period close, money gate, books-tied cert).
 
 U4 lands the Money Gate Agent and Books Integrity job. U5 adds the durable
-accounting journal. The integrity scorecard reports plan maturity 58→100
-and is imported lazily (CLI/tests) so boot money paths do not load it.
-Later units add CoA and period close. Callers go through
-``services.erp.money_gate`` / ``accounting_journal`` — this package never
-invents a second money store or pricing writer.
+accounting journal. U6 seals the daily ``finance.books_tied`` certificate.
+The integrity scorecard reports plan maturity 58→100 and is imported lazily
+(CLI/tests) so boot money paths do not load it. Later units add CoA and
+period close. Callers go through ``services.erp.money_gate`` /
+``accounting_journal`` / ``books_tied`` — this package never invents a
+second money store or pricing writer.
 """
 
 from services.erp.money_gate import (
@@ -32,15 +33,22 @@ __all__ = [
     'append_journal_entry',
     'hydrate_accounting_engine_from_journal',
     'journal_enabled',
+    'issue_certificate',
+    'status_report',
+    'verify_certificate',
     'compute_integrity_scorecard',
     'render_scorecard_markdown',
 ]
 
 
 def __getattr__(name: str):
-    """Lazy-load the offline scorecard so serve boot stays on money modules."""
+    """Lazy-load offline helpers so serve boot stays on money modules."""
     if name in ('compute_integrity_scorecard', 'render_scorecard_markdown'):
         from services.erp import integrity_scorecard as _scorecard
 
         return getattr(_scorecard, name)
+    if name in ('issue_certificate', 'status_report', 'verify_certificate'):
+        from services.erp import books_tied as _books_tied
+
+        return getattr(_books_tied, name)
     raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
