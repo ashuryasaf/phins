@@ -22,6 +22,10 @@ FIDUCIARY_SNAPSHOT_KEYS = (
 _MODE_ENV = 'PHINS_FIDUCIARY_MODE'
 
 
+class FiduciaryBootError(RuntimeError):
+    """Fatal fiduciary migrate/hydrate failure in ``db`` mode (abort boot)."""
+
+
 def fiduciary_mode(environ: Optional[Mapping[str, str]] = None) -> str:
     """Return ``off``, ``dual``, or ``db``.
 

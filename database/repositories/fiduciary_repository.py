@@ -164,6 +164,10 @@ class SealedFiduciaryRepository(BaseRepository):
             try:
                 ok = self.upsert(str(key), payload, customer_id=customer_id)
             except Exception:
+                try:
+                    self.session.rollback()
+                except Exception:
+                    pass
                 errors += 1
                 continue
             if ok:
@@ -205,6 +209,10 @@ class SealedFiduciaryRepository(BaseRepository):
             try:
                 row = self.session.get(self.model_class, record_id)
             except SQLAlchemyError:
+                try:
+                    self.session.rollback()
+                except Exception:
+                    pass
                 errors += 1
                 continue
             if row is not None:
@@ -214,6 +222,10 @@ class SealedFiduciaryRepository(BaseRepository):
             try:
                 ok = self.upsert(record_id, payload, customer_id=customer_id)
             except Exception:
+                try:
+                    self.session.rollback()
+                except Exception:
+                    pass
                 errors += 1
                 continue
             if ok:

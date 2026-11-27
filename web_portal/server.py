@@ -9466,6 +9466,7 @@ def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) ->
     still hydrates (file remains SoR until operators flip to ``db``).
     """
     from services.fiduciary import (
+        FiduciaryBootError,
         fiduciary_mode,
         hydrate_fiduciary_from_db,
         migrate_snapshot_to_fiduciary_tables,
@@ -9479,10 +9480,14 @@ def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) ->
                 snapshot,
                 append_event=platform_event_ledger.append_event,
             )
+        except FiduciaryBootError:
+            raise
         except Exception as exc:
             print(f"[FIDUCIARY] Migration refused: {type(exc).__name__}: {exc}")
             if mode == 'db':
-                raise
+                raise FiduciaryBootError(
+                    f"fiduciary migration refused: {type(exc).__name__}: {exc}"
+                ) from exc
             # dual: file still holds the books
         else:
             reason = str(mig.get('reason') or '')
@@ -9491,7 +9496,7 @@ def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) ->
             elif reason.startswith('error:'):
                 print(f"[FIDUCIARY] Migration incomplete: {mig}")
                 if mode == 'db':
-                    raise RuntimeError(f"fiduciary migration failed: {reason}")
+                    raise FiduciaryBootError(f"fiduciary migration failed: {reason}")
             elif reason not in ('tables_already_populated', 'no_fiduciary_keys', 'fiduciary_mode_off'):
                 print(f"[FIDUCIARY] Migration skipped: {reason}")
     # dual + snapshot applied: gaps only (newer file wins over older rows).
@@ -9506,10 +9511,14 @@ def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) ->
             balance_sheet=PHINS_BALANCE_SHEET,
             prefer_db=prefer_db,
         )
+    except FiduciaryBootError:
+        raise
     except Exception as exc:
         print(f"[FIDUCIARY] Hydrate failed: {type(exc).__name__}")
         if mode == 'db':
-            raise
+            raise FiduciaryBootError(
+                f"fiduciary hydrate failed: {type(exc).__name__}"
+            ) from exc
         return
     loaded = sum(v for k, v in counts.items() if k != 'withheld' and isinstance(v, int))
     if loaded:
@@ -10217,6 +10226,14 @@ def load_ledger_data(allow_db_snapshot: bool = False):
             _resume_stale_ledger_snapshot_copy(data)
         return True
     except Exception as e:
+        # db-mode fiduciary failures must abort boot — do not treat as a
+        # soft "fresh ledger" start (run_server would otherwise continue).
+        try:
+            from services.fiduciary import FiduciaryBootError
+            if isinstance(e, FiduciaryBootError):
+                raise
+        except ImportError:
+            pass
         # Part of the snapshot is now in memory. Saving that over the database
         # copy would replace a whole record with a partial one.
         if _ledger_snapshot_store is not None and _ledger_snapshot_store.enabled:
@@ -69227,7 +69244,18 @@ def run_server(port: int = PORT) -> None:
         )
     if USE_DATABASE and database_enabled and _ledger_snapshot_store is not None:
         _ledger_snapshot_store.enable()
-    _ledger_loaded = load_ledger_data(allow_db_snapshot=True)
+    try:
+        _ledger_loaded = load_ledger_data(allow_db_snapshot=True)
+    except Exception as exc:
+        try:
+            from services.fiduciary import FiduciaryBootError
+            is_fiduciary = isinstance(exc, FiduciaryBootError)
+        except ImportError:
+            is_fiduciary = False
+        if is_fiduciary:
+            print(f"❌ [FIDUCIARY] Boot refused: {exc}")
+            raise SystemExit(f"Fiduciary boot failed: {exc}") from exc
+        raise
     if _ledger_loaded:
         print("✓ Ledger data restored from persistent storage")
     else:
@@ -69571,7 +69599,18 @@ def run_server(port: int = PORT) -> None:
 def bootstrap_runtime_state_for_command() -> None:
     """Load persisted command/runtime state for one-shot automation tasks."""
     print("📂 Loading persisted ledger data for command execution...")
-    _cmd_loaded = load_ledger_data()
+    try:
+        _cmd_loaded = load_ledger_data()
+    except Exception as exc:
+        try:
+            from services.fiduciary import FiduciaryBootError
+            is_fiduciary = isinstance(exc, FiduciaryBootError)
+        except ImportError:
+            is_fiduciary = False
+        if is_fiduciary:
+            print(f"❌ [FIDUCIARY] Command boot refused: {exc}")
+            raise SystemExit(f"Fiduciary boot failed: {exc}") from exc
+        raise
     if _cmd_loaded:
         print("✓ Ledger data restored from persistent storage")
     else:

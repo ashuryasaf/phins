@@ -9,6 +9,7 @@ JSON ledger snapshot remains a cache (dual mode) or omits those keys
 from services.fiduciary.migrate import migrate_snapshot_to_fiduciary_tables
 from services.fiduciary.store import (
     FIDUCIARY_SNAPSHOT_KEYS,
+    FiduciaryBootError,
     fiduciary_mode,
     flush_fiduciary_to_db,
     hydrate_fiduciary_from_db,
@@ -17,6 +18,7 @@ from services.fiduciary.store import (
 
 __all__ = [
     'FIDUCIARY_SNAPSHOT_KEYS',
+    'FiduciaryBootError',
     'fiduciary_mode',
     'flush_fiduciary_to_db',
     'hydrate_fiduciary_from_db',

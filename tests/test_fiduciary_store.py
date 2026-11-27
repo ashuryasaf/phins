@@ -258,6 +258,44 @@ def test_migrate_journal_failure_propagates(sqlite_db, monkeypatch):
     db.close()
 
 
+def test_migrate_row_errors_are_not_reported_ok(sqlite_db, monkeypatch):
+    """Per-row write failures must not yield migrated=True / completed."""
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    events = []
+
+    def _append(**kwargs):
+        events.append(kwargs)
+        return {'id': kwargs.get('entity_id')}
+
+    db = DatabaseManager()
+    assert db.health_wallets.upsert('CUST-BAD', {'balance': 1}) is True
+    row = db.health_wallets.session.get(HealthWallet, 'CUST-BAD')
+    row.checksum = '0' * 64
+    db.health_wallets.session.commit()
+    db.close()
+
+    # force=True uses replace_mapping, which withholds the broken seal.
+    result = migrate_snapshot_to_fiduciary_tables(
+        {
+            'health_wallets': {
+                'CUST-BAD': {'customer_id': 'CUST-BAD', 'balance': 99},
+                'CUST-OK': {'customer_id': 'CUST-OK', 'balance': 2},
+            },
+        },
+        append_event=_append,
+        force=True,
+    )
+    assert result['migrated'] is False
+    assert result['reason'] == 'error:row_errors'
+    assert result['counts']['health_wallets']['withheld'] >= 1
+    assert events[-1]['status'] == 'failed'
+
+    db = DatabaseManager()
+    # Intact new id may still have been written before withheld was tallied.
+    assert db.health_wallets.get_payload('CUST-BAD') is None
+    db.close()
+
+
 def test_flush_error_is_surfaced(sqlite_db, monkeypatch):
     """db mode callers must see flush failure; dual still returns the error key."""
     monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'db')

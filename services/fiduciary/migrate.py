@@ -172,10 +172,47 @@ def migrate_snapshot_to_fiduciary_tables(
             result['keys'] = sorted(subset.keys())
             return result
 
-        after = _table_row_counts(db)
         result['counts'] = counts
-        result['after'] = after
         result['keys'] = sorted(subset.keys())
+        # fill_missing / replace_mapping swallow per-row failures into
+        # errors/withheld — treat those as an incomplete migrate, not ok.
+        row_failures = {
+            label: block
+            for label, block in counts.items()
+            if isinstance(block, dict)
+            and (
+                int(block.get('errors') or 0) > 0
+                or int(block.get('withheld') or 0) > 0
+            )
+        }
+        if row_failures:
+            logger.error("fiduciary migration row failures: %s", row_failures)
+            result['reason'] = 'error:row_errors'
+            result['migrated'] = False
+            result['after'] = _table_row_counts(db)
+            if append_event is not None:
+                append_event(
+                    event_type=MIGRATION_EVENT,
+                    entity_type=MIGRATION_ENTITY,
+                    entity_id=f'{MIGRATION_ENTITY_ID}-failed-{fingerprint[:16]}',
+                    actor='system_fiduciary_migrate',
+                    status='failed',
+                    payload={
+                        'schema': 'phins.fiduciary.migration.v1',
+                        'fingerprint': fingerprint,
+                        'before': before,
+                        'after': result['after'],
+                        'counts': counts,
+                        'row_failures': row_failures,
+                        'keys': sorted(subset.keys()),
+                        'force': force,
+                        'failed_at': datetime.utcnow().isoformat(),
+                    },
+                )
+            return result
+
+        after = _table_row_counts(db)
+        result['after'] = after
         result['migrated'] = True
         result['reason'] = 'ok'
 
