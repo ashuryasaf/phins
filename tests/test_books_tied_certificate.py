@@ -197,7 +197,7 @@ def test_books_integrity_job_can_issue_certificate(monkeypatch):
 
 
 def test_freshness_exception_fails_closed(monkeypatch):
-    """A crash inside freshness_failures must refuse high-value moves."""
+    """A crash inside freshness_failures must refuse high-value moves only."""
     monkeypatch.setenv('PHINS_MONEY_GATE', '1')
     monkeypatch.setenv('PHINS_BOOKS_TIED_REQUIRE', '1')
 
@@ -214,6 +214,17 @@ def test_freshness_exception_fails_closed(monkeypatch):
             platform_ledger=_ledger(),
         )
     assert bt.CERT_MISSING in raised.value.failed_checks
+
+    # Non-high-value ops must not inherit the cert refusal.
+    ok = authorize_money_move(
+        'remittance.settle',
+        books=_green_books(),
+        actor='admin',
+        role='admin',
+        platform_ledger=_ledger(),
+    )
+    assert ok.ok is True
+    assert bt.CERT_MISSING not in ok.failed_checks
 
 
 def test_inprocess_daily_clock_issues_and_is_idempotent(monkeypatch):
