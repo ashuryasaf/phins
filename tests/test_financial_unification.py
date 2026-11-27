@@ -1761,7 +1761,9 @@ def test_restore_offers_the_one_decomposition_that_reproduces_the_premium():
 
 def test_restore_refuses_when_no_kernel_price_gives_the_premium():
     table = {(0.0, 20): _quote(2479.59, 1960.15, 0.0, 294.02, 225.42, 0.0)}
-    result = kernel_pin_restore_candidate(dict(_STORED), pricer=_pricer(table))
+    result = kernel_pin_restore_candidate(
+        dict(_STORED), application={"age": 40}, pricer=_pricer(table),
+    )
     assert result["status"] == "refused"
     assert result["reason"] == "no_kernel_price_reproduces_the_premium"
     assert result["pins"] == {}
@@ -1778,7 +1780,9 @@ def test_restore_refuses_when_two_decompositions_give_the_same_premium():
         calls.append((float(payload["savings_rate"]), int(payload["term_years"])))
         return _pricer(table)(payload)
 
-    result = kernel_pin_restore_candidate(dict(_STORED), pricer=counting_pricer)
+    result = kernel_pin_restore_candidate(
+        dict(_STORED), application={"age": 40}, pricer=counting_pricer,
+    )
     assert result["status"] == "refused"
     assert result["reason"] == "more_than_one_decomposition"
     assert result["pins"] == {}
@@ -1788,7 +1792,11 @@ def test_restore_refuses_when_two_decompositions_give_the_same_premium():
 
 def test_restore_accepts_two_terms_that_price_identically():
     quote = _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5)
-    result = kernel_pin_restore_candidate(dict(_STORED), pricer=_pricer({(0.5, 20): quote, (0.5, 25): quote}))
+    result = kernel_pin_restore_candidate(
+        dict(_STORED),
+        application={"age": 40},
+        pricer=_pricer({(0.5, 20): quote, (0.5, 25): quote}),
+    )
     assert result["status"] == "restorable"
     assert len(result["matches"]) == 2
 
@@ -1857,7 +1865,9 @@ def test_restore_keeps_an_underwriting_loading_as_the_company_fee():
     stored = {**_STORED, "annual_premium": 4802.87, "monthly_premium": 400.23}
     table = {(0.5, 20): {**_quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5), "monthly": 296.47}}
     result = kernel_pin_restore_candidate(
-        stored, application={"premium_adjustment": 35}, pricer=_pricer(table),
+        stored,
+        application={"age": 40, "premium_adjustment": 35},
+        pricer=_pricer(table),
     )
     assert result["status"] == "restorable", result
     pins = result["pins"]
@@ -1873,13 +1883,20 @@ def test_restore_keeps_an_underwriting_loading_as_the_company_fee():
 def test_restore_refuses_a_discount_a_broken_seal_and_a_mismatched_monthly():
     table = {(0.5, 20): _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5)}
     discounted = kernel_pin_restore_candidate(
-        dict(_STORED), application={"premium_adjustment": -10}, pricer=_pricer(table),
+        dict(_STORED),
+        application={"age": 40, "premium_adjustment": -10},
+        pricer=_pricer(table),
     )
     assert (discounted["status"], discounted["reason"]) == ("refused", "discounted_premium")
     broken = kernel_pin_restore_candidate({**_STORED, "kernel_pin_intact": False}, pricer=_pricer(table))
     assert (broken["status"], broken["reason"]) == ("refused", "pin_seal_broken")
-    monthly = kernel_pin_restore_candidate({**_STORED, "monthly_premium": 300.00}, pricer=_pricer(table))
+    monthly = kernel_pin_restore_candidate(
+        {**_STORED, "monthly_premium": 300.00},
+        application={"age": 40},
+        pricer=_pricer(table),
+    )
     assert monthly["status"] == "refused"
+    assert monthly["reason"] == "no_kernel_price_reproduces_the_premium"
 
 
 def test_restore_leaves_a_pinned_policy_and_an_earlier_allocation_alone():
