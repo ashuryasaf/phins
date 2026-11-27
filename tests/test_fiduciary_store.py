@@ -363,26 +363,29 @@ def test_should_flush_fiduciary_skips_clean_periodic_ticks():
     assert _should_flush_fiduciary(periodic=True, wrote_file=False, force_db=True) is True
 
 
-def test_flush_refuses_empty_overwrite_of_sealed_rows(sqlite_db, monkeypatch):
-    """Empty process dicts must not replace intact sealed wallets."""
+def test_flush_skips_empty_book_without_blocking_others(sqlite_db, monkeypatch):
+    """Empty NFT book must not abort wallet flush or wipe sealed wallets."""
     monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
     assert flush_fiduciary_to_db(
         health_wallets={'CUST-E': {'customer_id': 'CUST-E', 'balance': 5}},
         wallet_withdrawals={},
-        nft_ledger={},
+        nft_ledger={'NFT-E': {'token_id': 'NFT-E', 'customer_id': 'CUST-E'}},
         investment_accounts={},
         balance_sheet={},
-    )['health_wallets']['written'] == 1
-    refused = flush_fiduciary_to_db(
-        health_wallets={},
+    )['nft_ledger']['written'] == 1
+    result = flush_fiduciary_to_db(
+        health_wallets={'CUST-E': {'customer_id': 'CUST-E', 'balance': 9}},
         wallet_withdrawals={},
-        nft_ledger={},
+        nft_ledger={},  # purged in memory; sealed row remains
         investment_accounts={},
         balance_sheet={},
     )
-    assert refused.get('error') == 'refuse_empty_overwrite:health_wallets'
+    assert result.get('error') is None
+    assert result['nft_ledger'].get('skipped') == 'refuse_empty_overwrite'
+    assert result['health_wallets']['written'] == 1
     db = DatabaseManager()
-    assert db.health_wallets.get_payload('CUST-E')['balance'] == 5
+    assert db.health_wallets.get_payload('CUST-E')['balance'] == 9
+    assert db.nft_ledger.get_payload('NFT-E')['token_id'] == 'NFT-E'
     db.close()
 
 

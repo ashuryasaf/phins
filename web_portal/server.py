@@ -9499,10 +9499,16 @@ def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) ->
                     raise FiduciaryBootError(f"fiduciary migration failed: {reason}")
             elif reason not in ('tables_already_populated', 'no_fiduciary_keys', 'fiduciary_mode_off'):
                 print(f"[FIDUCIARY] Migration skipped: {reason}")
-    # dual + snapshot already applied into memory: do not gap-fill from DB
-    # (would resurrect sandbox-purged / account-reset ids still sealed in
-    # tables). db mode and bare AE2 restore (no snapshot) prefer sealed rows.
-    if snapshot is not None and mode == 'dual':
+    # dual + snapshot that still carries fiduciary keys (even empty after a
+    # purge): memory is the file SoR — do not gap-fill (would resurrect
+    # purged ids). A snapshot from db mode omits those keys; then hydrate
+    # from sealed tables so rolling back to dual does not boot empty.
+    from services.fiduciary import FIDUCIARY_SNAPSHOT_KEYS
+    snapshot_has_fiduciary = (
+        isinstance(snapshot, dict)
+        and any(key in snapshot for key in FIDUCIARY_SNAPSHOT_KEYS)
+    )
+    if mode == 'dual' and snapshot_has_fiduciary:
         return
     try:
         counts = hydrate_fiduciary_from_db(
