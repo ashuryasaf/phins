@@ -329,7 +329,10 @@ def pack_row_extra(repository_name: str, model_class, data: Dict[str, Any], exis
     """Seal non-column keys into ``extra`` so dual-path reads keep them.
 
     Kernel-pin fields stay on ``kernel_pin`` for policies. Mapped aliases are
-    not stored twice. A broken existing overlay is replaced, never merged.
+    not stored twice. SQLAlchemy relationship keys (``policies``, ``claims``,
+    …) are never sealed — empty registration lists must not round-trip onto
+    ``cascade='delete-orphan'`` attributes. A broken existing overlay is
+    replaced, never merged.
     """
     import json
 
@@ -342,8 +345,11 @@ def pack_row_extra(repository_name: str, model_class, data: Dict[str, Any], exis
     if 'extra' not in columns:
         return data
 
+    from database.models import orm_relationship_keys
+
     reserved = set(columns)
     reserved.update(_EXTRA_ALIASES.get(repository_name, ()))
+    reserved.update(orm_relationship_keys(model_class))
     if repository_name == 'policies':
         from database.models import POLICY_KERNEL_PIN_FIELDS
         reserved.update(POLICY_KERNEL_PIN_FIELDS)
@@ -358,6 +364,9 @@ def pack_row_extra(repository_name: str, model_class, data: Dict[str, Any], exis
                     extras.update(loaded)
             except Exception:
                 extras = {}
+    # Drop legacy relationship keys that an earlier write may have sealed.
+    for rel_key in orm_relationship_keys(model_class):
+        extras.pop(rel_key, None)
 
     for key, value in data.items():
         if key in reserved or key == 'extra':
@@ -824,9 +833,16 @@ class DatabaseDict:
                 )
                 value_for_row = stringify_json_columns(repo.model_class, value_for_row)
                 value_for_row = coerce_model_datetimes(repo.model_class, value_for_row)
+                # Columns only — never hasattr(): relationship names (policies,
+                # claims, …) would match and cascade delete-orphan wipe children.
+                try:
+                    valid_columns = {c.name for c in repo.model_class.__table__.columns}
+                except Exception:
+                    valid_columns = set()
                 if existing:
-                    # Update existing - filter out keys that aren't model attributes
-                    update_data = {k: v for k, v in value_for_row.items() if hasattr(existing, k)}
+                    update_data = {
+                        k: v for k, v in value_for_row.items() if k in valid_columns
+                    }
                     repo.update(key, **update_data)
                 else:
                     # Create new (ensure id is set)
@@ -837,16 +853,16 @@ class DatabaseDict:
                         create_value['username'] = key
                     elif 'token' not in create_value and self.repository_name == 'sessions':
                         create_value['token'] = key
-                    
-                    # Filter out keys that aren't valid model attributes to prevent errors
-                    try:
-                        model_class = repo.model_class
-                        valid_columns = {c.name for c in model_class.__table__.columns}
-                        filtered_value = {k: v for k, v in create_value.items() if k in valid_columns}
+
+                    if valid_columns:
+                        filtered_value = {
+                            k: v for k, v in create_value.items() if k in valid_columns
+                        }
                         created = repo.create(**filtered_value)
-                    except Exception as e:
-                        # Fallback: try creating with all values
-                        logger.warning(f"Error filtering columns for {self.repository_name}: {e}")
+                    else:
+                        logger.warning(
+                            f"No columns resolved for {self.repository_name}; creating unfiltered"
+                        )
                         created = repo.create(**create_value)
                     if created is None:
                         raise RuntimeError(

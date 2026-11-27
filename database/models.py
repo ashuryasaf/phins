@@ -157,7 +157,7 @@ class Customer(Base):
         if include_auth:
             data['password_hash'] = self.password_hash
             data['password_salt'] = self.password_salt
-        return merge_row_extra(data, self.extra)
+        return merge_row_extra(data, self.extra, type(self))
     
     def has_portal_access(self) -> bool:
         """Check if customer has portal login configured"""
@@ -244,12 +244,27 @@ _EXTRA_JSON_DICT_KEYS = frozenset({
 })
 
 
-def merge_row_extra(record, raw_extra):
+def orm_relationship_keys(model_class):
+    """SQLAlchemy relationship attribute names on ``model_class`` (never columns)."""
+    try:
+        from sqlalchemy.orm import RelationshipProperty
+        return frozenset(
+            key
+            for key, attr in model_class.__mapper__.attrs.items()
+            if isinstance(attr, RelationshipProperty)
+        )
+    except Exception:
+        return frozenset()
+
+
+def merge_row_extra(record, raw_extra, model_class=None):
     """Fold the dual-path ``extra`` JSON into a ``to_dict`` record.
 
     Column and kernel-pin keys already on the record win. A broken extra blob
     is skipped so a bad overlay never blanks the row. Legacy rows that stored
     a JSON object as a string inside ``extra`` are coerced back to dicts.
+    Relationship keys (``policies``, ``claims``, …) are never folded back —
+    registration-shaped empty lists must not mask or overwrite real children.
     """
     if not record or raw_extra in (None, ''):
         return record
@@ -259,8 +274,11 @@ def merge_row_extra(record, raw_extra):
         return record
     if not isinstance(extra, dict):
         return record
+    skip = {'extra'}
+    if model_class is not None:
+        skip.update(orm_relationship_keys(model_class))
     for key, value in extra.items():
-        if key == 'extra':
+        if key in skip:
             continue
         if key in _EXTRA_JSON_DICT_KEYS and isinstance(value, str):
             try:
@@ -351,7 +369,7 @@ class Policy(Base):
             record.setdefault(key, value)
         if not intact:
             record['kernel_pin_intact'] = False
-        return merge_row_extra(record, self.extra)
+        return merge_row_extra(record, self.extra, type(self))
 
 
 class Claim(Base):
@@ -430,7 +448,7 @@ class Claim(Base):
             'payment_reference': self.payment_reference,
             'paid_amount': self.paid_amount
         }
-        return merge_row_extra(record, self.extra)
+        return merge_row_extra(record, self.extra, type(self))
 
 
 class UnderwritingApplication(Base):
@@ -594,7 +612,7 @@ class UnderwritingApplication(Base):
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'updated_date': self.updated_date.isoformat() if self.updated_date else None
         }
-        return merge_row_extra(record, self.extra)
+        return merge_row_extra(record, self.extra, type(self))
 
 
 class Bill(Base):
@@ -636,7 +654,7 @@ class Bill(Base):
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'updated_date': self.updated_date.isoformat() if self.updated_date else None
         }
-        return merge_row_extra(record, self.extra)
+        return merge_row_extra(record, self.extra, type(self))
 
 
 class User(Base):

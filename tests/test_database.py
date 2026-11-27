@@ -463,6 +463,88 @@ def test_apply_create_defaults_skipped_outside_test_mode(monkeypatch):
     assert filled['email'] == 'cust-live@phins.local'
 
 
+def test_customer_update_does_not_orphan_policies_via_extra_relationships():
+    """Registration-shaped ``policies: []`` / ``claims: []`` must not cascade-wipe children."""
+    import json
+    from database import init_database
+    from database.data_access import DatabaseDict, pack_row_extra
+    from database.models import Customer, merge_row_extra, orm_relationship_keys
+
+    init_database()
+    customers = DatabaseDict('customers')
+    policies = DatabaseDict('policies')
+    claims = DatabaseDict('claims')
+    cid, pid, clid = 'TEST-CUST-U3-ORPHAN', 'TEST-POL-U3-ORPHAN', 'TEST-CLM-U3-ORPHAN'
+    for store, key in ((claims, clid), (policies, pid), (customers, cid)):
+        if key in store:
+            del store[key]
+    try:
+        assert orm_relationship_keys(Customer) >= frozenset({'policies', 'claims'})
+        registration = {
+            'id': cid,
+            'name': 'Orphan Guard',
+            'email': 'orphan-guard@phins.local',
+            'policies': [],
+            'claims': [],
+            'portal_flag': True,
+        }
+        packed = pack_row_extra('customers', Customer, registration, existing=None)
+        raw_extra = packed.get('extra')
+        assert raw_extra
+        loaded = json.loads(raw_extra) if isinstance(raw_extra, str) else raw_extra
+        assert 'policies' not in loaded
+        assert 'claims' not in loaded
+        assert loaded.get('portal_flag') is True
+
+        # Registration-shaped create: empty child lists must not cascade later.
+        customers[cid] = registration
+
+        policies[pid] = {
+            'id': pid,
+            'customer_id': cid,
+            'type': 'life',
+            'coverage_amount': 100000.0,
+            'annual_premium': 1200.0,
+        }
+        claims[clid] = {
+            'id': clid,
+            'policy_id': pid,
+            'customer_id': cid,
+            'claimed_amount': 500.0,
+            'status': 'pending',
+        }
+        assert pid in policies
+        assert clid in claims
+
+        # In-place update + full rewrite with empty relationship lists (Bugbot HIGH).
+        customers[cid]['name'] = 'Orphan Guard Updated'
+        customers[cid] = {
+            **dict(customers[cid]),
+            'policies': [],
+            'claims': [],
+            'name': 'Orphan Guard Rewritten',
+        }
+        assert customers[cid]['name'] == 'Orphan Guard Rewritten'
+        assert pid in policies
+        assert policies[pid]['customer_id'] == cid
+        assert clid in claims
+        assert claims[clid]['customer_id'] == cid
+
+        # Legacy extra with relationship keys must not fold into to_dict.
+        merged = merge_row_extra(
+            {'id': cid, 'name': 'x'},
+            json.dumps({'policies': [], 'claims': [], 'keep_me': 1}),
+            Customer,
+        )
+        assert 'policies' not in merged
+        assert 'claims' not in merged
+        assert merged['keep_me'] == 1
+    finally:
+        for store, key in ((claims, clid), (policies, pid), (customers, cid)):
+            if key in store:
+                del store[key]
+
+
 def test_ensure_fk_parents_seeds_customer_for_policy_in_test_mode():
     """Postgres FK: policy create under test mode seeds a missing customer."""
     from database import init_database
