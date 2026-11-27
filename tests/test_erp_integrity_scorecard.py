@@ -119,6 +119,60 @@ def test_u14_baseline_snapshot_files_are_not_partial(tmp_path: Path):
     assert by_id['U14']['status'] == 'missing'
 
 
+def test_u14_empty_slo_stub_is_not_landed(tmp_path: Path):
+    """An empty SLO test plus baseline stores must not claim U14."""
+    for rel in (
+        'services/ledger_snapshot_store.py',
+        'services/agent_job_queue.py',
+        'tests/test_ledger_snapshot_slos.py',
+    ):
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('# stub\n', encoding='utf-8')
+    report = compute_integrity_scorecard(repo_root=str(tmp_path))
+    by_id = {u['unit_id']: u for u in report['units']}
+    assert by_id['U14']['status'] == 'missing'
+
+
+def test_u14_requires_dlq_age_and_snapshot_needles(tmp_path: Path):
+    """Landed U14 needs DLQ + pending_age + over-cap/incremental coverage."""
+    path = tmp_path / 'tests' / 'test_ledger_snapshot_slos.py'
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        'def test_queue_slo():\n'
+        '    assert pending_age < 60\n'
+        '    assert DLQ == []\n'
+        '    assert over_cap is False\n',
+        encoding='utf-8',
+    )
+    report = compute_integrity_scorecard(repo_root=str(tmp_path))
+    by_id = {u['unit_id']: u for u in report['units']}
+    assert by_id['U14']['status'] == 'landed'
+
+    path.write_text('def test_only_dlq():\n    assert DLQ == []\n', encoding='utf-8')
+    report = compute_integrity_scorecard(repo_root=str(tmp_path))
+    by_id = {u['unit_id']: u for u in report['units']}
+    assert by_id['U14']['status'] == 'partial'
+
+
+def test_u9_requires_bordereaux_with_remittance(tmp_path: Path):
+    """Remittance alone is partial; bordereaux is required to land U9."""
+    remit = tmp_path / 'services' / 'mga' / 'remittance.py'
+    remit.parent.mkdir(parents=True)
+    remit.write_text('def run():\n    pass\n', encoding='utf-8')
+    report = compute_integrity_scorecard(repo_root=str(tmp_path))
+    by_id = {u['unit_id']: u for u in report['units']}
+    assert by_id['U9']['status'] == 'partial'
+
+    (tmp_path / 'services' / 'mga' / 'bordereaux.py').write_text(
+        'def build():\n    pass\n',
+        encoding='utf-8',
+    )
+    report = compute_integrity_scorecard(repo_root=str(tmp_path))
+    by_id = {u['unit_id']: u for u in report['units']}
+    assert by_id['U9']['status'] == 'landed'
+
+
 def test_u13_baseline_tenant_tests_are_not_partial(tmp_path: Path):
     """Customer cross-tenant tests without binder_id are not U13 progress."""
     path = tmp_path / 'tests' / 'test_tenant_isolation.py'

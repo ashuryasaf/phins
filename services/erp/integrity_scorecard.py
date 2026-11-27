@@ -245,12 +245,24 @@ def _assess_units(root: Path) -> List[UnitEvidence]:
         evidence=[],
         notes='fiscal periods + natural accounts',
     ))
+    # Plan lists remittance.py and bordereaux.py together; remittance alone
+    # must not claim the full U9 band (same pattern as U8 / U10).
+    u9_remit = _exists(root, 'services/mga/remittance.py')
+    u9_bdx = _exists(root, 'services/mga/bordereaux.py')
     units.append(UnitEvidence(
         unit_id='U9',
         title='Remittance + bordereaux',
-        status='landed' if _exists(root, 'services/mga/remittance.py') else 'missing',
+        status=(
+            'landed' if u9_remit and u9_bdx
+            else ('partial' if u9_remit or u9_bdx else 'missing')
+        ),
         weight=1.0,
-        evidence=[],
+        evidence=[
+            p for p, hit in (
+                ('services/mga/remittance.py', u9_remit),
+                ('services/mga/bordereaux.py', u9_bdx),
+            ) if hit
+        ],
         notes='carrier payables from kernel pins + ledger cash',
     ))
     units.append(UnitEvidence(
@@ -312,20 +324,39 @@ def _assess_units(root: Path) -> List[UnitEvidence]:
         notes='binder_id on policies/remittances',
     ))
 
-    # ledger_snapshot_store + agent_job_queue are baseline (score 58). U14
-    # credit starts only when the plan's SLO / incremental verify suite exists.
-    u14_slo_test = _exists(root, 'tests/test_ledger_snapshot_slos.py')
-    u14_snap = _exists(root, 'services/ledger_snapshot_store.py')
-    u14_queue = _exists(root, 'services/agent_job_queue.py')
+    # ledger_snapshot_store + agent_job_queue are baseline (score 58) and are
+    # ignored as landed evidence — an empty SLO test must not claim U14.
+    # Credit needs the plan verify suite with queue SLO + DLQ / pending-age
+    # needles (and preferably over-cap snapshot coverage).
+    u14_test_path = root / 'tests' / 'test_ledger_snapshot_slos.py'
+    u14_test = u14_test_path.is_file()
+    u14_has_dlq = u14_test and (
+        _grep_file(u14_test_path, 'DLQ') or _grep_file(u14_test_path, 'dlq')
+    )
+    u14_has_age = u14_test and (
+        _grep_file(u14_test_path, 'pending_age')
+        or _grep_file(u14_test_path, 'pending-age')
+    )
+    u14_has_snap = u14_test and (
+        _grep_file(u14_test_path, 'over_cap')
+        or _grep_file(u14_test_path, 'over-cap')
+        or _grep_file(u14_test_path, 'incremental')
+    )
+    u14_landed = u14_has_dlq and u14_has_age and u14_has_snap
+    u14_partial = u14_test and (u14_has_dlq or u14_has_age or u14_has_snap)
     units.append(UnitEvidence(
         unit_id='U14',
         title='Snapshot strategy + queue SLOs',
         status=(
-            'landed' if u14_slo_test and u14_snap and u14_queue
-            else ('partial' if u14_slo_test else 'missing')
+            'landed' if u14_landed
+            else ('partial' if u14_partial else 'missing')
         ),
         weight=1.0,
-        evidence=['tests/test_ledger_snapshot_slos.py'] if u14_slo_test else [],
+        evidence=(
+            ['tests/test_ledger_snapshot_slos.py']
+            if u14_landed or u14_partial
+            else []
+        ),
         notes='incremental snapshots + DLQ age alerts',
     ))
 
