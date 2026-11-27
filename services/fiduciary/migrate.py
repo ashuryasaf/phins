@@ -23,16 +23,6 @@ def _fingerprint(snapshot: Mapping[str, Any]) -> str:
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 
-# Snapshot key → (table label used in before/after counts, emptiness predicate).
-_TABLE_FOR_KEY = {
-    'health_wallets': 'health_wallets',
-    'wallet_withdrawals': 'wallet_withdrawals',
-    'nft_ledger': 'nft_ledger',
-    'investment_accounts': 'investment_accounts',
-    'phins_balance_sheet': 'balance_sheet',
-}
-
-
 def _table_row_counts(db: Any) -> Dict[str, int]:
     return {
         'health_wallets': db.health_wallets.count_rows(),
@@ -43,27 +33,61 @@ def _table_row_counts(db: Any) -> Dict[str, int]:
     }
 
 
+def _repo_for_key(db: Any, key: str) -> Any:
+    return {
+        'health_wallets': db.health_wallets,
+        'wallet_withdrawals': db.wallet_withdrawals,
+        'nft_ledger': db.nft_ledger,
+        'investment_accounts': db.investment_accounts,
+        'phins_balance_sheet': db.balance_sheet,
+    }[key]
+
+
 def _keys_needing_migrate(
+    db: Any,
     snapshot: Mapping[str, Any],
-    counts: Mapping[str, int],
     *,
     force: bool,
 ) -> Dict[str, Any]:
-    """Return snapshot subset for empty tables (or every present key when force).
+    """Return snapshot keys that still need rows (or every key when force).
 
-    A half-finished first boot leaves some tables populated and others empty.
-    The next boot must still migrate the empty ones — never skip the whole
-    migrate just because *any* fiduciary table already has rows.
+    A half-finished migrate may leave *some* wallet ids in the table. The next
+    boot must still insert the missing ids — never treat ``count_rows() > 0``
+    as "this book is done".
     """
     pending: Dict[str, Any] = {}
     for key in FIDUCIARY_SNAPSHOT_KEYS:
         value = snapshot.get(key)
         if not value or not isinstance(value, dict):
             continue
-        table = _TABLE_FOR_KEY[key]
-        if force or counts.get(table, 0) == 0:
+        if force:
+            pending[key] = value
+            continue
+        if key == 'phins_balance_sheet':
+            if db.balance_sheet.count_rows() == 0:
+                pending[key] = value
+            continue
+        missing = _repo_for_key(db, key).missing_ids(value)
+        if missing:
             pending[key] = value
     return pending
+
+
+def _write_key(
+    db: Any,
+    key: str,
+    mapping: Dict[str, Any],
+    *,
+    force: bool,
+) -> Dict[str, int]:
+    repo = _repo_for_key(db, key)
+    customer_from = 'customer_id' if key in ('wallet_withdrawals', 'nft_ledger') else None
+    if key == 'phins_balance_sheet':
+        ok = db.balance_sheet.upsert_phins(mapping)
+        return {'written': 1 if ok else 0, 'withheld': 0 if ok else 1, 'errors': 0}
+    if force:
+        return repo.replace_mapping(mapping, customer_from=customer_from)
+    return repo.fill_missing_mapping(mapping, customer_from=customer_from)
 
 
 def migrate_snapshot_to_fiduciary_tables(
@@ -75,9 +99,9 @@ def migrate_snapshot_to_fiduciary_tables(
     """Copy fiduciary keys from a ledger snapshot into sealed tables.
 
     Writes a platform-ledger before/after event **before** any table upsert
-    when ``append_event`` is supplied (fail closed on journal failure). Only
-    empty tables are filled unless ``force`` is True; populated tables are
-    left alone so a partial migrate can finish on the next boot.
+    when ``append_event`` is supplied (fail closed on journal failure). Default
+    path only inserts missing record ids (and empty balance-sheet); ``force``
+    replaces intact rows. A half-written book resumes on the next boot.
     """
     mode = fiduciary_mode()
     result: Dict[str, Any] = {
@@ -107,7 +131,7 @@ def migrate_snapshot_to_fiduciary_tables(
     db = DatabaseManager()
     try:
         before = _table_row_counts(db)
-        subset = _keys_needing_migrate(snapshot, before, force=force)
+        subset = _keys_needing_migrate(db, snapshot, force=force)
         if not subset:
             result['reason'] = 'tables_already_populated'
             return result
@@ -117,6 +141,7 @@ def migrate_snapshot_to_fiduciary_tables(
             'fingerprint': fingerprint,
             'before': before,
             'keys': sorted(subset.keys()),
+            'force': force,
             'started_at': datetime.utcnow().isoformat(),
         }
 
@@ -133,23 +158,9 @@ def migrate_snapshot_to_fiduciary_tables(
             )
 
         counts: Dict[str, Any] = {}
-        if 'health_wallets' in subset:
-            counts['health_wallets'] = db.health_wallets.replace_mapping(subset['health_wallets'])
-        if 'wallet_withdrawals' in subset:
-            counts['wallet_withdrawals'] = db.wallet_withdrawals.replace_mapping(
-                subset['wallet_withdrawals'], customer_from='customer_id'
-            )
-        if 'nft_ledger' in subset:
-            counts['nft_ledger'] = db.nft_ledger.replace_mapping(
-                subset['nft_ledger'], customer_from='customer_id'
-            )
-        if 'investment_accounts' in subset:
-            counts['investment_accounts'] = db.investment_accounts.replace_mapping(
-                subset['investment_accounts']
-            )
-        if 'phins_balance_sheet' in subset:
-            ok = db.balance_sheet.upsert_phins(subset['phins_balance_sheet'])
-            counts['balance_sheet'] = {'written': 1 if ok else 0, 'withheld': 0 if ok else 1}
+        for key, mapping in subset.items():
+            label = 'balance_sheet' if key == 'phins_balance_sheet' else key
+            counts[label] = _write_key(db, key, mapping, force=force)
 
         after = _table_row_counts(db)
         result['counts'] = counts
@@ -172,6 +183,7 @@ def migrate_snapshot_to_fiduciary_tables(
                     'after': after,
                     'counts': counts,
                     'keys': sorted(subset.keys()),
+                    'force': force,
                     'completed_at': datetime.utcnow().isoformat(),
                 },
             )

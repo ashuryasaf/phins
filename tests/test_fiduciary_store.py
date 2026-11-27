@@ -188,7 +188,7 @@ def test_migrate_resumes_empty_tables_after_partial(sqlite_db, monkeypatch):
     second = migrate_snapshot_to_fiduciary_tables(full, append_event=_append)
     assert second['migrated'] is True
     assert second['reason'] == 'ok'
-    assert 'health_wallets' not in second['keys']  # already populated — left alone
+    assert 'health_wallets' not in second['keys']  # all wallet ids already present
     assert 'phins_balance_sheet' in second['keys']
     assert 'wallet_withdrawals' in second['keys']
 
@@ -202,6 +202,43 @@ def test_migrate_resumes_empty_tables_after_partial(sqlite_db, monkeypatch):
     third = migrate_snapshot_to_fiduciary_tables(full, append_event=_append)
     assert third['migrated'] is False
     assert third['reason'] == 'tables_already_populated'
+
+
+def test_migrate_fills_missing_ids_inside_half_written_table(sqlite_db, monkeypatch):
+    """count_rows()>0 must not skip remaining wallet ids in the same table."""
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    events = []
+
+    def _append(**kwargs):
+        events.append(kwargs)
+        return {'id': kwargs.get('entity_id')}
+
+    first = migrate_snapshot_to_fiduciary_tables(
+        {'health_wallets': {'CUST-A': {'customer_id': 'CUST-A', 'balance': 1}}},
+        append_event=_append,
+    )
+    assert first['migrated'] is True
+
+    second = migrate_snapshot_to_fiduciary_tables(
+        {
+            'health_wallets': {
+                'CUST-A': {'customer_id': 'CUST-A', 'balance': 1},
+                'CUST-B': {'customer_id': 'CUST-B', 'balance': 2},
+            },
+        },
+        append_event=_append,
+    )
+    assert second['migrated'] is True
+    assert 'health_wallets' in second['keys']
+    assert second['counts']['health_wallets']['written'] == 1
+    assert second['counts']['health_wallets']['skipped'] == 1
+
+    db = DatabaseManager()
+    assert db.health_wallets.count_rows() == 2
+    assert db.health_wallets.get_payload('CUST-B')['balance'] == 2
+    # Existing intact row is not rewritten by fill-missing.
+    assert db.health_wallets.get_payload('CUST-A')['balance'] == 1
+    db.close()
 
 
 def test_flush_error_is_surfaced(sqlite_db, monkeypatch):

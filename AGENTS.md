@@ -869,8 +869,8 @@ Environment variables commonly used:
   flush as a durability failure on `save_ledger_data`. A checksum
   mismatch withholds the row and never overwrites it. Migration from a
   snapshot is journal-first on the platform ledger
-  (`fiduciary.tables_migrated`) and only fills empty tables so a
-  half-finished boot can resume.
+  (`fiduciary.tables_migrated`) and inserts only missing record ids
+  (plus an empty balance-sheet row) so a half-finished boot can resume.
   The image creates `/data`, so `phins_ledger_data.json` (algo balances,
   policy documents, and fiduciary keys while dual) is lost on redeploy
   unless a volume is mounted there; HTTP serve **refuses to start** in

@@ -9447,6 +9447,11 @@ def _flush_fiduciary_tables() -> bool:
         if result.get('error'):
             print(f"[FIDUCIARY] Flush error: {result['error']}")
             return False
+        # Per-row write failures must not look like a successful seal.
+        for block in result.values():
+            if isinstance(block, dict) and int(block.get('errors') or 0) > 0:
+                print(f"[FIDUCIARY] Flush had row errors: {result}")
+                return False
         return True
     except Exception as exc:
         print(f"[FIDUCIARY] Flush failed: {type(exc).__name__}")
@@ -9454,14 +9459,15 @@ def _flush_fiduciary_tables() -> bool:
 
 
 def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) -> None:
-    """U2: migrate empty fiduciary tables from snapshot, then hydrate memory."""
+    """U2: migrate missing fiduciary ids from snapshot, then hydrate memory."""
     try:
         from services.fiduciary import (
             fiduciary_mode,
             hydrate_fiduciary_from_db,
             migrate_snapshot_to_fiduciary_tables,
         )
-        if fiduciary_mode() == 'off':
+        mode = fiduciary_mode()
+        if mode == 'off':
             return
         if snapshot:
             try:
@@ -9471,17 +9477,16 @@ def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) ->
                 )
             except Exception as exc:
                 print(f"[FIDUCIARY] Migration skipped: {type(exc).__name__}: {exc}")
-        # When a snapshot was just applied into memory, only fill gaps from
-        # sealed tables so an older dual-write cannot overwrite a newer file.
-        # Bare table restore (no snapshot — AE2 volume-less redeploy) uses
-        # prefer_db so the sealed rows become the live books.
+        # dual + snapshot applied: gaps only (newer file wins over older rows).
+        # db mode, or bare AE2 restore with no snapshot: sealed tables win.
+        prefer_db = snapshot is None or mode == 'db'
         counts = hydrate_fiduciary_from_db(
             health_wallets=HEALTH_WALLETS,
             wallet_withdrawals=WALLET_WITHDRAWALS,
             nft_ledger=NFT_LEDGER,
             investment_accounts=INVESTMENT_ACCOUNTS,
             balance_sheet=PHINS_BALANCE_SHEET,
-            prefer_db=snapshot is None,
+            prefer_db=prefer_db,
         )
         loaded = sum(v for k, v in counts.items() if k != 'withheld' and isinstance(v, int))
         if loaded:
@@ -10184,9 +10189,8 @@ def load_ledger_data(allow_db_snapshot: bool = False):
         if _loaded_trading_bots:
             print(f"  - Trading Bots: {len(_loaded_trading_bots)} bots (pending sync)")
         print(f"  - Saved at: {data.get('saved_at', 'unknown')}")
-        # U2: migrate empty fiduciary tables from this snapshot, then fill
-        # memory gaps only (snapshot already applied — DB does not win over
-        # a newer file). AE2 bare restore uses prefer_db when snapshot is None.
+        # U2: migrate missing fiduciary ids from this snapshot, then hydrate.
+        # dual: gaps only after a file/snapshot load. db / AE2 bare: prefer_db.
         _hydrate_and_migrate_fiduciary(data)
         if _LEDGER_LOAD_SOURCE == 'file':
             _resume_stale_ledger_snapshot_copy(data)

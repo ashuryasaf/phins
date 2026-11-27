@@ -143,18 +143,24 @@ class SealedFiduciaryRepository(BaseRepository):
             logger.error("%s count failed: %s", self.model_class.__tablename__, exc)
             raise
 
+    def _customer_id_for(
+        self, payload: Any, *, customer_from: Optional[str] = None
+    ) -> Optional[str]:
+        if not isinstance(payload, dict):
+            return None
+        if customer_from and payload.get(customer_from):
+            return str(payload.get(customer_from))
+        if payload.get('customer_id'):
+            return str(payload.get('customer_id'))
+        return None
+
     def replace_mapping(self, mapping: Dict[str, Any], *, customer_from: Optional[str] = None) -> Dict[str, int]:
         """Upsert every entry. Returns counts of written / withheld / errors."""
         written = withheld = errors = 0
         for key, payload in (mapping or {}).items():
             if not key:
                 continue
-            customer_id = None
-            if isinstance(payload, dict):
-                if customer_from and payload.get(customer_from):
-                    customer_id = str(payload.get(customer_from))
-                elif payload.get('customer_id'):
-                    customer_id = str(payload.get('customer_id'))
+            customer_id = self._customer_id_for(payload, customer_from=customer_from)
             try:
                 ok = self.upsert(str(key), payload, customer_id=customer_id)
             except Exception:
@@ -165,6 +171,61 @@ class SealedFiduciaryRepository(BaseRepository):
             else:
                 withheld += 1
         return {'written': written, 'withheld': withheld, 'errors': errors}
+
+    def missing_ids(self, mapping: Dict[str, Any]) -> List[str]:
+        """Return mapping keys that have no row yet (half-written books)."""
+        missing: List[str] = []
+        for key in (mapping or {}):
+            if not key:
+                continue
+            record_id = str(key)
+            try:
+                row = self.session.get(self.model_class, record_id)
+            except SQLAlchemyError as exc:
+                logger.error(
+                    "%s missing_ids lookup failed for %s: %s",
+                    self.model_class.__tablename__,
+                    record_id,
+                    exc,
+                )
+                raise
+            if row is None:
+                missing.append(record_id)
+        return missing
+
+    def fill_missing_mapping(
+        self, mapping: Dict[str, Any], *, customer_from: Optional[str] = None
+    ) -> Dict[str, int]:
+        """Insert only ids with no row. Never overwrite intact or broken seals."""
+        written = withheld = errors = skipped = 0
+        for key, payload in (mapping or {}).items():
+            if not key:
+                continue
+            record_id = str(key)
+            try:
+                row = self.session.get(self.model_class, record_id)
+            except SQLAlchemyError:
+                errors += 1
+                continue
+            if row is not None:
+                skipped += 1
+                continue
+            customer_id = self._customer_id_for(payload, customer_from=customer_from)
+            try:
+                ok = self.upsert(record_id, payload, customer_id=customer_id)
+            except Exception:
+                errors += 1
+                continue
+            if ok:
+                written += 1
+            else:
+                withheld += 1
+        return {
+            'written': written,
+            'withheld': withheld,
+            'errors': errors,
+            'skipped': skipped,
+        }
 
 
 class HealthWalletRepository(SealedFiduciaryRepository):
