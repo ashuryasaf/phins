@@ -618,6 +618,10 @@ By selecting an investment route, you confirm you understand the risks and benef
                 reference_no=allocation.bill_id,
                 idempotency_key=f"ae:{self.engine_id}:alloc:{allocation_id}:savings:debit",
             )
+
+            # Seal the allocation header so peer hydrate can rebuild
+            # ``engine.allocations`` (needed for reconstruct idempotency).
+            self._seal_allocation_record(allocation)
             
             return True, f"Allocation {allocation_id} posted successfully"
         
@@ -659,7 +663,38 @@ By selecting an investment route, you confirm you understand the risks and benef
             )
         allocation.status = AllocationStatus.REVERSED
         allocation.notes = "; ".join(bit for bit in (allocation.notes, note) if bit)
+        self._seal_allocation_record(allocation, suffix='reversed')
         return True, f"Allocation {allocation_id} reversed"
+
+    def _seal_allocation_record(self, allocation: PremiumAllocation, *, suffix: str = '') -> None:
+        """Append a sealed allocation header to the durable journal (U5)."""
+        try:
+            from services.erp.accounting_journal import (
+                append_journal_entry, journal_enabled, journal_required,
+            )
+        except Exception:
+            return
+        if not journal_enabled():
+            return
+        payload = dict(allocation.to_dict())
+        payload['record_type'] = 'allocation'
+        key = f"ae:{self.engine_id}:allocation:{allocation.allocation_id}"
+        if suffix:
+            key = f"{key}:{suffix}"
+        result = append_journal_entry(
+            idempotency_key=key[:200],
+            payload=payload,
+            engine_id=self.engine_id,
+            allocation_id=allocation.allocation_id,
+            policy_id=allocation.policy_id,
+            customer_id=allocation.customer_id,
+            entry_type='allocation',
+            account_type='',
+        )
+        if not result.get('ok') and journal_required():
+            raise RuntimeError(
+                f"accounting journal refused allocation seal: {result.get('reason') or 'withheld'}"
+            )
     
     def get_customer_statement(self, customer_id: str, start_date: date, 
                                end_date: date) -> CustomerPremiumStatement:

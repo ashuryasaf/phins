@@ -31,8 +31,12 @@ def sqlite_journal(monkeypatch, tmp_path):
     monkeypatch.setenv('SQLITE_PATH', str(tmp_path / 'accounting-u5.sqlite'))
     monkeypatch.setenv('PHINS_ACCOUNTING_JOURNAL_MODE', 'dual')
     monkeypatch.setenv('PHINS_TEST_MODE', 'true')
+    # Drop the cached engine so a prior test's SQLITE_PATH is not reused.
+    from database import reset_connection
+    reset_connection()
     init_database(drop_existing=True)
     yield
+    reset_connection()
 
 
 def test_mode_defaults_off_under_test_env(monkeypatch):
@@ -189,3 +193,131 @@ def test_boot_hydrate_runs_before_ledger_reconstruct(monkeypatch):
     result = portal.hydrate_accounting_book_from_ledger()
     assert order == ['journal', 'ledger']
     assert result.get('journal', {}).get('loaded') == 1
+
+
+def test_peer_process_smoke_shares_journal(sqlite_journal, tmp_path):
+    """Plan U5 verify: process A posts; process B boots from the same SQLite journal."""
+    import json
+    import os
+    import subprocess
+    import sys
+
+    from database import reset_connection
+
+    eng = AccountingEngine('ACC-J-PEER', 'Peer Co')
+    alloc = eng.create_allocation(
+        bill_id='BILL-PEER', policy_id='POL-PEER', customer_id='CUST-PEER',
+        total_premium=Decimal('100.00'), risk_percentage=Decimal('100'),
+    )
+    assert eng.post_allocation(alloc.allocation_id, 'accountant')[0] is True
+    assert eng._get_account_balance(AccountType.RISK_FUND) == Decimal('100.00')
+    reset_connection()
+
+    sqlite_path = os.environ.get('SQLITE_PATH') or str(tmp_path / 'accounting-u5.sqlite')
+    # Do not call init_database in the child: under PHINS_TEST_MODE + a
+    # tempfile SQLITE_PATH it auto-drops tables and would wipe the journal.
+    child = (
+        'import json, os\n'
+        f'os.environ["USE_DATABASE"] = "true"\n'
+        f'os.environ["USE_SQLITE"] = "true"\n'
+        f'os.environ["SQLITE_PATH"] = {sqlite_path!r}\n'
+        'os.environ["PHINS_ACCOUNTING_JOURNAL_MODE"] = "dual"\n'
+        'os.environ["PHINS_TEST_MODE"] = "true"\n'
+        'from database import reset_connection\n'
+        'reset_connection()\n'
+        'from accounting_engine import AccountType, AccountingEngine\n'
+        'from services.erp.accounting_journal import hydrate_accounting_engine_from_journal\n'
+        'peer = AccountingEngine("ACC-J-PEER", "Peer Co")\n'
+        'hydrated = hydrate_accounting_engine_from_journal(peer)\n'
+        'risk = float(peer._get_account_balance(AccountType.RISK_FUND))\n'
+        'print(json.dumps({"loaded": hydrated.get("loaded"), "risk": risk, '
+        '"entries": len(peer.ledger_entries)}))\n'
+    )
+    env = os.environ.copy()
+    env.update({
+        'USE_DATABASE': 'true',
+        'USE_SQLITE': 'true',
+        'SQLITE_PATH': sqlite_path,
+        'PHINS_ACCOUNTING_JOURNAL_MODE': 'dual',
+        'PHINS_TEST_MODE': 'true',
+        'PYTHONPATH': '/agent/repos/phins',
+    })
+    proc = subprocess.run(
+        [sys.executable, '-c', child],
+        cwd='/agent/repos/phins',
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr or proc.stdout
+    lines = [ln for ln in proc.stdout.splitlines() if ln.strip().startswith('{')]
+    assert lines, proc.stdout
+    report = json.loads(lines[-1])
+    assert report['loaded'] >= 1
+    assert report['risk'] == 100.0
+    assert report['entries'] >= 1
+
+
+def test_reconstruct_after_journal_hydrate_stays_idempotent(sqlite_journal, monkeypatch):
+    """After journal hydrate, ledger reconstruct must not double-post the same cash."""
+    from accounting_engine import get_accounting_engine, reset_accounting_engine
+    from services.financial_unification_service import (
+        accounting_book_totals,
+        post_premium_to_accounting_book,
+        reconstruct_accounting_book_from_ledger,
+    )
+
+    reset_accounting_engine()
+    monkeypatch.setenv('PHINS_ACCOUNTING_JOURNAL_MODE', 'dual')
+
+    posted = post_premium_to_accounting_book(
+        bill_id='BILL-REC-1',
+        policy_id='POL-REC-1',
+        customer_id='CUST-REC-1',
+        amount=50.0,
+        risk_percentage=100,
+        savings_percentage=0,
+        risk_amount=50.0,
+        savings_amount=0.0,
+        source_tx_id='TX-REC-1',
+        posted_by='test',
+    )
+    assert posted.get('posted') is True
+
+    # Peer boot: empty shared engine ← journal (entries + allocation headers).
+    reset_accounting_engine()
+    peer = get_accounting_engine()
+    hydrated = journal.hydrate_accounting_engine_from_journal(peer)
+    assert hydrated['loaded'] >= 1
+    assert int(hydrated.get('allocations_loaded') or 0) >= 1
+
+    policies = {
+        'POL-REC-1': {
+            'id': 'POL-REC-1',
+            'customer_id': 'CUST-REC-1',
+            'annual_premium': 50.0,
+            'risk_premium_annual': 50.0,
+            'savings_premium_annual': 0.0,
+            'pricing_source': 'pricing_kernel',
+        }
+    }
+    txs = {
+        'TX-REC-1': {
+            'id': 'TX-REC-1',
+            'type': 'premium_payment',
+            'amount': 50.0,
+            'customer_id': 'CUST-REC-1',
+            'metadata': {'bill_id': 'BILL-REC-1', 'policy_id': 'POL-REC-1'},
+        }
+    }
+    first = reconstruct_accounting_book_from_ledger(
+        policies=policies, claims={}, billing={}, transactions=txs, actor='boot',
+    )
+    second = reconstruct_accounting_book_from_ledger(
+        policies=policies, claims={}, billing={}, transactions=txs, actor='boot',
+    )
+    # Journal already carried the post — reconstruct must not invent a second.
+    assert int(first.get('posted_count') or 0) == 0
+    assert int(second.get('posted_count') or 0) == 0
+    assert accounting_book_totals()['premium_posted'] == 50.0

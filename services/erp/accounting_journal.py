@@ -164,7 +164,14 @@ def hydrate_accounting_engine_from_journal(engine: Any) -> Dict[str, Any]:
     if mode == 'off':
         return {'loaded': 0, 'skipped': 0, 'mode': mode}
 
-    from accounting_engine import AccountType, AccountingEntry, EntryType
+    from accounting_engine import (
+        AccountType,
+        AccountingEntry,
+        AllocationStatus,
+        EntryType,
+        InvestmentRoute,
+        PremiumAllocation,
+    )
 
     rows = load_journal_entries(engine_id=getattr(engine, 'engine_id', None) or None)
     # Also accept rows without engine filter when engine_id column was null.
@@ -186,8 +193,47 @@ def hydrate_accounting_engine_from_journal(engine: Any) -> Dict[str, Any]:
 
     loaded = 0
     skipped = 0
+    allocations_loaded = 0
     max_no = int(getattr(engine, 'entry_counter', 0) or 0)
     for row in rows:
+        if str(row.get('record_type') or '') == 'allocation':
+            alloc_id = str(row.get('allocation_id') or '')
+            if not alloc_id:
+                skipped += 1
+                continue
+            existing = (getattr(engine, 'allocations', {}) or {}).get(alloc_id)
+            # Prefer a later reversed seal over a posted header.
+            if existing is not None and getattr(existing, 'status', None) == AllocationStatus.REVERSED:
+                skipped += 1
+                continue
+            try:
+                route = InvestmentRoute(str(row.get('investment_route') or InvestmentRoute.BASIC_SAVINGS.value))
+                status = AllocationStatus(str(row.get('status') or AllocationStatus.POSTED.value))
+                alloc = PremiumAllocation(
+                    allocation_id=alloc_id,
+                    bill_id=str(row.get('bill_id') or ''),
+                    policy_id=str(row.get('policy_id') or ''),
+                    customer_id=str(row.get('customer_id') or ''),
+                    allocation_date=_parse_entry_date(row.get('allocation_date')),
+                    total_premium=Decimal(str(row.get('total_premium') or 0)),
+                    risk_percentage=Decimal(str(row.get('risk_percentage') or 0)),
+                    savings_percentage=Decimal(str(row.get('savings_percentage') or 0)),
+                    investment_route=route,
+                    preserve_savings_percentage=True,
+                    risk_amount_exact=Decimal(str(row.get('risk_premium') or 0)),
+                    savings_amount_exact=Decimal(str(row.get('savings_premium') or 0)),
+                    notes=str(row.get('notes') or ''),
+                )
+                alloc.status = status
+                if row.get('posted_date'):
+                    alloc.posted_date = _parse_entry_date(row.get('posted_date'))
+                alloc.posted_by = str(row.get('posted_by') or '')
+                engine.allocations[alloc_id] = alloc
+                allocations_loaded += 1
+                loaded += 1
+            except Exception:
+                skipped += 1
+            continue
         try:
             entry_type = EntryType(str(row.get('entry_type') or ''))
             account_type = AccountType(str(row.get('account_type') or ''))
@@ -237,7 +283,13 @@ def hydrate_accounting_engine_from_journal(engine: Any) -> Dict[str, Any]:
         existing_keys.add(key)
         loaded += 1
     engine.entry_counter = max(int(getattr(engine, 'entry_counter', 0) or 0), max_no)
-    return {'loaded': loaded, 'skipped': skipped, 'mode': mode, 'rows': len(rows)}
+    return {
+        'loaded': loaded,
+        'skipped': skipped,
+        'allocations_loaded': allocations_loaded,
+        'mode': mode,
+        'rows': len(rows),
+    }
 
 
 __all__ = [
