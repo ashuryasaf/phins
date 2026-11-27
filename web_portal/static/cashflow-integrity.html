@@ -99,6 +99,17 @@
                 <span class="note" id="period-close-stamp"></span>
             </div>
         </section>
+        <section id="remittance">
+            <h2>Carrier remittance <span id="remittance-verdict"></span></h2>
+            <p class="note">Sealed bordereaux from kernel pins + ledger premium cash (AE5). Carrier payable is risk cash only — never analytical expense weights. Settle goes through Money Gate.</p>
+            <p class="note" id="remittance-body">Reading remittance status…</p>
+            <div id="remittance-actions">
+                <button id="remittance-build" type="button">Build this month’s bordereau</button>
+                <button id="remittance-settle" type="button" disabled>Settle payable run</button>
+                <button id="remittance-refresh" type="button" class="quiet">Refresh</button>
+                <span class="note" id="remittance-stamp"></span>
+            </div>
+        </section>
         <div class="cards" id="funds"></div>
         <section id="kernel-pins">
             <h2>Kernel pins <span id="pins-verdict"></span></h2>
@@ -172,6 +183,7 @@
     <script src="/phins-doc-return.js"></script>
     <script src="/books-tied-badge.js"></script>
     <script src="/period-close-badge.js"></script>
+    <script src="/remittance-badge.js"></script>
     <script src="/cashflow-unified-report.js"></script>
     <script>
         const money = (value) => '$' + Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
