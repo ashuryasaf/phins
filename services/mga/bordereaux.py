@@ -386,10 +386,45 @@ def build_bordereau(
     sealed['ae5_ok'] = bool(check.get('ok'))
     sealed['ae5'] = check
     with _LOCK:
-        # One bordereau per binder/period — drop prior seals for that slot.
+        # Never replace a bordereau that a settled remittance still points at —
+        # later cash must not look remitted under a new seal (Bugbot high).
+        protected_ids: set = set()
+        try:
+            from services.mga import remittance as rem_mod
+            for run in rem_mod.list_remittance_runs(
+                binder_id=binder,
+                period_id=str(period_id),
+                status=rem_mod.STATUS_SETTLED,
+            ):
+                bid = str(run.get('bordereau_id') or '').strip()
+                if bid:
+                    protected_ids.add(bid)
+                snap = run.get('bordereau_snapshot')
+                if isinstance(snap, dict) and snap.get('id'):
+                    protected_ids.add(str(snap['id']))
+                    # Keep the remitted seal in the store for AE5 verify.
+                    if str(snap['id']) not in _STORE:
+                        _STORE[str(snap['id'])] = dict(snap)
+        except Exception:
+            protected_ids = set()
+        if protected_ids:
+            for pid in protected_ids:
+                kept = _STORE.get(pid)
+                if kept is not None:
+                    return dict(kept)
+            # Settled period with no recoverable seal — refuse inventing a new one.
+            sealed['ae5_ok'] = False
+            sealed['ae5'] = {
+                'ok': False,
+                'reason': 'bordereau_period_already_settled',
+            }
+            return sealed
+        # One unpaid bordereau per binder/period — drop prior unpaid seals.
         stale = [
             rid for rid, row in _STORE.items()
-            if row.get('binder_id') == binder and row.get('period_id') == str(period_id)
+            if row.get('binder_id') == binder
+            and row.get('period_id') == str(period_id)
+            and rid not in protected_ids
         ]
         for rid in stale:
             _STORE.pop(rid, None)

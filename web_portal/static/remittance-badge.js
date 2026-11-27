@@ -41,12 +41,23 @@
     lastPeriodId = String(status.period_id || currentPeriodId());
     var runs = status.runs || [];
     var boards = status.bordereaux || [];
-    // Scoped to one period — pick the latest board / the period's payable.
-    var board = boards.length ? boards[boards.length - 1] : {};
+    // Scoped to one period — prefer the settled run's remitted cash over a
+    // later rebuild board so post-settle premium never looks already paid.
     var payable = runs.filter(function (r) { return r.status === 'payable'; });
     var settled = runs.filter(function (r) { return r.status === 'settled'; });
+    var settledRun = settled.length ? settled[settled.length - 1] : null;
+    var board = boards.length ? boards[boards.length - 1] : {};
+    if (settledRun) {
+      board = {
+        premium_cash: settledRun.premium_cash,
+        carrier_payable: settledRun.amount,
+        bordereau_sha256: settledRun.bordereau_sha256,
+        ae5_ok: true,
+        built_at: settledRun.settled_at,
+      };
+    }
     lastPayableId = payable.length ? String(payable[payable.length - 1].id || '') : '';
-    var label = settled.length && !payable.length
+    var label = settledRun && !payable.length
       ? 'settled'
       : (payable.length ? 'payable' : (boards.length ? 'sealed' : 'idle'));
     if (verdictEl) {
@@ -55,7 +66,12 @@
     }
     var bits = [];
     if (board.premium_cash != null) bits.push('premium $' + Number(board.premium_cash).toFixed(2));
-    if (board.carrier_payable != null) bits.push('carrier payable $' + Number(board.carrier_payable).toFixed(2));
+    if (board.carrier_payable != null) {
+      bits.push(
+        (settledRun ? 'remitted $' : 'carrier payable $') +
+        Number(board.carrier_payable).toFixed(2)
+      );
+    }
     if (board.ae5_ok === false) bits.push('AE5 seal failed');
     else if (board.bordereau_sha256) bits.push('AE5 seal ' + String(board.bordereau_sha256).slice(0, 12) + '…');
     bits.push(payable.length + ' payable · ' + settled.length + ' settled');

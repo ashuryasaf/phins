@@ -350,6 +350,102 @@ def test_settled_run_blocks_second_payable():
         monkeypatch.undo()
 
 
+def test_rebuild_after_settle_keeps_remitted_cash(monkeypatch):
+    """Post-settle rebuild must not replace the remitted AE5 seal (Bugbot high)."""
+    monkeypatch.setenv('PHINS_MONEY_GATE', '1')
+    monkeypatch.setenv('PHINS_BOOKS_TIED_REQUIRE', '0')
+    policies, ledger, claims, period_id, binder_id = _fixture_binder()
+    built = rem.build_and_create(
+        binder_id=binder_id,
+        period_id=period_id,
+        policies=policies,
+        ledger_transactions=ledger,
+        claims=claims,
+    )
+    remitted = float(built['bordereau']['carrier_payable'])
+    remitted_sha = built['bordereau']['bordereau_sha256']
+    rem.settle_remittance_run(
+        built['run']['id'],
+        actor='accountant',
+        role='accountant',
+        books=_green_books(),
+    )
+    # Extra premium after settle.
+    more_ledger = list(ledger) + [{
+        'id': 'TX-U9-LATE',
+        'type': 'premium_payment',
+        'amount': 200.0,
+        'timestamp': '2026-11-28T12:00:00Z',
+        'customer_id': 'CUST-U9',
+        'metadata': {'policy_id': 'POL-U9-B'},
+    }]
+    again = rem.build_and_create(
+        binder_id=binder_id,
+        period_id=period_id,
+        policies=policies,
+        ledger_transactions=more_ledger,
+        claims=claims,
+    )
+    assert again.get('already_settled') is True
+    assert again['run']['status'] == rem.STATUS_SETTLED
+    assert float(again['run']['amount']) == remitted
+    assert again['bordereau']['bordereau_sha256'] == remitted_sha
+    assert float(again['bordereau']['carrier_payable']) == remitted
+    board = brd.build_bordereau(
+        binder_id=binder_id,
+        period_id=period_id,
+        policies=policies,
+        ledger_transactions=more_ledger,
+        claims=claims,
+    )
+    assert board['bordereau_sha256'] == remitted_sha
+    assert float(board['carrier_payable']) == remitted
+
+
+def test_payable_refresh_mirrors_ledger_event(monkeypatch):
+    events = []
+
+    class _Ledger:
+        def append_event(self, **kwargs):
+            events.append(kwargs)
+            return {'ok': True}
+
+    monkeypatch.setattr(rem, '_resolve_platform_ledger', lambda: _Ledger())
+    policies, ledger, claims, period_id, binder_id = _fixture_binder()
+    first = rem.build_and_create(
+        binder_id=binder_id,
+        period_id=period_id,
+        policies=policies,
+        ledger_transactions=ledger,
+        claims=claims,
+        actor='a',
+    )
+    richer = list(ledger) + [{
+        'id': 'TX-U9-MORE',
+        'type': 'premium_payment',
+        'amount': 25.0,
+        'timestamp': '2026-11-25T12:00:00Z',
+        'customer_id': 'CUST-U9',
+        'metadata': {'policy_id': 'POL-U9-A'},
+    }]
+    second = rem.build_and_create(
+        binder_id=binder_id,
+        period_id=period_id,
+        policies=policies,
+        ledger_transactions=richer,
+        claims=claims,
+        actor='b',
+    )
+    assert second.get('refreshed') is True
+    assert second['run']['id'] == first['run']['id']
+    assert float(second['run']['amount']) > float(first['run']['amount'])
+    types = [e.get('event_type') for e in events]
+    assert rem.EVENT_CREATED in types
+    assert rem.EVENT_REFRESHED in types
+    refreshed = [e for e in events if e.get('event_type') == rem.EVENT_REFRESHED]
+    assert refreshed[0]['entry_id'].startswith(second['run']['id'] + ':refreshed:')
+
+
 def test_scorecard_u9_landed_on_this_checkout():
     report = compute_integrity_scorecard()
     by_id = {u['unit_id']: u for u in report['units']}

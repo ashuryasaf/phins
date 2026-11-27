@@ -24,6 +24,7 @@ STATUS_PAYABLE = 'payable'
 STATUS_SETTLED = 'settled'
 STATUS_CANCELLED = 'cancelled'
 EVENT_CREATED = 'mga.remittance_created'
+EVENT_REFRESHED = 'mga.remittance_refreshed'
 EVENT_SETTLED = 'mga.remittance_settled'
 OP_SETTLE = 'remittance.settle'
 
@@ -87,17 +88,28 @@ def _resolve_platform_ledger() -> Any:
         return None
 
 
-def _mirror(event_type: str, run: Mapping[str, Any]) -> Dict[str, Any]:
+def _mirror(
+    event_type: str,
+    run: Mapping[str, Any],
+    *,
+    entry_suffix: Optional[str] = None,
+) -> Dict[str, Any]:
     ledger = _resolve_platform_ledger()
     if ledger is None:
         return {'ok': True, 'skipped': True}
-    entry_id = str(run.get('id') or '') + ':' + event_type.split('.')[-1]
+    suffix = entry_suffix or event_type.split('.')[-1]
+    entry_id = str(run.get('id') or '') + ':' + suffix
     try:
         ledger.append_event(
             event_type=event_type,
             entity_type='remittance_run',
             entity_id=run.get('id'),
-            actor=run.get('settled_by') or run.get('created_by') or 'remittance',
+            actor=(
+                run.get('settled_by')
+                or run.get('updated_by')
+                or run.get('created_by')
+                or 'remittance'
+            ),
             amount=float(_money(run.get('amount'))),
             payload={
                 'run_id': run.get('id'),
@@ -115,6 +127,40 @@ def _mirror(event_type: str, run: Mapping[str, Any]) -> Dict[str, Any]:
     except Exception as exc:
         logger.exception('remittance ledger mirror failed event=%s run=%s', event_type, run.get('id'))
         return {'ok': False, 'reason': 'ledger_append_failed', 'error': str(exc)}
+
+
+def settled_run_for(binder_id: str, period_id: str) -> Optional[Dict[str, Any]]:
+    """Return the settled remittance for binder/period, if any."""
+    rows = list_remittance_runs(
+        binder_id=str(binder_id or ''),
+        period_id=str(period_id or ''),
+        status=STATUS_SETTLED,
+    )
+    return dict(rows[0]) if rows else None
+
+
+def bordereau_snapshot_from_run(run: Mapping[str, Any]) -> Dict[str, Any]:
+    """Read-only board view for a settled run (keeps remitted cash visible)."""
+    snap = run.get('bordereau_snapshot')
+    if isinstance(snap, Mapping) and snap.get('bordereau_sha256'):
+        return dict(snap)
+    return {
+        'id': run.get('bordereau_id'),
+        'schema': brd.SCHEMA,
+        'binder_id': run.get('binder_id'),
+        'period_id': run.get('period_id'),
+        'bordereau_sha256': run.get('bordereau_sha256'),
+        'carrier_payable': run.get('amount'),
+        'premium_cash': run.get('premium_cash'),
+        'claims_paid': run.get('claims_paid'),
+        'commission': 0.0,
+        'streams': run.get('streams') or {},
+        'currency': run.get('currency') or 'USD',
+        'lines': [],
+        'policy_ids': [],
+        'settled_snapshot': True,
+        'ae5_ok': True,
+    }
 
 
 def create_remittance_run(
@@ -152,6 +198,8 @@ def create_remittance_run(
                 ):
                     return {'ok': True, 'already': True, 'run': dict(existing)}
                 refreshed = dict(existing)
+                prior_amount = refreshed.get('amount')
+                prior_sha = refreshed.get('bordereau_sha256')
                 refreshed['bordereau_id'] = bordereau_id
                 refreshed['bordereau_sha256'] = bordereau.get('bordereau_sha256')
                 refreshed['amount'] = float(amount)
@@ -161,6 +209,21 @@ def create_remittance_run(
                 refreshed['currency'] = str(bordereau.get('currency') or 'USD')
                 refreshed['updated_at'] = _now_iso()
                 refreshed['updated_by'] = actor
+                sha = str(bordereau.get('bordereau_sha256') or '')[:12] or 'refresh'
+                mirrored = _mirror(
+                    EVENT_REFRESHED,
+                    refreshed,
+                    entry_suffix=f'refreshed:{sha}',
+                )
+                if not mirrored.get('ok'):
+                    raise RemittanceError(
+                        'ledger_append_failed',
+                        detail={
+                            'ledger': mirrored,
+                            'prior_amount': prior_amount,
+                            'prior_sha': prior_sha,
+                        },
+                    )
                 _RUNS[run_id] = refreshed
                 return {'ok': True, 'refreshed': True, 'run': dict(refreshed)}
             else:
@@ -276,11 +339,25 @@ def settle_remittance_run(
             raise RemittanceError('remittance_not_found')
         if run.get('status') == STATUS_SETTLED:
             return {'ok': True, 'already_settled': True, 'run': dict(run)}
+        # Re-load the intact seal and freeze it on the run so a later rebuild
+        # cannot erase the remitted AE5 cash picture.
+        bordereau = brd.get_bordereau(str(run.get('bordereau_id') or ''))
+        if bordereau is None:
+            raise RemittanceError('bordereau_missing')
+        check = brd.verify_bordereau(bordereau)
+        if not check.get('ok'):
+            raise RemittanceError('bordereau_not_intact', detail={'ae5': check})
         run = dict(run)
         run['status'] = STATUS_SETTLED
         run['settled_at'] = _now_iso()
         run['settled_by'] = actor
         run['money_gate_digest'] = getattr(verdict, 'digest', '') or ''
+        run['bordereau_snapshot'] = dict(bordereau)
+        run['bordereau_sha256'] = bordereau.get('bordereau_sha256')
+        run['amount'] = float(_money(bordereau.get('carrier_payable')))
+        run['premium_cash'] = bordereau.get('premium_cash')
+        run['claims_paid'] = bordereau.get('claims_paid')
+        run['streams'] = bordereau.get('streams') or {}
         mirrored = _mirror(EVENT_SETTLED, run)
         if not mirrored.get('ok'):
             raise RemittanceError('ledger_append_failed', detail={'ledger': mirrored})
@@ -303,6 +380,17 @@ def build_and_create(
     actor: str = 'accountant',
 ) -> Dict[str, Any]:
     """Build a sealed bordereau and open a payable remittance run."""
+    settled = settled_run_for(binder_id, period_id)
+    if settled is not None:
+        board = brd.get_bordereau(str(settled.get('bordereau_id') or ''))
+        if board is None:
+            board = bordereau_snapshot_from_run(settled)
+        return {
+            'ok': True,
+            'already_settled': True,
+            'bordereau': board,
+            'run': settled,
+        }
     bordereau = brd.build_bordereau(
         binder_id=binder_id,
         period_id=period_id,
@@ -325,16 +413,19 @@ def build_and_create(
 
 __all__ = [
     'EVENT_CREATED',
+    'EVENT_REFRESHED',
     'EVENT_SETTLED',
     'OP_SETTLE',
     'RemittanceError',
     'STATUS_CANCELLED',
     'STATUS_PAYABLE',
     'STATUS_SETTLED',
+    'bordereau_snapshot_from_run',
     'build_and_create',
     'create_remittance_run',
     'get_remittance_run',
     'list_remittance_runs',
     'reset_remittance_state',
     'settle_remittance_run',
+    'settled_run_for',
 ]
