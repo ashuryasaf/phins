@@ -2,11 +2,13 @@
 
 U4 lands the Money Gate Agent and Books Integrity job. U5 adds the durable
 accounting journal. U6 seals the daily ``finance.books_tied`` certificate.
-The integrity scorecard reports plan maturity 58→100 and is imported lazily
-(CLI/tests) so boot money paths do not load it. Later units add CoA and
-period close. Callers go through ``services.erp.money_gate`` /
-``accounting_journal`` / ``books_tied`` — this package never invents a
-second money store or pricing writer.
+U7 (agent commission clawback) lives on AgentOS +
+``services.jobs.commission_clawback_job`` and gates through Money Gate op
+``agent_commission.clawback``. The integrity scorecard reports plan maturity
+58→100 and is imported lazily (CLI/tests) so boot money paths do not load
+it. Later units add CoA and period close. Callers go through
+``services.erp.money_gate`` / ``accounting_journal`` / ``books_tied`` — this
+package never invents a second money store or pricing writer.
 """
 
 from services.erp.money_gate import (

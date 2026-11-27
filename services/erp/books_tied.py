@@ -30,6 +30,7 @@ CERT_TAMPERED = 'books_tied_certificate_tampered'
 HIGH_VALUE_OPERATIONS = frozenset({
     'wallet_withdrawal.release',
     'agent_commission.settle',
+    'agent_commission.clawback',
     'claim_payout',
 })
 

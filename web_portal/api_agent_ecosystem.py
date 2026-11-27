@@ -34,6 +34,7 @@ Admin (role=admin) — Agents Management:
   POST /api/admin/agents/repair-referrals
   POST /api/admin/agents/payouts/run      {agent_id?, idempotency_key?, settle?, external_payout_reference?}
   POST /api/admin/agents/payouts/settle  {payout_id, external_payout_reference?}
+  POST /api/admin/agents/commissions/clawback  {commission_id?} | scan all lapsed/unpaid (U7)
   POST /api/admin/agent-invitations/approve
   POST /api/admin/agent-invitations/reject
   POST /api/admin/agent-invitations/redeem
@@ -213,6 +214,7 @@ def handle_get(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
                 customers=data_sources.get("customers", {}),
                 policies=data_sources.get("policies", {}),
                 suppliers=data_sources.get("suppliers", {}),
+                bills=data_sources.get("bills") or {},
             )
         if path == "/api/admin/agents/funnel":
             agent_id = _first(qs, "agent_id")
@@ -308,6 +310,49 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
         if path == "/api/admin/agents/recompute-commissions":
             created = _recompute(data_sources)
             return 200, {"created": created, "ledger_intact": svc.verify_ledger_integrity()}
+
+        if path == "/api/admin/agents/commissions/clawback":
+            # U7: Money Gate before posting a hash-chained reversal (high-value).
+            try:
+                from services.erp.money_gate import (
+                    MoneyGateError, authorize_money_move, http_refuse,
+                )
+                authorize_money_move(
+                    "agent_commission.clawback",
+                    break_glass=bool(body.get("break_glass")),
+                    break_glass_reason=str(body.get("break_glass_reason") or ""),
+                    actor=admin,
+                    role=str(role or ""),
+                    platform_ledger=data_sources.get("platform_ledger"),
+                )
+            except MoneyGateError as gate_exc:
+                return 409, http_refuse(gate_exc)
+            commission_id = body.get("commission_id")
+            reason = body.get("reason")
+            policy_id = body.get("policy_id")
+            if commission_id:
+                ok, result = svc.apply_clawback(
+                    str(commission_id),
+                    reason=str(reason) if reason is not None else None,
+                    policy_id=str(policy_id) if policy_id else None,
+                    actor=admin,
+                )
+                if ok:
+                    return 200, {
+                        "commission": result,
+                        "ledger_intact": svc.verify_ledger_integrity(),
+                        "coverage": svc.clawback_coverage(
+                            data_sources.get("policies", {}) or {},
+                            data_sources.get("bills") or {},
+                        ),
+                    }
+                return (404 if result == "Commission not found" else 409), {"error": result}
+            scan = svc.clawback_for_policies(
+                data_sources.get("policies", {}) or {},
+                data_sources.get("bills") or {},
+                actor=admin,
+            )
+            return 200, scan
 
         if path == "/api/admin/agents/payouts/run":
             agent_id = body.get("agent_id") or None
