@@ -384,28 +384,76 @@ def freshness_failures(
 
 
 def status_report(ledger: Any, *, now: Optional[datetime] = None) -> Dict[str, Any]:
-    """Accountant-facing badge payload (today's seal, else usable prior-day)."""
+    """Accountant-facing badge payload.
+
+    ``intact`` means the seal verifies (checksum OK). ``fresh`` means intact
+    and still within ``max_age_hours``. An intact but aged seal reports
+    ``fresh=False`` / ``reason=books_tied_certificate_stale`` so the badge
+    can show "stale" instead of "tampered".
+    """
     day = utc_day(now)
     today_entry = find_certificate(ledger, day=day)
+    today_check = verify_certificate(today_entry)
+    latest = latest_verified_certificate(ledger)
     usable = usable_certificate(ledger, now=now)
-    entry = usable.get('entry') if usable.get('ok') else today_entry
-    age = usable.get('age_hours') if usable.get('ok') else None
-    if age is None and usable.get('ok'):
-        age = certificate_age_hours(usable, now=now)
+
+    if usable.get('ok'):
+        entry = usable.get('entry')
+        payload = usable.get('payload') or {}
+        age = usable.get('age_hours')
+        if age is None:
+            age = certificate_age_hours(usable, now=now)
+        intact = True
+        fresh = True
+        reason = ''
+        source_day = str(usable.get('source_day') or day)
+    elif today_check.get('ok'):
+        entry = today_entry
+        payload = today_check.get('payload') or {}
+        age = certificate_age_hours(today_check, now=now)
+        intact = True
+        fresh = False
+        reason = CERT_STALE
+        source_day = day
+    elif latest.get('ok'):
+        entry = latest.get('entry')
+        payload = latest.get('payload') or {}
+        age = certificate_age_hours(latest, now=now)
+        intact = True
+        fresh = False
+        reason = CERT_STALE
+        source_day = str(latest.get('utc_day') or '')
+    elif today_entry is not None:
+        entry = today_entry
+        payload = certificate_payload_from_entry(today_entry)
+        age = certificate_age_hours(today_check, now=now)
+        intact = False
+        fresh = False
+        reason = str(today_check.get('reason') or CERT_TAMPERED)
+        source_day = day
+    else:
+        entry = None
+        payload = {}
+        age = None
+        intact = False
+        fresh = False
+        reason = CERT_MISSING
+        source_day = ''
+
     return {
         'schema': 'phins.books_tied_status.v1',
         'utc_day': day,
-        'present': today_entry is not None or bool(usable.get('ok')),
-        'intact': bool(usable.get('ok')),
-        'reason': '' if usable.get('ok') else str(usable.get('reason') or ''),
+        'present': entry is not None or today_entry is not None,
+        'intact': intact,
+        'reason': reason,
         'age_hours': age,
         'max_age_hours': max_age_hours(),
-        'fresh': bool(usable.get('ok')),
+        'fresh': fresh,
         'required': books_tied_required(),
-        'digest': str((usable.get('payload') or {}).get('digest') or ''),
-        'evaluated_at': str((usable.get('payload') or {}).get('evaluated_at') or ''),
+        'digest': str(payload.get('digest') or ''),
+        'evaluated_at': str(payload.get('evaluated_at') or ''),
         'entry_id': str((entry or {}).get('id') or '') if entry else '',
-        'source_day': str(usable.get('source_day') or ''),
+        'source_day': source_day,
         'event_type': EVENT_TYPE,
     }
 

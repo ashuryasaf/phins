@@ -238,6 +238,35 @@ def test_prior_day_cert_covers_midnight_gap(monkeypatch):
     assert verdict.ok is True
 
 
+def test_status_report_stale_is_intact_not_tampered(monkeypatch):
+    """An aged but verified seal must report intact=True, fresh=False."""
+    monkeypatch.setenv('PHINS_BOOKS_TIED_MAX_AGE_HOURS', '2')
+    ledger = _ledger()
+    old = datetime.now(timezone.utc) - timedelta(hours=5)
+    from services.erp.money_gate import MoneyGateVerdict
+
+    issued = bt.issue_certificate(
+        ledger,
+        verdict=MoneyGateVerdict(
+            ok=True,
+            failed_checks=[],
+            digest=digest_for([], ok=True),
+            enforced=True,
+            operation='books_tied.issue',
+            evaluated_at=old.isoformat(),
+        ),
+        actor='test',
+        day=bt.utc_day(),
+        force=True,
+    )
+    assert issued['issued'] is True
+    status = bt.status_report(ledger)
+    assert status['present'] is True
+    assert status['intact'] is True
+    assert status['fresh'] is False
+    assert status['reason'] == bt.CERT_STALE
+
+
 def test_retry_sooner_when_issue_fails(monkeypatch):
     monkeypatch.setenv('PHINS_BOOKS_TIED_RETRY_SECONDS', '120')
     failed = {'certificate': {'issued': False, 'reason': 'books_red'}}
