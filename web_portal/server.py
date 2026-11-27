@@ -9483,7 +9483,7 @@ def _hydrate_and_migrate_fiduciary(
     """
     from services.fiduciary import (
         FiduciaryBootError,
-        capture_fiduciary_baseline_from_db,
+        capture_fiduciary_baseline_from_memory,
         fiduciary_mode,
         hydrate_fiduciary_from_db,
         migrate_snapshot_to_fiduciary_tables,
@@ -9539,10 +9539,17 @@ def _hydrate_and_migrate_fiduciary(
         and marker != FIDUCIARY_BOOKS_DB
         and not prefer_sealed
     ):
-        # File remains SoR; still capture sealed digests so a later mutation
-        # flush CAS-withholds peer updates instead of reverting them.
+        # File remains SoR. Baseline must be digests of the live (file) books
+        # — not sealed checksums — or a matching token would authorize flushing
+        # an older file book over a newer peer seal.
         try:
-            capture_fiduciary_baseline_from_db()
+            capture_fiduciary_baseline_from_memory(
+                health_wallets=HEALTH_WALLETS,
+                wallet_withdrawals=WALLET_WITHDRAWALS,
+                nft_ledger=NFT_LEDGER,
+                investment_accounts=INVESTMENT_ACCOUNTS,
+                balance_sheet=PHINS_BALANCE_SHEET,
+            )
         except Exception as exc:
             print(
                 f"[FIDUCIARY] Baseline capture skipped: {type(exc).__name__}"

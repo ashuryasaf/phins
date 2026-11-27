@@ -17,6 +17,7 @@ from services.fiduciary.store import (
     FIDUCIARY_BOOKS_DB,
     FIDUCIARY_BOOKS_MARKER,
     FIDUCIARY_SNAPSHOT_KEYS,
+    capture_fiduciary_baseline_from_memory,
     fiduciary_baseline,
     fiduciary_mode,
     flush_fiduciary_to_db,
@@ -847,4 +848,67 @@ def test_flush_cas_allows_write_when_baseline_matches(sqlite_db, monkeypatch):
     db = DatabaseManager()
     assert db.health_wallets.get_payload('CUST-OK')['balance'] == 42.0
     db.close()
+
+
+def test_dual_file_sor_memory_baseline_cannot_overwrite_newer_seal(
+    sqlite_db, monkeypatch
+):
+    """Dual volume boot: baseline from file digests, not sealed checksums."""
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    # Peer sealed a newer wallet first.
+    assert flush_fiduciary_to_db(
+        health_wallets={'CUST-FS': {'customer_id': 'CUST-FS', 'balance': 999.0}},
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )['health_wallets']['written'] == 1
+    reset_fiduciary_baseline()
+    # This process boots from an older volume file (hydrate skipped).
+    file_book = {'CUST-FS': {'customer_id': 'CUST-FS', 'balance': 1.0}}
+    capture_fiduciary_baseline_from_memory(
+        health_wallets=file_book,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )
+    _, file_digest = canonical_payload(file_book['CUST-FS'])
+    assert fiduciary_baseline('health_wallets')['CUST-FS'] == file_digest
+    result = flush_fiduciary_to_db(
+        health_wallets=file_book,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )
+    assert result['health_wallets']['withheld'] >= 1
+    assert result['health_wallets']['written'] == 0
+    assert file_book['CUST-FS']['balance'] == 999.0
+    db = DatabaseManager()
+    assert db.health_wallets.get_payload('CUST-FS')['balance'] == 999.0
+    db.close()
+
+
+def test_upsert_atomic_cas_update_requires_matching_checksum(sqlite_db):
+    """Conditional UPDATE withholds when the sealed checksum already moved."""
+    db = DatabaseManager()
+    original = {'customer_id': 'CUST-ATM', 'balance': 3}
+    assert db.health_wallets.upsert('CUST-ATM', original) is True
+    _, digest = canonical_payload(original)
+    peer = {'customer_id': 'CUST-ATM', 'balance': 8}
+    assert db.health_wallets.upsert(
+        'CUST-ATM', peer, expected_checksum=digest
+    ) is True
+    assert (
+        db.health_wallets.upsert(
+            'CUST-ATM',
+            {'customer_id': 'CUST-ATM', 'balance': 3},
+            expected_checksum=digest,
+        )
+        is False
+    )
+    assert db.health_wallets.get_payload('CUST-ATM')['balance'] == 8
+    db.close()
+
 

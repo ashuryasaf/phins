@@ -12,7 +12,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Type
 
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from database.fiduciary_models import (
     BalanceSheetCounters,
@@ -55,6 +55,10 @@ class SealedFiduciaryRepository(BaseRepository):
         matching ``expected_checksum`` (CAS); a missing token or a peer
         update withholds the write instead of a blind overwrite. Idempotent
         no-ops (same canonical payload) still succeed without a token.
+
+        Updates use a conditional ``UPDATE ... WHERE checksum = :expected``
+        so two READ COMMITTED writers that both observed the same digest
+        cannot both commit — the loser gets ``rowcount == 0`` and withholds.
         """
         text, digest = canonical_payload(payload)
         try:
@@ -79,29 +83,49 @@ class SealedFiduciaryRepository(BaseRepository):
                         record_id,
                     )
                     return False
-                if row.checksum != expected_checksum:
-                    logger.error(
-                        "%s concurrent change for %s; withhold",
-                        self.model_class.__tablename__,
-                        record_id,
-                    )
-                    return False
-                row.payload_json = text
-                row.checksum = digest
-                row.updated_date = datetime.utcnow()
-                if self._customer_field and customer_id is not None:
-                    setattr(row, self._customer_field, customer_id)
-            else:
-                kwargs = {
-                    'id': record_id,
+                values: Dict[str, Any] = {
                     'payload_json': text,
                     'checksum': digest,
+                    'updated_date': datetime.utcnow(),
                 }
-                if self._customer_field is not None:
-                    kwargs[self._customer_field] = customer_id
-                row = self.model_class(**kwargs)
-                self.session.add(row)
-            self.session.commit()
+                if self._customer_field and customer_id is not None:
+                    values[self._customer_field] = customer_id
+                changed = (
+                    self.session.query(self.model_class)
+                    .filter(
+                        self.model_class.id == record_id,
+                        self.model_class.checksum == expected_checksum,
+                    )
+                    .update(values, synchronize_session=False)
+                )
+                self.session.commit()
+                if changed == 1:
+                    return True
+                logger.error(
+                    "%s concurrent change for %s; withhold",
+                    self.model_class.__tablename__,
+                    record_id,
+                )
+                return False
+            kwargs = {
+                'id': record_id,
+                'payload_json': text,
+                'checksum': digest,
+            }
+            if self._customer_field is not None:
+                kwargs[self._customer_field] = customer_id
+            self.session.add(self.model_class(**kwargs))
+            try:
+                self.session.commit()
+            except IntegrityError:
+                # Peer inserted the same id first — do not overwrite it.
+                self.session.rollback()
+                logger.error(
+                    "%s concurrent insert for %s; withhold",
+                    self.model_class.__tablename__,
+                    record_id,
+                )
+                return False
             return True
         except SQLAlchemyError as exc:
             # Log type only — SQLAlchemy may stringify bound payload_json.
@@ -113,6 +137,7 @@ class SealedFiduciaryRepository(BaseRepository):
             )
             self.session.rollback()
             raise
+
 
     def _verified_payload(self, row: Any) -> Optional[Any]:
         digest = hashlib.sha256((row.payload_json or '').encode('utf-8')).hexdigest()

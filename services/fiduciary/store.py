@@ -88,11 +88,67 @@ def _set_baseline(book: str, checksums: Mapping[str, str]) -> None:
     _FIDUCIARY_BASELINE[book] = {str(k): str(v) for k, v in checksums.items()}
 
 
+def capture_fiduciary_baseline_from_memory(
+    *,
+    health_wallets: Mapping[str, Any],
+    wallet_withdrawals: Mapping[str, Any],
+    nft_ledger: Mapping[str, Any],
+    investment_accounts: Mapping[str, Any],
+    balance_sheet: Mapping[str, Any],
+) -> Dict[str, int]:
+    """Stamp CAS baselines from digests of what this process currently holds.
+
+    Used on dual file-SoR boot (hydrate skipped). Baseline must reflect the
+    in-memory / file book — not live sealed checksums — otherwise a matching
+    ``expected_checksum`` would authorize flushing an older file book over a
+    newer peer seal. When sealed already differs, the next flush withholds
+    and adopts the peer payload.
+    """
+    from database.repositories.fiduciary_repository import (
+        BALANCE_SHEET_ID,
+        canonical_payload,
+    )
+
+    mode = fiduciary_mode()
+    if mode == 'off':
+        return {'mode': 0}
+    counts = {
+        'health_wallets': 0,
+        'wallet_withdrawals': 0,
+        'nft_ledger': 0,
+        'investment_accounts': 0,
+        'balance_sheet': 0,
+    }
+
+    def _from_mapping(label: str, mapping: Mapping[str, Any]) -> None:
+        checksums: Dict[str, str] = {}
+        for key, payload in (mapping or {}).items():
+            if not key:
+                continue
+            _, digest = canonical_payload(payload)
+            checksums[str(key)] = digest
+        _set_baseline(label, checksums)
+        counts[label] = len(checksums)
+
+    _from_mapping('health_wallets', health_wallets)
+    _from_mapping('wallet_withdrawals', wallet_withdrawals)
+    _from_mapping('nft_ledger', nft_ledger)
+    _from_mapping('investment_accounts', investment_accounts)
+    if balance_sheet:
+        _, digest = canonical_payload(dict(balance_sheet))
+        _set_baseline('balance_sheet', {BALANCE_SHEET_ID: digest})
+        counts['balance_sheet'] = 1
+    else:
+        _set_baseline('balance_sheet', {})
+    return counts
+
+
 def capture_fiduciary_baseline_from_db() -> Dict[str, int]:
     """Record sealed checksums without merging payloads into memory.
 
-    Call on dual file-SoR boot paths that skip hydrate so a later mutation
-    flush still CAS-withholds peer updates.
+    Prefer ``capture_fiduciary_baseline_from_memory`` on dual file-SoR boot.
+    Kept for tests / diagnostics that intentionally observe sealed digests
+    after a prefer-db hydrate.
     """
     mode = fiduciary_mode()
     if mode == 'off':
