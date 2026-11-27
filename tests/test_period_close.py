@@ -186,6 +186,59 @@ def test_hard_close_restored_from_ledger_after_memory_clear(monkeypatch):
         pc.assert_period_open_for_post(date(2025, 9, 15))
 
 
+def test_hard_close_restored_from_db_when_memory_empty(monkeypatch):
+    """Peer worker: durable platform_ledger row restores HARD without memory."""
+
+    class _Row:
+        def to_dict(self):
+            return {
+                'id': 'PCP-2025-07-hard-abc',
+                'event_type': pc.EVENT_HARD,
+                'entity_id': '2025-07',
+                'actor': 'peer',
+                'timestamp': '2025-07-31T12:00:00Z',
+                'payload': {
+                    'period_id': '2025-07',
+                    'pack_id': 'PCP-2025-07-hard-abc',
+                    'checksum': 'deadbeef',
+                    'action': 'hard',
+                    'trial_balance': {'balanced': True},
+                    'chart_fingerprint': coa.chart_fingerprint(),
+                    'critical_checks_digest': 'x',
+                    'actor': 'peer',
+                    'sealed_at': '2025-07-31T12:00:00Z',
+                },
+            }
+
+    class _Db:
+        platform_ledger = type('PL', (), {
+            'get_by_entity_event': staticmethod(lambda *_a, **_k: [_Row()]),
+        })()
+
+    class _Ledger:
+        transaction_ledger = {}
+
+        def _database_enabled(self):
+            return True
+
+        def _get_db_manager_factory(self):
+            class _CM:
+                def __enter__(self):
+                    return _Db()
+
+                def __exit__(self, *a):
+                    return False
+
+            return _CM
+
+    monkeypatch.setattr(pc, '_resolve_platform_ledger', lambda: _Ledger())
+    restored = pc.ensure_period(2025, 7)
+    assert restored['status'] == pc.STATUS_HARD
+    assert restored['hard_closed_by'] == 'peer'
+    with pytest.raises(pc.PeriodClosedError):
+        pc.assert_period_open_for_post(date(2025, 7, 10))
+
+
 def test_reverse_allocation_refuses_hard_closed_today():
     eng = AccountingEngine('ACC-U8-REV', 'Reverse Gate Co')
     alloc = eng.create_allocation(

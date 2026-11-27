@@ -805,12 +805,28 @@ By selecting an investment route, you confirm you understand the risks and benef
         Contra lines + the reversed header seal in one journal transaction so
         a mid-loop clash cannot leave a one-sided credit while status stays
         POSTED (Agentic Security Review on U5).
+        U8 / AE4: contra lines are dated today, so a hard-closed current
+        month refuses the reversal before status or the book changes.
         """
         allocation = self.allocations.get(allocation_id)
         if allocation is None:
             return False, f"Allocation {allocation_id} not found"
         if allocation.status != AllocationStatus.POSTED:
             return False, f"Allocation {allocation_id} is not posted"
+        entry_date = date.today()
+        try:
+            from services.erp.period_close import PeriodClosedError, assert_period_open_for_post
+        except ImportError:
+            PeriodClosedError = None  # type: ignore
+            assert_period_open_for_post = None  # type: ignore
+        if assert_period_open_for_post is not None:
+            try:
+                assert_period_open_for_post(entry_date)
+            except Exception as period_exc:
+                if PeriodClosedError is not None and isinstance(period_exc, PeriodClosedError):
+                    detail = period_exc.as_response()
+                    return False, str(detail.get('error') or period_exc)
+                raise
         note = f"reversed_by={reversed_by}" + (f"; {reason}" if reason else "")
         subject = self._premium_cash_subject(allocation)
         # Generation of the POSTED cycle being reversed (= current reverse count).
@@ -837,7 +853,7 @@ By selecting an investment route, you confirm you understand the risks and benef
                     allocation_id=allocation_id,
                     policy_id=allocation.policy_id,
                     customer_id=allocation.customer_id,
-                    entry_date=date.today(),
+                    entry_date=entry_date,
                     entry_type=entry_type,
                     account_type=account_type,
                     credit_amount=amount,

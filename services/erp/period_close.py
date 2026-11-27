@@ -121,13 +121,14 @@ def _empty_period(year: int, month: int) -> Dict[str, Any]:
 def ensure_period(year: int, month: int) -> Dict[str, Any]:
     """Return the fiscal period for ``year``/``month``, creating it open.
 
-    A hard-close mirrored on the platform ledger is restored first so a
-    restarted worker does not reopen a month that was already sealed.
+    A hard-close mirrored on the platform ledger (memory or DB) is restored
+    first so a restarted or peer worker does not reopen a sealed month —
+    even when this process still holds an open/soft row.
     """
     pid = period_id_for(year, month)
     with _LOCK:
         existing = _PERIODS.get(pid)
-        if existing is not None:
+        if existing is not None and existing.get('status') == STATUS_HARD:
             return dict(existing)
     restored = _restore_hard_close_from_ledger(pid)
     if restored is not None:
@@ -413,24 +414,68 @@ def _pack_from_ledger_fields(fields: Dict[str, Any]) -> Optional[Dict[str, Any]]
     return resealed
 
 
+def _db_hard_close_entry(period_id: str, ledger: Any = None) -> Optional[Dict[str, Any]]:
+    """Newest durable ``finance.period_hard_closed`` row for peer workers."""
+    ledger = ledger if ledger is not None else _resolve_platform_ledger()
+    if ledger is None:
+        return None
+    enabled = getattr(ledger, '_database_enabled', None)
+    factory = getattr(ledger, '_get_db_manager_factory', None)
+    try:
+        if not callable(enabled) or not enabled() or not callable(factory):
+            return None
+        maker = factory()
+        if not callable(maker):
+            return None
+        with maker() as db:
+            rows = db.platform_ledger.get_by_entity_event(period_id, EVENT_HARD, limit=1)
+            if not rows:
+                return None
+            record = rows[0].to_dict() if hasattr(rows[0], 'to_dict') else None
+    except Exception:
+        return None
+    if not isinstance(record, dict):
+        return None
+    # Merge nested payload JSON onto the row so _pack_fields_from_entry works.
+    payload = record.get('payload')
+    if isinstance(payload, str) and payload.strip():
+        try:
+            parsed = json.loads(payload)
+            payload = parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            payload = {}
+    merged = dict(payload) if isinstance(payload, dict) else {}
+    merged.setdefault('event_type', record.get('event_type') or EVENT_HARD)
+    merged.setdefault('type', EVENT_HARD)
+    merged.setdefault('entity_id', record.get('entity_id') or period_id)
+    merged.setdefault('actor', record.get('actor'))
+    merged.setdefault('timestamp', record.get('timestamp'))
+    merged.setdefault('entry_id', record.get('id'))
+    if isinstance(payload, dict):
+        merged['payload'] = payload
+    return merged
+
+
 def _restore_hard_close_from_ledger(period_id: str) -> Optional[Dict[str, Any]]:
     """Rehydrate a hard-closed period from the platform ledger (peer / restart).
 
-    Soft/reopen events do not clear a hard-close row — hard remains immutable.
-    Missing ledger → no restore (period stays open until closed again).
+    Prefers the in-process ledger, then the durable ``platform_ledger`` table
+    when the database is on (other workers). Soft/reopen events do not clear
+    a hard-close row — hard remains immutable.
     """
     pid = str(period_id or '').strip()
     if not pid:
         return None
     ledger = _resolve_platform_ledger()
-    if ledger is None:
-        return None
     latest: Optional[Dict[str, Any]] = None
-    for entry in _iter_platform_ledger_entries(ledger):
-        event_type = str(entry.get('event_type') or entry.get('type') or '')
-        entity_id = str(entry.get('entity_id') or '')
-        if event_type == EVENT_HARD and entity_id == pid:
-            latest = entry
+    if ledger is not None:
+        for entry in _iter_platform_ledger_entries(ledger):
+            event_type = str(entry.get('event_type') or entry.get('type') or '')
+            entity_id = str(entry.get('entity_id') or '')
+            if event_type == EVENT_HARD and entity_id == pid:
+                latest = entry
+    if latest is None:
+        latest = _db_hard_close_entry(pid, ledger=ledger)
     if latest is None:
         return None
     try:

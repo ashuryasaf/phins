@@ -38,22 +38,36 @@ def run_once(
     return result
 
 
+def _accounting_engine() -> Any:
+    """Engine the admin period-close route seals against.
+
+    A standalone worker's singleton starts empty; hydrate from the journal
+    the way the web process does at boot so the sealed trial balance is the
+    books, not zeros.
+    """
+    try:
+        from accounting_engine import get_accounting_engine
+        engine = get_accounting_engine()
+    except Exception:
+        return None
+    try:
+        from services.erp.accounting_journal import hydrate_accounting_engine_from_journal
+        hydrate_accounting_engine_from_journal(engine)
+    except Exception:
+        pass
+    return engine
+
+
 def _handle(job: Dict[str, Any]) -> Dict[str, Any]:
     params = job.get('input_params') or {}
     period_id = str(params.get('period_id') or '').strip()
     if not period_id:
         raise ValueError('period_id is required')
-    engine = None
-    try:
-        from accounting_engine import get_accounting_engine
-        engine = get_accounting_engine()
-    except Exception:
-        engine = None
     return run_once(
         period_id=period_id,
         action=str(params.get('action') or 'soft'),
         actor=str(params.get('actor') or 'period_close_job'),
-        engine=engine,
+        engine=_accounting_engine(),
         books=params.get('books'),
     )
 
