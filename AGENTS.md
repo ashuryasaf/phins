@@ -1370,11 +1370,12 @@ Important test harness facts:
   `PHINS_FIDUCIARY_MODE=dual` (installs `requirements-dev.txt` so pytest is
   present). Root pytest still defaults to in-memory; both paths must stay
   green. `DatabaseDict` fills required create defaults only under
-  `PHINS_TEST_MODE`, seals non-column keys in `extra` (also listed in
-  `_UPGRADE_NEW_COLUMNS`), write-throughs `store[id][k]=v` (and one nested
-  dict level; rolls the proxy back if persist fails), and fails closed when
-  a create cannot land. Fiduciary unit tests stay in
-  `tests/test_fiduciary_store.py` (U2), not this job.
+  `PHINS_TEST_MODE`, seeds missing FK parents in that mode so Postgres
+  matches in-memory fixture order, seals non-column keys in `extra` (also
+  listed in `_UPGRADE_NEW_COLUMNS`), write-throughs `store[id][k]=v` (and
+  one nested dict level; rolls nested+parent proxies back if persist
+  fails), and fails closed when a create cannot land. Fiduciary unit
+  tests stay in `tests/test_fiduciary_store.py` (U2), not this job.
 - **Root `conftest.py`** starts an embedded `ThreadingHTTPServer` on
   `127.0.0.1` with `PortalHandler`; sets env defaults
   (`USE_DATABASE=false`, `USE_SQLITE=true`, `PHINS_TEST_MODE=true`). Under

@@ -463,6 +463,36 @@ def test_apply_create_defaults_skipped_outside_test_mode(monkeypatch):
     assert filled['email'] == 'cust-live@phins.local'
 
 
+def test_ensure_fk_parents_seeds_customer_for_policy_in_test_mode():
+    """Postgres FK: policy create under test mode seeds a missing customer."""
+    from database import init_database
+    from database.data_access import DatabaseDict
+
+    init_database()
+    customers = DatabaseDict('customers')
+    policies = DatabaseDict('policies')
+    cid, pid = 'TEST-CUST-U3-FK', 'TEST-POL-U3-FK'
+    for store, key in ((policies, pid), (customers, cid)):
+        if key in store:
+            del store[key]
+    try:
+        assert cid not in customers
+        policies[pid] = {
+            'id': pid,
+            'customer_id': cid,
+            'type': 'life',
+            'coverage_amount': 1000.0,
+            'annual_premium': 100.0,
+        }
+        assert cid in customers
+        assert policies[pid]['customer_id'] == cid
+    finally:
+        if pid in policies:
+            del policies[pid]
+        if cid in customers:
+            del customers[cid]
+
+
 def test_write_through_rolls_back_proxy_when_persist_fails(monkeypatch):
     """Failed DB write must not leave the in-hand proxy ahead of the store."""
     from database import init_database
@@ -492,6 +522,51 @@ def test_write_through_rolls_back_proxy_when_persist_fails(monkeypatch):
 
         assert row['name'] == 'Rollback'
         assert customers[cid]['name'] == 'Rollback'
+    finally:
+        if cid in customers:
+            del customers[cid]
+
+
+def test_nested_write_through_rolls_back_when_persist_fails(monkeypatch):
+    """Nested mutation must not leave parent/nested ahead of the DB on failure."""
+    from database import init_database
+    from database.data_access import DatabaseDict
+    import pytest as _pytest
+
+    init_database()
+    customers = DatabaseDict('customers')
+    cid = 'TEST-CUST-U3-WT-NEST'
+    if cid in customers:
+        del customers[cid]
+    try:
+        customers[cid] = {
+            'id': cid,
+            'name': 'Nested',
+            'email': 'nest@phins.local',
+            'health_wallet': {'balance': 10.0, 'written_distribution': {'a': 1}},
+        }
+        row = customers[cid]
+        wallet = row['health_wallet']
+        assert wallet['balance'] == 10.0
+
+        original = DatabaseDict.__setitem__
+
+        def boom(self, key, value):
+            if key == cid:
+                raise RuntimeError('forced nested persist failure')
+            return original(self, key, value)
+
+        monkeypatch.setattr(DatabaseDict, '__setitem__', boom)
+        with _pytest.raises(RuntimeError, match='forced nested persist failure'):
+            wallet['balance'] = 99.0
+
+        assert wallet['balance'] == 10.0
+        assert row['health_wallet']['balance'] == 10.0
+        assert customers[cid]['health_wallet']['balance'] == 10.0
+        # Nested proxy still write-throughs after the failed attempt.
+        monkeypatch.setattr(DatabaseDict, '__setitem__', original)
+        wallet['balance'] = 11.0
+        assert customers[cid]['health_wallet']['balance'] == 11.0
     finally:
         if cid in customers:
             del customers[cid]
