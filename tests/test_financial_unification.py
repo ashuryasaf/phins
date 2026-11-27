@@ -1772,10 +1772,18 @@ def test_restore_refuses_when_two_decompositions_give_the_same_premium():
         (0.5, 20): _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5),
         (0.25, 30): _quote(3557.68, 2300.00, 575.00, 345.00, 337.68, 0.25),
     }
-    result = kernel_pin_restore_candidate(dict(_STORED), pricer=_pricer(table))
+    calls = []
+
+    def counting_pricer(payload):
+        calls.append((float(payload["savings_rate"]), int(payload["term_years"])))
+        return _pricer(table)(payload)
+
+    result = kernel_pin_restore_candidate(dict(_STORED), pricer=counting_pricer)
     assert result["status"] == "refused"
     assert result["reason"] == "more_than_one_decomposition"
     assert result["pins"] == {}
+    # Stop as soon as a second distinct stack appears; do not finish the full grid.
+    assert len(calls) < 20
 
 
 def test_restore_accepts_two_terms_that_price_identically():
@@ -1783,6 +1791,38 @@ def test_restore_accepts_two_terms_that_price_identically():
     result = kernel_pin_restore_candidate(dict(_STORED), pricer=_pricer({(0.5, 20): quote, (0.5, 25): quote}))
     assert result["status"] == "restorable"
     assert len(result["matches"]) == 2
+
+
+def test_restore_prefers_application_term_and_reuses_quote_cache():
+    table = {
+        (0.5, 25): _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5),
+        (0.5, 20): _quote(3400.00, 1900.00, 950.00, 285.00, 265.00, 0.5),
+    }
+    calls = []
+
+    def counting_pricer(payload):
+        calls.append((float(payload["savings_rate"]), int(payload["term_years"])))
+        return _pricer(table)(payload)
+
+    cache = {}
+    first = kernel_pin_restore_candidate(
+        dict(_STORED),
+        application={"age": 40, "term_years": 25},
+        pricer=counting_pricer,
+        quote_cache=cache,
+    )
+    assert first["status"] == "restorable"
+    assert first["matches"][0]["term_years"] == 25
+    assert calls[0] == (0.0, 25)
+    before = len(calls)
+    second = kernel_pin_restore_candidate(
+        dict(_STORED),
+        application={"age": 40, "term_years": 25},
+        pricer=counting_pricer,
+        quote_cache=cache,
+    )
+    assert second["status"] == "restorable"
+    assert len(calls) == before  # identical quotes served from the shared cache
 
 
 def test_restore_keeps_an_underwriting_loading_as_the_company_fee():

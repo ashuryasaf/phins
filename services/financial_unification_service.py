@@ -2943,12 +2943,85 @@ def _restore_pricing_payload(
     return payload
 
 
+def _restore_term_years(
+    policy: Mapping[str, Any],
+    application: Optional[Mapping[str, Any]],
+) -> Tuple[int, ...]:
+    """Prefer the term already on the application or policy, then the form grid."""
+    app = application or {}
+    preferred: List[int] = []
+    for raw in (
+        app.get("term_years"),
+        app.get("coverage_years"),
+        (app.get("coverage") or {}).get("term_years") if isinstance(app.get("coverage"), Mapping) else None,
+        (app.get("coverage") or {}).get("coverageYears") if isinstance(app.get("coverage"), Mapping) else None,
+        policy.get("term_years"),
+        policy.get("coverage_years"),
+    ):
+        if raw in (None, ""):
+            continue
+        try:
+            term = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if term in RESTORE_TERM_YEARS and term not in preferred:
+            preferred.append(term)
+    ordered = list(preferred)
+    for term in RESTORE_TERM_YEARS:
+        if term not in ordered:
+            ordered.append(term)
+    return tuple(ordered)
+
+
+def _restore_quote_cache_key(payload: Mapping[str, Any]) -> Tuple[Any, ...]:
+    """Stable key for one restore quote, including questionnaire underwriting inputs."""
+    questionnaire = payload.get("questionnaire")
+    if isinstance(questionnaire, Mapping):
+        questionnaire_key = tuple(sorted((str(k), str(v)) for k, v in questionnaire.items()))
+    else:
+        questionnaire_key = ()
+    return (
+        payload.get("type"),
+        str(payload.get("coverage_amount") or ""),
+        str(payload.get("age") or ""),
+        str(payload.get("dob") or ""),
+        str(payload.get("risk_score") or ""),
+        str(payload.get("gender") or ""),
+        str(payload.get("smoking_status") or ""),
+        str(payload.get("ethnicity") or ""),
+        str(payload.get("adl_level") or ""),
+        str(payload.get("savings_rate") or ""),
+        str(payload.get("term_years") or ""),
+        questionnaire_key,
+    )
+
+
+def _cached_restore_pricer(pricer: Any, cache: Optional[Dict[Tuple[Any, ...], Any]] = None) -> Any:
+    """Memoize kernel quotes inside one restore pass (same age/cover/rate/term)."""
+    if cache is None:
+        return pricer
+
+    def price(payload: Mapping[str, Any]) -> Any:
+        key = _restore_quote_cache_key(payload)
+        if key in cache:
+            return cache[key]
+        try:
+            quote = pricer(dict(payload))
+        except Exception:
+            quote = None
+        cache[key] = quote
+        return quote
+
+    return price
+
+
 def kernel_pin_restore_candidate(
     policy: Mapping[str, Any],
     *,
     application: Optional[Mapping[str, Any]] = None,
     customer: Optional[Mapping[str, Any]] = None,
     pricer: Any = None,
+    quote_cache: Optional[Dict[Tuple[Any, ...], Any]] = None,
 ) -> Dict[str, Any]:
     """Find the one kernel decomposition that reproduces a stored premium.
 
@@ -2958,6 +3031,10 @@ def kernel_pin_restore_candidate(
     monthly premium when one is stored). Anything else is refused: no match,
     more than one match, a discounted premium, or a seal that fails its
     checksum. Nothing is written here.
+
+    ``quote_cache`` is an optional process-local memo shared across one
+    restore/preview pass so identical (age, cover, rate, term) quotes are
+    not recomputed for every unpinned policy.
     """
     policy_id = str(policy.get("id") or policy.get("policy_id") or "")
     annual = money(policy.get("annual_premium"))
@@ -2987,6 +3064,7 @@ def kernel_pin_restore_candidate(
         return result
     if pricer is None:
         from services.pricing_shadow_service import price_application_with_kernel as pricer
+    pricer = _cached_restore_pricer(pricer, quote_cache)
 
     loading = _restore_loading(policy, application)
     if loading < 0:
@@ -2996,8 +3074,9 @@ def kernel_pin_restore_candidate(
     stored_monthly = money(policy.get("monthly_premium"))
     factor = Decimal("1") + loading
     found: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+    terms = _restore_term_years(policy, application)
     for addon, rate in RESTORE_SAVINGS_ADDONS:
-        for term in RESTORE_TERM_YEARS:
+        for term in terms:
             payload = dict(base_payload)
             payload["savings_rate"] = rate
             payload["term_years"] = term
@@ -3028,11 +3107,13 @@ def kernel_pin_restore_candidate(
             entry = found.setdefault(layers, {"quote": dict(quote), "addon": addon, "rate": rate, "terms": []})
             entry["terms"].append(term)
             result["matches"].append({"savings_addon": addon, "savings_rate": rate, "term_years": term})
+            # Two distinct decompositions already refuse the restore; stop the grid.
+            if len(found) > 1:
+                result["reason"] = "more_than_one_decomposition"
+                result["matches"] = result["matches"][:8]
+                return result
     if not found:
         result["reason"] = "no_kernel_price_reproduces_the_premium"
-        return result
-    if len(found) > 1:
-        result["reason"] = "more_than_one_decomposition"
         return result
 
     entry = next(iter(found.values()))

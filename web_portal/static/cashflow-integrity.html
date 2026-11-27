@@ -30,7 +30,8 @@
         .watch { background: #8a6a22; color: #fff; }
         .clear { background: #1f6b4a; color: #fff; }
         button { background: #c4a35a; color: #0b1f3a; border: 0; border-radius: 8px; padding: 10px 14px; font-weight: 650; cursor: pointer; }
-        button:disabled { opacity: .5; cursor: wait; }
+        button:disabled { opacity: .5; cursor: not-allowed; }
+        button.is-busy { cursor: wait; }
         pre { white-space: pre-wrap; background: #0e1c33; padding: 14px; border-radius: 12px; color: #efe6d2; }
         .note { color: #b7c3d6; font-size: 13px; }
         h2 { font-weight: 500; margin-top: 28px; }
@@ -98,6 +99,7 @@
         <section id="kernel-pins">
             <h2>Kernel pins <span id="pins-verdict"></span></h2>
             <p class="note">A policy stored without its kernel decomposition cannot be split into risk, loadings, and savings. Each one is repriced from its stored application. A pin is restored only when exactly one kernel decomposition gives the billed premium to the cent. The premium, the bills, and the balances are not changed. Savings that were charged and never landed are credited by the claim and savings repair on this page.</p>
+            <p class="note" id="pins-analysis">Analysing pins…</p>
             <div class="roster-wrap" id="pins-table"></div>
             <p style="margin-top:12px"><button id="pins-restore" type="button" disabled>Restore the pins that reproduce</button></p>
             <p class="note" id="pins-result"></p>
@@ -219,71 +221,164 @@
             changed_since_preview: 'The policy changed while this ran.',
             pin_not_read_back: 'The pin was written and did not read back.'
         };
+        const PINS_FETCH_MS = 120000;
+        let pinsLoadSeq = 0;
+
+        function setPinsBusy(busy, label) {
+            const button = document.getElementById('pins-restore');
+            button.classList.toggle('is-busy', !!busy);
+            if (busy) {
+                button.disabled = true;
+                if (label) button.textContent = label;
+            }
+        }
+
+        function renderPinsAnalysis(pins, prefix) {
+            const analysis = (pins && pins.analysis) || {};
+            const counts = (pins && pins.counts) || {};
+            const open = (counts.restorable || 0) + (counts.refused || 0) + (counts.not_verified || 0);
+            const parts = [];
+            if (prefix) parts.push(prefix);
+            if (analysis.policies_scanned != null) {
+                parts.push('Scanned ' + analysis.policies_scanned + ' polic' + (analysis.policies_scanned === 1 ? 'y' : 'ies'));
+            }
+            if (open) {
+                parts.push(open + ' without a pin');
+                parts.push((counts.restorable || 0) + ' restorable');
+                parts.push((counts.refused || 0) + ' refused');
+            } else if (counts.pinned != null) {
+                parts.push((counts.pinned || 0) + ' already pinned');
+            }
+            if (analysis.elapsed_ms != null) parts.push(analysis.elapsed_ms + ' ms');
+            if (analysis.success_rate != null && open) {
+                parts.push('match rate ' + Math.round(Number(analysis.success_rate) * 100) + '%');
+            }
+            if (analysis.restored != null) parts.push('restored ' + analysis.restored);
+            document.getElementById('pins-analysis').textContent = parts.join(' · ') || 'Pin analysis ready.';
+        }
 
         async function loadPins() {
-            const response = await fetch('/api/admin/cashflow/kernel-pins', { headers });
-            const body = await response.json();
+            const seq = ++pinsLoadSeq;
             const host = document.getElementById('pins-table');
             const button = document.getElementById('pins-restore');
-            if (!response.ok) {
+            const analysisEl = document.getElementById('pins-analysis');
+            setPinsBusy(true, 'Analysing pins…');
+            analysisEl.textContent = 'Analysing which premiums the kernel can reproduce…';
+            const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            const timer = controller ? setTimeout(() => controller.abort(), PINS_FETCH_MS) : null;
+            try {
+                const response = await fetch('/api/admin/cashflow/kernel-pins', {
+                    headers,
+                    signal: controller ? controller.signal : undefined,
+                });
+                const body = await response.json();
+                if (seq !== pinsLoadSeq) return;
+                if (!response.ok) {
+                    host.innerHTML = '';
+                    document.getElementById('pins-verdict').innerHTML = '';
+                    const message = body.error === 'Unauthorized'
+                        ? 'Admin, accountant, or actuary can read the pins.'
+                        : (body.error || 'Could not read the pins.');
+                    analysisEl.textContent = body.error === 'Unauthorized'
+                        ? 'Sign in as admin, accountant, or actuary to analyse pins.'
+                        : 'Pin analysis did not complete.';
+                    document.getElementById('pins-result').textContent = message;
+                    button.disabled = true;
+                    button.textContent = 'Restore the pins that reproduce';
+                    return;
+                }
+                const pins = body.kernel_pins || {};
+                const counts = pins.counts || {};
+                const rows = pins.policies || [];
+                const open = (counts.restorable || 0) + (counts.refused || 0) + (counts.not_verified || 0);
+                document.getElementById('pins-verdict').innerHTML = open
+                    ? '<span class="tag attention">' + open + ' without a pin</span>'
+                    : '<span class="tag clear">every policy is pinned</span>';
+                renderPinsAnalysis(pins);
+                button.disabled = !(counts.restorable > 0);
+                button.textContent = counts.restorable > 0
+                    ? 'Restore ' + counts.restorable + ' pin(s) that reproduce · ' + money(pins.restorable_annual_premium) + ' a year'
+                    : 'Restore the pins that reproduce';
+                if (!rows.length) {
+                    host.innerHTML = '<p class="note">' + (counts.pinned || 0) + ' policies carry their kernel pin. Nothing to restore.</p>';
+                    return;
+                }
+                host.innerHTML = '<table><thead><tr><th>Policy</th><th>Customer</th><th>Annual premium</th><th>Outcome</th>'
+                    + '<th>Risk</th><th>Underwriting fee</th><th>Expense loading</th><th>Profit</th><th>Savings add-on</th></tr></thead><tbody>'
+                    + rows.map((row) => {
+                        const p = row.pins || {};
+                        const ok = row.status === 'restorable' || row.status === 'restored';
+                        const cell = (value) => ok ? money(value) : '—';
+                        return '<tr><td>' + text(row.policy_id) + '</td><td>' + text(row.customer_id) + '</td><td>' + money(row.annual_premium) + '</td>'
+                            + '<td><span class="tag ' + (ok ? 'watch' : 'attention') + '">' + text(row.status) + '</span> <span class="note">'
+                            + text(PIN_REASONS[row.reason] || row.reason) + '</span></td>'
+                            + '<td>' + cell(p.risk_premium_annual) + '</td><td>' + cell(p.underwriting_fee_annual) + '</td>'
+                            + '<td>' + cell(p.expense_loading_annual) + '</td><td>' + cell(p.profit_margin_annual) + '</td>'
+                            + '<td>' + cell(p.savings_premium_annual) + (p.savings_addon ? ' <span class="note">' + text(p.savings_addon) + '</span>' : '') + '</td></tr>';
+                    }).join('') + '</tbody></table>'
+                    + (pins.policies_total > rows.length ? '<p class="note">Showing ' + rows.length + ' of ' + pins.policies_total + '.</p>' : '');
+            } catch (err) {
+                if (seq !== pinsLoadSeq) return;
                 host.innerHTML = '';
-                document.getElementById('pins-verdict').innerHTML = '';
-                document.getElementById('pins-result').textContent = body.error === 'Unauthorized'
-                    ? 'Admin, accountant, or actuary can read the pins.' : (body.error || 'Could not read the pins.');
+                document.getElementById('pins-verdict').innerHTML = '<span class="tag attention">analysis stalled</span>';
+                analysisEl.textContent = (err && err.name === 'AbortError')
+                    ? 'Pin analysis timed out. Refresh the page or try again.'
+                    : 'Pin analysis could not finish. Refresh the page or try again.';
                 button.disabled = true;
-                return;
+                button.textContent = 'Restore the pins that reproduce';
+            } finally {
+                if (timer) clearTimeout(timer);
+                if (seq === pinsLoadSeq) button.classList.remove('is-busy');
             }
-            const pins = body.kernel_pins || {};
-            const counts = pins.counts || {};
-            const rows = pins.policies || [];
-            const open = (counts.restorable || 0) + (counts.refused || 0) + (counts.not_verified || 0);
-            document.getElementById('pins-verdict').innerHTML = open
-                ? '<span class="tag attention">' + open + ' without a pin</span>'
-                : '<span class="tag clear">every policy is pinned</span>';
-            button.disabled = !(counts.restorable > 0);
-            button.textContent = counts.restorable > 0
-                ? 'Restore ' + counts.restorable + ' pin(s) that reproduce · ' + money(pins.restorable_annual_premium) + ' a year'
-                : 'Restore the pins that reproduce';
-            if (!rows.length) {
-                host.innerHTML = '<p class="note">' + (counts.pinned || 0) + ' policies carry their kernel pin. Nothing to restore.</p>';
-                return;
-            }
-            host.innerHTML = '<table><thead><tr><th>Policy</th><th>Customer</th><th>Annual premium</th><th>Outcome</th>'
-                + '<th>Risk</th><th>Underwriting fee</th><th>Expense loading</th><th>Profit</th><th>Savings add-on</th></tr></thead><tbody>'
-                + rows.map((row) => {
-                    const p = row.pins || {};
-                    const ok = row.status === 'restorable' || row.status === 'restored';
-                    const cell = (value) => ok ? money(value) : '—';
-                    return '<tr><td>' + text(row.policy_id) + '</td><td>' + text(row.customer_id) + '</td><td>' + money(row.annual_premium) + '</td>'
-                        + '<td><span class="tag ' + (ok ? 'watch' : 'attention') + '">' + text(row.status) + '</span> <span class="note">'
-                        + text(PIN_REASONS[row.reason] || row.reason) + '</span></td>'
-                        + '<td>' + cell(p.risk_premium_annual) + '</td><td>' + cell(p.underwriting_fee_annual) + '</td>'
-                        + '<td>' + cell(p.expense_loading_annual) + '</td><td>' + cell(p.profit_margin_annual) + '</td>'
-                        + '<td>' + cell(p.savings_premium_annual) + (p.savings_addon ? ' <span class="note">' + text(p.savings_addon) + '</span>' : '') + '</td></tr>';
-                }).join('') + '</tbody></table>'
-                + (pins.policies_total > rows.length ? '<p class="note">Showing ' + rows.length + ' of ' + pins.policies_total + '.</p>' : '');
         }
 
         document.getElementById('pins-restore').addEventListener('click', async () => {
             const button = document.getElementById('pins-restore');
-            button.disabled = true;
-            const response = await fetch('/api/admin/cashflow/restore-kernel-pins', { method: 'POST', headers, body: '{}' });
-            const body = await response.json();
-            const counts = (body.kernel_pins || {}).counts || {};
-            const book = (body.kernel_pins || {}).accounting_book || {};
-            const failures = {
-                repair_journal_failed: 'The repair journal could not be written, so nothing was changed.',
-                pin_not_read_back: 'A pin was written and did not read back. That policy is listed again.',
-                accounting_book_not_resplit: 'The pins were restored. A premium already booked could not be re-split on the accounting book; run Repair books on the accounting page.',
-            };
-            document.getElementById('pins-result').textContent = response.ok
-                ? ('Restored ' + (counts.restored || 0) + ' pin(s). ' + (counts.refused || 0) + ' left as stored. '
-                    + (book.resplit_count || 0) + ' premium posting(s) re-split on the accounting book. The before and after lines are in the repair journal.')
-                : (failures[body.error] || body.error || 'Could not restore.');
-            await loadPins();
-            load();
-            const refresh = document.getElementById('unified-refresh');
-            if (refresh) refresh.click();
+            const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            const timer = controller ? setTimeout(() => controller.abort(), PINS_FETCH_MS) : null;
+            setPinsBusy(true, 'Restoring pins…');
+            document.getElementById('pins-result').textContent = 'Restoring pins that reproduce the billed premium…';
+            try {
+                const response = await fetch('/api/admin/cashflow/restore-kernel-pins', {
+                    method: 'POST',
+                    headers,
+                    body: '{}',
+                    signal: controller ? controller.signal : undefined,
+                });
+                const body = await response.json();
+                const pins = body.kernel_pins || {};
+                const counts = pins.counts || {};
+                const book = pins.accounting_book || {};
+                const failures = {
+                    repair_journal_failed: 'The repair journal could not be written, so nothing was changed.',
+                    pin_not_read_back: 'A pin was written and did not read back. That policy is listed again.',
+                    accounting_book_not_resplit: 'The pins were restored. A premium already booked could not be re-split on the accounting book; run Repair books on the accounting page.',
+                };
+                if (response.ok) {
+                    renderPinsAnalysis(pins, 'Restore finished');
+                    document.getElementById('pins-result').textContent = (
+                        'Restored ' + (counts.restored || 0) + ' pin(s). ' + (counts.refused || 0) + ' left as stored. '
+                        + (book.resplit_count || 0) + ' premium posting(s) re-split on the accounting book. The before and after lines are in the repair journal.'
+                    );
+                } else {
+                    document.getElementById('pins-result').textContent = failures[body.error] || body.error || 'Could not restore.';
+                    if (pins.analysis) renderPinsAnalysis(pins, 'Restore stopped');
+                }
+                await loadPins();
+                load();
+                if (window.PhinsUnifiedCashflow && typeof window.PhinsUnifiedCashflow.reload === 'function') {
+                    window.PhinsUnifiedCashflow.reload();
+                }
+            } catch (err) {
+                document.getElementById('pins-result').textContent = (err && err.name === 'AbortError')
+                    ? 'Restore timed out. Nothing further was applied after the timeout; refresh and read the pin list.'
+                    : 'Restore could not finish. Refresh and read the pin list before trying again.';
+                button.disabled = false;
+                button.textContent = 'Restore the pins that reproduce';
+            } finally {
+                if (timer) clearTimeout(timer);
+                button.classList.remove('is-busy');
+            }
         });
 
         document.getElementById('post-claims').addEventListener('click', async () => {

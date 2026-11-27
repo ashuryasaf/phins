@@ -671,6 +671,11 @@ def test_kernel_pin_restore_reproduces_the_premium_and_journals_first(live_books
     assert status == 200, body
     preview = body["kernel_pins"]
     assert preview["applied"] is False
+    analysis = preview["analysis"]
+    assert analysis["policies_scanned"] >= 1
+    assert analysis["without_pin"] >= 1
+    assert analysis["elapsed_ms"] >= 0
+    assert 0.0 <= analysis["success_rate"] <= 1.0
     row = next(r for r in preview["policies"] if r["policy_id"] == policy_id)
     assert row["status"] == "restorable"
     assert {key: row["pins"][key] for key in _MONEY_PINS} == issued
@@ -738,6 +743,78 @@ def test_kernel_pin_restore_reproduces_the_premium_and_journals_first(live_books
     assert status == 200 and body["kernel_pins"]["applied"] is False
     assert len([line for line in journal if line.get("action") == "cashflow.kernel_pin_restore"]) == 2
     assert lines >= 2
+
+
+def test_restore_apply_refused_count_keeps_preview_refusals_beyond_list_cap(live_books, monkeypatch):
+    """Apply recount must not derive refused from the 200-row policies slice."""
+    portal = live_books
+    admin = _session(portal, "phins_restore-cap", "admin", "admin")
+    journal = []
+    monkeypatch.setattr(portal, "_append_cashflow_repair_journal", journal.append)
+
+    refused_rows = [
+        {
+            "policy_id": f"POL-REF-{i}",
+            "customer_id": f"CUST-REF-{i}",
+            "annual_premium": 100.0,
+            "status": "refused",
+            "reason": "no_kernel_price_reproduces_the_premium",
+            "pins": {},
+        }
+        for i in range(250)
+    ]
+    # Missing from POLICIES so apply marks it changed_since_preview.
+    candidate = {
+        "policy_id": "POL-MISSING",
+        "customer_id": "CUST-MISSING",
+        "annual_premium": 200.0,
+        "status": "restorable",
+        "reason": "one_decomposition_reproduces_the_premium",
+        "pins": {
+            "risk_premium_annual": 150.0,
+            "savings_premium_annual": 0.0,
+            "expense_loading_annual": 25.0,
+            "profit_margin_annual": 25.0,
+        },
+    }
+
+    def fake_scan():
+        return {
+            "success": True,
+            "applied": False,
+            "writes_premiums": False,
+            "counts": {
+                "pinned": 0,
+                "restorable": 1,
+                "refused": 250,
+                "restored": 0,
+                "not_verified": 0,
+            },
+            "restorable_annual_premium": 200.0,
+            "policies": refused_rows[:199] + [candidate],
+            "policies_listed": 200,
+            "policies_total": 251,
+            "durable": True,
+            "analysis": {
+                "policies_scanned": 251,
+                "without_pin": 251,
+                "quote_cache_entries": 0,
+                "elapsed_ms": 1,
+                "success_rate": round(1 / 251, 4),
+            },
+            "_restorable": [("POL-MISSING", candidate)],
+        }
+
+    monkeypatch.setattr(portal, "_kernel_pin_restore_scan", fake_scan)
+    status, body = _http("POST", "/api/admin/cashflow/restore-kernel-pins", admin)
+    assert status == 200, body
+    counts = body["kernel_pins"]["counts"]
+    # 250 preview refusals + the missing restorable that flipped to refused.
+    assert counts["refused"] == 251
+    assert counts["restored"] == 0
+    assert counts["restorable"] == 0
+    assert candidate["status"] == "refused"
+    assert candidate["reason"] == "changed_since_preview"
 
 
 def _balance_sheet(admin):
