@@ -1895,6 +1895,7 @@ def test_restore_refuses_stored_quote_missing_monthly_when_policy_has_one():
     quote = _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5)
     quote["savings_addon"] = "balanced"
     quote["savings_rate"] = 0.5
+    quote.pop("monthly", None)
     # No monthly on the quote while the policy bills monthly — same bar as the grid.
     result = kernel_pin_restore_candidate(
         dict(_STORED),
