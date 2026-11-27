@@ -49,6 +49,9 @@ def main(argv=None) -> int:
     from services.bi_analytics_service import get_bi_analytics_service
     from services.bi_snapshot_service import get_bi_snapshot_service
 
+    # U1: refuse to snapshot empty in-memory books in real production.
+    portal._enforce_durable_database()
+
     data_sources = portal.bi_data_sources()
     bi_service = get_bi_analytics_service()
     output = {'success': True}

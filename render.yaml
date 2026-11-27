@@ -29,3 +29,7 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0
+      # U1: bare RENDER makes database_required() true. Link the same
+      # Postgres as the web service (DATABASE_URL) so auto-pay does not
+      # exit at the CLI durability gate. Do not set
+      # PHINS_REQUIRE_DATABASE=false here — that would charge empty books.

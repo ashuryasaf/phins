@@ -2446,23 +2446,46 @@ else:
     BILLING: Dict[str, Dict[str, Any]] = {}  # bill_id -> bill data (for metrics)
     print("✓ Using in-memory storage (demo data will be loaded at startup)")
 
-# DI-1 / U1: refuse volatile in-memory books when durability is required
-# (explicit PHINS_REQUIRE_DATABASE, or the production default).
+# DI-1 / U1: durability is required (explicit PHINS_REQUIRE_DATABASE, or the
+# production default) but unavailable. Do not SystemExit at import — cron /
+# bi-snapshot / worker import this module and must survive load. Entry points
+# call _enforce_durable_database() before serving or moving money.
 if _refuse_in_memory_boot(
     required=DATABASE_REQUIRED,
     use_database=USE_DATABASE,
     database_enabled=database_enabled,
 ):
     print("=" * 60)
-    print("FATAL: Durable database storage is required but unavailable.")
-    print("       Refusing to start on volatile in-memory storage to protect")
-    print("       data-integrity guarantees (no empty-book split-brain).")
-    print("       Fix the DB connection, or set PHINS_REQUIRE_DATABASE=false")
-    print("       only as an explicit non-production escape hatch.")
-    print("       See docs/INVESTOR_AI_BI_OPTIMIZATION_REVIEW.md §6 and")
-    print("       docs/plans/2026-11-27-erp-mga-integrity-100.md U1.")
+    print("WARNING: Durable database storage is required but unavailable.")
+    print("         Volatile in-memory books are loaded for import only.")
+    print("         HTTP serve / auto-pay / bi-snapshot will refuse to run")
+    print("         until the DB is reachable (or PHINS_REQUIRE_DATABASE=false).")
+    print("         See docs/plans/2026-11-27-erp-mga-integrity-100.md U1.")
     print("=" * 60)
-    raise SystemExit(1)
+
+
+def _enforce_durable_database() -> None:
+    """U1: abort the current entry point when production needs a live DB.
+
+    Called from ``run_server``, ``execute_monthly_auto_pay_cli``, and the
+    bi-snapshot main — not at import — so one-shot jobs can load the module
+    without dying, then fail closed before they serve or mutate books.
+    """
+    if _refuse_in_memory_boot(
+        required=DATABASE_REQUIRED,
+        use_database=USE_DATABASE,
+        database_enabled=database_enabled,
+    ):
+        print("=" * 60)
+        print("FATAL: Durable database storage is required but unavailable.")
+        print("       Refusing to run on volatile in-memory storage to protect")
+        print("       data-integrity guarantees (no empty-book split-brain).")
+        print("       Fix the DB connection, or set PHINS_REQUIRE_DATABASE=false")
+        print("       only as an explicit non-production escape hatch.")
+        print("       See docs/INVESTOR_AI_BI_OPTIMIZATION_REVIEW.md §6 and")
+        print("       docs/plans/2026-11-27-erp-mga-integrity-100.md U1.")
+        print("=" * 60)
+        raise SystemExit(1)
 
 
 def attempt_database_recovery():
@@ -68996,8 +69019,9 @@ def _seed_startup_demo_fixtures() -> None:
 
 
 def run_server(port: int = PORT) -> None:
-    # U1: refuse HTTP serve on an ephemeral ledger path in real production.
-    # Deferred from import so cron/worker/bi-snapshot imports stay alive.
+    # U1: refuse HTTP serve without a live DB or on an ephemeral ledger path.
+    # Both gates are deferred from import so cron/worker/bi-snapshot can load.
+    _enforce_durable_database()
     _enforce_durable_ledger_at_serve()
 
     # Audit security-critical secrets early so operators see misconfiguration
@@ -69480,6 +69504,9 @@ def bootstrap_runtime_state_for_command() -> None:
 
 def execute_monthly_auto_pay_cli(argv: Optional[List[str]] = None) -> int:
     """Run the monthly auto-pay batch as a one-shot command for schedulers."""
+    # U1: fail closed before charging when production has no durable DB.
+    _enforce_durable_database()
+
     args = list(argv or [])
     dry_run = '--dry-run' in args
     notify_users = '--no-notify' not in args

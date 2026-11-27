@@ -846,8 +846,9 @@ Environment variables commonly used:
   `DB_PASSWORD`, `PHINS_REQUIRE_DATABASE` (defaults **on** in real
   production via `security/boot_integrity.py` — entrypoint does not
   export it; unrecognized values fail closed; explicit `false` is the
-  escape hatch; `PHINS_TEST_MODE` and Railway PR previews stay soft so
-  empty in-memory books are never served as prod)
+  escape hatch; `PHINS_TEST_MODE` and Railway PR previews stay soft;
+  refuse runs in `run_server` / auto-pay CLI / bi-snapshot, not at
+  import, so empty in-memory books are never served or charged as prod)
 - **Server:** `PORT`, `HOST`, `BASE_URL`, `PHINS_ENVIRONMENT`,
   `POPULATE_DEMO_DATA`
 - **Test:** `PHINS_TEST_MODE`, `TEST_BASE_URL`, `TEST_PORT`,

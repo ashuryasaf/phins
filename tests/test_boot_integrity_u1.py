@@ -151,7 +151,7 @@ def test_render_platform_defaults_to_require_database_without_explicit_label():
 
 
 def test_ae1_kill_postgres_shape_production_requires_db_and_refuses_memory():
-    """AE1: production + DB down → refuse in-memory boot (SystemExit at serve)."""
+    """AE1: production + DB down → refuse in-memory (SystemExit at entry points)."""
     env = {
         "PHINS_ENVIRONMENT": "production",
         "RAILWAY_ENVIRONMENT": "production",
@@ -160,3 +160,33 @@ def test_ae1_kill_postgres_shape_production_requires_db_and_refuses_memory():
     assert refuse_in_memory_boot(
         required=True, use_database=False, database_enabled=False
     ) is True
+
+
+def test_durable_database_enforce_is_noop_under_test_mode():
+    """Import + entry-point enforce must not abort the pytest harness."""
+    import web_portal.server as portal
+
+    # PHINS_TEST_MODE is set by root conftest; enforce must be a no-op.
+    portal._enforce_durable_database()
+
+
+def test_import_time_no_longer_systemexits_on_db_refuse():
+    """DB refuse lives in _enforce_durable_database, not bare import side effects."""
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[1] / "web_portal" / "server.py"
+    text = src.read_text(encoding="utf-8")
+    marker = "# DI-1 / U1: durability is required"
+    start = text.index(marker)
+    # The import-time block ends at the enforce helper definition.
+    end = text.index("def _enforce_durable_database()", start)
+    chunk = text[start:end]
+    assert "raise SystemExit" not in chunk
+    assert "WARNING: Durable database storage is required" in chunk
+    assert "def run_server" in text
+    assert "_enforce_durable_database()" in text.split("def run_server", 1)[1].split(
+        "def ", 1
+    )[0]
+    assert "_enforce_durable_database()" in text.split(
+        "def execute_monthly_auto_pay_cli", 1
+    )[1].split("bootstrap_runtime_state_for_command", 1)[0]
