@@ -866,9 +866,11 @@ Environment variables commonly used:
   `services/fiduciary/`); dual mode writes tables on every
   `save_ledger_data` and hydrates gaps on boot; `db` omits those keys
   from the JSON / agent_artifacts snapshot and treats a failed table
-  flush as a durability failure on `save_ledger_data`. A checksum
-  mismatch withholds the row and never overwrites it. Migration from a
-  snapshot is journal-first on the platform ledger
+  flush as a durability failure on `save_ledger_data`. Fiduciary flush
+  follows the same dirty gate as the ledger file — a clean periodic
+  tick does not republish process-local dicts over shared Postgres.
+  A checksum mismatch withholds the row and never overwrites it.
+  Migration from a snapshot is journal-first on the platform ledger
   (`fiduciary.tables_migrated`) and inserts only missing record ids
   (plus an empty balance-sheet row) so a half-finished boot can resume.
   The image creates `/data`, so `phins_ledger_data.json` (algo balances,

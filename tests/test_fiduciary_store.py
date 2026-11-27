@@ -350,6 +350,16 @@ def test_hydrate_propagates_db_open_failure(monkeypatch):
         )
 
 
+def test_should_flush_fiduciary_skips_clean_periodic_ticks():
+    """Idle periodic saves must not republish process-local fiduciary dicts."""
+    from web_portal.server import _should_flush_fiduciary
+
+    assert _should_flush_fiduciary(periodic=True, dirty=False, force_db=False) is False
+    assert _should_flush_fiduciary(periodic=True, dirty=True, force_db=False) is True
+    assert _should_flush_fiduciary(periodic=False, dirty=False, force_db=False) is True
+    assert _should_flush_fiduciary(periodic=True, dirty=False, force_db=True) is True
+
+
 def test_snapshot_payload_omits_fiduciary_keys_in_db_mode(monkeypatch):
     monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'db')
     snap = {
