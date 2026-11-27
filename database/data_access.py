@@ -381,10 +381,10 @@ def pack_row_extra(repository_name: str, model_class, data: Dict[str, Any], exis
 class _NestedWriteThrough(dict):
     """Nested dict that assign-backs into a parent ``_WriteThroughRecord``.
 
-    Snapshots the nested plain dict *and* a parent snapshot that freezes this
-    key to the pre-mutation nested state before mutating, so a failed persist
-    restores both the nested proxy and the parent (the live nested object is
-    already mutated when the parent would otherwise snapshot).
+    The new mapping is built aside and adopted only after that assign-back
+    persists. Mutating this proxy first would make the parent's rollback
+    snapshot the new value, so a failed write would leave the proxy ahead
+    of the database. (Autofix ``1bbc092875``, absorbed onto tip.)
     """
 
     __slots__ = ('_parent', '_parent_key')
@@ -394,70 +394,49 @@ class _NestedWriteThrough(dict):
         self._parent = parent
         self._parent_key = parent_key
 
-    def _mutate_then_assign(self, apply) -> Any:
-        nested_before = dict(self)
-        parent_before = self._parent._snapshot_with(self._parent_key, nested_before)
-        try:
-            result = apply()
-            # Install a plain dict then persist without re-snapshotting the
-            # already-mutated nested proxy as the "before" state.
-            self._parent._commit_nested(self._parent_key, dict(self), parent_before)
-            return result
-        except Exception:
-            super().clear()
-            super().update(nested_before)
-            self._parent._restore(parent_before)
-            # Re-wrap this key so later nested edits still write through.
-            super(_WriteThroughRecord, self._parent).__setitem__(
-                self._parent_key, self
-            )
-            raise
+    def _commit(self, pending: Dict[str, Any]) -> None:
+        """Assign ``pending`` back, then adopt it only if that persist succeeds."""
+        self._parent[self._parent_key] = pending
+        super().clear()
+        super().update(pending)
 
     def __setitem__(self, key, value):
-        def apply():
-            super(_NestedWriteThrough, self).__setitem__(key, value)
-
-        self._mutate_then_assign(apply)
+        pending = dict(self)
+        pending[key] = value
+        self._commit(pending)
 
     def __delitem__(self, key):
-        def apply():
-            super(_NestedWriteThrough, self).__delitem__(key)
-
-        self._mutate_then_assign(apply)
+        pending = dict(self)
+        del pending[key]
+        self._commit(pending)
 
     def clear(self):
-        def apply():
-            super(_NestedWriteThrough, self).clear()
-
-        self._mutate_then_assign(apply)
+        self._commit({})
 
     def pop(self, *args):
-        def apply():
-            return super(_NestedWriteThrough, self).pop(*args)
-
-        return self._mutate_then_assign(apply)
+        pending = dict(self)
+        value = pending.pop(*args)
+        self._commit(pending)
+        return value
 
     def popitem(self):
-        def apply():
-            return super(_NestedWriteThrough, self).popitem()
-
-        return self._mutate_then_assign(apply)
+        pending = dict(self)
+        item = pending.popitem()
+        self._commit(pending)
+        return item
 
     def setdefault(self, key, default=None):
         if key in self:
             return self[key]
-
-        def apply():
-            super(_NestedWriteThrough, self).setdefault(key, default)
-            return self[key]
-
-        return self._mutate_then_assign(apply)
+        pending = dict(self)
+        pending.setdefault(key, default)
+        self._commit(pending)
+        return self[key]
 
     def update(self, *args, **kwargs):
-        def apply():
-            super(_NestedWriteThrough, self).update(*args, **kwargs)
-
-        self._mutate_then_assign(apply)
+        pending = dict(self)
+        pending.update(*args, **kwargs)
+        self._commit(pending)
 
 
 class _WriteThroughRecord(dict):
@@ -488,12 +467,6 @@ class _WriteThroughRecord(dict):
             for k, v in self.items()
         }
 
-    def _snapshot_with(self, nested_key: str, nested_plain: Dict[str, Any]) -> Dict[str, Any]:
-        """Like ``_snapshot``, but freeze ``nested_key`` to ``nested_plain``."""
-        snap = self._snapshot()
-        snap[nested_key] = dict(nested_plain)
-        return snap
-
     def _restore(self, snapshot: Dict[str, Any]) -> None:
         super().clear()
         super().update(snapshot)
@@ -507,18 +480,6 @@ class _WriteThroughRecord(dict):
             self._store[self._key] = self._snapshot()
         finally:
             self._persisting = False
-
-    def _commit_nested(self, nested_key: str, nested_plain: Dict[str, Any], parent_before: Dict[str, Any]) -> None:
-        """Persist a nested assign-back; restore ``parent_before`` on failure."""
-        try:
-            super().__setitem__(nested_key, nested_plain)
-            self._persist()
-            # Re-wrap so subsequent nested mutations still write through.
-            wrapped = _NestedWriteThrough(self, nested_key, nested_plain)
-            super().__setitem__(nested_key, wrapped)
-        except Exception:
-            self._restore(parent_before)
-            raise
 
     def _mutate_then_persist(self, apply) -> Any:
         """Apply ``apply`` then persist; roll the proxy back if the DB write fails."""

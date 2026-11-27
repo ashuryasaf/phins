@@ -528,48 +528,57 @@ def test_write_through_rolls_back_proxy_when_persist_fails(monkeypatch):
 
 
 def test_nested_write_through_rolls_back_when_persist_fails(monkeypatch):
-    """Nested mutation must not leave parent/nested ahead of the DB on failure."""
+    """A failed nested assign must not leave the proxy, the record, or a later edit ahead of the DB."""
     from database import init_database
     from database.data_access import DatabaseDict
     import pytest as _pytest
 
     init_database()
-    customers = DatabaseDict('customers')
-    cid = 'TEST-CUST-U3-WT-NEST'
-    if cid in customers:
-        del customers[cid]
+    apps = DatabaseDict('underwriting')
+    uid = 'TEST-UW-U3-NESTED-RB'
+    original_mix = {'health_wallet': 30, 'investments': 65, 'algo': 5}
+    if uid in apps:
+        del apps[uid]
     try:
-        customers[cid] = {
-            'id': cid,
-            'name': 'Nested',
-            'email': 'nest@phins.local',
-            'health_wallet': {'balance': 10.0, 'written_distribution': {'a': 1}},
+        apps[uid] = {
+            'id': uid,
+            'health_wallet': {'enabled': True, 'written_distribution': {'health_wallet': 15}},
         }
-        row = customers[cid]
+        row = apps[uid]
         wallet = row['health_wallet']
-        assert wallet['balance'] == 10.0
+        wallet['written_distribution'] = dict(original_mix)
+        assert wallet['written_distribution'] == original_mix
+        assert apps[uid]['health_wallet']['written_distribution'] == original_mix
 
         original = DatabaseDict.__setitem__
 
         def boom(self, key, value):
-            if key == cid:
-                raise RuntimeError('forced nested persist failure')
+            if key == uid:
+                raise RuntimeError('forced persist failure')
             return original(self, key, value)
 
         monkeypatch.setattr(DatabaseDict, '__setitem__', boom)
-        with _pytest.raises(RuntimeError, match='forced nested persist failure'):
-            wallet['balance'] = 99.0
+        with _pytest.raises(RuntimeError, match='forced persist failure'):
+            wallet['written_distribution'] = {'health_wallet': 99}
+        with _pytest.raises(RuntimeError, match='forced persist failure'):
+            wallet.update(written_distribution={'health_wallet': 99})
+        with _pytest.raises(RuntimeError, match='forced persist failure'):
+            del wallet['enabled']
 
-        assert wallet['balance'] == 10.0
-        assert row['health_wallet']['balance'] == 10.0
-        assert customers[cid]['health_wallet']['balance'] == 10.0
-        # Nested proxy still write-throughs after the failed attempt.
+        assert wallet['written_distribution'] == original_mix
+        assert wallet['enabled'] is True
+        assert row['health_wallet']['written_distribution'] == original_mix
+        assert row['health_wallet']['enabled'] is True
+        assert apps[uid]['health_wallet']['written_distribution'] == original_mix
+
         monkeypatch.setattr(DatabaseDict, '__setitem__', original)
-        wallet['balance'] = 11.0
-        assert customers[cid]['health_wallet']['balance'] == 11.0
+        wallet['note'] = 'kept'
+        stored = apps[uid]['health_wallet']
+        assert stored['written_distribution'] == original_mix
+        assert stored.get('note') == 'kept'
     finally:
-        if cid in customers:
-            del customers[cid]
+        if uid in apps:
+            del apps[uid]
 
 
 def test_upgrade_new_columns_lists_fiduciary_extra():
