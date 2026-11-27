@@ -67,10 +67,9 @@ def _canonical(payload: Any) -> str:
     return json.dumps(payload, sort_keys=True, separators=(',', ':'), default=str)
 
 
-def _run_id(binder_id: str, period_id: str, bordereau_id: str) -> str:
-    digest = hashlib.sha256(
-        f'{binder_id}|{period_id}|{bordereau_id}'.encode('utf-8')
-    ).hexdigest()[:12]
+def _run_id(binder_id: str, period_id: str) -> str:
+    """One remittance run identity per binder/period (never per rebuild)."""
+    digest = hashlib.sha256(f'{binder_id}|{period_id}'.encode('utf-8')).hexdigest()[:12]
     return f'REM-{binder_id}-{period_id}-{digest}'
 
 
@@ -136,11 +135,39 @@ def create_remittance_run(
     if not period_id or not bordereau_id:
         raise RemittanceError('bordereau_incomplete')
     amount = _money(bordereau.get('carrier_payable'))
-    run_id = _run_id(binder_id, period_id, bordereau_id)
+    run_id = _run_id(binder_id, period_id)
     with _LOCK:
         existing = _RUNS.get(run_id)
         if existing is not None:
-            return {'ok': True, 'already': True, 'run': dict(existing)}
+            if existing.get('status') == STATUS_SETTLED:
+                return {'ok': True, 'already_settled': True, 'run': dict(existing)}
+            if existing.get('status') == STATUS_CANCELLED:
+                pass  # reopen a fresh payable below
+            elif existing.get('status') == STATUS_PAYABLE:
+                # Same sealed cash → idempotent. Changed cash → refresh the
+                # single payable in place (never a second run for the period).
+                if (
+                    existing.get('bordereau_sha256') == bordereau.get('bordereau_sha256')
+                    and float(_money(existing.get('amount'))) == float(amount)
+                ):
+                    return {'ok': True, 'already': True, 'run': dict(existing)}
+                refreshed = dict(existing)
+                refreshed['bordereau_id'] = bordereau_id
+                refreshed['bordereau_sha256'] = bordereau.get('bordereau_sha256')
+                refreshed['amount'] = float(amount)
+                refreshed['premium_cash'] = bordereau.get('premium_cash')
+                refreshed['claims_paid'] = bordereau.get('claims_paid')
+                refreshed['streams'] = bordereau.get('streams') or {}
+                refreshed['currency'] = str(bordereau.get('currency') or 'USD')
+                refreshed['updated_at'] = _now_iso()
+                refreshed['updated_by'] = actor
+                _RUNS[run_id] = refreshed
+                return {'ok': True, 'refreshed': True, 'run': dict(refreshed)}
+            else:
+                raise RemittanceError(
+                    'remittance_not_payable',
+                    detail={'status': existing.get('status')},
+                )
         run = {
             'id': run_id,
             'status': STATUS_PAYABLE,
@@ -291,6 +318,8 @@ def build_and_create(
         'bordereau': bordereau,
         'run': created.get('run'),
         'already': created.get('already'),
+        'already_settled': created.get('already_settled'),
+        'refreshed': created.get('refreshed'),
     }
 
 

@@ -1,6 +1,6 @@
 /**
  * Remittance + bordereaux badge on /cashflow-integrity.html (U9 / AE5).
- * Reads GET /api/admin/cashflow/remittance. Build/settle is POST.
+ * Reads GET /api/admin/cashflow/remittance?period_id=YYYY-MM. Build/settle is POST.
  */
 (function () {
   var root = document.getElementById('remittance');
@@ -21,6 +21,13 @@
   var settleBtn = document.getElementById('remittance-settle');
   var refreshBtn = document.getElementById('remittance-refresh');
   var lastPayableId = '';
+  var lastPeriodId = '';
+
+  function currentPeriodId() {
+    var d = new Date();
+    var m = d.getUTCMonth() + 1;
+    return d.getUTCFullYear() + '-' + (m < 10 ? '0' + m : String(m));
+  }
 
   function headers() {
     var h = { Accept: 'application/json' };
@@ -31,11 +38,14 @@
 
   function paint(status) {
     if (!status) return;
+    lastPeriodId = String(status.period_id || currentPeriodId());
     var runs = status.runs || [];
     var boards = status.bordereaux || [];
+    // Scoped to one period — pick the latest board / the period's payable.
+    var board = boards.length ? boards[boards.length - 1] : {};
     var payable = runs.filter(function (r) { return r.status === 'payable'; });
     var settled = runs.filter(function (r) { return r.status === 'settled'; });
-    lastPayableId = payable.length ? String(payable[0].id || '') : '';
+    lastPayableId = payable.length ? String(payable[payable.length - 1].id || '') : '';
     var label = settled.length && !payable.length
       ? 'settled'
       : (payable.length ? 'payable' : (boards.length ? 'sealed' : 'idle'));
@@ -43,7 +53,6 @@
       verdictEl.textContent = label;
       verdictEl.className = label === 'settled' ? 'ok' : (label === 'payable' ? 'warn' : 'ok');
     }
-    var board = boards[0] || {};
     var bits = [];
     if (board.premium_cash != null) bits.push('premium $' + Number(board.premium_cash).toFixed(2));
     if (board.carrier_payable != null) bits.push('carrier payable $' + Number(board.carrier_payable).toFixed(2));
@@ -53,7 +62,7 @@
     if (bodyEl) {
       bodyEl.textContent =
         'Binder ' + (status.binder_id || status.default_binder_id || 'PHINS-DEFAULT') +
-        (status.period_id ? (' · period ' + status.period_id) : '') +
+        ' · period ' + lastPeriodId +
         '. ' + bits.join(' · ') +
         '. Settle authorizes through Money Gate remittance.settle.';
     }
@@ -66,7 +75,10 @@
 
   function refresh() {
     if (bodyEl) bodyEl.textContent = 'Reading remittance status…';
-    return fetch('/api/admin/cashflow/remittance', { headers: headers() })
+    var period = lastPeriodId || currentPeriodId();
+    return fetch('/api/admin/cashflow/remittance?period_id=' + encodeURIComponent(period), {
+      headers: headers(),
+    })
       .then(function (r) {
         return r.json().then(function (body) {
           return { ok: r.ok, body: body };
@@ -88,10 +100,11 @@
   }
 
   function postAction(body) {
+    var payload = Object.assign({ period_id: lastPeriodId || currentPeriodId() }, body || {});
     fetch('/api/admin/cashflow/remittance', {
       method: 'POST',
       headers: Object.assign({ 'Content-Type': 'application/json' }, headers()),
-      body: JSON.stringify(body || {}),
+      body: JSON.stringify(payload),
     })
       .then(function (r) {
         return r.json().then(function (resp) {

@@ -122,6 +122,8 @@ def _in_period(stamp: Any, start: date, end: date) -> bool:
 
 
 def _seal_body(pack: Mapping[str, Any]) -> Dict[str, Any]:
+    # AE5 cash body only — built_at/actor stay off the seal so a rebuild with
+    # the same cash is content-addressed (same id / digest; no duplicate run).
     return {
         'schema': SCHEMA,
         'binder_id': pack.get('binder_id'),
@@ -133,8 +135,7 @@ def _seal_body(pack: Mapping[str, Any]) -> Dict[str, Any]:
         'carrier_payable': pack.get('carrier_payable'),
         'lines': pack.get('lines') or [],
         'policy_ids': pack.get('policy_ids') or [],
-        'built_at': pack.get('built_at'),
-        'actor': pack.get('actor'),
+        'streams': pack.get('streams') or {},
     }
 
 
@@ -283,7 +284,9 @@ def build_bordereau(
         if policy_id not in policy_id_set:
             continue
         paid_at = claim.get('paid_at') or claim.get('closed_at') or claim.get('updated_at') or claim.get('created_at')
-        if paid_at and not _in_period(paid_at, start, end):
+        # Undated paid/closed claims are withheld — including them would seal
+        # the same claim into every binder period.
+        if not paid_at or not _in_period(paid_at, start, end):
             continue
         amount = _money(
             claim.get('amount_paid')
@@ -383,6 +386,13 @@ def build_bordereau(
     sealed['ae5_ok'] = bool(check.get('ok'))
     sealed['ae5'] = check
     with _LOCK:
+        # One bordereau per binder/period — drop prior seals for that slot.
+        stale = [
+            rid for rid, row in _STORE.items()
+            if row.get('binder_id') == binder and row.get('period_id') == str(period_id)
+        ]
+        for rid in stale:
+            _STORE.pop(rid, None)
         _STORE[str(sealed['id'])] = dict(sealed)
     return sealed
 

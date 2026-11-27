@@ -41402,11 +41402,16 @@ For claims or questions, please contact:
                 qs = urlparse.parse_qs(urlparse.urlparse(self.path).query or '')
                 binder_id = str((qs.get('binder_id') or [brd.DEFAULT_BINDER_ID])[0] or brd.DEFAULT_BINDER_ID)
                 period_id = str((qs.get('period_id') or [''])[0] or '').strip()
+                # Default the status view to the current UTC month so the badge
+                # never mixes last month's board with this month's payable.
+                if not period_id:
+                    today = __import__('datetime').date.today()
+                    period_id = f'{today.year:04d}-{today.month:02d}'
                 status = {
                     'binder_id': binder_id,
-                    'period_id': period_id or None,
-                    'bordereaux': brd.list_bordereaux(binder_id=binder_id, period_id=period_id or None),
-                    'runs': rem.list_remittance_runs(binder_id=binder_id, period_id=period_id or None),
+                    'period_id': period_id,
+                    'bordereaux': brd.list_bordereaux(binder_id=binder_id, period_id=period_id),
+                    'runs': rem.list_remittance_runs(binder_id=binder_id, period_id=period_id),
                     'default_binder_id': brd.DEFAULT_BINDER_ID,
                 }
             except Exception:

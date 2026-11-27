@@ -262,6 +262,94 @@ def test_expense_weights_never_drive_payable():
     assert pack['carrier_payable'] <= pack['premium_cash'] + 1e-9
 
 
+def test_rebuild_does_not_duplicate_payable():
+    """Same binder/period rebuild keeps one remittance run (Bugbot high)."""
+    policies, ledger, claims, period_id, binder_id = _fixture_binder()
+    first = rem.build_and_create(
+        binder_id=binder_id,
+        period_id=period_id,
+        policies=policies,
+        ledger_transactions=ledger,
+        claims=claims,
+        actor='a',
+    )
+    second = rem.build_and_create(
+        binder_id=binder_id,
+        period_id=period_id,
+        policies=policies,
+        ledger_transactions=ledger,
+        claims=claims,
+        actor='b',
+    )
+    assert first['run']['id'] == second['run']['id']
+    assert second.get('already') is True or second['run']['id'] == first['run']['id']
+    assert len(rem.list_remittance_runs(binder_id=binder_id, period_id=period_id)) == 1
+    assert first['bordereau']['bordereau_sha256'] == second['bordereau']['bordereau_sha256']
+
+
+def test_undated_claims_are_withheld_from_every_period():
+    policies, ledger, _claims, _period, binder_id = _fixture_binder()
+    undated = {
+        'CLM-UNDATED': {
+            'id': 'CLM-UNDATED',
+            'policy_id': 'POL-U9-A',
+            'status': 'paid',
+            'amount_paid': 99.0,
+            # no paid_at / closed_at / updated_at / created_at
+        },
+    }
+    nov = brd.build_bordereau(
+        binder_id=binder_id,
+        period_id='2026-11',
+        policies=policies,
+        ledger_transactions=ledger,
+        claims=undated,
+    )
+    dec = brd.build_bordereau(
+        binder_id=binder_id,
+        period_id='2026-12',
+        policies=policies,
+        ledger_transactions=[],
+        claims=undated,
+    )
+    assert nov['claims_paid'] == 0.0
+    assert dec['claims_paid'] == 0.0
+    assert not any(r.get('claim_id') == 'CLM-UNDATED' for r in nov['lines'])
+    assert not any(r.get('claim_id') == 'CLM-UNDATED' for r in dec['lines'])
+
+
+def test_settled_run_blocks_second_payable():
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv('PHINS_MONEY_GATE', '1')
+    monkeypatch.setenv('PHINS_BOOKS_TIED_REQUIRE', '0')
+    try:
+        policies, ledger, claims, period_id, binder_id = _fixture_binder()
+        built = rem.build_and_create(
+            binder_id=binder_id,
+            period_id=period_id,
+            policies=policies,
+            ledger_transactions=ledger,
+            claims=claims,
+        )
+        rem.settle_remittance_run(
+            built['run']['id'],
+            actor='accountant',
+            role='accountant',
+            books=_green_books(),
+        )
+        again = rem.build_and_create(
+            binder_id=binder_id,
+            period_id=period_id,
+            policies=policies,
+            ledger_transactions=ledger,
+            claims=claims,
+        )
+        assert again.get('already_settled') is True or again['run']['status'] == rem.STATUS_SETTLED
+        assert len(rem.list_remittance_runs(binder_id=binder_id, period_id=period_id)) == 1
+    finally:
+        monkeypatch.undo()
+
+
 def test_scorecard_u9_landed_on_this_checkout():
     report = compute_integrity_scorecard()
     by_id = {u['unit_id']: u for u in report['units']}
