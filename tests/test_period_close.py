@@ -112,6 +112,45 @@ def test_hard_close_idempotent_and_immutable():
     assert reopen['reason'] == 'hard_closed_immutable'
 
 
+class _FakeLedger:
+    def __init__(self, *, fail: bool = False):
+        self.fail = fail
+        self.events = []
+
+    def append_event(self, **kwargs):
+        if self.fail:
+            raise RuntimeError('ledger_down')
+        self.events.append(kwargs)
+        return kwargs
+
+
+def test_reopen_soft_mirrors_ledger_event(monkeypatch):
+    ledger = _FakeLedger()
+    monkeypatch.setattr(pc, '_resolve_platform_ledger', lambda: ledger)
+    soft = pc.soft_close('2026-02', actor='acct')
+    assert soft['ok'] is True
+    assert any(e['event_type'] == pc.EVENT_SOFT for e in ledger.events)
+
+    reopen = pc.reopen_soft('2026-02', actor='acct')
+    assert reopen['ok'] is True
+    assert reopen['period']['status'] == pc.STATUS_OPEN
+    assert reopen['pack']['checksum']
+    reopen_events = [e for e in ledger.events if e['event_type'] == pc.EVENT_REOPEN]
+    assert len(reopen_events) == 1
+    assert reopen_events[0]['entity_id'] == '2026-02'
+    assert reopen_events[0]['payload']['prior_pack_checksum'] == soft['pack']['checksum']
+
+
+def test_soft_close_fails_closed_when_ledger_append_fails(monkeypatch):
+    ledger = _FakeLedger(fail=True)
+    monkeypatch.setattr(pc, '_resolve_platform_ledger', lambda: ledger)
+    result = pc.soft_close('2026-04', actor='acct')
+    assert result['ok'] is False
+    assert result['reason'] == 'ledger_append_failed'
+    period = pc.get_period('2026-04')
+    assert period is None or period.get('status') == pc.STATUS_OPEN
+
+
 def test_tampered_pack_fails_verify():
     result = pc.soft_close('2024-06', actor='acct')
     pack = dict(result['pack'])

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import threading
 from calendar import monthrange
 from datetime import date, datetime, timezone
@@ -18,6 +19,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from services.erp import coa as coa_mod
 
+logger = logging.getLogger(__name__)
+
 STATUS_OPEN = 'open'
 STATUS_SOFT = 'soft'
 STATUS_HARD = 'hard'
@@ -25,6 +28,7 @@ PERIOD_STATUSES = (STATUS_OPEN, STATUS_SOFT, STATUS_HARD)
 
 EVENT_SOFT = 'finance.period_soft_closed'
 EVENT_HARD = 'finance.period_hard_closed'
+EVENT_REOPEN = 'finance.period_reopened'
 
 _LOCK = threading.RLock()
 # period_id (YYYY-MM) -> period dict
@@ -267,13 +271,28 @@ def _critical_checks_digest(books: Optional[Dict[str, Any]] = None) -> str:
         return hashlib.sha256(b'period-close-checks-unavailable').hexdigest()
 
 
-def _mirror_pack_to_ledger(pack: Dict[str, Any], *, event_type: str) -> None:
+def _resolve_platform_ledger() -> Any:
+    import sys
+    portal = sys.modules.get('web_portal.server') or sys.modules.get('server')
+    if portal is None:
+        return None
+    ledger = getattr(portal, 'platform_event_ledger', None)
+    if ledger is None or not hasattr(ledger, 'append_event'):
+        return None
+    return ledger
+
+
+def _mirror_pack_to_ledger(pack: Dict[str, Any], *, event_type: str) -> Dict[str, Any]:
+    """Append a durable period-close event when a platform ledger is present.
+
+    No ledger (unit tests / early boot) → skipped OK. A present ledger that
+    refuses the append fails closed so the period state is not advanced.
+    """
+    ledger = _resolve_platform_ledger()
+    if ledger is None:
+        return {'ok': True, 'skipped': True, 'reason': 'ledger_unavailable'}
+    entry_id = str(pack.get('id') or f"PCP-{pack.get('period_id')}-{event_type}")
     try:
-        import sys
-        portal = sys.modules.get('web_portal.server') or sys.modules.get('server')
-        ledger = getattr(portal, 'platform_event_ledger', None) if portal else None
-        if ledger is None:
-            return
         ledger.append_event(
             event_type=event_type,
             entity_type='fiscal_period',
@@ -285,11 +304,23 @@ def _mirror_pack_to_ledger(pack: Dict[str, Any], *, event_type: str) -> None:
                 'checksum': pack.get('checksum'),
                 'action': pack.get('action'),
                 'trial_balance': pack.get('trial_balance'),
+                'prior_pack_id': pack.get('prior_pack_id'),
+                'prior_pack_checksum': pack.get('prior_pack_checksum'),
             },
-            entry_id=str(pack.get('id') or ''),
+            entry_id=entry_id,
         )
-    except Exception:
-        pass
+        return {'ok': True, 'entry_id': entry_id}
+    except Exception as exc:
+        logger.exception(
+            'period_close ledger mirror failed event_type=%s period=%s',
+            event_type,
+            pack.get('period_id'),
+        )
+        return {
+            'ok': False,
+            'reason': 'ledger_append_failed',
+            'error': str(exc) or type(exc).__name__,
+        }
 
 
 def soft_close(
@@ -320,6 +351,15 @@ def soft_close(
             'actor': actor,
             'sealed_at': sealed_at,
         })
+        mirrored = _mirror_pack_to_ledger(pack, event_type=EVENT_SOFT)
+        if not mirrored.get('ok'):
+            return {
+                'ok': False,
+                'reason': mirrored.get('reason') or 'ledger_append_failed',
+                'period': dict(period),
+                'pack': pack,
+                'ledger': mirrored,
+            }
         period['status'] = STATUS_SOFT
         period['soft_closed_at'] = sealed_at
         period['soft_closed_by'] = actor
@@ -328,7 +368,6 @@ def soft_close(
         period['updated_at'] = sealed_at
         _PERIODS[period['id']] = period
         _PACKS[period['id']] = pack
-        _mirror_pack_to_ledger(pack, event_type=EVENT_SOFT)
         return {'ok': True, 'period': dict(period), 'pack': pack}
 
 
@@ -370,6 +409,15 @@ def hard_close(
             'prior_pack_id': period.get('pack_id'),
             'prior_pack_checksum': period.get('pack_checksum'),
         })
+        mirrored = _mirror_pack_to_ledger(pack, event_type=EVENT_HARD)
+        if not mirrored.get('ok'):
+            return {
+                'ok': False,
+                'reason': mirrored.get('reason') or 'ledger_append_failed',
+                'period': dict(period),
+                'pack': pack,
+                'ledger': mirrored,
+            }
         period['status'] = STATUS_HARD
         period['hard_closed_at'] = sealed_at
         period['hard_closed_by'] = actor
@@ -378,23 +426,53 @@ def hard_close(
         period['updated_at'] = sealed_at
         _PERIODS[period['id']] = period
         _PACKS[period['id']] = pack
-        _mirror_pack_to_ledger(pack, event_type=EVENT_HARD)
         return {'ok': True, 'period': dict(period), 'pack': pack}
 
 
 def reopen_soft(period_id: str, *, actor: str = 'accountant') -> Dict[str, Any]:
-    """Return a soft-closed period to open. Hard-closed periods refuse."""
+    """Return a soft-closed period to open. Hard-closed periods refuse.
+
+    Soft → open is mirrored as ``finance.period_reopened`` when a platform
+    ledger is present (fail closed on append failure).
+    """
     with _LOCK:
         period = get_period(period_id) or ensure_period(*parse_period_id(period_id))
         if period.get('status') == STATUS_HARD:
             return {'ok': False, 'reason': 'hard_closed_immutable', 'period': period}
+        if period.get('status') != STATUS_SOFT:
+            return {'ok': True, 'already_open': True, 'period': dict(period)}
+        prior_pack = _PACKS.get(period['id']) or {}
+        reopened_at = _now_iso()
+        reopen_pack = _seal_pack({
+            'period_id': period['id'],
+            'action': 'reopen',
+            'trial_balance': prior_pack.get('trial_balance') or trial_balance(period['id']),
+            'chart_fingerprint': coa_mod.chart_fingerprint(),
+            'critical_checks_digest': prior_pack.get('critical_checks_digest') or '',
+            'actor': actor,
+            'sealed_at': reopened_at,
+            'prior_pack_id': period.get('pack_id') or prior_pack.get('id'),
+            'prior_pack_checksum': period.get('pack_checksum') or prior_pack.get('checksum'),
+        })
+        mirrored = _mirror_pack_to_ledger(reopen_pack, event_type=EVENT_REOPEN)
+        if not mirrored.get('ok'):
+            return {
+                'ok': False,
+                'reason': mirrored.get('reason') or 'ledger_append_failed',
+                'period': dict(period),
+                'pack': reopen_pack,
+                'ledger': mirrored,
+            }
         period['status'] = STATUS_OPEN
         period['soft_closed_at'] = None
         period['soft_closed_by'] = None
-        period['updated_at'] = _now_iso()
+        period['updated_at'] = reopened_at
+        period['reopened_at'] = reopened_at
         period['reopened_by'] = actor
+        period['reopen_pack_id'] = reopen_pack['id']
+        period['reopen_pack_checksum'] = reopen_pack['checksum']
         _PERIODS[period['id']] = period
-        return {'ok': True, 'period': dict(period)}
+        return {'ok': True, 'period': dict(period), 'pack': reopen_pack}
 
 
 def get_close_pack(period_id: str) -> Optional[Dict[str, Any]]:
@@ -424,6 +502,7 @@ def status_report(*, engine: Any = None) -> Dict[str, Any]:
 
 __all__ = [
     'EVENT_HARD',
+    'EVENT_REOPEN',
     'EVENT_SOFT',
     'PERIOD_STATUSES',
     'PeriodClosedError',
