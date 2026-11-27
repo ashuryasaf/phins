@@ -525,6 +525,7 @@ Preferred file-by-task:
 | Unified cash flow statement | `services/cashflow_unified_report.py`, `services/premium_flow_reconciliation.py` (`claim_cash_books`), `web_portal/static/cashflow-unified-report.js`; tests in `tests/test_cashflow_unified_report.py` |
 | Health wallet withdrawal / retention bar | `services/wallet_withdrawal_service.py`, `services/id_photo_crop.py`, `web_portal/api_wallet_withdrawal.py`, `web_portal/static/wallet-withdraw-chat.{html,js}`, `web_portal/static/withdrawal-retention-bar.js`; tests in `tests/test_wallet_withdrawal.py` |
 | Money Gate / books integrity (U4) | `services/erp/money_gate.py`, `services/jobs/books_integrity_job.py`; wired on withdrawal release, agent commission settle, `POST /api/claims/pay`; env `PHINS_MONEY_GATE`; goldens in `tests/golden/money_gate/`; tests in `tests/test_money_gate.py` |
+| Durable accounting journal (U5) | `services/erp/accounting_journal.py`, `database/accounting_models.py`, `database/repositories/accounting_journal_repository.py`; `AccountingEngine._create_ledger_entry` posts through the journal; boot hydrates journal then ledger reconstruct; env `PHINS_ACCOUNTING_JOURNAL_MODE` (`off`/`dual`/`db`); tests in `tests/test_accounting_journal.py` |
 | Fiduciary durability (wallets / NFT / BS) | `services/fiduciary/`, `database/fiduciary_models.py`, `database/repositories/fiduciary_repository.py`; tests in `tests/test_fiduciary_store.py` |
 | Customer intro / invitation landing | `web_portal/static/join.html`; films `join_intro_*` on the media Customer relations tab; briefs in `services/solution_video_blueprints.py` (`JOIN_INTRO_OUTLINES`, `JOIN-` campaigns) |
 | Document archive / durability probe | `services/customer_document_vault_service.py`, `services/document_durability_agent.py` |
@@ -1210,6 +1211,18 @@ Environment variables commonly used:
   `POST /api/claims/pay` refuse with 409 `{error, failed_checks[]}` when
   critical unified/reconcile checks are red. Admin break-glass needs a
   reason and a forensic `finance.money_gate_break_glass` ledger event first
+- **Accounting journal (U5):** `PHINS_ACCOUNTING_JOURNAL_MODE`
+  (`off` / `dual` default when DB is up / `db`). Every
+  `AccountingEngine` ledger post inserts a sealed
+  `accounting_journal_entries` row keyed by bill (+ optional `ledger_tx`)
+  with a `:gN` suffix after each reverse so resplit can rebook; allocation
+  ids are content-addressed (engine + cash subject + generation). Sealed
+  payloads omit process-local fields (`entry_no`, running `balance`,
+  timestamps). `post_allocation` rolls back `POSTED` when the journal
+  refuses mid-post. Boot hydrates the journal before ledger-cash
+  reconstruct. `db` mode refuses the memory post when the durable write
+  fails; dual still fails closed on idempotency/checksum clashes
+  (transient `journal_unavailable` only keeps the memory post)
 - **Delivery bidding (B11):** `PHINS_DELIVERY_SLA_TICK_SECONDS` (SLA clock
  interval for closing elapsed bidding windows, default 60)
 - **Admin desk:** an admin saves a mailbox password once on

@@ -44,7 +44,9 @@ from services.financial_unification_service import (
 
 
 def setup_function():
-    reset_accounting_engine()
+    # Financial unification rebuilds the same bill/tx subjects across cases;
+    # clear durable journal seals too (U5 dual/db), not only the in-memory book.
+    reset_accounting_engine(clear_journal=True)
 
 
 def test_kernel_split_prefers_policy_pin_over_allocation_prefs():
@@ -119,6 +121,33 @@ def test_split_without_a_savings_election_is_pure_risk():
     assert split["savings_amount"] == 0.0
     assert split["split_source"] == "no_savings_election"
     assert split["split_label"] == "no_savings_election"
+
+
+def test_draft_allocation_does_not_count_as_already_posted():
+    """A failed seal left as DRAFT must not block reconstruct retry."""
+    from accounting_engine import AllocationStatus
+
+    engine = get_accounting_engine()
+    draft = engine.create_allocation(
+        bill_id="BILL-DRAFT",
+        policy_id="POL-DRAFT",
+        customer_id="CUST-DRAFT",
+        total_premium=Decimal("25.00"),
+        risk_percentage=Decimal("100"),
+        allocation_notes="ledger_tx=TX-DRAFT",
+    )
+    assert draft.status == AllocationStatus.DRAFT
+    posted = post_premium_to_accounting_book(
+        bill_id="BILL-DRAFT",
+        policy_id="POL-DRAFT",
+        customer_id="CUST-DRAFT",
+        amount=25.00,
+        risk_percentage=100,
+        source_tx_id="TX-DRAFT",
+        engine=engine,
+    )
+    assert posted["posted"] is True
+    assert accounting_book_totals(engine)["risk_posted"] == 25.0
 
 
 def test_premium_and_claim_cash_post_to_same_accounting_book():
@@ -1570,7 +1599,7 @@ def test_reconcile_warns_about_premium_cash_on_a_policy_with_no_pin():
 
 def _booked_before_the_pin():
     """$296.47 booked all-risk on a policy with no pin, then the pin is restored."""
-    reset_accounting_engine()
+    reset_accounting_engine(clear_journal=True)
     engine = get_accounting_engine()
     billing = {"BILL-FS": {"id": "BILL-FS", "customer_id": "CUST-FS", "policy_id": "POL-FS", "amount_paid": 296.47}}
     transactions = [{
@@ -1662,7 +1691,9 @@ def test_resplit_is_limited_to_the_named_policies_and_ignores_a_cent():
     assert other["resplit_count"] == 0
     assert accounting_book_totals(engine)["risk_posted"] == 296.47
 
-    reset_accounting_engine()
+    # Fresh near-pin book on the same BILL/TX subjects — wipe journal seals
+    # from the all-risk posting above or dual/db refuses the 1¢ rebook.
+    reset_accounting_engine(clear_journal=True)
     engine = get_accounting_engine()
     post_premium_to_accounting_book(
         bill_id="BILL-FS", policy_id="POL-FS", customer_id="CUST-FS", amount=296.47,

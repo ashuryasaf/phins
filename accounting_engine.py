@@ -15,11 +15,65 @@ Features:
 
 from __future__ import annotations
 
+import hashlib
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Dict, Optional, Tuple, Any, cast
 from datetime import datetime, date
 from decimal import Decimal, ROUND_HALF_UP
+
+# Journal withhold reasons that must refuse the in-memory post even in dual
+# mode — peer key clashes / checksum failures must not fork the books.
+_JOURNAL_INTEGRITY_REASONS = frozenset({
+    'idempotency_payload_mismatch',
+    'idempotency_race_mismatch',
+    'checksum_mismatch',
+})
+
+# Process-local / time-varying fields — never part of the sealed journal
+# checksum identity (Agentic Security Review on U5).
+_JOURNAL_VOLATILE_ENTRY_FIELDS = frozenset({
+    'entry_no',
+    'balance',
+    'created_date',
+    'posted_by',
+    'entry_date',
+    # Billing / reconstruct / resplit / reverse prose differs for the same
+    # cash key; sealing it forks peers on idempotency_payload_mismatch.
+    'description',
+})
+_JOURNAL_VOLATILE_ALLOC_FIELDS = frozenset({
+    'created_date',
+    'posted_date',
+    'posted_by',
+    'allocation_date',
+    # Path prefixes (kernel_split / reconstruct / resplit / reversed_by)
+    # vary; ledger_tx is re-stamped as a stable field on seal.
+    'notes',
+})
+
+_LEDGER_TX_RE = re.compile(r'ledger_tx=([^\s;]+)')
+
+
+def _cash_subject_from(bill_id: str, notes: str = '') -> str:
+    """Stable cash identity: bill + optional ledger_tx marker."""
+    bill = str(bill_id or '').strip() or 'UNBILLED'
+    match = _LEDGER_TX_RE.search(str(notes or ''))
+    tx = match.group(1).strip() if match else ''
+    if tx:
+        return f"{bill}:{tx}"
+    return bill
+
+
+def _ledger_tx_from_notes(notes: str = '') -> str:
+    match = _LEDGER_TX_RE.search(str(notes or ''))
+    return match.group(1).strip() if match else ''
+
+
+def _stable_journal_payload(payload: Dict[str, Any], *, volatile: frozenset) -> Dict[str, Any]:
+    """Copy of ``payload`` with volatile keys stripped for sealing."""
+    return {k: v for k, v in dict(payload or {}).items() if k not in volatile}
 
 
 # ============================================================================
@@ -552,7 +606,16 @@ By selecting an investment route, you confirm you understand the risks and benef
         Returns:
             Created PremiumAllocation object
         """
-        allocation_id = f"ALLOC-{len(self.allocations) + 1:06d}"
+        # Content-addressed id (engine + bill[+tx] + reverse generation) —
+        # never ``ALLOC-{len+1}`` (process-local) or a random UUID (peers
+        # would seal different payloads for the same cash).
+        subject = _cash_subject_from(bill_id, allocation_notes)
+        gen = self._premium_post_generation(subject)
+        allocation_id = self._allocation_id_for(subject, gen)
+        existing = self.allocations.get(allocation_id)
+        if existing is not None and existing.status == AllocationStatus.POSTED:
+            # Same cash already on the book — do not clobber the header.
+            return existing
         preserve_savings = savings_percentage is not None
         if savings_percentage is None:
             savings_percentage = Decimal(100) - Decimal(str(risk_percentage))
@@ -575,6 +638,48 @@ By selecting an investment route, you confirm you understand the risks and benef
         
         self.allocations[allocation_id] = allocation
         return allocation
+
+    def _premium_cash_subject(self, allocation: PremiumAllocation) -> str:
+        """Stable cash identity for journal keys: bill + optional ledger_tx."""
+        return _cash_subject_from(
+            str(getattr(allocation, 'bill_id', '') or ''),
+            str(getattr(allocation, 'notes', '') or ''),
+        )
+
+    def _premium_post_generation(self, subject: str) -> int:
+        """Count completed reverse cycles for ``subject`` (next post gen)."""
+        wanted = str(subject or '')
+        n = 0
+        for alloc in self.allocations.values():
+            if getattr(alloc, 'status', None) != AllocationStatus.REVERSED:
+                continue
+            if self._premium_cash_subject(alloc) == wanted:
+                n += 1
+        return n
+
+    def _allocation_id_for(self, subject: str, gen: int) -> str:
+        digest = hashlib.sha256(
+            f"{self.engine_id}|{subject}|g{int(gen)}".encode('utf-8')
+        ).hexdigest()[:12].upper()
+        return f"ALLOC-{digest}"
+
+    def _premium_journal_key(
+        self,
+        subject: str,
+        side: str,
+        *,
+        gen: int,
+        credit_rev: bool = False,
+    ) -> str:
+        """Content-addressed premium key; ``:gN`` after the first reverse."""
+        base = f"ae:{self.engine_id}:premium:{subject}:{side}"
+        if credit_rev:
+            base = f"{base}:credit:rev"
+        else:
+            base = f"{base}:debit"
+        if int(gen) > 0:
+            base = f"{base}:g{int(gen)}"
+        return base[:200]
     
     def post_allocation(self, allocation_id: str, posted_by: str) -> Tuple[bool, str]:
         """
@@ -582,51 +687,109 @@ By selecting an investment route, you confirm you understand the risks and benef
         
         Returns:
             Tuple of (success, message)
+
+        Risk, savings, and the allocation header seal in one journal
+        transaction so a mid-post clash cannot leave an orphan debit on
+        the shared durable book while memory rolls back (Bugbot U5).
         """
         if allocation_id not in self.allocations:
             return False, f"Allocation {allocation_id} not found"
         
         allocation = self.allocations[allocation_id]
-        
+        prior_status = allocation.status
+        prior_posted_date = allocation.posted_date
+        prior_posted_by = allocation.posted_by
+        entries_before = len(self.ledger_entries)
+        counter_before = self.entry_counter
+        prepared: List[AccountingEntry] = []
+        self._pending_ledger_entries = prepared
+
         try:
             allocation.post_allocation(posted_by)
-            
-            # Create Risk Fund entry
-            self._create_ledger_entry(
-                allocation_id=allocation_id,
-                policy_id=allocation.policy_id,
-                customer_id=allocation.customer_id,
-                entry_date=date.today(),
-                entry_type=EntryType.RISK_PAYMENT,
-                account_type=AccountType.RISK_FUND,
-                debit_amount=allocation.risk_premium,
-                description=f"Risk Premium Posted - Total Premium: ${allocation.total_premium:.2f}",
-                reference_no=allocation.bill_id
+            subject = self._premium_cash_subject(allocation)
+            gen = self._premium_post_generation(subject)
+            journal_items: List[Dict[str, Any]] = []
+
+            for entry_type, account_type, amount, side, label in (
+                (
+                    EntryType.RISK_PAYMENT, AccountType.RISK_FUND,
+                    allocation.risk_premium, 'risk', 'Risk Premium Posted',
+                ),
+                (
+                    EntryType.SAVINGS_DEPOSIT, AccountType.SAVINGS_FUND,
+                    allocation.savings_premium, 'savings', 'Savings Premium Posted',
+                ),
+            ):
+                entry = self._build_ledger_entry(
+                    allocation_id=allocation_id,
+                    policy_id=allocation.policy_id,
+                    customer_id=allocation.customer_id,
+                    entry_date=date.today(),
+                    entry_type=entry_type,
+                    account_type=account_type,
+                    debit_amount=amount,
+                    description=(
+                        f"{label} - Total Premium: ${allocation.total_premium:.2f}"
+                    ),
+                    reference_no=allocation.bill_id,
+                )
+                prepared.append(entry)
+                journal_items.append(self._journal_item_for_entry(
+                    entry,
+                    self._premium_journal_key(subject, side, gen=gen),
+                ))
+
+            # Seal the allocation header so peer hydrate can rebuild
+            # ``engine.allocations`` (needed for reconstruct idempotency).
+            seal_item = self._allocation_seal_item(
+                allocation, cash_subject=subject, gen=gen,
             )
-            
-            # Create Savings Fund entry
-            self._create_ledger_entry(
-                allocation_id=allocation_id,
-                policy_id=allocation.policy_id,
-                customer_id=allocation.customer_id,
-                entry_date=date.today(),
-                entry_type=EntryType.SAVINGS_DEPOSIT,
-                account_type=AccountType.SAVINGS_FUND,
-                debit_amount=allocation.savings_premium,
-                description=f"Savings Premium Posted - Total Premium: ${allocation.total_premium:.2f}",
-                reference_no=allocation.bill_id
-            )
-            
+            if seal_item is not None:
+                journal_items.append(seal_item)
+
+            if journal_items:
+                from services.erp.accounting_journal import (
+                    append_journal_entries, journal_enabled, journal_required,
+                )
+                if journal_enabled():
+                    batch = append_journal_entries(journal_items)
+                    if not batch.get('ok'):
+                        reason_code = str(batch.get('reason') or '')
+                        if journal_required() or reason_code in _JOURNAL_INTEGRITY_REASONS:
+                            raise RuntimeError(
+                                f"accounting journal refused post: {reason_code or 'withheld'}"
+                            )
+                        # Dual fail-open on transient journal_unavailable:
+                        # keep memory post and the entry numbers already
+                        # assigned (do not rewind the counter).
+
+            self.ledger_entries.extend(prepared)
             return True, f"Allocation {allocation_id} posted successfully"
         
         except Exception as e:
+            # Never leave POSTED without a complete journaled book — callers
+            # treat POSTED as already_posted and reconstruct will not repair.
+            allocation.status = prior_status
+            allocation.posted_date = prior_posted_date
+            allocation.posted_by = prior_posted_by
+            self.entry_counter = counter_before
+            if len(self.ledger_entries) > entries_before:
+                del self.ledger_entries[entries_before:]
             return False, f"Error posting allocation: {str(e)}"
+        finally:
+            self._pending_ledger_entries = []
 
     def reverse_allocation(self, allocation_id: str, reversed_by: str, reason: str = "") -> Tuple[bool, str]:
         """Take a posted allocation off the book with contra entries.
 
         The allocation stays on record as ``REVERSED`` and its fund entries
         are offset, so the history of what was booked is not removed.
+        Vacates the debit generation so a later resplit can rebook the same
+        cash under ``:gN`` keys.
+
+        Contra lines + the reversed header seal in one journal transaction so
+        a mid-loop clash cannot leave a one-sided credit while status stays
+        POSTED (Agentic Security Review on U5).
         """
         allocation = self.allocations.get(allocation_id)
         if allocation is None:
@@ -634,26 +797,211 @@ By selecting an investment route, you confirm you understand the risks and benef
         if allocation.status != AllocationStatus.POSTED:
             return False, f"Allocation {allocation_id} is not posted"
         note = f"reversed_by={reversed_by}" + (f"; {reason}" if reason else "")
-        for entry_type, account_type, amount in (
-            (EntryType.RISK_PAYMENT, AccountType.RISK_FUND, allocation.risk_premium),
-            (EntryType.SAVINGS_DEPOSIT, AccountType.SAVINGS_FUND, allocation.savings_premium),
-        ):
-            if Decimal(str(amount)) <= Decimal("0"):
-                continue
-            self._create_ledger_entry(
-                allocation_id=allocation_id,
-                policy_id=allocation.policy_id,
-                customer_id=allocation.customer_id,
-                entry_date=date.today(),
-                entry_type=entry_type,
-                account_type=account_type,
-                credit_amount=amount,
-                description=f"Reversal of allocation {allocation_id} ({note})",
-                reference_no=allocation.bill_id,
+        subject = self._premium_cash_subject(allocation)
+        # Generation of the POSTED cycle being reversed (= current reverse count).
+        gen = self._premium_post_generation(subject)
+        prior_status = allocation.status
+        prior_notes = allocation.notes
+        entries_before = len(self.ledger_entries)
+        counter_before = self.entry_counter
+        prepared: List[AccountingEntry] = []
+        self._pending_ledger_entries = prepared
+        try:
+            journal_items: List[Dict[str, Any]] = []
+            for entry_type, account_type, amount in (
+                (EntryType.RISK_PAYMENT, AccountType.RISK_FUND, allocation.risk_premium),
+                (EntryType.SAVINGS_DEPOSIT, AccountType.SAVINGS_FUND, allocation.savings_premium),
+            ):
+                if Decimal(str(amount)) <= Decimal("0"):
+                    continue
+                side = 'risk' if account_type == AccountType.RISK_FUND else 'savings'
+                key = self._premium_journal_key(
+                    subject, side, gen=gen, credit_rev=True,
+                )
+                entry = self._build_ledger_entry(
+                    allocation_id=allocation_id,
+                    policy_id=allocation.policy_id,
+                    customer_id=allocation.customer_id,
+                    entry_date=date.today(),
+                    entry_type=entry_type,
+                    account_type=account_type,
+                    credit_amount=amount,
+                    description=f"Reversal of allocation {allocation_id} ({note})",
+                    reference_no=allocation.bill_id,
+                )
+                prepared.append(entry)
+                journal_items.append(self._journal_item_for_entry(entry, key))
+
+            # Preview REVERSED seal payload (restored on failure).
+            allocation.status = AllocationStatus.REVERSED
+            allocation.notes = "; ".join(bit for bit in (prior_notes, note) if bit)
+            seal_item = self._allocation_seal_item(
+                allocation, cash_subject=subject, gen=gen, suffix='reversed',
             )
-        allocation.status = AllocationStatus.REVERSED
-        allocation.notes = "; ".join(bit for bit in (allocation.notes, note) if bit)
-        return True, f"Allocation {allocation_id} reversed"
+            if seal_item is not None:
+                journal_items.append(seal_item)
+
+            if journal_items:
+                from services.erp.accounting_journal import (
+                    append_journal_entries, journal_enabled, journal_required,
+                )
+                if journal_enabled():
+                    batch = append_journal_entries(journal_items)
+                    if not batch.get('ok'):
+                        reason_code = str(batch.get('reason') or '')
+                        if journal_required() or reason_code in _JOURNAL_INTEGRITY_REASONS:
+                            raise RuntimeError(
+                                f"accounting journal refused reverse: {reason_code or 'withheld'}"
+                            )
+
+            self.ledger_entries.extend(prepared)
+            return True, f"Allocation {allocation_id} reversed"
+        except Exception as e:
+            allocation.status = prior_status
+            allocation.notes = prior_notes
+            self.entry_counter = counter_before
+            if len(self.ledger_entries) > entries_before:
+                del self.ledger_entries[entries_before:]
+            return False, f"Error reversing allocation: {str(e)}"
+        finally:
+            self._pending_ledger_entries = []
+
+    def _allocation_seal_item(
+        self,
+        allocation: PremiumAllocation,
+        *,
+        cash_subject: str = '',
+        gen: int = 0,
+        suffix: str = '',
+    ) -> Optional[Dict[str, Any]]:
+        """Journal item for an allocation header seal (or ``None`` if journal off)."""
+        try:
+            from services.erp.accounting_journal import journal_enabled
+        except Exception:
+            return None
+        if not journal_enabled():
+            return None
+        payload = _stable_journal_payload(
+            dict(allocation.to_dict()), volatile=_JOURNAL_VOLATILE_ALLOC_FIELDS,
+        )
+        payload['record_type'] = 'allocation'
+        payload['post_generation'] = int(gen)
+        # Cash identity without path-varying note prefixes.
+        ledger_tx = _ledger_tx_from_notes(getattr(allocation, 'notes', '') or '')
+        if ledger_tx:
+            payload['ledger_tx'] = ledger_tx
+            payload['notes'] = f'ledger_tx={ledger_tx}'
+        else:
+            payload['notes'] = ''
+        subject = str(cash_subject or self._premium_cash_subject(allocation) or allocation.allocation_id)
+        key = f"ae:{self.engine_id}:allocation:{subject}"
+        if int(gen) > 0:
+            key = f"{key}:g{int(gen)}"
+        if suffix:
+            key = f"{key}:{suffix}"
+        return {
+            'idempotency_key': key[:200],
+            'payload': payload,
+            'engine_id': self.engine_id,
+            'allocation_id': allocation.allocation_id,
+            'policy_id': allocation.policy_id,
+            'customer_id': allocation.customer_id,
+            'entry_type': 'allocation',
+            'account_type': '',
+        }
+
+    def _seal_allocation_record(
+        self,
+        allocation: PremiumAllocation,
+        *,
+        cash_subject: str = '',
+        gen: int = 0,
+        suffix: str = '',
+    ) -> None:
+        """Append a sealed allocation header to the durable journal (U5)."""
+        try:
+            from services.erp.accounting_journal import (
+                append_journal_entry, journal_required,
+            )
+        except Exception:
+            return
+        item = self._allocation_seal_item(
+            allocation, cash_subject=cash_subject, gen=gen, suffix=suffix,
+        )
+        if item is None:
+            return
+        result = append_journal_entry(**item)
+        reason = str(result.get('reason') or '')
+        if not result.get('ok') and (
+            journal_required() or reason in _JOURNAL_INTEGRITY_REASONS
+        ):
+            raise RuntimeError(
+                f"accounting journal refused allocation seal: {reason or 'withheld'}"
+            )
+
+    def _build_ledger_entry(
+        self,
+        *,
+        allocation_id: str,
+        policy_id: str,
+        customer_id: str,
+        entry_date: date,
+        entry_type: EntryType,
+        account_type: AccountType,
+        debit_amount: Decimal = Decimal(0),
+        credit_amount: Decimal = Decimal(0),
+        description: str = '',
+        reference_no: str = '',
+    ) -> AccountingEntry:
+        """Build a ledger entry (bumps counter) without journaling or appending."""
+        balance = self._get_account_balance(account_type)
+        debit = Decimal(str(debit_amount))
+        credit = Decimal(str(credit_amount))
+        # Include prepared-but-not-yet-appended siblings for running balance
+        # when building a multi-line reverse/post batch.
+        for pending in getattr(self, '_pending_ledger_entries', []) or []:
+            if pending.account_type == account_type:
+                balance += Decimal(str(pending.debit_amount or 0))
+                balance -= Decimal(str(pending.credit_amount or 0))
+        if debit > Decimal('0'):
+            balance += debit
+        elif credit > Decimal('0'):
+            balance -= credit
+        balance = balance.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        self.entry_counter += 1
+        return AccountingEntry(
+            entry_no=self.entry_counter,
+            allocation_id=allocation_id,
+            policy_id=policy_id,
+            customer_id=customer_id,
+            entry_date=entry_date,
+            entry_type=entry_type,
+            account_type=account_type,
+            debit_amount=debit,
+            credit_amount=credit,
+            balance=balance,
+            description=description,
+            reference_no=reference_no,
+            posted_by=self.engine_id,
+        )
+
+    def _journal_item_for_entry(
+        self, entry: AccountingEntry, idempotency_key: str,
+    ) -> Dict[str, Any]:
+        payload = _stable_journal_payload(
+            entry.to_dict(), volatile=_JOURNAL_VOLATILE_ENTRY_FIELDS,
+        )
+        payload['idempotency_key'] = idempotency_key
+        return {
+            'idempotency_key': idempotency_key,
+            'payload': payload,
+            'engine_id': self.engine_id,
+            'allocation_id': entry.allocation_id,
+            'policy_id': entry.policy_id,
+            'customer_id': entry.customer_id,
+            'entry_type': entry.entry_type.value,
+            'account_type': entry.account_type.value,
+        }
     
     def get_customer_statement(self, customer_id: str, start_date: date, 
                                end_date: date) -> CustomerPremiumStatement:
@@ -808,7 +1156,8 @@ By selecting an investment route, you confirm you understand the risks and benef
                 account_type=AccountType.RISK_FUND,
                 credit_amount=Decimal(str(amount)),
                 description=f"Claim payment {claim_id} - ${amount:.2f} to customer wallet",
-                reference_no=claim_id
+                reference_no=claim_id,
+                idempotency_key=f"ae:{self.engine_id}:claim:{claim_id}:risk:credit",
             )
             return True, f"Claim payment {claim_id} for ${amount:.2f} recorded"
         except Exception as e:
@@ -817,23 +1166,17 @@ By selecting an investment route, you confirm you understand the risks and benef
     def _create_ledger_entry(self, allocation_id: str, policy_id: str, customer_id: str,
                             entry_date: date, entry_type: EntryType, account_type: AccountType,
                             debit_amount: Decimal = Decimal(0), credit_amount: Decimal = Decimal(0),
-                            description: str = "", reference_no: str = "") -> AccountingEntry:
-        """Create and track ledger entry"""
-        # Calculate running balance using Decimal arithmetic
-        balance = self._get_account_balance(account_type)
+                            description: str = "", reference_no: str = "",
+                            idempotency_key: str = "") -> AccountingEntry:
+        """Create and track ledger entry.
+
+        U5: when the durable accounting journal is on, every post also
+        inserts a sealed journal row (idempotent key). In ``db`` mode a
+        failed journal write refuses the in-memory append (fail closed).
+        """
         debit = Decimal(str(debit_amount))
         credit = Decimal(str(credit_amount))
-        if debit > Decimal('0'):
-            balance += debit
-        elif credit > Decimal('0'):
-            balance -= credit
-
-        # Round balance to cents for ledger
-        balance = balance.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-
-        self.entry_counter += 1
-        entry = AccountingEntry(
-            entry_no=self.entry_counter,
+        entry = self._build_ledger_entry(
             allocation_id=allocation_id,
             policy_id=policy_id,
             customer_id=customer_id,
@@ -842,22 +1185,80 @@ By selecting an investment route, you confirm you understand the risks and benef
             account_type=account_type,
             debit_amount=debit,
             credit_amount=credit,
-            balance=balance,
             description=description,
             reference_no=reference_no,
-            posted_by=self.engine_id
         )
-        
+
+        try:
+            from services.erp.accounting_journal import (
+                append_journal_entry,
+                journal_enabled,
+                journal_required,
+                make_idempotency_key,
+            )
+        except Exception:
+            append_journal_entry = None  # type: ignore
+            journal_enabled = lambda: False  # type: ignore
+            journal_required = lambda: False  # type: ignore
+            make_idempotency_key = None  # type: ignore
+
+        if append_journal_entry is not None and journal_enabled():
+            side = 'debit' if debit > Decimal('0') else ('credit' if credit > Decimal('0') else 'zero')
+            key = str(idempotency_key or '').strip()
+            if not key and make_idempotency_key is not None:
+                subject = str(reference_no or allocation_id or entry.entry_no)
+                kind = 'claim' if entry_type == EntryType.CLAIM_PAYMENT else 'alloc'
+                key = make_idempotency_key(
+                    engine_id=self.engine_id,
+                    kind=kind,
+                    subject_id=subject,
+                    account_type=account_type.value,
+                    side=side,
+                )
+            result = append_journal_entry(**self._journal_item_for_entry(entry, key))
+            if not result.get('ok'):
+                reason = str(result.get('reason') or '')
+                # Fail closed on integrity clashes even in dual mode so peer
+                # books cannot fork. Transient journal_unavailable still
+                # allows the dual memory post — keep the assigned entry_no
+                # so the next post does not reuse it (Bugbot U5).
+                if journal_required() or reason in _JOURNAL_INTEGRITY_REASONS:
+                    self.entry_counter -= 1
+                    raise RuntimeError(
+                        f"accounting journal refused post: {reason or 'withheld'}"
+                    )
+            elif result.get('reused'):
+                # Match the same generation (content-addressed allocation_id),
+                # not just bill+amounts — otherwise a :gN reuse can bind to a
+                # still-present gen0 debit after reverse (Security Review).
+                for existing in self.ledger_entries:
+                    if (
+                        str(getattr(existing, 'allocation_id', '') or '') == str(allocation_id or '')
+                        and str(getattr(existing, 'reference_no', '') or '') == str(reference_no or '')
+                        and getattr(existing, 'entry_type', None) == entry_type
+                        and getattr(existing, 'account_type', None) == account_type
+                        and Decimal(str(getattr(existing, 'debit_amount', 0) or 0)) == debit
+                        and Decimal(str(getattr(existing, 'credit_amount', 0) or 0)) == credit
+                    ):
+                        self.entry_counter -= 1
+                        return existing
+
         self.ledger_entries.append(entry)
         return entry
     
     def _get_account_balance(self, account_type: AccountType) -> Decimal:
-        """Get current balance for account type"""
+        """Get current balance for account type.
+
+        Sums debits/credits rather than reading a stored running balance —
+        journal hydrate omits process-local ``balance`` from sealed payloads.
+        """
         balance = Decimal(0)
         for entry in self.ledger_entries:
-            if entry.account_type == account_type:
-                balance = entry.balance
-        return balance
+            if entry.account_type != account_type:
+                continue
+            balance += Decimal(str(getattr(entry, 'debit_amount', 0) or 0))
+            balance -= Decimal(str(getattr(entry, 'credit_amount', 0) or 0))
+        return balance.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     
     def get_summary(self) -> Dict[str, Any]:
         """Get engine summary"""
@@ -944,8 +1345,19 @@ def get_accounting_engine() -> AccountingEngine:
     return _SHARED_ACCOUNTING_ENGINE
 
 
-def reset_accounting_engine() -> None:
-    """Reset the process-wide accounting engine used by server flows."""
+def reset_accounting_engine(*, clear_journal: bool = False) -> None:
+    """Reset the process-wide accounting engine used by server flows.
+
+    ``clear_journal=True`` wipes durable journal rows (test isolation only).
+    Peer-hydrate tests reset memory while keeping the journal, so the
+    default leaves seals intact; root ``conftest`` clears between cases.
+    """
     global _SHARED_ACCOUNTING_ENGINE
     _SHARED_ACCOUNTING_ENGINE = None
+    if clear_journal:
+        try:
+            from services.erp.accounting_journal import clear_journal_for_tests
+            clear_journal_for_tests()
+        except Exception:
+            pass
 

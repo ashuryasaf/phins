@@ -28,6 +28,8 @@ from .models import Base
 from . import marketplace_models  # noqa: F401
 # Fiduciary money tables (U2): health wallets, withdrawals, NFT, investments, BS.
 from . import fiduciary_models  # noqa: F401
+# Durable accounting journal (U5).
+from . import accounting_models  # noqa: F401
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

@@ -65,6 +65,7 @@ from database.repositories import (
     NftLedgerRepository,
     InvestmentAccountRepository,
     BalanceSheetRepository,
+    AccountingJournalRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -152,6 +153,8 @@ class DatabaseManager:
         self._nft_ledger = None
         self._investment_accounts = None
         self._balance_sheet = None
+        # Durable accounting journal (U5).
+        self._accounting_journal = None
     
     def _ensure_session(self) -> Session:
         """
@@ -232,6 +235,7 @@ class DatabaseManager:
         self._nft_ledger = None
         self._investment_accounts = None
         self._balance_sheet = None
+        self._accounting_journal = None
     
     @property
     def customers(self) -> CustomerRepository:
@@ -585,6 +589,13 @@ class DatabaseManager:
         if self._balance_sheet is None:
             self._balance_sheet = BalanceSheetRepository(self._ensure_session())
         return self._balance_sheet
+
+    @property
+    def accounting_journal(self) -> AccountingJournalRepository:
+        """Sealed accounting journal (U5 GL append log)."""
+        if self._accounting_journal is None:
+            self._accounting_journal = AccountingJournalRepository(self._ensure_session())
+        return self._accounting_journal
 
     def commit(self):
         """Commit current transaction"""
