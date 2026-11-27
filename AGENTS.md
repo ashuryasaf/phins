@@ -1227,14 +1227,17 @@ Environment variables commonly used:
   (transient `journal_unavailable` only keeps the memory post)
 - **Books-tied certificate (U6):** once per UTC day after Money Gate
   critical checks are green, append sealed `finance.books_tied`
-  (`BOOKS-TIED-{day}`) via `services/erp/books_tied.py` and the
-  `books_tied_daily` queue clock (`ensure_daily_clock` at boot). Evidence
-  only — never rewrites books. `PHINS_BOOKS_TIED_REQUIRE` (default on
-  outside `PHINS_TEST_MODE`) folds cert freshness into high-value
-  authorize (`wallet_withdrawal.release`, `agent_commission.settle`,
-  `claim_payout`); `PHINS_BOOKS_TIED_MAX_AGE_HOURS` (default 36).
-  Accountant badge: `GET`/`POST /api/admin/cashflow/books-tied` on
-  `/cashflow-integrity.html`
+  (`BOOKS-TIED-{day}`) via `services/erp/books_tied.py`. Serve boot always
+  issues today's cert (when green) and arms an in-process daily timer
+  (`start_inprocess_daily_clock`); when the agent queue is on,
+  `ensure_daily_clock` also enqueues the durable `books_tied_daily` row.
+  Evidence only — never rewrites books. `PHINS_BOOKS_TIED_REQUIRE`
+  (default on outside `PHINS_TEST_MODE`) folds cert freshness into
+  high-value authorize (`wallet_withdrawal.release`,
+  `agent_commission.settle`, `claim_payout`); a freshness-check crash
+  fails closed like a missing cert. `PHINS_BOOKS_TIED_MAX_AGE_HOURS`
+  (default 36). Accountant badge: `GET`/`POST /api/admin/cashflow/books-tied`
+  on `/cashflow-integrity.html`
 - **Delivery bidding (B11):** `PHINS_DELIVERY_SLA_TICK_SECONDS` (SLA clock
  interval for closing elapsed bidding windows, default 60)
 - **Admin desk:** an admin saves a mailbox password once on

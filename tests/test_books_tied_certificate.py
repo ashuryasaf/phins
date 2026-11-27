@@ -196,6 +196,50 @@ def test_books_integrity_job_can_issue_certificate(monkeypatch):
     assert result['certificate']['issued'] is True
 
 
+def test_freshness_exception_fails_closed(monkeypatch):
+    """A crash inside freshness_failures must refuse high-value moves."""
+    monkeypatch.setenv('PHINS_MONEY_GATE', '1')
+    monkeypatch.setenv('PHINS_BOOKS_TIED_REQUIRE', '1')
+
+    def _boom(*_a, **_k):
+        raise RuntimeError('ledger walk failed')
+
+    monkeypatch.setattr(bt, 'freshness_failures', _boom)
+    with pytest.raises(MoneyGateError) as raised:
+        authorize_money_move(
+            'claim_payout',
+            books=_green_books(),
+            actor='claims',
+            role='claims',
+            platform_ledger=_ledger(),
+        )
+    assert bt.CERT_MISSING in raised.value.failed_checks
+
+
+def test_inprocess_daily_clock_issues_and_is_idempotent(monkeypatch):
+    monkeypatch.setenv('PHINS_MONEY_GATE', '1')
+    ledger = _ledger()
+    # Reset module flags so this test owns the in-process timer.
+    books_tied_job._INPROCESS_STARTED = False
+    if books_tied_job._INPROCESS_TIMER is not None:
+        try:
+            books_tied_job._INPROCESS_TIMER.cancel()
+        except Exception:
+            pass
+        books_tied_job._INPROCESS_TIMER = None
+
+    monkeypatch.setattr(books_tied_job, '_portal_ledger', lambda: ledger)
+    first = books_tied_job.start_inprocess_daily_clock(issue_now=True)
+    assert first['started'] is True
+    assert (first.get('certificate') or {}).get('certificate', {}).get('issued') is True
+    second = books_tied_job.start_inprocess_daily_clock(issue_now=False)
+    assert second['reason'] == 'already_started'
+    if books_tied_job._INPROCESS_TIMER is not None:
+        books_tied_job._INPROCESS_TIMER.cancel()
+        books_tied_job._INPROCESS_TIMER = None
+    books_tied_job._INPROCESS_STARTED = False
+
+
 def test_books_tied_http_routes(monkeypatch):
     """Accountant GET/POST surface on the embedded portal."""
     import json

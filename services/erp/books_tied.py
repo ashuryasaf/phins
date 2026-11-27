@@ -36,7 +36,13 @@ DEFAULT_MAX_AGE_HOURS = 36.0
 
 
 def books_tied_required() -> bool:
-    """Whether high-value authorize must see a fresh books-tied cert."""
+    """Whether high-value authorize must see a fresh books-tied cert.
+
+    Production default is on (same posture as Money Gate). The serve path
+    issues today's certificate at boot and arms an in-process daily timer
+    so the gate is not stranded when ``PHINS_AGENT_ASYNC`` is off. Set
+    ``PHINS_BOOKS_TIED_REQUIRE=0`` to skip the freshness check.
+    """
     raw = str(os.environ.get('PHINS_BOOKS_TIED_REQUIRE') or '').strip().lower()
     if raw in ('0', 'false', 'off', 'no'):
         return False

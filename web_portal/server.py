@@ -70002,6 +70002,22 @@ def run_server(port: int = PORT) -> None:
     except Exception as _worker_exc:
         print(f"   ⚠️  Async job queue not started: {_worker_exc}")
 
+    # U6: always issue today's books-tied cert (when green) and arm a
+    # process-local daily timer so PHINS_BOOKS_TIED_REQUIRE can stay on
+    # even when PHINS_AGENT_ASYNC / PHINS_DOC_ASYNC are off.
+    try:
+        from services.jobs import books_tied_job as _tied_boot
+        _tied_boot_result = _tied_boot.start_inprocess_daily_clock(issue_now=True)
+        _run = _tied_boot_result.get('certificate') or {}
+        _cert = _run.get('certificate') if isinstance(_run.get('certificate'), dict) else _run
+        print(
+            f"📒 Books-tied boot: issued={(_cert or {}).get('issued')} "
+            f"reason={(_cert or {}).get('reason')} "
+            f"timer={_tied_boot_result.get('reason')}"
+        )
+    except Exception as _tied_boot_exc:
+        print(f"   ⚠️  Books-tied boot clock skipped: {_tied_boot_exc}")
+
     # Video jobs a previous process left in flight get their submission or
     # polling re-armed (B8); without this a restart stranded them forever.
     try:

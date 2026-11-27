@@ -379,9 +379,22 @@ def authorize_money_move(
     try:
         from services.erp.books_tied import freshness_failures
 
-        cert_failed = freshness_failures(ledger, operation=operation)
+        cert_failed = list(freshness_failures(ledger, operation=operation) or [])
     except Exception:
-        cert_failed = []
+        # Fail closed: a freshness-check crash must refuse high-value moves
+        # the same way a missing certificate does (U6 review).
+        try:
+            from services.erp.books_tied import (
+                CERT_MISSING as _CERT_MISSING,
+                HIGH_VALUE_OPERATIONS as _HIGH_VALUE,
+                books_tied_required as _books_tied_required,
+            )
+            if _books_tied_required() and str(operation or '') in _HIGH_VALUE:
+                cert_failed = [_CERT_MISSING]
+            else:
+                cert_failed = []
+        except Exception:
+            cert_failed = ['books_tied_certificate_missing']
     if cert_failed:
         merged = sorted(set(list(verdict.failed_checks) + list(cert_failed)))
         verdict = MoneyGateVerdict(
