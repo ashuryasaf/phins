@@ -124,12 +124,13 @@ def _assess_units(root: Path) -> List[UnitEvidence]:
     # for progress_score when all core files exist.
     if u2_hits == len(u2_core):
         u2_status = 'partial'  # plan listed separate repos; dual mode remains
-        fid_mode = _exists(root, 'services/fiduciary') and any(
+        # AGENTS.md / workflow docs alone must not upgrade U2 — require the
+        # mode string inside services/fiduciary (same anti-doc rule as U6/U7).
+        fid_mode = any(
             _grep_file(root / rel, 'PHINS_FIDUCIARY_MODE')
             for rel in (
                 'services/fiduciary/__init__.py',
                 'services/fiduciary/store.py',
-                'AGENTS.md',
             )
             if _exists(root, rel)
         )
@@ -275,16 +276,23 @@ def _assess_units(root: Path) -> List[UnitEvidence]:
     ))
 
     # --- P3 ---
-    u12 = (
-        _exists(root, 'web_portal/api_finance.py')
-        and _exists(root, 'services/erp/unit_of_work.py')
+    # Plan names finance + fiduciary + mga API extractions plus shared UoW.
+    u12_parts = (
+        ('web_portal/api_finance.py', _exists(root, 'web_portal/api_finance.py')),
+        ('web_portal/api_fiduciary.py', _exists(root, 'web_portal/api_fiduciary.py')),
+        ('web_portal/api_mga.py', _exists(root, 'web_portal/api_mga.py')),
+        ('services/erp/unit_of_work.py', _exists(root, 'services/erp/unit_of_work.py')),
     )
+    u12_hits = sum(1 for _, hit in u12_parts if hit)
     units.append(UnitEvidence(
         unit_id='U12',
         title='Extract money APIs + UoW',
-        status='landed' if u12 else 'missing',
+        status=(
+            'landed' if u12_hits == len(u12_parts)
+            else ('partial' if u12_hits else 'missing')
+        ),
         weight=1.0,
-        evidence=[],
+        evidence=[p for p, hit in u12_parts if hit],
         notes='thin finance/fiduciary/mga handlers',
     ))
 

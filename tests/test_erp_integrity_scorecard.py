@@ -198,3 +198,38 @@ def test_u7_ignores_baseline_clawback_mentions(tmp_path: Path):
     report = compute_integrity_scorecard(repo_root=str(tmp_path))
     by_id = {u['unit_id']: u for u in report['units']}
     assert by_id['U7']['status'] == 'missing'
+
+
+def test_u2_ignores_agents_md_fiduciary_mode(tmp_path: Path):
+    """AGENTS.md naming PHINS_FIDUCIARY_MODE must not upgrade U2 to landed."""
+    for rel in (
+        'database/fiduciary_models.py',
+        'database/repositories/fiduciary_repository.py',
+        'services/fiduciary/__init__.py',
+        'tests/test_fiduciary_store.py',
+    ):
+        _write(tmp_path, rel, '# stub\n')
+    _write(tmp_path, 'AGENTS.md', 'Set PHINS_FIDUCIARY_MODE=dual\n')
+    report = compute_integrity_scorecard(repo_root=str(tmp_path))
+    by_id = {u['unit_id']: u for u in report['units']}
+    assert by_id['U2']['status'] == 'partial'
+
+    _write(tmp_path, 'services/fiduciary/store.py', "_MODE_ENV = 'PHINS_FIDUCIARY_MODE'\n")
+    report = compute_integrity_scorecard(repo_root=str(tmp_path))
+    by_id = {u['unit_id']: u for u in report['units']}
+    assert by_id['U2']['status'] == 'landed'
+
+
+def test_u12_requires_all_money_api_modules(tmp_path: Path):
+    """Finance API + UoW alone is partial; fiduciary and mga APIs are required."""
+    _write(tmp_path, 'web_portal/api_finance.py', '# stub\n')
+    _write(tmp_path, 'services/erp/unit_of_work.py', '# stub\n')
+    report = compute_integrity_scorecard(repo_root=str(tmp_path))
+    by_id = {u['unit_id']: u for u in report['units']}
+    assert by_id['U12']['status'] == 'partial'
+
+    _write(tmp_path, 'web_portal/api_fiduciary.py', '# stub\n')
+    _write(tmp_path, 'web_portal/api_mga.py', '# stub\n')
+    report = compute_integrity_scorecard(repo_root=str(tmp_path))
+    by_id = {u['unit_id']: u for u in report['units']}
+    assert by_id['U12']['status'] == 'landed'
