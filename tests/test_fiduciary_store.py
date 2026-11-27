@@ -241,6 +241,23 @@ def test_migrate_fills_missing_ids_inside_half_written_table(sqlite_db, monkeypa
     db.close()
 
 
+def test_migrate_journal_failure_propagates(sqlite_db, monkeypatch):
+    """Journal refusal must raise — no table writes without a before-record."""
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+
+    def _boom(**kwargs):
+        raise RuntimeError('ledger_sealed')
+
+    with pytest.raises(RuntimeError, match='ledger_sealed'):
+        migrate_snapshot_to_fiduciary_tables(
+            {'health_wallets': {'CUST-J': {'customer_id': 'CUST-J', 'balance': 1}}},
+            append_event=_boom,
+        )
+    db = DatabaseManager()
+    assert db.health_wallets.count_rows() == 0
+    db.close()
+
+
 def test_flush_error_is_surfaced(sqlite_db, monkeypatch):
     """db mode callers must see flush failure; dual still returns the error key."""
     monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'db')

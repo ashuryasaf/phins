@@ -129,6 +129,7 @@ def migrate_snapshot_to_fiduciary_tables(
     from database.manager import DatabaseManager
 
     db = DatabaseManager()
+    journaled = False
     try:
         before = _table_row_counts(db)
         subset = _keys_needing_migrate(db, snapshot, force=force)
@@ -147,7 +148,7 @@ def migrate_snapshot_to_fiduciary_tables(
 
         if append_event is not None:
             # Forensic journal first — refuse the migrate if the chain cannot
-            # accept the before record.
+            # accept the before record (propagate; do not soft-return).
             append_event(
                 event_type=MIGRATION_EVENT,
                 entity_type=MIGRATION_ENTITY,
@@ -156,11 +157,20 @@ def migrate_snapshot_to_fiduciary_tables(
                 status='started',
                 payload=journal_payload,
             )
+            journaled = True
 
-        counts: Dict[str, Any] = {}
-        for key, mapping in subset.items():
-            label = 'balance_sheet' if key == 'phins_balance_sheet' else key
-            counts[label] = _write_key(db, key, mapping, force=force)
+        try:
+            counts: Dict[str, Any] = {}
+            for key, mapping in subset.items():
+                label = 'balance_sheet' if key == 'phins_balance_sheet' else key
+                counts[label] = _write_key(db, key, mapping, force=force)
+        except Exception as exc:
+            # Rows already committed stay; fill_missing resumes next boot.
+            logger.error("fiduciary migration copy failed: %s", exc)
+            result['reason'] = f'error:{type(exc).__name__}'
+            result['migrated'] = False
+            result['keys'] = sorted(subset.keys())
+            return result
 
         after = _table_row_counts(db)
         result['counts'] = counts
@@ -189,7 +199,12 @@ def migrate_snapshot_to_fiduciary_tables(
             )
         return result
     except Exception as exc:
-        logger.error("fiduciary migration failed: %s", exc)
+        # Journal failure (or unexpected setup error) must not look like a
+        # soft skip — callers in db mode fail closed on this raise.
+        if not journaled:
+            logger.error("fiduciary migration refused (journal/setup): %s", exc)
+            raise
+        logger.error("fiduciary migration failed after journal: %s", exc)
         result['reason'] = f'error:{type(exc).__name__}'
         result['migrated'] = False
         return result

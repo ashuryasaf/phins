@@ -9459,27 +9459,45 @@ def _flush_fiduciary_tables() -> bool:
 
 
 def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) -> None:
-    """U2: migrate missing fiduciary ids from snapshot, then hydrate memory."""
+    """U2: migrate missing fiduciary ids from snapshot, then hydrate memory.
+
+    Journal refusal and ``db``-mode copy failures propagate so boot does not
+    silently continue without sealed books. Dual mode logs copy errors and
+    still hydrates (file remains SoR until operators flip to ``db``).
+    """
+    from services.fiduciary import (
+        fiduciary_mode,
+        hydrate_fiduciary_from_db,
+        migrate_snapshot_to_fiduciary_tables,
+    )
+    mode = fiduciary_mode()
+    if mode == 'off':
+        return
+    if snapshot:
+        try:
+            mig = migrate_snapshot_to_fiduciary_tables(
+                snapshot,
+                append_event=platform_event_ledger.append_event,
+            )
+        except Exception as exc:
+            print(f"[FIDUCIARY] Migration refused: {type(exc).__name__}: {exc}")
+            if mode == 'db':
+                raise
+            # dual: file still holds the books
+        else:
+            reason = str(mig.get('reason') or '')
+            if mig.get('migrated'):
+                print(f"[FIDUCIARY] Migrated keys={mig.get('keys')} counts={mig.get('counts')}")
+            elif reason.startswith('error:'):
+                print(f"[FIDUCIARY] Migration incomplete: {mig}")
+                if mode == 'db':
+                    raise RuntimeError(f"fiduciary migration failed: {reason}")
+            elif reason not in ('tables_already_populated', 'no_fiduciary_keys', 'fiduciary_mode_off'):
+                print(f"[FIDUCIARY] Migration skipped: {reason}")
+    # dual + snapshot applied: gaps only (newer file wins over older rows).
+    # db mode, or bare AE2 restore with no snapshot: sealed tables win.
+    prefer_db = snapshot is None or mode == 'db'
     try:
-        from services.fiduciary import (
-            fiduciary_mode,
-            hydrate_fiduciary_from_db,
-            migrate_snapshot_to_fiduciary_tables,
-        )
-        mode = fiduciary_mode()
-        if mode == 'off':
-            return
-        if snapshot:
-            try:
-                migrate_snapshot_to_fiduciary_tables(
-                    snapshot,
-                    append_event=platform_event_ledger.append_event,
-                )
-            except Exception as exc:
-                print(f"[FIDUCIARY] Migration skipped: {type(exc).__name__}: {exc}")
-        # dual + snapshot applied: gaps only (newer file wins over older rows).
-        # db mode, or bare AE2 restore with no snapshot: sealed tables win.
-        prefer_db = snapshot is None or mode == 'db'
         counts = hydrate_fiduciary_from_db(
             health_wallets=HEALTH_WALLETS,
             wallet_withdrawals=WALLET_WITHDRAWALS,
@@ -9488,11 +9506,14 @@ def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) ->
             balance_sheet=PHINS_BALANCE_SHEET,
             prefer_db=prefer_db,
         )
-        loaded = sum(v for k, v in counts.items() if k != 'withheld' and isinstance(v, int))
-        if loaded:
-            print(f"[FIDUCIARY] Hydrated sealed rows: {counts}")
     except Exception as exc:
         print(f"[FIDUCIARY] Hydrate failed: {type(exc).__name__}")
+        if mode == 'db':
+            raise
+        return
+    loaded = sum(v for k, v in counts.items() if k != 'withheld' and isinstance(v, int))
+    if loaded:
+        print(f"[FIDUCIARY] Hydrated sealed rows: {counts}")
 
 
 def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
