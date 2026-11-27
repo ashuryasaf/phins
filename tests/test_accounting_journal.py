@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -309,25 +310,17 @@ def test_post_allocation_rolls_back_posted_on_journal_refuse(monkeypatch):
     from accounting_engine import AllocationStatus
 
     monkeypatch.setenv('PHINS_ACCOUNTING_JOURNAL_MODE', 'dual')
-    calls = {'n': 0}
 
-    def _clash(**_kwargs):
-        calls['n'] += 1
-        if calls['n'] == 1:
-            # First ledger line seals; second clashes.
-            return {
-                'ok': True, 'id': 'JE-1', 'checksum': 'abc',
-                'reused': False, 'withheld': False, 'mode': 'dual',
-            }
+    def _clash_batch(items):
+        # All-or-nothing: refuse the whole post seal batch.
         return {
-            'ok': False, 'id': None, 'checksum': '',
-            'reused': False, 'withheld': True,
+            'ok': False, 'results': [], 'reused': False, 'withheld': True,
             'reason': 'idempotency_payload_mismatch', 'mode': 'dual',
         }
 
     import services.erp.accounting_journal as aj
 
-    monkeypatch.setattr(aj, 'append_journal_entry', _clash)
+    monkeypatch.setattr(aj, 'append_journal_entries', _clash_batch)
     monkeypatch.setattr(aj, 'journal_enabled', lambda environ=None: True)
     monkeypatch.setattr(aj, 'journal_required', lambda environ=None: False)
 
@@ -342,6 +335,81 @@ def test_post_allocation_rolls_back_posted_on_journal_refuse(monkeypatch):
     assert alloc.status == AllocationStatus.DRAFT
     assert alloc.posted_date is None
     assert eng.ledger_entries == []
+
+
+def test_post_allocation_journal_batch_is_atomic(monkeypatch, sqlite_journal):
+    """A mid-post refuse must not leave orphan durable debits without a header."""
+    from accounting_engine import AllocationStatus
+    import services.erp.accounting_journal as aj
+
+    real_batch = aj.append_journal_entries
+    calls = {'n': 0}
+
+    def _fail_once(items):
+        calls['n'] += 1
+        if calls['n'] == 1:
+            return {
+                'ok': False, 'results': [], 'reused': False, 'withheld': True,
+                'reason': 'idempotency_payload_mismatch', 'mode': 'dual',
+            }
+        return real_batch(items)
+
+    monkeypatch.setattr(aj, 'append_journal_entries', _fail_once)
+    eng = AccountingEngine('ACC-J-ATOMIC', 'Atomic Co')
+    alloc = eng.create_allocation(
+        bill_id='BILL-AT', policy_id='P1', customer_id='C1',
+        total_premium=Decimal('40.00'), risk_percentage=Decimal('100'),
+    )
+    ok, msg = eng.post_allocation(alloc.allocation_id, 'accountant')
+    assert ok is False
+    assert alloc.status == AllocationStatus.DRAFT
+    assert eng.ledger_entries == []
+    # Shared journal must stay empty for this engine after the refused batch.
+    rows = aj.load_journal_entries(engine_id='ACC-J-ATOMIC')
+    assert rows == []
+
+
+def test_dual_transient_journal_keeps_entry_numbers(monkeypatch):
+    """Dual fail-open must not rewind entry_counter while still appending."""
+    monkeypatch.setenv('PHINS_ACCOUNTING_JOURNAL_MODE', 'dual')
+
+    def _unavailable(**_kwargs):
+        return {
+            'ok': False, 'id': None, 'checksum': '',
+            'reused': False, 'withheld': True,
+            'reason': 'journal_unavailable', 'mode': 'dual',
+        }
+
+    import services.erp.accounting_journal as aj
+
+    monkeypatch.setattr(aj, 'append_journal_entry', _unavailable)
+    monkeypatch.setattr(aj, 'journal_enabled', lambda environ=None: True)
+    monkeypatch.setattr(aj, 'journal_required', lambda environ=None: False)
+
+    eng = AccountingEngine('ACC-J-CTR', 'Counter Co')
+    first = eng._create_ledger_entry(
+        allocation_id='A1', policy_id='P1', customer_id='C1',
+        entry_date=date.today(),
+        entry_type=EntryType.CLAIM_PAYMENT,
+        account_type=AccountType.RISK_FUND,
+        debit_amount=Decimal('10.00'),
+        description='claim 1',
+        reference_no='CLM-1',
+        idempotency_key='ae:ACC-J-CTR:claim:CLM-1:risk:debit',
+    )
+    second = eng._create_ledger_entry(
+        allocation_id='A2', policy_id='P1', customer_id='C1',
+        entry_date=date.today(),
+        entry_type=EntryType.CLAIM_PAYMENT,
+        account_type=AccountType.RISK_FUND,
+        debit_amount=Decimal('5.00'),
+        description='claim 2',
+        reference_no='CLM-2',
+        idempotency_key='ae:ACC-J-CTR:claim:CLM-2:risk:debit',
+    )
+    assert first.entry_no == 1
+    assert second.entry_no == 2
+    assert [e.entry_no for e in eng.ledger_entries] == [1, 2]
 
 
 def test_reverse_then_repost_uses_next_generation_keys(sqlite_journal):
@@ -524,6 +592,7 @@ def test_peer_process_smoke_shares_journal(sqlite_journal, tmp_path):
         'print(json.dumps({"loaded": hydrated.get("loaded"), "risk": risk, '
         '"entries": len(peer.ledger_entries)}))\n'
     )
+    repo_root = str(Path(__file__).resolve().parents[1])
     env = os.environ.copy()
     env.update({
         'USE_DATABASE': 'true',
@@ -531,11 +600,11 @@ def test_peer_process_smoke_shares_journal(sqlite_journal, tmp_path):
         'SQLITE_PATH': sqlite_path,
         'PHINS_ACCOUNTING_JOURNAL_MODE': 'dual',
         'PHINS_TEST_MODE': 'true',
-        'PYTHONPATH': '/agent/repos/phins',
+        'PYTHONPATH': repo_root,
     })
     proc = subprocess.run(
         [sys.executable, '-c', child],
-        cwd='/agent/repos/phins',
+        cwd=repo_root,
         capture_output=True,
         text=True,
         env=env,

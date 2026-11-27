@@ -676,6 +676,10 @@ By selecting an investment route, you confirm you understand the risks and benef
         
         Returns:
             Tuple of (success, message)
+
+        Risk, savings, and the allocation header seal in one journal
+        transaction so a mid-post clash cannot leave an orphan debit on
+        the shared durable book while memory rolls back (Bugbot U5).
         """
         if allocation_id not in self.allocations:
             return False, f"Allocation {allocation_id} not found"
@@ -685,44 +689,70 @@ By selecting an investment route, you confirm you understand the risks and benef
         prior_posted_date = allocation.posted_date
         prior_posted_by = allocation.posted_by
         entries_before = len(self.ledger_entries)
-        
+        counter_before = self.entry_counter
+        prepared: List[AccountingEntry] = []
+        self._pending_ledger_entries = prepared
+
         try:
             allocation.post_allocation(posted_by)
             subject = self._premium_cash_subject(allocation)
             gen = self._premium_post_generation(subject)
-            
-            # Create Risk Fund entry
-            self._create_ledger_entry(
-                allocation_id=allocation_id,
-                policy_id=allocation.policy_id,
-                customer_id=allocation.customer_id,
-                entry_date=date.today(),
-                entry_type=EntryType.RISK_PAYMENT,
-                account_type=AccountType.RISK_FUND,
-                debit_amount=allocation.risk_premium,
-                description=f"Risk Premium Posted - Total Premium: ${allocation.total_premium:.2f}",
-                reference_no=allocation.bill_id,
-                idempotency_key=self._premium_journal_key(subject, 'risk', gen=gen),
-            )
-            
-            # Create Savings Fund entry
-            self._create_ledger_entry(
-                allocation_id=allocation_id,
-                policy_id=allocation.policy_id,
-                customer_id=allocation.customer_id,
-                entry_date=date.today(),
-                entry_type=EntryType.SAVINGS_DEPOSIT,
-                account_type=AccountType.SAVINGS_FUND,
-                debit_amount=allocation.savings_premium,
-                description=f"Savings Premium Posted - Total Premium: ${allocation.total_premium:.2f}",
-                reference_no=allocation.bill_id,
-                idempotency_key=self._premium_journal_key(subject, 'savings', gen=gen),
-            )
+            journal_items: List[Dict[str, Any]] = []
+
+            for entry_type, account_type, amount, side, label in (
+                (
+                    EntryType.RISK_PAYMENT, AccountType.RISK_FUND,
+                    allocation.risk_premium, 'risk', 'Risk Premium Posted',
+                ),
+                (
+                    EntryType.SAVINGS_DEPOSIT, AccountType.SAVINGS_FUND,
+                    allocation.savings_premium, 'savings', 'Savings Premium Posted',
+                ),
+            ):
+                entry = self._build_ledger_entry(
+                    allocation_id=allocation_id,
+                    policy_id=allocation.policy_id,
+                    customer_id=allocation.customer_id,
+                    entry_date=date.today(),
+                    entry_type=entry_type,
+                    account_type=account_type,
+                    debit_amount=amount,
+                    description=(
+                        f"{label} - Total Premium: ${allocation.total_premium:.2f}"
+                    ),
+                    reference_no=allocation.bill_id,
+                )
+                prepared.append(entry)
+                journal_items.append(self._journal_item_for_entry(
+                    entry,
+                    self._premium_journal_key(subject, side, gen=gen),
+                ))
 
             # Seal the allocation header so peer hydrate can rebuild
             # ``engine.allocations`` (needed for reconstruct idempotency).
-            self._seal_allocation_record(allocation, cash_subject=subject, gen=gen)
-            
+            seal_item = self._allocation_seal_item(
+                allocation, cash_subject=subject, gen=gen,
+            )
+            if seal_item is not None:
+                journal_items.append(seal_item)
+
+            if journal_items:
+                from services.erp.accounting_journal import (
+                    append_journal_entries, journal_enabled, journal_required,
+                )
+                if journal_enabled():
+                    batch = append_journal_entries(journal_items)
+                    if not batch.get('ok'):
+                        reason_code = str(batch.get('reason') or '')
+                        if journal_required() or reason_code in _JOURNAL_INTEGRITY_REASONS:
+                            raise RuntimeError(
+                                f"accounting journal refused post: {reason_code or 'withheld'}"
+                            )
+                        # Dual fail-open on transient journal_unavailable:
+                        # keep memory post and the entry numbers already
+                        # assigned (do not rewind the counter).
+
+            self.ledger_entries.extend(prepared)
             return True, f"Allocation {allocation_id} posted successfully"
         
         except Exception as e:
@@ -731,9 +761,12 @@ By selecting an investment route, you confirm you understand the risks and benef
             allocation.status = prior_status
             allocation.posted_date = prior_posted_date
             allocation.posted_by = prior_posted_by
+            self.entry_counter = counter_before
             if len(self.ledger_entries) > entries_before:
                 del self.ledger_entries[entries_before:]
             return False, f"Error posting allocation: {str(e)}"
+        finally:
+            self._pending_ledger_entries = []
 
     def reverse_allocation(self, allocation_id: str, reversed_by: str, reason: str = "") -> Tuple[bool, str]:
         """Take a posted allocation off the book with contra entries.
@@ -1166,12 +1199,13 @@ By selecting an investment route, you confirm you understand the risks and benef
                 )
             result = append_journal_entry(**self._journal_item_for_entry(entry, key))
             if not result.get('ok'):
-                self.entry_counter -= 1
                 reason = str(result.get('reason') or '')
                 # Fail closed on integrity clashes even in dual mode so peer
                 # books cannot fork. Transient journal_unavailable still
-                # allows the dual memory post.
+                # allows the dual memory post — keep the assigned entry_no
+                # so the next post does not reuse it (Bugbot U5).
                 if journal_required() or reason in _JOURNAL_INTEGRITY_REASONS:
+                    self.entry_counter -= 1
                     raise RuntimeError(
                         f"accounting journal refused post: {reason or 'withheld'}"
                     )
