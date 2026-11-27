@@ -380,6 +380,75 @@ def test_reverse_then_repost_uses_next_generation_keys(sqlite_journal):
     assert eng._get_account_balance(AccountType.SAVINGS_FUND) == Decimal('40.00')
 
 
+def test_reverse_rolls_back_when_journal_batch_refuses(monkeypatch, sqlite_journal):
+    """Partial reverse must not leave POSTED with one-sided memory contras."""
+    from accounting_engine import AllocationStatus
+
+    eng = AccountingEngine('ACC-J-REVFAIL', 'RevFail Co')
+    alloc = eng.create_allocation(
+        bill_id='BILL-RF', policy_id='P1', customer_id='C1',
+        total_premium=Decimal('100.00'), risk_percentage=Decimal('60'),
+        savings_percentage=Decimal('40'),
+        risk_amount=Decimal('60.00'),
+        savings_amount=Decimal('40.00'),
+    )
+    assert eng.post_allocation(alloc.allocation_id, 'accountant')[0] is True
+    before_entries = len(eng.ledger_entries)
+
+    import services.erp.accounting_journal as aj
+
+    def _boom(items):
+        return {
+            'ok': False,
+            'results': [],
+            'withheld': True,
+            'reason': 'idempotency_payload_mismatch',
+            'mode': 'dual',
+        }
+
+    monkeypatch.setattr(aj, 'append_journal_entries', _boom)
+    monkeypatch.setattr(aj, 'journal_enabled', lambda environ=None: True)
+    monkeypatch.setattr(aj, 'journal_required', lambda environ=None: False)
+
+    ok, msg = eng.reverse_allocation(alloc.allocation_id, 'accountant', 'clash')
+    assert ok is False
+    assert 'idempotency_payload_mismatch' in msg
+    assert alloc.status == AllocationStatus.POSTED
+    assert len(eng.ledger_entries) == before_entries
+
+
+def test_reused_journal_does_not_bind_prior_generation_debit(sqlite_journal):
+    """After reverse, a :g1 reuse must not match the still-present gen0 debit."""
+    from accounting_engine import AllocationStatus, EntryType
+
+    eng = AccountingEngine('ACC-J-GENMATCH', 'GenMatch Co')
+    first = eng.create_allocation(
+        bill_id='BILL-GM', policy_id='P1', customer_id='C1',
+        total_premium=Decimal('50.00'), risk_percentage=Decimal('100'),
+        allocation_notes='ledger_tx=TX-GM',
+    )
+    assert eng.post_allocation(first.allocation_id, 'accountant')[0] is True
+    assert eng.reverse_allocation(first.allocation_id, 'accountant')[0] is True
+
+    second = eng.create_allocation(
+        bill_id='BILL-GM', policy_id='P1', customer_id='C1',
+        total_premium=Decimal('50.00'), risk_percentage=Decimal('100'),
+        allocation_notes='ledger_tx=TX-GM',
+    )
+    assert second.allocation_id != first.allocation_id
+    assert eng.post_allocation(second.allocation_id, 'accountant')[0] is True
+    assert second.status == AllocationStatus.POSTED
+
+    risk_debits = [
+        e for e in eng.ledger_entries
+        if e.entry_type == EntryType.RISK_PAYMENT and e.debit_amount > 0
+    ]
+    # gen0 debit + gen1 debit both present (gen0 offset by credit:rev).
+    assert len(risk_debits) == 2
+    assert {e.allocation_id for e in risk_debits} == {first.allocation_id, second.allocation_id}
+    assert eng._get_account_balance(AccountType.RISK_FUND) == Decimal('50.00')
+
+
 def test_boot_hydrate_runs_before_ledger_reconstruct(monkeypatch):
     """hydrate_accounting_book_from_ledger must call journal hydrate first."""
     order = []

@@ -87,38 +87,91 @@ def append_journal_entry(
     entry_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Persist one sealed journal row when the journal mode is on."""
+    batch = append_journal_entries([{
+        'idempotency_key': idempotency_key,
+        'payload': payload,
+        'engine_id': engine_id,
+        'allocation_id': allocation_id,
+        'policy_id': policy_id,
+        'customer_id': customer_id,
+        'entry_type': entry_type,
+        'account_type': account_type,
+        'entry_id': entry_id,
+    }])
+    if batch.get('ok') and batch.get('results'):
+        result = dict(batch['results'][0])
+        result['mode'] = batch.get('mode')
+        return result
+    return {
+        'ok': False,
+        'id': None,
+        'checksum': '',
+        'reused': False,
+        'withheld': True,
+        'reason': batch.get('reason') or 'withheld',
+        'mode': batch.get('mode') or accounting_journal_mode(),
+    }
+
+
+def append_journal_entries(items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Persist many sealed rows in one transaction (all-or-nothing).
+
+    Used by ``reverse_allocation`` so a mid-loop clash cannot leave a
+    one-sided contra sealed while the allocation stays POSTED.
+    """
     mode = accounting_journal_mode()
     if mode == 'off':
         return {
             'ok': True,
-            'id': None,
-            'checksum': '',
-            'reused': False,
-            'withheld': False,
+            'results': [
+                {
+                    'ok': True,
+                    'id': None,
+                    'checksum': '',
+                    'reused': False,
+                    'withheld': False,
+                }
+                for _ in (items or [])
+            ],
             'mode': mode,
         }
+    if not items:
+        return {'ok': True, 'results': [], 'mode': mode}
     try:
         db = _db_manager()
+        results: List[Dict[str, Any]] = []
         with db.session_scope():
-            result = db.accounting_journal.append(
-                idempotency_key=idempotency_key,
-                payload=payload,
-                engine_id=engine_id,
-                allocation_id=allocation_id,
-                policy_id=policy_id,
-                customer_id=customer_id,
-                entry_type=entry_type,
-                account_type=account_type,
-                entry_id=entry_id,
-            )
-        result['mode'] = mode
-        return result
-    except Exception as exc:
-        logger.error("accounting journal append failed: %s", type(exc).__name__)
+            for item in items:
+                result = db.accounting_journal.append(
+                    idempotency_key=str(item.get('idempotency_key') or ''),
+                    payload=dict(item.get('payload') or {}),
+                    engine_id=str(item.get('engine_id') or ''),
+                    allocation_id=str(item.get('allocation_id') or ''),
+                    policy_id=str(item.get('policy_id') or ''),
+                    customer_id=str(item.get('customer_id') or ''),
+                    entry_type=str(item.get('entry_type') or ''),
+                    account_type=str(item.get('account_type') or ''),
+                    entry_id=item.get('entry_id'),
+                )
+                if not result.get('ok'):
+                    # Abort the whole transaction — no partial reverse/post seals.
+                    raise RuntimeError(str(result.get('reason') or 'withheld'))
+                results.append(result)
+        return {'ok': True, 'results': results, 'mode': mode}
+    except RuntimeError as exc:
         return {
             'ok': False,
-            'id': None,
-            'checksum': '',
+            'results': [],
+            'reused': False,
+            'withheld': True,
+            'reason': str(exc) or 'withheld',
+            'mode': mode,
+        }
+    except Exception as exc:
+        logger.error("accounting journal batch append failed: %s", type(exc).__name__)
+        return {
+            'ok': False,
+            'results': [],
             'reused': False,
             'withheld': True,
             'reason': 'journal_unavailable',
@@ -325,6 +378,7 @@ __all__ = [
     'journal_required',
     'make_idempotency_key',
     'append_journal_entry',
+    'append_journal_entries',
     'load_journal_entries',
     'clear_journal_for_tests',
     'hydrate_accounting_engine_from_journal',
