@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -1190,5 +1191,103 @@ def test_flush_adopt_into_mirrors_peer_into_freeze(sqlite_db, monkeypatch):
     assert live['CUST-M'] is not freeze['CUST-M']
     live['CUST-M']['balance'] = 1.0
     assert freeze['CUST-M']['balance'] == 777.0
+
+
+def test_adopt_freeze_stays_isolated_from_live_mutations(sqlite_db, monkeypatch):
+    """In-place credits after adopt must not land in the write freeze.
+
+    Claim payment credits the wallet and appends a transaction, and the
+    balance sheet mutates nested lists, without the persistence lock. The
+    volume snapshot dumps the freeze, so that copy stays at the sealed
+    payload. (Absorbed from Autofix dc1e41d4; tip deep-copies live too.)
+    """
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    peer_wallet = {
+        'customer_id': 'CUST-M',
+        'balance': 50.0,
+        'transactions': [{'id': 'seed', 'amount': 50.0}],
+    }
+    peer_sheet = {
+        'claims_reserve': 10.0,
+        'transactions': [{'id': 'seed'}],
+        'revenue_breakdown': {'premium_income': 1.0},
+    }
+    assert flush_fiduciary_to_db(
+        health_wallets={'CUST-M': peer_wallet},
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet=peer_sheet,
+    )['health_wallets']['written'] == 1
+
+    _, digest_wallet = canonical_payload(peer_wallet)
+    _, digest_sheet = canonical_payload(peer_sheet)
+    sealed_wallet = {
+        'customer_id': 'CUST-M',
+        'balance': 777.0,
+        'transactions': [{'id': 'sealed', 'amount': 777.0}],
+    }
+    sealed_sheet = {
+        'claims_reserve': 20.0,
+        'transactions': [{'id': 'sealed'}],
+        'revenue_breakdown': {'premium_income': 2.0},
+    }
+    db = DatabaseManager()
+    assert db.health_wallets.upsert(
+        'CUST-M', sealed_wallet, expected_checksum=digest_wallet,
+    ) is True
+    assert db.balance_sheet.upsert_phins(
+        sealed_sheet, expected_checksum=digest_sheet,
+    ) is True
+    db.close()
+
+    freeze_wallets = {'CUST-M': copy.deepcopy(peer_wallet)}
+    live_wallets = {'CUST-M': copy.deepcopy(peer_wallet)}
+    freeze_sheet = copy.deepcopy(peer_sheet)
+    live_sheet = copy.deepcopy(peer_sheet)
+    capture_fiduciary_baseline_from_memory(
+        health_wallets=freeze_wallets,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet=freeze_sheet,
+    )
+    result = flush_fiduciary_to_db(
+        health_wallets=freeze_wallets,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet=freeze_sheet,
+        adopt_into={
+            'health_wallets': live_wallets,
+            'balance_sheet': live_sheet,
+        },
+    )
+    assert result['health_wallets'].get('adopted', 0) >= 1
+    assert result['balance_sheet'].get('adopted', 0) >= 1
+    assert live_wallets['CUST-M']['balance'] == 777.0
+    assert live_sheet['claims_reserve'] == 20.0
+
+    live_wallets['CUST-M']['balance'] = 900.0
+    live_wallets['CUST-M']['transactions'].append(
+        {'id': 'unsealed', 'amount': 123.0}
+    )
+    live_sheet['claims_reserve'] = 99.0
+    live_sheet['transactions'].append({'id': 'unsealed'})
+    live_sheet['revenue_breakdown']['premium_income'] = 99.0
+
+    assert freeze_wallets['CUST-M'] is not live_wallets['CUST-M']
+    assert freeze_wallets['CUST-M']['balance'] == 777.0
+    assert freeze_wallets['CUST-M']['transactions'] == [
+        {'id': 'sealed', 'amount': 777.0},
+    ]
+    assert freeze_sheet['claims_reserve'] == 20.0
+    assert freeze_sheet['transactions'] == [{'id': 'sealed'}]
+    assert freeze_sheet['revenue_breakdown']['premium_income'] == 2.0
+    assert freeze_sheet['transactions'] is not live_sheet['transactions']
+    assert (
+        freeze_sheet['revenue_breakdown']
+        is not live_sheet['revenue_breakdown']
+    )
 
 
