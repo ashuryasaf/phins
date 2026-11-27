@@ -1,7 +1,8 @@
 """ERP integrity package (CoA, period close, money gate, books-tied cert).
 
 U4 lands the Money Gate Agent and Books Integrity job. U5 adds the durable
-accounting journal. Later units add CoA and period close. Callers go through
+accounting journal. The integrity scorecard reports plan maturity 58→100.
+Later units add CoA and period close. Callers go through
 ``services.erp.money_gate`` / ``accounting_journal`` — this package never
 invents a second money store or pricing writer.
 """
@@ -19,6 +20,10 @@ from services.erp.accounting_journal import (
     hydrate_accounting_engine_from_journal,
     journal_enabled,
 )
+from services.erp.integrity_scorecard import (
+    compute_integrity_scorecard,
+    render_scorecard_markdown,
+)
 
 __all__ = [
     'MoneyGateError',
@@ -30,4 +35,6 @@ __all__ = [
     'append_journal_entry',
     'hydrate_accounting_engine_from_journal',
     'journal_enabled',
+    'compute_integrity_scorecard',
+    'render_scorecard_markdown',
 ]
