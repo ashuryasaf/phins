@@ -3,12 +3,16 @@
 Two guarantees for real production:
 
 1. Durable database storage is required (no silent in-memory split-brain).
-2. The ledger snapshot path must not be the process tempdir (lost on redeploy).
+2. The HTTP serve path must not use a tempdir ledger snapshot (lost on redeploy).
 
 Defaults follow :func:`security.secrets_policy._is_production` so Railway PR
 previews that inherit ``PHINS_ENVIRONMENT=production`` stay non-production,
-and ``PHINS_TEST_MODE`` never fail-closes. An explicit
-``PHINS_REQUIRE_DATABASE`` / ``PHINS_ALLOW_EPHEMERAL_LEDGER`` value always wins.
+and ``PHINS_TEST_MODE`` never fail-closes.
+
+Explicit ``PHINS_REQUIRE_DATABASE=false`` (and aliases) is the only soft
+escape hatch for the DB gate. Any other non-empty value is treated as
+require-on (fail-closed on typos). ``PHINS_ALLOW_EPHEMERAL_LEDGER=true`` is
+the escape hatch for the ledger-path gate.
 """
 
 from __future__ import annotations
@@ -52,43 +56,49 @@ def _production(environ: EnvMap) -> bool:
 def database_required(environ: Optional[EnvMap] = None) -> bool:
     """Whether boot must refuse volatile in-memory storage.
 
-    Explicit ``PHINS_REQUIRE_DATABASE`` wins. Otherwise defaults to True in
-    real production and False elsewhere (tests, demos, Railway PR previews).
+    - Explicit falsy ``PHINS_REQUIRE_DATABASE`` → soft (escape hatch).
+    - Any other non-empty explicit value → require DB (fail-closed on typos).
+    - Unset → True in real production, False in test / preview / demo.
     """
     env: EnvMap = environ if environ is not None else os.environ
     raw = env.get("PHINS_REQUIRE_DATABASE")
     if raw is not None and str(raw).strip() != "":
         if _falsy(raw):
             return False
-        return _truthy(raw)
+        # Truthy *or* unrecognized → keep the guard on.
+        return True
     if _test_mode(env):
         return False
     return _production(env)
 
 
 def ephemeral_ledger_forbidden(environ: Optional[EnvMap] = None) -> bool:
-    """Whether an ephemeral (tempdir) ledger path must abort boot."""
+    """Whether an ephemeral (tempdir) ledger path must abort HTTP serve."""
     env: EnvMap = environ if environ is not None else os.environ
     raw = env.get("PHINS_ALLOW_EPHEMERAL_LEDGER")
     if raw is not None and str(raw).strip() != "":
         if _truthy(raw):
             return False
-        if _falsy(raw):
-            return True
+        # Explicit falsy *or* unrecognized → forbid ephemeral (fail-closed).
+        return True
     if _test_mode(env):
         return False
     return _production(env)
 
 
 def ledger_path_is_ephemeral(path: str, *, temp_root: Optional[str] = None) -> bool:
-    """True when ``path`` lives under the process tempdir."""
+    """True when ``path`` lives under the process tempdir, or cannot be classified.
+
+    Unclassifiable paths fail closed: a durability gate must not treat "unknown"
+    as durable.
+    """
     root = temp_root if temp_root is not None else tempfile.gettempdir()
     try:
-        return os.path.abspath(path).startswith(os.path.abspath(root) + os.sep) or (
-            os.path.abspath(path) == os.path.abspath(root)
-        )
+        abs_path = os.path.abspath(path)
+        abs_root = os.path.abspath(root)
+        return abs_path == abs_root or abs_path.startswith(abs_root + os.sep)
     except (TypeError, ValueError, OSError):
-        return False
+        return True
 
 
 def refuse_in_memory_boot(*, required: bool, use_database: bool, database_enabled: bool) -> bool:

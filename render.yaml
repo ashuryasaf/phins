@@ -9,10 +9,11 @@ services:
         value: 3.12.0
       - key: PORT
         value: 8000
-      # U1: RENDER implies production in security.boot_integrity; durable DB
-      # is required unless PHINS_REQUIRE_DATABASE is explicitly false.
-      - key: PHINS_ENVIRONMENT
-        value: production
+      # U1: bare RENDER is already treated as production by
+      # security.boot_integrity / secrets_policy; durable DB is required
+      # unless PHINS_REQUIRE_DATABASE is explicitly false. Do not set
+      # PHINS_ENVIRONMENT=production here — that would broaden production
+      # semantics beyond the HTTP serve gate.
       - key: ALPACA_API_KEY
         sync: false
       - key: ALPACA_SECRET_KEY

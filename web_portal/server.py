@@ -9194,23 +9194,31 @@ if LEDGER_PERSISTENCE_FILE.startswith(tempfile.gettempdir()):
     print(f"⚠️  [PERSISTENCE] Using ephemeral path {LEDGER_PERSISTENCE_FILE} — "
           "data will be lost on container restart. Set LEDGER_PERSISTENCE_FILE "
           "or mount a volume at /data for durable storage.")
-# U1: real production must not land the ledger snapshot in tempdir (lost on
-# every redeploy). Tests / demos / Railway PR previews stay soft; operators
-# may set PHINS_ALLOW_EPHEMERAL_LEDGER=true as an explicit escape hatch.
-if _refuse_ephemeral_ledger_boot(
-    forbidden=_ephemeral_ledger_forbidden(),
-    ledger_path=LEDGER_PERSISTENCE_FILE,
-):
-    print("=" * 60)
-    print("FATAL: Ledger persistence path is ephemeral (tempdir) but this")
-    print("       deployment requires durable storage.")
-    print(f"       Resolved path: {LEDGER_PERSISTENCE_FILE}")
-    print("       Mount a volume at /data (or set RAILWAY_VOLUME_MOUNT_PATH /")
-    print("       LEDGER_PERSISTENCE_FILE to a durable path), or set")
-    print("       PHINS_ALLOW_EPHEMERAL_LEDGER=true only as an explicit escape hatch.")
-    print("       See docs/plans/2026-11-27-erp-mga-integrity-100.md U1.")
-    print("=" * 60)
-    raise SystemExit(1)
+
+
+def _enforce_durable_ledger_at_serve() -> None:
+    """U1: abort HTTP serve when production would land the ledger in tempdir.
+
+    Kept out of import time so cron / bi-snapshot / worker one-shots that
+    ``import web_portal.server`` still run when no volume is mounted. Only
+    ``run_server()`` calls this. Tests / demos / Railway PR previews stay
+    soft; operators may set ``PHINS_ALLOW_EPHEMERAL_LEDGER=true`` as an
+    explicit escape hatch.
+    """
+    if _refuse_ephemeral_ledger_boot(
+        forbidden=_ephemeral_ledger_forbidden(),
+        ledger_path=LEDGER_PERSISTENCE_FILE,
+    ):
+        print("=" * 60)
+        print("FATAL: Ledger persistence path is ephemeral (tempdir) but this")
+        print("       deployment requires durable storage.")
+        print(f"       Resolved path: {LEDGER_PERSISTENCE_FILE}")
+        print("       Mount a volume at /data (or set RAILWAY_VOLUME_MOUNT_PATH /")
+        print("       LEDGER_PERSISTENCE_FILE to a durable path), or set")
+        print("       PHINS_ALLOW_EPHEMERAL_LEDGER=true only as an explicit escape hatch.")
+        print("       See docs/plans/2026-11-27-erp-mga-integrity-100.md U1.")
+        print("=" * 60)
+        raise SystemExit(1)
 
 
 def persistence_file_on_volume() -> bool:
@@ -68988,6 +68996,10 @@ def _seed_startup_demo_fixtures() -> None:
 
 
 def run_server(port: int = PORT) -> None:
+    # U1: refuse HTTP serve on an ephemeral ledger path in real production.
+    # Deferred from import so cron/worker/bi-snapshot imports stay alive.
+    _enforce_durable_ledger_at_serve()
+
     # Audit security-critical secrets early so operators see misconfiguration
     # immediately and don't first learn about it via a failed login.
     #

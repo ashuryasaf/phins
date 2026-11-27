@@ -57,6 +57,16 @@ def test_database_required_explicit_true_wins_outside_production():
     }) is True
 
 
+@pytest.mark.parametrize("raw", ("maybe", "TRUE ", "Required", "1x", "enable"))
+def test_database_required_unrecognized_explicit_fails_closed(raw):
+    """Typos / non-falsy values must not silently soft-open production."""
+    assert database_required({
+        "PHINS_ENVIRONMENT": "production",
+        "RAILWAY_ENVIRONMENT": "production",
+        "PHINS_REQUIRE_DATABASE": raw,
+    }) is True
+
+
 def test_database_required_false_by_default_in_development():
     assert database_required({"PHINS_ENVIRONMENT": "development"}) is False
 
@@ -90,6 +100,15 @@ def test_ephemeral_ledger_allowed_with_escape_hatch():
     }) is False
 
 
+@pytest.mark.parametrize("raw", ("maybe", "TURE", "yesplease", "1x"))
+def test_ephemeral_ledger_unrecognized_allow_fails_closed(raw):
+    assert ephemeral_ledger_forbidden({
+        "PHINS_ENVIRONMENT": "production",
+        "RAILWAY_ENVIRONMENT": "production",
+        "PHINS_ALLOW_EPHEMERAL_LEDGER": raw,
+    }) is True
+
+
 def test_ephemeral_ledger_allowed_in_test_mode():
     assert ephemeral_ledger_forbidden({
         "PHINS_ENVIRONMENT": "production",
@@ -105,6 +124,16 @@ def test_ledger_path_is_ephemeral_under_tempdir(tmp_path, monkeypatch):
     durable.parent.mkdir()
     assert ledger_path_is_ephemeral(str(ephemeral), temp_root=str(fake_tmp)) is True
     assert ledger_path_is_ephemeral(str(durable), temp_root=str(fake_tmp)) is False
+
+
+def test_ledger_path_unclassifiable_fails_closed(monkeypatch):
+    """Path errors must not soft-open the durability gate."""
+
+    def _boom(_path):
+        raise OSError("cannot classify")
+
+    monkeypatch.setattr(os.path, "abspath", _boom)
+    assert ledger_path_is_ephemeral("/data/phins_ledger_data.json") is True
 
 
 def test_refuse_ephemeral_ledger_boot_uses_real_tempdir(monkeypatch, tmp_path):
