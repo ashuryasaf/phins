@@ -256,6 +256,9 @@ _UPGRADE_NEW_COLUMNS = [
     # Issued kernel decomposition, sealed JSON. Without it a stored policy
     # loses its risk / savings / loading pins and every premium books as risk.
     ('policies', 'kernel_pin', 'TEXT', None),
+    # U13 multi-entity / binder tenancy — historical rows default to platform.
+    ('policies', 'binder_id', 'VARCHAR(80)', "'PHINS-DEFAULT'"),
+    ('policies', 'entity_id', 'VARCHAR(80)', "'PHINS-PLATFORM'"),
     # Agent ecosystem §C: per-renewal period + payout sweep on commissions.
     ('agent_commissions', 'period', 'VARCHAR(40)', "''"),
     ('agent_commissions', 'payout_id', 'VARCHAR(80)', None),
@@ -309,6 +312,9 @@ _UPGRADE_NEW_INDEXES = [
     # are distinct on both SQLite and PostgreSQL, so customers without an
     # identity yet do not collide.
     ('customers', 'ux_customers_identity', ('nationality', 'national_id_hash'), True),
+    # U13 binder / entity tenancy filters on policies.
+    ('policies', 'ix_policies_binder_id', ('binder_id',), False),
+    ('policies', 'ix_policies_entity_id', ('entity_id',), False),
 ]
 # Columns that were NOT NULL and are now nullable (table_name, column_name).
 # PostgreSQL: ``ALTER COLUMN ... DROP NOT NULL``. SQLite cannot alter a

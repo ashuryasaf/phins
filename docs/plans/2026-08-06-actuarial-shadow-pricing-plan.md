@@ -310,10 +310,10 @@ No `release:validate` required for this additive shadow work.
 
 ## Definition of Done
 
-- All Implementation Units U1–U4 complete.
-- Flag default keeps production behavior identical when unset.
-- No billed premium field changes in create success path.
-- AE1–AE3 covered by automated tests.
+- [x] All Implementation Units U1–U4 complete (`services/pricing_shadow_service.py`, create hook, tests).
+- [x] Flag default keeps production behavior identical when unset.
+- [x] No billed premium field changes in create success path.
+- [x] AE1–AE3 covered by automated tests (`tests/test_pricing_shadow_service.py`, `tests/test_pricing_shadow_create.py`).
 - Origin assessment remains the long-term north star; this plan does not implement Phases C–E.
 - Ready for a follow-on plan: risk→kernel loading (C) or cutover (D) only after shadow data accumulates.
 

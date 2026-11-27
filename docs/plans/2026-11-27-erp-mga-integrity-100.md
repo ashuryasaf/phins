@@ -321,17 +321,17 @@ bash quick_smoke_test.sh
 - Hotspot: `web_portal/server.py` (401 edits / 6 months).
 
 ### Scorecard checklist (claim 100 only when all true)
-- [ ] Prod require-DB + volume fail-boot
-- [ ] Fiduciary tables authoritative
-- [ ] DB financial CI
-- [ ] Money Gate on all payout paths
-- [ ] Durable accounting journal
+- [x] Prod require-DB + volume fail-boot
+- [x] Fiduciary tables authoritative
+- [x] DB financial CI
+- [x] Money Gate on all payout paths
+- [x] Durable accounting journal
 - [x] Daily books-tied certificate
 - [x] Agent clawbacks
 - [x] CoA + hard period close
-- [ ] Bordereaux + remittance sealed & tied
-- [ ] Trust TB + RI cession cash
-- [ ] Premium tax additive
-- [ ] Money APIs extracted + UoW
-- [ ] Multi-entity leakage-proof
-- [ ] Snapshot/queue cannot freeze durability
+- [x] Bordereaux + remittance sealed & tied
+- [x] Trust TB + RI cession cash
+- [x] Premium tax additive
+- [x] Money APIs extracted + UoW
+- [x] Multi-entity leakage-proof
+- [x] Snapshot/queue cannot freeze durability
