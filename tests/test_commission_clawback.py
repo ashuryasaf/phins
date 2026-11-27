@@ -118,7 +118,8 @@ def test_scan_claws_lapsed_and_reports_coverage():
     assert again["clawed"] == 0 and again["already"] == 1
 
 
-def test_unpaid_overdue_bill_triggers_clawback():
+def test_overdue_bill_alone_does_not_auto_claw_active_policy():
+    """A late premium on an active policy must not reverse initial-term accrual."""
     agent = _affiliated_agent("CUST-OVER")
     policies = {
         "POL-OVER": {
@@ -129,6 +130,7 @@ def test_unpaid_overdue_bill_triggers_clawback():
         }
     }
     svc.recompute_commissions(policies)
+    cid = svc.list_commissions(agent_id=agent["id"])[0]["id"]
     bills = {
         "BILL-1": {
             "id": "BILL-1",
@@ -138,12 +140,16 @@ def test_unpaid_overdue_bill_triggers_clawback():
         }
     }
     result = svc.clawback_for_policies(policies, bills, actor="test")
-    assert result["clawed"] == 1
-    assert result["items"][0]["reason"] == "unpaid_premium_overdue"
+    assert result["clawed"] == 0
+    assert svc.COMMISSIONS[cid]["status"] == "accrued"
+    # Explicit admin clawback still works for unpaid premium.
+    ok, out = svc.apply_clawback(
+        cid, reason="unpaid_premium_overdue", policy_id="POL-OVER", actor="admin",
+    )
+    assert ok and out["status"] == "reversed"
     summary = svc.income_summary(agent["id"])
     assert summary["clawed_back_total"] == 80.0
     assert summary["lifetime_total"] == 0.0
-    assert summary["accrued_total"] == 0.0
 
 
 def test_payable_unsweep_then_clawback():

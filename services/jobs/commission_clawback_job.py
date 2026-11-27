@@ -1,9 +1,10 @@
 """Commission Clawback Agent clock (ERP/MGA integrity U7).
 
-Scans policies (and overdue bills) and posts hash-chained
-``agent.commission.clawed_back`` reversals for live commissions on lapsed
-or unpaid premium. Idempotent on ``(policy_id, commission_id)``. When the
-agent job queue is running, ``ensure_scan_clock`` keeps one recurring row;
+Scans policies and posts hash-chained ``agent.commission.clawed_back``
+reversals for live commissions on lapsed / cancelled / expired / inactive
+policies. Overdue bills alone do not auto-claw (admin posts those
+explicitly). Idempotent on ``(policy_id, commission_id)``. When the agent
+job queue is running, ``ensure_scan_clock`` keeps one recurring row;
 ``enqueue_once`` is the operator / API path. Correctness also holds when
 an admin posts ``/api/admin/agents/commissions/clawback`` inline.
 """

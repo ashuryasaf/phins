@@ -69,6 +69,9 @@ CLAWBACK_EVENT = "agent.commission.clawed_back"
 LAPSE_POLICY_STATUSES = frozenset({
     "lapsed", "cancelled", "canceled", "expired", "inactive",
 })
+# Overdue bills alone do *not* auto-claw (a single late premium must not
+# reverse an initial-term accrual on an still-active policy). Admins can
+# still post an explicit clawback with reason ``unpaid_premium_overdue``.
 UNPAID_BILL_STATUSES = frozenset({"overdue"})
 
 _GENESIS_HASH = "0" * 64
@@ -1729,23 +1732,19 @@ def _policy_needs_clawback(
     policy: Dict[str, Any],
     bills: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:
-    """Return a clawback reason when the policy should reverse commissions."""
+    """Return a clawback reason when the policy should reverse commissions.
+
+    Automatic scan / AE6 coverage only fire on lapsed-family statuses.
+    ``bills`` is accepted for call-site compatibility; overdue alone never
+    returns a trigger here (explicit admin clawback covers unpaid premium).
+    """
     if not isinstance(policy, dict):
         return None
     status = (policy.get("status") or "").lower().replace(" ", "_")
     if status in LAPSE_POLICY_STATUSES:
         return f"policy_{status}"
-    pid = policy.get("id")
-    if not pid or not bills:
-        return None
-    for bill in bills.values():
-        if not isinstance(bill, dict):
-            continue
-        if bill.get("policy_id") != pid:
-            continue
-        bstatus = (bill.get("status") or "").lower().replace(" ", "_")
-        if bstatus in UNPAID_BILL_STATUSES:
-            return "unpaid_premium_overdue"
+    # Intentionally ignore bills — see module note on UNPAID_BILL_STATUSES.
+    _ = bills
     return None
 
 
@@ -1858,19 +1857,50 @@ def apply_clawback(
         if payout_update is not None:
             persist_items.append(("payout", payout_update))
         if not _persist_records(persist_items):
-            # Roll back in-memory mutation so a retry can re-attempt.
+            # Roll back in-memory mutation so a retry can re-attempt. Always
+            # drop the ledger tip we just appended (DB and memory agree that
+            # nothing landed). For a payable unsweep, force a full hydrate so
+            # the payout run cannot stay half-edited while the commission
+            # snaps back to ``payable``.
             if COMMISSION_LEDGER and COMMISSION_LEDGER[-1]["id"] == entry["id"]:
                 COMMISSION_LEDGER.pop()
-            comm["status"] = prior_status
-            for key in (
-                "clawed_back_at", "clawback_reason", "clawback_policy_id",
-                "clawback_prior_status", "clawback_actor", "clawback_ledger_entry_id",
-                "updated_at",
-            ):
-                comm.pop(key, None)
             if prior_status == "payable" and payout_update is not None:
-                # Restore prior payout snapshot is hard; force rehydrate.
                 _hydrate_from_db(force=True)
+                # In-memory mode has no durable source — restore the commission
+                # and re-attach it to the calculated payout we unswept.
+                live = COMMISSIONS.get(commission_id)
+                if live is not None and (live.get("status") or "") != "reversed":
+                    live["status"] = prior_status
+                    for key in (
+                        "clawed_back_at", "clawback_reason", "clawback_policy_id",
+                        "clawback_prior_status", "clawback_actor",
+                        "clawback_ledger_entry_id", "updated_at",
+                    ):
+                        live.pop(key, None)
+                    pay = PAYOUTS.get(payout_update.get("id") or "")
+                    if pay is not None and pay.get("status") == "calculated":
+                        ids = list(pay.get("commission_ids") or [])
+                        if commission_id not in ids:
+                            ids.append(commission_id)
+                            ids.sort()
+                            remaining = [
+                                COMMISSIONS[cid] for cid in ids if cid in COMMISSIONS
+                            ]
+                            pay["commission_ids"] = ids
+                            pay["commission_count"] = len(ids)
+                            pay["gross_amount"] = round(
+                                sum(float(c.get("amount") or 0.0) for c in remaining), 2,
+                            )
+                            pay["commissions_hash"] = _commissions_hash(ids)
+                            live["payout_id"] = pay["id"]
+            else:
+                comm["status"] = prior_status
+                for key in (
+                    "clawed_back_at", "clawback_reason", "clawback_policy_id",
+                    "clawback_prior_status", "clawback_actor",
+                    "clawback_ledger_entry_id", "updated_at",
+                ):
+                    comm.pop(key, None)
             return False, "Commission clawback could not be persisted; nothing was changed"
 
         out = dict(comm)
@@ -1887,9 +1917,10 @@ def clawback_for_policies(
 ) -> Dict[str, Any]:
     """Scan policies and claw back live commissions that should reverse (U7).
 
-    Triggers: lapsed/cancelled/expired/inactive policy status, or an overdue
-    premium bill on the policy. Idempotent — already-reversed rows are counted
-    as ``already``. ``payable`` rows are unswept then reversed.
+    Triggers: lapsed/cancelled/expired/inactive policy status only.
+    Overdue bills on an still-active policy are not auto-clawed — use
+    ``apply_clawback`` with an explicit reason. Idempotent — already-reversed
+    rows are counted as ``already``. ``payable`` rows are unswept then reversed.
     """
     with _LOCK:
         _hydrate_from_db(force=True)
