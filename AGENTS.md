@@ -1214,12 +1214,15 @@ Environment variables commonly used:
 - **Accounting journal (U5):** `PHINS_ACCOUNTING_JOURNAL_MODE`
   (`off` / `dual` default when DB is up / `db`). Every
   `AccountingEngine` ledger post inserts a sealed
-  `accounting_journal_entries` row keyed by bill (+ optional `ledger_tx`),
-  not a process-local `ALLOC-NNNNNN`; allocation ids are UUIDs. Boot
-  hydrates the journal before ledger-cash reconstruct. `db` mode refuses
-  the memory post when the durable write fails; dual still fails closed
-  on idempotency/checksum clashes (transient `journal_unavailable` only
-  keeps the memory post)
+  `accounting_journal_entries` row keyed by bill (+ optional `ledger_tx`)
+  with a `:gN` suffix after each reverse so resplit can rebook; allocation
+  ids are content-addressed (engine + cash subject + generation). Sealed
+  payloads omit process-local fields (`entry_no`, running `balance`,
+  timestamps). `post_allocation` rolls back `POSTED` when the journal
+  refuses mid-post. Boot hydrates the journal before ledger-cash
+  reconstruct. `db` mode refuses the memory post when the durable write
+  fails; dual still fails closed on idempotency/checksum clashes
+  (transient `journal_unavailable` only keeps the memory post)
 - **Delivery bidding (B11):** `PHINS_DELIVERY_SLA_TICK_SECONDS` (SLA clock
  interval for closing elapsed bidding windows, default 60)
 - **Admin desk:** an admin saves a mailbox password once on

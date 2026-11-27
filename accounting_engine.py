@@ -15,8 +15,8 @@ Features:
 
 from __future__ import annotations
 
+import hashlib
 import re
-import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Dict, Optional, Tuple, Any, cast
@@ -31,7 +31,38 @@ _JOURNAL_INTEGRITY_REASONS = frozenset({
     'checksum_mismatch',
 })
 
+# Process-local / time-varying fields — never part of the sealed journal
+# checksum identity (Agentic Security Review on U5).
+_JOURNAL_VOLATILE_ENTRY_FIELDS = frozenset({
+    'entry_no',
+    'balance',
+    'created_date',
+    'posted_by',
+    'entry_date',
+})
+_JOURNAL_VOLATILE_ALLOC_FIELDS = frozenset({
+    'created_date',
+    'posted_date',
+    'posted_by',
+    'allocation_date',
+})
+
 _LEDGER_TX_RE = re.compile(r'ledger_tx=([^\s;]+)')
+
+
+def _cash_subject_from(bill_id: str, notes: str = '') -> str:
+    """Stable cash identity: bill + optional ledger_tx marker."""
+    bill = str(bill_id or '').strip() or 'UNBILLED'
+    match = _LEDGER_TX_RE.search(str(notes or ''))
+    tx = match.group(1).strip() if match else ''
+    if tx:
+        return f"{bill}:{tx}"
+    return bill
+
+
+def _stable_journal_payload(payload: Dict[str, Any], *, volatile: frozenset) -> Dict[str, Any]:
+    """Copy of ``payload`` with volatile keys stripped for sealing."""
+    return {k: v for k, v in dict(payload or {}).items() if k not in volatile}
 
 
 # ============================================================================
@@ -564,9 +595,16 @@ By selecting an investment route, you confirm you understand the risks and benef
         Returns:
             Created PremiumAllocation object
         """
-        # UUID — never ``ALLOC-{len+1}``: that sequence is process-local and
-        # collides across peers (Agentic Security Review on U5).
-        allocation_id = f"ALLOC-{uuid.uuid4().hex[:12].upper()}"
+        # Content-addressed id (engine + bill[+tx] + reverse generation) —
+        # never ``ALLOC-{len+1}`` (process-local) or a random UUID (peers
+        # would seal different payloads for the same cash).
+        subject = _cash_subject_from(bill_id, allocation_notes)
+        gen = self._premium_post_generation(subject)
+        allocation_id = self._allocation_id_for(subject, gen)
+        existing = self.allocations.get(allocation_id)
+        if existing is not None and existing.status == AllocationStatus.POSTED:
+            # Same cash already on the book — do not clobber the header.
+            return existing
         preserve_savings = savings_percentage is not None
         if savings_percentage is None:
             savings_percentage = Decimal(100) - Decimal(str(risk_percentage))
@@ -592,13 +630,45 @@ By selecting an investment route, you confirm you understand the risks and benef
 
     def _premium_cash_subject(self, allocation: PremiumAllocation) -> str:
         """Stable cash identity for journal keys: bill + optional ledger_tx."""
-        bill = str(getattr(allocation, 'bill_id', '') or '').strip() or 'UNBILLED'
-        notes = str(getattr(allocation, 'notes', '') or '')
-        match = _LEDGER_TX_RE.search(notes)
-        tx = match.group(1).strip() if match else ''
-        if tx:
-            return f"{bill}:{tx}"
-        return bill
+        return _cash_subject_from(
+            str(getattr(allocation, 'bill_id', '') or ''),
+            str(getattr(allocation, 'notes', '') or ''),
+        )
+
+    def _premium_post_generation(self, subject: str) -> int:
+        """Count completed reverse cycles for ``subject`` (next post gen)."""
+        wanted = str(subject or '')
+        n = 0
+        for alloc in self.allocations.values():
+            if getattr(alloc, 'status', None) != AllocationStatus.REVERSED:
+                continue
+            if self._premium_cash_subject(alloc) == wanted:
+                n += 1
+        return n
+
+    def _allocation_id_for(self, subject: str, gen: int) -> str:
+        digest = hashlib.sha256(
+            f"{self.engine_id}|{subject}|g{int(gen)}".encode('utf-8')
+        ).hexdigest()[:12].upper()
+        return f"ALLOC-{digest}"
+
+    def _premium_journal_key(
+        self,
+        subject: str,
+        side: str,
+        *,
+        gen: int,
+        credit_rev: bool = False,
+    ) -> str:
+        """Content-addressed premium key; ``:gN`` after the first reverse."""
+        base = f"ae:{self.engine_id}:premium:{subject}:{side}"
+        if credit_rev:
+            base = f"{base}:credit:rev"
+        else:
+            base = f"{base}:debit"
+        if int(gen) > 0:
+            base = f"{base}:g{int(gen)}"
+        return base[:200]
     
     def post_allocation(self, allocation_id: str, posted_by: str) -> Tuple[bool, str]:
         """
@@ -611,10 +681,15 @@ By selecting an investment route, you confirm you understand the risks and benef
             return False, f"Allocation {allocation_id} not found"
         
         allocation = self.allocations[allocation_id]
+        prior_status = allocation.status
+        prior_posted_date = allocation.posted_date
+        prior_posted_by = allocation.posted_by
+        entries_before = len(self.ledger_entries)
         
         try:
             allocation.post_allocation(posted_by)
             subject = self._premium_cash_subject(allocation)
+            gen = self._premium_post_generation(subject)
             
             # Create Risk Fund entry
             self._create_ledger_entry(
@@ -627,7 +702,7 @@ By selecting an investment route, you confirm you understand the risks and benef
                 debit_amount=allocation.risk_premium,
                 description=f"Risk Premium Posted - Total Premium: ${allocation.total_premium:.2f}",
                 reference_no=allocation.bill_id,
-                idempotency_key=f"ae:{self.engine_id}:premium:{subject}:risk:debit",
+                idempotency_key=self._premium_journal_key(subject, 'risk', gen=gen),
             )
             
             # Create Savings Fund entry
@@ -641,16 +716,23 @@ By selecting an investment route, you confirm you understand the risks and benef
                 debit_amount=allocation.savings_premium,
                 description=f"Savings Premium Posted - Total Premium: ${allocation.total_premium:.2f}",
                 reference_no=allocation.bill_id,
-                idempotency_key=f"ae:{self.engine_id}:premium:{subject}:savings:debit",
+                idempotency_key=self._premium_journal_key(subject, 'savings', gen=gen),
             )
 
             # Seal the allocation header so peer hydrate can rebuild
             # ``engine.allocations`` (needed for reconstruct idempotency).
-            self._seal_allocation_record(allocation, cash_subject=subject)
+            self._seal_allocation_record(allocation, cash_subject=subject, gen=gen)
             
             return True, f"Allocation {allocation_id} posted successfully"
         
         except Exception as e:
+            # Never leave POSTED without a complete journaled book — callers
+            # treat POSTED as already_posted and reconstruct will not repair.
+            allocation.status = prior_status
+            allocation.posted_date = prior_posted_date
+            allocation.posted_by = prior_posted_by
+            if len(self.ledger_entries) > entries_before:
+                del self.ledger_entries[entries_before:]
             return False, f"Error posting allocation: {str(e)}"
 
     def reverse_allocation(self, allocation_id: str, reversed_by: str, reason: str = "") -> Tuple[bool, str]:
@@ -658,6 +740,8 @@ By selecting an investment route, you confirm you understand the risks and benef
 
         The allocation stays on record as ``REVERSED`` and its fund entries
         are offset, so the history of what was booked is not removed.
+        Vacates the debit generation so a later resplit can rebook the same
+        cash under ``:gN`` keys.
         """
         allocation = self.allocations.get(allocation_id)
         if allocation is None:
@@ -666,6 +750,8 @@ By selecting an investment route, you confirm you understand the risks and benef
             return False, f"Allocation {allocation_id} is not posted"
         note = f"reversed_by={reversed_by}" + (f"; {reason}" if reason else "")
         subject = self._premium_cash_subject(allocation)
+        # Generation of the POSTED cycle being reversed (= current reverse count).
+        gen = self._premium_post_generation(subject)
         for entry_type, account_type, amount in (
             (EntryType.RISK_PAYMENT, AccountType.RISK_FUND, allocation.risk_premium),
             (EntryType.SAVINGS_DEPOSIT, AccountType.SAVINGS_FUND, allocation.savings_premium),
@@ -683,13 +769,15 @@ By selecting an investment route, you confirm you understand the risks and benef
                 credit_amount=amount,
                 description=f"Reversal of allocation {allocation_id} ({note})",
                 reference_no=allocation.bill_id,
-                idempotency_key=(
-                    f"ae:{self.engine_id}:premium:{subject}:{side}:credit:rev"
+                idempotency_key=self._premium_journal_key(
+                    subject, side, gen=gen, credit_rev=True,
                 ),
             )
         allocation.status = AllocationStatus.REVERSED
         allocation.notes = "; ".join(bit for bit in (allocation.notes, note) if bit)
-        self._seal_allocation_record(allocation, cash_subject=subject, suffix='reversed')
+        self._seal_allocation_record(
+            allocation, cash_subject=subject, gen=gen, suffix='reversed',
+        )
         return True, f"Allocation {allocation_id} reversed"
 
     def _seal_allocation_record(
@@ -697,6 +785,7 @@ By selecting an investment route, you confirm you understand the risks and benef
         allocation: PremiumAllocation,
         *,
         cash_subject: str = '',
+        gen: int = 0,
         suffix: str = '',
     ) -> None:
         """Append a sealed allocation header to the durable journal (U5)."""
@@ -708,10 +797,15 @@ By selecting an investment route, you confirm you understand the risks and benef
             return
         if not journal_enabled():
             return
-        payload = dict(allocation.to_dict())
+        payload = _stable_journal_payload(
+            dict(allocation.to_dict()), volatile=_JOURNAL_VOLATILE_ALLOC_FIELDS,
+        )
         payload['record_type'] = 'allocation'
+        payload['post_generation'] = int(gen)
         subject = str(cash_subject or self._premium_cash_subject(allocation) or allocation.allocation_id)
         key = f"ae:{self.engine_id}:allocation:{subject}"
+        if int(gen) > 0:
+            key = f"{key}:g{int(gen)}"
         if suffix:
             key = f"{key}:{suffix}"
         result = append_journal_entry(
@@ -958,7 +1052,9 @@ By selecting an investment route, you confirm you understand the risks and benef
                     account_type=account_type.value,
                     side=side,
                 )
-            payload = entry.to_dict()
+            payload = _stable_journal_payload(
+                entry.to_dict(), volatile=_JOURNAL_VOLATILE_ENTRY_FIELDS,
+            )
             payload['idempotency_key'] = key
             result = append_journal_entry(
                 idempotency_key=key,
@@ -998,12 +1094,18 @@ By selecting an investment route, you confirm you understand the risks and benef
         return entry
     
     def _get_account_balance(self, account_type: AccountType) -> Decimal:
-        """Get current balance for account type"""
+        """Get current balance for account type.
+
+        Sums debits/credits rather than reading a stored running balance —
+        journal hydrate omits process-local ``balance`` from sealed payloads.
+        """
         balance = Decimal(0)
         for entry in self.ledger_entries:
-            if entry.account_type == account_type:
-                balance = entry.balance
-        return balance
+            if entry.account_type != account_type:
+                continue
+            balance += Decimal(str(getattr(entry, 'debit_amount', 0) or 0))
+            balance -= Decimal(str(getattr(entry, 'credit_amount', 0) or 0))
+        return balance.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     
     def get_summary(self) -> Dict[str, Any]:
         """Get engine summary"""

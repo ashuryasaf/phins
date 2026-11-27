@@ -239,8 +239,8 @@ def test_dual_mode_still_allows_memory_on_journal_unavailable(monkeypatch):
     assert len(eng.ledger_entries) == 1
 
 
-def test_allocation_ids_are_unique_across_engines():
-    """Two engines must not mint the same ALLOC-NNNNNN sequence."""
+def test_allocation_ids_are_content_addressed_not_sequential():
+    """Allocation ids hash cash subject — never ALLOC-{n} or random UUID."""
     a = AccountingEngine('ACC-A', 'A')
     b = AccountingEngine('ACC-B', 'B')
     ids = set()
@@ -255,8 +255,20 @@ def test_allocation_ids_are_unique_across_engines():
             )
             assert alloc.allocation_id not in ids
             ids.add(alloc.allocation_id)
-            # Not the old process-local counter format.
             assert alloc.allocation_id != f'ALLOC-{len(ids):06d}'
+    # Same engine + bill (+ notes) → same id (peer-safe).
+    again = a.create_allocation(
+        bill_id='B-ACC-A-0',
+        policy_id='P1',
+        customer_id='C1',
+        total_premium=Decimal('10.00'),
+        risk_percentage=Decimal('100'),
+    )
+    first = next(
+        x for x in a.allocations.values()
+        if x.bill_id == 'B-ACC-A-0'
+    )
+    assert again.allocation_id == first.allocation_id
 
 
 def test_premium_keys_include_ledger_tx_when_present(sqlite_journal):
@@ -274,6 +286,82 @@ def test_premium_keys_include_ledger_tx_when_present(sqlite_journal):
     keys = {r.get('idempotency_key') for r in journal.load_journal_entries(engine_id='ACC-J-TX')}
     assert 'ae:ACC-J-TX:premium:BILL-TX1:TX-99:risk:debit' in keys
     assert 'ae:ACC-J-TX:allocation:BILL-TX1:TX-99' in keys
+
+
+def test_post_allocation_rolls_back_posted_on_journal_refuse(monkeypatch):
+    """POSTED must not stick when a journal integrity clash aborts the post."""
+    from accounting_engine import AllocationStatus
+
+    monkeypatch.setenv('PHINS_ACCOUNTING_JOURNAL_MODE', 'dual')
+    calls = {'n': 0}
+
+    def _clash(**_kwargs):
+        calls['n'] += 1
+        if calls['n'] == 1:
+            # First ledger line seals; second clashes.
+            return {
+                'ok': True, 'id': 'JE-1', 'checksum': 'abc',
+                'reused': False, 'withheld': False, 'mode': 'dual',
+            }
+        return {
+            'ok': False, 'id': None, 'checksum': '',
+            'reused': False, 'withheld': True,
+            'reason': 'idempotency_payload_mismatch', 'mode': 'dual',
+        }
+
+    import services.erp.accounting_journal as aj
+
+    monkeypatch.setattr(aj, 'append_journal_entry', _clash)
+    monkeypatch.setattr(aj, 'journal_enabled', lambda environ=None: True)
+    monkeypatch.setattr(aj, 'journal_required', lambda environ=None: False)
+
+    eng = AccountingEngine('ACC-J-ROLLBACK', 'Rollback Co')
+    alloc = eng.create_allocation(
+        bill_id='BILL-RB', policy_id='P1', customer_id='C1',
+        total_premium=Decimal('50.00'), risk_percentage=Decimal('100'),
+    )
+    ok, msg = eng.post_allocation(alloc.allocation_id, 'accountant')
+    assert ok is False
+    assert 'idempotency_payload_mismatch' in msg
+    assert alloc.status == AllocationStatus.DRAFT
+    assert alloc.posted_date is None
+    assert eng.ledger_entries == []
+
+
+def test_reverse_then_repost_uses_next_generation_keys(sqlite_journal):
+    """After reverse, debit keys move to :g1 so resplit can rebook the cash."""
+    from accounting_engine import AllocationStatus
+
+    eng = AccountingEngine('ACC-J-REV', 'Rev Co')
+    first = eng.create_allocation(
+        bill_id='BILL-REV', policy_id='POL-REV', customer_id='CUST-REV',
+        total_premium=Decimal('100.00'), risk_percentage=Decimal('100'),
+        allocation_notes='ledger_tx=TX-REV',
+    )
+    assert eng.post_allocation(first.allocation_id, 'accountant')[0] is True
+    assert eng.reverse_allocation(first.allocation_id, 'accountant', 'resplit')[0] is True
+    assert first.status == AllocationStatus.REVERSED
+
+    second = eng.create_allocation(
+        bill_id='BILL-REV', policy_id='POL-REV', customer_id='CUST-REV',
+        total_premium=Decimal('100.00'), risk_percentage=Decimal('60'),
+        savings_percentage=Decimal('40'),
+        allocation_notes='ledger_tx=TX-REV; resplit',
+        risk_amount=Decimal('60.00'),
+        savings_amount=Decimal('40.00'),
+    )
+    assert second.allocation_id != first.allocation_id
+    ok, msg = eng.post_allocation(second.allocation_id, 'accountant')
+    assert ok is True, msg
+    assert second.status == AllocationStatus.POSTED
+
+    keys = {r.get('idempotency_key') for r in journal.load_journal_entries(engine_id='ACC-J-REV')}
+    assert 'ae:ACC-J-REV:premium:BILL-REV:TX-REV:risk:debit' in keys
+    assert 'ae:ACC-J-REV:premium:BILL-REV:TX-REV:risk:credit:rev' in keys
+    assert 'ae:ACC-J-REV:premium:BILL-REV:TX-REV:risk:debit:g1' in keys
+    assert 'ae:ACC-J-REV:allocation:BILL-REV:TX-REV:g1' in keys
+    assert eng._get_account_balance(AccountType.RISK_FUND) == Decimal('60.00')
+    assert eng._get_account_balance(AccountType.SAVINGS_FUND) == Decimal('40.00')
 
 
 def test_boot_hydrate_runs_before_ledger_reconstruct(monkeypatch):
