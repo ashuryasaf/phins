@@ -110,6 +110,15 @@
                 <span class="note" id="remittance-stamp"></span>
             </div>
         </section>
+        <section id="trust-recon">
+            <h2>Trust &amp; cession <span id="trust-verdict"></span></h2>
+            <p class="note">Trust holds carrier risk cash until remittance. Trust Recon flags a deficit and never invents cash. Cession is a treaty cash book — analytical expense weights stay planning-only.</p>
+            <p class="note" id="trust-body">Reading trust status…</p>
+            <div id="trust-actions">
+                <button id="trust-refresh" type="button" class="quiet">Refresh</button>
+                <span class="note" id="trust-stamp"></span>
+            </div>
+        </section>
         <div class="cards" id="funds"></div>
         <section id="kernel-pins">
             <h2>Kernel pins <span id="pins-verdict"></span></h2>
@@ -184,6 +193,7 @@
     <script src="/books-tied-badge.js"></script>
     <script src="/period-close-badge.js"></script>
     <script src="/remittance-badge.js"></script>
+    <script src="/trust-badge.js"></script>
     <script src="/cashflow-unified-report.js"></script>
     <script>
         const money = (value) => '$' + Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });

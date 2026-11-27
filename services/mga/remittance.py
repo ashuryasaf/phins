@@ -224,6 +224,29 @@ def create_remittance_run(
                             'prior_sha': prior_sha,
                         },
                     )
+                # U10: adjust trust hold by the payable delta (never invent cash).
+                delta = float(amount) - float(_money(prior_amount))
+                if abs(delta) > 0.005:
+                    try:
+                        from services.mga import trust as trust_mod
+                        adj = trust_mod.record_movement(
+                            binder_id=binder_id,
+                            period_id=period_id,
+                            kind=trust_mod.KIND_ADJUSTMENT,
+                            amount=abs(delta),
+                            signed=+1 if delta > 0 else -1,
+                            currency=str(bordereau.get('currency') or 'USD'),
+                            ref_type='remittance_refresh',
+                            ref_id=run_id,
+                            actor=actor,
+                            note='payable refresh trust delta',
+                        )
+                        refreshed['trust_adjust_id'] = (adj.get('movement') or {}).get('id')
+                    except Exception as trust_exc:
+                        raise RemittanceError(
+                            'trust_adjust_failed',
+                            detail={'error': str(trust_exc)},
+                        ) from trust_exc
                 _RUNS[run_id] = refreshed
                 return {'ok': True, 'refreshed': True, 'run': dict(refreshed)}
             else:
@@ -254,6 +277,20 @@ def create_remittance_run(
                 'ledger_append_failed',
                 detail={'ledger': mirrored},
             )
+        # U10: hold carrier risk cash on the trust book pending settle.
+        try:
+            from services.mga import trust as trust_mod
+            held = trust_mod.hold_premium_from_bordereau(bordereau, actor=actor)
+            if not held.get('ok') and not held.get('already'):
+                raise RemittanceError('trust_hold_failed', detail={'trust': held})
+            run['trust_movement_id'] = (held.get('movement') or {}).get('id')
+        except RemittanceError:
+            raise
+        except Exception as trust_exc:
+            raise RemittanceError(
+                'trust_hold_failed',
+                detail={'error': str(trust_exc)},
+            ) from trust_exc
         _RUNS[run_id] = run
         return {'ok': True, 'run': dict(run)}
 
@@ -358,6 +395,27 @@ def settle_remittance_run(
         run['premium_cash'] = bordereau.get('premium_cash')
         run['claims_paid'] = bordereau.get('claims_paid')
         run['streams'] = bordereau.get('streams') or {}
+        # U10: release trust + post treaty cession before the settle lands.
+        try:
+            from services.mga import trust as trust_mod
+            from services.mga import cession as cession_mod
+            released = trust_mod.release_on_remittance(run, actor=actor)
+            if not released.get('ok') and not released.get('already'):
+                raise RemittanceError('trust_release_failed', detail={'trust': released})
+            ceded = cession_mod.post_cession_from_bordereau(
+                bordereau, actor=actor,
+            )
+            if not ceded.get('ok') and not ceded.get('already'):
+                raise RemittanceError('cession_post_failed', detail={'cession': ceded})
+            run['trust_release_id'] = (released.get('movement') or {}).get('id')
+            run['cession_entry_id'] = (ceded.get('entry') or {}).get('id')
+        except RemittanceError:
+            raise
+        except Exception as u10_exc:
+            raise RemittanceError(
+                'trust_or_cession_failed',
+                detail={'error': str(u10_exc)},
+            ) from u10_exc
         mirrored = _mirror(EVENT_SETTLED, run)
         if not mirrored.get('ok'):
             raise RemittanceError('ledger_append_failed', detail={'ledger': mirrored})
