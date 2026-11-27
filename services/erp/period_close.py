@@ -317,17 +317,100 @@ def _iter_platform_ledger_entries(ledger: Any) -> List[Dict[str, Any]]:
     return []
 
 
-def _payload_dict(entry: Dict[str, Any]) -> Dict[str, Any]:
-    payload = entry.get('payload')
-    if isinstance(payload, dict):
-        return dict(payload)
-    if isinstance(payload, str) and payload.strip():
+_PACK_LEDGER_KEYS = (
+    'period_id',
+    'pack_id',
+    'checksum',
+    'action',
+    'trial_balance',
+    'chart_fingerprint',
+    'critical_checks_digest',
+    'actor',
+    'sealed_at',
+    'prior_pack_id',
+    'prior_pack_checksum',
+)
+
+
+def _pack_fields_from_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """Pull close-pack fields from a nested ``payload`` or flattened ledger row.
+
+    ``PlatformEventLedgerService.append_event`` merges the supplied payload
+    onto the top level of the entry (same pattern as books_tied certs).
+    """
+    nested = entry.get('payload') if isinstance(entry.get('payload'), dict) else None
+    if isinstance(nested, str) and nested.strip():
         try:
-            parsed = json.loads(payload)
-            return dict(parsed) if isinstance(parsed, dict) else {}
+            parsed = json.loads(nested)
+            nested = parsed if isinstance(parsed, dict) else None
         except Exception:
-            return {}
-    return {}
+            nested = None
+    source: Dict[str, Any]
+    if nested and any(k in nested for k in ('pack_id', 'checksum', 'trial_balance', 'sealed_at')):
+        source = dict(nested)
+    else:
+        source = dict(entry)
+    out: Dict[str, Any] = {}
+    for key in _PACK_LEDGER_KEYS:
+        if key in source and source[key] is not None:
+            out[key] = source[key]
+    if 'period_id' not in out and entry.get('entity_id'):
+        out['period_id'] = entry.get('entity_id')
+    if 'actor' not in out and entry.get('actor'):
+        out['actor'] = entry.get('actor')
+    if 'pack_id' not in out and entry.get('entry_id'):
+        # Prefer pack_id from payload; fall back only when id looks like a pack.
+        eid = str(entry.get('entry_id') or '')
+        if eid.startswith('PCP-'):
+            out['pack_id'] = eid
+    if 'sealed_at' not in out:
+        stamp = entry.get('timestamp') or entry.get('recorded_at')
+        if stamp:
+            out['sealed_at'] = stamp
+    return out
+
+
+def _pack_from_ledger_fields(fields: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Rebuild a close pack that ``verify_close_pack`` can re-seal."""
+    period_id = str(fields.get('period_id') or '')
+    action = str(fields.get('action') or STATUS_HARD)
+    if not period_id:
+        return None
+    pack = {
+        'period_id': period_id,
+        'action': action,
+        'trial_balance': fields.get('trial_balance'),
+        'chart_fingerprint': fields.get('chart_fingerprint'),
+        'critical_checks_digest': fields.get('critical_checks_digest'),
+        'actor': fields.get('actor') or 'period_close',
+        'sealed_at': fields.get('sealed_at') or _now_iso(),
+        'prior_pack_id': fields.get('prior_pack_id'),
+        'prior_pack_checksum': fields.get('prior_pack_checksum'),
+        'restored_from_ledger': True,
+    }
+    stored_checksum = str(fields.get('checksum') or '')
+    stored_id = str(fields.get('pack_id') or '')
+    # Prefer the stored seal when present and intact; otherwise recompute.
+    if stored_checksum:
+        pack['checksum'] = stored_checksum
+        pack['id'] = stored_id or f"PCP-{period_id}-{action}-{stored_checksum[:12]}"
+        if verify_close_pack(pack).get('ok'):
+            return pack
+    resealed = _seal_pack(pack)
+    # If a stored checksum was present but mismatched, refuse rather than
+    # invent a new seal over incomplete fields.
+    if stored_checksum and resealed.get('checksum') != stored_checksum:
+        logger.warning(
+            'period_close restored pack checksum mismatch period=%s',
+            period_id,
+        )
+        # Still restore HARD status; pack verify stays failed until resealed
+        # fields are complete. Keep the stored ids for forensics.
+        pack['checksum'] = stored_checksum
+        pack['id'] = stored_id or resealed.get('id')
+        pack['seal_intact'] = False
+        return pack
+    return resealed
 
 
 def _restore_hard_close_from_ledger(period_id: str) -> Optional[Dict[str, Any]]:
@@ -354,14 +437,20 @@ def _restore_hard_close_from_ledger(period_id: str) -> Optional[Dict[str, Any]]:
         year, month = parse_period_id(pid)
     except ValueError:
         return None
-    payload = _payload_dict(latest)
-    sealed_at = (
-        str(payload.get('sealed_at') or '')
-        or str(latest.get('timestamp') or latest.get('recorded_at') or _now_iso())
+    fields = _pack_fields_from_entry(latest)
+    fields.setdefault('period_id', pid)
+    fields.setdefault('action', STATUS_HARD)
+    pack = _pack_from_ledger_fields(fields)
+    sealed_at = str(
+        (pack or {}).get('sealed_at')
+        or fields.get('sealed_at')
+        or latest.get('timestamp')
+        or latest.get('recorded_at')
+        or _now_iso()
     )
-    actor = str(latest.get('actor') or payload.get('actor') or 'period_close')
-    pack_id = str(payload.get('pack_id') or latest.get('entry_id') or '')
-    pack_checksum = str(payload.get('checksum') or '')
+    actor = str((pack or {}).get('actor') or fields.get('actor') or latest.get('actor') or 'period_close')
+    pack_id = str((pack or {}).get('id') or fields.get('pack_id') or '') or None
+    pack_checksum = str((pack or {}).get('checksum') or fields.get('checksum') or '') or None
     with _LOCK:
         period = _empty_period(year, month)
         period['status'] = STATUS_HARD
@@ -369,21 +458,12 @@ def _restore_hard_close_from_ledger(period_id: str) -> Optional[Dict[str, Any]]:
         period['hard_closed_by'] = actor
         period['soft_closed_at'] = sealed_at
         period['soft_closed_by'] = actor
-        period['pack_id'] = pack_id or None
-        period['pack_checksum'] = pack_checksum or None
+        period['pack_id'] = pack_id
+        period['pack_checksum'] = pack_checksum
         period['updated_at'] = sealed_at
         _PERIODS[pid] = period
-        if pack_id or pack_checksum:
-            _PACKS[pid] = {
-                'id': pack_id,
-                'period_id': pid,
-                'action': STATUS_HARD,
-                'checksum': pack_checksum,
-                'actor': actor,
-                'sealed_at': sealed_at,
-                'trial_balance': payload.get('trial_balance'),
-                'restored_from_ledger': True,
-            }
+        if pack is not None:
+            _PACKS[pid] = pack
         return dict(period)
 
 
@@ -392,6 +472,8 @@ def _mirror_pack_to_ledger(pack: Dict[str, Any], *, event_type: str) -> Dict[str
 
     No ledger (unit tests / early boot) → skipped OK. A present ledger that
     refuses the append fails closed so the period state is not advanced.
+    Payload carries every field ``_seal_pack`` hashes so a restart can
+    rebuild a verifiable pack (``append_event`` flattens these onto the row).
     """
     ledger = _resolve_platform_ledger()
     if ledger is None:
@@ -405,10 +487,15 @@ def _mirror_pack_to_ledger(pack: Dict[str, Any], *, event_type: str) -> Dict[str
             actor=pack.get('actor') or 'period_close',
             amount=0.0,
             payload={
+                'period_id': pack.get('period_id'),
                 'pack_id': pack.get('id'),
                 'checksum': pack.get('checksum'),
                 'action': pack.get('action'),
                 'trial_balance': pack.get('trial_balance'),
+                'chart_fingerprint': pack.get('chart_fingerprint'),
+                'critical_checks_digest': pack.get('critical_checks_digest'),
+                'actor': pack.get('actor') or 'period_close',
+                'sealed_at': pack.get('sealed_at'),
                 'prior_pack_id': pack.get('prior_pack_id'),
                 'prior_pack_checksum': pack.get('prior_pack_checksum'),
             },

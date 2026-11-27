@@ -113,6 +113,8 @@ def test_hard_close_idempotent_and_immutable():
 
 
 class _FakeLedger:
+    """Mirrors PlatformEventLedgerService.append_event flatten behaviour."""
+
     def __init__(self, *, fail: bool = False):
         self.fail = fail
         self.events = []
@@ -122,8 +124,12 @@ class _FakeLedger:
         if self.fail:
             raise RuntimeError('ledger_down')
         entry_id = str(kwargs.get('entry_id') or f"evt-{len(self.events)}")
-        row = dict(kwargs)
+        payload = kwargs.pop('payload', None) or {}
+        row = dict(payload) if isinstance(payload, dict) else {}
+        row.update(kwargs)
         row['entry_id'] = entry_id
+        row['type'] = kwargs.get('event_type') or row.get('type')
+        row['event_type'] = kwargs.get('event_type') or row.get('event_type')
         self.events.append(row)
         self.transaction_ledger[entry_id] = row
         return row
@@ -143,7 +149,8 @@ def test_reopen_soft_mirrors_ledger_event(monkeypatch):
     reopen_events = [e for e in ledger.events if e['event_type'] == pc.EVENT_REOPEN]
     assert len(reopen_events) == 1
     assert reopen_events[0]['entity_id'] == '2026-02'
-    assert reopen_events[0]['payload']['prior_pack_checksum'] == soft['pack']['checksum']
+    # FakeLedger flattens payload onto the row (like PlatformEventLedgerService).
+    assert reopen_events[0]['prior_pack_checksum'] == soft['pack']['checksum']
 
 
 def test_soft_close_fails_closed_when_ledger_append_fails(monkeypatch):
@@ -162,13 +169,19 @@ def test_hard_close_restored_from_ledger_after_memory_clear(monkeypatch):
     hard = pc.hard_close('2025-09', actor='acct')
     assert hard['ok'] is True
     pack_id = hard['pack']['id']
-    # Simulate restart: clear process memory; ledger still has the event.
-    pc.reset_period_close_state()
-    assert pc.get_period('2025-09') is None or True  # may restore immediately
+    pack_checksum = hard['pack']['checksum']
+    assert pc.verify_close_pack(hard['pack'])['ok'] is True
+    # Simulate restart: clear process memory; ledger still has flattened event.
     pc.reset_period_close_state()
     restored = pc.ensure_period(2025, 9)
     assert restored['status'] == pc.STATUS_HARD
     assert restored['pack_id'] == pack_id
+    assert restored['pack_checksum'] == pack_checksum
+    restored_pack = pc.get_close_pack('2025-09')
+    assert restored_pack is not None
+    assert pc.verify_close_pack(restored_pack)['ok'] is True
+    assert restored_pack['checksum'] == pack_checksum
+    assert restored_pack.get('chart_fingerprint') == hard['pack']['chart_fingerprint']
     with pytest.raises(pc.PeriodClosedError):
         pc.assert_period_open_for_post(date(2025, 9, 15))
 
