@@ -843,7 +843,10 @@ Environment variables commonly used:
 
 - **Database:** `USE_DATABASE`, `DATABASE_URL`, `DATABASE_PUBLIC_URL`,
   `USE_SQLITE`, `SQLITE_PATH`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`,
-  `DB_PASSWORD`
+  `DB_PASSWORD`, `PHINS_REQUIRE_DATABASE` (defaults **on** in real
+  production via `security/boot_integrity.py` / `entrypoint.sh serve`;
+  explicit `false` is the escape hatch; `PHINS_TEST_MODE` and Railway PR
+  previews stay soft so empty in-memory books are never served as prod)
 - **Server:** `PORT`, `HOST`, `BASE_URL`, `PHINS_ENVIRONMENT`,
   `POPULATE_DEMO_DATA`
 - **Test:** `PHINS_TEST_MODE`, `TEST_BASE_URL`, `TEST_PORT`,
@@ -856,7 +859,10 @@ Environment variables commonly used:
   `/data`, so `phins_ledger_data.json` (health wallets, withdrawals, NFT
   ledger, investment accounts, balance sheet, algo balances, policy
   documents) is lost on redeploy unless a volume is mounted there; boot
-  warns when `/data` is not a mount point. With the database on, the server
+  **refuses to start** in real production when the resolved path is under
+  the process tempdir (`PHINS_ALLOW_EPHEMERAL_LEDGER=true` is the explicit
+  escape hatch) and still warns when `/data` exists but is not a mount
+  point. With the database on, the server
   (never a one-shot command) also keeps that snapshot as one checksummed
   `agent_artifacts` row (`services/ledger_snapshot_store.py`, id
   `platform-ledger-snapshot`; DB-authoritative stores such as the platform

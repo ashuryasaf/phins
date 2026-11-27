@@ -9,6 +9,10 @@ services:
         value: 3.12.0
       - key: PORT
         value: 8000
+      # U1: RENDER implies production in security.boot_integrity; durable DB
+      # is required unless PHINS_REQUIRE_DATABASE is explicitly false.
+      - key: PHINS_ENVIRONMENT
+        value: production
       - key: ALPACA_API_KEY
         sync: false
       - key: ALPACA_SECRET_KEY

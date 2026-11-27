@@ -2285,12 +2285,20 @@ def demo_data_seeding_enabled() -> bool:
         if os.environ.get('PHINS_ENVIRONMENT', '').strip().lower() in ('production', 'prod', 'live'):
             return False
     return os.environ.get('POPULATE_DEMO_DATA', 'true').strip().lower() in ('true', '1', 'yes')
-# Data-integrity guardrail (opt-in, default OFF so existing behavior is unchanged).
-# When PHINS_REQUIRE_DATABASE is truthy, the platform refuses to run on the
-# volatile in-memory fallback — this prevents the silent split-brain where the
-# request path writes to one store while reports/integrity read another. See
-# docs/INVESTOR_AI_BI_OPTIMIZATION_REVIEW.md §6 (DI-1).
-DATABASE_REQUIRED = os.environ.get('PHINS_REQUIRE_DATABASE', 'false').lower() in ('1', 'true', 'yes', 'on')
+# Data-integrity guardrail (U1 / DI-1).
+# Real production defaults to requiring durable DB storage so a failed
+# Postgres connection cannot silently serve empty in-memory books. Explicit
+# PHINS_REQUIRE_DATABASE wins; PHINS_TEST_MODE and Railway PR previews stay
+# soft (see security.boot_integrity.database_required / secrets_policy._is_production).
+# docs/INVESTOR_AI_BI_OPTIMIZATION_REVIEW.md §6; docs/plans/2026-11-27-erp-mga-integrity-100.md U1.
+from security.boot_integrity import (
+    database_required as _database_required,
+    ephemeral_ledger_forbidden as _ephemeral_ledger_forbidden,
+    refuse_ephemeral_ledger_boot as _refuse_ephemeral_ledger_boot,
+    refuse_in_memory_boot as _refuse_in_memory_boot,
+)
+
+DATABASE_REQUIRED = _database_required()
 database_enabled = False
 _db_init_done = False  # guards against duplicate init_database + seed_default_users calls
 
@@ -2438,15 +2446,21 @@ else:
     BILLING: Dict[str, Dict[str, Any]] = {}  # bill_id -> bill data (for metrics)
     print("✓ Using in-memory storage (demo data will be loaded at startup)")
 
-# DI-1 guardrail: if the operator explicitly requires durable storage but we
-# ended up on the in-memory fallback, fail fast rather than silently serving a
-# store that cannot back the platform's data-integrity guarantees. Default OFF.
-if DATABASE_REQUIRED and not (USE_DATABASE and database_enabled):
+# DI-1 / U1: refuse volatile in-memory books when durability is required
+# (explicit PHINS_REQUIRE_DATABASE, or the production default).
+if _refuse_in_memory_boot(
+    required=DATABASE_REQUIRED,
+    use_database=USE_DATABASE,
+    database_enabled=database_enabled,
+):
     print("=" * 60)
-    print("FATAL: PHINS_REQUIRE_DATABASE is set but durable database storage is")
-    print("       unavailable. Refusing to start on volatile in-memory storage to")
-    print("       protect data-integrity guarantees. Fix the DB connection or unset")
-    print("       PHINS_REQUIRE_DATABASE. See docs/INVESTOR_AI_BI_OPTIMIZATION_REVIEW.md §6.")
+    print("FATAL: Durable database storage is required but unavailable.")
+    print("       Refusing to start on volatile in-memory storage to protect")
+    print("       data-integrity guarantees (no empty-book split-brain).")
+    print("       Fix the DB connection, or set PHINS_REQUIRE_DATABASE=false")
+    print("       only as an explicit non-production escape hatch.")
+    print("       See docs/INVESTOR_AI_BI_OPTIMIZATION_REVIEW.md §6 and")
+    print("       docs/plans/2026-11-27-erp-mga-integrity-100.md U1.")
     print("=" * 60)
     raise SystemExit(1)
 
@@ -9180,6 +9194,23 @@ if LEDGER_PERSISTENCE_FILE.startswith(tempfile.gettempdir()):
     print(f"⚠️  [PERSISTENCE] Using ephemeral path {LEDGER_PERSISTENCE_FILE} — "
           "data will be lost on container restart. Set LEDGER_PERSISTENCE_FILE "
           "or mount a volume at /data for durable storage.")
+# U1: real production must not land the ledger snapshot in tempdir (lost on
+# every redeploy). Tests / demos / Railway PR previews stay soft; operators
+# may set PHINS_ALLOW_EPHEMERAL_LEDGER=true as an explicit escape hatch.
+if _refuse_ephemeral_ledger_boot(
+    forbidden=_ephemeral_ledger_forbidden(),
+    ledger_path=LEDGER_PERSISTENCE_FILE,
+):
+    print("=" * 60)
+    print("FATAL: Ledger persistence path is ephemeral (tempdir) but this")
+    print("       deployment requires durable storage.")
+    print(f"       Resolved path: {LEDGER_PERSISTENCE_FILE}")
+    print("       Mount a volume at /data (or set RAILWAY_VOLUME_MOUNT_PATH /")
+    print("       LEDGER_PERSISTENCE_FILE to a durable path), or set")
+    print("       PHINS_ALLOW_EPHEMERAL_LEDGER=true only as an explicit escape hatch.")
+    print("       See docs/plans/2026-11-27-erp-mga-integrity-100.md U1.")
+    print("=" * 60)
+    raise SystemExit(1)
 
 
 def persistence_file_on_volume() -> bool:

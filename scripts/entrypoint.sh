@@ -42,6 +42,32 @@ fi
 
 case "$mode" in
     serve)
+        # U1 (ERP/MGA integrity): real production defaults to requiring a
+        # durable DB. Leave the variable unset when already configured, when
+        # PHINS_TEST_MODE is on, or when this is a Railway PR preview
+        # (inherits PHINS_ENVIRONMENT=production) — Python
+        # security.boot_integrity / secrets_policy also decide those cases.
+        # Exporting true for every "production" label would abort preview deploys.
+        _default_require_db=0
+        case "${PHINS_ENVIRONMENT:-}" in
+            production|prod|live) _default_require_db=1 ;;
+        esac
+        if [ -n "${PHINS_REQUIRE_DATABASE+x}" ]; then
+            _default_require_db=0
+        fi
+        case "${PHINS_TEST_MODE:-}" in
+            1|true|yes|y|on) _default_require_db=0 ;;
+        esac
+        case "${RAILWAY_ENVIRONMENT:-}" in
+            pr-*|*-pr-*) _default_require_db=0 ;;
+        esac
+        case "${RAILWAY_ENVIRONMENT_NAME:-}" in
+            pr-*|*-pr-*) _default_require_db=0 ;;
+        esac
+        if [ "$_default_require_db" = "1" ]; then
+            export PHINS_REQUIRE_DATABASE=true
+            echo "entrypoint.sh: defaulting PHINS_REQUIRE_DATABASE=true for production" >&2
+        fi
         exec python3 web_portal/server.py "$@"
         ;;
     cron)
