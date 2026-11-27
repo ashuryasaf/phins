@@ -64,8 +64,9 @@ def test_known_landed_units_on_this_checkout():
     # U6 must not take half credit from the U4 job's forward-looking docstring.
     assert by_id['U6']['status'] == 'missing', by_id['U6']
     assert by_id['U7']['status'] == 'missing', by_id['U7']
-    # P2/P3 units not started.
-    for uid in ('U8', 'U9', 'U10', 'U11', 'U12'):
+    # P2/P3 units not started — baseline snapshot/queue/tenant files alone
+    # must not inflate U13/U14 progress.
+    for uid in ('U8', 'U9', 'U10', 'U11', 'U12', 'U13', 'U14'):
         assert by_id[uid]['status'] == 'missing', (uid, by_id[uid])
 
 
@@ -102,3 +103,30 @@ def test_module_check_respects_repo_root(tmp_path: Path):
     report = compute_integrity_scorecard(repo_root=str(tmp_path))
     by_id = {u['unit_id']: u for u in report['units']}
     assert by_id['U6']['status'] == 'partial'  # module without test
+
+
+def test_u14_baseline_snapshot_files_are_not_partial(tmp_path: Path):
+    """Baseline ledger_snapshot_store + job queue alone must not credit U14."""
+    for rel in (
+        'services/ledger_snapshot_store.py',
+        'services/agent_job_queue.py',
+    ):
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('# baseline\n', encoding='utf-8')
+    report = compute_integrity_scorecard(repo_root=str(tmp_path))
+    by_id = {u['unit_id']: u for u in report['units']}
+    assert by_id['U14']['status'] == 'missing'
+
+
+def test_u13_baseline_tenant_tests_are_not_partial(tmp_path: Path):
+    """Customer cross-tenant tests without binder_id are not U13 progress."""
+    path = tmp_path / 'tests' / 'test_tenant_isolation.py'
+    path.parent.mkdir(parents=True)
+    path.write_text('def test_cross_tenant():\n    assert True\n', encoding='utf-8')
+    models = tmp_path / 'database' / 'models.py'
+    models.parent.mkdir(parents=True)
+    models.write_text('class Policy:\n    pass\n', encoding='utf-8')
+    report = compute_integrity_scorecard(repo_root=str(tmp_path))
+    by_id = {u['unit_id']: u for u in report['units']}
+    assert by_id['U13']['status'] == 'missing'

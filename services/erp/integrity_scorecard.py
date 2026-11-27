@@ -286,29 +286,47 @@ def _assess_units(root: Path) -> List[UnitEvidence]:
         notes='thin finance/fiduciary/mga handlers',
     ))
 
+    # Baseline customer cross-tenant tests already exist; U13 needs binder /
+    # entity columns and test extensions that name them — not the baseline file alone.
     u13_test = _exists(root, 'tests/test_tenant_isolation.py')
     u13_binder = False
     models = root / 'database' / 'models.py'
     if models.is_file():
         u13_binder = _grep_file(models, 'binder_id')
+    u13_test_binder = (
+        u13_test and _grep_file(root / 'tests/test_tenant_isolation.py', 'binder_id')
+    )
     units.append(UnitEvidence(
         unit_id='U13',
         title='Multi-entity / binder tenancy',
-        status='landed' if u13_test and u13_binder else ('partial' if u13_test else 'missing'),
+        status=(
+            'landed' if u13_binder and u13_test_binder
+            else ('partial' if u13_binder else 'missing')
+        ),
         weight=1.0,
-        evidence=['tests/test_tenant_isolation.py'] if u13_test else [],
+        evidence=[
+            p for p, hit in (
+                ('database/models.py#binder_id', u13_binder),
+                ('tests/test_tenant_isolation.py#binder_id', u13_test_binder),
+            ) if hit
+        ],
         notes='binder_id on policies/remittances',
     ))
 
+    # ledger_snapshot_store + agent_job_queue are baseline (score 58). U14
+    # credit starts only when the plan's SLO / incremental verify suite exists.
+    u14_slo_test = _exists(root, 'tests/test_ledger_snapshot_slos.py')
     u14_snap = _exists(root, 'services/ledger_snapshot_store.py')
     u14_queue = _exists(root, 'services/agent_job_queue.py')
     units.append(UnitEvidence(
         unit_id='U14',
         title='Snapshot strategy + queue SLOs',
-        status='landed' if u14_snap and u14_queue and _exists(root, 'tests/test_ledger_snapshot_slos.py')
-        else ('partial' if u14_snap and u14_queue else 'missing'),
+        status=(
+            'landed' if u14_slo_test and u14_snap and u14_queue
+            else ('partial' if u14_slo_test else 'missing')
+        ),
         weight=1.0,
-        evidence=[p for p in ('services/ledger_snapshot_store.py', 'services/agent_job_queue.py') if _exists(root, p)],
+        evidence=['tests/test_ledger_snapshot_slos.py'] if u14_slo_test else [],
         notes='incremental snapshots + DLQ age alerts',
     ))
 
