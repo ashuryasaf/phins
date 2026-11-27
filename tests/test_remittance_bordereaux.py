@@ -7,16 +7,22 @@ import pytest
 from services.erp.integrity_scorecard import compute_integrity_scorecard
 from services.jobs import bordereaux_job
 from services.mga import bordereaux as brd
+from services.mga import cession as ces
 from services.mga import remittance as rem
+from services.mga import trust as trust_mod
 
 
 @pytest.fixture(autouse=True)
 def _reset():
     brd.reset_bordereaux_state()
     rem.reset_remittance_state()
+    trust_mod.reset_trust_state()
+    ces.reset_cession_state()
     yield
     brd.reset_bordereaux_state()
     rem.reset_remittance_state()
+    trust_mod.reset_trust_state()
+    ces.reset_cession_state()
 
 
 def _green_books():
@@ -450,6 +456,6 @@ def test_scorecard_u9_landed_on_this_checkout():
     report = compute_integrity_scorecard()
     by_id = {u['unit_id']: u for u in report['units']}
     assert by_id['U9']['status'] == 'landed', by_id['U9']
-    # P2 still incomplete without U10–U11 — claimed stays 82; progress rises.
-    assert report['claimed_score'] == 82
-    assert float(report['progress_score']) > 82.0
+    # With U10–U11 on this tip, P2 claims 93.
+    assert report['claimed_score'] == 93
+    assert float(report['progress_score']) >= 93.0

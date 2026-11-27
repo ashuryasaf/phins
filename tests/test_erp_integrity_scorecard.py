@@ -56,15 +56,15 @@ def test_markdown_render_includes_scores():
 
 
 def test_known_landed_units_on_this_checkout():
-    """U1–U9 are expected on the integrity track tip used for review."""
+    """U1–U11 are expected on the integrity track tip used for review."""
     report = compute_integrity_scorecard()
     by_id = {u['unit_id']: u for u in report['units']}
-    for uid in ('U1', 'U2', 'U3', 'U4', 'U5', 'U6', 'U7', 'U8', 'U9'):
+    for uid in ('U1', 'U2', 'U3', 'U4', 'U5', 'U6', 'U7', 'U8', 'U9', 'U10', 'U11'):
         assert by_id[uid]['status'] == 'landed', (uid, by_id[uid])
-    # P2 incomplete without U10–U11 — claimed stays 82; progress rises.
-    assert report['claimed_score'] == 82
-    assert float(report['progress_score']) > 82.0
-    for uid in ('U10', 'U11', 'U12', 'U13', 'U14'):
+    # P2 complete — claimed 93; P3 still open.
+    assert report['claimed_score'] == 93
+    assert float(report['progress_score']) >= 93.0
+    for uid in ('U12', 'U13', 'U14'):
         assert by_id[uid]['status'] == 'missing', (uid, by_id[uid])
 
 

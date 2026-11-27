@@ -41421,6 +41421,66 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({'success': True, 'remittance': status}, default=str).encode('utf-8'))
             return
 
+        if path == '/api/admin/cashflow/trust':
+            if not require_role(session, ['admin', 'accountant', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                from services.mga import trust as trust_mod
+                from services.mga import cession as cession_mod
+                from services.mga import bordereaux as brd
+                from services.jobs import trust_recon_job
+                qs = urlparse.parse_qs(urlparse.urlparse(self.path).query or '')
+                binder_id = str((qs.get('binder_id') or [brd.DEFAULT_BINDER_ID])[0] or brd.DEFAULT_BINDER_ID)
+                bank_raw = (qs.get('bank_balance') or [None])[0]
+                bank_balance = None
+                if bank_raw not in (None, ''):
+                    try:
+                        bank_balance = float(bank_raw)
+                    except (TypeError, ValueError):
+                        bank_balance = None
+                status = trust_recon_job.run_once(
+                    binder_id=binder_id,
+                    bank_balance=bank_balance,
+                    actor=str((session or {}).get('username') or 'accountant'),
+                )
+                status['cession'] = cession_mod.cession_totals(binder_id=binder_id)
+                status['treaties'] = cession_mod.list_treaties()
+            except Exception:
+                _write_cashflow_internal_error(self, "trust status failed")
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'success': True, 'trust': status}, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/admin/cashflow/premium-tax':
+            if not require_role(session, ['admin', 'accountant', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                from services.mga import premium_tax as tax_mod
+                from services.mga import bordereaux as brd
+                qs = urlparse.parse_qs(urlparse.urlparse(self.path).query or '')
+                binder_id = str((qs.get('binder_id') or [brd.DEFAULT_BINDER_ID])[0] or brd.DEFAULT_BINDER_ID)
+                period_id = str((qs.get('period_id') or [''])[0] or '').strip() or None
+                status = {
+                    'jurisdictions': tax_mod.list_jurisdictions(),
+                    'schedule': tax_mod.remittance_schedule(
+                        binder_id=binder_id, period_id=period_id,
+                    ),
+                    'accruals': tax_mod.list_accruals(
+                        binder_id=binder_id, period_id=period_id,
+                    ),
+                }
+            except Exception:
+                _write_cashflow_internal_error(self, "premium-tax status failed")
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'success': True, 'premium_tax': status}, default=str).encode('utf-8'))
+            return
+
         if path == '/api/admin/cashflow/kernel-pins':
             if not require_role(session, ['admin', 'accountant', 'actuary']):
                 self._set_json_headers(403)

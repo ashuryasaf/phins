@@ -265,22 +265,36 @@ def _assess_units(root: Path) -> List[UnitEvidence]:
         evidence=[p for p in u9_files if _exists(root, p)] if u9_core else [],
         notes='carrier payables from kernel pins + ledger cash (AE5)',
     ))
+    u10_files = [
+        'services/mga/trust.py',
+        'services/mga/cession.py',
+        'services/jobs/trust_recon_job.py',
+        'tests/test_trust_cession.py',
+    ]
+    u10_core = (
+        _exists(root, 'services/mga/trust.py')
+        and _exists(root, 'services/mga/cession.py')
+    )
     units.append(UnitEvidence(
         unit_id='U10',
         title='Trust ledger + RI cession cash',
-        status='landed' if _exists(root, 'services/mga/trust.py') and _exists(root, 'services/mga/cession.py')
-        else 'missing',
+        status='landed' if u10_core else 'missing',
         weight=1.0,
-        evidence=[],
-        notes='fiduciary premium held vs operating',
+        evidence=[p for p in u10_files if _exists(root, p)] if u10_core else [],
+        notes='trust deficit fail-closed; cession ≠ _EXPENSE_WEIGHTS',
     ))
+    u11_files = [
+        'services/mga/premium_tax.py',
+        'tests/test_premium_tax.py',
+    ]
+    u11_core = _exists(root, 'services/mga/premium_tax.py')
     units.append(UnitEvidence(
         unit_id='U11',
         title='Premium tax engine',
-        status='landed' if _exists(root, 'services/mga/premium_tax.py') else 'missing',
+        status='landed' if u11_core else 'missing',
         weight=1.0,
-        evidence=[],
-        notes='additive GL tax accrual',
+        evidence=[p for p in u11_files if _exists(root, p)] if u11_core else [],
+        notes='additive GL tax accrual; never rewrites billed premium',
     ))
 
     # --- P3 ---
