@@ -9322,6 +9322,13 @@ def mark_ledger_dirty():
         pass
 
 
+def _clear_ledger_dirty_after_restore() -> None:
+    """Boot hydrate/load is not a mutation — idle SIGTERM must not flush."""
+    global _persistence_dirty
+    with _persistence_lock:
+        _persistence_dirty = False
+
+
 def verify_persistence_writable() -> bool:
     """Probe the ledger persistence path at startup.
 
@@ -9551,10 +9558,17 @@ def _should_flush_fiduciary(*, periodic: bool, wrote_file: bool, force_db: bool)
     Postgres. Gate on whether the file save actually wrote (under the
     persistence lock) — not a pre-lock dirty read — so a mutation that
     races into the same tick still flushes.
+
+    ``force_db`` alone (SIGTERM shutdown) is not enough: an idle replica or
+    cron that only hydrated at boot must not upsert stale books over newer
+    sealed rows. Explicit mutation saves (``not periodic`` and not
+    shutdown-only) still flush even when persistence is disabled.
     """
-    if force_db or not periodic:
+    if wrote_file:
         return True
-    return bool(wrote_file)
+    if not periodic and not force_db:
+        return True
+    return False
 
 
 def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
@@ -10082,6 +10096,7 @@ def load_ledger_data(allow_db_snapshot: bool = False):
         print("[PERSISTENCE] Persistence disabled, using in-memory storage only")
         # U2: sealed fiduciary tables may still restore wallets/BS.
         _hydrate_and_migrate_fiduciary(None)
+        _clear_ledger_dirty_after_restore()
         return False
 
     db_data = _read_ledger_snapshot_from_db() if allow_db_snapshot else None
@@ -10090,6 +10105,7 @@ def load_ledger_data(allow_db_snapshot: bool = False):
         print(f"[PERSISTENCE] No persistence file found at {LEDGER_PERSISTENCE_FILE}, starting fresh")
         # AE2: fiduciary tables alone can restore wallets after a volume-less redeploy.
         _hydrate_and_migrate_fiduciary(None)
+        _clear_ledger_dirty_after_restore()
         return False
 
     # Read the file before anything is applied, so an unreadable file can
@@ -10109,6 +10125,7 @@ def load_ledger_data(allow_db_snapshot: bool = False):
                 # sealed fiduciary books (AE2) so the next flush cannot publish
                 # empty process dicts over intact Postgres rows.
                 _hydrate_and_migrate_fiduciary(None)
+                _clear_ledger_dirty_after_restore()
                 return False
 
     try:
@@ -10283,6 +10300,7 @@ def load_ledger_data(allow_db_snapshot: bool = False):
         _hydrate_and_migrate_fiduciary(data)
         if _LEDGER_LOAD_SOURCE == 'file':
             _resume_stale_ledger_snapshot_copy(data)
+        _clear_ledger_dirty_after_restore()
         return True
     except Exception as e:
         # db-mode fiduciary failures must abort boot — do not treat as a
@@ -10341,13 +10359,20 @@ def _graceful_shutdown(signum, frame):
 
     Railway sends SIGTERM when redeploying or scaling down. Without this
     handler, up to 60 seconds of in-memory mutations can be lost.
+
+    Idle processes (hydrated at boot, never mutated) must not invent
+    dirtiness: that would flush stale fiduciary maps over shared Postgres.
     """
     sig_name = 'SIGTERM' if signum == 15 else 'SIGINT' if signum == 2 else f'signal {signum}'
     print(f"\n[SHUTDOWN] Received {sig_name}, flushing persistence...")
     try:
-        mark_ledger_dirty()
-        save_ledger_data(_periodic=False, force_db=True)
-        print("[SHUTDOWN] Ledger data flushed to disk successfully")
+        with _persistence_lock:
+            had_pending = bool(_persistence_dirty)
+        if had_pending:
+            save_ledger_data(_periodic=False, force_db=True)
+            print("[SHUTDOWN] Ledger data flushed to disk successfully")
+        else:
+            print("[SHUTDOWN] No pending ledger mutations; skipping flush")
     except Exception as exc:
         print(f"[SHUTDOWN] Error flushing ledger: {exc}")
     # Dispose the SQLAlchemy engine so pooled PostgreSQL connections are

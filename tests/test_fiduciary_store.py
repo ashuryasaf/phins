@@ -356,13 +356,33 @@ def test_hydrate_propagates_db_open_failure(monkeypatch):
 
 
 def test_should_flush_fiduciary_skips_clean_periodic_ticks():
-    """Idle periodic saves must not republish process-local fiduciary dicts."""
+    """Idle periodic / shutdown saves must not republish process-local books."""
     from web_portal.server import _should_flush_fiduciary
 
     assert _should_flush_fiduciary(periodic=True, wrote_file=False, force_db=False) is False
     assert _should_flush_fiduciary(periodic=True, wrote_file=True, force_db=False) is True
     assert _should_flush_fiduciary(periodic=False, wrote_file=False, force_db=False) is True
-    assert _should_flush_fiduciary(periodic=True, wrote_file=False, force_db=True) is True
+    # force_db alone (idle SIGTERM) must not flush stale hydrated books.
+    assert _should_flush_fiduciary(periodic=True, wrote_file=False, force_db=True) is False
+    assert _should_flush_fiduciary(periodic=False, wrote_file=False, force_db=True) is False
+    assert _should_flush_fiduciary(periodic=False, wrote_file=True, force_db=True) is True
+
+
+def test_graceful_shutdown_skips_flush_when_clean(monkeypatch):
+    """Idle SIGTERM must not invent dirtiness or flush fiduciary books."""
+    import web_portal.server as portal
+
+    monkeypatch.setattr(portal, '_persistence_dirty', False)
+    called = {'n': 0}
+
+    def _save(*_a, **_k):
+        called['n'] += 1
+        return True
+
+    monkeypatch.setattr(portal, 'save_ledger_data', _save)
+    with pytest.raises(SystemExit):
+        portal._graceful_shutdown(15, None)
+    assert called['n'] == 0
 
 
 def test_flush_skips_empty_book_without_blocking_others(sqlite_db, monkeypatch):
