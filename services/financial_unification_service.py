@@ -670,14 +670,18 @@ def _matching_allocation(engine: Any, bill_id: str, source_tx_id: Optional[str])
     If the same ledger tx was booked as ``UNBILLED-{tx}`` (bills missing at
     post time), a later real ``bill_id`` for that tx must not post again.
 
-    A reversed allocation no longer carries the cash, so it does not match.
+    A reversed (or draft / cancelled) allocation no longer carries the cash,
+    so it does not match — only POSTED rows are already on the book. A failed
+    journal seal that left a DRAFT must not block reconstruct.
     """
     allocations = getattr(engine, "allocations", {}) or {}
     wanted_bill = str(bill_id or "")
     marker = f"ledger_tx={source_tx_id}" if source_tx_id else ""
     unbilled_key = f"UNBILLED-{source_tx_id}" if source_tx_id else ""
     for alloc in allocations.values():
-        if _allocation_is_reversed(alloc):
+        status = getattr(alloc, "status", None)
+        status_name = str(getattr(status, "name", status) or "").upper()
+        if status_name != "POSTED":
             continue
         alloc_bill = str(getattr(alloc, "bill_id", "") or "")
         notes = str(getattr(alloc, "notes", "") or "")

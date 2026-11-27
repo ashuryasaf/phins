@@ -320,7 +320,13 @@ def hydrate_accounting_engine_from_journal(engine: Any) -> Dict[str, Any]:
                     preserve_savings_percentage=True,
                     risk_amount_exact=Decimal(str(row.get('risk_premium') or 0)),
                     savings_amount_exact=Decimal(str(row.get('savings_premium') or 0)),
-                    notes=str(row.get('notes') or ''),
+                    notes=(
+                        str(row.get('notes') or '')
+                        or (
+                            f"ledger_tx={row.get('ledger_tx')}"
+                            if row.get('ledger_tx') else ''
+                        )
+                    ),
                 )
                 alloc.status = status
                 if row.get('posted_date'):

@@ -322,6 +322,75 @@ def test_premium_keys_include_ledger_tx_when_present(sqlite_journal):
     assert 'ae:ACC-J-TX:allocation:BILL-TX1:TX-99' in keys
 
 
+def test_sealed_payload_ignores_path_varying_notes_and_descriptions(sqlite_journal):
+    """Billing vs reconstruct prose must not fork the sealed checksum."""
+    from accounting_engine import _stable_journal_payload, _JOURNAL_VOLATILE_ENTRY_FIELDS
+    from accounting_engine import _JOURNAL_VOLATILE_ALLOC_FIELDS, _ledger_tx_from_notes
+
+    eng = AccountingEngine('ACC-J-STABLE', 'Stable Co')
+    billing = eng.create_allocation(
+        bill_id='BILL-ST', policy_id='P1', customer_id='C1',
+        total_premium=Decimal('50.00'), risk_percentage=Decimal('100'),
+        allocation_notes='kernel_split=pin; ledger_tx=TX-ST',
+    )
+    reconstruct = eng.create_allocation(
+        bill_id='BILL-ST2', policy_id='P1', customer_id='C1',
+        total_premium=Decimal('50.00'), risk_percentage=Decimal('100'),
+        allocation_notes='reconstruct kernel_split=pin; ledger_tx=TX-ST2',
+    )
+    assert eng.post_allocation(billing.allocation_id, 'billing')[0] is True
+    assert eng.post_allocation(reconstruct.allocation_id, 'boot_reconstruct')[0] is True
+
+    rows = journal.load_journal_entries(engine_id='ACC-J-STABLE')
+    headers = [r for r in rows if r.get('record_type') == 'allocation']
+    assert headers
+    for header in headers:
+        # Only the stable ledger_tx token — no path prefix.
+        assert header.get('notes') in (
+            f"ledger_tx={_ledger_tx_from_notes(header.get('notes') or '')}",
+            header.get('notes'),
+        )
+        assert 'kernel_split' not in str(header.get('notes') or '')
+        assert 'reconstruct' not in str(header.get('notes') or '')
+        assert header.get('ledger_tx')
+
+    # Entry descriptions are stripped from the sealed checksum identity.
+    sample = {
+        'description': 'Risk Premium Posted - Total Premium: $50.00',
+        'debit_amount': '50.00',
+        'entry_no': 1,
+    }
+    stable = _stable_journal_payload(sample, volatile=_JOURNAL_VOLATILE_ENTRY_FIELDS)
+    assert 'description' not in stable
+    assert 'entry_no' not in stable
+    assert 'notes' in _JOURNAL_VOLATILE_ALLOC_FIELDS
+
+
+def test_path_varying_notes_reuse_same_cash_key(sqlite_journal):
+    """Second seal with different prose but same cash must reuse, not clash."""
+    from services.erp.accounting_journal import append_journal_entry
+
+    eng = AccountingEngine('ACC-J-REUSE-NOTE', 'Reuse Note Co')
+    first = eng.create_allocation(
+        bill_id='BILL-RN', policy_id='P1', customer_id='C1',
+        total_premium=Decimal('30.00'), risk_percentage=Decimal('100'),
+        allocation_notes='kernel_split=pin; ledger_tx=TX-RN',
+    )
+    assert eng.post_allocation(first.allocation_id, 'billing')[0] is True
+
+    entry = eng.ledger_entries[0]
+    entry.description = 'reconstruct Risk Premium Posted - different prose'
+    item = eng._journal_item_for_entry(
+        entry,
+        eng._premium_journal_key('BILL-RN:TX-RN', 'risk', gen=0),
+    )
+    # Description is stripped before sealing — identity matches the first post.
+    assert 'description' not in item['payload']
+    result = append_journal_entry(**item)
+    assert result.get('ok') is True
+    assert result.get('reused') is True
+
+
 def test_post_allocation_rolls_back_posted_on_journal_refuse(monkeypatch):
     """POSTED must not stick when a journal integrity clash aborts the post."""
     from accounting_engine import AllocationStatus

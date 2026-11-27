@@ -39,12 +39,18 @@ _JOURNAL_VOLATILE_ENTRY_FIELDS = frozenset({
     'created_date',
     'posted_by',
     'entry_date',
+    # Billing / reconstruct / resplit / reverse prose differs for the same
+    # cash key; sealing it forks peers on idempotency_payload_mismatch.
+    'description',
 })
 _JOURNAL_VOLATILE_ALLOC_FIELDS = frozenset({
     'created_date',
     'posted_date',
     'posted_by',
     'allocation_date',
+    # Path prefixes (kernel_split / reconstruct / resplit / reversed_by)
+    # vary; ledger_tx is re-stamped as a stable field on seal.
+    'notes',
 })
 
 _LEDGER_TX_RE = re.compile(r'ledger_tx=([^\s;]+)')
@@ -58,6 +64,11 @@ def _cash_subject_from(bill_id: str, notes: str = '') -> str:
     if tx:
         return f"{bill}:{tx}"
     return bill
+
+
+def _ledger_tx_from_notes(notes: str = '') -> str:
+    match = _LEDGER_TX_RE.search(str(notes or ''))
+    return match.group(1).strip() if match else ''
 
 
 def _stable_journal_payload(payload: Dict[str, Any], *, volatile: frozenset) -> Dict[str, Any]:
@@ -875,6 +886,13 @@ By selecting an investment route, you confirm you understand the risks and benef
         )
         payload['record_type'] = 'allocation'
         payload['post_generation'] = int(gen)
+        # Cash identity without path-varying note prefixes.
+        ledger_tx = _ledger_tx_from_notes(getattr(allocation, 'notes', '') or '')
+        if ledger_tx:
+            payload['ledger_tx'] = ledger_tx
+            payload['notes'] = f'ledger_tx={ledger_tx}'
+        else:
+            payload['notes'] = ''
         subject = str(cash_subject or self._premium_cash_subject(allocation) or allocation.allocation_id)
         key = f"ae:{self.engine_id}:allocation:{subject}"
         if int(gen) > 0:

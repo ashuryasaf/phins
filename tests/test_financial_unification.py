@@ -123,6 +123,33 @@ def test_split_without_a_savings_election_is_pure_risk():
     assert split["split_label"] == "no_savings_election"
 
 
+def test_draft_allocation_does_not_count_as_already_posted():
+    """A failed seal left as DRAFT must not block reconstruct retry."""
+    from accounting_engine import AllocationStatus
+
+    engine = get_accounting_engine()
+    draft = engine.create_allocation(
+        bill_id="BILL-DRAFT",
+        policy_id="POL-DRAFT",
+        customer_id="CUST-DRAFT",
+        total_premium=Decimal("25.00"),
+        risk_percentage=Decimal("100"),
+        allocation_notes="ledger_tx=TX-DRAFT",
+    )
+    assert draft.status == AllocationStatus.DRAFT
+    posted = post_premium_to_accounting_book(
+        bill_id="BILL-DRAFT",
+        policy_id="POL-DRAFT",
+        customer_id="CUST-DRAFT",
+        amount=25.00,
+        risk_percentage=100,
+        source_tx_id="TX-DRAFT",
+        engine=engine,
+    )
+    assert posted["posted"] is True
+    assert accounting_book_totals(engine)["risk_posted"] == 25.0
+
+
 def test_premium_and_claim_cash_post_to_same_accounting_book():
     engine = get_accounting_engine()
     posted = post_premium_to_accounting_book(
