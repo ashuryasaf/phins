@@ -691,10 +691,25 @@ By selecting an investment route, you confirm you understand the risks and benef
         Risk, savings, and the allocation header seal in one journal
         transaction so a mid-post clash cannot leave an orphan debit on
         the shared durable book while memory rolls back (Bugbot U5).
+        U8 / AE4: refuse when today falls in a hard-closed fiscal period.
         """
         if allocation_id not in self.allocations:
             return False, f"Allocation {allocation_id} not found"
-        
+
+        try:
+            from services.erp.period_close import PeriodClosedError, assert_period_open_for_post
+        except ImportError:
+            PeriodClosedError = None  # type: ignore
+            assert_period_open_for_post = None  # type: ignore
+        if assert_period_open_for_post is not None:
+            try:
+                assert_period_open_for_post(date.today())
+            except Exception as period_exc:
+                if PeriodClosedError is not None and isinstance(period_exc, PeriodClosedError):
+                    detail = period_exc.as_response()
+                    return False, str(detail.get('error') or period_exc)
+                raise
+
         allocation = self.allocations[allocation_id]
         prior_status = allocation.status
         prior_posted_date = allocation.posted_date
@@ -1173,7 +1188,14 @@ By selecting an investment route, you confirm you understand the risks and benef
         U5: when the durable accounting journal is on, every post also
         inserts a sealed journal row (idempotent key). In ``db`` mode a
         failed journal write refuses the in-memory append (fail closed).
+        U8: refuse posts dated in a hard-closed fiscal period (AE4).
         """
+        try:
+            from services.erp.period_close import assert_period_open_for_post
+        except ImportError:
+            assert_period_open_for_post = None  # type: ignore
+        if assert_period_open_for_post is not None:
+            assert_period_open_for_post(entry_date)
         debit = Decimal(str(debit_amount))
         credit = Decimal(str(credit_amount))
         entry = self._build_ledger_entry(

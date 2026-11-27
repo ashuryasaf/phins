@@ -23,8 +23,8 @@ from services.agent_job_queue import AgentJobQueue
 
 from . import (
     books_integrity_job, books_tied_job, claims_bot_job, commission_clawback_job,
-    delivery_sla_job, pension_import_job, risk_report_job, underwriting_bot_job,
-    video_job,
+    delivery_sla_job, pension_import_job, period_close_job, risk_report_job,
+    underwriting_bot_job, video_job,
 )
 
 POLL_URL_PREFIX = '/api/jobs/'
@@ -78,6 +78,7 @@ def register_all(queue: AgentJobQueue, context: Optional[JobContext] = None) -> 
     books_integrity_job.register(queue)
     books_tied_job.register(queue)
     commission_clawback_job.register(queue)
+    period_close_job.register(queue)
     if context is not None:
         underwriting_bot_job.register(queue, context)
         claims_bot_job.register(queue, context)
@@ -119,6 +120,7 @@ __all__ = [
     'claims_bot_job',
     'commission_clawback_job',
     'pension_import_job',
+    'period_close_job',
     'public_job_view',
     'queued_response',
     'register_all',

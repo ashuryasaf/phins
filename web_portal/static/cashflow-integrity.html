@@ -58,10 +58,13 @@
         #unified-checks { list-style: none; padding: 0; margin: 10px 0 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 6px 18px; }
         #unified-checks li { font-size: 13px; color: #d5dcea; line-height: 1.45; }
         #unified-checks li.bad { color: #ffd9d2; }
-        #books-tied { margin: 18px 0; padding: 16px 18px; border: 1px solid rgba(196,163,90,.45); border-radius: 14px; background: #102443; }
-        #books-tied h2 { margin: 0 0 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-        #books-tied-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
-        #books-tied-actions button.quiet { background: transparent; color: #e8d7a8; border: 1px solid rgba(196,163,90,.5); }
+        #books-tied, #period-close { margin: 18px 0; padding: 16px 18px; border: 1px solid rgba(196,163,90,.45); border-radius: 14px; background: #102443; }
+        #books-tied h2, #period-close h2 { margin: 0 0 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        #books-tied-actions, #period-close-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+        #books-tied-actions button.quiet, #period-close-actions button.quiet { background: transparent; color: #e8d7a8; border: 1px solid rgba(196,163,90,.5); }
+        #period-close-verdict.ok { color: #9fe7b8; }
+        #period-close-verdict.warn { color: #e8d7a8; }
+        #period-close-verdict.bad { color: #ffd9d2; }
     </style>
 </head>
 <body>
@@ -83,6 +86,17 @@
                 <button id="books-tied-issue" type="button">Seal today’s certificate</button>
                 <button id="books-tied-refresh" type="button" class="quiet">Refresh</button>
                 <span class="note" id="books-tied-stamp"></span>
+            </div>
+        </section>
+        <section id="period-close">
+            <h2>Fiscal period <span id="period-close-verdict"></span></h2>
+            <p class="note">Natural accounts roll under Risk / Savings / Reinsurance / Operating. Soft close seals the month’s trial balance; hard close refuses further GL posts dated in that month (compensating entries go in an open period).</p>
+            <p class="note" id="period-close-body">Reading fiscal period status…</p>
+            <div id="period-close-actions">
+                <button id="period-close-soft" type="button">Soft close this month</button>
+                <button id="period-close-hard" type="button">Hard close this month</button>
+                <button id="period-close-refresh" type="button" class="quiet">Refresh</button>
+                <span class="note" id="period-close-stamp"></span>
             </div>
         </section>
         <div class="cards" id="funds"></div>
@@ -157,6 +171,7 @@
     </main>
     <script src="/phins-doc-return.js"></script>
     <script src="/books-tied-badge.js"></script>
+    <script src="/period-close-badge.js"></script>
     <script src="/cashflow-unified-report.js"></script>
     <script>
         const money = (value) => '$' + Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });

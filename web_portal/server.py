@@ -41370,6 +41370,27 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({'success': True, 'books_tied': status}, default=str).encode('utf-8'))
             return
 
+        if path == '/api/admin/cashflow/period-close':
+            if not require_role(session, ['admin', 'accountant', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                from services.erp.period_close import status_report as period_close_status
+                from accounting_engine import get_accounting_engine
+                engine = None
+                try:
+                    engine = get_accounting_engine()
+                except Exception:
+                    engine = None
+                status = period_close_status(engine=engine)
+            except Exception:
+                _write_cashflow_internal_error(self, "period-close status failed")
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'success': True, 'period_close': status}, default=str).encode('utf-8'))
+            return
+
         if path == '/api/admin/cashflow/kernel-pins':
             if not require_role(session, ['admin', 'accountant', 'actuary']):
                 self._set_json_headers(403)
@@ -55504,6 +55525,67 @@ For claims or questions, please contact:
                 'success': True,
                 'certificate': issued,
                 'books_tied': status,
+            }, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/admin/cashflow/period-close':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'accountant', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                content_length = int(self.headers.get('Content-Length', 0) or 0)
+                raw = self.rfile.read(content_length) if content_length > 0 else b'{}'
+                body = json.loads(raw.decode('utf-8') or '{}')
+                if not isinstance(body, dict):
+                    body = {}
+            except Exception:
+                body = {}
+            action = str(body.get('action') or 'soft').strip().lower()
+            period_id = str(body.get('period_id') or '').strip()
+            actor = str((session or {}).get('username') or 'accountant')
+            try:
+                from services.erp import period_close as pc
+                from accounting_engine import get_accounting_engine
+                engine = None
+                try:
+                    engine = get_accounting_engine()
+                except Exception:
+                    engine = None
+                if not period_id:
+                    today = __import__('datetime').date.today()
+                    period_id = pc.period_id_for(today.year, today.month)
+                if action in ('hard', 'hard_close'):
+                    result = pc.hard_close(period_id, actor=actor, engine=engine)
+                elif action in ('reopen', 'reopen_soft'):
+                    result = pc.reopen_soft(period_id, actor=actor)
+                else:
+                    result = pc.soft_close(period_id, actor=actor, engine=engine)
+                status = pc.status_report(engine=engine)
+            except Exception as period_exc:
+                if type(period_exc).__name__ == 'PeriodClosedError':
+                    self._set_json_headers(409)
+                    self.wfile.write(json.dumps(
+                        getattr(period_exc, 'as_response', lambda: {'error': str(period_exc)})()
+                    ).encode('utf-8'))
+                    return
+                _write_cashflow_internal_error(self, "period-close action failed")
+                return
+            if not result.get('ok'):
+                self._set_json_headers(409)
+                self.wfile.write(json.dumps({
+                    'error': result.get('reason') or 'period_close_refused',
+                    **{k: v for k, v in result.items() if k != 'ok'},
+                }, default=str).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'result': result,
+                'period_close': status,
             }, default=str).encode('utf-8'))
             return
 
