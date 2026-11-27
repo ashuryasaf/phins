@@ -6,8 +6,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from services.agent_job_queue import RescheduleJob
 from services.erp import books_tied as bt
-from services.erp.money_gate import MoneyGateError, authorize_money_move, digest_for
+from services.erp.money_gate import MoneyGateError, MoneyGateVerdict, authorize_money_move, digest_for
 from services.jobs import books_tied_job
 from services.platform_event_ledger_service import PlatformEventLedgerService
 
@@ -161,6 +162,176 @@ def test_stale_certificate_refuses(monkeypatch):
             platform_ledger=ledger,
         )
     assert bt.CERT_STALE in raised.value.failed_checks
+
+
+def _sealed_verdict(when: datetime) -> MoneyGateVerdict:
+    return MoneyGateVerdict(
+        ok=True,
+        failed_checks=[],
+        digest=digest_for([], ok=True),
+        enforced=True,
+        operation='books_tied.issue',
+        evaluated_at=when.isoformat(),
+    )
+
+
+def test_prior_day_cert_covers_gap_before_todays_seal(monkeypatch):
+    """00:00–00:05 UTC has no same-day cert; a cert inside max age still passes."""
+    monkeypatch.setenv('PHINS_MONEY_GATE', '1')
+    monkeypatch.setenv('PHINS_BOOKS_TIED_REQUIRE', '1')
+    ledger = _ledger()
+    now = datetime.now(timezone.utc)
+    gap = now.replace(hour=0, minute=1, second=0, microsecond=0)
+    if gap > now:
+        gap = gap - timedelta(days=1)
+    issued_at = gap - timedelta(hours=24)
+    issued = bt.issue_certificate(
+        ledger,
+        verdict=_sealed_verdict(issued_at),
+        actor='test',
+        day=bt.utc_day(issued_at),
+    )
+    assert issued['issued'] is True
+    assert bt.utc_day(issued_at) != bt.utc_day(gap)
+    assert bt.freshness_failures(ledger, operation='claim_payout', now=gap) == []
+    assert bt.freshness_failures(
+        ledger, operation='wallet_withdrawal.release', now=gap,
+    ) == []
+
+    # The same certificate past the window is stale. max_age is not decorative.
+    stale_at = issued_at + timedelta(hours=40)
+    assert bt.freshness_failures(
+        ledger, operation='agent_commission.settle', now=stale_at,
+    ) == [bt.CERT_STALE]
+
+
+def test_authorize_accepts_recent_prior_day_certificate(monkeypatch):
+    monkeypatch.setenv('PHINS_MONEY_GATE', '1')
+    monkeypatch.setenv('PHINS_BOOKS_TIED_REQUIRE', '1')
+    ledger = _ledger()
+    now = datetime.now(timezone.utc)
+    prior_day = bt.utc_day(now - timedelta(days=1))
+    issued = bt.issue_certificate(
+        ledger,
+        verdict=_sealed_verdict(now - timedelta(hours=1)),
+        actor='test',
+        day=prior_day,
+    )
+    assert issued['issued'] is True
+    assert bt.find_certificate(ledger, day=bt.utc_day(now)) is None
+    verdict = authorize_money_move(
+        'claim_payout',
+        books=_green_books(),
+        actor='claims',
+        role='claims',
+        platform_ledger=ledger,
+    )
+    assert verdict.ok is True
+    assert verdict.failed_checks == []
+
+
+def test_same_day_tamper_still_refuses_with_a_fresh_prior_cert(monkeypatch):
+    monkeypatch.setenv('PHINS_MONEY_GATE', '1')
+    monkeypatch.setenv('PHINS_BOOKS_TIED_REQUIRE', '1')
+    ledger = _ledger()
+    now = datetime.now(timezone.utc)
+    prior = bt.issue_certificate(
+        ledger,
+        verdict=_sealed_verdict(now - timedelta(hours=2)),
+        actor='test',
+        day=bt.utc_day(now - timedelta(days=1)),
+    )
+    assert prior['issued'] is True
+    today = bt.issue_certificate(ledger, books=_green_books(), actor='test')
+    assert today['issued'] is True
+    stored = ledger.transaction_ledger[today['entry']['id']]
+    stored['digest'] = 'deadbeef'
+    assert bt.freshness_failures(ledger, operation='claim_payout') == [bt.CERT_TAMPERED]
+
+
+def test_failed_daily_issue_retries_before_next_midnight(monkeypatch):
+    def _red(**_kwargs):
+        return {
+            'verdict': {'ok': False},
+            'certificate': {'issued': False, 'reason': 'books_red'},
+            'status': {},
+        }
+
+    monkeypatch.setattr(books_tied_job, 'run_once', _red)
+    with pytest.raises(RescheduleJob) as raised:
+        books_tied_job._handle({'input_params': {}})
+    assert raised.value.delay_seconds == books_tied_job.ISSUE_RETRY_SECONDS
+
+    def _already(**_kwargs):
+        return {
+            'verdict': {'ok': True},
+            'certificate': {'issued': False, 'reason': 'already_issued'},
+            'status': {},
+        }
+
+    monkeypatch.setattr(books_tied_job, 'run_once', _already)
+    with pytest.raises(RescheduleJob) as raised:
+        books_tied_job._handle({'input_params': {}})
+    # Wall clock moves between the two calls; the delay is still the next
+    # UTC day, not the short failure retry.
+    assert raised.value.delay_seconds == pytest.approx(
+        bt.seconds_until_next_utc_midnight(), abs=5,
+    )
+    assert raised.value.delay_seconds > books_tied_job.ISSUE_RETRY_SECONDS
+
+    def _boom(**_kwargs):
+        raise RuntimeError('ledger down')
+
+    monkeypatch.setattr(books_tied_job, 'run_once', _boom)
+    with pytest.raises(RescheduleJob) as raised:
+        books_tied_job._handle({'input_params': {}})
+    assert raised.value.delay_seconds == books_tied_job.ISSUE_RETRY_SECONDS
+    with pytest.raises(RuntimeError):
+        books_tied_job._handle({'input_params': {'once': True}})
+
+
+def test_inprocess_clock_retries_when_issue_fails(monkeypatch):
+    captured = {}
+
+    class _Timer:
+        def __init__(self, delay, fn):
+            captured['delay'] = delay
+            captured['fn'] = fn
+            self.daemon = False
+
+        def start(self):
+            captured['started'] = True
+
+        def cancel(self):
+            captured['cancelled'] = True
+
+    monkeypatch.setattr(books_tied_job.threading, 'Timer', _Timer)
+    monkeypatch.setattr(books_tied_job, 'run_once', lambda **_k: {
+        'certificate': {'issued': False, 'reason': 'ledger_unavailable'},
+    })
+    books_tied_job._inprocess_tick()
+    assert captured['started'] is True
+    assert captured['delay'] == books_tied_job.ISSUE_RETRY_SECONDS
+
+    def _explode(**_k):
+        raise RuntimeError('issue exploded')
+
+    monkeypatch.setattr(books_tied_job, 'run_once', _explode)
+    books_tied_job._inprocess_tick()
+    assert captured['delay'] == books_tied_job.ISSUE_RETRY_SECONDS
+
+    books_tied_job._INPROCESS_STARTED = False
+    if books_tied_job._INPROCESS_TIMER is not None:
+        try:
+            books_tied_job._INPROCESS_TIMER.cancel()
+        except Exception:
+            pass
+        books_tied_job._INPROCESS_TIMER = None
+    first = books_tied_job.start_inprocess_daily_clock(issue_now=True)
+    assert first['started'] is True
+    assert first['next_tick_seconds'] == books_tied_job.ISSUE_RETRY_SECONDS
+    books_tied_job._INPROCESS_STARTED = False
+    books_tied_job._INPROCESS_TIMER = None
 
 
 def test_status_report_and_job(monkeypatch):

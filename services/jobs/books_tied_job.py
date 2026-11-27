@@ -24,7 +24,10 @@ JOB_TYPE = 'books_tied_daily'
 SUBJECT_TYPE = 'books_tied'
 SUBJECT_ID = 'global'
 IDEMPOTENCY_KEY = 'books-tied-daily-clock'
-DEFAULT_RETRY_SECONDS = 900.0  # 15 minutes
+# Failed seals retry the same UTC day. Five minutes matches the post-midnight
+# clock offset (Bugbot Autofix) and stays overridable via env.
+ISSUE_RETRY_SECONDS = 300.0
+DEFAULT_RETRY_SECONDS = ISSUE_RETRY_SECONDS
 
 _INPROCESS_LOCK = threading.Lock()
 _INPROCESS_STARTED = False
@@ -94,7 +97,18 @@ def next_delay(run_result: Optional[Dict[str, Any]] = None) -> float:
 
 def _handle(job: Dict[str, Any]) -> Dict[str, Any]:
     params = job.get('input_params') or {}
-    result = run_once(books=params.get('books'), actor=str(params.get('actor') or 'books_tied_job'))
+    try:
+        result = run_once(
+            books=params.get('books'),
+            actor=str(params.get('actor') or 'books_tied_job'),
+        )
+    except Exception as exc:
+        if params.get('once'):
+            raise
+        raise RescheduleJob(
+            ISSUE_RETRY_SECONDS,
+            f"books_tied daily: error={exc}",
+        ) from exc
     if params.get('once'):
         return result
     delay = next_delay(result)

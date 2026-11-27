@@ -360,8 +360,8 @@ def authorize_money_move(
     When enforcement is off the verdict is returned with ``ok`` reflecting
     the books but the move is allowed. Break-glass requires ``role=admin``,
     a non-empty reason, and a successful forensic ledger append first.
-    High-value ops also need today's sealed ``finance.books_tied`` cert
-    (U6) unless ``PHINS_BOOKS_TIED_REQUIRE=0``.
+    High-value ops also need a verified ``finance.books_tied`` cert inside
+    ``PHINS_BOOKS_TIED_MAX_AGE_HOURS`` (U6) unless ``PHINS_BOOKS_TIED_REQUIRE=0``.
     """
     verdict = evaluate_money_gate(
         books=books, books_provider=books_provider, operation=operation,
