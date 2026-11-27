@@ -407,5 +407,296 @@ def test_policy_kernel_pin_with_a_bad_checksum_is_withheld_and_not_overwritten()
         del customers['TEST-CUST-PIN-2']
 
 
+def test_database_dict_create_defaults_and_extra_round_trip():
+    """U3 dual-path: omitted NOT NULL fields + non-column keys survive."""
+    from database import init_database
+    from database.data_access import DatabaseDict
+
+    init_database()
+    customers = DatabaseDict('customers')
+    policies = DatabaseDict('policies')
+    cid, pid = 'TEST-CUST-U3-EXTRA', 'TEST-POL-U3-EXTRA'
+    for store, key in ((policies, pid), (customers, cid)):
+        if key in store:
+            del store[key]
+    try:
+        customers[cid] = {'id': cid, 'name': 'U3 Extra'}  # no email
+        assert customers[cid]['email'] == 'test-cust-u3-extra@phins.local'
+        policies[pid] = {
+            'id': pid,
+            'customer_id': cid,
+            'annual_premium': 1200.0,
+            'risk_premium_annual': 960.0,
+            'savings_premium_annual': 240.0,
+            'pricing_source': 'pricing_kernel',
+            'adl_level': 5,
+            'adl_level_source': 'unspecified_baseline',
+        }
+        stored = policies[pid]
+        assert stored['type'] == 'life'
+        assert stored['coverage_amount'] == 1200.0
+        assert stored['risk_premium_annual'] == 960.0
+        assert stored['adl_level'] == 5
+        assert stored['adl_level_source'] == 'unspecified_baseline'
+        # In-place top-level mutation write-throughs like an in-memory dict.
+        policies[pid]['adl_level'] = 3
+        assert policies[pid]['adl_level'] == 3
+    finally:
+        if pid in policies:
+            del policies[pid]
+        if cid in customers:
+            del customers[cid]
+
+
+def test_apply_create_defaults_skipped_outside_test_mode(monkeypatch):
+    """Production create path must not invent placeholder emails / unassigned ids."""
+    from database.data_access import apply_create_defaults
+
+    monkeypatch.delenv('PHINS_TEST_MODE', raising=False)
+    monkeypatch.setenv('PHINS_TEST_MODE', 'false')
+    raw = {'id': 'CUST-LIVE', 'name': 'Live'}
+    assert apply_create_defaults('customers', 'CUST-LIVE', raw) is raw
+    assert 'email' not in raw
+
+    monkeypatch.setenv('PHINS_TEST_MODE', 'true')
+    filled = apply_create_defaults('customers', 'CUST-LIVE', {'id': 'CUST-LIVE', 'name': 'Live'})
+    assert filled['email'] == 'cust-live@phins.local'
+
+
+def test_customer_update_does_not_orphan_policies_via_extra_relationships():
+    """Registration-shaped ``policies: []`` / ``claims: []`` must not cascade-wipe children."""
+    import json
+    from database import init_database
+    from database.data_access import DatabaseDict, pack_row_extra
+    from database.models import Customer, merge_row_extra, orm_relationship_keys
+
+    init_database()
+    customers = DatabaseDict('customers')
+    policies = DatabaseDict('policies')
+    claims = DatabaseDict('claims')
+    cid, pid, clid = 'TEST-CUST-U3-ORPHAN', 'TEST-POL-U3-ORPHAN', 'TEST-CLM-U3-ORPHAN'
+    for store, key in ((claims, clid), (policies, pid), (customers, cid)):
+        if key in store:
+            del store[key]
+    try:
+        assert orm_relationship_keys(Customer) >= frozenset({'policies', 'claims'})
+        registration = {
+            'id': cid,
+            'name': 'Orphan Guard',
+            'email': 'orphan-guard@phins.local',
+            'policies': [],
+            'claims': [],
+            'portal_flag': True,
+        }
+        packed = pack_row_extra('customers', Customer, registration, existing=None)
+        raw_extra = packed.get('extra')
+        assert raw_extra
+        loaded = json.loads(raw_extra) if isinstance(raw_extra, str) else raw_extra
+        assert 'policies' not in loaded
+        assert 'claims' not in loaded
+        assert loaded.get('portal_flag') is True
+
+        # Registration-shaped create: empty child lists must not cascade later.
+        customers[cid] = registration
+
+        policies[pid] = {
+            'id': pid,
+            'customer_id': cid,
+            'type': 'life',
+            'coverage_amount': 100000.0,
+            'annual_premium': 1200.0,
+        }
+        claims[clid] = {
+            'id': clid,
+            'policy_id': pid,
+            'customer_id': cid,
+            'claimed_amount': 500.0,
+            'status': 'pending',
+        }
+        assert pid in policies
+        assert clid in claims
+
+        # In-place update + full rewrite with empty relationship lists (Bugbot HIGH).
+        customers[cid]['name'] = 'Orphan Guard Updated'
+        customers[cid] = {
+            **dict(customers[cid]),
+            'policies': [],
+            'claims': [],
+            'name': 'Orphan Guard Rewritten',
+        }
+        assert customers[cid]['name'] == 'Orphan Guard Rewritten'
+        assert pid in policies
+        assert policies[pid]['customer_id'] == cid
+        assert clid in claims
+        assert claims[clid]['customer_id'] == cid
+
+        # Legacy extra with relationship keys must not fold into to_dict.
+        merged = merge_row_extra(
+            {'id': cid, 'name': 'x'},
+            json.dumps({'policies': [], 'claims': [], 'keep_me': 1}),
+            Customer,
+        )
+        assert 'policies' not in merged
+        assert 'claims' not in merged
+        assert merged['keep_me'] == 1
+    finally:
+        for store, key in ((claims, clid), (policies, pid), (customers, cid)):
+            if key in store:
+                del store[key]
+
+
+def test_ensure_fk_parents_seeds_customer_for_policy_in_test_mode():
+    """Postgres FK: policy create under test mode seeds a missing customer."""
+    from database import init_database
+    from database.data_access import DatabaseDict
+
+    init_database()
+    customers = DatabaseDict('customers')
+    policies = DatabaseDict('policies')
+    cid, pid = 'TEST-CUST-U3-FK', 'TEST-POL-U3-FK'
+    for store, key in ((policies, pid), (customers, cid)):
+        if key in store:
+            del store[key]
+    try:
+        assert cid not in customers
+        policies[pid] = {
+            'id': pid,
+            'customer_id': cid,
+            'type': 'life',
+            'coverage_amount': 1000.0,
+            'annual_premium': 100.0,
+        }
+        assert cid in customers
+        assert policies[pid]['customer_id'] == cid
+    finally:
+        if pid in policies:
+            del policies[pid]
+        if cid in customers:
+            del customers[cid]
+
+
+def test_write_through_rolls_back_proxy_when_persist_fails(monkeypatch):
+    """Failed DB write must not leave the in-hand proxy ahead of the store."""
+    from database import init_database
+    from database.data_access import DatabaseDict
+    import pytest as _pytest
+
+    init_database()
+    customers = DatabaseDict('customers')
+    cid = 'TEST-CUST-U3-WT-RB'
+    if cid in customers:
+        del customers[cid]
+    try:
+        customers[cid] = {'id': cid, 'name': 'Rollback', 'email': 'rb@phins.local'}
+        row = customers[cid]
+        assert row['name'] == 'Rollback'
+
+        original = DatabaseDict.__setitem__
+
+        def boom(self, key, value):
+            if key == cid:
+                raise RuntimeError('forced persist failure')
+            return original(self, key, value)
+
+        monkeypatch.setattr(DatabaseDict, '__setitem__', boom)
+        with _pytest.raises(RuntimeError, match='forced persist failure'):
+            row['name'] = 'ShouldNotStick'
+
+        assert row['name'] == 'Rollback'
+        assert customers[cid]['name'] == 'Rollback'
+    finally:
+        if cid in customers:
+            del customers[cid]
+
+
+def test_nested_write_through_rolls_back_when_persist_fails(monkeypatch):
+    """A failed nested assign must not leave the proxy, the record, or a later edit ahead of the DB."""
+    from database import init_database
+    from database.data_access import DatabaseDict
+    import pytest as _pytest
+
+    init_database()
+    apps = DatabaseDict('underwriting')
+    uid = 'TEST-UW-U3-NESTED-RB'
+    original_mix = {'health_wallet': 30, 'investments': 65, 'algo': 5}
+    if uid in apps:
+        del apps[uid]
+    try:
+        apps[uid] = {
+            'id': uid,
+            'health_wallet': {'enabled': True, 'written_distribution': {'health_wallet': 15}},
+        }
+        row = apps[uid]
+        wallet = row['health_wallet']
+        wallet['written_distribution'] = dict(original_mix)
+        assert wallet['written_distribution'] == original_mix
+        assert apps[uid]['health_wallet']['written_distribution'] == original_mix
+
+        original = DatabaseDict.__setitem__
+
+        def boom(self, key, value):
+            if key == uid:
+                raise RuntimeError('forced persist failure')
+            return original(self, key, value)
+
+        monkeypatch.setattr(DatabaseDict, '__setitem__', boom)
+        with _pytest.raises(RuntimeError, match='forced persist failure'):
+            wallet['written_distribution'] = {'health_wallet': 99}
+        with _pytest.raises(RuntimeError, match='forced persist failure'):
+            wallet.update(written_distribution={'health_wallet': 99})
+        with _pytest.raises(RuntimeError, match='forced persist failure'):
+            del wallet['enabled']
+
+        assert wallet['written_distribution'] == original_mix
+        assert wallet['enabled'] is True
+        assert row['health_wallet']['written_distribution'] == original_mix
+        assert row['health_wallet']['enabled'] is True
+        assert apps[uid]['health_wallet']['written_distribution'] == original_mix
+
+        monkeypatch.setattr(DatabaseDict, '__setitem__', original)
+        wallet['note'] = 'kept'
+        stored = apps[uid]['health_wallet']
+        assert stored['written_distribution'] == original_mix
+        assert stored.get('note') == 'kept'
+    finally:
+        if uid in apps:
+            del apps[uid]
+
+
+def test_upgrade_new_columns_lists_fiduciary_extra():
+    """Existing DBs only gain columns listed in ``_UPGRADE_NEW_COLUMNS``."""
+    from database import _UPGRADE_NEW_COLUMNS
+
+    expected = {
+        ('customers', 'extra'),
+        ('policies', 'extra'),
+        ('claims', 'extra'),
+        ('underwriting_applications', 'extra'),
+        ('bills', 'extra'),
+    }
+    listed = {(table, column) for table, column, *_ in _UPGRADE_NEW_COLUMNS}
+    assert expected <= listed
+
+
+def test_database_dict_create_fails_closed_without_customer_id():
+    from database import init_database
+    from database.data_access import DatabaseDict
+    import pytest as _pytest
+
+    init_database()
+    policies = DatabaseDict('policies')
+    pid = 'TEST-POL-U3-FAILCLOSED'
+    if pid in policies:
+        del policies[pid]
+    with _pytest.raises(RuntimeError, match='create failed'):
+        policies[pid] = {
+            'id': pid,
+            'type': 'life',
+            'coverage_amount': 1000.0,
+            'annual_premium': 100.0,
+            # customer_id missing → FK / NOT NULL depending on backend
+        }
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

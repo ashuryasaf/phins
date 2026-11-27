@@ -636,12 +636,18 @@ def test_kernel_pin_restore_reproduces_the_premium_and_journals_first(live_books
     issued = {key: policy[key] for key in _MONEY_PINS}
     annual = policy["annual_premium"]
     # The policy as the database kept it before the pin was durable.
-    for key in list(policy):
+    # Under USE_DATABASE=true the pin lives in ``kernel_pin``; clearing the
+    # expanded keys alone is not enough — set them to None so the seal drops
+    # them (absent keys on a write-through persist keep the stored pin).
+    stripped = dict(policy)
+    for key in list(stripped):
         if key in _MONEY_PINS or key in (
             "integrity_hash", "product_id", "savings_addon", "savings_rate", "savings_rate_used",
             "savings_formula", "allocation_version", "pricing_source",
         ):
-            policy.pop(key)
+            stripped[key] = None
+    portal.POLICIES[policy_id] = stripped
+    policy = portal.POLICIES[policy_id]
     for bill in [b for b in portal.BILLING.values() if b.get("customer_id") == customer_id]:
         status, body = _http("POST", "/api/billing/pay", admin, {
             "bill_id": bill["id"], "amount": bill.get("amount_due") or bill.get("amount"),

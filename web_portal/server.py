@@ -695,12 +695,20 @@ def compute_unified_financial_metrics(
     claims = list(CLAIMS.values())
     if exclude_suspended:
         claims = [c for c in claims if not is_suspended_account(c.get('customer_id', ''))]
+    def _claim_cash_figure(claim: Dict[str, Any], *keys: str) -> float:
+        # DatabaseDict to_dict includes null columns; ``.get(key, default)`` does
+        # not fall through when paid_amount is present as None.
+        for key in keys:
+            if claim.get(key) is not None and claim.get(key) != '':
+                return safe_float(claim.get(key), 0.0)
+        return 0.0
+
     claims_paid_amount = round(sum(
-        safe_float(c.get('paid_amount', c.get('approved_amount', c.get('amount_approved', 0))), 0.0)
+        _claim_cash_figure(c, 'paid_amount', 'approved_amount', 'amount_approved')
         for c in claims if status_in(c, ['paid', 'closed'])
     ), 2)
     claims_disbursed_amount = round(sum(
-        safe_float(c.get('approved_amount', c.get('amount_approved', 0)), 0.0)
+        _claim_cash_figure(c, 'approved_amount', 'amount_approved')
         for c in claims if status_eq(c, 'paid')
     ), 2)
     pending_claims_liability = round(sum(
@@ -58120,7 +58128,17 @@ For claims or questions, please contact:
                                     approved_by=data.get('approved_by', 'admin')
                                 )
                             
-                            # Create billing record in database
+                            # Create billing record in database. due_date on the
+                            # in-memory bill is an ISO string; the column is DateTime.
+                            # description is not a Bill column (it rides on
+                            # DatabaseDict ``extra`` via BILLING[bill_id]=bill);
+                            # keep passing it so older call sites stay stable.
+                            _due = bill.get('due_date')
+                            if isinstance(_due, str):
+                                try:
+                                    _due = datetime.fromisoformat(_due.replace('Z', '+00:00'))
+                                except ValueError:
+                                    _due = now
                             db.billing.create(
                                 id=bill_id,
                                 policy_id=policy_id,
@@ -58128,9 +58146,9 @@ For claims or questions, please contact:
                                 amount=bill['amount'],
                                 amount_paid=0.0,
                                 status='outstanding',
-                                due_date=bill['due_date'],
+                                due_date=_due if _due is not None else now,
                                 created_date=now,
-                                description=bill.get('description', '')
+                                description=bill.get('description', ''),
                             )
                             
                             print(f"[DB] Persisted approval: Policy {policy_id} -> active, UW {uw_id} -> approved, Bill {bill_id} created")

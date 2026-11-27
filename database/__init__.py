@@ -286,6 +286,13 @@ _UPGRADE_NEW_COLUMNS = [
     ('referral_rewards', 'release_at', 'VARCHAR(40)', None),
     # Professional inquiry lives on the same request row. The raw link token is not stored.
     ('professional_requests', 'inquiry_json', 'TEXT', None),
+    # U3 dual-path overlay: non-column keys sealed beside the row so
+    # DatabaseDict matches the in-memory dict shape under USE_DATABASE=true.
+    ('customers', 'extra', 'TEXT', None),
+    ('policies', 'extra', 'TEXT', None),
+    ('claims', 'extra', 'TEXT', None),
+    ('underwriting_applications', 'extra', 'TEXT', None),
+    ('bills', 'extra', 'TEXT', None),
 ]
 # Columns whose declared type must be widened on existing databases
 # (table_name, column_name, new_type).
