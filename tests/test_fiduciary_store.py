@@ -17,6 +17,7 @@ from services.fiduciary.store import (
     FIDUCIARY_BOOKS_DB,
     FIDUCIARY_BOOKS_MARKER,
     FIDUCIARY_SNAPSHOT_KEYS,
+    _refresh_baseline_after_flush,
     capture_fiduciary_baseline_from_memory,
     fiduciary_baseline,
     fiduciary_mode,
@@ -955,6 +956,42 @@ def test_flush_baseline_excludes_unheld_sealed_ids(sqlite_db, monkeypatch):
     assert result['health_wallets']['withheld'] >= 1
     db = DatabaseManager()
     assert db.health_wallets.get_payload('CUST-PEER')['balance'] == 999.0
+    db.close()
+
+
+def test_refresh_does_not_adopt_over_post_flush_live_credit(sqlite_db, monkeypatch):
+    """Adopt only when live still equals the flushed snapshot (no local race)."""
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    flushed = {'CUST-R': {'customer_id': 'CUST-R', 'balance': 100.0}}
+    assert flush_fiduciary_to_db(
+        health_wallets=flushed,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )['health_wallets']['written'] == 1
+    _, digest_100 = canonical_payload(flushed['CUST-R'])
+    db = DatabaseManager()
+    assert db.health_wallets.upsert(
+        'CUST-R',
+        {'customer_id': 'CUST-R', 'balance': 999.0},
+        expected_checksum=digest_100,
+    ) is True
+    _, digest_999 = canonical_payload({'customer_id': 'CUST-R', 'balance': 999.0})
+    # Live raced ahead after the flush snapshot was taken.
+    live = {'CUST-R': {'customer_id': 'CUST-R', 'balance': 150.0}}
+    adopted = _refresh_baseline_after_flush(
+        'health_wallets',
+        live,
+        db.health_wallets,
+        flushed=flushed,
+        prior_expected={'CUST-R': digest_100},
+        written_ids=[],
+        withheld_ids=['CUST-R'],
+    )
+    assert adopted == 0
+    assert live['CUST-R']['balance'] == 150.0
+    assert fiduciary_baseline('health_wallets')['CUST-R'] == digest_999
     db.close()
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, Mapping, MutableMapping, Optional
+from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional
 
 from services.hydrated_store import db_mode_enabled
 
@@ -269,23 +269,29 @@ def hydrate_fiduciary_from_db(
 
 def _refresh_baseline_after_flush(
     label: str,
-    mapping: Mapping[str, Any],
+    live: Mapping[str, Any],
     repo: Any,
     *,
+    flushed: Mapping[str, Any],
     prior_expected: Mapping[str, str],
+    written_ids: Iterable[str],
+    withheld_ids: Iterable[str],
 ) -> int:
     """Align baseline (and mutable memory) with sealed outcomes.
 
-    Wins / no-ops: stamp baseline from our payload digest.
-    Withholds: adopt the sealed payload into memory when ``mapping`` is
-    mutable, then stamp baseline from sealed — never advance the CAS token
-    to a peer digest while leaving a stale book in place (that would let the
-    next flush overwrite the peer).
+    Compare digests against the ``flushed`` snapshot that was actually
+    upserted — not the live maps, which a concurrent credit may have moved
+    after ``replace_mapping(dict(mapping))`` ran unlocked.
 
-    Baseline is rebuilt only for ids in this process's live ``mapping``.
-    Sealed ids this replica never held must not receive tokens — a later
-    lazy ``HEALTH_WALLETS[id] = {$0}`` would otherwise CAS-replace the peer.
-    Returns how many ids were adopted.
+    * Written / no-op ids: stamp baseline from the flushed digest; never
+      clobber a live credit that raced ahead of the snapshot.
+    * Withheld ids: adopt sealed into live memory only when live still
+      equals the flushed snapshot. If live moved, stamp baseline from the
+      sealed digest without adopting so the next flush can CAS-write the
+      local credit over the peer.
+
+    Baseline is rebuilt only for ids in ``flushed`` / live. Sealed ids this
+    replica never held must not receive tokens. Returns adopt count.
     """
     from database.repositories.fiduciary_repository import canonical_payload
 
@@ -293,32 +299,52 @@ def _refresh_baseline_after_flush(
         sealed_cs = repo.load_checksums()
         sealed_payloads = repo.load_mapping()
     except Exception:
-        # Leave prior baseline untouched if sealed cannot be re-read.
         return 0
 
-    # Drop foreign tokens: only ids present in the live book stay.
     baseline: Dict[str, str] = {}
     adopted = 0
-    mutable = isinstance(mapping, MutableMapping)
-    for key, payload in list(mapping.items()):
+    mutable = isinstance(live, MutableMapping)
+    written_set = {str(i) for i in written_ids}
+    withheld_set = {str(i) for i in withheld_ids}
+
+    for key, flushed_payload in (flushed or {}).items():
         record_id = str(key)
-        _, our_digest = canonical_payload(payload)
+        _, flushed_digest = canonical_payload(flushed_payload)
         sealed_digest = sealed_cs.get(record_id)
-        if sealed_digest == our_digest:
-            baseline[record_id] = sealed_digest
+
+        if record_id in written_set:
+            # We sealed (or no-op'd) the flushed snapshot. Token = that digest.
+            # Leave live alone — a post-snapshot credit must survive.
+            baseline[record_id] = sealed_digest or flushed_digest
             continue
+
+        if record_id not in withheld_set:
+            # Error / skipped — keep a prior token only if still in live book.
+            if record_id in prior_expected and record_id in (live or {}):
+                baseline[record_id] = prior_expected[record_id]
+            continue
+
         if sealed_digest is None:
-            # Insert withheld/errored — no token for a row that is not sealed.
             continue
-        # Peer (or broken-seal path) won. Adopt sealed into live memory so
-        # the next mutation save cannot CAS-match and revert it.
-        if mutable and record_id in sealed_payloads:
-            mapping[record_id] = sealed_payloads[record_id]  # type: ignore[index]
+
+        live_payload = (live or {}).get(record_id)
+        live_digest = None
+        if live_payload is not None:
+            _, live_digest = canonical_payload(live_payload)
+
+        if (
+            mutable
+            and live_digest == flushed_digest
+            and record_id in sealed_payloads
+        ):
+            # Live still matches what we tried to write — peer win; adopt.
+            live[record_id] = sealed_payloads[record_id]  # type: ignore[index]
             baseline[record_id] = sealed_digest
             adopted += 1
-        elif record_id in prior_expected:
-            # Keep the prior token so a later flush still withholds.
-            baseline[record_id] = prior_expected[record_id]
+        else:
+            # Live raced ahead (or missing): observe sealed for next CAS write
+            # without wiping the local credit.
+            baseline[record_id] = sealed_digest
     _set_baseline(label, baseline)
     return adopted
 
@@ -381,9 +407,16 @@ def flush_fiduciary_to_db(
             kwargs: Dict[str, Any] = {'expected_checksums': expected}
             if customer_from:
                 kwargs['customer_from'] = customer_from
-            counts = repo.replace_mapping(dict(mapping), **kwargs)
+            flushed = dict(mapping)
+            counts = repo.replace_mapping(flushed, **kwargs)
             adopted = _refresh_baseline_after_flush(
-                label, mapping, repo, prior_expected=expected
+                label,
+                mapping,
+                repo,
+                flushed=flushed,
+                prior_expected=expected,
+                written_ids=counts.get('written_ids') or [],
+                withheld_ids=counts.get('withheld_ids') or [],
             )
             if adopted:
                 counts['adopted'] = adopted
@@ -404,30 +437,40 @@ def flush_fiduciary_to_db(
             expected_sheet = (_FIDUCIARY_BASELINE.get('balance_sheet') or {}).get(
                 BALANCE_SHEET_ID
             )
+            flushed_sheet = dict(balance_sheet)
             ok = db.balance_sheet.upsert_phins(
-                dict(balance_sheet), expected_checksum=expected_sheet
+                flushed_sheet, expected_checksum=expected_sheet
             )
-            # Align memory + baseline the same way as per-id books.
-            prior = dict(_FIDUCIARY_BASELINE.get('balance_sheet') or {})
+            prior: Dict[str, str] = {}
             try:
                 sealed_cs = db.balance_sheet.load_checksums()
                 sealed_payload = db.balance_sheet.get_phins()
             except Exception:
                 sealed_cs = {}
                 sealed_payload = None
-            _, our_digest = canonical_payload(dict(balance_sheet))
+            _, flushed_digest = canonical_payload(flushed_sheet)
             sealed_digest = sealed_cs.get(BALANCE_SHEET_ID)
             adopted = 0
-            if sealed_digest == our_digest:
-                prior[BALANCE_SHEET_ID] = sealed_digest
-            elif sealed_digest is not None and isinstance(balance_sheet, MutableMapping):
-                if isinstance(sealed_payload, dict):
+            if ok:
+                # Written / no-op: stamp flushed digest; do not clobber a live
+                # race that mutated balance_sheet after the snapshot.
+                prior[BALANCE_SHEET_ID] = sealed_digest or flushed_digest
+            elif sealed_digest is not None:
+                live_digest = None
+                if balance_sheet:
+                    _, live_digest = canonical_payload(dict(balance_sheet))
+                if (
+                    isinstance(balance_sheet, MutableMapping)
+                    and live_digest == flushed_digest
+                    and isinstance(sealed_payload, dict)
+                ):
                     balance_sheet.clear()
                     balance_sheet.update(sealed_payload)
                     prior[BALANCE_SHEET_ID] = sealed_digest
                     adopted = 1
-            elif expected_sheet is not None:
-                prior[BALANCE_SHEET_ID] = expected_sheet
+                else:
+                    # Live raced ahead — observe sealed for the next CAS write.
+                    prior[BALANCE_SHEET_ID] = sealed_digest
             _set_baseline('balance_sheet', prior)
             result['balance_sheet'] = {
                 'written': 1 if ok else 0,

@@ -249,8 +249,8 @@ class SealedFiduciaryRepository(BaseRepository):
         *,
         customer_from: Optional[str] = None,
         expected_checksums: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, int]:
-        """Upsert every entry. Returns counts of written / withheld / errors.
+    ) -> Dict[str, Any]:
+        """Upsert every entry. Returns counts plus per-id written/withheld lists.
 
         Never deletes sealed rows: a checksum-mismatched (withheld) seal must
         stay for forensics, and a dual/replica flush of a subset book must not
@@ -261,6 +261,8 @@ class SealedFiduciaryRepository(BaseRepository):
         flush does not revert peer updates for ids this process did not win.
         """
         written = withheld = errors = 0
+        written_ids: List[str] = []
+        withheld_ids: List[str] = []
         expected = expected_checksums or {}
         for key, payload in (mapping or {}).items():
             if not key:
@@ -283,9 +285,17 @@ class SealedFiduciaryRepository(BaseRepository):
                 continue
             if ok:
                 written += 1
+                written_ids.append(record_id)
             else:
                 withheld += 1
-        return {'written': written, 'withheld': withheld, 'errors': errors}
+                withheld_ids.append(record_id)
+        return {
+            'written': written,
+            'withheld': withheld,
+            'errors': errors,
+            'written_ids': written_ids,
+            'withheld_ids': withheld_ids,
+        }
 
     def missing_ids(self, mapping: Dict[str, Any]) -> List[str]:
         """Return mapping keys that have no row yet (half-written books)."""
