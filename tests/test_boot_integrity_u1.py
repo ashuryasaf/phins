@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import os
+import re
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -69,6 +72,32 @@ def test_database_required_unrecognized_explicit_fails_closed(raw):
 
 def test_database_required_false_by_default_in_development():
     assert database_required({"PHINS_ENVIRONMENT": "development"}) is False
+
+
+def test_database_required_folds_case_for_test_mode_and_previews():
+    """Shell used to miss these and export an explicit true, which wins."""
+    assert database_required({
+        "PHINS_ENVIRONMENT": "production",
+        "PHINS_TEST_MODE": "TRUE",
+    }) is False
+    assert database_required({
+        "PHINS_ENVIRONMENT": "Production",
+        "RAILWAY_ENVIRONMENT": "PR-123",
+    }) is False
+    assert database_required({"PHINS_ENVIRONMENT": "Production"}) is True
+
+
+def test_entrypoint_serve_does_not_export_require_database():
+    text = (Path(__file__).resolve().parents[1] / "scripts" / "entrypoint.sh").read_text()
+    serve = text.split("\n    serve)", 1)[1].split("\n        ;;", 1)[0]
+    statements = [
+        line for line in serve.splitlines()
+        if line.split("#", 1)[0].strip()
+    ]
+    body = "\n".join(statements)
+    assert not re.search(r"\bexport\s+PHINS_REQUIRE_DATABASE\b", body)
+    assert "PHINS_REQUIRE_DATABASE=" not in body
+    assert "_default_require_db" not in body
 
 
 def test_refuse_in_memory_boot_when_required_and_db_down():
@@ -168,6 +197,78 @@ def test_durable_database_enforce_is_noop_under_test_mode():
 
     # PHINS_TEST_MODE is set by root conftest; enforce must be a no-op.
     portal._enforce_durable_database()
+
+
+def _render_cron_env() -> dict:
+    """Production Render flag and a tempdir ledger file.
+
+    ``PHINS_REQUIRE_DATABASE=false`` keeps the durable-DB gate out of this
+    check. A healthy database still reaches the ledger gate, which is what
+    aborted monthly auto-pay on an older import-time abort.
+    """
+    env = os.environ.copy()
+    for name in (
+        "PHINS_TEST_MODE",
+        "PHINS_ENVIRONMENT",
+        "ENVIRONMENT",
+        "ENV",
+        "RAILWAY_ENVIRONMENT",
+        "RAILWAY_ENVIRONMENT_NAME",
+        "PHINS_ALLOW_EPHEMERAL_LEDGER",
+        "PHINS_REQUIRE_DATABASE",
+    ):
+        env.pop(name, None)
+    env["RENDER"] = "true"
+    env["USE_DATABASE"] = "false"
+    env["PHINS_REQUIRE_DATABASE"] = "false"
+    env["LEDGER_PERSISTENCE_FILE"] = os.path.join(
+        tempfile.gettempdir(), f"phins-ledger-boot-{os.getpid()}.json"
+    )
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    return env
+
+
+def test_one_shot_import_survives_render_ephemeral_ledger():
+    repo = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [sys.executable, "-c", "import web_portal.server; print('imported')"],
+        cwd=repo,
+        env=_render_cron_env(),
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "imported" in result.stdout
+
+
+def test_server_main_still_refuses_render_ephemeral_ledger():
+    repo = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [sys.executable, str(repo / "web_portal" / "server.py")],
+        cwd=repo,
+        env=_render_cron_env(),
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert result.returncode == 1, result.stdout[-2000:]
+    assert "FATAL: Ledger persistence path is ephemeral" in result.stdout
+
+
+def test_ledger_gate_is_serve_only_not_import():
+    src = Path(__file__).resolve().parents[1] / "web_portal" / "server.py"
+    text = src.read_text(encoding="utf-8")
+    persist = text.split("LEDGER_PERSISTENCE_FILE = _resolve_persistence_file()", 1)[1]
+    import_chunk = persist.split("def _enforce_durable_ledger_at_serve()", 1)[0]
+    assert "raise SystemExit" not in import_chunk
+    serve = text.split("def run_server", 1)[1].split("def ", 1)[0]
+    assert "_enforce_durable_ledger_at_serve()" in serve
+    auto_pay = text.split("def execute_monthly_auto_pay_cli", 1)[1].split(
+        "bootstrap_runtime_state_for_command", 1
+    )[0]
+    assert "_enforce_durable_ledger_at_serve()" not in auto_pay
 
 
 def test_import_time_no_longer_systemexits_on_db_refuse():
