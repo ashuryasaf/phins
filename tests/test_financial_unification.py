@@ -1856,6 +1856,37 @@ def test_restore_accepts_a_stored_application_quote_that_ties():
     assert result["pins"]["risk_premium_annual"] == 1960.15
 
 
+def test_restore_accepts_duplicate_stored_quotes_with_the_same_layers():
+    quote = _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5)
+    quote["savings_addon"] = "balanced"
+    quote["savings_rate"] = 0.5
+    result = kernel_pin_restore_candidate(
+        dict(_STORED),
+        application={"quote_provenance": quote, "premium_data": dict(quote)},
+        pricer=_pricer({}),
+    )
+    assert result["status"] == "restorable", result
+    assert result["reason"] == "stored_quote_reproduces_the_premium"
+    assert result["pins"]["risk_premium_annual"] == 1960.15
+
+
+def test_restore_refuses_disagreeing_stored_quotes_that_both_tie():
+    first = _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5)
+    first["savings_addon"] = "balanced"
+    first["savings_rate"] = 0.5
+    second = _quote(3557.68, 2300.00, 575.00, 345.00, 337.68, 0.25)
+    second["savings_addon"] = "light"
+    second["savings_rate"] = 0.25
+    result = kernel_pin_restore_candidate(
+        dict(_STORED),
+        application={"quote_provenance": first, "premium_data": second},
+        pricer=_pricer({}),
+    )
+    assert result["status"] == "refused"
+    assert result["reason"] == "more_than_one_decomposition"
+    assert result["pins"] == {}
+
+
 def test_restore_refuses_without_age_instead_of_defaulting_silently():
     result = kernel_pin_restore_candidate(dict(_STORED), application=None, customer={}, pricer=_pricer({}))
     assert (result["status"], result["reason"]) == ("refused", "no_age_to_reprice")

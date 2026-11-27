@@ -3182,12 +3182,15 @@ def kernel_pin_restore_candidate(
 ) -> Dict[str, Any]:
     """Find the one kernel decomposition that reproduces a stored premium.
 
-    The policy is repriced from its stored application for each savings
-    add-on and term the forms offer. A pin is offered only when exactly one
-    decomposition gives the billed annual premium to the cent (and the
-    monthly premium when one is stored). Anything else is refused: no match,
-    more than one match, a discounted premium, or a seal that fails its
-    checksum. Nothing is written here.
+    Stored issued quotes are tried first. Every source whose layers reproduce
+    the billed premium is kept; identical stacks collapse to one, and two
+    disagreeing stacks refuse. Otherwise the policy is repriced from its
+    stored application for each savings add-on and term the forms offer. A
+    pin is offered only when exactly one decomposition gives the billed
+    annual premium to the cent (and the monthly premium when one is stored).
+    Anything else is refused: no match, more than one match, a discounted
+    premium, missing age, or a seal that fails its checksum. Nothing is
+    written here.
 
     ``quote_cache`` is an optional process-local memo shared across one
     restore/preview pass so identical (age, cover, rate, term) quotes are
@@ -3228,22 +3231,42 @@ def kernel_pin_restore_candidate(
         result["reason"] = "discounted_premium"
         return result
     stored_monthly = money(policy.get("monthly_premium"))
-    # Prefer an issued quote already sealed on the application or policy when
-    # its layers reproduce the billed premium. That restores without guessing.
+    # Prefer issued quotes already sealed on the application or policy when
+    # their layers reproduce the billed premium. Collect every tying source;
+    # disagreeing stacks refuse the same way the reprice grid does.
+    stored_found: Dict[Tuple[str, ...], Dict[str, Any]] = {}
     for source in _stored_quote_sources(policy, application):
         pins = _pins_from_stored_quote(
             source, annual=annual, monthly=stored_monthly, loading=loading,
         )
         if not pins:
             continue
-        result["status"] = "restorable"
-        result["reason"] = "stored_quote_reproduces_the_premium"
-        result["pins"] = pins
-        result["matches"] = [{
+        layers = tuple(
+            str(money(pins.get(key)))
+            for key in (
+                "risk_premium_annual",
+                "savings_premium_annual",
+                "expense_loading_annual",
+                "profit_margin_annual",
+            )
+        )
+        stored_found.setdefault(layers, pins)
+        result["matches"].append({
             "savings_addon": pins.get("savings_addon") or "none",
             "savings_rate": pins.get("savings_rate") or 0.0,
             "source": "stored_quote",
-        }]
+        })
+        if len(stored_found) > 1:
+            result["reason"] = "more_than_one_decomposition"
+            result["matches"] = result["matches"][:8]
+            result["pins"] = {}
+            return result
+    if len(stored_found) == 1:
+        pins = next(iter(stored_found.values()))
+        result["status"] = "restorable"
+        result["reason"] = "stored_quote_reproduces_the_premium"
+        result["pins"] = pins
+        result["matches"] = result["matches"][:1]
         return result
 
     base_payload = _restore_pricing_payload(policy, application, customer)
