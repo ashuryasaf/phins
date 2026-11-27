@@ -3080,8 +3080,11 @@ def _pins_from_stored_quote(
     if money(base_annual * factor) != annual:
         return None
     quoted_monthly = money(quote.get("monthly") or quote.get("quoted_monthly"))
-    if monthly > 0 and quoted_monthly > 0 and money(quoted_monthly * factor) != monthly:
-        return None
+    # When the policy stores a monthly premium, the quote must too and must
+    # match after loading — same bar as the reprice grid.
+    if monthly > 0:
+        if quoted_monthly <= 0 or money(quoted_monthly * factor) != monthly:
+            return None
     layer_total = sum(
         (
             money(quote.get(key))

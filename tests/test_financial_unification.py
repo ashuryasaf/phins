@@ -1845,6 +1845,7 @@ def test_restore_accepts_a_stored_application_quote_that_ties():
     quote = _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5)
     quote["savings_addon"] = "balanced"
     quote["savings_rate"] = 0.5
+    quote["monthly"] = 296.47
     result = kernel_pin_restore_candidate(
         dict(_STORED),
         application={"quote_provenance": quote},
@@ -1860,6 +1861,7 @@ def test_restore_accepts_duplicate_stored_quotes_with_the_same_layers():
     quote = _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5)
     quote["savings_addon"] = "balanced"
     quote["savings_rate"] = 0.5
+    quote["monthly"] = 296.47
     result = kernel_pin_restore_candidate(
         dict(_STORED),
         application={"quote_provenance": quote, "premium_data": dict(quote)},
@@ -1874,9 +1876,11 @@ def test_restore_refuses_disagreeing_stored_quotes_that_both_tie():
     first = _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5)
     first["savings_addon"] = "balanced"
     first["savings_rate"] = 0.5
+    first["monthly"] = 296.47
     second = _quote(3557.68, 2300.00, 575.00, 345.00, 337.68, 0.25)
     second["savings_addon"] = "light"
     second["savings_rate"] = 0.25
+    second["monthly"] = 296.47
     result = kernel_pin_restore_candidate(
         dict(_STORED),
         application={"quote_provenance": first, "premium_data": second},
@@ -1884,6 +1888,21 @@ def test_restore_refuses_disagreeing_stored_quotes_that_both_tie():
     )
     assert result["status"] == "refused"
     assert result["reason"] == "more_than_one_decomposition"
+    assert result["pins"] == {}
+
+
+def test_restore_refuses_stored_quote_missing_monthly_when_policy_has_one():
+    quote = _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5)
+    quote["savings_addon"] = "balanced"
+    quote["savings_rate"] = 0.5
+    # No monthly on the quote while the policy bills monthly — same bar as the grid.
+    result = kernel_pin_restore_candidate(
+        dict(_STORED),
+        application={"quote_provenance": quote, "age": 40},
+        pricer=_pricer({}),
+    )
+    assert result["status"] == "refused"
+    assert result["reason"] == "no_kernel_price_reproduces_the_premium"
     assert result["pins"] == {}
 
 
