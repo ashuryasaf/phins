@@ -63,6 +63,27 @@ DB_AUTHORITATIVE_KEYS = (
     'claims',
 )
 
+# Fiduciary keys (U2) are omitted from the snapshot copy when
+# PHINS_FIDUCIARY_MODE=db — the sealed tables are then authoritative.
+FIDUCIARY_SNAPSHOT_KEYS = (
+    'health_wallets',
+    'wallet_withdrawals',
+    'nft_ledger',
+    'investment_accounts',
+    'phins_balance_sheet',
+)
+
+
+def _authoritative_keys() -> tuple:
+    keys = list(DB_AUTHORITATIVE_KEYS)
+    try:
+        from services.fiduciary.store import omit_fiduciary_from_snapshot
+        if omit_fiduciary_from_snapshot():
+            keys.extend(FIDUCIARY_SNAPSHOT_KEYS)
+    except Exception:
+        pass
+    return tuple(keys)
+
 DEFAULT_INTERVAL_SECONDS = 60
 DEFAULT_MAX_BYTES = 64 * 1024 * 1024
 
@@ -76,12 +97,13 @@ def _env_int(name: str, default: int, minimum: int = 0) -> int:
 
 def build_payload(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     """The stored form of a frozen ledger snapshot (DB-authoritative keys dropped)."""
-    data = {k: v for k, v in snapshot.items() if k not in DB_AUTHORITATIVE_KEYS}
+    omit = set(_authoritative_keys())
+    data = {k: v for k, v in snapshot.items() if k not in omit}
     return {
         'format': FORMAT,
         'saved_at': snapshot.get('saved_at'),
         'version': snapshot.get('version'),
-        'omitted': sorted(k for k in snapshot if k in DB_AUTHORITATIVE_KEYS),
+        'omitted': sorted(k for k in snapshot if k in omit),
         'data': data,
     }
 

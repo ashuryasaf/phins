@@ -26,6 +26,8 @@ from .models import Base
 # `Base.metadata.create_all` includes them. The import is intentionally
 # side-effect only.
 from . import marketplace_models  # noqa: F401
+# Fiduciary money tables (U2): health wallets, withdrawals, NFT, investments, BS.
+from . import fiduciary_models  # noqa: F401
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

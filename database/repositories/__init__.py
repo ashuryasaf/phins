@@ -55,6 +55,13 @@ from .ai_usage_repository import AIUsageRepository
 from .agent_artifact_repository import AgentArtifactRepository
 from .video_job_repository import VideoJobRepository
 from .referral_reward_repository import ReferralRewardRepository
+from .fiduciary_repository import (
+    HealthWalletRepository,
+    WalletWithdrawalRepository,
+    NftLedgerRepository,
+    InvestmentAccountRepository,
+    BalanceSheetRepository,
+)
 
 __all__ = [
     'BaseRepository',
@@ -102,4 +109,9 @@ __all__ = [
     'AgentArtifactRepository',
     'VideoJobRepository',
     'ReferralRewardRepository',
+    'HealthWalletRepository',
+    'WalletWithdrawalRepository',
+    'NftLedgerRepository',
+    'InvestmentAccountRepository',
+    'BalanceSheetRepository',
 ]

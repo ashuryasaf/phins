@@ -9428,6 +9428,62 @@ def _offer_ledger_snapshot_to_db(snapshot, *, periodic: bool, force: bool) -> No
         print(f"[PERSISTENCE] Database snapshot copy not written ({outcome})")
 
 
+def _flush_fiduciary_tables() -> None:
+    """U2: seal live fiduciary dicts into DB tables (dual/db modes)."""
+    try:
+        from services.fiduciary import flush_fiduciary_to_db, fiduciary_mode
+        if fiduciary_mode() == 'off':
+            return
+        result = flush_fiduciary_to_db(
+            health_wallets=HEALTH_WALLETS,
+            wallet_withdrawals=WALLET_WITHDRAWALS,
+            nft_ledger=NFT_LEDGER,
+            investment_accounts=INVESTMENT_ACCOUNTS,
+            balance_sheet=PHINS_BALANCE_SHEET,
+        )
+        if result.get('error'):
+            print(f"[FIDUCIARY] Flush error: {result['error']}")
+    except Exception as exc:
+        print(f"[FIDUCIARY] Flush failed: {type(exc).__name__}")
+
+
+def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) -> None:
+    """U2: one-shot migrate from snapshot, then overlay sealed table rows."""
+    try:
+        from services.fiduciary import (
+            fiduciary_mode,
+            hydrate_fiduciary_from_db,
+            migrate_snapshot_to_fiduciary_tables,
+        )
+        if fiduciary_mode() == 'off':
+            return
+        if snapshot:
+            try:
+                migrate_snapshot_to_fiduciary_tables(
+                    snapshot,
+                    append_event=platform_event_ledger.append_event,
+                )
+            except Exception as exc:
+                print(f"[FIDUCIARY] Migration skipped: {type(exc).__name__}: {exc}")
+        # When a snapshot was just applied into memory, only fill gaps from
+        # sealed tables so an older dual-write cannot overwrite a newer file.
+        # Bare table restore (no snapshot — AE2 volume-less redeploy) uses
+        # prefer_db so the sealed rows become the live books.
+        counts = hydrate_fiduciary_from_db(
+            health_wallets=HEALTH_WALLETS,
+            wallet_withdrawals=WALLET_WITHDRAWALS,
+            nft_ledger=NFT_LEDGER,
+            investment_accounts=INVESTMENT_ACCOUNTS,
+            balance_sheet=PHINS_BALANCE_SHEET,
+            prefer_db=snapshot is None,
+        )
+        loaded = sum(v for k, v in counts.items() if k != 'withheld' and isinstance(v, int))
+        if loaded:
+            print(f"[FIDUCIARY] Hydrated sealed rows: {counts}")
+    except Exception as exc:
+        print(f"[FIDUCIARY] Hydrate failed: {type(exc).__name__}")
+
+
 def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
     """Save all ledger data to persistent storage.
 
@@ -9448,6 +9504,7 @@ def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
     try:
         return _save_ledger_data_file(_periodic, frozen)
     finally:
+        _flush_fiduciary_tables()
         if PERSISTENCE_ENABLED:
             _offer_ledger_snapshot_to_db(
                 frozen[0] if frozen else None, periodic=_periodic, force=force_db,
@@ -9491,21 +9548,30 @@ def _save_ledger_data_file(_periodic: bool, _snapshot_out: list):
             except:
                 pass
             
+            # U2: when fiduciary tables are authoritative, keep empty
+            # placeholders in the file snapshot so older readers stay stable.
+            _omit_fiduciary = False
+            try:
+                from services.fiduciary import omit_fiduciary_from_snapshot
+                _omit_fiduciary = omit_fiduciary_from_snapshot()
+            except Exception:
+                _omit_fiduciary = False
+
             data = {
                 'saved_at': datetime.now().isoformat(),
                 'version': '2.0',
-                'health_wallets': HEALTH_WALLETS,
-                'wallet_withdrawals': WALLET_WITHDRAWALS,
+                'health_wallets': {} if _omit_fiduciary else HEALTH_WALLETS,
+                'wallet_withdrawals': {} if _omit_fiduciary else WALLET_WITHDRAWALS,
                 'medical_purchases': MEDICAL_PURCHASES,
-                'nft_ledger': NFT_LEDGER,
+                'nft_ledger': {} if _omit_fiduciary else NFT_LEDGER,
                 'customer_allocations': CUSTOMER_ALLOCATIONS,
-                'investment_accounts': INVESTMENT_ACCOUNTS,
+                'investment_accounts': {} if _omit_fiduciary else INVESTMENT_ACCOUNTS,
                 'transaction_ledger': TRANSACTION_LEDGER,
                 # v1.2 additions - algo trading data
                 'algo_trading_balances': algo_balances,
                 'trading_bots': trading_bots,
                 # v1.3 additions - PHINS Main Balance Sheet
-                'phins_balance_sheet': PHINS_BALANCE_SHEET,
+                'phins_balance_sheet': {} if _omit_fiduciary else PHINS_BALANCE_SHEET,
                 # v1.5 additions - Underwriting Files
                 'underwriting_files': UNDERWRITING_FILES,
                 # v1.6 additions - Media Assets and Design Settings
@@ -9887,7 +9953,7 @@ def load_ledger_data(allow_db_snapshot: bool = False):
     used when the file is missing, unreadable, or older than that copy
     (a redeploy without a volume, a failed file write).
     """
-    global HEALTH_WALLETS, MEDICAL_PURCHASES, NFT_LEDGER, CUSTOMER_ALLOCATIONS, INVESTMENT_ACCOUNTS, TRANSACTION_LEDGER
+    global HEALTH_WALLETS, WALLET_WITHDRAWALS, MEDICAL_PURCHASES, NFT_LEDGER, CUSTOMER_ALLOCATIONS, INVESTMENT_ACCOUNTS, TRANSACTION_LEDGER
     global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS, PHINS_BALANCE_SHEET, CLAIMS, CLAIM_FILES, UNDERWRITING_FILES
     global MEDIA_ASSETS, DESIGN_SETTINGS, INVITATION_CODES, REGISTERED_CUSTOMERS
     global CUSTOMER_INVITATIONS, CUSTOMER_REFERRAL_STATS
@@ -9903,12 +9969,16 @@ def load_ledger_data(allow_db_snapshot: bool = False):
     
     if not PERSISTENCE_ENABLED:
         print("[PERSISTENCE] Persistence disabled, using in-memory storage only")
+        # U2: sealed fiduciary tables may still restore wallets/BS.
+        _hydrate_and_migrate_fiduciary(None)
         return False
 
     db_data = _read_ledger_snapshot_from_db() if allow_db_snapshot else None
     file_present = os.path.exists(LEDGER_PERSISTENCE_FILE)
     if not file_present and db_data is None:
         print(f"[PERSISTENCE] No persistence file found at {LEDGER_PERSISTENCE_FILE}, starting fresh")
+        # AE2: fiduciary tables alone can restore wallets after a volume-less redeploy.
+        _hydrate_and_migrate_fiduciary(None)
         return False
 
     # Read the file before anything is applied, so an unreadable file can
@@ -10093,6 +10163,10 @@ def load_ledger_data(allow_db_snapshot: bool = False):
         if _loaded_trading_bots:
             print(f"  - Trading Bots: {len(_loaded_trading_bots)} bots (pending sync)")
         print(f"  - Saved at: {data.get('saved_at', 'unknown')}")
+        # U2: migrate snapshot fiduciary keys into sealed tables (once), then
+        # overlay intact DB rows (DB wins). AE2: redeploy without a volume
+        # still restores wallets/BS from these tables.
+        _hydrate_and_migrate_fiduciary(data)
         if _LEDGER_LOAD_SOURCE == 'file':
             _resume_stale_ledger_snapshot_copy(data)
         return True
