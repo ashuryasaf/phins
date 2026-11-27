@@ -214,25 +214,24 @@ def _assess_units(root: Path) -> List[UnitEvidence]:
         notes='finance.books_tied ledger event',
     ))
 
-    clawback = False
-    for rel in (
-        'services/agent_ecosystem_service.py',
-        'services/jobs/commission_clawback_job.py',
-        'tests/test_commission_clawback.py',
-    ):
-        if _exists(root, rel) and (
-            'clawback' in rel
-            or _grep_file(root / rel, 'clawback')
-        ):
-            clawback = True
-            break
+    # Do not grep baseline agent_ecosystem_service for "clawback" — a
+    # comment/TODO there would inflate progress the same way U6's docstring did.
+    u7_job = _exists(root, 'services/jobs/commission_clawback_job.py')
+    u7_test = _exists(root, 'tests/test_commission_clawback.py')
     units.append(UnitEvidence(
         unit_id='U7',
         title='Agent commission clawback',
-        status='landed' if clawback and _exists(root, 'tests/test_commission_clawback.py')
-        else ('partial' if clawback else 'missing'),
+        status=(
+            'landed' if u7_job and u7_test
+            else ('partial' if u7_job or u7_test else 'missing')
+        ),
         weight=1.0,
-        evidence=[],
+        evidence=[
+            p for p, hit in (
+                ('services/jobs/commission_clawback_job.py', u7_job),
+                ('tests/test_commission_clawback.py', u7_test),
+            ) if hit
+        ],
         notes='hash-chained commission reversal on lapse',
     ))
 

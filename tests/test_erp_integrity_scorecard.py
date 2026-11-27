@@ -130,3 +130,13 @@ def test_u13_baseline_tenant_tests_are_not_partial(tmp_path: Path):
     report = compute_integrity_scorecard(repo_root=str(tmp_path))
     by_id = {u['unit_id']: u for u in report['units']}
     assert by_id['U13']['status'] == 'missing'
+
+
+def test_u7_ignores_baseline_clawback_mentions(tmp_path: Path):
+    """A clawback TODO in agent_ecosystem_service is not U7 progress."""
+    path = tmp_path / 'services' / 'agent_ecosystem_service.py'
+    path.parent.mkdir(parents=True)
+    path.write_text('# TODO: commission clawback on lapse\n', encoding='utf-8')
+    report = compute_integrity_scorecard(repo_root=str(tmp_path))
+    by_id = {u['unit_id']: u for u in report['units']}
+    assert by_id['U7']['status'] == 'missing'
