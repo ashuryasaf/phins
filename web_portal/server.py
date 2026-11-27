@@ -2212,6 +2212,70 @@ except ImportError:
         api_wallet_withdrawal_post = None
         print("Warning: Wallet Withdrawal API not available.")
 
+# U12 strangler: thin finance / fiduciary / MGA money surfaces.
+try:
+    from web_portal.api_finance import (
+        API_PREFIXES as FINANCE_API_PREFIXES,
+        dispatch_get as api_finance_get,
+        dispatch_post as api_finance_post,
+    )
+    finance_api_enabled = True
+except ImportError:
+    try:
+        from api_finance import (  # type: ignore
+            API_PREFIXES as FINANCE_API_PREFIXES,
+            dispatch_get as api_finance_get,
+            dispatch_post as api_finance_post,
+        )
+        finance_api_enabled = True
+    except ImportError:
+        finance_api_enabled = False
+        FINANCE_API_PREFIXES = ()
+        api_finance_get = None
+        api_finance_post = None
+
+try:
+    from web_portal.api_fiduciary import (
+        API_PREFIXES as FIDUCIARY_API_PREFIXES,
+        dispatch_get as api_fiduciary_get,
+        dispatch_post as api_fiduciary_post,
+    )
+    fiduciary_api_enabled = True
+except ImportError:
+    try:
+        from api_fiduciary import (  # type: ignore
+            API_PREFIXES as FIDUCIARY_API_PREFIXES,
+            dispatch_get as api_fiduciary_get,
+            dispatch_post as api_fiduciary_post,
+        )
+        fiduciary_api_enabled = True
+    except ImportError:
+        fiduciary_api_enabled = False
+        FIDUCIARY_API_PREFIXES = ()
+        api_fiduciary_get = None
+        api_fiduciary_post = None
+
+try:
+    from web_portal.api_mga import (
+        API_PREFIXES as MGA_API_PREFIXES,
+        dispatch_get as api_mga_get,
+        dispatch_post as api_mga_post,
+    )
+    mga_api_enabled = True
+except ImportError:
+    try:
+        from api_mga import (  # type: ignore
+            API_PREFIXES as MGA_API_PREFIXES,
+            dispatch_get as api_mga_get,
+            dispatch_post as api_mga_post,
+        )
+        mga_api_enabled = True
+    except ImportError:
+        mga_api_enabled = False
+        MGA_API_PREFIXES = ()
+        api_mga_get = None
+        api_mga_post = None
+
 REFERRAL_API_PREFIXES = (
     '/api/customer/referral-rewards',
     '/api/customer/professional-requests',
@@ -27130,6 +27194,41 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
                 return
 
+        # U12: thin finance / fiduciary / MGA GET dispatch (strangler).
+        if finance_api_enabled and api_finance_get and path.startswith(FINANCE_API_PREFIXES):
+            try:
+                finance_result = api_finance_get(path, session, qs)
+                if finance_result is not None:
+                    status_code, response_data = finance_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+            except Exception:
+                _write_cashflow_internal_error(self, "finance API GET failed")
+                return
+        if fiduciary_api_enabled and api_fiduciary_get and path.startswith(FIDUCIARY_API_PREFIXES):
+            try:
+                fiduciary_result = api_fiduciary_get(path, session, qs)
+                if fiduciary_result is not None:
+                    status_code, response_data = fiduciary_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+            except Exception:
+                _write_cashflow_internal_error(self, "fiduciary API GET failed")
+                return
+        if mga_api_enabled and api_mga_get and path.startswith(MGA_API_PREFIXES):
+            try:
+                mga_result = api_mga_get(path, session, qs)
+                if mga_result is not None:
+                    status_code, response_data = mga_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+            except Exception:
+                _write_cashflow_internal_error(self, "MGA API GET failed")
+                return
+
         # =====================================================================
         # CHAT APPLICATION (GET) - conversational new-policy flow state,
         # journey (A-Z pipeline), staff funnel. Session optional (resume-code
@@ -48173,6 +48272,35 @@ For claims or questions, please contact:
                 logging.getLogger(__name__).exception("wallet withdrawal POST failed for %s", path)
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Internal server error'}).encode('utf-8'))
+                return
+
+        # U12: thin finance / fiduciary / MGA POST dispatch (strangler).
+        if (
+            (finance_api_enabled and api_finance_post and path.startswith(FINANCE_API_PREFIXES))
+            or (fiduciary_api_enabled and api_fiduciary_post and path.startswith(FIDUCIARY_API_PREFIXES))
+            or (mga_api_enabled and api_mga_post and path.startswith(MGA_API_PREFIXES))
+        ):
+            try:
+                try:
+                    money_body = json.loads(body) if body else {}
+                except json.JSONDecodeError:
+                    money_body = {}
+                if not isinstance(money_body, dict):
+                    money_body = {}
+                money_result = None
+                if finance_api_enabled and api_finance_post and path.startswith(FINANCE_API_PREFIXES):
+                    money_result = api_finance_post(path, session, money_body, client_ip)
+                if money_result is None and fiduciary_api_enabled and api_fiduciary_post and path.startswith(FIDUCIARY_API_PREFIXES):
+                    money_result = api_fiduciary_post(path, session, money_body, client_ip)
+                if money_result is None and mga_api_enabled and api_mga_post and path.startswith(MGA_API_PREFIXES):
+                    money_result = api_mga_post(path, session, money_body, client_ip)
+                if money_result is not None:
+                    status_code, response_data = money_result
+                    self._set_json_headers(status_code)
+                    self.wfile.write(json.dumps(response_data, default=str).encode('utf-8'))
+                    return
+            except Exception:
+                _write_cashflow_internal_error(self, "money API POST failed")
                 return
 
         # ========== TRADING TERMINAL API (POST) ==========

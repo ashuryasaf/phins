@@ -101,5 +101,5 @@ def test_scorecard_u11_landed_on_this_checkout():
     report = compute_integrity_scorecard()
     by_id = {u['unit_id']: u for u in report['units']}
     assert by_id['U11']['status'] == 'landed', by_id['U11']
-    # P2 complete with U8–U11 → claimed 93.
-    assert report['claimed_score'] == 93
+    # Plan complete with U1–U14 → claimed 100.
+    assert report['claimed_score'] == 100

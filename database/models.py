@@ -305,6 +305,9 @@ class Policy(Base):
     status = Column(String(50), default='pending_underwriting')
     underwriting_id = Column(String(50), index=True)
     risk_score = Column(String(20))  # low, medium, high, very_high
+    # U13 multi-entity / binder tenancy — historical rows default to platform.
+    binder_id = Column(String(80), nullable=False, default='PHINS-DEFAULT', index=True)
+    entity_id = Column(String(80), nullable=False, default='PHINS-PLATFORM', index=True)
     start_date = Column(DateTime)
     end_date = Column(DateTime)
     approval_date = Column(DateTime)
@@ -354,6 +357,8 @@ class Policy(Base):
             'status': self.status,
             'underwriting_id': self.underwriting_id,
             'risk_score': self.risk_score,
+            'binder_id': self.binder_id or 'PHINS-DEFAULT',
+            'entity_id': self.entity_id or 'PHINS-PLATFORM',
             'start_date': self.start_date.isoformat() if self.start_date else None,
             'end_date': self.end_date.isoformat() if self.end_date else None,
             'approval_date': self.approval_date.isoformat() if self.approval_date else None,

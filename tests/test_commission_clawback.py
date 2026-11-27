@@ -267,8 +267,8 @@ def test_scorecard_u7_landed_on_this_checkout():
     report = compute_integrity_scorecard()
     by_id = {u["unit_id"]: u for u in report["units"]}
     assert by_id["U7"]["status"] == "landed", by_id["U7"]
-    # P1 complete → claimed 82.
-    assert report["claimed_score"] == 82
+    # Plan complete on this tip → claimed 100; P1 still claimed.
+    assert report["claimed_score"] == 100
     p1 = next(b for b in report["bands"] if b["id"] == "P1")
     assert p1["claimed"] is True
 

@@ -456,6 +456,6 @@ def test_scorecard_u9_landed_on_this_checkout():
     report = compute_integrity_scorecard()
     by_id = {u['unit_id']: u for u in report['units']}
     assert by_id['U9']['status'] == 'landed', by_id['U9']
-    # With U10–U11 on this tip, P2 claims 93.
-    assert report['claimed_score'] == 93
-    assert float(report['progress_score']) >= 93.0
+    # Plan complete on this tip — claimed 100.
+    assert report['claimed_score'] == 100
+    assert float(report['progress_score']) >= 100.0

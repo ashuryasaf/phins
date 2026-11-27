@@ -77,7 +77,7 @@ Marketplace and wallet. Suppliers are invited, network-governed participants; th
 
 ## 5. Technology — the one standard
 
-The technology section is the same in every PHINS document because it is read from the repository, not written: 165 service modules in 9 packages, 12 API modules, 23 repositories, 15 security modules and 319 test files at the time of rendering. The platform is a single Python service with a database-backed durable layer (PostgreSQL / SQLite), a generalized job queue, and a hash-chained ledger.
+The technology section is the same in every PHINS document because it is read from the repository, not written: 165 service modules in 9 packages, 15 API modules, 23 repositories, 15 security modules and 321 test files at the time of rendering. The platform is a single Python service with a database-backed durable layer (PostgreSQL / SQLite), a generalized job queue, and a hash-chained ledger.
 
 Ten standards define what 'PHINS technology' means in a partner market, listed in Appendix D: one pricing kernel, append-only integrity, AI governance (agents recommend, humans decide), an evidence pipeline with provenance, durable checksummed agent state, one identity writer, shared security utilities, chat intake beside classic forms, marketplace and payments on the ledger, and one document standard. A partner receives the whole set; nothing is forked per market.
 
@@ -226,7 +226,7 @@ Insurance broker and lawyer who designed the PHINS contract family and built the
 |---|---|
 | Licensed insurance broker | Life, disability and long-term-care distribution practice in Israel; the anchor contract's 1:4 / 1:1 disability mechanism and the ADL-3 trigger are his product design. |
 | Advocate (Adv.) | Israeli Bar; drafted the regulatory application memorandum in actuarial form (Draft 3.1, EN + HE) and opened the pre-ruling track with the Capital Market, Insurance and Savings Authority (12 October 2026). |
-| Platform author | Built the production platform at www.phins.ai — 165 service modules, 12 API modules, 23 repositories, 15 security modules, 319 test files at this render — including the pricing kernel, the hash-chained ledger and the AI agents that recommend while humans decide. |
+| Platform author | Built the production platform at www.phins.ai — 165 service modules, 15 API modules, 23 repositories, 15 security modules, 321 test files at this render — including the pricing kernel, the hash-chained ledger and the AI agents that recommend while humans decide. |
 
 ---
 
@@ -255,13 +255,13 @@ Insurance broker and lawyer who designed the PHINS contract family and built the
 
 - Supervisor engaged: pre-ruling track with the Capital Market, Insurance and Savings Authority opened 12 October 2026.
 - Demographics and public spend make the gap legible to regulators, partners and customers.
-- AI operating model is built: 165 service modules, 319 test files, golden sets gating CI.
+- AI operating model is built: 165 service modules, 321 test files, golden sets gating CI.
 
 ## Slide 5 — Founder
 *Asaf Ashury, Adv. · Founder & CEO · PHINS Technologies*
 
 - Licensed insurance broker and advocate; designed the contract family (1:4 / 1:1 disability mechanism, ADL-3 trigger) and drafted the regulatory memorandum in actuarial form.
-- Built the production platform end-to-end — 165 service modules, 319 test files at this render; pricing kernel, hash-chained ledger, AI agents that recommend while humans decide.
+- Built the production platform end-to-end — 165 service modules, 321 test files at this render; pricing kernel, hash-chained ledger, AI agents that recommend while humans decide.
 - Opened the pre-ruling track with the Capital Market, Insurance and Savings Authority on 12 October 2026.
 
 ## Slide 6 — Product and pricing
@@ -287,7 +287,7 @@ Insurance broker and lawyer who designed the PHINS contract family and built the
 
 ## Slide 9 — Technology — one standard
 
-- 165 service modules · 12 API modules · 23 repositories · 15 security modules (live census).
+- 165 service modules · 15 API modules · 23 repositories · 15 security modules (live census).
 - One pricing kernel, hash-chained ledger, AI governance, evidence provenance, durable checksummed agent state, one identity writer.
 - One document standard: navy / gold letterhead, shield emblem, Inter + Space Grotesk — chrome never changes figures.
 
@@ -408,10 +408,10 @@ The carrier books 100% of risk GWP, pays the PHINS fee (25%), expects claims of 
 |---|---|
 | Service modules (`services/*.py`) | 165 |
 | Service packages | 9 |
-| API modules (`web_portal/api_*.py`) | 12 |
+| API modules (`web_portal/api_*.py`) | 15 |
 | Repositories (`database/repositories/*_repository.py`) | 23 |
 | Security modules (`security/*.py`) | 15 |
-| Test files | 319 |
+| Test files | 321 |
 | Agents with golden sets | 3 |
 
 | Pillar | Standard |
