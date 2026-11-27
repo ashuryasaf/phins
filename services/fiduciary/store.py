@@ -19,6 +19,12 @@ FIDUCIARY_SNAPSHOT_KEYS = (
     'phins_balance_sheet',
 )
 
+# Stamped on the JSON ledger file when fiduciary books are empty placeholders
+# (db-authoritative mode). Dual boot uses this to hydrate sealed tables
+# instead of treating those empties as a file-SoR purge.
+FIDUCIARY_BOOKS_MARKER = 'fiduciary_books'
+FIDUCIARY_BOOKS_DB = 'db'
+
 _MODE_ENV = 'PHINS_FIDUCIARY_MODE'
 
 

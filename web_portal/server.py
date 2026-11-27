@@ -9499,14 +9499,23 @@ def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) ->
                     raise FiduciaryBootError(f"fiduciary migration failed: {reason}")
             elif reason not in ('tables_already_populated', 'no_fiduciary_keys', 'fiduciary_mode_off'):
                 print(f"[FIDUCIARY] Migration skipped: {reason}")
-    # dual + snapshot that already put non-empty money books in memory: do
-    # not gap-fill (would resurrect purged ids). Empty `{}` placeholders
-    # (db-mode file / corrupt rollback) must still hydrate from sealed
-    # tables so we do not boot empty and later flush seed state over Postgres.
-    money_books_loaded = bool(
-        HEALTH_WALLETS or WALLET_WITHDRAWALS or NFT_LEDGER or INVESTMENT_ACCOUNTS
+    # dual + file SoR: skip gap-fill so purged ids stay gone. db-mode files
+    # stamp fiduciary_books=db on empty placeholders — those still hydrate.
+    # Keys omitted entirely (agent_artifacts omit / AE2) also hydrate.
+    from services.fiduciary import (
+        FIDUCIARY_BOOKS_DB,
+        FIDUCIARY_BOOKS_MARKER,
+        FIDUCIARY_SNAPSHOT_KEYS,
     )
-    if mode == 'dual' and snapshot is not None and money_books_loaded:
+    marker = (
+        str((snapshot or {}).get(FIDUCIARY_BOOKS_MARKER) or '').strip().lower()
+        if isinstance(snapshot, dict)
+        else ''
+    )
+    keys_present = isinstance(snapshot, dict) and any(
+        key in snapshot for key in FIDUCIARY_SNAPSHOT_KEYS
+    )
+    if mode == 'dual' and snapshot is not None and keys_present and marker != FIDUCIARY_BOOKS_DB:
         return
     try:
         counts = hydrate_fiduciary_from_db(
@@ -9638,13 +9647,20 @@ def _save_ledger_data_file(_periodic: bool, _snapshot_out: list):
                 pass
             
             # U2: when fiduciary tables are authoritative, keep empty
-            # placeholders in the file snapshot so older readers stay stable.
+            # placeholders in the file snapshot so older readers stay stable,
+            # and stamp fiduciary_books=db so dual rollback still hydrates.
             _omit_fiduciary = False
             try:
-                from services.fiduciary import omit_fiduciary_from_snapshot
+                from services.fiduciary import (
+                    FIDUCIARY_BOOKS_DB,
+                    FIDUCIARY_BOOKS_MARKER,
+                    omit_fiduciary_from_snapshot,
+                )
                 _omit_fiduciary = omit_fiduciary_from_snapshot()
             except Exception:
                 _omit_fiduciary = False
+                FIDUCIARY_BOOKS_DB = 'db'
+                FIDUCIARY_BOOKS_MARKER = 'fiduciary_books'
 
             data = {
                 'saved_at': datetime.now().isoformat(),
@@ -9680,6 +9696,8 @@ def _save_ledger_data_file(_periodic: bool, _snapshot_out: list):
                 # v2.2 additions - sandbox pushed customers tracking
                 'sandbox_pushed_customers': list(SANDBOX_PUSHED_CUSTOMERS),
             }
+            if _omit_fiduciary:
+                data[FIDUCIARY_BOOKS_MARKER] = FIDUCIARY_BOOKS_DB
 
             # DB-backed entities: only include in the snapshot when running
             # in pure in-memory mode (no DB). When PostgreSQL is active these
