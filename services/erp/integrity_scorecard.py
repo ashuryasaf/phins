@@ -9,8 +9,6 @@ score. Band points are claimed only when every unit in that band is
 
 from __future__ import annotations
 
-import importlib.util
-import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -71,11 +69,17 @@ def _exists(root: Path, rel: str) -> bool:
     return (root / rel).is_file() or (root / rel).is_dir()
 
 
-def _module_importable(module: str) -> bool:
-    try:
-        return importlib.util.find_spec(module) is not None
-    except (ModuleNotFoundError, ValueError):
+def _module_under_root(root: Path, module: str) -> bool:
+    """True when ``module`` exists as a file/package under ``repo_root``.
+
+    Uses the filesystem of the scored checkout — never the running
+    interpreter's ``sys.path`` — so ``--repo-root`` isolation holds.
+    """
+    parts = tuple(p for p in str(module or '').split('.') if p)
+    if not parts:
         return False
+    base = root.joinpath(*parts)
+    return base.with_suffix('.py').is_file() or (base / '__init__.py').is_file()
 
 
 def _grep_file(path: Path, needle: str) -> bool:
@@ -188,19 +192,25 @@ def _assess_units(root: Path) -> List[UnitEvidence]:
         notes='PHINS_ACCOUNTING_JOURNAL_MODE',
     ))
 
-    u6_marker = _grep_file(root / 'services/jobs/books_integrity_job.py', 'finance.books_tied') \
-        if _exists(root, 'services/jobs/books_integrity_job.py') else False
-    u6_impl = (
-        _module_importable('services.erp.books_tied')
-        or _exists(root, 'services/erp/books_tied.py')
-        or _exists(root, 'tests/test_books_tied_certificate.py')
+    # U6 evidence must be the certificate itself — not a forward-looking
+    # docstring mention of ``finance.books_tied`` inside the U4 job.
+    u6_module = _module_under_root(root, 'services.erp.books_tied')
+    u6_test = _exists(root, 'tests/test_books_tied_certificate.py')
+    u6_status = (
+        'landed' if u6_module and u6_test
+        else ('partial' if u6_module or u6_test else 'missing')
     )
     units.append(UnitEvidence(
         unit_id='U6',
         title='Books-tied daily certificate',
-        status='landed' if u6_impl else ('partial' if u6_marker else 'missing'),
+        status=u6_status,
         weight=1.0,
-        evidence=['services/jobs/books_integrity_job.py'] if u6_marker else [],
+        evidence=[
+            p for p, hit in (
+                ('services/erp/books_tied.py', u6_module),
+                ('tests/test_books_tied_certificate.py', u6_test),
+            ) if hit
+        ],
         notes='finance.books_tied ledger event',
     ))
 

@@ -61,6 +61,9 @@ def test_known_landed_units_on_this_checkout():
     by_id = {u['unit_id']: u for u in report['units']}
     for uid in ('U1', 'U3', 'U4', 'U5'):
         assert by_id[uid]['status'] == 'landed', (uid, by_id[uid])
+    # U6 must not take half credit from the U4 job's forward-looking docstring.
+    assert by_id['U6']['status'] == 'missing', by_id['U6']
+    assert by_id['U7']['status'] == 'missing', by_id['U7']
     # P2/P3 units not started.
     for uid in ('U8', 'U9', 'U10', 'U11', 'U12'):
         assert by_id[uid]['status'] == 'missing', (uid, by_id[uid])
@@ -71,3 +74,31 @@ def test_scorecard_uses_explicit_repo_root(tmp_path: Path):
     assert empty['claimed_score'] == BASELINE_SCORE
     assert empty['plan_present'] is False
     assert all(u['status'] == 'missing' for u in empty['units'])
+
+
+def test_u6_ignores_forward_looking_docstring(tmp_path: Path):
+    """A U4 job that only *mentions* finance.books_tied is not U6 progress."""
+    job = tmp_path / 'services' / 'jobs'
+    job.mkdir(parents=True)
+    (job / 'books_integrity_job.py').write_text(
+        '"""agent_artifact later in U6 for the daily finance.books_tied cert)."""\n',
+        encoding='utf-8',
+    )
+    report = compute_integrity_scorecard(repo_root=str(tmp_path))
+    by_id = {u['unit_id']: u for u in report['units']}
+    assert by_id['U6']['status'] == 'missing'
+
+
+def test_module_check_respects_repo_root(tmp_path: Path):
+    """U6 landed evidence must come from the scored tree, not sys.path."""
+    from services.erp import integrity_scorecard as sc
+
+    # Live checkout may later grow books_tied; an empty root must stay missing.
+    assert sc._module_under_root(tmp_path, 'services.erp.books_tied') is False
+    pkg = tmp_path / 'services' / 'erp'
+    pkg.mkdir(parents=True)
+    (pkg / 'books_tied.py').write_text('CERTIFICATE = True\n', encoding='utf-8')
+    assert sc._module_under_root(tmp_path, 'services.erp.books_tied') is True
+    report = compute_integrity_scorecard(repo_root=str(tmp_path))
+    by_id = {u['unit_id']: u for u in report['units']}
+    assert by_id['U6']['status'] == 'partial'  # module without test
