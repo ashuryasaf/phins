@@ -85,8 +85,13 @@ def test_append_and_hydrate_round_trip(sqlite_journal):
     rows = journal.load_journal_entries(engine_id='ACC-J-DUAL')
     assert len(rows) >= 2
     keys = {r.get('idempotency_key') for r in rows}
-    assert f'ae:ACC-J-DUAL:alloc:{alloc.allocation_id}:risk:debit' in keys
-    assert f'ae:ACC-J-DUAL:alloc:{alloc.allocation_id}:savings:debit' in keys
+    # Content-addressed on bill (and optional ledger_tx), not process-local
+    # ALLOC-{n} — Agentic Security Review on U5.
+    assert 'ae:ACC-J-DUAL:premium:BILL-J1:risk:debit' in keys
+    assert 'ae:ACC-J-DUAL:premium:BILL-J1:savings:debit' in keys
+    assert 'ae:ACC-J-DUAL:allocation:BILL-J1' in keys
+    assert alloc.allocation_id.startswith('ALLOC-')
+    assert len(alloc.allocation_id) > len('ALLOC-000001')
 
     eng2 = AccountingEngine('ACC-J-DUAL', 'Dual Co')
     hydrated = journal.hydrate_accounting_engine_from_journal(eng2)
@@ -153,9 +158,122 @@ def test_db_mode_refuses_when_journal_unavailable(monkeypatch):
             debit_amount=Decimal('10.00'),
             description='x',
             reference_no='B1',
-            idempotency_key='ae:ACC-J-DB:alloc:A1:risk:debit',
+            idempotency_key='ae:ACC-J-DB:premium:B1:risk:debit',
         )
     assert eng.ledger_entries == []
+
+
+def test_dual_mode_refuses_memory_on_idempotency_clash(monkeypatch):
+    """Integrity clash must fail closed even when journal is dual (not db)."""
+    monkeypatch.setenv('PHINS_ACCOUNTING_JOURNAL_MODE', 'dual')
+
+    def _clash(**_kwargs):
+        return {
+            'ok': False,
+            'id': None,
+            'checksum': '',
+            'reused': False,
+            'withheld': True,
+            'reason': 'idempotency_payload_mismatch',
+            'mode': 'dual',
+        }
+
+    import services.erp.accounting_journal as aj
+
+    monkeypatch.setattr(aj, 'append_journal_entry', _clash)
+    monkeypatch.setattr(aj, 'journal_enabled', lambda environ=None: True)
+    monkeypatch.setattr(aj, 'journal_required', lambda environ=None: False)
+
+    eng = AccountingEngine('ACC-J-DUAL-CLASH', 'Clash Co')
+    with pytest.raises(RuntimeError, match='idempotency_payload_mismatch'):
+        eng._create_ledger_entry(
+            allocation_id='A1',
+            policy_id='P1',
+            customer_id='C1',
+            entry_date=date.today(),
+            entry_type=EntryType.RISK_PAYMENT,
+            account_type=AccountType.RISK_FUND,
+            debit_amount=Decimal('10.00'),
+            description='x',
+            reference_no='B1',
+            idempotency_key='ae:ACC-J-DUAL-CLASH:premium:B1:risk:debit',
+        )
+    assert eng.ledger_entries == []
+
+
+def test_dual_mode_still_allows_memory_on_journal_unavailable(monkeypatch):
+    """Transient journal_unavailable in dual keeps the memory post."""
+    monkeypatch.setenv('PHINS_ACCOUNTING_JOURNAL_MODE', 'dual')
+
+    def _unavailable(**_kwargs):
+        return {
+            'ok': False,
+            'id': None,
+            'checksum': '',
+            'reused': False,
+            'withheld': True,
+            'reason': 'journal_unavailable',
+            'mode': 'dual',
+        }
+
+    import services.erp.accounting_journal as aj
+
+    monkeypatch.setattr(aj, 'append_journal_entry', _unavailable)
+    monkeypatch.setattr(aj, 'journal_enabled', lambda environ=None: True)
+    monkeypatch.setattr(aj, 'journal_required', lambda environ=None: False)
+
+    eng = AccountingEngine('ACC-J-DUAL-UNAV', 'Unav Co')
+    entry = eng._create_ledger_entry(
+        allocation_id='A1',
+        policy_id='P1',
+        customer_id='C1',
+        entry_date=date.today(),
+        entry_type=EntryType.RISK_PAYMENT,
+        account_type=AccountType.RISK_FUND,
+        debit_amount=Decimal('10.00'),
+        description='x',
+        reference_no='B1',
+        idempotency_key='ae:ACC-J-DUAL-UNAV:premium:B1:risk:debit',
+    )
+    assert entry is not None
+    assert len(eng.ledger_entries) == 1
+
+
+def test_allocation_ids_are_unique_across_engines():
+    """Two engines must not mint the same ALLOC-NNNNNN sequence."""
+    a = AccountingEngine('ACC-A', 'A')
+    b = AccountingEngine('ACC-B', 'B')
+    ids = set()
+    for eng in (a, b):
+        for i in range(5):
+            alloc = eng.create_allocation(
+                bill_id=f'B-{eng.engine_id}-{i}',
+                policy_id='P1',
+                customer_id='C1',
+                total_premium=Decimal('10.00'),
+                risk_percentage=Decimal('100'),
+            )
+            assert alloc.allocation_id not in ids
+            ids.add(alloc.allocation_id)
+            # Not the old process-local counter format.
+            assert alloc.allocation_id != f'ALLOC-{len(ids):06d}'
+
+
+def test_premium_keys_include_ledger_tx_when_present(sqlite_journal):
+    eng = AccountingEngine('ACC-J-TX', 'Tx Co')
+    alloc = eng.create_allocation(
+        bill_id='BILL-TX1',
+        policy_id='POL-TX1',
+        customer_id='CUST-TX1',
+        total_premium=Decimal('80.00'),
+        risk_percentage=Decimal('100'),
+        allocation_notes='ledger_tx=TX-99',
+    )
+    ok, msg = eng.post_allocation(alloc.allocation_id, 'accountant')
+    assert ok is True, msg
+    keys = {r.get('idempotency_key') for r in journal.load_journal_entries(engine_id='ACC-J-TX')}
+    assert 'ae:ACC-J-TX:premium:BILL-TX1:TX-99:risk:debit' in keys
+    assert 'ae:ACC-J-TX:allocation:BILL-TX1:TX-99' in keys
 
 
 def test_boot_hydrate_runs_before_ledger_reconstruct(monkeypatch):

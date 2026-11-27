@@ -15,11 +15,23 @@ Features:
 
 from __future__ import annotations
 
+import re
+import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Dict, Optional, Tuple, Any, cast
 from datetime import datetime, date
 from decimal import Decimal, ROUND_HALF_UP
+
+# Journal withhold reasons that must refuse the in-memory post even in dual
+# mode — peer key clashes / checksum failures must not fork the books.
+_JOURNAL_INTEGRITY_REASONS = frozenset({
+    'idempotency_payload_mismatch',
+    'idempotency_race_mismatch',
+    'checksum_mismatch',
+})
+
+_LEDGER_TX_RE = re.compile(r'ledger_tx=([^\s;]+)')
 
 
 # ============================================================================
@@ -552,7 +564,9 @@ By selecting an investment route, you confirm you understand the risks and benef
         Returns:
             Created PremiumAllocation object
         """
-        allocation_id = f"ALLOC-{len(self.allocations) + 1:06d}"
+        # UUID — never ``ALLOC-{len+1}``: that sequence is process-local and
+        # collides across peers (Agentic Security Review on U5).
+        allocation_id = f"ALLOC-{uuid.uuid4().hex[:12].upper()}"
         preserve_savings = savings_percentage is not None
         if savings_percentage is None:
             savings_percentage = Decimal(100) - Decimal(str(risk_percentage))
@@ -575,6 +589,16 @@ By selecting an investment route, you confirm you understand the risks and benef
         
         self.allocations[allocation_id] = allocation
         return allocation
+
+    def _premium_cash_subject(self, allocation: PremiumAllocation) -> str:
+        """Stable cash identity for journal keys: bill + optional ledger_tx."""
+        bill = str(getattr(allocation, 'bill_id', '') or '').strip() or 'UNBILLED'
+        notes = str(getattr(allocation, 'notes', '') or '')
+        match = _LEDGER_TX_RE.search(notes)
+        tx = match.group(1).strip() if match else ''
+        if tx:
+            return f"{bill}:{tx}"
+        return bill
     
     def post_allocation(self, allocation_id: str, posted_by: str) -> Tuple[bool, str]:
         """
@@ -590,6 +614,7 @@ By selecting an investment route, you confirm you understand the risks and benef
         
         try:
             allocation.post_allocation(posted_by)
+            subject = self._premium_cash_subject(allocation)
             
             # Create Risk Fund entry
             self._create_ledger_entry(
@@ -602,7 +627,7 @@ By selecting an investment route, you confirm you understand the risks and benef
                 debit_amount=allocation.risk_premium,
                 description=f"Risk Premium Posted - Total Premium: ${allocation.total_premium:.2f}",
                 reference_no=allocation.bill_id,
-                idempotency_key=f"ae:{self.engine_id}:alloc:{allocation_id}:risk:debit",
+                idempotency_key=f"ae:{self.engine_id}:premium:{subject}:risk:debit",
             )
             
             # Create Savings Fund entry
@@ -616,12 +641,12 @@ By selecting an investment route, you confirm you understand the risks and benef
                 debit_amount=allocation.savings_premium,
                 description=f"Savings Premium Posted - Total Premium: ${allocation.total_premium:.2f}",
                 reference_no=allocation.bill_id,
-                idempotency_key=f"ae:{self.engine_id}:alloc:{allocation_id}:savings:debit",
+                idempotency_key=f"ae:{self.engine_id}:premium:{subject}:savings:debit",
             )
 
             # Seal the allocation header so peer hydrate can rebuild
             # ``engine.allocations`` (needed for reconstruct idempotency).
-            self._seal_allocation_record(allocation)
+            self._seal_allocation_record(allocation, cash_subject=subject)
             
             return True, f"Allocation {allocation_id} posted successfully"
         
@@ -640,12 +665,14 @@ By selecting an investment route, you confirm you understand the risks and benef
         if allocation.status != AllocationStatus.POSTED:
             return False, f"Allocation {allocation_id} is not posted"
         note = f"reversed_by={reversed_by}" + (f"; {reason}" if reason else "")
+        subject = self._premium_cash_subject(allocation)
         for entry_type, account_type, amount in (
             (EntryType.RISK_PAYMENT, AccountType.RISK_FUND, allocation.risk_premium),
             (EntryType.SAVINGS_DEPOSIT, AccountType.SAVINGS_FUND, allocation.savings_premium),
         ):
             if Decimal(str(amount)) <= Decimal("0"):
                 continue
+            side = 'risk' if account_type == AccountType.RISK_FUND else 'savings'
             self._create_ledger_entry(
                 allocation_id=allocation_id,
                 policy_id=allocation.policy_id,
@@ -657,16 +684,21 @@ By selecting an investment route, you confirm you understand the risks and benef
                 description=f"Reversal of allocation {allocation_id} ({note})",
                 reference_no=allocation.bill_id,
                 idempotency_key=(
-                    f"ae:{self.engine_id}:alloc:{allocation_id}:"
-                    f"{account_type.value}:credit:rev"
+                    f"ae:{self.engine_id}:premium:{subject}:{side}:credit:rev"
                 ),
             )
         allocation.status = AllocationStatus.REVERSED
         allocation.notes = "; ".join(bit for bit in (allocation.notes, note) if bit)
-        self._seal_allocation_record(allocation, suffix='reversed')
+        self._seal_allocation_record(allocation, cash_subject=subject, suffix='reversed')
         return True, f"Allocation {allocation_id} reversed"
 
-    def _seal_allocation_record(self, allocation: PremiumAllocation, *, suffix: str = '') -> None:
+    def _seal_allocation_record(
+        self,
+        allocation: PremiumAllocation,
+        *,
+        cash_subject: str = '',
+        suffix: str = '',
+    ) -> None:
         """Append a sealed allocation header to the durable journal (U5)."""
         try:
             from services.erp.accounting_journal import (
@@ -678,7 +710,8 @@ By selecting an investment route, you confirm you understand the risks and benef
             return
         payload = dict(allocation.to_dict())
         payload['record_type'] = 'allocation'
-        key = f"ae:{self.engine_id}:allocation:{allocation.allocation_id}"
+        subject = str(cash_subject or self._premium_cash_subject(allocation) or allocation.allocation_id)
+        key = f"ae:{self.engine_id}:allocation:{subject}"
         if suffix:
             key = f"{key}:{suffix}"
         result = append_journal_entry(
@@ -691,9 +724,12 @@ By selecting an investment route, you confirm you understand the risks and benef
             entry_type='allocation',
             account_type='',
         )
-        if not result.get('ok') and journal_required():
+        reason = str(result.get('reason') or '')
+        if not result.get('ok') and (
+            journal_required() or reason in _JOURNAL_INTEGRITY_REASONS
+        ):
             raise RuntimeError(
-                f"accounting journal refused allocation seal: {result.get('reason') or 'withheld'}"
+                f"accounting journal refused allocation seal: {reason or 'withheld'}"
             )
     
     def get_customer_statement(self, customer_id: str, start_date: date, 
@@ -936,20 +972,22 @@ By selecting an investment route, you confirm you understand the risks and benef
             )
             if not result.get('ok'):
                 self.entry_counter -= 1
-                if journal_required():
+                reason = str(result.get('reason') or '')
+                # Fail closed on integrity clashes even in dual mode so peer
+                # books cannot fork. Transient journal_unavailable still
+                # allows the dual memory post.
+                if journal_required() or reason in _JOURNAL_INTEGRITY_REASONS:
                     raise RuntimeError(
-                        f"accounting journal refused post: {result.get('reason') or 'withheld'}"
+                        f"accounting journal refused post: {reason or 'withheld'}"
                     )
-                # dual mode: keep memory post when durable write fails (logged upstream)
             elif result.get('reused'):
                 # Peer already sealed this key — do not double-book memory when
                 # the same subject is already on the in-process book.
                 for existing in self.ledger_entries:
                     if (
-                        str(getattr(existing, 'allocation_id', '') or '') == str(allocation_id or '')
+                        str(getattr(existing, 'reference_no', '') or '') == str(reference_no or '')
                         and getattr(existing, 'entry_type', None) == entry_type
                         and getattr(existing, 'account_type', None) == account_type
-                        and str(getattr(existing, 'reference_no', '') or '') == str(reference_no or '')
                         and Decimal(str(getattr(existing, 'debit_amount', 0) or 0)) == debit
                         and Decimal(str(getattr(existing, 'credit_amount', 0) or 0)) == credit
                     ):
