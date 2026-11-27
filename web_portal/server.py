@@ -9530,7 +9530,11 @@ def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) ->
         raise
     except Exception as exc:
         print(f"[FIDUCIARY] Hydrate failed: {type(exc).__name__}")
-        if mode == 'db':
+        # Fail closed whenever sealed tables are the recovery path: db mode,
+        # AE2 / missing file (snapshot is None), or db-mode empty placeholders.
+        # Soft-continuing dual into reconcile_fresh_start_with_db() seeds $0
+        # wallets that later flush over intact Postgres rows.
+        if mode == 'db' or snapshot is None or marker == FIDUCIARY_BOOKS_DB:
             raise FiduciaryBootError(
                 f"fiduciary hydrate failed: {type(exc).__name__}"
             ) from exc
@@ -10526,11 +10530,26 @@ def reconcile_fresh_start_with_db() -> int:
             if not all_customers:
                 return 0
 
+            # U2: when sealed fiduciary tables already hold money books, do
+            # not invent $0 wallet/investment rows that could flush over them.
+            seed_money_books = True
+            try:
+                from services.fiduciary import fiduciary_mode
+                if fiduciary_mode() in ('dual', 'db'):
+                    sealed = (
+                        int(db.health_wallets.count_rows() or 0)
+                        + int(db.investment_accounts.count_rows() or 0)
+                    )
+                    if sealed > 0:
+                        seed_money_books = False
+            except Exception:
+                seed_money_books = True
+
             now_iso = datetime.now().isoformat()
             for cust_id, cust_data in all_customers.items():
                 touched = False
 
-                if cust_id not in HEALTH_WALLETS:
+                if seed_money_books and cust_id not in HEALTH_WALLETS:
                     HEALTH_WALLETS[cust_id] = {
                         'customer_id': cust_id,
                         'balance': 0.0,
@@ -10541,7 +10560,7 @@ def reconcile_fresh_start_with_db() -> int:
                     }
                     touched = True
 
-                if cust_id not in INVESTMENT_ACCOUNTS:
+                if seed_money_books and cust_id not in INVESTMENT_ACCOUNTS:
                     INVESTMENT_ACCOUNTS[cust_id] = {
                         'customer_id': cust_id,
                         'balance': 0.0,

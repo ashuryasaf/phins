@@ -536,3 +536,70 @@ def test_dual_full_purge_empty_books_skip_gap_fill(sqlite_db, monkeypatch):
     )
     assert called['n'] == 0
     assert 'CUST-PURGED-ALL' not in portal.HEALTH_WALLETS
+
+
+def test_dual_hydrate_failure_without_file_sor_aborts(monkeypatch):
+    """AE2 / missing file must not soft-continue into $0 wallet seeding."""
+    import web_portal.server as portal
+    from services.fiduciary import FiduciaryBootError
+
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    monkeypatch.setenv('USE_DATABASE', 'true')
+
+    def _boom(*_a, **_k):
+        raise RuntimeError('db_down')
+
+    monkeypatch.setattr(
+        'services.fiduciary.hydrate_fiduciary_from_db',
+        _boom,
+    )
+    with pytest.raises(FiduciaryBootError, match='RuntimeError'):
+        portal._hydrate_and_migrate_fiduciary(None)
+
+
+def test_dual_hydrate_failure_with_file_snapshot_soft_continues(monkeypatch):
+    """Dual with a non-placeholder snapshot may soft-continue on hydrate error."""
+    import web_portal.server as portal
+
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    monkeypatch.setenv('USE_DATABASE', 'true')
+
+    def _boom(*_a, **_k):
+        raise RuntimeError('db_down')
+
+    monkeypatch.setattr(
+        'services.fiduciary.hydrate_fiduciary_from_db',
+        _boom,
+    )
+    # Fiduciary keys omitted (other snapshot content only) → hydrate runs,
+    # dual soft-continues because a file snapshot was applied.
+    portal._hydrate_and_migrate_fiduciary({'transaction_ledger': {}})
+
+
+def test_replace_mapping_prunes_absent_ids(sqlite_db, monkeypatch):
+    """Non-empty flush must delete sealed ids removed from the live book."""
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    assert flush_fiduciary_to_db(
+        health_wallets={
+            'CUST-KEEP': {'customer_id': 'CUST-KEEP', 'balance': 1},
+            'CUST-GONE': {'customer_id': 'CUST-GONE', 'balance': 9},
+        },
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )['health_wallets']['written'] == 2
+    result = flush_fiduciary_to_db(
+        health_wallets={
+            'CUST-KEEP': {'customer_id': 'CUST-KEEP', 'balance': 2},
+        },
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )
+    assert result['health_wallets'].get('deleted') == 1
+    db = DatabaseManager()
+    assert db.health_wallets.get_payload('CUST-KEEP')['balance'] == 2
+    assert db.health_wallets.get_payload('CUST-GONE') is None
+    db.close()

@@ -169,8 +169,15 @@ class SealedFiduciaryRepository(BaseRepository):
         return None
 
     def replace_mapping(self, mapping: Dict[str, Any], *, customer_from: Optional[str] = None) -> Dict[str, int]:
-        """Upsert every entry. Returns counts of written / withheld / errors."""
-        written = withheld = errors = 0
+        """Upsert every entry; prune sealed ids absent from a non-empty map.
+
+        Empty mappings never reach here (flush refuses empty overwrite). A
+        non-empty map is the live book SoR for this process, so ids removed
+        by sandbox purge / account reset are deleted from the sealed table
+        and cannot resurrect on the next db-mode or AE2 hydrate.
+        """
+        written = withheld = errors = deleted = 0
+        live_ids = {str(key) for key in (mapping or {}) if key}
         for key, payload in (mapping or {}).items():
             if not key:
                 continue
@@ -188,7 +195,35 @@ class SealedFiduciaryRepository(BaseRepository):
                 written += 1
             else:
                 withheld += 1
-        return {'written': written, 'withheld': withheld, 'errors': errors}
+        if live_ids:
+            try:
+                stale = (
+                    self.session.query(self.model_class)
+                    .filter(~self.model_class.id.in_(live_ids))
+                    .all()
+                )
+                for row in stale:
+                    self.session.delete(row)
+                    deleted += 1
+                if deleted:
+                    self.session.commit()
+            except SQLAlchemyError as exc:
+                logger.error(
+                    "%s prune absent failed: %s",
+                    self.model_class.__tablename__,
+                    type(exc).__name__,
+                )
+                try:
+                    self.session.rollback()
+                except Exception:
+                    pass
+                errors += 1
+        return {
+            'written': written,
+            'withheld': withheld,
+            'errors': errors,
+            'deleted': deleted,
+        }
 
     def missing_ids(self, mapping: Dict[str, Any]) -> List[str]:
         """Return mapping keys that have no row yet (half-written books)."""
