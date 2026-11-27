@@ -1858,49 +1858,48 @@ def apply_clawback(
             persist_items.append(("payout", payout_update))
         if not _persist_records(persist_items):
             # Roll back in-memory mutation so a retry can re-attempt. Always
-            # drop the ledger tip we just appended (DB and memory agree that
-            # nothing landed). For a payable unsweep, force a full hydrate so
-            # the payout run cannot stay half-edited while the commission
-            # snaps back to ``payable``.
+            # drop the ledger tip we just appended. Restore from the captured
+            # ``prior_status`` even when hydrate is a no-op (DB off) or
+            # swallows a refresh error — otherwise the row stays ``reversed``,
+            # the payout stays unswept, and a retry returns
+            # ``already_clawed_back`` without rewriting.
             if COMMISSION_LEDGER and COMMISSION_LEDGER[-1]["id"] == entry["id"]:
                 COMMISSION_LEDGER.pop()
-            if prior_status == "payable" and payout_update is not None:
-                _hydrate_from_db(force=True)
-                # In-memory mode has no durable source — restore the commission
-                # and re-attach it to the calculated payout we unswept.
-                live = COMMISSIONS.get(commission_id)
-                if live is not None and (live.get("status") or "") != "reversed":
-                    live["status"] = prior_status
-                    for key in (
-                        "clawed_back_at", "clawback_reason", "clawback_policy_id",
-                        "clawback_prior_status", "clawback_actor",
-                        "clawback_ledger_entry_id", "updated_at",
-                    ):
-                        live.pop(key, None)
-                    pay = PAYOUTS.get(payout_update.get("id") or "")
-                    if pay is not None and pay.get("status") == "calculated":
-                        ids = list(pay.get("commission_ids") or [])
-                        if commission_id not in ids:
-                            ids.append(commission_id)
-                            ids.sort()
-                            remaining = [
-                                COMMISSIONS[cid] for cid in ids if cid in COMMISSIONS
-                            ]
-                            pay["commission_ids"] = ids
-                            pay["commission_count"] = len(ids)
-                            pay["gross_amount"] = round(
-                                sum(float(c.get("amount") or 0.0) for c in remaining), 2,
-                            )
-                            pay["commissions_hash"] = _commissions_hash(ids)
-                            live["payout_id"] = pay["id"]
-            else:
-                comm["status"] = prior_status
-                for key in (
-                    "clawed_back_at", "clawback_reason", "clawback_policy_id",
-                    "clawback_prior_status", "clawback_actor",
-                    "clawback_ledger_entry_id", "updated_at",
-                ):
-                    comm.pop(key, None)
+            saved_payout_id = (
+                (payout_update or {}).get("id")
+                if prior_status == "payable"
+                else comm.get("payout_id")
+            )
+            # Prefer a DB refresh when available, then force local restore.
+            _hydrate_from_db(force=True)
+            live = COMMISSIONS.get(commission_id) or comm
+            live["status"] = prior_status
+            for key in (
+                "clawed_back_at", "clawback_reason", "clawback_policy_id",
+                "clawback_prior_status", "clawback_actor",
+                "clawback_ledger_entry_id", "updated_at",
+            ):
+                live.pop(key, None)
+            COMMISSIONS[commission_id] = live
+            if prior_status == "payable" and saved_payout_id:
+                pay = PAYOUTS.get(saved_payout_id)
+                if pay is not None and pay.get("status") == "calculated":
+                    ids = list(pay.get("commission_ids") or [])
+                    if commission_id not in ids:
+                        ids.append(commission_id)
+                        ids.sort()
+                    remaining = [
+                        COMMISSIONS[cid] for cid in ids if cid in COMMISSIONS
+                    ]
+                    pay["commission_ids"] = ids
+                    pay["commission_count"] = len(ids)
+                    pay["gross_amount"] = round(
+                        sum(float(c.get("amount") or 0.0) for c in remaining), 2,
+                    )
+                    pay["commissions_hash"] = _commissions_hash(ids)
+                    if pay.get("external_payout_reference") == "clawback_voided":
+                        pay["external_payout_reference"] = None
+                    live["payout_id"] = pay["id"]
             return False, "Commission clawback could not be persisted; nothing was changed"
 
         out = dict(comm)

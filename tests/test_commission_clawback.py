@@ -182,6 +182,39 @@ def test_payable_unsweep_then_clawback():
     assert svc.verify_ledger_integrity() is True
 
 
+def test_payable_persist_failure_restores_prior_status(monkeypatch):
+    """DB-off hydrate is a no-op; rollback must still undo a failed payable claw."""
+    agent = _affiliated_agent("CUST-FAIL")
+    policies = {
+        "POL-FAIL": {
+            "id": "POL-FAIL",
+            "customer_id": "CUST-FAIL",
+            "annual_premium": 1000,
+            "status": "active",
+        }
+    }
+    svc.recompute_commissions(policies)
+    run = svc.run_payouts(agent_id=agent["id"], created_by="admin")
+    pay_id = run["payouts"][0]["id"]
+    cid = run["payouts"][0]["commission_ids"][0]
+    policies["POL-FAIL"]["status"] = "lapsed"
+
+    monkeypatch.setattr(svc, "_persist_records", lambda _items: False)
+    ok, err = svc.apply_clawback(cid, policy_id="POL-FAIL", actor="test")
+    assert ok is False
+    assert "persisted" in str(err).lower()
+    assert svc.COMMISSIONS[cid]["status"] == "payable"
+    assert svc.COMMISSIONS[cid]["payout_id"] == pay_id
+    pay = svc.get_payout(pay_id)
+    assert cid in pay["commission_ids"]
+    assert pay["gross_amount"] == 100.0
+    # Retry must not hit already_clawed_back — the write can be attempted again.
+    monkeypatch.setattr(svc, "_persist_records", lambda _items: True)
+    ok2, out2 = svc.apply_clawback(cid, policy_id="POL-FAIL", actor="test")
+    assert ok2 and out2["status"] == "reversed"
+    assert out2.get("already_clawed_back") is not True
+
+
 def test_integrity_flags_clawback_gap_then_clears():
     agent = _affiliated_agent("CUST-INT")
     customers = {"CUST-INT": {"id": "CUST-INT", "name": "Ira", "referring_agent_id": agent["id"]}}
