@@ -332,6 +332,24 @@ def test_flush_error_is_surfaced(sqlite_db, monkeypatch):
     assert result.get('error') == 'RuntimeError'
 
 
+def test_hydrate_propagates_db_open_failure(monkeypatch):
+    """Hydrate must not soft-return empty counts when the DB cannot open."""
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'db')
+    monkeypatch.setattr(
+        'services.fiduciary.store._db_manager',
+        lambda: (_ for _ in ()).throw(RuntimeError('db_down')),
+    )
+    with pytest.raises(RuntimeError, match='db_down'):
+        hydrate_fiduciary_from_db(
+            health_wallets={},
+            wallet_withdrawals={},
+            nft_ledger={},
+            investment_accounts={},
+            balance_sheet={},
+            prefer_db=True,
+        )
+
+
 def test_snapshot_payload_omits_fiduciary_keys_in_db_mode(monkeypatch):
     monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'db')
     snap = {

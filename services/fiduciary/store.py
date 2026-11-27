@@ -85,7 +85,8 @@ def hydrate_fiduciary_from_db(
         db = _db_manager()
     except Exception as exc:
         logger.error("fiduciary hydrate: cannot open DB: %s", type(exc).__name__)
-        return counts
+        # Propagate so db-mode boot can abort; dual callers catch and soft-log.
+        raise
 
     def _merge(target: MutableMapping[str, Any], loaded: Dict[str, Any], label: str) -> None:
         for key, payload in loaded.items():
@@ -106,6 +107,7 @@ def hydrate_fiduciary_from_db(
                 counts['balance_sheet'] = 1
     except Exception as exc:
         logger.error("fiduciary hydrate failed: %s", type(exc).__name__)
+        raise
     finally:
         try:
             db.close()
