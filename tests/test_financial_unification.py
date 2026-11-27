@@ -1825,6 +1825,34 @@ def test_restore_prefers_application_term_and_reuses_quote_cache():
     assert len(calls) == before  # identical quotes served from the shared cache
 
 
+def test_restore_uses_policy_age_when_application_is_missing():
+    table = {(0.5, 20): _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5)}
+    stored = {**_STORED, "age": 40, "term_years": 20, "savings_addon": "balanced"}
+    result = kernel_pin_restore_candidate(stored, application=None, pricer=_pricer(table))
+    assert result["status"] == "restorable", result
+    assert result["pins"]["risk_premium_annual"] == 1960.15
+
+
+def test_restore_accepts_a_stored_application_quote_that_ties():
+    quote = _quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5)
+    quote["savings_addon"] = "balanced"
+    quote["savings_rate"] = 0.5
+    result = kernel_pin_restore_candidate(
+        dict(_STORED),
+        application={"quote_provenance": quote},
+        pricer=_pricer({}),  # must not need the grid
+    )
+    assert result["status"] == "restorable", result
+    assert result["reason"] == "stored_quote_reproduces_the_premium"
+    assert result["pins"]["kernel_pin_source"] == "restored_from_stored_quote"
+    assert result["pins"]["risk_premium_annual"] == 1960.15
+
+
+def test_restore_refuses_without_age_instead_of_defaulting_silently():
+    result = kernel_pin_restore_candidate(dict(_STORED), application=None, customer={}, pricer=_pricer({}))
+    assert (result["status"], result["reason"]) == ("refused", "no_age_to_reprice")
+
+
 def test_restore_keeps_an_underwriting_loading_as_the_company_fee():
     stored = {**_STORED, "annual_premium": 4802.87, "monthly_premium": 400.23}
     table = {(0.5, 20): {**_quote(3557.68, 1960.15, 980.08, 294.02, 323.43, 0.5), "monthly": 296.47}}

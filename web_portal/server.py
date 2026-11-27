@@ -12953,6 +12953,7 @@ def _kernel_pin_restore_scan() -> Dict[str, Any]:
     rows = []
     restorable = []
     counts = {'pinned': 0, 'restorable': 0, 'refused': 0, 'restored': 0, 'not_verified': 0}
+    refusal_reasons: Dict[str, int] = {}
     restorable_annual = 0.0
     scanned = 0
     quote_cache: Dict[tuple, Any] = {}
@@ -12979,6 +12980,9 @@ def _kernel_pin_restore_scan() -> Dict[str, Any]:
         if status == 'restorable':
             restorable.append((str(policy_id), candidate))
             restorable_annual += safe_float(candidate.get('annual_premium'), 0.0)
+        else:
+            reason = str(candidate.get('reason') or 'refused')
+            refusal_reasons[reason] = refusal_reasons.get(reason, 0) + 1
         rows.append(candidate)
 
     elapsed_ms = int(round((time.perf_counter() - started) * 1000))
@@ -13001,6 +13005,8 @@ def _kernel_pin_restore_scan() -> Dict[str, Any]:
             'success_rate': (
                 round(counts['restorable'] / open_count, 4) if open_count else 1.0
             ),
+            'refusal_reasons': refusal_reasons,
+            'action_available': counts['restorable'] > 0,
         },
         '_restorable': restorable,
     }

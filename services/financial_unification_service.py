@@ -2913,6 +2913,7 @@ def _restore_pricing_payload(
 ) -> Dict[str, Any]:
     app = application or {}
     person = customer or {}
+    personal = app.get("personal_info") if isinstance(app.get("personal_info"), Mapping) else {}
     payload: Dict[str, Any] = {
         "type": policy.get("type") or app.get("policy_type") or "life",
         "coverage_amount": policy.get("coverage_amount") or app.get("coverage_amount"),
@@ -2920,18 +2921,31 @@ def _restore_pricing_payload(
     }
     age = app.get("age")
     if age in (None, ""):
+        age = policy.get("age")
+    if age in (None, ""):
         age = person.get("age")
+    if age in (None, "") and personal:
+        age = personal.get("age")
     if age not in (None, ""):
         payload["age"] = age
     else:
-        dob = person.get("dob") or person.get("date_of_birth")
+        dob = (
+            app.get("dob")
+            or app.get("date_of_birth")
+            or policy.get("dob")
+            or policy.get("date_of_birth")
+            or person.get("dob")
+            or person.get("date_of_birth")
+            or (personal.get("dob") if personal else None)
+            or (personal.get("date_of_birth") if personal else None)
+        )
         if dob:
             payload["dob"] = dob
     for key, sources in (
-        ("gender", (app.get("gender"), person.get("gender"))),
-        ("smoking_status", (app.get("smoking_status"),)),
-        ("ethnicity", (app.get("ethnicity"), person.get("ethnicity"))),
-        ("adl_level", (app.get("adl_level"), policy.get("adl_level"))),
+        ("gender", (app.get("gender"), policy.get("gender"), person.get("gender"), personal.get("gender") if personal else None)),
+        ("smoking_status", (app.get("smoking_status"), policy.get("smoking_status"), person.get("smoking_status"))),
+        ("ethnicity", (app.get("ethnicity"), policy.get("ethnicity"), person.get("ethnicity"))),
+        ("adl_level", (app.get("adl_level"), policy.get("adl_level"), policy.get("adl_pricing_level"))),
     ):
         for value in sources:
             if value not in (None, ""):
@@ -2955,6 +2969,7 @@ def _restore_term_years(
         app.get("coverage_years"),
         (app.get("coverage") or {}).get("term_years") if isinstance(app.get("coverage"), Mapping) else None,
         (app.get("coverage") or {}).get("coverageYears") if isinstance(app.get("coverage"), Mapping) else None,
+        (app.get("quote_provenance") or {}).get("term_years") if isinstance(app.get("quote_provenance"), Mapping) else None,
         policy.get("term_years"),
         policy.get("coverage_years"),
     ):
@@ -2971,6 +2986,148 @@ def _restore_term_years(
         if term not in ordered:
             ordered.append(term)
     return tuple(ordered)
+
+
+def _restore_savings_addons(
+    policy: Mapping[str, Any],
+    application: Optional[Mapping[str, Any]],
+) -> Tuple[Tuple[str, float], ...]:
+    """Prefer the savings election already on the application or policy."""
+    app = application or {}
+    questionnaire = app.get("questionnaire") if isinstance(app.get("questionnaire"), Mapping) else {}
+    provenance = app.get("quote_provenance") if isinstance(app.get("quote_provenance"), Mapping) else {}
+    preferred: List[Tuple[str, float]] = []
+    name = str(
+        app.get("savings_addon")
+        or questionnaire.get("savings_addon")
+        or policy.get("savings_addon")
+        or ""
+    ).strip().lower()
+    rate_raw = (
+        app.get("savings_rate")
+        if app.get("savings_rate") is not None
+        else provenance.get("savings_rate_used")
+        if provenance.get("savings_rate_used") is not None
+        else policy.get("savings_rate")
+    )
+    rate = None
+    if rate_raw not in (None, ""):
+        try:
+            rate = float(rate_raw)
+        except (TypeError, ValueError):
+            rate = None
+        if rate is not None and rate > 1.0:
+            rate = rate / 100.0
+    by_name = {addon: value for addon, value in RESTORE_SAVINGS_ADDONS}
+    by_rate = {value: addon for addon, value in RESTORE_SAVINGS_ADDONS}
+    if name in by_name:
+        preferred.append((name, by_name[name]))
+    elif rate is not None:
+        matched = by_rate.get(float(money(rate)))
+        if matched:
+            preferred.append((matched, by_name[matched]))
+    ordered = list(preferred)
+    for item in RESTORE_SAVINGS_ADDONS:
+        if item not in ordered:
+            ordered.append(item)
+    return tuple(ordered)
+
+
+def _stored_quote_sources(
+    policy: Mapping[str, Any],
+    application: Optional[Mapping[str, Any]],
+) -> List[Mapping[str, Any]]:
+    """Records that may already carry the issued kernel decomposition."""
+    sources: List[Mapping[str, Any]] = []
+    app = application or {}
+    for raw in (
+        app.get("quote_provenance"),
+        app.get("premium_data"),
+        app.get("kernel_quote"),
+        app,
+        policy,
+    ):
+        if isinstance(raw, Mapping) and raw.get("risk_premium_annual") is not None:
+            sources.append(raw)
+    return sources
+
+
+def _pins_from_stored_quote(
+    quote: Mapping[str, Any],
+    *,
+    annual: Decimal,
+    monthly: Decimal,
+    loading: Decimal,
+) -> Optional[Dict[str, Any]]:
+    """Accept a stored quote only when its layers reproduce the billed premium."""
+    if quote.get("risk_premium_annual") is None:
+        return None
+    base_annual = money(quote.get("annual") or quote.get("quoted_annual"))
+    if base_annual <= 0:
+        layers = [
+            money(quote.get(key))
+            for key in (
+                "risk_premium_annual",
+                "savings_premium_annual",
+                "expense_loading_annual",
+                "profit_margin_annual",
+            )
+        ]
+        base_annual = sum(layers, Decimal("0"))
+    if base_annual <= 0:
+        return None
+    factor = Decimal("1") + loading
+    if money(base_annual * factor) != annual:
+        return None
+    quoted_monthly = money(quote.get("monthly") or quote.get("quoted_monthly"))
+    if monthly > 0 and quoted_monthly > 0 and money(quoted_monthly * factor) != monthly:
+        return None
+    layer_total = sum(
+        (
+            money(quote.get(key))
+            for key in (
+                "risk_premium_annual",
+                "savings_premium_annual",
+                "expense_loading_annual",
+                "profit_margin_annual",
+            )
+        ),
+        Decimal("0"),
+    )
+    if layer_total != base_annual:
+        return None
+    pins: Dict[str, Any] = {
+        key: quote[key] for key in _RESTORE_PIN_KEYS if quote.get(key) is not None
+    }
+    addon = str(quote.get("savings_addon") or "").strip().lower()
+    rate = quote.get("savings_rate")
+    if rate is None:
+        rate = quote.get("savings_rate_used")
+    if rate not in (None, ""):
+        try:
+            rate_value = float(rate)
+        except (TypeError, ValueError):
+            rate_value = 0.0
+        if rate_value > 1.0:
+            rate_value = rate_value / 100.0
+        if rate_value > 0:
+            pins["savings_rate"] = rate_value
+            if not addon:
+                by_rate = {value: name for name, value in RESTORE_SAVINGS_ADDONS}
+                addon = by_rate.get(float(money(rate_value)), "") or ""
+            if addon:
+                pins["savings_addon"] = addon
+    elif addon and addon != "none":
+        by_name = {name: value for name, value in RESTORE_SAVINGS_ADDONS}
+        if addon in by_name and by_name[addon] > 0:
+            pins["savings_addon"] = addon
+            pins["savings_rate"] = by_name[addon]
+    if loading > 0:
+        pins["actuarial_annual_premium"] = float(base_annual)
+        pins["underwriting_loading"] = float(loading)
+        pins["underwriting_fee_annual"] = float(annual - base_annual)
+    pins["kernel_pin_source"] = "restored_from_stored_quote"
+    return pins
 
 
 def _restore_quote_cache_key(payload: Mapping[str, Any]) -> Tuple[Any, ...]:
@@ -3070,12 +3227,34 @@ def kernel_pin_restore_candidate(
     if loading < 0:
         result["reason"] = "discounted_premium"
         return result
-    base_payload = _restore_pricing_payload(policy, application, customer)
     stored_monthly = money(policy.get("monthly_premium"))
+    # Prefer an issued quote already sealed on the application or policy when
+    # its layers reproduce the billed premium. That restores without guessing.
+    for source in _stored_quote_sources(policy, application):
+        pins = _pins_from_stored_quote(
+            source, annual=annual, monthly=stored_monthly, loading=loading,
+        )
+        if not pins:
+            continue
+        result["status"] = "restorable"
+        result["reason"] = "stored_quote_reproduces_the_premium"
+        result["pins"] = pins
+        result["matches"] = [{
+            "savings_addon": pins.get("savings_addon") or "none",
+            "savings_rate": pins.get("savings_rate") or 0.0,
+            "source": "stored_quote",
+        }]
+        return result
+
+    base_payload = _restore_pricing_payload(policy, application, customer)
+    if "age" not in base_payload and "dob" not in base_payload:
+        result["reason"] = "no_age_to_reprice"
+        return result
     factor = Decimal("1") + loading
     found: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
     terms = _restore_term_years(policy, application)
-    for addon, rate in RESTORE_SAVINGS_ADDONS:
+    addons = _restore_savings_addons(policy, application)
+    for addon, rate in addons:
         for term in terms:
             payload = dict(base_payload)
             payload["savings_rate"] = rate

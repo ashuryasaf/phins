@@ -32,6 +32,11 @@
         button { background: #c4a35a; color: #0b1f3a; border: 0; border-radius: 8px; padding: 10px 14px; font-weight: 650; cursor: pointer; }
         button:disabled { opacity: .5; cursor: not-allowed; }
         button.is-busy { cursor: wait; }
+        #kernel-pins { margin-top: 8px; padding: 16px 18px; border: 1px solid rgba(196,163,90,.45); border-radius: 14px; background: #102443; }
+        #kernel-pins h2 { margin-top: 0; }
+        #pins-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+        #pins-actions button.quiet { background: transparent; color: #e8d7a8; border: 1px solid rgba(196,163,90,.5); }
+        #pins-refusal { margin: 8px 0 0; color: #ffd9d2; font-size: 13px; line-height: 1.45; }
         pre { white-space: pre-wrap; background: #0e1c33; padding: 14px; border-radius: 12px; color: #efe6d2; }
         .note { color: #b7c3d6; font-size: 13px; }
         h2 { font-weight: 500; margin-top: 28px; }
@@ -67,6 +72,18 @@
     <main>
         <p class="rules" id="rules">Kernel risk stays on the risk book. Only an add-on or a growth add is saved. Paid claims stay on the claims book and move from the reserve to the health wallet.</p>
         <div class="cards" id="funds"></div>
+        <section id="kernel-pins">
+            <h2>Kernel pins <span id="pins-verdict"></span></h2>
+            <p class="note">A policy stored without its kernel decomposition cannot be split into risk, loadings, and savings. Each one is restored only when a stored issued quote, or exactly one kernel decomposition, gives the billed premium to the cent. The premium, the bills, and the balances are not changed. Savings that were charged and never landed are credited by the claim and savings repair on this page.</p>
+            <p class="note" id="pins-analysis">Analysing pins…</p>
+            <p class="note" id="pins-refusal" hidden></p>
+            <div class="roster-wrap" id="pins-table"></div>
+            <div id="pins-actions">
+                <button id="pins-restore" type="button" disabled>Restore the pins that reproduce</button>
+                <button id="pins-refresh" type="button" class="quiet">Re-analyse pins</button>
+            </div>
+            <p class="note" id="pins-result"></p>
+        </section>
         <section id="unified-report">
             <h2>Unified cash flow statement <span id="unified-verdict"></span></h2>
             <p class="note" id="unified-basis"></p>
@@ -95,14 +112,6 @@
             <div id="unified-agents"></div>
             <h3>Customers</h3>
             <div id="unified-customers"></div>
-        </section>
-        <section id="kernel-pins">
-            <h2>Kernel pins <span id="pins-verdict"></span></h2>
-            <p class="note">A policy stored without its kernel decomposition cannot be split into risk, loadings, and savings. Each one is repriced from its stored application. A pin is restored only when exactly one kernel decomposition gives the billed premium to the cent. The premium, the bills, and the balances are not changed. Savings that were charged and never landed are credited by the claim and savings repair on this page.</p>
-            <p class="note" id="pins-analysis">Analysing pins…</p>
-            <div class="roster-wrap" id="pins-table"></div>
-            <p style="margin-top:12px"><button id="pins-restore" type="button" disabled>Restore the pins that reproduce</button></p>
-            <p class="note" id="pins-result"></p>
         </section>
         <h2>Customers to monitor</h2>
         <p class="note">Asaf Assurance, Efrat PHINS, Asi PHINS, and Shosh PHINS are the standing list. Anyone else with a ledger, bill, claim, wallet, or NFT seal is added from the books.</p>
@@ -213,7 +222,9 @@
 
         const PIN_REASONS = {
             one_decomposition_reproduces_the_premium: 'One kernel decomposition gives this premium',
+            stored_quote_reproduces_the_premium: 'The issued quote on file gives this premium',
             no_kernel_price_reproduces_the_premium: 'No kernel price gives this premium. Left as stored.',
+            no_age_to_reprice: 'No age on the policy, application, or customer to reprice. Left as stored.',
             more_than_one_decomposition: 'More than one decomposition gives this premium. Left as stored.',
             discounted_premium: 'The premium was discounted at underwriting. Left as stored.',
             pin_seal_broken: 'The stored pin fails its checksum. It is not served and not replaced.',
@@ -226,11 +237,32 @@
 
         function setPinsBusy(busy, label) {
             const button = document.getElementById('pins-restore');
+            const refresh = document.getElementById('pins-refresh');
             button.classList.toggle('is-busy', !!busy);
+            if (refresh) refresh.disabled = !!busy;
             if (busy) {
                 button.disabled = true;
                 if (label) button.textContent = label;
             }
+        }
+
+        function renderPinsRefusal(pins) {
+            const host = document.getElementById('pins-refusal');
+            const analysis = (pins && pins.analysis) || {};
+            const counts = (pins && pins.counts) || {};
+            const reasons = analysis.refusal_reasons || {};
+            const open = (counts.restorable || 0) + (counts.refused || 0) + (counts.not_verified || 0);
+            if (!(counts.restorable > 0) && open > 0) {
+                const detail = Object.keys(reasons).map((key) =>
+                    reasons[key] + ' · ' + (PIN_REASONS[key] || key)
+                ).join(' · ');
+                host.hidden = false;
+                host.textContent = 'Restore stays closed while no pin can be reproduced safely.'
+                    + (detail ? ' ' + detail : '');
+                return;
+            }
+            host.hidden = true;
+            host.textContent = '';
         }
 
         function renderPinsAnalysis(pins, prefix) {
@@ -254,7 +286,9 @@
                 parts.push('match rate ' + Math.round(Number(analysis.success_rate) * 100) + '%');
             }
             if (analysis.restored != null) parts.push('restored ' + analysis.restored);
+            if (analysis.action_available) parts.push('restore available');
             document.getElementById('pins-analysis').textContent = parts.join(' · ') || 'Pin analysis ready.';
+            renderPinsRefusal(pins);
         }
 
         async function loadPins() {
@@ -295,10 +329,13 @@
                     ? '<span class="tag attention">' + open + ' without a pin</span>'
                     : '<span class="tag clear">every policy is pinned</span>';
                 renderPinsAnalysis(pins);
-                button.disabled = !(counts.restorable > 0);
-                button.textContent = counts.restorable > 0
+                const canRestore = counts.restorable > 0;
+                button.disabled = !canRestore;
+                button.textContent = canRestore
                     ? 'Restore ' + counts.restorable + ' pin(s) that reproduce · ' + money(pins.restorable_annual_premium) + ' a year'
-                    : 'Restore the pins that reproduce';
+                    : (open
+                        ? 'No safe pin to restore'
+                        : 'Restore the pins that reproduce');
                 if (!rows.length) {
                     host.innerHTML = '<p class="note">' + (counts.pinned || 0) + ' policies carry their kernel pin. Nothing to restore.</p>';
                     return;
@@ -326,9 +363,14 @@
                     : 'Pin analysis could not finish. Refresh the page or try again.';
                 button.disabled = true;
                 button.textContent = 'Restore the pins that reproduce';
+                document.getElementById('pins-refusal').hidden = true;
             } finally {
                 if (timer) clearTimeout(timer);
-                if (seq === pinsLoadSeq) button.classList.remove('is-busy');
+                if (seq === pinsLoadSeq) {
+                    button.classList.remove('is-busy');
+                    const refresh = document.getElementById('pins-refresh');
+                    if (refresh) refresh.disabled = false;
+                }
             }
         }
 
@@ -392,6 +434,10 @@
                 : (body.error || 'Could not post.');
             button.disabled = false;
             load();
+        });
+
+        document.getElementById('pins-refresh').addEventListener('click', () => {
+            loadPins();
         });
 
         load();
