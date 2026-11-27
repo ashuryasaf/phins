@@ -9439,16 +9439,9 @@ def _flush_fiduciary_tables() -> bool:
     """U2: seal live fiduciary dicts into DB tables (dual/db modes).
 
     Returns ``True`` when the flush succeeded or was skipped (mode off).
-    Dual file-SoR withholds (no adopt) must fail closed so the ledger stays
-    dirty and retries — otherwise a withheld older seal is never overwritten
-    and the next snapshot can freeze a diverge.
     """
     try:
-        from services.fiduciary import (
-            fiduciary_file_sor,
-            flush_fiduciary_to_db,
-            fiduciary_mode,
-        )
+        from services.fiduciary import flush_fiduciary_to_db, fiduciary_mode
         if fiduciary_mode() == 'off':
             return True
         result = flush_fiduciary_to_db(
@@ -9463,13 +9456,8 @@ def _flush_fiduciary_tables() -> bool:
             return False
         # Per-row write failures must not look like a successful seal.
         for block in result.values():
-            if not isinstance(block, dict):
-                continue
-            if int(block.get('errors') or 0) > 0:
+            if isinstance(block, dict) and int(block.get('errors') or 0) > 0:
                 print(f"[FIDUCIARY] Flush had row errors: {result}")
-                return False
-            if fiduciary_file_sor() and int(block.get('withheld') or 0) > 0:
-                print(f"[FIDUCIARY] File-SoR flush withheld rows: {result}")
                 return False
         return True
     except Exception as exc:
@@ -9486,16 +9474,15 @@ def _hydrate_and_migrate_fiduciary(
 
     Journal refusal and ``db``-mode copy failures propagate so boot does not
     silently continue without sealed books. Dual mode logs copy errors and
-    still hydrates (file remains SoR until operators flip to ``db``).
+    still hydrates with ``preserve_absent`` when a volume file is present.
 
     ``prefer_sealed`` is set when the applied snapshot came from the throttled
     ``agent_artifacts`` copy (volume-less / file-lagging Railway restore):
     sealed tables are dual-written on every mutation save and can be newer
-    than that copy, so dual must not skip hydrate and later flush stale books.
+    than that copy, so dual must hydrate fully (no ``preserve_absent``).
     """
     from services.fiduciary import (
         FiduciaryBootError,
-        capture_fiduciary_baseline_from_memory,
         fiduciary_mode,
         hydrate_fiduciary_from_db,
         migrate_snapshot_to_fiduciary_tables,
@@ -9528,9 +9515,10 @@ def _hydrate_and_migrate_fiduciary(
                     raise FiduciaryBootError(f"fiduciary migration failed: {reason}")
             elif reason not in ('tables_already_populated', 'no_fiduciary_keys', 'fiduciary_mode_off'):
                 print(f"[FIDUCIARY] Migration skipped: {reason}")
-    # dual + volume file SoR: skip gap-fill so purged ids stay gone. db-mode
-    # files stamp fiduciary_books=db — those still hydrate. A throttled DB
-    # snapshot copy (prefer_sealed) must hydrate: sealed rows can be newer.
+    # Dual volume file: prefer sealed on conflict for ids still present, but
+    # do not re-add sealed-only ids (file purges stay gone). db-mode files
+    # stamp fiduciary_books=db — those hydrate fully. A throttled DB snapshot
+    # copy (prefer_sealed) must hydrate without preserve_absent.
     from services.fiduciary import (
         FIDUCIARY_BOOKS_DB,
         FIDUCIARY_BOOKS_MARKER,
@@ -9544,29 +9532,13 @@ def _hydrate_and_migrate_fiduciary(
     keys_present = isinstance(snapshot, dict) and any(
         key in snapshot for key in FIDUCIARY_SNAPSHOT_KEYS
     )
-    if (
+    preserve_absent = (
         mode == 'dual'
         and snapshot is not None
         and keys_present
         and marker != FIDUCIARY_BOOKS_DB
         and not prefer_sealed
-    ):
-        # File remains SoR. Baseline must be digests of the live (file) books
-        # — not sealed checksums — or a matching token would authorize flushing
-        # an older file book over a newer peer seal.
-        try:
-            capture_fiduciary_baseline_from_memory(
-                health_wallets=HEALTH_WALLETS,
-                wallet_withdrawals=WALLET_WITHDRAWALS,
-                nft_ledger=NFT_LEDGER,
-                investment_accounts=INVESTMENT_ACCOUNTS,
-                balance_sheet=PHINS_BALANCE_SHEET,
-            )
-        except Exception as exc:
-            print(
-                f"[FIDUCIARY] Baseline capture skipped: {type(exc).__name__}"
-            )
-        return
+    )
     try:
         counts = hydrate_fiduciary_from_db(
             health_wallets=HEALTH_WALLETS,
@@ -9575,6 +9547,7 @@ def _hydrate_and_migrate_fiduciary(
             investment_accounts=INVESTMENT_ACCOUNTS,
             balance_sheet=PHINS_BALANCE_SHEET,
             prefer_db=True,
+            preserve_absent=preserve_absent,
         )
     except FiduciaryBootError:
         raise
@@ -10342,7 +10315,7 @@ def load_ledger_data(allow_db_snapshot: bool = False):
         if _loaded_trading_bots:
             print(f"  - Trading Bots: {len(_loaded_trading_bots)} bots (pending sync)")
         print(f"  - Saved at: {data.get('saved_at', 'unknown')}")
-        # U2: migrate missing ids; dual+volume-file skips gap-fill hydrate.
+        # U2: migrate missing ids; dual+volume uses preserve_absent hydrate.
         # Throttled DB snapshot copy prefers sealed rows (newer dual-writes).
         _hydrate_and_migrate_fiduciary(
             data,

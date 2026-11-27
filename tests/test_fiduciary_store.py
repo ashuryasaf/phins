@@ -512,15 +512,15 @@ def test_dual_empty_placeholders_still_hydrate(sqlite_db, monkeypatch):
     assert portal.HEALTH_WALLETS['CUST-EMPTY-PLACEHOLDER']['balance'] == 42
 
 
-def test_dual_nonempty_books_skip_gap_fill(sqlite_db, monkeypatch):
-    """Live dual file SoR must not resurrect purged ids via hydrate gap-fill."""
+def test_dual_nonempty_books_preserve_absent(sqlite_db, monkeypatch):
+    """Dual volume: prefer sealed on conflict; do not resurrect purged ids."""
     import web_portal.server as portal
 
     monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
     monkeypatch.setenv('USE_DATABASE', 'true')
     assert flush_fiduciary_to_db(
         health_wallets={
-            'CUST-KEEP': {'customer_id': 'CUST-KEEP', 'balance': 1},
+            'CUST-KEEP': {'customer_id': 'CUST-KEEP', 'balance': 99},
             'CUST-PURGED': {'customer_id': 'CUST-PURGED', 'balance': 9},
         },
         wallet_withdrawals={},
@@ -535,11 +535,11 @@ def test_dual_nonempty_books_skip_gap_fill(sqlite_db, monkeypatch):
     portal.NFT_LEDGER.clear()
     portal.INVESTMENT_ACCOUNTS.clear()
 
-    called = {'n': 0}
+    called = {'kwargs': None}
 
     def _mark(*_a, **_k):
-        called['n'] += 1
-        return {'health_wallets': 0, 'withheld': 0}
+        called['kwargs'] = _k
+        return hydrate_fiduciary_from_db(*_a, **_k)
 
     monkeypatch.setattr(
         'services.fiduciary.hydrate_fiduciary_from_db',
@@ -554,12 +554,15 @@ def test_dual_nonempty_books_skip_gap_fill(sqlite_db, monkeypatch):
             'phins_balance_sheet': {},
         }
     )
-    assert called['n'] == 0
+    assert called['kwargs'] is not None
+    assert called['kwargs'].get('preserve_absent') is True
+    assert called['kwargs'].get('prefer_db') is True
+    assert portal.HEALTH_WALLETS['CUST-KEEP']['balance'] == 99
     assert 'CUST-PURGED' not in portal.HEALTH_WALLETS
 
 
-def test_dual_full_purge_empty_books_skip_gap_fill(sqlite_db, monkeypatch):
-    """Dual file with empty fiduciary keys (no db marker) must not resurrect."""
+def test_dual_full_purge_empty_books_preserve_absent(sqlite_db, monkeypatch):
+    """Dual empty fiduciary keys (no db marker): do not resurrect purged ids."""
     import web_portal.server as portal
 
     monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
@@ -581,11 +584,11 @@ def test_dual_full_purge_empty_books_skip_gap_fill(sqlite_db, monkeypatch):
     portal.PHINS_BALANCE_SHEET.clear()
     portal.PHINS_BALANCE_SHEET['claims_reserve'] = 1
 
-    called = {'n': 0}
+    called = {'kwargs': None}
 
     def _mark(*_a, **_k):
-        called['n'] += 1
-        return {'health_wallets': 0, 'withheld': 0}
+        called['kwargs'] = _k
+        return hydrate_fiduciary_from_db(*_a, **_k)
 
     monkeypatch.setattr(
         'services.fiduciary.hydrate_fiduciary_from_db',
@@ -600,7 +603,8 @@ def test_dual_full_purge_empty_books_skip_gap_fill(sqlite_db, monkeypatch):
             'phins_balance_sheet': {'claims_reserve': 1},
         }
     )
-    assert called['n'] == 0
+    assert called['kwargs'] is not None
+    assert called['kwargs'].get('preserve_absent') is True
     assert 'CUST-PURGED-ALL' not in portal.HEALTH_WALLETS
 
 
@@ -851,44 +855,45 @@ def test_flush_cas_allows_write_when_baseline_matches(sqlite_db, monkeypatch):
     db.close()
 
 
-def test_dual_file_sor_newer_file_writes_without_adopting_old_seal(
-    sqlite_db, monkeypatch
-):
-    """Dual volume SoR: newer file overwrites a lagging seal; never adopts it."""
-    from services.fiduciary.store import fiduciary_file_sor
-
+def test_dual_preserve_absent_prefers_sealed_on_conflict(sqlite_db, monkeypatch):
+    """Dual volume boot: prefer sealed on conflict; do not revive purged ids."""
     monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
-    # Lagging seal first.
     assert flush_fiduciary_to_db(
-        health_wallets={'CUST-FS': {'customer_id': 'CUST-FS', 'balance': 1.0}},
+        health_wallets={
+            'CUST-KEEP': {'customer_id': 'CUST-KEEP', 'balance': 999.0},
+            'CUST-PURGED': {'customer_id': 'CUST-PURGED', 'balance': 50.0},
+        },
         wallet_withdrawals={},
         nft_ledger={},
         investment_accounts={},
         balance_sheet={},
-    )['health_wallets']['written'] == 1
-    reset_fiduciary_baseline()
-    # Newer volume file (hydrate skipped) — file is SoR.
-    file_book = {'CUST-FS': {'customer_id': 'CUST-FS', 'balance': 999.0}}
-    capture_fiduciary_baseline_from_memory(
-        health_wallets=file_book,
+    )['health_wallets']['written'] == 2
+    # Volume file still has KEEP (stale) and dropped PURGED.
+    memory = {'CUST-KEEP': {'customer_id': 'CUST-KEEP', 'balance': 1.0}}
+    counts = hydrate_fiduciary_from_db(
+        health_wallets=memory,
         wallet_withdrawals={},
         nft_ledger={},
         investment_accounts={},
         balance_sheet={},
+        prefer_db=True,
+        preserve_absent=True,
     )
-    assert fiduciary_file_sor() is True
+    assert memory['CUST-KEEP']['balance'] == 999.0
+    assert 'CUST-PURGED' not in memory
+    assert counts['health_wallets'] == 1
+    # Flush must not overwrite the preferred sealed KEEP with a stale token.
     result = flush_fiduciary_to_db(
-        health_wallets=file_book,
+        health_wallets=memory,
         wallet_withdrawals={},
         nft_ledger={},
         investment_accounts={},
         balance_sheet={},
     )
-    assert result['health_wallets']['written'] == 1
-    assert result['health_wallets'].get('adopted', 0) == 0
-    assert file_book['CUST-FS']['balance'] == 999.0
+    assert result['health_wallets']['withheld'] == 0
     db = DatabaseManager()
-    assert db.health_wallets.get_payload('CUST-FS')['balance'] == 999.0
+    assert db.health_wallets.get_payload('CUST-KEEP')['balance'] == 999.0
+    assert db.health_wallets.get_payload('CUST-PURGED')['balance'] == 50.0
     db.close()
 
 
