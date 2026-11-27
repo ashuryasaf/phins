@@ -113,11 +113,28 @@ def append_journal_entry(
     }
 
 
+def _anchor_sqlite_transaction(session) -> None:
+    """Open a real SQLite transaction before the first SAVEPOINT.
+
+    sqlite3 legacy transaction control does not start a transaction for
+    SAVEPOINT alone. Releasing that savepoint then commits the row on its
+    own, so a later refusal in the same batch cannot roll earlier rows
+    back (Bugbot Autofix / U5 batch seals).
+    """
+    conn = session.connection()
+    if getattr(conn.dialect, 'name', '') != 'sqlite':
+        return
+    raw = getattr(getattr(conn, 'connection', None), 'driver_connection', None)
+    if raw is not None and getattr(raw, 'in_transaction', False):
+        return
+    conn.exec_driver_sql('BEGIN')
+
+
 def append_journal_entries(items: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Persist many sealed rows in one transaction (all-or-nothing).
 
-    Used by ``reverse_allocation`` so a mid-loop clash cannot leave a
-    one-sided contra sealed while the allocation stays POSTED.
+    Used by ``post_allocation`` and ``reverse_allocation`` so a mid-loop
+    clash cannot leave a one-sided line sealed.
     """
     mode = accounting_journal_mode()
     if mode == 'off':
@@ -141,6 +158,7 @@ def append_journal_entries(items: List[Dict[str, Any]]) -> Dict[str, Any]:
         db = _db_manager()
         results: List[Dict[str, Any]] = []
         with db.session_scope():
+            _anchor_sqlite_transaction(db.session)
             for item in items:
                 result = db.accounting_journal.append(
                     idempotency_key=str(item.get('idempotency_key') or ''),

@@ -253,7 +253,24 @@ def test_dual_mode_still_allows_memory_on_journal_unavailable(monkeypatch):
         idempotency_key='ae:ACC-J-DUAL-UNAV:premium:B1:risk:debit',
     )
     assert entry is not None
+    assert entry.entry_no == 1
     assert len(eng.ledger_entries) == 1
+    # The kept line still owns its number; the next post must not reuse it.
+    second = eng._create_ledger_entry(
+        allocation_id='A1',
+        policy_id='P1',
+        customer_id='C1',
+        entry_date=date.today(),
+        entry_type=EntryType.SAVINGS_DEPOSIT,
+        account_type=AccountType.SAVINGS_FUND,
+        debit_amount=Decimal('5.00'),
+        description='y',
+        reference_no='B1',
+        idempotency_key='ae:ACC-J-DUAL-UNAV:premium:B1:savings:debit',
+    )
+    assert second.entry_no == 2
+    assert eng.entry_counter == 2
+    assert len(eng.ledger_entries) == 2
 
 
 def test_allocation_ids_are_content_addressed_not_sequential():
@@ -367,6 +384,48 @@ def test_post_allocation_journal_batch_is_atomic(monkeypatch, sqlite_journal):
     # Shared journal must stay empty for this engine after the refused batch.
     rows = aj.load_journal_entries(engine_id='ACC-J-ATOMIC')
     assert rows == []
+
+
+def test_post_allocation_refused_later_line_seals_nothing(sqlite_journal, monkeypatch):
+    """A withheld savings line must not leave the risk debit in SQLite.
+
+    Exercises the real savepoint path (not a mocked batch) so the SQLite
+    BEGIN anchor is required for all-or-nothing rollback.
+    """
+    from database.repositories.accounting_journal_repository import (
+        AccountingJournalRepository,
+    )
+
+    real_append = AccountingJournalRepository.append
+
+    def _savings_clash(self, **kwargs):
+        key = str(kwargs.get('idempotency_key') or '')
+        if ':savings:' in key:
+            return {
+                'ok': False,
+                'id': None,
+                'checksum': '',
+                'reused': False,
+                'withheld': True,
+                'reason': 'idempotency_payload_mismatch',
+            }
+        return real_append(self, **kwargs)
+
+    monkeypatch.setattr(AccountingJournalRepository, 'append', _savings_clash)
+
+    eng = AccountingEngine('ACC-J-SQLITE-ATOM', 'Sqlite Atomic Co')
+    alloc = eng.create_allocation(
+        bill_id='BILL-SQA', policy_id='P1', customer_id='C1',
+        total_premium=Decimal('40.00'), risk_percentage=Decimal('60'),
+        savings_percentage=Decimal('40'),
+        risk_amount=Decimal('24.00'),
+        savings_amount=Decimal('16.00'),
+    )
+    ok, msg = eng.post_allocation(alloc.allocation_id, 'accountant')
+    assert ok is False, msg
+    assert 'idempotency_payload_mismatch' in msg
+    assert eng.ledger_entries == []
+    assert journal.load_journal_entries(engine_id='ACC-J-SQLITE-ATOM') == []
 
 
 def test_dual_transient_journal_keeps_entry_numbers(monkeypatch):
