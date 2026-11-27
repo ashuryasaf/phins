@@ -1354,13 +1354,29 @@ python3 scripts/run_agent_eval.py golden            # agent golden sets (CI gate
 python3 scripts/run_agent_eval.py golden --update   # deliberate fixture refresh; review the diff
 python3 scripts/run_agent_eval.py replay ai_automation_controller --decisions log.json
 python3 scripts/build_business_plan.py --check   # unified business plan HTML/Markdown up to date?
+
+# U3 DB financial CI (Postgres in GitHub Actions; SQLite locally is an OK proxy)
+USE_DATABASE=true USE_SQLITE=true PHINS_FIDUCIARY_MODE=dual pytest \
+  tests/test_financial_unification.py tests/test_cashflow_unified_report.py \
+  tests/test_balance_sheet_integrity.py tests/test_money_flow_integrity.py \
+  tests/test_wallet_withdrawal.py \
+  tests/test_accounting_engine.py tests/test_premium_flow_reconciliation.py -q
 ```
 
 Important test harness facts:
 
+- **DB financial CI (U3):** `.github/workflows/db_financial_ci.yml` runs the
+  money suites above with `USE_DATABASE=true` against a Postgres service and
+  `PHINS_FIDUCIARY_MODE=dual`. Root pytest still defaults to in-memory; both
+  paths must stay green. `DatabaseDict` fills required create defaults, seals
+  non-column keys in `extra`, write-throughs `store[id][k]=v` (and one nested
+  dict level), and fails closed when a create cannot land. Fiduciary unit
+  tests stay in `tests/test_fiduciary_store.py` (U2), not this job.
 - **Root `conftest.py`** starts an embedded `ThreadingHTTPServer` on
   `127.0.0.1` with `PortalHandler`; sets env defaults
-  (`USE_DATABASE=false`, `USE_SQLITE=true`, `PHINS_TEST_MODE=true`)
+  (`USE_DATABASE=false`, `USE_SQLITE=true`, `PHINS_TEST_MODE=true`). Under
+  `USE_DATABASE=true` it also clears `DatabaseDict` portal stores between
+  tests (claims/billing before policies/customers) so fixed ids do not collide.
 - Port selection: honors a `TEST_PORT` env override, prefers `8000`, and
   falls back to a free kernel-assigned port if `8000` is busy; the bound
   port is published via `TEST_PORT` and `TEST_BASE_URL`, so tests should

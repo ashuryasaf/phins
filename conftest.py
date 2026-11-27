@@ -193,14 +193,16 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
     if not getattr(portal, "PHINS_TEST_MODE", False):
         return
 
-    # Clear only in-memory dict-like stores (do not clear USERS).
+    # Clear dict-like portal stores (do not clear USERS). Order matters under
+    # USE_DATABASE=true so FK children go before parents. DatabaseDict is not a
+    # dict subclass, so clear it by type name the same way as in-memory dicts.
     for attr in [
-        "POLICIES",
         "CLAIMS",
-        "CUSTOMERS",
-        "UNDERWRITING_APPLICATIONS",
-        "SESSIONS",
         "BILLING",
+        "POLICIES",
+        "UNDERWRITING_APPLICATIONS",
+        "CUSTOMERS",
+        "SESSIONS",
         "HEALTH_WALLETS",
         "WALLET_WITHDRAWALS",
         "MEDICAL_PURCHASES",
@@ -216,7 +218,7 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
     ]:
         try:
             obj = getattr(portal, attr, None)
-            if isinstance(obj, dict):
+            if isinstance(obj, dict) or type(obj).__name__ == "DatabaseDict":
                 obj.clear()
         except Exception:
             pass

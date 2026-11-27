@@ -407,5 +407,66 @@ def test_policy_kernel_pin_with_a_bad_checksum_is_withheld_and_not_overwritten()
         del customers['TEST-CUST-PIN-2']
 
 
+def test_database_dict_create_defaults_and_extra_round_trip():
+    """U3 dual-path: omitted NOT NULL fields + non-column keys survive."""
+    from database import init_database
+    from database.data_access import DatabaseDict
+
+    init_database()
+    customers = DatabaseDict('customers')
+    policies = DatabaseDict('policies')
+    cid, pid = 'TEST-CUST-U3-EXTRA', 'TEST-POL-U3-EXTRA'
+    for store, key in ((policies, pid), (customers, cid)):
+        if key in store:
+            del store[key]
+    try:
+        customers[cid] = {'id': cid, 'name': 'U3 Extra'}  # no email
+        assert customers[cid]['email'] == 'test-cust-u3-extra@phins.local'
+        policies[pid] = {
+            'id': pid,
+            'customer_id': cid,
+            'annual_premium': 1200.0,
+            'risk_premium_annual': 960.0,
+            'savings_premium_annual': 240.0,
+            'pricing_source': 'pricing_kernel',
+            'adl_level': 5,
+            'adl_level_source': 'unspecified_baseline',
+        }
+        stored = policies[pid]
+        assert stored['type'] == 'life'
+        assert stored['coverage_amount'] == 1200.0
+        assert stored['risk_premium_annual'] == 960.0
+        assert stored['adl_level'] == 5
+        assert stored['adl_level_source'] == 'unspecified_baseline'
+        # In-place top-level mutation write-throughs like an in-memory dict.
+        policies[pid]['adl_level'] = 3
+        assert policies[pid]['adl_level'] == 3
+    finally:
+        if pid in policies:
+            del policies[pid]
+        if cid in customers:
+            del customers[cid]
+
+
+def test_database_dict_create_fails_closed_without_customer_id():
+    from database import init_database
+    from database.data_access import DatabaseDict
+    import pytest as _pytest
+
+    init_database()
+    policies = DatabaseDict('policies')
+    pid = 'TEST-POL-U3-FAILCLOSED'
+    if pid in policies:
+        del policies[pid]
+    with _pytest.raises(RuntimeError, match='create failed'):
+        policies[pid] = {
+            'id': pid,
+            'type': 'life',
+            'coverage_amount': 1000.0,
+            'annual_premium': 100.0,
+            # customer_id missing → FK / NOT NULL depending on backend
+        }
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

@@ -71,12 +71,50 @@ def _notify_write(repository_name: str, operation: str) -> None:
                            repository_name, operation, exc)
 
 
-def convert_datetime_strings(data: Dict[str, Any]) -> Dict[str, Any]:
+def _parse_datetime_value(value: Any) -> Any:
+    """Parse an ISO / date string into ``datetime``; leave other values alone."""
+    if value is None or isinstance(value, datetime):
+        return value
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return value
+    try:
+        return datetime.fromisoformat(text.replace('Z', '+00:00'))
+    except (ValueError, AttributeError):
+        pass
+    for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%d/%m/%Y'):
+        try:
+            return datetime.strptime(text[:10], fmt)
+        except (ValueError, TypeError):
+            continue
+    return value
+
+
+_DATETIME_FIELD_NAMES = (
+    'created_date', 'updated_date', 'start_date', 'end_date',
+    'approval_date', 'filed_date', 'payment_date', 'submitted_date',
+    'decision_date', 'due_date', 'paid_date', 'expires', 'last_login',
+    'timestamp',
+)
+
+_JSON_FIELD_NAMES = (
+    'questionnaire_responses', 'payment_setup', 'health_wallet',
+    'billing', 'riders', 'metadata', 'additional_data',
+    'medical_conditions', 'documents', 'data_sources',
+)
+
+
+def convert_datetime_strings(data: Dict[str, Any], *, stringify_json: bool = True) -> Dict[str, Any]:
     """
     Convert ISO datetime strings to datetime objects and dict fields to JSON strings.
     
     Args:
         data: Dictionary that may contain datetime strings and nested dicts
+        stringify_json: When False, leave dict/list JSON fields alone so
+            ``pack_row_extra`` can seal non-column keys without double-encoding
+            them as strings (U3 dual-path).
     
     Returns:
         Dictionary with datetime strings converted to datetime objects
@@ -84,36 +122,18 @@ def convert_datetime_strings(data: Dict[str, Any]) -> Dict[str, Any]:
     """
     import json
     
-    datetime_fields = [
-        'created_date', 'updated_date', 'start_date', 'end_date',
-        'approval_date', 'filed_date', 'payment_date', 'submitted_date',
-        'decision_date', 'due_date', 'paid_date', 'expires', 'last_login',
-        'timestamp'
-    ]
-    
-    # Fields that should be stored as JSON strings
-    json_fields = [
-        'questionnaire_responses', 'payment_setup', 'health_wallet',
-        'billing', 'riders', 'metadata', 'additional_data',
-        'medical_conditions', 'documents', 'data_sources'
-    ]
-    
     result = data.copy()
     
     # Convert datetime fields
-    for field in datetime_fields:
+    for field in _DATETIME_FIELD_NAMES:
         if field in result and result[field] is not None:
-            value = result[field]
-            if isinstance(value, str):
-                try:
-                    # Parse ISO format datetime string
-                    result[field] = datetime.fromisoformat(value.replace('Z', '+00:00'))
-                except (ValueError, AttributeError):
-                    # If parsing fails, keep original value
-                    pass
+            result[field] = _parse_datetime_value(result[field])
     
+    if not stringify_json:
+        return result
+
     # Convert dict/list fields to JSON strings for storage
-    for field in json_fields:
+    for field in _JSON_FIELD_NAMES:
         if field in result and result[field] is not None:
             value = result[field]
             if isinstance(value, (dict, list)):
@@ -124,6 +144,315 @@ def convert_datetime_strings(data: Dict[str, Any]) -> Dict[str, Any]:
                     result[field] = str(value)
     
     return result
+
+
+def stringify_json_columns(model_class, data: Dict[str, Any]) -> Dict[str, Any]:
+    """JSON-encode dict/list values only for columns that store Text JSON."""
+    import json
+
+    try:
+        columns = {c.name for c in model_class.__table__.columns}
+    except Exception:
+        columns = set()
+    result = data
+    for field in _JSON_FIELD_NAMES:
+        if field not in columns or field not in result or result[field] is None:
+            continue
+        value = result[field]
+        if isinstance(value, (dict, list)):
+            if result is data:
+                result = data.copy()
+            try:
+                result[field] = json.dumps(value)
+            except (TypeError, ValueError):
+                result[field] = str(value)
+    return result
+
+
+def coerce_model_datetimes(model_class, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Re-parse every DateTime column so SQLite/Postgres never see raw strings."""
+    try:
+        from sqlalchemy import DateTime as SADateTime
+        columns = model_class.__table__.columns
+    except Exception:
+        return data
+    result = data
+    for column in columns:
+        name = column.name
+        if name not in result or result[name] is None:
+            continue
+        try:
+            if not isinstance(column.type, SADateTime):
+                continue
+        except Exception:
+            continue
+        parsed = _parse_datetime_value(result[name])
+        if parsed is not result[name]:
+            if result is data:
+                result = data.copy()
+            result[name] = parsed
+    return result
+
+
+def apply_create_defaults(repository_name: str, key: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Fill NOT NULL columns the in-memory dict shape often omits.
+
+    Production API writers already send these fields; dual-path tests and
+    legacy assignments do not. Defaults are deterministic per id so a retry
+    does not invent a new email.
+    """
+    import re
+
+    result = data
+    changed = False
+
+    def _set(name, value):
+        nonlocal result, changed
+        if result is data:
+            result = data.copy()
+        result[name] = value
+        changed = True
+
+    if repository_name == 'customers':
+        name = result.get('name')
+        if name is None or (isinstance(name, str) and not name.strip()):
+            _set('name', str(key))
+        if not result.get('email'):
+            slug = re.sub(r'[^a-zA-Z0-9]+', '-', str(key).lower()).strip('-') or 'customer'
+            _set('email', f'{slug}@phins.local')
+    elif repository_name == 'policies':
+        if not result.get('type'):
+            _set('type', result.get('policy_type') or result.get('product_type') or 'life')
+        if result.get('coverage_amount') is None:
+            coverage = None
+            for alt in ('coverage', 'sum_insured', 'face_amount'):
+                if result.get(alt) is not None:
+                    try:
+                        coverage = float(result[alt])
+                    except (TypeError, ValueError):
+                        coverage = None
+                    if coverage is not None:
+                        break
+            if coverage is None:
+                try:
+                    coverage = float(result.get('annual_premium') or 0.0)
+                except (TypeError, ValueError):
+                    coverage = 0.0
+            _set('coverage_amount', coverage)
+        if result.get('annual_premium') is None:
+            _set('annual_premium', 0.0)
+    elif repository_name == 'billing':
+        if result.get('amount') is None and result.get('amount_due') is not None:
+            try:
+                _set('amount', float(result['amount_due']))
+            except (TypeError, ValueError):
+                _set('amount', 0.0)
+        if result.get('amount') is None and result.get('amount_paid') is not None:
+            try:
+                _set('amount', float(result['amount_paid']))
+            except (TypeError, ValueError):
+                pass
+        if result.get('amount') is None:
+            _set('amount', 0.0)
+    elif repository_name == 'claims':
+        if result.get('claimed_amount') is None and result.get('amount') is not None:
+            try:
+                _set('claimed_amount', float(result['amount']))
+            except (TypeError, ValueError):
+                _set('claimed_amount', 0.0)
+        if result.get('claimed_amount') is None:
+            _set('claimed_amount', 0.0)
+        # Wallet-repair fixtures often omit policy_id; keep a stable placeholder
+        # so the dual-path row lands (in-memory dicts allow the omission).
+        if not result.get('policy_id'):
+            _set('policy_id', 'POL-UNASSIGNED')
+        if not result.get('customer_id'):
+            _set('customer_id', 'CUST-UNASSIGNED')
+    return result
+
+
+_EXTRA_REPOSITORIES = frozenset({
+    'customers', 'policies', 'claims', 'billing', 'underwriting',
+})
+_EXTRA_ALIASES = {
+    'billing': frozenset({'amount_due', 'bill_id'}),
+    'claims': frozenset({'amount', 'claim_id', 'files'}),
+    'policies': frozenset({'policy_id', 'policy_type', 'product_type', 'coverage', 'sum_insured', 'face_amount'}),
+    'underwriting': frozenset({'uw_id', 'application_id'}),
+}
+
+
+def pack_row_extra(repository_name: str, model_class, data: Dict[str, Any], existing: Any = None) -> Dict[str, Any]:
+    """Seal non-column keys into ``extra`` so dual-path reads keep them.
+
+    Kernel-pin fields stay on ``kernel_pin`` for policies. Mapped aliases are
+    not stored twice. A broken existing overlay is replaced, never merged.
+    """
+    import json
+
+    if repository_name not in _EXTRA_REPOSITORIES:
+        return data
+    try:
+        columns = {c.name for c in model_class.__table__.columns}
+    except Exception:
+        return data
+    if 'extra' not in columns:
+        return data
+
+    reserved = set(columns)
+    reserved.update(_EXTRA_ALIASES.get(repository_name, ()))
+    if repository_name == 'policies':
+        from database.models import POLICY_KERNEL_PIN_FIELDS
+        reserved.update(POLICY_KERNEL_PIN_FIELDS)
+
+    extras: Dict[str, Any] = {}
+    if existing is not None:
+        raw = getattr(existing, 'extra', None)
+        if raw not in (None, ''):
+            try:
+                loaded = raw if isinstance(raw, dict) else json.loads(raw)
+                if isinstance(loaded, dict):
+                    extras.update(loaded)
+            except Exception:
+                extras = {}
+
+    for key, value in data.items():
+        if key in reserved or key == 'extra':
+            continue
+        if value is None:
+            extras.pop(key, None)
+        else:
+            extras[key] = value
+
+    result = data.copy()
+    if extras:
+        try:
+            result['extra'] = json.dumps(extras, sort_keys=True, default=str)
+        except (TypeError, ValueError):
+            result['extra'] = json.dumps({k: str(v) for k, v in extras.items()}, sort_keys=True)
+    else:
+        result['extra'] = None
+    return result
+
+
+class _NestedWriteThrough(dict):
+    """Nested dict that assign-backs into a parent ``_WriteThroughRecord``."""
+
+    __slots__ = ('_parent', '_parent_key')
+
+    def __init__(self, parent: '_WriteThroughRecord', parent_key: str, data: Dict[str, Any]):
+        super().__init__(data)
+        self._parent = parent
+        self._parent_key = parent_key
+
+    def _assign_back(self) -> None:
+        self._parent[self._parent_key] = dict(self)
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        self._assign_back()
+
+    def __delitem__(self, key):
+        super().__delitem__(key)
+        self._assign_back()
+
+    def clear(self):
+        super().clear()
+        self._assign_back()
+
+    def pop(self, *args):
+        value = super().pop(*args)
+        self._assign_back()
+        return value
+
+    def popitem(self):
+        item = super().popitem()
+        self._assign_back()
+        return item
+
+    def setdefault(self, key, default=None):
+        if key not in self:
+            super().setdefault(key, default)
+            self._assign_back()
+        return self[key]
+
+    def update(self, *args, **kwargs):
+        super().update(*args, **kwargs)
+        self._assign_back()
+
+
+class _WriteThroughRecord(dict):
+    """Dict returned by ``DatabaseDict.__getitem__`` that persists edits.
+
+    In-memory stores return a live reference; DatabaseDict used to return a
+    detached ``to_dict`` copy so ``store[id]['x'] = y`` was silently lost.
+    One level of nested dict mutation (``store[id]['health_wallet']['x']=y``)
+    assign-backs through ``_NestedWriteThrough``.
+    """
+
+    __slots__ = ('_store', '_key', '_persisting')
+
+    def __init__(self, store: 'DatabaseDict', key: str, data: Dict[str, Any]):
+        super().__init__(data)
+        self._store = store
+        self._key = key
+        self._persisting = False
+
+    def _persist(self) -> None:
+        if self._persisting:
+            return
+        self._persisting = True
+        try:
+            # Nested proxies must flatten to plain dicts before the DB write.
+            plain = {
+                k: (dict(v) if isinstance(v, _NestedWriteThrough) else v)
+                for k, v in self.items()
+            }
+            self._store[self._key] = plain
+        finally:
+            self._persisting = False
+
+    def __getitem__(self, key):
+        value = super().__getitem__(key)
+        if isinstance(value, dict) and not isinstance(value, (_WriteThroughRecord, _NestedWriteThrough)):
+            wrapped = _NestedWriteThrough(self, key, value)
+            super().__setitem__(key, wrapped)
+            return wrapped
+        return value
+
+    def __setitem__(self, key, value):
+        if isinstance(value, _NestedWriteThrough):
+            value = dict(value)
+        super().__setitem__(key, value)
+        self._persist()
+
+    def __delitem__(self, key):
+        super().__delitem__(key)
+        self._persist()
+
+    def clear(self):
+        super().clear()
+        self._persist()
+
+    def pop(self, *args):
+        value = super().pop(*args)
+        self._persist()
+        return value
+
+    def popitem(self):
+        item = super().popitem()
+        self._persist()
+        return item
+
+    def setdefault(self, key, default=None):
+        if key not in self:
+            super().setdefault(key, default)
+            self._persist()
+        return self[key]
+
+    def update(self, *args, **kwargs):
+        super().update(*args, **kwargs)
+        self._persist()
 
 
 # Field mappings from server dictionary keys to database model fields
@@ -368,12 +697,16 @@ class DatabaseDict:
                     raise KeyError(key)
                 return item.to_dict()
         
-        return self._execute_with_retry(_do_get)
+        data = self._execute_with_retry(_do_get)
+        return _WriteThroughRecord(self, key, data)
     
     def __setitem__(self, key: str, value: Dict[str, Any]):
         """Set item by key (create or update) with automatic retry"""
-        # Convert datetime strings to datetime objects
-        value = convert_datetime_strings(value)
+        if isinstance(value, _WriteThroughRecord):
+            value = dict(value)
+        # Datetimes only here — JSON dict fields stay dicts until after extras
+        # are packed so payment_setup/billing are not double-encoded into extra.
+        value = convert_datetime_strings(value, stringify_json=False)
         
         # Map field names from server format to database format
         value = map_fields_for_repository(self.repository_name, value)
@@ -382,15 +715,24 @@ class DatabaseDict:
             with DatabaseManager() as db:
                 repo = self._get_repository(db)
                 existing = repo.get_by_id(key)
+                row_value = value
+                if existing is None:
+                    # Defaults only on create — never invent columns over a partial update.
+                    row_value = apply_create_defaults(self.repository_name, key, value)
                 if self.repository_name == 'policies':
-                    _seal_policy_kernel_pin(key, value, existing)
+                    _seal_policy_kernel_pin(key, row_value, existing)
+                value_for_row = pack_row_extra(
+                    self.repository_name, repo.model_class, row_value, existing
+                )
+                value_for_row = stringify_json_columns(repo.model_class, value_for_row)
+                value_for_row = coerce_model_datetimes(repo.model_class, value_for_row)
                 if existing:
                     # Update existing - filter out keys that aren't model attributes
-                    update_data = {k: v for k, v in value.items() if hasattr(existing, k)}
+                    update_data = {k: v for k, v in value_for_row.items() if hasattr(existing, k)}
                     repo.update(key, **update_data)
                 else:
                     # Create new (ensure id is set)
-                    create_value = value.copy()
+                    create_value = value_for_row.copy()
                     if 'id' not in create_value and self.repository_name not in ['users', 'sessions']:
                         create_value['id'] = key
                     elif 'username' not in create_value and self.repository_name == 'users':
@@ -403,11 +745,15 @@ class DatabaseDict:
                         model_class = repo.model_class
                         valid_columns = {c.name for c in model_class.__table__.columns}
                         filtered_value = {k: v for k, v in create_value.items() if k in valid_columns}
-                        repo.create(**filtered_value)
+                        created = repo.create(**filtered_value)
                     except Exception as e:
                         # Fallback: try creating with all values
                         logger.warning(f"Error filtering columns for {self.repository_name}: {e}")
-                        repo.create(**create_value)
+                        created = repo.create(**create_value)
+                    if created is None:
+                        raise RuntimeError(
+                            f"DatabaseDict create failed for {self.repository_name}[{key}]"
+                        )
         
         self._execute_with_retry(_do_set)
         self._cache_valid = False

@@ -102,6 +102,10 @@ class Customer(Base):
     identity_source = Column(String(30), nullable=True)      # registration|login_prompt|application|...
     identity_history = Column(Text, nullable=True)           # append-only JSON list of corrections
 
+    # Dual-path overlay: in-memory dict keys that are not columns survive here
+    # so USE_DATABASE=true matches the demo dict shape (U3 financial CI).
+    extra = Column(Text, nullable=True)
+
     __table_args__ = (
         Index('ux_customers_identity', 'nationality', 'national_id_hash', unique=True),
     )
@@ -153,7 +157,7 @@ class Customer(Base):
         if include_auth:
             data['password_hash'] = self.password_hash
             data['password_salt'] = self.password_salt
-        return data
+        return merge_row_extra(data, self.extra)
     
     def has_portal_access(self) -> bool:
         """Check if customer has portal login configured"""
@@ -234,6 +238,41 @@ def unpack_policy_kernel_pin(raw):
         return {}, False
 
 
+_EXTRA_JSON_DICT_KEYS = frozenset({
+    'payment_setup', 'health_wallet', 'billing', 'riders', 'metadata',
+    'additional_data', 'questionnaire_responses', 'data_sources',
+})
+
+
+def merge_row_extra(record, raw_extra):
+    """Fold the dual-path ``extra`` JSON into a ``to_dict`` record.
+
+    Column and kernel-pin keys already on the record win. A broken extra blob
+    is skipped so a bad overlay never blanks the row. Legacy rows that stored
+    a JSON object as a string inside ``extra`` are coerced back to dicts.
+    """
+    if not record or raw_extra in (None, ''):
+        return record
+    try:
+        extra = raw_extra if isinstance(raw_extra, dict) else json.loads(raw_extra)
+    except Exception:
+        return record
+    if not isinstance(extra, dict):
+        return record
+    for key, value in extra.items():
+        if key == 'extra':
+            continue
+        if key in _EXTRA_JSON_DICT_KEYS and isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, (dict, list)):
+                    value = parsed
+            except Exception:
+                pass
+        record.setdefault(key, value)
+    return record
+
+
 class Policy(Base):
     """Insurance policy master table"""
     __tablename__ = 'policies'
@@ -265,6 +304,8 @@ class Policy(Base):
     # Issued kernel decomposition (risk, savings add-on, loadings, election),
     # sealed with its SHA-256. See POLICY_KERNEL_PIN_FIELDS.
     kernel_pin = Column(Text)
+    # Dual-path overlay for non-column policy keys (adl_level, labels, …).
+    extra = Column(Text, nullable=True)
     
     # Relationships
     customer = relationship("Customer", back_populates="policies")
@@ -310,7 +351,7 @@ class Policy(Base):
             record.setdefault(key, value)
         if not intact:
             record['kernel_pin_intact'] = False
-        return record
+        return merge_row_extra(record, self.extra)
 
 
 class Claim(Base):
@@ -348,6 +389,8 @@ class Claim(Base):
     payment_method = Column(String(50))  # How payment was made
     payment_reference = Column(String(100))  # Payment reference number
     paid_amount = Column(Float)  # Actual amount paid
+    # Dual-path overlay for non-column claim keys.
+    extra = Column(Text, nullable=True)
     
     # Relationships
     policy = relationship("Policy", back_populates="claims")
@@ -356,7 +399,7 @@ class Claim(Base):
     def to_dict(self):
         """Convert model to dictionary"""
         import json as _json
-        return {
+        record = {
             'id': self.id,
             'policy_id': self.policy_id,
             'customer_id': self.customer_id,
@@ -387,6 +430,7 @@ class Claim(Base):
             'payment_reference': self.payment_reference,
             'paid_amount': self.paid_amount
         }
+        return merge_row_extra(record, self.extra)
 
 
 class UnderwritingApplication(Base):
@@ -458,6 +502,8 @@ class UnderwritingApplication(Base):
     medical_conditions = Column(Text)  # JSON string - array of conditions
     documents = Column(Text)  # JSON string - array of verified documents
     data_sources = Column(Text)  # JSON string - tracking data origins
+    # Dual-path overlay for non-column underwriting keys.
+    extra = Column(Text, nullable=True)
     
     submitted_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     decision_date = Column(DateTime)
@@ -491,7 +537,7 @@ class UnderwritingApplication(Base):
             except:
                 return []
         
-        return {
+        record = {
             'id': self.id,
             'policy_id': self.policy_id,
             'customer_id': self.customer_id,
@@ -548,6 +594,7 @@ class UnderwritingApplication(Base):
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'updated_date': self.updated_date.isoformat() if self.updated_date else None
         }
+        return merge_row_extra(record, self.extra)
 
 
 class Bill(Base):
@@ -565,16 +612,20 @@ class Bill(Base):
     payment_method = Column(String(50))  # credit_card, debit_card, bank_transfer, check, etc.
     transaction_id = Column(String(100))
     late_fee = Column(Float, default=0.0)
+    # Dual-path overlay for non-column bill keys (amount_due aliases live in to_dict).
+    extra = Column(Text, nullable=True)
     created_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_date = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     def to_dict(self):
         """Convert model to dictionary"""
-        return {
+        record = {
             'id': self.id,
             'policy_id': self.policy_id,
             'customer_id': self.customer_id,
             'amount': self.amount,
+            # In-memory bills use amount_due; keep both so dual-path reads match.
+            'amount_due': self.amount,
             'amount_paid': self.amount_paid,
             'status': self.status,
             'due_date': self.due_date.isoformat() if self.due_date else None,
@@ -585,6 +636,7 @@ class Bill(Base):
             'created_date': self.created_date.isoformat() if self.created_date else None,
             'updated_date': self.updated_date.isoformat() if self.updated_date else None
         }
+        return merge_row_extra(record, self.extra)
 
 
 class User(Base):

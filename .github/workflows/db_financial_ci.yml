@@ -1,0 +1,104 @@
+name: DB financial CI
+
+# U3: prove the production USE_DATABASE=true money path on every change that
+# touches fiduciary books, financial services, or the dual-path data layer.
+# In-memory suites stay the default pytest path; this job is the merge gate
+# that forbids claiming green without the Postgres-backed run.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web_portal/server.py'
+      - 'services/**'
+      - 'database/**'
+      - 'billing_engine.py'
+      - 'accounting_engine.py'
+      - 'tests/test_financial_unification.py'
+      - 'tests/test_cashflow_unified_report.py'
+      - 'tests/test_balance_sheet_integrity.py'
+      - 'tests/test_money_flow_integrity.py'
+      - 'tests/test_wallet_withdrawal.py'
+      - 'tests/test_accounting_engine.py'
+      - 'tests/test_premium_flow_reconciliation.py'
+      - 'conftest.py'
+      - 'requirements.txt'
+      - '.github/workflows/db_financial_ci.yml'
+  pull_request:
+    paths:
+      - 'web_portal/server.py'
+      - 'services/**'
+      - 'database/**'
+      - 'billing_engine.py'
+      - 'accounting_engine.py'
+      - 'tests/test_financial_unification.py'
+      - 'tests/test_cashflow_unified_report.py'
+      - 'tests/test_balance_sheet_integrity.py'
+      - 'tests/test_money_flow_integrity.py'
+      - 'tests/test_wallet_withdrawal.py'
+      - 'tests/test_accounting_engine.py'
+      - 'tests/test_premium_flow_reconciliation.py'
+      - 'conftest.py'
+      - 'requirements.txt'
+      - '.github/workflows/db_financial_ci.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  financial-postgres:
+    name: USE_DATABASE=true financial suites (Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: phins
+          POSTGRES_PASSWORD: phins
+          POSTGRES_DB: phins_financial_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U phins -d phins_financial_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run financial integrity suites under USE_DATABASE=true
+        env:
+          USE_DATABASE: 'true'
+          USE_SQLITE: 'false'
+          DATABASE_URL: postgresql://phins:phins@127.0.0.1:5432/phins_financial_ci
+          PHINS_TEST_MODE: 'true'
+          PHINS_ASSESSMENT_AI_ENABLED: 'false'
+          PHINS_FIDUCIARY_MODE: 'dual'
+        run: |
+          python -m pytest \
+            tests/test_financial_unification.py \
+            tests/test_cashflow_unified_report.py \
+            tests/test_balance_sheet_integrity.py \
+            tests/test_money_flow_integrity.py \
+            tests/test_wallet_withdrawal.py \
+            tests/test_accounting_engine.py \
+            tests/test_premium_flow_reconciliation.py \
+            -q --tb=line
