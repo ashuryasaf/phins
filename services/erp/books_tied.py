@@ -3,10 +3,11 @@
 Once per UTC day, after Money Gate critical checks are green, append a sealed
 ``finance.books_tied`` event to the platform ledger. The certificate is
 evidence only — it never rewrites books. Money Gate may refuse high-value
-moves when today's certificate is missing or older than
-``PHINS_BOOKS_TIED_MAX_AGE_HOURS`` (default 36). Set
-``PHINS_BOOKS_TIED_REQUIRE=0`` to skip the freshness gate (certificate issue
-still runs).
+moves when no intact certificate is younger than
+``PHINS_BOOKS_TIED_MAX_AGE_HOURS`` (default 36). Prefer today's seal; a
+prior-day seal still counts while it is within that age window (covers the
+UTC midnight → daily-clock gap). Set ``PHINS_BOOKS_TIED_REQUIRE=0`` to skip
+the freshness gate (certificate issue still runs).
 """
 
 from __future__ import annotations
@@ -312,50 +313,99 @@ def issue_certificate(
     }
 
 
+def usable_certificate(
+    ledger: Any,
+    *,
+    now: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    """Today's intact cert, else the newest intact cert still within max age.
+
+    Prefer the current UTC day so a fresh issue wins. Fall back to the
+    latest verified seal so the midnight→clock gap does not refuse payouts
+    while yesterday's cert is still younger than ``max_age_hours``.
+    """
+    day = utc_day(now)
+    today = find_certificate(ledger, day=day)
+    check = verify_certificate(today)
+    if check.get('ok'):
+        age = certificate_age_hours(check, now=now)
+        if age is not None and age <= max_age_hours():
+            check = dict(check)
+            check['age_hours'] = age
+            check['source_day'] = day
+            return check
+        return {
+            'ok': False,
+            'reason': CERT_STALE,
+            'entry': check.get('entry'),
+            'age_hours': age,
+        }
+    today_reason = str(check.get('reason') or CERT_MISSING)
+    if today is not None and today_reason == CERT_TAMPERED:
+        return {'ok': False, 'reason': CERT_TAMPERED, 'entry': today}
+
+    latest = latest_verified_certificate(ledger)
+    if not latest.get('ok'):
+        return {'ok': False, 'reason': CERT_MISSING, 'entry': None}
+    age = certificate_age_hours(latest, now=now)
+    if age is None or age > max_age_hours():
+        return {
+            'ok': False,
+            'reason': CERT_STALE,
+            'entry': latest.get('entry'),
+            'age_hours': age,
+        }
+    out = dict(latest)
+    out['age_hours'] = age
+    out['source_day'] = str(latest.get('utc_day') or '')
+    return out
+
+
 def freshness_failures(
     ledger: Any,
     *,
     operation: str,
     now: Optional[datetime] = None,
 ) -> list:
-    """Critical-check ids when a high-value op lacks a fresh same-day cert."""
+    """Critical-check ids when a high-value op lacks a fresh certificate."""
     if not books_tied_required():
         return []
     if str(operation or '') not in HIGH_VALUE_OPERATIONS:
         return []
-    day = utc_day(now)
-    entry = find_certificate(ledger, day=day)
-    check = verify_certificate(entry)
-    if not check.get('ok'):
-        reason = str(check.get('reason') or CERT_MISSING)
-        if reason == CERT_TAMPERED:
-            return [CERT_TAMPERED]
-        return [CERT_MISSING]
-    age = certificate_age_hours(check, now=now)
-    if age is None or age > max_age_hours():
+    check = usable_certificate(ledger, now=now)
+    if check.get('ok'):
+        return []
+    reason = str(check.get('reason') or CERT_MISSING)
+    if reason == CERT_TAMPERED:
+        return [CERT_TAMPERED]
+    if reason == CERT_STALE:
         return [CERT_STALE]
-    return []
+    return [CERT_MISSING]
 
 
 def status_report(ledger: Any, *, now: Optional[datetime] = None) -> Dict[str, Any]:
-    """Accountant-facing badge payload for today's certificate."""
+    """Accountant-facing badge payload (today's seal, else usable prior-day)."""
     day = utc_day(now)
-    entry = find_certificate(ledger, day=day)
-    check = verify_certificate(entry)
-    age = certificate_age_hours(check, now=now) if check.get('ok') else None
+    today_entry = find_certificate(ledger, day=day)
+    usable = usable_certificate(ledger, now=now)
+    entry = usable.get('entry') if usable.get('ok') else today_entry
+    age = usable.get('age_hours') if usable.get('ok') else None
+    if age is None and usable.get('ok'):
+        age = certificate_age_hours(usable, now=now)
     return {
         'schema': 'phins.books_tied_status.v1',
         'utc_day': day,
-        'present': entry is not None,
-        'intact': bool(check.get('ok')),
-        'reason': str(check.get('reason') or ''),
+        'present': today_entry is not None or bool(usable.get('ok')),
+        'intact': bool(usable.get('ok')),
+        'reason': '' if usable.get('ok') else str(usable.get('reason') or ''),
         'age_hours': age,
         'max_age_hours': max_age_hours(),
-        'fresh': bool(check.get('ok') and age is not None and age <= max_age_hours()),
+        'fresh': bool(usable.get('ok')),
         'required': books_tied_required(),
-        'digest': str((check.get('payload') or {}).get('digest') or ''),
-        'evaluated_at': str((check.get('payload') or {}).get('evaluated_at') or ''),
+        'digest': str((usable.get('payload') or {}).get('digest') or ''),
+        'evaluated_at': str((usable.get('payload') or {}).get('evaluated_at') or ''),
         'entry_id': str((entry or {}).get('id') or '') if entry else '',
+        'source_day': str(usable.get('source_day') or ''),
         'event_type': EVENT_TYPE,
     }
 

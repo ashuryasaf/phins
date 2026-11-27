@@ -1,9 +1,10 @@
 """Daily books-tied certificate clock (ERP/MGA integrity U6).
 
 Evaluates Money Gate critical checks and, when green, appends today's sealed
-``finance.books_tied`` ledger event. Reschedules itself toward the next UTC
-midnight (plus five minutes) so the certificate renews once per day without
-consuming retry attempts. ``ensure_daily_clock`` is idempotent.
+``finance.books_tied`` ledger event. On success (or already issued),
+reschedules toward the next UTC midnight (+5 minutes). On failure (red
+books, missing ledger, exception), retries sooner the same day so payouts
+are not stranded until tomorrow. ``ensure_daily_clock`` is idempotent.
 
 When the agent job queue is not running (``PHINS_AGENT_ASYNC`` / doc async
 default off), ``start_inprocess_daily_clock`` still issues at boot and arms a
@@ -13,6 +14,7 @@ flags.
 
 from __future__ import annotations
 
+import os
 import threading
 from typing import Any, Dict, Optional
 
@@ -22,6 +24,7 @@ JOB_TYPE = 'books_tied_daily'
 SUBJECT_TYPE = 'books_tied'
 SUBJECT_ID = 'global'
 IDEMPOTENCY_KEY = 'books-tied-daily-clock'
+DEFAULT_RETRY_SECONDS = 900.0  # 15 minutes
 
 _INPROCESS_LOCK = threading.Lock()
 _INPROCESS_STARTED = False
@@ -64,18 +67,41 @@ def _portal_ledger() -> Any:
         return None
 
 
-def _handle(job: Dict[str, Any]) -> Dict[str, Any]:
+def retry_seconds() -> float:
+    try:
+        value = float(os.environ.get('PHINS_BOOKS_TIED_RETRY_SECONDS', DEFAULT_RETRY_SECONDS))
+    except (TypeError, ValueError):
+        value = DEFAULT_RETRY_SECONDS
+    return max(60.0, min(value, 12 * 3600.0))
+
+
+def next_delay(run_result: Optional[Dict[str, Any]] = None) -> float:
+    """Next wake: midnight+5m after a good seal, else a same-day retry."""
     from services.erp.books_tied import seconds_until_next_utc_midnight
 
+    cert = None
+    if isinstance(run_result, dict):
+        cert = run_result.get('certificate')
+        if not isinstance(cert, dict) and 'issued' in run_result:
+            cert = run_result
+    reason = str((cert or {}).get('reason') or '')
+    issued = bool((cert or {}).get('issued'))
+    if issued or reason == 'already_issued':
+        return seconds_until_next_utc_midnight()
+    # books_red / ledger_unavailable / tampered / boot_error → retry sooner
+    return min(retry_seconds(), seconds_until_next_utc_midnight())
+
+
+def _handle(job: Dict[str, Any]) -> Dict[str, Any]:
     params = job.get('input_params') or {}
     result = run_once(books=params.get('books'), actor=str(params.get('actor') or 'books_tied_job'))
     if params.get('once'):
         return result
-    delay = seconds_until_next_utc_midnight()
+    delay = next_delay(result)
     issued = bool((result.get('certificate') or {}).get('issued'))
     raise RescheduleJob(
         delay,
-        f"books_tied daily: issued={issued} reason={(result.get('certificate') or {}).get('reason')}",
+        f"books_tied daily: issued={issued} reason={(result.get('certificate') or {}).get('reason')} delay={delay:.0f}s",
     )
 
 
@@ -116,18 +142,17 @@ def register(queue: AgentJobQueue) -> None:
 
 
 def _inprocess_tick() -> None:
-    """Daemon timer body: issue today's cert, then re-arm toward next UTC day."""
+    """Daemon timer body: issue today's cert, then re-arm (retry or next day)."""
     global _INPROCESS_TIMER
+    run_result: Optional[Dict[str, Any]] = None
     try:
-        run_once(actor='books_tied_inprocess')
-    except Exception:
-        pass
+        run_result = run_once(actor='books_tied_inprocess')
+    except Exception as exc:
+        run_result = {'certificate': {'issued': False, 'reason': f'tick_error:{exc}'}}
     try:
-        from services.erp.books_tied import seconds_until_next_utc_midnight
-
-        delay = seconds_until_next_utc_midnight()
+        delay = next_delay(run_result)
     except Exception:
-        delay = 3600.0
+        delay = retry_seconds()
     timer = threading.Timer(delay, _inprocess_tick)
     timer.daemon = True
     with _INPROCESS_LOCK:
@@ -152,15 +177,16 @@ def start_inprocess_daily_clock(*, issue_now: bool = True) -> Dict[str, Any]:
         try:
             result['certificate'] = run_once(actor='books_tied_boot')
         except Exception as exc:
-            result['certificate'] = {'issued': False, 'reason': f'boot_error:{exc}'}
+            result['certificate'] = {
+                'issued': False,
+                'reason': f'boot_error:{exc}',
+            }
     if already:
         result['started'] = True
         result['reason'] = 'already_started'
         return result
     try:
-        from services.erp.books_tied import seconds_until_next_utc_midnight
-
-        delay = seconds_until_next_utc_midnight()
+        delay = next_delay(result.get('certificate'))
         timer = threading.Timer(delay, _inprocess_tick)
         timer.daemon = True
         with _INPROCESS_LOCK:

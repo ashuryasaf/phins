@@ -196,6 +196,58 @@ def test_books_integrity_job_can_issue_certificate(monkeypatch):
     assert result['certificate']['issued'] is True
 
 
+def test_prior_day_cert_covers_midnight_gap(monkeypatch):
+    """Yesterday's intact seal within max_age still authorizes after UTC midnight."""
+    monkeypatch.setenv('PHINS_MONEY_GATE', '1')
+    monkeypatch.setenv('PHINS_BOOKS_TIED_REQUIRE', '1')
+    monkeypatch.setenv('PHINS_BOOKS_TIED_MAX_AGE_HOURS', '36')
+    ledger = _ledger()
+    now = datetime.now(timezone.utc)
+    yesterday = (now - timedelta(days=1)).strftime('%Y-%m-%d')
+    stamp = (now - timedelta(hours=2)).isoformat()
+    from services.erp.money_gate import MoneyGateVerdict
+
+    issued = bt.issue_certificate(
+        ledger,
+        verdict=MoneyGateVerdict(
+            ok=True,
+            failed_checks=[],
+            digest=digest_for([], ok=True),
+            enforced=True,
+            operation='books_tied.issue',
+            evaluated_at=stamp,
+        ),
+        actor='test',
+        day=yesterday,
+        force=True,
+    )
+    assert issued['issued'] is True
+    # No today cert — freshness must still accept yesterday within age window.
+    assert bt.find_certificate(ledger, day=bt.utc_day(now)) is None
+    failures = bt.freshness_failures(
+        ledger, operation='claim_payout', now=now,
+    )
+    assert failures == []
+    verdict = authorize_money_move(
+        'claim_payout',
+        books=_green_books(),
+        actor='claims',
+        role='claims',
+        platform_ledger=ledger,
+    )
+    assert verdict.ok is True
+
+
+def test_retry_sooner_when_issue_fails(monkeypatch):
+    monkeypatch.setenv('PHINS_BOOKS_TIED_RETRY_SECONDS', '120')
+    failed = {'certificate': {'issued': False, 'reason': 'books_red'}}
+    ok = {'certificate': {'issued': True, 'reason': 'issued'}}
+    already = {'certificate': {'issued': False, 'reason': 'already_issued'}}
+    assert books_tied_job.next_delay(failed) == 120.0
+    assert books_tied_job.next_delay(ok) > 120.0
+    assert books_tied_job.next_delay(already) > 120.0
+
+
 def test_freshness_exception_fails_closed(monkeypatch):
     """A crash inside freshness_failures must refuse high-value moves only."""
     monkeypatch.setenv('PHINS_MONEY_GATE', '1')

@@ -1235,9 +1235,12 @@ Environment variables commonly used:
   (default on outside `PHINS_TEST_MODE`) folds cert freshness into
   high-value authorize (`wallet_withdrawal.release`,
   `agent_commission.settle`, `claim_payout`); a freshness-check crash
-  fails closed like a missing cert. `PHINS_BOOKS_TIED_MAX_AGE_HOURS`
-  (default 36). Accountant badge: `GET`/`POST /api/admin/cashflow/books-tied`
-  on `/cashflow-integrity.html`
+  fails closed like a missing cert. Prefer today's seal; a prior-day
+  seal still counts within `PHINS_BOOKS_TIED_MAX_AGE_HOURS` (default 36)
+  so the UTC midnight→clock gap does not refuse payouts. A failed daily
+  issue retries after `PHINS_BOOKS_TIED_RETRY_SECONDS` (default 900).
+  Accountant badge: `GET`/`POST /api/admin/cashflow/books-tied` on
+  `/cashflow-integrity.html`
 - **Delivery bidding (B11):** `PHINS_DELIVERY_SLA_TICK_SECONDS` (SLA clock
  interval for closing elapsed bidding windows, default 60)
 - **Admin desk:** an admin saves a mailbox password once on
