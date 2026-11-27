@@ -448,6 +448,36 @@ def test_database_dict_create_defaults_and_extra_round_trip():
             del customers[cid]
 
 
+def test_apply_create_defaults_skipped_outside_test_mode(monkeypatch):
+    """Production create path must not invent placeholder emails / unassigned ids."""
+    from database.data_access import apply_create_defaults
+
+    monkeypatch.delenv('PHINS_TEST_MODE', raising=False)
+    monkeypatch.setenv('PHINS_TEST_MODE', 'false')
+    raw = {'id': 'CUST-LIVE', 'name': 'Live'}
+    assert apply_create_defaults('customers', 'CUST-LIVE', raw) is raw
+    assert 'email' not in raw
+
+    monkeypatch.setenv('PHINS_TEST_MODE', 'true')
+    filled = apply_create_defaults('customers', 'CUST-LIVE', {'id': 'CUST-LIVE', 'name': 'Live'})
+    assert filled['email'] == 'cust-live@phins.local'
+
+
+def test_upgrade_new_columns_lists_fiduciary_extra():
+    """Existing DBs only gain columns listed in ``_UPGRADE_NEW_COLUMNS``."""
+    from database import _UPGRADE_NEW_COLUMNS
+
+    expected = {
+        ('customers', 'extra'),
+        ('policies', 'extra'),
+        ('claims', 'extra'),
+        ('underwriting_applications', 'extra'),
+        ('bills', 'extra'),
+    }
+    listed = {(table, column) for table, column, *_ in _UPGRADE_NEW_COLUMNS}
+    assert expected <= listed
+
+
 def test_database_dict_create_fails_closed_without_customer_id():
     from database import init_database
     from database.data_access import DatabaseDict

@@ -58067,6 +58067,9 @@ For claims or questions, please contact:
                             
                             # Create billing record in database. due_date on the
                             # in-memory bill is an ISO string; the column is DateTime.
+                            # description is not a Bill column (it rides on
+                            # DatabaseDict ``extra`` via BILLING[bill_id]=bill);
+                            # keep passing it so older call sites stay stable.
                             _due = bill.get('due_date')
                             if isinstance(_due, str):
                                 try:
@@ -58082,6 +58085,7 @@ For claims or questions, please contact:
                                 status='outstanding',
                                 due_date=_due if _due is not None else now,
                                 created_date=now,
+                                description=bill.get('description', ''),
                             )
                             
                             print(f"[DB] Persisted approval: Policy {policy_id} -> active, UW {uw_id} -> approved, Bill {bill_id} created")

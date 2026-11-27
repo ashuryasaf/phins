@@ -197,11 +197,15 @@ def coerce_model_datetimes(model_class, data: Dict[str, Any]) -> Dict[str, Any]:
 def apply_create_defaults(repository_name: str, key: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """Fill NOT NULL columns the in-memory dict shape often omits.
 
-    Production API writers already send these fields; dual-path tests and
-    legacy assignments do not. Defaults are deterministic per id so a retry
-    does not invent a new email.
+    Test-only. Production API writers already send these fields; inventing
+    ``{id}@phins.local`` or ``POL-UNASSIGNED`` on a live create would land
+    placeholder rows in the books. Under ``PHINS_TEST_MODE`` the defaults are
+    deterministic per id so a retry does not invent a new email.
     """
     import re
+
+    if os.environ.get('PHINS_TEST_MODE', '').lower() not in ('1', 'true', 'yes'):
+        return data
 
     result = data
     changed = False
@@ -388,6 +392,11 @@ class _WriteThroughRecord(dict):
     detached ``to_dict`` copy so ``store[id]['x'] = y`` was silently lost.
     One level of nested dict mutation (``store[id]['health_wallet']['x']=y``)
     assign-backs through ``_NestedWriteThrough``.
+
+    Intentional under U3 dual-path: production writers mutate nested fields
+    (e.g. ``health_wallet.written_distribution``) the same way as in-memory.
+    Each edit reassigns ``store[key]`` so ``DatabaseDict.__setitem__`` commits
+    once; a failed persist raises and does not leave a silent split brain.
     """
 
     __slots__ = ('_store', '_key', '_persisting')
