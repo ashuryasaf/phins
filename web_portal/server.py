@@ -9465,12 +9465,21 @@ def _flush_fiduciary_tables() -> bool:
         return False
 
 
-def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) -> None:
+def _hydrate_and_migrate_fiduciary(
+    snapshot: Optional[Dict[str, Any]] = None,
+    *,
+    prefer_sealed: bool = False,
+) -> None:
     """U2: migrate missing fiduciary ids from snapshot, then hydrate memory.
 
     Journal refusal and ``db``-mode copy failures propagate so boot does not
     silently continue without sealed books. Dual mode logs copy errors and
     still hydrates (file remains SoR until operators flip to ``db``).
+
+    ``prefer_sealed`` is set when the applied snapshot came from the throttled
+    ``agent_artifacts`` copy (volume-less / file-lagging Railway restore):
+    sealed tables are dual-written on every mutation save and can be newer
+    than that copy, so dual must not skip hydrate and later flush stale books.
     """
     from services.fiduciary import (
         FiduciaryBootError,
@@ -9506,9 +9515,9 @@ def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) ->
                     raise FiduciaryBootError(f"fiduciary migration failed: {reason}")
             elif reason not in ('tables_already_populated', 'no_fiduciary_keys', 'fiduciary_mode_off'):
                 print(f"[FIDUCIARY] Migration skipped: {reason}")
-    # dual + file SoR: skip gap-fill so purged ids stay gone. db-mode files
-    # stamp fiduciary_books=db on empty placeholders — those still hydrate.
-    # Keys omitted entirely (agent_artifacts omit / AE2) also hydrate.
+    # dual + volume file SoR: skip gap-fill so purged ids stay gone. db-mode
+    # files stamp fiduciary_books=db — those still hydrate. A throttled DB
+    # snapshot copy (prefer_sealed) must hydrate: sealed rows can be newer.
     from services.fiduciary import (
         FIDUCIARY_BOOKS_DB,
         FIDUCIARY_BOOKS_MARKER,
@@ -9522,7 +9531,13 @@ def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) ->
     keys_present = isinstance(snapshot, dict) and any(
         key in snapshot for key in FIDUCIARY_SNAPSHOT_KEYS
     )
-    if mode == 'dual' and snapshot is not None and keys_present and marker != FIDUCIARY_BOOKS_DB:
+    if (
+        mode == 'dual'
+        and snapshot is not None
+        and keys_present
+        and marker != FIDUCIARY_BOOKS_DB
+        and not prefer_sealed
+    ):
         return
     try:
         counts = hydrate_fiduciary_from_db(
@@ -9538,10 +9553,14 @@ def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) ->
     except Exception as exc:
         print(f"[FIDUCIARY] Hydrate failed: {type(exc).__name__}")
         # Fail closed whenever sealed tables are the recovery path: db mode,
-        # AE2 / missing file (snapshot is None), or db-mode empty placeholders.
-        # Soft-continuing dual into reconcile_fresh_start_with_db() seeds $0
-        # wallets that later flush over intact Postgres rows.
-        if mode == 'db' or snapshot is None or marker == FIDUCIARY_BOOKS_DB:
+        # AE2 / missing file (snapshot is None), db-mode empty placeholders,
+        # or a throttled DB snapshot copy (prefer_sealed).
+        if (
+            mode == 'db'
+            or snapshot is None
+            or marker == FIDUCIARY_BOOKS_DB
+            or prefer_sealed
+        ):
             raise FiduciaryBootError(
                 f"fiduciary hydrate failed: {type(exc).__name__}"
             ) from exc
@@ -10295,9 +10314,12 @@ def load_ledger_data(allow_db_snapshot: bool = False):
         if _loaded_trading_bots:
             print(f"  - Trading Bots: {len(_loaded_trading_bots)} bots (pending sync)")
         print(f"  - Saved at: {data.get('saved_at', 'unknown')}")
-        # U2: migrate missing ids; dual+snapshot skips gap-fill hydrate.
-        # db / AE2 bare restore prefer sealed rows.
-        _hydrate_and_migrate_fiduciary(data)
+        # U2: migrate missing ids; dual+volume-file skips gap-fill hydrate.
+        # Throttled DB snapshot copy prefers sealed rows (newer dual-writes).
+        _hydrate_and_migrate_fiduciary(
+            data,
+            prefer_sealed=(_LEDGER_LOAD_SOURCE == 'database'),
+        )
         if _LEDGER_LOAD_SOURCE == 'file':
             _resume_stale_ledger_snapshot_copy(data)
         _clear_ledger_dirty_after_restore()

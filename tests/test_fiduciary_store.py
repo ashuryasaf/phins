@@ -385,6 +385,46 @@ def test_graceful_shutdown_skips_flush_when_clean(monkeypatch):
     assert called['n'] == 0
 
 
+def test_dual_db_snapshot_copy_prefers_sealed_over_stale_keys(sqlite_db, monkeypatch):
+    """Throttled agent_artifacts copy must not skip sealed hydrate in dual."""
+    import web_portal.server as portal
+
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    monkeypatch.setenv('USE_DATABASE', 'true')
+    assert flush_fiduciary_to_db(
+        health_wallets={
+            'CUST-NEWER': {'customer_id': 'CUST-NEWER', 'balance': 99},
+        },
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )['health_wallets']['written'] == 1
+
+    portal.HEALTH_WALLETS.clear()
+    portal.HEALTH_WALLETS['CUST-NEWER'] = {
+        'customer_id': 'CUST-NEWER',
+        'balance': 1,  # stale throttled snapshot
+    }
+    portal.WALLET_WITHDRAWALS.clear()
+    portal.NFT_LEDGER.clear()
+    portal.INVESTMENT_ACCOUNTS.clear()
+
+    portal._hydrate_and_migrate_fiduciary(
+        {
+            'health_wallets': {
+                'CUST-NEWER': {'customer_id': 'CUST-NEWER', 'balance': 1},
+            },
+            'wallet_withdrawals': {},
+            'nft_ledger': {},
+            'investment_accounts': {},
+            'phins_balance_sheet': {},
+        },
+        prefer_sealed=True,
+    )
+    assert portal.HEALTH_WALLETS['CUST-NEWER']['balance'] == 99
+
+
 def test_flush_skips_empty_book_without_blocking_others(sqlite_db, monkeypatch):
     """Empty NFT book must not abort wallet flush or wipe sealed wallets."""
     monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
