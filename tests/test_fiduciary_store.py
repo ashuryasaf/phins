@@ -576,8 +576,10 @@ def test_dual_hydrate_failure_with_file_snapshot_soft_continues(monkeypatch):
     portal._hydrate_and_migrate_fiduciary({'transaction_ledger': {}})
 
 
-def test_replace_mapping_prunes_absent_ids(sqlite_db, monkeypatch):
-    """Non-empty flush must delete sealed ids removed from the live book."""
+def test_replace_mapping_does_not_delete_absent_or_withheld(sqlite_db, monkeypatch):
+    """Upsert-only flush must keep absent ids and broken seals for forensics."""
+    from database.fiduciary_models import HealthWallet
+
     monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
     assert flush_fiduciary_to_db(
         health_wallets={
@@ -589,6 +591,13 @@ def test_replace_mapping_prunes_absent_ids(sqlite_db, monkeypatch):
         investment_accounts={},
         balance_sheet={},
     )['health_wallets']['written'] == 2
+    db = DatabaseManager()
+    row = db.health_wallets.session.get(HealthWallet, 'CUST-GONE')
+    assert row is not None
+    row.checksum = '0' * 64
+    db.health_wallets.session.commit()
+    db.close()
+
     result = flush_fiduciary_to_db(
         health_wallets={
             'CUST-KEEP': {'customer_id': 'CUST-KEEP', 'balance': 2},
@@ -598,8 +607,12 @@ def test_replace_mapping_prunes_absent_ids(sqlite_db, monkeypatch):
         investment_accounts={},
         balance_sheet={},
     )
-    assert result['health_wallets'].get('deleted') == 1
+    assert 'deleted' not in result['health_wallets']
     db = DatabaseManager()
     assert db.health_wallets.get_payload('CUST-KEEP')['balance'] == 2
+    # Broken seal still present and still withheld.
     assert db.health_wallets.get_payload('CUST-GONE') is None
+    still = db.health_wallets.session.get(HealthWallet, 'CUST-GONE')
+    assert still is not None
+    assert still.checksum == '0' * 64
     db.close()
