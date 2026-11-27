@@ -69999,6 +69999,14 @@ def run_server(port: int = PORT) -> None:
                       f"(next UTC midnight +5m)")
             except Exception as _tied_exc:
                 print(f"   ⚠️  Books-tied daily clock not scheduled: {_tied_exc}")
+            # U7: recurring commission clawback scan (lapse / unpaid premium).
+            try:
+                from services.jobs import commission_clawback_job as _claw_job
+                _claw = _claw_job.ensure_scan_clock(_doc_worker)
+                print(f"↩️  Commission clawback clock: {_claw.get('id')} "
+                      f"(every {_claw_job.tick_seconds():g}s)")
+            except Exception as _claw_exc:
+                print(f"   ⚠️  Commission clawback clock not scheduled: {_claw_exc}")
     except Exception as _worker_exc:
         print(f"   ⚠️  Async job queue not started: {_worker_exc}")
 

@@ -377,10 +377,11 @@ def authorize_money_move(
         except Exception:
             ledger = None
     # Keep the high-value op list local so an import failure cannot refuse
-    # every money move (only these three payouts need the cert).
+    # every money move (only these payouts / clawbacks need the cert).
     _BOOKS_TIED_HIGH_VALUE = frozenset({
         'wallet_withdrawal.release',
         'agent_commission.settle',
+        'agent_commission.clawback',
         'claim_payout',
     })
     try:

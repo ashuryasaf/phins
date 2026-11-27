@@ -12,6 +12,9 @@ Implements the agent layer the investor deck promises:
     ``(affiliation_id, source_event_id, period)``
   * payout runs (``agent_payouts``): sweep accrued commissions into a run,
     settle it (commissions -> paid) and anchor it on the platform ledger
+  * commission clawbacks (U7): on policy lapse / unpaid premium, post a
+    hash-chained ``agent.commission.clawed_back`` reversal (status
+    ``reversed``); idempotent on ``(policy_id, commission_id)``
   * agent income summaries, a PII-minimized "customer outline" and a
     subtree-scoped broker funnel
 
@@ -59,6 +62,17 @@ _ACCRUED_KEYS: set = set()                         # (source_event_id, affiliati
 
 INITIAL_TERM = ""                                  # ``period`` of the once-per-policy accrual
 PAYOUT_STATUSES = ("calculated", "settled")
+# Commission rows that still count toward income / payout integrity.
+LIVE_COMMISSION_STATUSES = ("accrued", "payable", "paid")
+CLAWBACK_EVENT = "agent.commission.clawed_back"
+# Policy statuses that stop driving premium commission and trigger clawback.
+LAPSE_POLICY_STATUSES = frozenset({
+    "lapsed", "cancelled", "canceled", "expired", "inactive",
+})
+# Overdue bills alone do *not* auto-claw (a single late premium must not
+# reverse an initial-term accrual on an still-active policy). Admins can
+# still post an explicit clawback with reason ``unpaid_premium_overdue``.
+UNPAID_BILL_STATUSES = frozenset({"overdue"})
 
 _GENESIS_HASH = "0" * 64
 # Refresh-on-read coalescing. In DB mode the durable tables are the source of
@@ -147,6 +161,19 @@ def _find_invitation(code: Optional[str]) -> Optional[Dict[str, Any]]:
 
 def _canonical(payload: Dict[str, Any]) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def policy_id_from_source_event(source_event_id: str) -> Optional[str]:
+    """Parse ``policy:{id}`` / ``policy:{id}:{period}`` into the policy id."""
+    raw = str(source_event_id or "").strip()
+    if not raw.startswith("policy:"):
+        return None
+    rest = raw[len("policy:"):]
+    if not rest:
+        return None
+    # Renewal terms embed ``:{period}`` after the policy id; period is a date.
+    parts = rest.split(":")
+    return parts[0] or None
 
 
 def _ledger_append(event_type: str, agent_id: str, amount: float,
@@ -387,22 +414,50 @@ def _build_commission_ledger(
         })
     for comm in commissions.values():
         aff = affiliations.get(comm.get("affiliation_id")) or {}
+        accrued_payload = {
+            "commission_id": comm.get("id"),
+            "affiliation_id": comm.get("affiliation_id"),
+            "principal_type": aff.get("principal_type"),
+            "principal_id": aff.get("principal_id"),
+            "base_amount": comm.get("base_amount"),
+            "rate": comm.get("rate"),
+            "source_event_id": comm.get("source_event_id"),
+            "period": comm.get("period") or INITIAL_TERM,
+        }
         events.append({
             "event_type": "agent.commission.accrued",
             "agent_id": comm.get("agent_id"),
             "amount": round(float(comm.get("amount") or 0.0), 2),
             "timestamp": comm.get("created_at") or _now_iso(),
-            "payload": {
-                "commission_id": comm.get("id"),
-                "affiliation_id": comm.get("affiliation_id"),
-                "principal_type": aff.get("principal_type"),
-                "principal_id": aff.get("principal_id"),
-                "base_amount": comm.get("base_amount"),
-                "rate": comm.get("rate"),
-                "source_event_id": comm.get("source_event_id"),
-                "period": comm.get("period") or INITIAL_TERM,
-            },
+            "payload": accrued_payload,
         })
+        # U7: a reversed row reconstructs its clawback after the accrual so
+        # the hash chain reflects AE6 (lapse → reversal) after hydrate.
+        if (comm.get("status") or "") == "reversed":
+            claw_ts = (
+                comm.get("clawed_back_at")
+                or comm.get("updated_at")
+                or comm.get("created_at")
+                or _now_iso()
+            )
+            amount = round(float(comm.get("amount") or 0.0), 2)
+            events.append({
+                "event_type": CLAWBACK_EVENT,
+                "agent_id": comm.get("agent_id"),
+                "amount": -abs(amount),
+                "timestamp": claw_ts,
+                "payload": {
+                    "commission_id": comm.get("id"),
+                    "policy_id": (
+                        comm.get("clawback_policy_id")
+                        or policy_id_from_source_event(comm.get("source_event_id") or "")
+                    ),
+                    "reason": comm.get("clawback_reason") or "policy_lapse",
+                    "prior_status": comm.get("clawback_prior_status") or "accrued",
+                    "source_event_id": comm.get("source_event_id"),
+                    "actor": comm.get("clawback_actor") or "system",
+                },
+            })
     for pay in (payouts or {}).values():
         events.append({
             "event_type": "agent.payout.calculated",
@@ -1207,14 +1262,18 @@ def income_summary(agent_id: str) -> Dict[str, Any]:
             return round(sum(c["amount"] for c in comms
                              if status is None or c["status"] == status), 2)
 
+        live = [c for c in comms if c.get("status") in LIVE_COMMISSION_STATUSES]
         return {
             "agent_id": agent_id,
             "currency": "USD",
             "accrued_total": total("accrued"),
             "payable_total": total("payable"),
             "paid_total": total("paid"),
-            "lifetime_total": total(),
-            "renewal_total": round(sum(c["amount"] for c in comms
+            "clawed_back_total": total("reversed"),
+            # Lifetime excludes reversed rows so a clawback does not keep
+            # counting as earned income (U7 / AE6).
+            "lifetime_total": round(sum(float(c.get("amount") or 0.0) for c in live), 2),
+            "renewal_total": round(sum(c["amount"] for c in live
                                        if (c.get("period") or INITIAL_TERM) != INITIAL_TERM), 2),
             "counts": {
                 "affiliated_customers": len([a for a in affs if a["principal_type"] == "customer"]),
@@ -1222,8 +1281,9 @@ def income_summary(agent_id: str) -> Dict[str, Any]:
                 "sub_agents": len([a for a in affs if a["principal_type"] == "agent"]),
                 "invitations_pending_approval": len([i for i in invs if i["status"] == "pending_approval"]),
                 "invitations_active": len([i for i in invs if i["status"] in ("approved", "sent")]),
-                "commission_events": len(comms),
-                "renewal_events": len([c for c in comms
+                "commission_events": len(live),
+                "clawed_back_events": len([c for c in comms if c.get("status") == "reversed"]),
+                "renewal_events": len([c for c in live
                                        if (c.get("period") or INITIAL_TERM) != INITIAL_TERM]),
                 "payouts_calculated": len([p for p in pays if p["status"] == "calculated"]),
                 "payouts_settled": len([p for p in pays if p["status"] == "settled"]),
@@ -1666,6 +1726,322 @@ def get_payout(payout_id: str) -> Optional[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# Commission clawback (U7 / AE6): hash-chained reversal on lapse / unpaid
+# ---------------------------------------------------------------------------
+def _policy_needs_clawback(
+    policy: Dict[str, Any],
+    bills: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """Return a clawback reason when the policy should reverse commissions.
+
+    Automatic scan / AE6 coverage only fire on lapsed-family statuses.
+    ``bills`` is accepted for call-site compatibility; overdue alone never
+    returns a trigger here (explicit admin clawback covers unpaid premium).
+    """
+    if not isinstance(policy, dict):
+        return None
+    status = (policy.get("status") or "").lower().replace(" ", "_")
+    if status in LAPSE_POLICY_STATUSES:
+        return f"policy_{status}"
+    # Intentionally ignore bills — see module note on UNPAID_BILL_STATUSES.
+    _ = bills
+    return None
+
+
+def _unsweep_payable_from_payout(comm: Dict[str, Any], *, now: str) -> Optional[Dict[str, Any]]:
+    """Remove a payable commission from its open calculated payout run.
+
+    Returns the updated payout dict (possibly emptied) or ``None`` when the
+    commission was not on a calculated run. Settled runs are left alone —
+    clawback of ``paid`` rows does not rewrite historical payout totals.
+    """
+    pay_id = comm.get("payout_id")
+    if not pay_id:
+        return None
+    pay = PAYOUTS.get(pay_id)
+    if pay is None:
+        return None
+    if pay.get("status") != "calculated":
+        return None
+    ids = [cid for cid in list(pay.get("commission_ids") or []) if cid != comm.get("id")]
+    remaining = [COMMISSIONS[cid] for cid in ids if cid in COMMISSIONS]
+    pay["commission_ids"] = ids
+    pay["commission_count"] = len(ids)
+    pay["gross_amount"] = round(sum(float(c.get("amount") or 0.0) for c in remaining), 2)
+    pay["commissions_hash"] = _commissions_hash(ids)
+    pay["updated_at"] = now
+    if not ids:
+        # Empty shell left after the last payable was clawed — keep the row
+        # so DB hydrate does not resurrect a stale commission set, and mark
+        # the reference so integrity can skip it.
+        pay["external_payout_reference"] = (
+            pay.get("external_payout_reference") or "clawback_voided"
+        )
+    return pay
+
+
+def apply_clawback(
+    commission_id: str,
+    *,
+    reason: Optional[str] = None,
+    policy_id: Optional[str] = None,
+    actor: str = "system",
+) -> Tuple[bool, Any]:
+    """Post a hash-chained commission clawback (status ``reversed``).
+
+    Idempotent on ``(policy_id, commission_id)``: a second call on an already
+    reversed row returns success with ``already_clawed_back``. Mirrors
+    supplier ``apply_clawback`` shape (amount/reason) but writes an append-only
+    ledger reversal rather than mutating a settlement net. ``payable`` rows
+    are unswept from their open calculated payout first; ``paid`` rows keep
+    their payout link for audit and reverse in place.
+    """
+    with _LOCK:
+        _hydrate_from_db(force=True)
+        comm = COMMISSIONS.get(commission_id)
+        if comm is None:
+            return False, "Commission not found"
+        resolved_policy = (
+            policy_id
+            or comm.get("clawback_policy_id")
+            or policy_id_from_source_event(comm.get("source_event_id") or "")
+        )
+        if (comm.get("status") or "") == "reversed":
+            return True, {
+                **dict(comm),
+                "already_clawed_back": True,
+                "policy_id": resolved_policy,
+            }
+
+        prior_status = str(comm.get("status") or "accrued")
+        if prior_status not in LIVE_COMMISSION_STATUSES:
+            return False, f"Commission is {prior_status}; only accrued/payable/paid can be clawed back"
+
+        amount = round(float(comm.get("amount") or 0.0), 2)
+        if amount <= 0:
+            return False, "amount must be positive"
+
+        now = _now_iso()
+        claw_reason = str(reason or "policy_lapse").strip() or "policy_lapse"
+        payout_update: Optional[Dict[str, Any]] = None
+        if prior_status == "payable":
+            payout_update = _unsweep_payable_from_payout(comm, now=now)
+
+        entry = _ledger_append(
+            CLAWBACK_EVENT,
+            comm["agent_id"],
+            -abs(amount),
+            {
+                "commission_id": commission_id,
+                "policy_id": resolved_policy,
+                "reason": claw_reason,
+                "prior_status": prior_status,
+                "source_event_id": comm.get("source_event_id"),
+                "actor": actor,
+            },
+            mirror=True,
+        )
+        comm["status"] = "reversed"
+        comm["clawed_back_at"] = now
+        comm["clawback_reason"] = claw_reason
+        comm["clawback_policy_id"] = resolved_policy
+        comm["clawback_prior_status"] = prior_status
+        comm["clawback_actor"] = actor
+        comm["clawback_ledger_entry_id"] = entry["id"]
+        comm["updated_at"] = now
+        if prior_status == "payable":
+            # Detach from the open run after unsweep; paid keeps payout_id.
+            comm["payout_id"] = None
+
+        persist_items: List[Tuple[str, Dict[str, Any]]] = [("commission", comm)]
+        if payout_update is not None:
+            persist_items.append(("payout", payout_update))
+        if not _persist_records(persist_items):
+            # Roll back in-memory mutation so a retry can re-attempt. Always
+            # drop the ledger tip we just appended. Restore from the captured
+            # ``prior_status`` even when hydrate is a no-op (DB off) or
+            # swallows a refresh error — otherwise the row stays ``reversed``,
+            # the payout stays unswept, and a retry returns
+            # ``already_clawed_back`` without rewriting.
+            if COMMISSION_LEDGER and COMMISSION_LEDGER[-1]["id"] == entry["id"]:
+                COMMISSION_LEDGER.pop()
+            saved_payout_id = (
+                (payout_update or {}).get("id")
+                if prior_status == "payable"
+                else comm.get("payout_id")
+            )
+            # Prefer a DB refresh when available, then force local restore.
+            _hydrate_from_db(force=True)
+            live = COMMISSIONS.get(commission_id) or comm
+            live["status"] = prior_status
+            for key in (
+                "clawed_back_at", "clawback_reason", "clawback_policy_id",
+                "clawback_prior_status", "clawback_actor",
+                "clawback_ledger_entry_id", "updated_at",
+            ):
+                live.pop(key, None)
+            COMMISSIONS[commission_id] = live
+            if prior_status == "payable" and saved_payout_id:
+                pay = PAYOUTS.get(saved_payout_id)
+                if pay is not None and pay.get("status") == "calculated":
+                    ids = list(pay.get("commission_ids") or [])
+                    if commission_id not in ids:
+                        ids.append(commission_id)
+                        ids.sort()
+                    remaining = [
+                        COMMISSIONS[cid] for cid in ids if cid in COMMISSIONS
+                    ]
+                    pay["commission_ids"] = ids
+                    pay["commission_count"] = len(ids)
+                    pay["gross_amount"] = round(
+                        sum(float(c.get("amount") or 0.0) for c in remaining), 2,
+                    )
+                    pay["commissions_hash"] = _commissions_hash(ids)
+                    if pay.get("external_payout_reference") == "clawback_voided":
+                        pay["external_payout_reference"] = None
+                    live["payout_id"] = pay["id"]
+            return False, "Commission clawback could not be persisted; nothing was changed"
+
+        out = dict(comm)
+        out["policy_id"] = resolved_policy
+        out["ledger_entry"] = entry
+        return True, out
+
+
+def clawback_for_policies(
+    policies: Dict[str, Any],
+    bills: Optional[Dict[str, Any]] = None,
+    *,
+    actor: str = "commission_clawback_agent",
+) -> Dict[str, Any]:
+    """Scan policies and claw back live commissions that should reverse (U7).
+
+    Triggers: lapsed/cancelled/expired/inactive policy status only.
+    Overdue bills on an still-active policy are not auto-clawed — use
+    ``apply_clawback`` with an explicit reason. Idempotent — already-reversed
+    rows are counted as ``already``. ``payable`` rows are unswept then reversed.
+    """
+    with _LOCK:
+        _hydrate_from_db(force=True)
+        clawed: List[Dict[str, Any]] = []
+        already: List[Dict[str, Any]] = []
+        skipped: List[Dict[str, Any]] = []
+        policies = policies or {}
+        bills = bills or {}
+
+        # Build policy → reason once.
+        reasons: Dict[str, str] = {}
+        for policy in policies.values():
+            if not isinstance(policy, dict) or not policy.get("id"):
+                continue
+            reason = _policy_needs_clawback(policy, bills)
+            if reason:
+                reasons[str(policy["id"])] = reason
+
+        for comm in list(COMMISSIONS.values()):
+            pid = policy_id_from_source_event(comm.get("source_event_id") or "")
+            if not pid or pid not in reasons:
+                continue
+            reason = reasons[pid]
+            if (comm.get("status") or "") == "reversed":
+                already.append({
+                    "commission_id": comm.get("id"),
+                    "policy_id": pid,
+                    "reason": reason,
+                })
+                continue
+            ok, out = apply_clawback(
+                comm["id"], reason=reason, policy_id=pid, actor=actor,
+            )
+            if ok:
+                row = out if isinstance(out, dict) else {"commission_id": comm["id"]}
+                if row.get("already_clawed_back"):
+                    already.append({
+                        "commission_id": row.get("id") or comm.get("id"),
+                        "policy_id": pid,
+                        "reason": reason,
+                    })
+                else:
+                    clawed.append({
+                        "commission_id": row.get("id") or comm.get("id"),
+                        "policy_id": pid,
+                        "reason": reason,
+                        "amount": row.get("amount"),
+                        "prior_status": row.get("clawback_prior_status"),
+                    })
+            else:
+                skipped.append({
+                    "commission_id": comm.get("id"),
+                    "policy_id": pid,
+                    "reason": reason,
+                    "error": out,
+                })
+
+        coverage = clawback_coverage(policies, bills)
+        return {
+            "clawed": len(clawed),
+            "already": len(already),
+            "skipped": len(skipped),
+            "items": clawed,
+            "already_items": already,
+            "skipped_items": skipped,
+            "coverage": coverage,
+            "ledger_intact": verify_ledger_integrity(),
+        }
+
+
+def clawback_coverage(
+    policies: Optional[Dict[str, Any]] = None,
+    bills: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """AE6 coverage: every commission on a clawback-trigger policy is reversed.
+
+    Read-only. ``ok`` is true when no live (accrued/payable/paid) commission
+    remains on a lapsed or overdue policy.
+    """
+    with _LOCK:
+        _hydrate_from_db()
+        policies = policies or {}
+        bills = bills or {}
+        gaps: List[Dict[str, Any]] = []
+        covered: List[Dict[str, Any]] = []
+
+        reasons: Dict[str, str] = {}
+        for policy in policies.values():
+            if not isinstance(policy, dict) or not policy.get("id"):
+                continue
+            reason = _policy_needs_clawback(policy, bills)
+            if reason:
+                reasons[str(policy["id"])] = reason
+
+        for comm in COMMISSIONS.values():
+            pid = policy_id_from_source_event(comm.get("source_event_id") or "")
+            if not pid or pid not in reasons:
+                continue
+            row = {
+                "commission_id": comm.get("id"),
+                "policy_id": pid,
+                "agent_id": comm.get("agent_id"),
+                "amount": comm.get("amount"),
+                "status": comm.get("status"),
+                "trigger": reasons[pid],
+            }
+            if (comm.get("status") or "") == "reversed":
+                covered.append(row)
+            elif (comm.get("status") or "") in LIVE_COMMISSION_STATUSES:
+                gaps.append(row)
+
+        return {
+            "ok": len(gaps) == 0,
+            "gap_count": len(gaps),
+            "covered_count": len(covered),
+            "gaps": gaps,
+            "covered": covered,
+            "ledger_intact": verify_ledger_integrity(),
+        }
+
+
+# ---------------------------------------------------------------------------
 # Broker funnel (§C): invitations -> affiliations -> policies -> premium -> payout
 # ---------------------------------------------------------------------------
 def _pct(num: int, den: int) -> float:
@@ -1807,10 +2183,16 @@ def _money_eq(left: Any, right: Any, tolerance: float = 0.015) -> bool:
 
 
 def _split_terms(comms: List[Dict[str, Any]]) -> Tuple[float, float, int]:
-    """(initial-term accrued, renewal accrued, distinct renewal periods) for one affiliation."""
+    """(initial-term accrued, renewal accrued, distinct renewal periods) for one affiliation.
+
+    Reversed (clawed-back) rows are excluded so AE6 does not keep counting
+    clawed commission as earned against the locked rate.
+    """
     initial = renewal = 0.0
     periods: set = set()
     for c in comms:
+        if (c.get("status") or "") == "reversed":
+            continue
         period = c.get("period") or INITIAL_TERM
         amount = float(c.get("amount") or 0.0)
         if period == INITIAL_TERM:
@@ -1841,13 +2223,15 @@ def _principal_record(customers: Optional[Dict[str, Any]],
 
 def connection_integrity(customers: Optional[Dict[str, Any]] = None,
                          policies: Optional[Dict[str, Any]] = None,
-                         suppliers: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                         suppliers: Optional[Dict[str, Any]] = None,
+                         bills: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Audit agent↔principal affiliation, referral FK, and commission consistency.
 
     Read-only. Flags (never silently repairs) any break in the locked-rate
     chain: one active affiliation per principal, ``referring_agent_id`` matching
     that affiliation, invitation rate snapshot matching the affiliation, and
-    accrued commission matching ``premium_basis × locked_rate``.
+    accrued commission matching ``premium_basis × locked_rate``. U7 also flags
+    live commissions that remain on a lapsed or overdue policy (AE6).
     """
     with _LOCK:
         _hydrate_from_db()
@@ -1856,6 +2240,7 @@ def connection_integrity(customers: Optional[Dict[str, Any]] = None,
         customers = customers or {}
         policies = policies or {}
         suppliers = suppliers or {}
+        bills = bills or {}
 
         def _issue(severity: str, code: str, message: str, **extra: Any) -> None:
             row = {"severity": severity, "code": code, "message": message}
@@ -1942,6 +2327,9 @@ def connection_integrity(customers: Optional[Dict[str, Any]] = None,
                            agent_id=aff.get("agent_id"), period=comm.get("period") or INITIAL_TERM,
                            expected=row_expected, amount=comm.get("amount"))
                 pay_id = comm.get("payout_id")
+                if (comm.get("status") or "") == "reversed":
+                    # Clawed-back rows may keep a settled payout id for audit.
+                    continue
                 if pay_id and pay_id not in PAYOUTS:
                     _issue("error", "commission_orphan_payout",
                            "Commission references a payout run that does not exist",
@@ -1962,8 +2350,9 @@ def connection_integrity(customers: Optional[Dict[str, Any]] = None,
                 premium_basis = round(sum(
                     float(p.get("annual_premium") or p.get("premium") or 0)
                     for p in cust_policies), 2)
-            accrued = round(sum(float(c.get("amount") or 0) for c in aff_comms), 2)
-            initial_accrued, renewal_accrued, renewal_periods = _split_terms(aff_comms)
+            live_comms = [c for c in aff_comms if (c.get("status") or "") != "reversed"]
+            accrued = round(sum(float(c.get("amount") or 0) for c in live_comms), 2)
+            initial_accrued, renewal_accrued, renewal_periods = _split_terms(live_comms)
             is_premium = (aff.get("commission_basis") or "premium") == "premium"
             expected = round(premium_basis * rate, 2) if is_premium else initial_accrued
             # Locked-rate consistency is judged on the initial term; renewal terms
@@ -2014,6 +2403,13 @@ def connection_integrity(customers: Optional[Dict[str, Any]] = None,
         # agent, carry the run's id, and the run total must equal their sum.
         for pay in PAYOUTS.values():
             ids = list(pay.get("commission_ids") or [])
+            # Empty calculated shells left after clawing the last payable.
+            if (
+                not ids
+                and pay.get("status") == "calculated"
+                and abs(float(pay.get("gross_amount") or 0.0)) < 0.015
+            ):
+                continue
             total = 0.0
             for cid in ids:
                 comm = COMMISSIONS.get(cid)
@@ -2028,6 +2424,10 @@ def connection_integrity(customers: Optional[Dict[str, Any]] = None,
                            "Payout run sweeps a commission of a different agent",
                            payout_id=pay.get("id"), agent_id=pay.get("agent_id"),
                            commission_id=cid, commission_agent_id=comm.get("agent_id"))
+                if (comm.get("status") or "") == "reversed":
+                    # Paid commission clawed back after settle — keep the
+                    # historical payout link; status need not stay ``paid``.
+                    continue
                 if comm.get("payout_id") != pay.get("id"):
                     _issue("error", "payout_link_drift",
                            "Swept commission does not point back at its payout run",
@@ -2048,6 +2448,19 @@ def connection_integrity(customers: Optional[Dict[str, Any]] = None,
                 _issue("error", "payout_hash_mismatch",
                        "Payout run commissions_hash does not match its commission ids",
                        payout_id=pay.get("id"), agent_id=pay.get("agent_id"))
+
+        # 2c) U7 / AE6: clawback coverage on lapsed / overdue policies.
+        # Inline the coverage scan (we already hold ``_LOCK``) so we can pass
+        # bills and avoid a nested hydrate that would re-enter needlessly.
+        coverage = clawback_coverage(policies, bills)
+        for gap in coverage.get("gaps") or []:
+            _issue("error", "commission_clawback_gap",
+                   "Live commission remains on a lapsed or unpaid policy",
+                   commission_id=gap.get("commission_id"),
+                   policy_id=gap.get("policy_id"),
+                   agent_id=gap.get("agent_id"),
+                   status=gap.get("status"),
+                   trigger=gap.get("trigger"))
 
         # 3) Orphan referring_agent_id (principal claims an agent with no affiliation).
         for cid, rec in customers.items():
@@ -2096,6 +2509,7 @@ def connection_integrity(customers: Optional[Dict[str, Any]] = None,
             "issue_counts": {"error": errors, "warning": warnings, "total": len(issues)},
             "issues": issues,
             "connections": connections,
+            "clawback_coverage": coverage,
             "currency": "USD",
         }
 
