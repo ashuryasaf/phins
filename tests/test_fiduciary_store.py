@@ -1186,5 +1186,9 @@ def test_flush_adopt_into_mirrors_peer_into_freeze(sqlite_db, monkeypatch):
     assert result['health_wallets'].get('adopted', 0) >= 1
     assert live['CUST-M']['balance'] == 777.0
     assert freeze['CUST-M']['balance'] == 777.0
+    # Adopt must deep-copy: an unlocked live mutation must not rewrite freeze.
+    assert live['CUST-M'] is not freeze['CUST-M']
+    live['CUST-M']['balance'] = 1.0
+    assert freeze['CUST-M']['balance'] == 777.0
 
 

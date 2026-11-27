@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import os
 from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional
@@ -380,13 +381,16 @@ def _refresh_baseline_after_flush(
             and record_id in sealed_payloads
         ):
             # Live still matches what we tried to write — peer win; adopt.
+            # Deep-copy into live and freeze separately: wallet writers mutate
+            # payloads in place without the persistence lock, so a shared
+            # reference would let unsealed credits leak into the volume freeze.
             sealed_row = sealed_payloads[record_id]
-            live[record_id] = sealed_row  # type: ignore[index]
+            live[record_id] = copy.deepcopy(sealed_row)  # type: ignore[index]
             if (
                 isinstance(mirror, MutableMapping)
                 and mirror is not live
             ):
-                mirror[record_id] = sealed_row
+                mirror[record_id] = copy.deepcopy(sealed_row)
             baseline[record_id] = sealed_digest
             adopted += 1
         else:
@@ -527,14 +531,16 @@ def flush_fiduciary_to_db(
                     and live_digest == flushed_digest
                     and isinstance(sealed_payload, dict)
                 ):
+                    # Separate deep copies — in-place balance-sheet mutations
+                    # must not rewrite the freeze before the volume write.
                     live_sheet.clear()
-                    live_sheet.update(sealed_payload)
+                    live_sheet.update(copy.deepcopy(sealed_payload))
                     if (
                         isinstance(balance_sheet, MutableMapping)
                         and balance_sheet is not live_sheet
                     ):
                         balance_sheet.clear()
-                        balance_sheet.update(sealed_payload)
+                        balance_sheet.update(copy.deepcopy(sealed_payload))
                     prior[BALANCE_SHEET_ID] = sealed_digest
                     adopted = 1
                 else:
