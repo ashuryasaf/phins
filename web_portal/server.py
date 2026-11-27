@@ -9525,16 +9525,17 @@ def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) ->
         print(f"[FIDUCIARY] Hydrated sealed rows: {counts}")
 
 
-def _should_flush_fiduciary(*, periodic: bool, dirty: bool, force_db: bool) -> bool:
+def _should_flush_fiduciary(*, periodic: bool, wrote_file: bool, force_db: bool) -> bool:
     """Whether this save should dual-write sealed fiduciary tables.
 
     Idle periodic ticks must not republish process-local dicts over shared
-    Postgres — a replica that never saw another instance's wallet mutation
-    would otherwise overwrite intact sealed rows every minute.
+    Postgres. Gate on whether the file save actually wrote (under the
+    persistence lock) — not a pre-lock dirty read — so a mutation that
+    races into the same tick still flushes.
     """
     if force_db or not periodic:
         return True
-    return bool(dirty)
+    return bool(wrote_file)
 
 
 def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
@@ -9554,22 +9555,27 @@ def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
     silently reporting success. In ``PHINS_FIDUCIARY_MODE=db``, a failed
     fiduciary table flush is also a durability failure (file is not SoR).
 
-    Fiduciary table flush is skipped on a clean periodic tick (same dirty
-    gate as the file) so idle replicas cannot stale-overwrite shared rows.
+    Fiduciary table flush follows the file write (or explicit/force paths)
+    so idle replicas cannot stale-overwrite shared rows. A failed flush
+    re-marks the ledger dirty so the next periodic tick retries.
     """
     frozen: list = []
     file_ok = False
     flush_ok = True
-    # Capture before _save_ledger_data_file clears the flag / marks dirty.
-    dirty_at_start = bool(_persistence_dirty)
-    do_fiduciary_flush = _should_flush_fiduciary(
-        periodic=_periodic, dirty=dirty_at_start, force_db=force_db,
-    )
     try:
         file_ok = bool(_save_ledger_data_file(_periodic, frozen))
     finally:
+        do_fiduciary_flush = _should_flush_fiduciary(
+            periodic=_periodic, wrote_file=bool(frozen), force_db=force_db,
+        )
         if do_fiduciary_flush:
             flush_ok = _flush_fiduciary_tables()
+            if not flush_ok:
+                # File may already be clean; keep retrying sealed tables.
+                try:
+                    mark_ledger_dirty()
+                except Exception:
+                    pass
         if PERSISTENCE_ENABLED:
             _offer_ledger_snapshot_to_db(
                 frozen[0] if frozen else None, periodic=_periodic, force=force_db,
