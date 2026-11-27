@@ -69891,7 +69891,15 @@ def run_server(port: int = PORT) -> None:
 
     # Run post-load integrity validation before serving traffic
     validate_startup_integrity()
+    # Journal + ledger-cash reconstruct can take tens of seconds on a full
+    # production Postgres book; log wall time so Railway healthcheckTimeout
+    # budgets stay honest (deploy gate is railway.json, currently 300s).
+    _acct_hydrate_started = time.time()
     hydrate_accounting_book_from_ledger()
+    print(
+        f"📒 Accounting book hydrate finished in "
+        f"{time.time() - _acct_hydrate_started:.1f}s"
+    )
 
     # Async document-processing worker (PHINS_DOC_ASYNC=true). Runs as daemon
     # threads inside this process; uploads enqueue enrichment jobs instead of
