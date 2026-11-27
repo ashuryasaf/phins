@@ -772,9 +772,35 @@ def _run_assessment_narrative(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in narrative.items() if k != 'generated_at'}
 
 
+def _run_money_gate(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Golden runner for the Money Gate: report fragments → critical verdict.
+
+    Freezes ``ok`` / ``failed_checks`` / ``digest`` only. Never touches live
+    books; fixtures supply unified ``integrity.failed`` and reconcile
+    ``discrepancies`` directly.
+    """
+    from services.erp.money_gate import evaluate_from_reports
+
+    # Preserve explicit null so books_unreadable fails closed (``or {}``
+    # would turn a missing-book fixture into an empty green report).
+    unified = payload['unified'] if 'unified' in payload else {}
+    reconcile = payload['reconcile'] if 'reconcile' in payload else {}
+    verdict = evaluate_from_reports(
+        unified_report=unified,
+        reconcile_report=reconcile,
+        operation=str(payload.get('operation') or 'golden'),
+    )
+    return {
+        'ok': verdict.ok,
+        'failed_checks': list(verdict.failed_checks),
+        'digest': verdict.digest,
+    }
+
+
 def _ensure_default_runners() -> None:
     _GOLDEN_RUNNERS.setdefault('ai_automation_controller', _run_controller_underwrite)
     _GOLDEN_RUNNERS.setdefault('assessment_ai', _run_assessment_narrative)
+    _GOLDEN_RUNNERS.setdefault('money_gate', _run_money_gate)
 
 
 __all__ = [

@@ -1,0 +1,26 @@
+{
+  "description": "AE3: claims_counted_once red refuses; non-critical marketplace_orders_tie is ignored.",
+  "expected": {
+    "digest": "ede453e1a377d9a7d47891672b255b112e7a5844ee69beef75ccbfc5d5b84dd8",
+    "failed_checks": [
+      "claims_counted_once"
+    ],
+    "ok": false
+  },
+  "input": {
+    "operation": "wallet_withdrawal.release",
+    "reconcile": {
+      "discrepancies": []
+    },
+    "unified": {
+      "integrity": {
+        "failed": [
+          "claims_counted_once",
+          "marketplace_orders_tie"
+        ],
+        "ok": false
+      }
+    }
+  },
+  "name": "claims_counted_once_red"
+}

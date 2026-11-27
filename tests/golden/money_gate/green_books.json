@@ -1,0 +1,21 @@
+{
+  "description": "All critical checks green → Money Gate authorises.",
+  "expected": {
+    "digest": "0f7adfedfa71142c0ebe6fe5ae8e859a2f8ffa519cf1bd5e7dba7d5ece4de97e",
+    "failed_checks": [],
+    "ok": true
+  },
+  "input": {
+    "operation": "wallet_withdrawal.release",
+    "reconcile": {
+      "discrepancies": []
+    },
+    "unified": {
+      "integrity": {
+        "failed": [],
+        "ok": true
+      }
+    }
+  },
+  "name": "green_books"
+}

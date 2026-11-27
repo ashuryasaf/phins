@@ -1,0 +1,14 @@
+{
+  "expected": {
+    "failed_checks": [
+      "books_unreadable"
+    ],
+    "ok": false
+  },
+  "input": {
+    "operation": "claim_payout",
+    "reconcile": null,
+    "unified": null
+  },
+  "name": "books_unreadable_red"
+}

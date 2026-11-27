@@ -220,6 +220,30 @@ def dispatch_post(path: str, session: Optional[Dict[str, Any]], body: Dict[str, 
                 denied = _staff(session, PAYOUT_ROLES)
                 if denied:
                     return denied
+                try:
+                    from services.erp.money_gate import (
+                        MoneyGateError, authorize_money_move, http_refuse,
+                    )
+                    # Pass the live portal journal explicitly so break-glass
+                    # does not depend on a second module-name lookup.
+                    platform_ledger = None
+                    try:
+                        import sys
+                        portal = sys.modules.get("web_portal.server") or sys.modules.get("server")
+                        if portal is not None:
+                            platform_ledger = getattr(portal, "platform_event_ledger", None)
+                    except Exception:
+                        platform_ledger = None
+                    authorize_money_move(
+                        "wallet_withdrawal.release",
+                        break_glass=bool(body.get("break_glass")),
+                        break_glass_reason=str(body.get("break_glass_reason") or ""),
+                        actor=_actor(session),
+                        role=_role(session),
+                        platform_ledger=platform_ledger,
+                    )
+                except MoneyGateError as gate_exc:
+                    return 409, http_refuse(gate_exc)
                 view = withdrawals.release(
                     withdrawal_id, actor=_actor(session), role=_role(session),
                     reference=str(body.get("reference") or ""),

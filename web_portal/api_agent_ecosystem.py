@@ -323,6 +323,25 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             reference = body.get("external_payout_reference")
             if reference is not None and not isinstance(reference, str):
                 return 400, {"error": "external_payout_reference must be a string"}
+            # U4: when settle is requested, authorize *before* run_payouts so a
+            # red gate does not leave calculated runs stranded without cash.
+            if body.get("settle"):
+                try:
+                    from services.erp.money_gate import (
+                        MoneyGateError, authorize_money_move, http_refuse,
+                    )
+                    authorize_money_move(
+                        "agent_commission.settle",
+                        break_glass=bool(body.get("break_glass")),
+                        break_glass_reason=str(body.get("break_glass_reason") or ""),
+                        actor=admin,
+                        # Use the role that passed the admin route gate — never
+                        # invent "admin" for break-glass if the session is empty.
+                        role=str(role or ""),
+                        platform_ledger=data_sources.get("platform_ledger"),
+                    )
+                except MoneyGateError as gate_exc:
+                    return 409, http_refuse(gate_exc)
             result = svc.run_payouts(agent_id=agent_id, created_by=admin, idempotency_key=idem)
             if body.get("settle"):
                 # Settle every run of the batch that is still calculated — also on
@@ -358,6 +377,22 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
             reference = body.get("external_payout_reference")
             if reference is not None and not isinstance(reference, str):
                 return 400, {"error": "external_payout_reference must be a string"}
+            try:
+                from services.erp.money_gate import (
+                    MoneyGateError, authorize_money_move, http_refuse,
+                )
+                authorize_money_move(
+                    "agent_commission.settle",
+                    break_glass=bool(body.get("break_glass")),
+                    break_glass_reason=str(body.get("break_glass_reason") or ""),
+                    actor=admin,
+                    # Use the role that passed the admin route gate — never
+                    # invent "admin" for break-glass if the session is empty.
+                    role=str(role or ""),
+                    platform_ledger=data_sources.get("platform_ledger"),
+                )
+            except MoneyGateError as gate_exc:
+                return 409, http_refuse(gate_exc)
             try:
                 ok, result = svc.settle_payout(
                     payout_id, settled_by=admin, external_payout_reference=reference or None,
