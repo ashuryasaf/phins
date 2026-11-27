@@ -383,6 +383,7 @@ def authorize_money_move(
         'agent_commission.settle',
         'agent_commission.clawback',
         'claim_payout',
+        'remittance.settle',
     })
     try:
         from services.erp.books_tied import freshness_failures

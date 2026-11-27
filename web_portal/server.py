@@ -41391,6 +41391,36 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({'success': True, 'period_close': status}, default=str).encode('utf-8'))
             return
 
+        if path == '/api/admin/cashflow/remittance':
+            if not require_role(session, ['admin', 'accountant', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                from services.mga import bordereaux as brd
+                from services.mga import remittance as rem
+                qs = urlparse.parse_qs(urlparse.urlparse(self.path).query or '')
+                binder_id = str((qs.get('binder_id') or [brd.DEFAULT_BINDER_ID])[0] or brd.DEFAULT_BINDER_ID)
+                period_id = str((qs.get('period_id') or [''])[0] or '').strip()
+                # Default the status view to the current UTC month so the badge
+                # never mixes last month's board with this month's payable.
+                if not period_id:
+                    today = __import__('datetime').date.today()
+                    period_id = f'{today.year:04d}-{today.month:02d}'
+                status = {
+                    'binder_id': binder_id,
+                    'period_id': period_id,
+                    'bordereaux': brd.list_bordereaux(binder_id=binder_id, period_id=period_id),
+                    'runs': rem.list_remittance_runs(binder_id=binder_id, period_id=period_id),
+                    'default_binder_id': brd.DEFAULT_BINDER_ID,
+                }
+            except Exception:
+                _write_cashflow_internal_error(self, "remittance status failed")
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'success': True, 'remittance': status}, default=str).encode('utf-8'))
+            return
+
         if path == '/api/admin/cashflow/kernel-pins':
             if not require_role(session, ['admin', 'accountant', 'actuary']):
                 self._set_json_headers(403)
@@ -55586,6 +55616,80 @@ For claims or questions, please contact:
                 'success': True,
                 'result': result,
                 'period_close': status,
+            }, default=str).encode('utf-8'))
+            return
+
+        if path == '/api/admin/cashflow/remittance':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'accountant', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                content_length = int(self.headers.get('Content-Length', 0) or 0)
+                raw = self.rfile.read(content_length) if content_length > 0 else b'{}'
+                body = json.loads(raw.decode('utf-8') or '{}')
+                if not isinstance(body, dict):
+                    body = {}
+            except Exception:
+                body = {}
+            action = str(body.get('action') or 'build').strip().lower()
+            actor = str((session or {}).get('username') or 'accountant')
+            role = str((session or {}).get('role') or 'accountant')
+            try:
+                from services.mga import bordereaux as brd
+                from services.mga import remittance as rem
+                from services.jobs import bordereaux_job
+                binder_id = str(body.get('binder_id') or brd.DEFAULT_BINDER_ID).strip() or brd.DEFAULT_BINDER_ID
+                period_id = str(body.get('period_id') or '').strip()
+                if not period_id:
+                    today = __import__('datetime').date.today()
+                    period_id = f'{today.year:04d}-{today.month:02d}'
+                if action in ('settle', 'settle_run'):
+                    run_id = str(body.get('run_id') or '').strip()
+                    result = rem.settle_remittance_run(
+                        run_id,
+                        actor=actor,
+                        role=role,
+                        break_glass=bool(body.get('break_glass')),
+                        break_glass_reason=str(body.get('break_glass_reason') or ''),
+                    )
+                else:
+                    result = bordereaux_job.run_once(
+                        binder_id=binder_id,
+                        period_id=period_id,
+                        create_remittance=True,
+                        actor=actor,
+                    )
+                status = {
+                    'binder_id': binder_id,
+                    'period_id': period_id,
+                    'bordereaux': brd.list_bordereaux(binder_id=binder_id, period_id=period_id),
+                    'runs': rem.list_remittance_runs(binder_id=binder_id, period_id=period_id),
+                }
+            except Exception as rem_exc:
+                if type(rem_exc).__name__ == 'RemittanceError':
+                    self._set_json_headers(409)
+                    self.wfile.write(json.dumps(
+                        getattr(rem_exc, 'as_response', lambda: {'error': str(rem_exc)})()
+                    ).encode('utf-8'))
+                    return
+                _write_cashflow_internal_error(self, "remittance action failed")
+                return
+            if not result.get('ok'):
+                self._set_json_headers(409)
+                self.wfile.write(json.dumps({
+                    'error': result.get('reason') or 'remittance_refused',
+                    **{k: v for k, v in result.items() if k != 'ok'},
+                }, default=str).encode('utf-8'))
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'result': result,
+                'remittance': status,
             }, default=str).encode('utf-8'))
             return
 

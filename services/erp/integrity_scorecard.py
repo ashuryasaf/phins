@@ -173,7 +173,7 @@ def _assess_units(root: Path) -> List[UnitEvidence]:
         status=u4_status,
         weight=1.0,
         evidence=[p for p in u4_files if _exists(root, p)],
-        notes='PHINS_MONEY_GATE; remittance wire still later',
+        notes='PHINS_MONEY_GATE; remittance.settle wired in U9',
     ))
 
     u5_files = [
@@ -246,16 +246,24 @@ def _assess_units(root: Path) -> List[UnitEvidence]:
         evidence=[],
         notes='fiscal periods + natural accounts',
     ))
+    u9_files = [
+        'services/mga/remittance.py',
+        'services/mga/bordereaux.py',
+        'services/jobs/bordereaux_job.py',
+        'tests/test_remittance_bordereaux.py',
+    ]
+    # Both plan-named modules required; remittance alone is not U9.
+    u9_core = (
+        _exists(root, 'services/mga/remittance.py')
+        and _exists(root, 'services/mga/bordereaux.py')
+    )
     units.append(UnitEvidence(
         unit_id='U9',
         title='Remittance + bordereaux',
-        status='landed' if (
-            _exists(root, 'services/mga/remittance.py')
-            and _exists(root, 'services/mga/bordereaux.py')
-        ) else 'missing',
+        status='landed' if u9_core else 'missing',
         weight=1.0,
-        evidence=[],
-        notes='carrier payables from kernel pins + ledger cash',
+        evidence=[p for p in u9_files if _exists(root, p)] if u9_core else [],
+        notes='carrier payables from kernel pins + ledger cash (AE5)',
     ))
     units.append(UnitEvidence(
         unit_id='U10',
