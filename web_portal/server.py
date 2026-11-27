@@ -41355,6 +41355,21 @@ For claims or questions, please contact:
             self.wfile.write(json.dumps({'success': True, 'monitoring': report}, default=str).encode('utf-8'))
             return
 
+        if path == '/api/admin/cashflow/books-tied':
+            if not require_role(session, ['admin', 'accountant', 'actuary', 'claims']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                from services.erp.books_tied import status_report as books_tied_status
+                status = books_tied_status(platform_event_ledger)
+            except Exception:
+                _write_cashflow_internal_error(self, "books-tied status failed")
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({'success': True, 'books_tied': status}, default=str).encode('utf-8'))
+            return
+
         if path == '/api/admin/cashflow/kernel-pins':
             if not require_role(session, ['admin', 'accountant', 'actuary']):
                 self._set_json_headers(403)
@@ -55458,6 +55473,39 @@ For claims or questions, please contact:
             return
         
         # ========== PHINS BALANCE SHEET MANAGEMENT API (POST) ==========
+
+        if path == '/api/admin/cashflow/books-tied':
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'accountant', 'actuary']):
+                self._set_json_headers(403)
+                self.wfile.write(json.dumps({'error': 'Unauthorized'}).encode('utf-8'))
+                return
+            try:
+                from services.erp.books_tied import (
+                    issue_certificate as books_tied_issue,
+                    status_report as books_tied_status,
+                )
+                from services.erp.money_gate import evaluate_money_gate as _eval_gate
+                actor = str((session or {}).get('username') or 'accountant')
+                verdict = _eval_gate(operation='books_tied.issue')
+                issued = books_tied_issue(
+                    platform_event_ledger,
+                    verdict=verdict,
+                    actor=actor,
+                )
+                status = books_tied_status(platform_event_ledger)
+            except Exception:
+                _write_cashflow_internal_error(self, "books-tied issue failed")
+                return
+            self._set_json_headers()
+            self.wfile.write(json.dumps({
+                'success': True,
+                'certificate': issued,
+                'books_tied': status,
+            }, default=str).encode('utf-8'))
+            return
 
         if path == '/api/admin/cashflow/post-claim-transfers':
             auth_header = self.headers.get('Authorization', '')
@@ -69943,8 +69991,32 @@ def run_server(port: int = PORT) -> None:
                       f"(every {_sla_job.tick_seconds():g}s)")
             except Exception as _sla_exc:
                 print(f"   ⚠️  Delivery SLA clock not scheduled: {_sla_exc}")
+            # U6: once-per-UTC-day books-tied certificate (idempotent clock).
+            try:
+                from services.jobs import books_tied_job as _tied_job
+                _tied = _tied_job.ensure_daily_clock(_doc_worker)
+                print(f"📒 Books-tied daily clock: {_tied.get('id')} "
+                      f"(next UTC midnight +5m)")
+            except Exception as _tied_exc:
+                print(f"   ⚠️  Books-tied daily clock not scheduled: {_tied_exc}")
     except Exception as _worker_exc:
         print(f"   ⚠️  Async job queue not started: {_worker_exc}")
+
+    # U6: always issue today's books-tied cert (when green) and arm a
+    # process-local daily timer so PHINS_BOOKS_TIED_REQUIRE can stay on
+    # even when PHINS_AGENT_ASYNC / PHINS_DOC_ASYNC are off.
+    try:
+        from services.jobs import books_tied_job as _tied_boot
+        _tied_boot_result = _tied_boot.start_inprocess_daily_clock(issue_now=True)
+        _run = _tied_boot_result.get('certificate') or {}
+        _cert = _run.get('certificate') if isinstance(_run.get('certificate'), dict) else _run
+        print(
+            f"📒 Books-tied boot: issued={(_cert or {}).get('issued')} "
+            f"reason={(_cert or {}).get('reason')} "
+            f"timer={_tied_boot_result.get('reason')}"
+        )
+    except Exception as _tied_boot_exc:
+        print(f"   ⚠️  Books-tied boot clock skipped: {_tied_boot_exc}")
 
     # Video jobs a previous process left in flight get their submission or
     # polling re-armed (B8); without this a restart stranded them forever.

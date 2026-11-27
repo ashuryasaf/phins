@@ -56,13 +56,11 @@ def test_markdown_render_includes_scores():
 
 
 def test_known_landed_units_on_this_checkout():
-    """U1/U3/U4/U5 are expected on the integrity track tip used for review."""
+    """U1–U6 are expected on the integrity track tip used for review."""
     report = compute_integrity_scorecard()
     by_id = {u['unit_id']: u for u in report['units']}
-    for uid in ('U1', 'U3', 'U4', 'U5'):
+    for uid in ('U1', 'U2', 'U3', 'U4', 'U5', 'U6'):
         assert by_id[uid]['status'] == 'landed', (uid, by_id[uid])
-    # U6 must not take half credit from the U4 job's forward-looking docstring.
-    assert by_id['U6']['status'] == 'missing', by_id['U6']
     assert by_id['U7']['status'] == 'missing', by_id['U7']
     # P2/P3 units not started — baseline snapshot/queue/tenant files alone
     # must not inflate U13/U14 progress.

@@ -326,7 +326,7 @@ bash quick_smoke_test.sh
 - [ ] DB financial CI
 - [ ] Money Gate on all payout paths
 - [ ] Durable accounting journal
-- [ ] Daily books-tied certificate
+- [x] Daily books-tied certificate
 - [ ] Agent clawbacks
 - [ ] CoA + hard period close
 - [ ] Bordereaux + remittance sealed & tied

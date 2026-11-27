@@ -526,6 +526,7 @@ Preferred file-by-task:
 | Health wallet withdrawal / retention bar | `services/wallet_withdrawal_service.py`, `services/id_photo_crop.py`, `web_portal/api_wallet_withdrawal.py`, `web_portal/static/wallet-withdraw-chat.{html,js}`, `web_portal/static/withdrawal-retention-bar.js`; tests in `tests/test_wallet_withdrawal.py` |
 | Money Gate / books integrity (U4) | `services/erp/money_gate.py`, `services/jobs/books_integrity_job.py`; wired on withdrawal release, agent commission settle, `POST /api/claims/pay`; env `PHINS_MONEY_GATE`; goldens in `tests/golden/money_gate/`; tests in `tests/test_money_gate.py` |
 | Durable accounting journal (U5) | `services/erp/accounting_journal.py`, `database/accounting_models.py`, `database/repositories/accounting_journal_repository.py`; `AccountingEngine._create_ledger_entry` posts through the journal; boot hydrates journal then ledger reconstruct; env `PHINS_ACCOUNTING_JOURNAL_MODE` (`off`/`dual`/`db`); tests in `tests/test_accounting_journal.py` |
+| Books-tied daily certificate (U6) | `services/erp/books_tied.py`, `services/jobs/books_tied_job.py`; ledger event `finance.books_tied` (`BOOKS-TIED-{utc_day}`); Money Gate freshness on high-value ops; `GET`/`POST /api/admin/cashflow/books-tied`; badge on `/cashflow-integrity.html` (`books-tied-badge.js`); env `PHINS_BOOKS_TIED_REQUIRE`, `PHINS_BOOKS_TIED_MAX_AGE_HOURS`; tests in `tests/test_books_tied_certificate.py` |
 | ERP/MGA integrity scorecard (58→100) | `services/erp/integrity_scorecard.py`, `scripts/run_erp_integrity_scorecard.py`; plan `docs/plans/2026-11-27-erp-mga-integrity-100.md`; tests in `tests/test_erp_integrity_scorecard.py` |
 | Fiduciary durability (wallets / NFT / BS) | `services/fiduciary/`, `database/fiduciary_models.py`, `database/repositories/fiduciary_repository.py`; tests in `tests/test_fiduciary_store.py` |
 | Customer intro / invitation landing | `web_portal/static/join.html`; films `join_intro_*` on the media Customer relations tab; briefs in `services/solution_video_blueprints.py` (`JOIN_INTRO_OUTLINES`, `JOIN-` campaigns) |
@@ -1224,6 +1225,22 @@ Environment variables commonly used:
   reconstruct. `db` mode refuses the memory post when the durable write
   fails; dual still fails closed on idempotency/checksum clashes
   (transient `journal_unavailable` only keeps the memory post)
+- **Books-tied certificate (U6):** once per UTC day after Money Gate
+  critical checks are green, append sealed `finance.books_tied`
+  (`BOOKS-TIED-{day}`) via `services/erp/books_tied.py`. Serve boot always
+  issues today's cert (when green) and arms an in-process daily timer
+  (`start_inprocess_daily_clock`); when the agent queue is on,
+  `ensure_daily_clock` also enqueues the durable `books_tied_daily` row.
+  Evidence only — never rewrites books. `PHINS_BOOKS_TIED_REQUIRE`
+  (default on outside `PHINS_TEST_MODE`) folds cert freshness into
+  high-value authorize (`wallet_withdrawal.release`,
+  `agent_commission.settle`, `claim_payout`); a freshness-check crash
+  fails closed like a missing cert. Prefer today's seal; a prior-day
+  seal still counts within `PHINS_BOOKS_TIED_MAX_AGE_HOURS` (default 36)
+  so the UTC midnight→clock gap does not refuse payouts. A failed daily
+  issue retries after `PHINS_BOOKS_TIED_RETRY_SECONDS` (default 300).
+  Accountant badge: `GET`/`POST /api/admin/cashflow/books-tied` on
+  `/cashflow-integrity.html`
 - **Delivery bidding (B11):** `PHINS_DELIVERY_SLA_TICK_SECONDS` (SLA clock
  interval for closing elapsed bidding windows, default 60)
 - **Admin desk:** an admin saves a mailbox password once on

@@ -360,10 +360,60 @@ def authorize_money_move(
     When enforcement is off the verdict is returned with ``ok`` reflecting
     the books but the move is allowed. Break-glass requires ``role=admin``,
     a non-empty reason, and a successful forensic ledger append first.
+    High-value ops also need a verified ``finance.books_tied`` cert inside
+    ``PHINS_BOOKS_TIED_MAX_AGE_HOURS`` (U6) unless ``PHINS_BOOKS_TIED_REQUIRE=0``.
     """
     verdict = evaluate_money_gate(
         books=books, books_provider=books_provider, operation=operation,
     )
+    # U6: fold certificate freshness into the same critical-check list.
+    ledger = platform_ledger
+    if ledger is _LEDGER_UNSET:
+        ledger = None
+        try:
+            import sys
+            portal = sys.modules.get('web_portal.server') or sys.modules.get('server')
+            ledger = getattr(portal, 'platform_event_ledger', None) if portal else None
+        except Exception:
+            ledger = None
+    # Keep the high-value op list local so an import failure cannot refuse
+    # every money move (only these three payouts need the cert).
+    _BOOKS_TIED_HIGH_VALUE = frozenset({
+        'wallet_withdrawal.release',
+        'agent_commission.settle',
+        'claim_payout',
+    })
+    try:
+        from services.erp.books_tied import freshness_failures
+
+        cert_failed = list(freshness_failures(ledger, operation=operation) or [])
+    except Exception:
+        # Fail closed for high-value ops only: a freshness-check crash must
+        # refuse the same way a missing certificate does (U6 review).
+        is_high_value = str(operation or '') in _BOOKS_TIED_HIGH_VALUE
+        if not is_high_value:
+            cert_failed = []
+        else:
+            try:
+                from services.erp.books_tied import (
+                    CERT_MISSING as _CERT_MISSING,
+                    books_tied_required as _books_tied_required,
+                )
+                cert_failed = [_CERT_MISSING] if _books_tied_required() else []
+            except Exception:
+                # Module itself unavailable — still refuse only these ops.
+                cert_failed = ['books_tied_certificate_missing']
+    if cert_failed:
+        merged = sorted(set(list(verdict.failed_checks) + list(cert_failed)))
+        verdict = MoneyGateVerdict(
+            ok=False,
+            failed_checks=merged,
+            digest=digest_for(merged, ok=False),
+            enforced=verdict.enforced,
+            operation=verdict.operation,
+            evaluated_at=verdict.evaluated_at,
+            source=verdict.source,
+        )
     if verdict.ok or not verdict.enforced:
         return verdict
     if break_glass:

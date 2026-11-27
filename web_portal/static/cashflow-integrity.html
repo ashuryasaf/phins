@@ -58,6 +58,10 @@
         #unified-checks { list-style: none; padding: 0; margin: 10px 0 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 6px 18px; }
         #unified-checks li { font-size: 13px; color: #d5dcea; line-height: 1.45; }
         #unified-checks li.bad { color: #ffd9d2; }
+        #books-tied { margin: 18px 0; padding: 16px 18px; border: 1px solid rgba(196,163,90,.45); border-radius: 14px; background: #102443; }
+        #books-tied h2 { margin: 0 0 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        #books-tied-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+        #books-tied-actions button.quiet { background: transparent; color: #e8d7a8; border: 1px solid rgba(196,163,90,.5); }
     </style>
 </head>
 <body>
@@ -71,6 +75,16 @@
     </header>
     <main>
         <p class="rules" id="rules">Kernel risk stays on the risk book. Only an add-on or a growth add is saved. Paid claims stay on the claims book and move from the reserve to the health wallet.</p>
+        <section id="books-tied">
+            <h2>Books-tied certificate <span id="books-tied-verdict"></span></h2>
+            <p class="note">Once per UTC day, after Money Gate critical checks are green, the platform seals a <code>finance.books_tied</code> ledger event. High-value money moves may require today’s certificate to stay fresh. The certificate is evidence only — it never rewrites the books.</p>
+            <p class="note" id="books-tied-body">Reading today’s books-tied certificate…</p>
+            <div id="books-tied-actions">
+                <button id="books-tied-issue" type="button">Seal today’s certificate</button>
+                <button id="books-tied-refresh" type="button" class="quiet">Refresh</button>
+                <span class="note" id="books-tied-stamp"></span>
+            </div>
+        </section>
         <div class="cards" id="funds"></div>
         <section id="kernel-pins">
             <h2>Kernel pins <span id="pins-verdict"></span></h2>
@@ -142,6 +156,7 @@
         <pre id="specimen">Loading…</pre>
     </main>
     <script src="/phins-doc-return.js"></script>
+    <script src="/books-tied-badge.js"></script>
     <script src="/cashflow-unified-report.js"></script>
     <script>
         const money = (value) => '$' + Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
