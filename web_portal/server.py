@@ -9609,13 +9609,16 @@ def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
     prefers sealed rows on conflict, so a volume file that raced ahead of
     a failed flush must not be reported as durable.
 
-    Fiduciary flush runs **before** the volume file write so a failed seal
-    leaves the file aligned with Postgres. A failed flush re-marks the
-    ledger dirty so the next periodic tick retries.
+    Fiduciary flush runs **before** the volume file write, and both run
+    under ``_persistence_lock`` (re-entrant with the file writer) so the
+    seal and the file share one view of the books. A mutation that arrives
+    mid-save blocks on the lock, then ``mark_ledger_dirty`` runs after we
+    clear dirty — the next tick seals it. A failed flush re-marks dirty and
+    skips the file write.
     """
+    global _persistence_dirty
     frozen: list = []
     file_ok = False
-    flush_ok = True
     mode = 'off'
     try:
         from services.fiduciary import fiduciary_mode
@@ -9623,38 +9626,34 @@ def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
     except Exception:
         mode = 'off'
 
-    # Flush sealed tables before the volume file when fiduciary mode is on.
-    # Dual hydrate prefers sealed on conflict; writing the file first and
-    # then failing the flush would leave credits on disk that the next boot
-    # overwrites with the stale seal.
-    if mode in ('dual', 'db'):
-        with _persistence_lock:
+    # Hold the persistence lock across seal + file so a concurrent mutation
+    # cannot publish a volume snapshot ahead of sealed tables (or clear dirty
+    # after a seal of an older view). RLock: _save_ledger_data_file re-enters.
+    with _persistence_lock:
+        if mode in ('dual', 'db'):
             dirty = bool(_persistence_dirty)
-        if not _periodic:
-            dirty = True
-        do_fiduciary_flush = _should_flush_fiduciary(
-            periodic=_periodic, ledger_dirty=dirty, force_db=force_db,
-        )
-        if do_fiduciary_flush:
-            flush_ok = _flush_fiduciary_tables()
-            if not flush_ok:
-                try:
-                    mark_ledger_dirty()
-                except Exception:
-                    pass
-                print(
-                    "[FIDUCIARY] Sealed flush failed; "
-                    "treating save as durability failure"
-                )
-                return False
-
-    try:
-        file_ok = bool(_save_ledger_data_file(_periodic, frozen))
-    finally:
-        if PERSISTENCE_ENABLED:
-            _offer_ledger_snapshot_to_db(
-                frozen[0] if frozen else None, periodic=_periodic, force=force_db,
+            if not _periodic:
+                dirty = True
+            do_fiduciary_flush = _should_flush_fiduciary(
+                periodic=_periodic, ledger_dirty=dirty, force_db=force_db,
             )
+            if do_fiduciary_flush:
+                if not _flush_fiduciary_tables():
+                    _persistence_dirty = True
+                    print(
+                        "[FIDUCIARY] Sealed flush failed; "
+                        "treating save as durability failure"
+                    )
+                    return False
+        try:
+            file_ok = bool(_save_ledger_data_file(_periodic, frozen))
+        finally:
+            if PERSISTENCE_ENABLED:
+                _offer_ledger_snapshot_to_db(
+                    frozen[0] if frozen else None,
+                    periodic=_periodic,
+                    force=force_db,
+                )
     return file_ok
 
 

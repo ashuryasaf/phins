@@ -393,6 +393,62 @@ def test_dual_flush_failure_is_durability_failure(sqlite_db, monkeypatch):
     assert wrote['n'] == 0
 
 
+def test_dual_flush_and_file_share_persistence_lock(sqlite_db, monkeypatch):
+    """Seal and volume write share the lock so mid-save mutations wait."""
+    import threading
+    import time
+
+    import web_portal.server as portal
+
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    monkeypatch.setenv('USE_DATABASE', 'true')
+    in_flush = threading.Event()
+    release_flush = threading.Event()
+    mutator_done = threading.Event()
+    order: list = []
+
+    def _flush():
+        order.append('flush')
+        in_flush.set()
+        assert release_flush.wait(2.0)
+        return True
+
+    def _file(_periodic, _snapshot_out):
+        order.append('file')
+        return True
+
+    monkeypatch.setattr(portal, '_flush_fiduciary_tables', _flush)
+    monkeypatch.setattr(portal, '_save_ledger_data_file', _file)
+    portal.mark_ledger_dirty()
+
+    def _mutator():
+        assert in_flush.wait(2.0)
+        # Blocks on _persistence_lock until save_ledger_data finishes.
+        portal.mark_ledger_dirty()
+        mutator_done.set()
+
+    saver_result = {'ok': None}
+
+    def _saver():
+        saver_result['ok'] = portal.save_ledger_data(_periodic=True)
+
+    saver = threading.Thread(target=_saver, daemon=True)
+    mutator = threading.Thread(target=_mutator, daemon=True)
+    saver.start()
+    mutator.start()
+    assert in_flush.wait(2.0)
+    time.sleep(0.1)
+    # Mutator must still be blocked on the lock during flush.
+    assert not mutator_done.is_set()
+    release_flush.set()
+    saver.join(2.0)
+    mutator.join(2.0)
+    assert saver_result['ok'] is True
+    assert order == ['flush', 'file']
+    assert mutator_done.is_set()
+    assert portal._persistence_dirty is True
+
+
 def test_graceful_shutdown_skips_flush_when_clean(monkeypatch):
     """Idle SIGTERM must not invent dirtiness or flush fiduciary books."""
     import web_portal.server as portal
