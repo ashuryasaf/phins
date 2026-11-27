@@ -9,6 +9,11 @@ services:
         value: 3.12.0
       - key: PORT
         value: 8000
+      # U1: bare RENDER is already treated as production by
+      # security.boot_integrity / secrets_policy; durable DB is required
+      # unless PHINS_REQUIRE_DATABASE is explicitly false. Do not set
+      # PHINS_ENVIRONMENT=production here — that would broaden production
+      # semantics beyond the HTTP serve gate.
       - key: ALPACA_API_KEY
         sync: false
       - key: ALPACA_SECRET_KEY
@@ -24,3 +29,7 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0
+      # U1: bare RENDER makes database_required() true. Link the same
+      # Postgres as the web service (DATABASE_URL) so auto-pay does not
+      # exit at the CLI durability gate. Do not set
+      # PHINS_REQUIRE_DATABASE=false here — that would charge empty books.

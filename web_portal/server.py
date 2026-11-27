@@ -2285,12 +2285,20 @@ def demo_data_seeding_enabled() -> bool:
         if os.environ.get('PHINS_ENVIRONMENT', '').strip().lower() in ('production', 'prod', 'live'):
             return False
     return os.environ.get('POPULATE_DEMO_DATA', 'true').strip().lower() in ('true', '1', 'yes')
-# Data-integrity guardrail (opt-in, default OFF so existing behavior is unchanged).
-# When PHINS_REQUIRE_DATABASE is truthy, the platform refuses to run on the
-# volatile in-memory fallback — this prevents the silent split-brain where the
-# request path writes to one store while reports/integrity read another. See
-# docs/INVESTOR_AI_BI_OPTIMIZATION_REVIEW.md §6 (DI-1).
-DATABASE_REQUIRED = os.environ.get('PHINS_REQUIRE_DATABASE', 'false').lower() in ('1', 'true', 'yes', 'on')
+# Data-integrity guardrail (U1 / DI-1).
+# Real production defaults to requiring durable DB storage so a failed
+# Postgres connection cannot silently serve empty in-memory books. Explicit
+# PHINS_REQUIRE_DATABASE wins; PHINS_TEST_MODE and Railway PR previews stay
+# soft (see security.boot_integrity.database_required / secrets_policy._is_production).
+# docs/INVESTOR_AI_BI_OPTIMIZATION_REVIEW.md §6; docs/plans/2026-11-27-erp-mga-integrity-100.md U1.
+from security.boot_integrity import (
+    database_required as _database_required,
+    ephemeral_ledger_forbidden as _ephemeral_ledger_forbidden,
+    refuse_ephemeral_ledger_boot as _refuse_ephemeral_ledger_boot,
+    refuse_in_memory_boot as _refuse_in_memory_boot,
+)
+
+DATABASE_REQUIRED = _database_required()
 database_enabled = False
 _db_init_done = False  # guards against duplicate init_database + seed_default_users calls
 
@@ -2438,17 +2446,46 @@ else:
     BILLING: Dict[str, Dict[str, Any]] = {}  # bill_id -> bill data (for metrics)
     print("✓ Using in-memory storage (demo data will be loaded at startup)")
 
-# DI-1 guardrail: if the operator explicitly requires durable storage but we
-# ended up on the in-memory fallback, fail fast rather than silently serving a
-# store that cannot back the platform's data-integrity guarantees. Default OFF.
-if DATABASE_REQUIRED and not (USE_DATABASE and database_enabled):
+# DI-1 / U1: durability is required (explicit PHINS_REQUIRE_DATABASE, or the
+# production default) but unavailable. Do not SystemExit at import — cron /
+# bi-snapshot / worker import this module and must survive load. Entry points
+# call _enforce_durable_database() before serving or moving money.
+if _refuse_in_memory_boot(
+    required=DATABASE_REQUIRED,
+    use_database=USE_DATABASE,
+    database_enabled=database_enabled,
+):
     print("=" * 60)
-    print("FATAL: PHINS_REQUIRE_DATABASE is set but durable database storage is")
-    print("       unavailable. Refusing to start on volatile in-memory storage to")
-    print("       protect data-integrity guarantees. Fix the DB connection or unset")
-    print("       PHINS_REQUIRE_DATABASE. See docs/INVESTOR_AI_BI_OPTIMIZATION_REVIEW.md §6.")
+    print("WARNING: Durable database storage is required but unavailable.")
+    print("         Volatile in-memory books are loaded for import only.")
+    print("         HTTP serve / auto-pay / bi-snapshot will refuse to run")
+    print("         until the DB is reachable (or PHINS_REQUIRE_DATABASE=false).")
+    print("         See docs/plans/2026-11-27-erp-mga-integrity-100.md U1.")
     print("=" * 60)
-    raise SystemExit(1)
+
+
+def _enforce_durable_database() -> None:
+    """U1: abort the current entry point when production needs a live DB.
+
+    Called from ``run_server``, ``execute_monthly_auto_pay_cli``, and the
+    bi-snapshot main — not at import — so one-shot jobs can load the module
+    without dying, then fail closed before they serve or mutate books.
+    """
+    if _refuse_in_memory_boot(
+        required=DATABASE_REQUIRED,
+        use_database=USE_DATABASE,
+        database_enabled=database_enabled,
+    ):
+        print("=" * 60)
+        print("FATAL: Durable database storage is required but unavailable.")
+        print("       Refusing to run on volatile in-memory storage to protect")
+        print("       data-integrity guarantees (no empty-book split-brain).")
+        print("       Fix the DB connection, or set PHINS_REQUIRE_DATABASE=false")
+        print("       only as an explicit non-production escape hatch.")
+        print("       See docs/INVESTOR_AI_BI_OPTIMIZATION_REVIEW.md §6 and")
+        print("       docs/plans/2026-11-27-erp-mga-integrity-100.md U1.")
+        print("=" * 60)
+        raise SystemExit(1)
 
 
 def attempt_database_recovery():
@@ -9180,6 +9217,31 @@ if LEDGER_PERSISTENCE_FILE.startswith(tempfile.gettempdir()):
     print(f"⚠️  [PERSISTENCE] Using ephemeral path {LEDGER_PERSISTENCE_FILE} — "
           "data will be lost on container restart. Set LEDGER_PERSISTENCE_FILE "
           "or mount a volume at /data for durable storage.")
+
+
+def _enforce_durable_ledger_at_serve() -> None:
+    """U1: abort HTTP serve when production would land the ledger in tempdir.
+
+    Kept out of import time so cron / bi-snapshot / worker one-shots that
+    ``import web_portal.server`` still run when no volume is mounted. Only
+    ``run_server()`` calls this. Tests / demos / Railway PR previews stay
+    soft; operators may set ``PHINS_ALLOW_EPHEMERAL_LEDGER=true`` as an
+    explicit escape hatch.
+    """
+    if _refuse_ephemeral_ledger_boot(
+        forbidden=_ephemeral_ledger_forbidden(),
+        ledger_path=LEDGER_PERSISTENCE_FILE,
+    ):
+        print("=" * 60)
+        print("FATAL: Ledger persistence path is ephemeral (tempdir) but this")
+        print("       deployment requires durable storage.")
+        print(f"       Resolved path: {LEDGER_PERSISTENCE_FILE}")
+        print("       Mount a volume at /data (or set RAILWAY_VOLUME_MOUNT_PATH /")
+        print("       LEDGER_PERSISTENCE_FILE to a durable path), or set")
+        print("       PHINS_ALLOW_EPHEMERAL_LEDGER=true only as an explicit escape hatch.")
+        print("       See docs/plans/2026-11-27-erp-mga-integrity-100.md U1.")
+        print("=" * 60)
+        raise SystemExit(1)
 
 
 def persistence_file_on_volume() -> bool:
@@ -68957,6 +69019,11 @@ def _seed_startup_demo_fixtures() -> None:
 
 
 def run_server(port: int = PORT) -> None:
+    # U1: refuse HTTP serve without a live DB or on an ephemeral ledger path.
+    # Both gates are deferred from import so cron/worker/bi-snapshot can load.
+    _enforce_durable_database()
+    _enforce_durable_ledger_at_serve()
+
     # Audit security-critical secrets early so operators see misconfiguration
     # immediately and don't first learn about it via a failed login.
     #
@@ -69437,6 +69504,9 @@ def bootstrap_runtime_state_for_command() -> None:
 
 def execute_monthly_auto_pay_cli(argv: Optional[List[str]] = None) -> int:
     """Run the monthly auto-pay batch as a one-shot command for schedulers."""
+    # U1: fail closed before charging when production has no durable DB.
+    _enforce_durable_database()
+
     args = list(argv or [])
     dry_run = '--dry-run' in args
     notify_users = '--no-notify' not in args

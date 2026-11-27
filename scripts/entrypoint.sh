@@ -42,6 +42,11 @@ fi
 
 case "$mode" in
     serve)
+        # U1 (ERP/MGA integrity): do NOT export PHINS_REQUIRE_DATABASE here.
+        # Python security.boot_integrity.database_required owns the default
+        # (on in real production; soft for PHINS_TEST_MODE and Railway PR
+        # previews). Exporting true from shell was case-sensitive, could
+        # override the soft path, and disagreed with secrets_policy.
         exec python3 web_portal/server.py "$@"
         ;;
     cron)
