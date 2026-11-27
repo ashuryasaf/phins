@@ -170,7 +170,7 @@ def dispatch_post(
             'books_tied': status,
         }
 
-    if path in ('/api/admin/cashflow/kernel-pins', '/api/admin/cashflow/restore-kernel-pins'):
+    if path == '/api/admin/cashflow/restore-kernel-pins':
         denied = _staff(session, KERNEL_PIN_ROLES)
         if denied:
             return denied
@@ -181,6 +181,12 @@ def dispatch_post(
             return 500, {'error': 'kernel pin restore unavailable'}
         with money_uow(label='kernel_pins'):
             result = restore(_actor(session), apply=True)
+        # Journal-first fail-closed: a non-durable restore must not look like success.
+        if result.get('success') is False:
+            return 503, {
+                'error': result.get('error') or 'not_durable',
+                'kernel_pins': result,
+            }
         return 200, {'success': True, 'kernel_pins': result}
 
     return None

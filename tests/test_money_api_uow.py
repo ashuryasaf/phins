@@ -45,6 +45,29 @@ def test_mga_dispatch_unauthorized():
     assert 'error' in body
 
 
+def test_restore_kernel_pins_fail_closed_503(monkeypatch):
+    """Journal-first restore must surface 503, never a false 200."""
+    from web_portal import api_finance
+
+    class _Portal:
+        @staticmethod
+        def require_role(session, roles):
+            return True
+
+        @staticmethod
+        def restore_kernel_pins(actor, apply=True):
+            return {'success': False, 'error': 'repair_journal_failed'}
+
+    monkeypatch.setattr(api_finance, '_portal', lambda: _Portal())
+    status, body = api_finance.dispatch_post(
+        '/api/admin/cashflow/restore-kernel-pins',
+        {'role': 'admin', 'username': 'accountant'},
+        {},
+    )
+    assert status == 503
+    assert body['error'] == 'repair_journal_failed'
+
+
 def test_scorecard_u12_landed_on_this_checkout():
     report = compute_integrity_scorecard()
     by_id = {u['unit_id']: u for u in report['units']}
