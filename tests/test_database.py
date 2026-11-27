@@ -463,6 +463,40 @@ def test_apply_create_defaults_skipped_outside_test_mode(monkeypatch):
     assert filled['email'] == 'cust-live@phins.local'
 
 
+def test_write_through_rolls_back_proxy_when_persist_fails(monkeypatch):
+    """Failed DB write must not leave the in-hand proxy ahead of the store."""
+    from database import init_database
+    from database.data_access import DatabaseDict
+    import pytest as _pytest
+
+    init_database()
+    customers = DatabaseDict('customers')
+    cid = 'TEST-CUST-U3-WT-RB'
+    if cid in customers:
+        del customers[cid]
+    try:
+        customers[cid] = {'id': cid, 'name': 'Rollback', 'email': 'rb@phins.local'}
+        row = customers[cid]
+        assert row['name'] == 'Rollback'
+
+        original = DatabaseDict.__setitem__
+
+        def boom(self, key, value):
+            if key == cid:
+                raise RuntimeError('forced persist failure')
+            return original(self, key, value)
+
+        monkeypatch.setattr(DatabaseDict, '__setitem__', boom)
+        with _pytest.raises(RuntimeError, match='forced persist failure'):
+            row['name'] = 'ShouldNotStick'
+
+        assert row['name'] == 'Rollback'
+        assert customers[cid]['name'] == 'Rollback'
+    finally:
+        if cid in customers:
+            del customers[cid]
+
+
 def test_upgrade_new_columns_lists_fiduciary_extra():
     """Existing DBs only gain columns listed in ``_UPGRADE_NEW_COLUMNS``."""
     from database import _UPGRADE_NEW_COLUMNS

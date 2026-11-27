@@ -407,24 +407,42 @@ class _WriteThroughRecord(dict):
         self._key = key
         self._persisting = False
 
+    def _snapshot(self) -> Dict[str, Any]:
+        return {
+            k: (dict(v) if isinstance(v, _NestedWriteThrough) else v)
+            for k, v in self.items()
+        }
+
+    def _restore(self, snapshot: Dict[str, Any]) -> None:
+        super().clear()
+        super().update(snapshot)
+
     def _persist(self) -> None:
         if self._persisting:
             return
         self._persisting = True
         try:
             # Nested proxies must flatten to plain dicts before the DB write.
-            plain = {
-                k: (dict(v) if isinstance(v, _NestedWriteThrough) else v)
-                for k, v in self.items()
-            }
-            self._store[self._key] = plain
+            self._store[self._key] = self._snapshot()
         finally:
             self._persisting = False
+
+    def _mutate_then_persist(self, apply) -> Any:
+        """Apply ``apply`` then persist; roll the proxy back if the DB write fails."""
+        before = self._snapshot()
+        try:
+            result = apply()
+            self._persist()
+            return result
+        except Exception:
+            self._restore(before)
+            raise
 
     def __getitem__(self, key):
         value = super().__getitem__(key)
         if isinstance(value, dict) and not isinstance(value, (_WriteThroughRecord, _NestedWriteThrough)):
             wrapped = _NestedWriteThrough(self, key, value)
+            # Install the wrapper without triggering a DB write.
             super().__setitem__(key, wrapped)
             return wrapped
         return value
@@ -432,36 +450,51 @@ class _WriteThroughRecord(dict):
     def __setitem__(self, key, value):
         if isinstance(value, _NestedWriteThrough):
             value = dict(value)
-        super().__setitem__(key, value)
-        self._persist()
+
+        def apply():
+            super(_WriteThroughRecord, self).__setitem__(key, value)
+
+        self._mutate_then_persist(apply)
 
     def __delitem__(self, key):
-        super().__delitem__(key)
-        self._persist()
+        def apply():
+            super(_WriteThroughRecord, self).__delitem__(key)
+
+        self._mutate_then_persist(apply)
 
     def clear(self):
-        super().clear()
-        self._persist()
+        def apply():
+            super(_WriteThroughRecord, self).clear()
+
+        self._mutate_then_persist(apply)
 
     def pop(self, *args):
-        value = super().pop(*args)
-        self._persist()
-        return value
+        def apply():
+            return super(_WriteThroughRecord, self).pop(*args)
+
+        return self._mutate_then_persist(apply)
 
     def popitem(self):
-        item = super().popitem()
-        self._persist()
-        return item
+        def apply():
+            return super(_WriteThroughRecord, self).popitem()
+
+        return self._mutate_then_persist(apply)
 
     def setdefault(self, key, default=None):
-        if key not in self:
-            super().setdefault(key, default)
-            self._persist()
-        return self[key]
+        if key in self:
+            return self[key]
+
+        def apply():
+            super(_WriteThroughRecord, self).setdefault(key, default)
+            return self[key]
+
+        return self._mutate_then_persist(apply)
 
     def update(self, *args, **kwargs):
-        super().update(*args, **kwargs)
-        self._persist()
+        def apply():
+            super(_WriteThroughRecord, self).update(*args, **kwargs)
+
+        self._mutate_then_persist(apply)
 
 
 # Field mappings from server dictionary keys to database model fields

@@ -78,11 +78,14 @@ jobs:
           cache: 'pip'
           cache-dependency-path: |
             requirements.txt
+            requirements-dev.txt
 
       - name: Install Python deps
         run: |
+          # requirements-dev.txt pulls runtime deps via -r requirements.txt
+          # and adds pytest (runtime-only install left pytest missing).
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       - name: Run financial integrity suites under USE_DATABASE=true
         env:
