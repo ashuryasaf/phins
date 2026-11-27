@@ -211,6 +211,65 @@ def hydrate_fiduciary_from_db(
     return counts
 
 
+def _refresh_baseline_after_flush(
+    label: str,
+    mapping: Mapping[str, Any],
+    repo: Any,
+    *,
+    prior_expected: Mapping[str, str],
+) -> int:
+    """Align baseline (and mutable memory) with sealed outcomes.
+
+    Wins / no-ops: stamp baseline from our payload digest.
+    Withholds: adopt the sealed payload into memory when ``mapping`` is
+    mutable, then stamp baseline from sealed — never advance the CAS token
+    to a peer digest while leaving a stale book in place (that would let the
+    next flush overwrite the peer). Returns how many ids were adopted.
+    """
+    from database.repositories.fiduciary_repository import canonical_payload
+
+    try:
+        sealed_cs = repo.load_checksums()
+        sealed_payloads = repo.load_mapping()
+    except Exception:
+        # Leave prior baseline untouched if sealed cannot be re-read.
+        return 0
+
+    baseline = dict(prior_expected)
+    adopted = 0
+    mutable = isinstance(mapping, MutableMapping)
+    for key, payload in list(mapping.items()):
+        record_id = str(key)
+        _, our_digest = canonical_payload(payload)
+        sealed_digest = sealed_cs.get(record_id)
+        if sealed_digest == our_digest:
+            baseline[record_id] = sealed_digest
+            continue
+        if sealed_digest is None:
+            # Insert withheld/errored — drop any stale token for this id.
+            baseline.pop(record_id, None)
+            continue
+        # Peer (or broken-seal path) won. Adopt sealed into live memory so
+        # the next mutation save cannot CAS-match and revert it.
+        if mutable and record_id in sealed_payloads:
+            mapping[record_id] = sealed_payloads[record_id]  # type: ignore[index]
+            baseline[record_id] = sealed_digest
+            adopted += 1
+        else:
+            # Keep the prior token so a later flush still withholds.
+            if record_id in prior_expected:
+                baseline[record_id] = prior_expected[record_id]
+            else:
+                baseline.pop(record_id, None)
+    # Observe sealed ids we did not flush so a later insert of that key
+    # into memory cannot blind-overwrite without a token.
+    for record_id, digest in sealed_cs.items():
+        if record_id not in baseline:
+            baseline[record_id] = digest
+    _set_baseline(label, baseline)
+    return adopted
+
+
 def flush_fiduciary_to_db(
     *,
     health_wallets: Mapping[str, Any],
@@ -223,7 +282,8 @@ def flush_fiduciary_to_db(
 
     Passes the process CAS baseline as ``expected_checksum`` so a multi-writer
     flush withholds ids another process updated since this one last
-    hydrated/flushed, instead of reverting them.
+    hydrated/flushed, instead of reverting them. Withheld ids adopt sealed
+    payloads into mutable mappings before the baseline advances.
     """
     mode = fiduciary_mode()
     if mode == 'off':
@@ -236,7 +296,10 @@ def flush_fiduciary_to_db(
 
     result: Dict[str, Any] = {'mode': mode}
     try:
-        from database.repositories.fiduciary_repository import BALANCE_SHEET_ID
+        from database.repositories.fiduciary_repository import (
+            BALANCE_SHEET_ID,
+            canonical_payload,
+        )
 
         # Per-book: skip empty process dicts over non-empty sealed tables
         # without aborting the rest of the flush (one purged NFT book must
@@ -261,18 +324,17 @@ def flush_fiduciary_to_db(
                     'skipped': 'refuse_empty_overwrite',
                 }
                 return
-            expected = _FIDUCIARY_BASELINE.get(label) or {}
+            expected = dict(_FIDUCIARY_BASELINE.get(label) or {})
             kwargs: Dict[str, Any] = {'expected_checksums': expected}
             if customer_from:
                 kwargs['customer_from'] = customer_from
             counts = repo.replace_mapping(dict(mapping), **kwargs)
+            adopted = _refresh_baseline_after_flush(
+                label, mapping, repo, prior_expected=expected
+            )
+            if adopted:
+                counts['adopted'] = adopted
             result[label] = counts
-            # Sealed table is source of truth for the next CAS baseline
-            # (our writes and peer wins both land here).
-            try:
-                _set_baseline(label, repo.load_checksums())
-            except Exception:
-                pass
 
         _write_or_skip('health_wallets', health_wallets, db.health_wallets)
         _write_or_skip(
@@ -292,14 +354,34 @@ def flush_fiduciary_to_db(
             ok = db.balance_sheet.upsert_phins(
                 dict(balance_sheet), expected_checksum=expected_sheet
             )
+            # Align memory + baseline the same way as per-id books.
+            prior = dict(_FIDUCIARY_BASELINE.get('balance_sheet') or {})
+            try:
+                sealed_cs = db.balance_sheet.load_checksums()
+                sealed_payload = db.balance_sheet.get_phins()
+            except Exception:
+                sealed_cs = {}
+                sealed_payload = None
+            _, our_digest = canonical_payload(dict(balance_sheet))
+            sealed_digest = sealed_cs.get(BALANCE_SHEET_ID)
+            adopted = 0
+            if sealed_digest == our_digest:
+                prior[BALANCE_SHEET_ID] = sealed_digest
+            elif sealed_digest is not None and isinstance(balance_sheet, MutableMapping):
+                if isinstance(sealed_payload, dict):
+                    balance_sheet.clear()
+                    balance_sheet.update(sealed_payload)
+                    prior[BALANCE_SHEET_ID] = sealed_digest
+                    adopted = 1
+            elif expected_sheet is not None:
+                prior[BALANCE_SHEET_ID] = expected_sheet
+            _set_baseline('balance_sheet', prior)
             result['balance_sheet'] = {
                 'written': 1 if ok else 0,
                 'withheld': 0 if ok else 1,
             }
-            try:
-                _set_baseline('balance_sheet', db.balance_sheet.load_checksums())
-            except Exception:
-                pass
+            if adopted:
+                result['balance_sheet']['adopted'] = adopted
         else:
             result['balance_sheet'] = {'written': 0, 'withheld': 0}
     except Exception as exc:

@@ -80,13 +80,26 @@ def _write_key(
     *,
     force: bool,
 ) -> Dict[str, int]:
+    from database.repositories.fiduciary_repository import BALANCE_SHEET_ID
+
     repo = _repo_for_key(db, key)
     customer_from = 'customer_id' if key in ('wallet_withdrawals', 'nft_ledger') else None
     if key == 'phins_balance_sheet':
-        ok = db.balance_sheet.upsert_phins(mapping)
+        # Insert when empty (no token). Force overwrite presents the current
+        # sealed digest as expected_checksum so CAS still applies.
+        expected = None
+        if force and db.balance_sheet.count_rows() > 0:
+            expected = db.balance_sheet.load_checksums().get(BALANCE_SHEET_ID)
+        ok = db.balance_sheet.upsert_phins(mapping, expected_checksum=expected)
         return {'written': 1 if ok else 0, 'withheld': 0 if ok else 1, 'errors': 0}
     if force:
-        return repo.replace_mapping(mapping, customer_from=customer_from)
+        # Intentional replace: CAS against seals observed at migrate start.
+        expected = repo.load_checksums()
+        return repo.replace_mapping(
+            mapping,
+            customer_from=customer_from,
+            expected_checksums=expected,
+        )
     return repo.fill_missing_mapping(mapping, customer_from=customer_from)
 
 

@@ -689,7 +689,10 @@ def test_upsert_cas_refuses_stale_expected_checksum(sqlite_db):
     assert db.health_wallets.upsert('CUST-CAS', original) is True
     _, digest = canonical_payload(original)
     peer = {'customer_id': 'CUST-CAS', 'balance': 77}
-    assert db.health_wallets.upsert('CUST-CAS', peer) is True
+    assert db.health_wallets.upsert(
+        'CUST-CAS', peer, expected_checksum=digest
+    ) is True
+    _, peer_digest = canonical_payload(peer)
     # Stale CAS (pre-peer digest) must not revert the peer write.
     assert (
         db.health_wallets.upsert(
@@ -700,6 +703,24 @@ def test_upsert_cas_refuses_stale_expected_checksum(sqlite_db):
         is False
     )
     assert db.health_wallets.get_payload('CUST-CAS')['balance'] == 77
+    assert peer_digest == db.health_wallets.load_checksums()['CUST-CAS']
+    db.close()
+
+
+def test_upsert_missing_expected_checksum_withholds_overwrite(sqlite_db):
+    """Existing sealed rows cannot be overwritten without a CAS token."""
+    db = DatabaseManager()
+    original = {'customer_id': 'CUST-NOCAS', 'balance': 5}
+    assert db.health_wallets.upsert('CUST-NOCAS', original) is True
+    assert (
+        db.health_wallets.upsert(
+            'CUST-NOCAS', {'customer_id': 'CUST-NOCAS', 'balance': 99}
+        )
+        is False
+    )
+    assert db.health_wallets.get_payload('CUST-NOCAS') == original
+    # Idempotent no-op still allowed without a token.
+    assert db.health_wallets.upsert('CUST-NOCAS', original) is True
     db.close()
 
 
@@ -726,17 +747,62 @@ def test_flush_cas_withholds_peer_wallet_update(sqlite_db, monkeypatch):
     )
     assert memory['CUST-MW']['balance'] == 100.0
     assert 'CUST-MW' in fiduciary_baseline('health_wallets')
+    prior = fiduciary_baseline('health_wallets')['CUST-MW']
 
-    # Peer writer updates sealed without this process's baseline.
+    # Peer writer updates sealed with a matching CAS token.
     db = DatabaseManager()
     assert db.health_wallets.upsert(
-        'CUST-MW', {'customer_id': 'CUST-MW', 'balance': 999.0}
+        'CUST-MW',
+        {'customer_id': 'CUST-MW', 'balance': 999.0},
+        expected_checksum=prior,
     ) is True
     db.close()
 
-    # Stale process memory flushes → CAS withhold; peer value survives.
+    # Stale process memory flushes → CAS withhold; peer value survives and
+    # is adopted into the live map so the next save cannot revert it.
+    stale = {'CUST-MW': {'customer_id': 'CUST-MW', 'balance': 100.0}}
     result = flush_fiduciary_to_db(
-        health_wallets={'CUST-MW': {'customer_id': 'CUST-MW', 'balance': 100.0}},
+        health_wallets=stale,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )
+    assert result['health_wallets']['withheld'] >= 1
+    assert result['health_wallets']['written'] == 0
+    assert result['health_wallets'].get('adopted', 0) >= 1
+    assert stale['CUST-MW']['balance'] == 999.0
+    db = DatabaseManager()
+    assert db.health_wallets.get_payload('CUST-MW')['balance'] == 999.0
+    db.close()
+
+    # A follow-up flush of the (now adopted) book must not rewrite peer data.
+    follow = flush_fiduciary_to_db(
+        health_wallets=stale,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )
+    assert follow['health_wallets']['withheld'] == 0
+    db = DatabaseManager()
+    assert db.health_wallets.get_payload('CUST-MW')['balance'] == 999.0
+    db.close()
+
+
+def test_flush_without_baseline_cannot_overwrite_sealed(sqlite_db, monkeypatch):
+    """Empty process baseline must not blind-overwrite existing seals."""
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    assert flush_fiduciary_to_db(
+        health_wallets={'CUST-BL': {'customer_id': 'CUST-BL', 'balance': 1.0}},
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )['health_wallets']['written'] == 1
+    reset_fiduciary_baseline()
+    result = flush_fiduciary_to_db(
+        health_wallets={'CUST-BL': {'customer_id': 'CUST-BL', 'balance': 50.0}},
         wallet_withdrawals={},
         nft_ledger={},
         investment_accounts={},
@@ -745,7 +811,7 @@ def test_flush_cas_withholds_peer_wallet_update(sqlite_db, monkeypatch):
     assert result['health_wallets']['withheld'] >= 1
     assert result['health_wallets']['written'] == 0
     db = DatabaseManager()
-    assert db.health_wallets.get_payload('CUST-MW')['balance'] == 999.0
+    assert db.health_wallets.get_payload('CUST-BL')['balance'] == 1.0
     db.close()
 
 

@@ -51,9 +51,10 @@ class SealedFiduciaryRepository(BaseRepository):
     ) -> bool:
         """Insert or replace when the payload changes.
 
-        Never clobber a bad-checksum row. When ``expected_checksum`` is set,
-        also refuse if the sealed row no longer matches that digest (another
-        writer updated it since this process last hydrated/flushed).
+        Never clobber a bad-checksum row. An existing sealed row requires a
+        matching ``expected_checksum`` (CAS); a missing token or a peer
+        update withholds the write instead of a blind overwrite. Idempotent
+        no-ops (same canonical payload) still succeed without a token.
         """
         text, digest = canonical_payload(payload)
         try:
@@ -69,18 +70,22 @@ class SealedFiduciaryRepository(BaseRepository):
                         record_id,
                     )
                     return False
-                if (
-                    expected_checksum is not None
-                    and row.checksum != expected_checksum
-                ):
+                if row.payload_json == text:
+                    return True
+                if expected_checksum is None:
+                    logger.error(
+                        "%s missing expected_checksum for %s; withhold",
+                        self.model_class.__tablename__,
+                        record_id,
+                    )
+                    return False
+                if row.checksum != expected_checksum:
                     logger.error(
                         "%s concurrent change for %s; withhold",
                         self.model_class.__tablename__,
                         record_id,
                     )
                     return False
-                if row.payload_json == text:
-                    return True
                 row.payload_json = text
                 row.checksum = digest
                 row.updated_date = datetime.utcnow()
