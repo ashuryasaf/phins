@@ -458,6 +458,93 @@ class AgentJobQueue:
                 stats[job['status']] = stats.get(job['status'], 0) + 1
             return stats
 
+    def slo_report(
+        self,
+        *,
+        pending_age_alert_seconds: Optional[float] = None,
+        dlq_depth_alert: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Queue SLO snapshot for ``/api/health`` and Books Integrity (U14).
+
+        Alerts when pending age or dead-letter depth exceeds thresholds.
+        Never invents cash or rewrites jobs.
+        """
+        try:
+            pending_cap = float(
+                pending_age_alert_seconds
+                if pending_age_alert_seconds is not None
+                else os.environ.get('PHINS_JOB_PENDING_AGE_ALERT_SECONDS', '900')
+            )
+        except (TypeError, ValueError):
+            pending_cap = 900.0
+        try:
+            dlq_cap = int(
+                dlq_depth_alert
+                if dlq_depth_alert is not None
+                else os.environ.get('PHINS_JOB_DLQ_DEPTH_ALERT', '1')
+            )
+        except (TypeError, ValueError):
+            dlq_cap = 1
+
+        stats = self.queue_stats()
+        pending = self.list_jobs(status='pending', limit=200)
+        dead = self.list_jobs(status='dead_letter', limit=200)
+        now = datetime.utcnow()
+        oldest_pending_age = 0.0
+        for job in pending:
+            created = job.get('created_date')
+            if isinstance(created, str):
+                try:
+                    created = datetime.fromisoformat(created.replace('Z', '+00:00')).replace(tzinfo=None)
+                except Exception:
+                    created = None
+            if isinstance(created, datetime):
+                age = max(0.0, (now - created).total_seconds())
+                if age > oldest_pending_age:
+                    oldest_pending_age = age
+
+        dlq_depth = int(stats.get('dead_letter', 0) or len(dead))
+        alerts = []
+        if oldest_pending_age >= pending_cap and pending:
+            alerts.append({
+                'code': 'pending_age',
+                'severity': 'warn',
+                'oldest_pending_age_seconds': oldest_pending_age,
+                'threshold_seconds': pending_cap,
+            })
+        if dlq_depth >= dlq_cap:
+            alerts.append({
+                'code': 'dlq_depth',
+                'severity': 'high',
+                'dead_letter_count': dlq_depth,
+                'threshold': dlq_cap,
+                'dead_letter': [j.get('id') for j in dead[:20]],
+            })
+
+        prod_requires_db = str(
+            os.environ.get('PHINS_ENVIRONMENT', '') or ''
+        ).strip().lower() == 'production'
+        db_required_ok = (not prod_requires_db) or self._use_db()
+        if prod_requires_db and not self._use_db():
+            alerts.append({
+                'code': 'db_queue_required',
+                'severity': 'high',
+                'note': 'production requires database-backed job queue',
+            })
+
+        return {
+            'ok': not alerts,
+            'stats': stats,
+            'pending_count': int(stats.get('pending', 0) or len(pending)),
+            'dead_letter_count': dlq_depth,
+            'oldest_pending_age_seconds': oldest_pending_age,
+            'pending_age_alert_seconds': pending_cap,
+            'dlq_depth_alert': dlq_cap,
+            'db_backed': self._use_db(),
+            'db_queue_required_ok': db_required_ok,
+            'alerts': alerts,
+        }
+
     def list_jobs(self, status: Optional[str] = None,
                   document_id: Optional[str] = None,
                   limit: int = 50,

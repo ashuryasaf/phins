@@ -86,6 +86,11 @@ def _authoritative_keys() -> tuple:
 
 DEFAULT_INTERVAL_SECONDS = 60
 DEFAULT_MAX_BYTES = 64 * 1024 * 1024
+# U14: when a full snapshot would exceed the cap, write keyed shards instead
+# of freezing durability. Each shard is content-addressed; the index row lists
+# shard digests. Over-cap behaviour never invents cash.
+FORMAT_INCREMENTAL = 'phins-ledger-snapshot-incremental/1'
+INCREMENTAL_INDEX_ID = 'platform-ledger-snapshot-index'
 
 
 def _env_int(name: str, default: int, minimum: int = 0) -> int:
@@ -93,6 +98,12 @@ def _env_int(name: str, default: int, minimum: int = 0) -> int:
         return max(minimum, int(os.environ.get(name, default)))
     except (TypeError, ValueError):
         return default
+
+
+def incremental_enabled() -> bool:
+    """True when incremental / sharded snapshots are allowed (default on)."""
+    raw = str(os.environ.get('PHINS_LEDGER_SNAPSHOT_INCREMENTAL', '1') or '1').strip().lower()
+    return raw not in ('0', 'false', 'no', 'off')
 
 
 def build_payload(snapshot: Dict[str, Any]) -> Dict[str, Any]:
@@ -106,6 +117,57 @@ def build_payload(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         'omitted': sorted(k for k in snapshot if k in omit),
         'data': data,
     }
+
+
+def build_incremental_shards(
+    snapshot: Dict[str, Any],
+    *,
+    max_bytes: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Split a snapshot into per-key shards when the full blob would over-cap.
+
+    Returns an index payload plus shard bodies. Never drops fiduciary keys
+    silently — if a single key exceeds ``max_bytes`` it is reported under
+    ``oversize_keys`` and withheld from the write set (fail closed).
+    """
+    cap = max_bytes if max_bytes is not None else _env_int(
+        'PHINS_LEDGER_SNAPSHOT_DB_MAX_BYTES', DEFAULT_MAX_BYTES, minimum=1,
+    )
+    omit = set(_authoritative_keys())
+    data = {k: v for k, v in snapshot.items() if k not in omit}
+    shards: Dict[str, Dict[str, Any]] = {}
+    oversize: list = []
+    for key, value in sorted(data.items()):
+        body = {
+            'format': FORMAT_INCREMENTAL,
+            'key': key,
+            'saved_at': snapshot.get('saved_at'),
+            'data': {key: value},
+        }
+        raw = json.dumps(body, sort_keys=True, separators=(',', ':'), default=str).encode('utf-8')
+        if len(raw) > cap:
+            oversize.append({'key': key, 'bytes': len(raw)})
+            continue
+        digest = hashlib.sha256(raw).hexdigest()
+        shards[key] = {
+            'artifact_id': f'{ARTIFACT_ID}:{key}',
+            'sha256': digest,
+            'bytes': len(raw),
+            'payload': body,
+        }
+    index = {
+        'format': FORMAT_INCREMENTAL,
+        'saved_at': snapshot.get('saved_at'),
+        'version': snapshot.get('version'),
+        'omitted': sorted(k for k in snapshot if k in omit),
+        'shards': {
+            key: {'artifact_id': s['artifact_id'], 'sha256': s['sha256'], 'bytes': s['bytes']}
+            for key, s in shards.items()
+        },
+        'oversize_keys': oversize,
+        'incremental': True,
+    }
+    return {'index': index, 'shards': shards, 'oversize_keys': oversize}
 
 
 def _default_db_factory():

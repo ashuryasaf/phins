@@ -711,3 +711,39 @@ def test_owner_can_deposit_to_own_wallet_proves_guard_not_overbroad():
     )
     after = float(portal.HEALTH_WALLETS[CUST_B]["balance"])
     assert after == before + 50.0, f"Owner B's deposit was not applied ({before} -> {after})"
+
+
+# --- U13 binder / entity tenancy ------------------------------------------
+
+def test_binder_id_on_policy_model_defaults_to_platform():
+    """U13: Policy carries binder_id / entity_id; historical default is platform."""
+    from database.models import Policy
+    assert hasattr(Policy, 'binder_id')
+    assert hasattr(Policy, 'entity_id')
+    from services.mga.tenancy import (
+        DEFAULT_BINDER_ID,
+        DEFAULT_ENTITY_ID,
+        stamp_tenancy,
+        assert_binder_scope,
+        filter_by_binder,
+    )
+    stamped = stamp_tenancy({'id': 'POL-X', 'customer_id': CUST_A})
+    assert stamped['binder_id'] == DEFAULT_BINDER_ID
+    assert stamped['entity_id'] == DEFAULT_ENTITY_ID
+
+    a = {'id': 'POL-A', 'binder_id': 'BINDER-A', 'secret': B_SENTINEL}
+    b = {'id': 'POL-B', 'binder_id': 'BINDER-B', 'secret': B_SENTINEL}
+    scoped = filter_by_binder({'POL-A': a, 'POL-B': b}, 'BINDER-A')
+    assert 'POL-A' in scoped
+    assert 'POL-B' not in scoped
+
+    with pytest.raises(PermissionError, match='cross_binder_refused'):
+        assert_binder_scope(b, binder_id='BINDER-A', resource_label='policy')
+
+
+def test_scorecard_u13_binder_evidence_present():
+    from services.erp.integrity_scorecard import compute_integrity_scorecard
+    report = compute_integrity_scorecard()
+    by_id = {u['unit_id']: u for u in report['units']}
+    assert by_id['U13']['status'] == 'landed', by_id['U13']
+    assert any('binder_id' in e for e in by_id['U13']['evidence'])
