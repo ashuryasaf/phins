@@ -17,10 +17,12 @@ from services.fiduciary.store import (
     FIDUCIARY_BOOKS_DB,
     FIDUCIARY_BOOKS_MARKER,
     FIDUCIARY_SNAPSHOT_KEYS,
+    fiduciary_baseline,
     fiduciary_mode,
     flush_fiduciary_to_db,
     hydrate_fiduciary_from_db,
     omit_fiduciary_from_snapshot,
+    reset_fiduciary_baseline,
 )
 from services import ledger_snapshot_store as lss
 
@@ -34,8 +36,10 @@ def sqlite_db(monkeypatch, tmp_path):
     monkeypatch.delenv('PHINS_TEST_MODE', raising=False)
     # Force db_mode_enabled via env (portal may not be loaded with DB flags).
     monkeypatch.setenv('PHINS_TEST_MODE', 'true')  # keep soft boot; mode is explicit dual
+    reset_fiduciary_baseline()
     init_database(drop_existing=True)
     yield
+    reset_fiduciary_baseline()
     # Leave the temp sqlite for inspection if needed.
 
 
@@ -676,3 +680,105 @@ def test_replace_mapping_does_not_delete_absent_or_withheld(sqlite_db, monkeypat
     assert still is not None
     assert still.checksum == '0' * 64
     db.close()
+
+
+def test_upsert_cas_refuses_stale_expected_checksum(sqlite_db):
+    """expected_checksum must match the sealed digest or the write is withheld."""
+    db = DatabaseManager()
+    original = {'customer_id': 'CUST-CAS', 'balance': 10}
+    assert db.health_wallets.upsert('CUST-CAS', original) is True
+    _, digest = canonical_payload(original)
+    peer = {'customer_id': 'CUST-CAS', 'balance': 77}
+    assert db.health_wallets.upsert('CUST-CAS', peer) is True
+    # Stale CAS (pre-peer digest) must not revert the peer write.
+    assert (
+        db.health_wallets.upsert(
+            'CUST-CAS',
+            {'customer_id': 'CUST-CAS', 'balance': 10},
+            expected_checksum=digest,
+        )
+        is False
+    )
+    assert db.health_wallets.get_payload('CUST-CAS')['balance'] == 77
+    db.close()
+
+
+def test_flush_cas_withholds_peer_wallet_update(sqlite_db, monkeypatch):
+    """Multi-writer: process baseline must not overwrite a peer's sealed row."""
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    wallets = {'CUST-MW': {'customer_id': 'CUST-MW', 'balance': 100.0}}
+    assert flush_fiduciary_to_db(
+        health_wallets=wallets,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )['health_wallets']['written'] == 1
+    # Establish this process's CAS baseline from sealed tables.
+    memory: dict = {}
+    hydrate_fiduciary_from_db(
+        health_wallets=memory,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+        prefer_db=True,
+    )
+    assert memory['CUST-MW']['balance'] == 100.0
+    assert 'CUST-MW' in fiduciary_baseline('health_wallets')
+
+    # Peer writer updates sealed without this process's baseline.
+    db = DatabaseManager()
+    assert db.health_wallets.upsert(
+        'CUST-MW', {'customer_id': 'CUST-MW', 'balance': 999.0}
+    ) is True
+    db.close()
+
+    # Stale process memory flushes → CAS withhold; peer value survives.
+    result = flush_fiduciary_to_db(
+        health_wallets={'CUST-MW': {'customer_id': 'CUST-MW', 'balance': 100.0}},
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )
+    assert result['health_wallets']['withheld'] >= 1
+    assert result['health_wallets']['written'] == 0
+    db = DatabaseManager()
+    assert db.health_wallets.get_payload('CUST-MW')['balance'] == 999.0
+    db.close()
+
+
+def test_flush_cas_allows_write_when_baseline_matches(sqlite_db, monkeypatch):
+    """Matching baseline still lets this process seal its own mutation."""
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    assert flush_fiduciary_to_db(
+        health_wallets={'CUST-OK': {'customer_id': 'CUST-OK', 'balance': 1.0}},
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )['health_wallets']['written'] == 1
+    memory: dict = {}
+    hydrate_fiduciary_from_db(
+        health_wallets=memory,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+        prefer_db=True,
+    )
+    memory['CUST-OK'] = {'customer_id': 'CUST-OK', 'balance': 42.0}
+    result = flush_fiduciary_to_db(
+        health_wallets=memory,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )
+    assert result['health_wallets']['written'] == 1
+    assert result['health_wallets']['withheld'] == 0
+    db = DatabaseManager()
+    assert db.health_wallets.get_payload('CUST-OK')['balance'] == 42.0
+    db.close()
+

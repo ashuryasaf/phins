@@ -9483,6 +9483,7 @@ def _hydrate_and_migrate_fiduciary(
     """
     from services.fiduciary import (
         FiduciaryBootError,
+        capture_fiduciary_baseline_from_db,
         fiduciary_mode,
         hydrate_fiduciary_from_db,
         migrate_snapshot_to_fiduciary_tables,
@@ -9538,6 +9539,14 @@ def _hydrate_and_migrate_fiduciary(
         and marker != FIDUCIARY_BOOKS_DB
         and not prefer_sealed
     ):
+        # File remains SoR; still capture sealed digests so a later mutation
+        # flush CAS-withholds peer updates instead of reverting them.
+        try:
+            capture_fiduciary_baseline_from_db()
+        except Exception as exc:
+            print(
+                f"[FIDUCIARY] Baseline capture skipped: {type(exc).__name__}"
+            )
         return
     try:
         counts = hydrate_fiduciary_from_db(

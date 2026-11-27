@@ -41,8 +41,20 @@ class SealedFiduciaryRepository(BaseRepository):
         super().__init__(model_class, session)
         self._customer_field = customer_field
 
-    def upsert(self, record_id: str, payload: Any, *, customer_id: Optional[str] = None) -> bool:
-        """Insert or replace when the payload changes. Never clobber a bad-checksum row."""
+    def upsert(
+        self,
+        record_id: str,
+        payload: Any,
+        *,
+        customer_id: Optional[str] = None,
+        expected_checksum: Optional[str] = None,
+    ) -> bool:
+        """Insert or replace when the payload changes.
+
+        Never clobber a bad-checksum row. When ``expected_checksum`` is set,
+        also refuse if the sealed row no longer matches that digest (another
+        writer updated it since this process last hydrated/flushed).
+        """
         text, digest = canonical_payload(payload)
         try:
             row = self.session.get(self.model_class, record_id)
@@ -53,6 +65,16 @@ class SealedFiduciaryRepository(BaseRepository):
                 if existing_digest != row.checksum:
                     logger.error(
                         "%s checksum mismatch for %s; withhold (not overwritten)",
+                        self.model_class.__tablename__,
+                        record_id,
+                    )
+                    return False
+                if (
+                    expected_checksum is not None
+                    and row.checksum != expected_checksum
+                ):
+                    logger.error(
+                        "%s concurrent change for %s; withhold",
                         self.model_class.__tablename__,
                         record_id,
                     )
@@ -146,6 +168,29 @@ class SealedFiduciaryRepository(BaseRepository):
         """Return ``{id: payload}`` for every intact row."""
         return {key: payload for key, payload, _ in self.iter_payloads()}
 
+    def load_checksums(self) -> Dict[str, str]:
+        """Return ``{id: checksum}`` for every intact sealed row.
+
+        Used as the process CAS baseline so a dual/db flush does not revert
+        another writer's updates for ids this process last observed.
+        """
+        out: Dict[str, str] = {}
+        try:
+            rows = self.session.query(self.model_class).all()
+        except SQLAlchemyError as exc:
+            logger.error(
+                "%s checksum load failed: %s",
+                self.model_class.__tablename__,
+                type(exc).__name__,
+            )
+            raise
+        for row in rows:
+            digest = hashlib.sha256((row.payload_json or '').encode('utf-8')).hexdigest()
+            if digest != row.checksum:
+                continue
+            out[str(row.id)] = row.checksum
+        return out
+
     def count_rows(self) -> int:
         try:
             return int(self.session.query(self.model_class).count())
@@ -168,21 +213,37 @@ class SealedFiduciaryRepository(BaseRepository):
             return str(payload.get('customer_id'))
         return None
 
-    def replace_mapping(self, mapping: Dict[str, Any], *, customer_from: Optional[str] = None) -> Dict[str, int]:
+    def replace_mapping(
+        self,
+        mapping: Dict[str, Any],
+        *,
+        customer_from: Optional[str] = None,
+        expected_checksums: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, int]:
         """Upsert every entry. Returns counts of written / withheld / errors.
 
         Never deletes sealed rows: a checksum-mismatched (withheld) seal must
         stay for forensics, and a dual/replica flush of a subset book must not
         drop other customers' intact ids. Purge durability across db-mode /
         AE2 hydrate needs an explicit tombstone API (out of U2 upsert scope).
+
+        ``expected_checksums`` (id → digest) enables CAS so a multi-writer
+        flush does not revert peer updates for ids this process did not win.
         """
         written = withheld = errors = 0
+        expected = expected_checksums or {}
         for key, payload in (mapping or {}).items():
             if not key:
                 continue
+            record_id = str(key)
             customer_id = self._customer_id_for(payload, customer_from=customer_from)
             try:
-                ok = self.upsert(str(key), payload, customer_id=customer_id)
+                ok = self.upsert(
+                    record_id,
+                    payload,
+                    customer_id=customer_id,
+                    expected_checksum=expected.get(record_id),
+                )
             except Exception:
                 try:
                     self.session.rollback()
@@ -287,8 +348,12 @@ class BalanceSheetRepository(SealedFiduciaryRepository):
     def get_phins(self) -> Optional[Any]:
         return self.get_payload(BALANCE_SHEET_ID)
 
-    def upsert_phins(self, payload: Any) -> bool:
-        return self.upsert(BALANCE_SHEET_ID, payload)
+    def upsert_phins(
+        self, payload: Any, *, expected_checksum: Optional[str] = None
+    ) -> bool:
+        return self.upsert(
+            BALANCE_SHEET_ID, payload, expected_checksum=expected_checksum
+        )
 
 
 __all__ = [

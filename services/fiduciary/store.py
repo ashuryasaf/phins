@@ -27,6 +27,17 @@ FIDUCIARY_BOOKS_DB = 'db'
 
 _MODE_ENV = 'PHINS_FIDUCIARY_MODE'
 
+# Process-local CAS baselines: sealed checksum last observed per book/id.
+# Hydrate and successful flush refresh these; a flush passes them as
+# expected_checksum so peer updates are withheld rather than reverted.
+_FIDUCIARY_BASELINE: Dict[str, Dict[str, str]] = {
+    'health_wallets': {},
+    'wallet_withdrawals': {},
+    'nft_ledger': {},
+    'investment_accounts': {},
+    'balance_sheet': {},
+}
+
 
 class FiduciaryBootError(RuntimeError):
     """Fatal fiduciary migrate/hydrate failure in ``db`` mode (abort boot)."""
@@ -57,9 +68,73 @@ def omit_fiduciary_from_snapshot(environ: Optional[Mapping[str, str]] = None) ->
     return fiduciary_mode(environ) == 'db'
 
 
+def reset_fiduciary_baseline() -> None:
+    """Clear CAS baselines (tests / process isolation)."""
+    for book in _FIDUCIARY_BASELINE:
+        _FIDUCIARY_BASELINE[book] = {}
+
+
+def fiduciary_baseline(book: str) -> Dict[str, str]:
+    """Copy of the process CAS baseline for ``book`` (tests / diagnostics)."""
+    return dict(_FIDUCIARY_BASELINE.get(book) or {})
+
+
 def _db_manager():
     from database.manager import DatabaseManager
     return DatabaseManager()
+
+
+def _set_baseline(book: str, checksums: Mapping[str, str]) -> None:
+    _FIDUCIARY_BASELINE[book] = {str(k): str(v) for k, v in checksums.items()}
+
+
+def capture_fiduciary_baseline_from_db() -> Dict[str, int]:
+    """Record sealed checksums without merging payloads into memory.
+
+    Call on dual file-SoR boot paths that skip hydrate so a later mutation
+    flush still CAS-withholds peer updates.
+    """
+    mode = fiduciary_mode()
+    if mode == 'off':
+        return {'mode': 0}
+    counts = {
+        'health_wallets': 0,
+        'wallet_withdrawals': 0,
+        'nft_ledger': 0,
+        'investment_accounts': 0,
+        'balance_sheet': 0,
+    }
+    try:
+        db = _db_manager()
+    except Exception as exc:
+        logger.error(
+            "fiduciary baseline capture: cannot open DB: %s", type(exc).__name__
+        )
+        raise
+    try:
+        for label, repo in (
+            ('health_wallets', db.health_wallets),
+            ('wallet_withdrawals', db.wallet_withdrawals),
+            ('nft_ledger', db.nft_ledger),
+            ('investment_accounts', db.investment_accounts),
+        ):
+            checksums = repo.load_checksums()
+            _set_baseline(label, checksums)
+            counts[label] = len(checksums)
+        sheet_cs = db.balance_sheet.load_checksums()
+        _set_baseline('balance_sheet', sheet_cs)
+        counts['balance_sheet'] = len(sheet_cs)
+    except Exception as exc:
+        logger.error(
+            "fiduciary baseline capture failed: %s", type(exc).__name__
+        )
+        raise
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+    return counts
 
 
 def hydrate_fiduciary_from_db(
@@ -75,6 +150,7 @@ def hydrate_fiduciary_from_db(
 
     When ``prefer_db`` is True (dual/db), an intact DB row replaces the
     in-memory value for that key. When False, DB only fills missing keys.
+    Always refreshes the process CAS baseline from intact sealed checksums.
     """
     mode = fiduciary_mode()
     if mode == 'off':
@@ -101,16 +177,29 @@ def hydrate_fiduciary_from_db(
                 counts[label] += 1
 
     try:
-        _merge(health_wallets, db.health_wallets.load_mapping(), 'health_wallets')
-        _merge(wallet_withdrawals, db.wallet_withdrawals.load_mapping(), 'wallet_withdrawals')
-        _merge(nft_ledger, db.nft_ledger.load_mapping(), 'nft_ledger')
-        _merge(investment_accounts, db.investment_accounts.load_mapping(), 'investment_accounts')
+        hw = db.health_wallets.load_mapping()
+        _merge(health_wallets, hw, 'health_wallets')
+        _set_baseline('health_wallets', db.health_wallets.load_checksums())
+
+        ww = db.wallet_withdrawals.load_mapping()
+        _merge(wallet_withdrawals, ww, 'wallet_withdrawals')
+        _set_baseline('wallet_withdrawals', db.wallet_withdrawals.load_checksums())
+
+        nft = db.nft_ledger.load_mapping()
+        _merge(nft_ledger, nft, 'nft_ledger')
+        _set_baseline('nft_ledger', db.nft_ledger.load_checksums())
+
+        inv = db.investment_accounts.load_mapping()
+        _merge(investment_accounts, inv, 'investment_accounts')
+        _set_baseline('investment_accounts', db.investment_accounts.load_checksums())
+
         sheet = db.balance_sheet.get_phins()
         if sheet is not None and isinstance(sheet, dict):
             if prefer_db or not balance_sheet:
                 balance_sheet.clear()
                 balance_sheet.update(sheet)
                 counts['balance_sheet'] = 1
+        _set_baseline('balance_sheet', db.balance_sheet.load_checksums())
     except Exception as exc:
         logger.error("fiduciary hydrate failed: %s", type(exc).__name__)
         raise
@@ -130,7 +219,12 @@ def flush_fiduciary_to_db(
     investment_accounts: Mapping[str, Any],
     balance_sheet: Mapping[str, Any],
 ) -> Dict[str, Any]:
-    """Dual/db write path: seal every live fiduciary dict into its table."""
+    """Dual/db write path: seal every live fiduciary dict into its table.
+
+    Passes the process CAS baseline as ``expected_checksum`` so a multi-writer
+    flush withholds ids another process updated since this one last
+    hydrated/flushed, instead of reverting them.
+    """
     mode = fiduciary_mode()
     if mode == 'off':
         return {'mode': 'off'}
@@ -142,6 +236,8 @@ def flush_fiduciary_to_db(
 
     result: Dict[str, Any] = {'mode': mode}
     try:
+        from database.repositories.fiduciary_repository import BALANCE_SHEET_ID
+
         # Per-book: skip empty process dicts over non-empty sealed tables
         # without aborting the rest of the flush (one purged NFT book must
         # not block wallet dual-writes).
@@ -165,12 +261,18 @@ def flush_fiduciary_to_db(
                     'skipped': 'refuse_empty_overwrite',
                 }
                 return
+            expected = _FIDUCIARY_BASELINE.get(label) or {}
+            kwargs: Dict[str, Any] = {'expected_checksums': expected}
             if customer_from:
-                result[label] = repo.replace_mapping(
-                    dict(mapping), customer_from=customer_from
-                )
-            else:
-                result[label] = repo.replace_mapping(dict(mapping))
+                kwargs['customer_from'] = customer_from
+            counts = repo.replace_mapping(dict(mapping), **kwargs)
+            result[label] = counts
+            # Sealed table is source of truth for the next CAS baseline
+            # (our writes and peer wins both land here).
+            try:
+                _set_baseline(label, repo.load_checksums())
+            except Exception:
+                pass
 
         _write_or_skip('health_wallets', health_wallets, db.health_wallets)
         _write_or_skip(
@@ -184,8 +286,20 @@ def flush_fiduciary_to_db(
         )
         _write_or_skip('investment_accounts', investment_accounts, db.investment_accounts)
         if balance_sheet:
-            ok = db.balance_sheet.upsert_phins(dict(balance_sheet))
-            result['balance_sheet'] = {'written': 1 if ok else 0, 'withheld': 0 if ok else 1}
+            expected_sheet = (_FIDUCIARY_BASELINE.get('balance_sheet') or {}).get(
+                BALANCE_SHEET_ID
+            )
+            ok = db.balance_sheet.upsert_phins(
+                dict(balance_sheet), expected_checksum=expected_sheet
+            )
+            result['balance_sheet'] = {
+                'written': 1 if ok else 0,
+                'withheld': 0 if ok else 1,
+            }
+            try:
+                _set_baseline('balance_sheet', db.balance_sheet.load_checksums())
+            except Exception:
+                pass
         else:
             result['balance_sheet'] = {'written': 0, 'withheld': 0}
     except Exception as exc:
