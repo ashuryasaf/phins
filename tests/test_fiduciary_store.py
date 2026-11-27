@@ -489,6 +489,35 @@ def test_dual_seal_and_file_share_one_fiduciary_freeze(sqlite_db, monkeypatch):
     assert portal.HEALTH_WALLETS['CUST-FREEZE']['balance'] == 999
 
 
+def test_fiduciary_freeze_race_is_durability_failure(sqlite_db, monkeypatch):
+    """A torn freeze must fail closed (no seal, no file) and keep dirty."""
+    import web_portal.server as portal
+
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    monkeypatch.setenv('USE_DATABASE', 'true')
+    wrote = {'flush': 0, 'file': 0}
+
+    def _boom():
+        raise RuntimeError('ledger snapshot raced a live dict; refusing empty freeze')
+
+    def _flush(*_a, **_k):
+        wrote['flush'] += 1
+        return True
+
+    def _file(*_a, **_k):
+        wrote['file'] += 1
+        return True
+
+    monkeypatch.setattr(portal, '_freeze_fiduciary_books', _boom)
+    monkeypatch.setattr(portal, '_flush_fiduciary_tables', _flush)
+    monkeypatch.setattr(portal, '_save_ledger_data_file', _file)
+    portal.mark_ledger_dirty()
+    assert portal.save_ledger_data(_periodic=True) is False
+    assert wrote['flush'] == 0
+    assert wrote['file'] == 0
+    assert portal._persistence_dirty is True
+
+
 def test_graceful_shutdown_skips_flush_when_clean(monkeypatch):
     """Idle SIGTERM must not invent dirtiness or flush fiduciary books."""
     import web_portal.server as portal

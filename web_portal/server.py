@@ -9436,14 +9436,20 @@ def _offer_ledger_snapshot_to_db(snapshot, *, periodic: bool, force: bool) -> No
 
 
 def _freeze_fiduciary_books() -> Dict[str, Any]:
-    """Deep-copy process fiduciary books for a shared seal + volume snapshot."""
-    import copy
+    """Deep-copy process fiduciary books for a shared seal + volume snapshot.
+
+    Uses ``_freeze_for_json`` (retrying items()/list()) so a wallet or NFT
+    mutation that races without the persistence lock cannot raise
+    ``dictionary changed size during iteration`` and tear the freeze. A
+    persistent race raises ``RuntimeError`` — callers fail closed and leave
+    the previous volume file / sealed rows alone.
+    """
     return {
-        'health_wallets': copy.deepcopy(dict(HEALTH_WALLETS)),
-        'wallet_withdrawals': copy.deepcopy(dict(WALLET_WITHDRAWALS)),
-        'nft_ledger': copy.deepcopy(dict(NFT_LEDGER)),
-        'investment_accounts': copy.deepcopy(dict(INVESTMENT_ACCOUNTS)),
-        'balance_sheet': copy.deepcopy(dict(PHINS_BALANCE_SHEET)),
+        'health_wallets': _freeze_for_json(HEALTH_WALLETS),
+        'wallet_withdrawals': _freeze_for_json(WALLET_WITHDRAWALS),
+        'nft_ledger': _freeze_for_json(NFT_LEDGER),
+        'investment_accounts': _freeze_for_json(INVESTMENT_ACCOUNTS),
+        'balance_sheet': _freeze_for_json(PHINS_BALANCE_SHEET),
     }
 
 
@@ -9671,13 +9677,26 @@ def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
                 periodic=_periodic, ledger_dirty=dirty, force_db=force_db,
             )
             if do_fiduciary_flush:
-                fiduciary_books = _freeze_fiduciary_books()
+                try:
+                    fiduciary_books = _freeze_fiduciary_books()
+                except RuntimeError as exc:
+                    # Racing wallet/NFT mutation tore the freeze — keep prior
+                    # seal + volume file; next dirty tick retries.
+                    _persistence_dirty = True
+                    print(
+                        f"[FIDUCIARY] Freeze raced live books "
+                        f"({type(exc).__name__}); "
+                        "treating save as durability failure"
+                    )
+                    return False
                 if not _flush_fiduciary_tables(fiduciary_books):
                     _persistence_dirty = True
                     print(
                         "[FIDUCIARY] Sealed flush failed; "
                         "treating save as durability failure"
                     )
+                    # Skip _offer_ledger_snapshot_to_db on purpose: no new
+                    # volume freeze means no snapshot copy for this attempt.
                     return False
         try:
             file_ok = bool(
