@@ -968,7 +968,18 @@ By selecting an investment route, you confirm you understand the risks and benef
         description: str = '',
         reference_no: str = '',
     ) -> AccountingEntry:
-        """Build a ledger entry (bumps counter) without journaling or appending."""
+        """Build a ledger entry (bumps counter) without journaling or appending.
+
+        U8 / AE4: every GL line path (post, reverse, create) refuses a
+        hard-closed ``entry_date`` here so callers cannot bypass via
+        ``_build_ledger_entry`` alone.
+        """
+        try:
+            from services.erp.period_close import assert_period_open_for_post
+        except ImportError:
+            assert_period_open_for_post = None  # type: ignore
+        if assert_period_open_for_post is not None:
+            assert_period_open_for_post(entry_date)
         balance = self._get_account_balance(account_type)
         debit = Decimal(str(debit_amount))
         credit = Decimal(str(credit_amount))
@@ -1188,14 +1199,8 @@ By selecting an investment route, you confirm you understand the risks and benef
         U5: when the durable accounting journal is on, every post also
         inserts a sealed journal row (idempotent key). In ``db`` mode a
         failed journal write refuses the in-memory append (fail closed).
-        U8: refuse posts dated in a hard-closed fiscal period (AE4).
+        U8 / AE4 is enforced inside ``_build_ledger_entry``.
         """
-        try:
-            from services.erp.period_close import assert_period_open_for_post
-        except ImportError:
-            assert_period_open_for_post = None  # type: ignore
-        if assert_period_open_for_post is not None:
-            assert_period_open_for_post(entry_date)
         debit = Decimal(str(debit_amount))
         credit = Decimal(str(credit_amount))
         entry = self._build_ledger_entry(

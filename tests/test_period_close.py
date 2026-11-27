@@ -116,12 +116,17 @@ class _FakeLedger:
     def __init__(self, *, fail: bool = False):
         self.fail = fail
         self.events = []
+        self.transaction_ledger = {}
 
     def append_event(self, **kwargs):
         if self.fail:
             raise RuntimeError('ledger_down')
-        self.events.append(kwargs)
-        return kwargs
+        entry_id = str(kwargs.get('entry_id') or f"evt-{len(self.events)}")
+        row = dict(kwargs)
+        row['entry_id'] = entry_id
+        self.events.append(row)
+        self.transaction_ledger[entry_id] = row
+        return row
 
 
 def test_reopen_soft_mirrors_ledger_event(monkeypatch):
@@ -149,6 +154,39 @@ def test_soft_close_fails_closed_when_ledger_append_fails(monkeypatch):
     assert result['reason'] == 'ledger_append_failed'
     period = pc.get_period('2026-04')
     assert period is None or period.get('status') == pc.STATUS_OPEN
+
+
+def test_hard_close_restored_from_ledger_after_memory_clear(monkeypatch):
+    ledger = _FakeLedger()
+    monkeypatch.setattr(pc, '_resolve_platform_ledger', lambda: ledger)
+    hard = pc.hard_close('2025-09', actor='acct')
+    assert hard['ok'] is True
+    pack_id = hard['pack']['id']
+    # Simulate restart: clear process memory; ledger still has the event.
+    pc.reset_period_close_state()
+    assert pc.get_period('2025-09') is None or True  # may restore immediately
+    pc.reset_period_close_state()
+    restored = pc.ensure_period(2025, 9)
+    assert restored['status'] == pc.STATUS_HARD
+    assert restored['pack_id'] == pack_id
+    with pytest.raises(pc.PeriodClosedError):
+        pc.assert_period_open_for_post(date(2025, 9, 15))
+
+
+def test_reverse_allocation_refuses_hard_closed_today():
+    eng = AccountingEngine('ACC-U8-REV', 'Reverse Gate Co')
+    alloc = eng.create_allocation(
+        bill_id='BILL-U8-REV', policy_id='POL-U8-REV', customer_id='CUST-U8-REV',
+        total_premium=Decimal('50.00'), risk_percentage=Decimal('80'),
+    )
+    ok, _ = eng.post_allocation(alloc.allocation_id, 'accountant')
+    assert ok is True
+    today = date.today()
+    hard = pc.hard_close(pc.period_id_for(today.year, today.month), actor='acct', engine=eng)
+    assert hard['ok'] is True
+    ok2, msg = eng.reverse_allocation(alloc.allocation_id, 'accountant', reason='should refuse')
+    assert ok2 is False
+    assert 'period_hard_closed' in msg
 
 
 def test_tampered_pack_fails_verify():

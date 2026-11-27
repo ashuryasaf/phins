@@ -43,10 +43,17 @@ def _handle(job: Dict[str, Any]) -> Dict[str, Any]:
     period_id = str(params.get('period_id') or '').strip()
     if not period_id:
         raise ValueError('period_id is required')
+    engine = None
+    try:
+        from accounting_engine import get_accounting_engine
+        engine = get_accounting_engine()
+    except Exception:
+        engine = None
     return run_once(
         period_id=period_id,
         action=str(params.get('action') or 'soft'),
         actor=str(params.get('actor') or 'period_close_job'),
+        engine=engine,
         books=params.get('books'),
     )
 

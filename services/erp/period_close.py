@@ -119,9 +119,20 @@ def _empty_period(year: int, month: int) -> Dict[str, Any]:
 
 
 def ensure_period(year: int, month: int) -> Dict[str, Any]:
-    """Return the fiscal period for ``year``/``month``, creating it open."""
+    """Return the fiscal period for ``year``/``month``, creating it open.
+
+    A hard-close mirrored on the platform ledger is restored first so a
+    restarted worker does not reopen a month that was already sealed.
+    """
+    pid = period_id_for(year, month)
     with _LOCK:
-        pid = period_id_for(year, month)
+        existing = _PERIODS.get(pid)
+        if existing is not None:
+            return dict(existing)
+    restored = _restore_hard_close_from_ledger(pid)
+    if restored is not None:
+        return restored
+    with _LOCK:
         existing = _PERIODS.get(pid)
         if existing is not None:
             return dict(existing)
@@ -131,14 +142,27 @@ def ensure_period(year: int, month: int) -> Dict[str, Any]:
 
 
 def get_period(period_id: str) -> Optional[Dict[str, Any]]:
+    pid = str(period_id or '').strip()
     with _LOCK:
-        row = _PERIODS.get(str(period_id or '').strip())
+        row = _PERIODS.get(pid)
+        if row is not None and row.get('status') == STATUS_HARD:
+            return dict(row)
+    # Peer restart / multi-worker: restore hard close from platform ledger.
+    restored = _restore_hard_close_from_ledger(pid)
+    if restored is not None:
+        return dict(restored)
+    with _LOCK:
+        row = _PERIODS.get(pid)
         return dict(row) if row else None
 
 
 def get_period_for_date(d: date) -> Dict[str, Any]:
     if not isinstance(d, date):
         raise TypeError('entry_date must be a date')
+    pid = period_id_for(d.year, d.month)
+    existing = get_period(pid)
+    if existing is not None:
+        return existing
     return ensure_period(d.year, d.month)
 
 
@@ -280,6 +304,87 @@ def _resolve_platform_ledger() -> Any:
     if ledger is None or not hasattr(ledger, 'append_event'):
         return None
     return ledger
+
+
+def _iter_platform_ledger_entries(ledger: Any) -> List[Dict[str, Any]]:
+    store = getattr(ledger, 'transaction_ledger', None)
+    if isinstance(store, dict):
+        return [dict(v) for v in store.values() if isinstance(v, dict)]
+    if hasattr(ledger, 'values') and callable(ledger.values):
+        return [dict(v) for v in ledger.values() if isinstance(v, dict)]
+    if isinstance(ledger, dict):
+        return [dict(v) for v in ledger.values() if isinstance(v, dict)]
+    return []
+
+
+def _payload_dict(entry: Dict[str, Any]) -> Dict[str, Any]:
+    payload = entry.get('payload')
+    if isinstance(payload, dict):
+        return dict(payload)
+    if isinstance(payload, str) and payload.strip():
+        try:
+            parsed = json.loads(payload)
+            return dict(parsed) if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _restore_hard_close_from_ledger(period_id: str) -> Optional[Dict[str, Any]]:
+    """Rehydrate a hard-closed period from the platform ledger (peer / restart).
+
+    Soft/reopen events do not clear a hard-close row — hard remains immutable.
+    Missing ledger → no restore (period stays open until closed again).
+    """
+    pid = str(period_id or '').strip()
+    if not pid:
+        return None
+    ledger = _resolve_platform_ledger()
+    if ledger is None:
+        return None
+    latest: Optional[Dict[str, Any]] = None
+    for entry in _iter_platform_ledger_entries(ledger):
+        event_type = str(entry.get('event_type') or entry.get('type') or '')
+        entity_id = str(entry.get('entity_id') or '')
+        if event_type == EVENT_HARD and entity_id == pid:
+            latest = entry
+    if latest is None:
+        return None
+    try:
+        year, month = parse_period_id(pid)
+    except ValueError:
+        return None
+    payload = _payload_dict(latest)
+    sealed_at = (
+        str(payload.get('sealed_at') or '')
+        or str(latest.get('timestamp') or latest.get('recorded_at') or _now_iso())
+    )
+    actor = str(latest.get('actor') or payload.get('actor') or 'period_close')
+    pack_id = str(payload.get('pack_id') or latest.get('entry_id') or '')
+    pack_checksum = str(payload.get('checksum') or '')
+    with _LOCK:
+        period = _empty_period(year, month)
+        period['status'] = STATUS_HARD
+        period['hard_closed_at'] = sealed_at
+        period['hard_closed_by'] = actor
+        period['soft_closed_at'] = sealed_at
+        period['soft_closed_by'] = actor
+        period['pack_id'] = pack_id or None
+        period['pack_checksum'] = pack_checksum or None
+        period['updated_at'] = sealed_at
+        _PERIODS[pid] = period
+        if pack_id or pack_checksum:
+            _PACKS[pid] = {
+                'id': pack_id,
+                'period_id': pid,
+                'action': STATUS_HARD,
+                'checksum': pack_checksum,
+                'actor': actor,
+                'sealed_at': sealed_at,
+                'trial_balance': payload.get('trial_balance'),
+                'restored_from_ledger': True,
+            }
+        return dict(period)
 
 
 def _mirror_pack_to_ledger(pack: Dict[str, Any], *, event_type: str) -> Dict[str, Any]:
