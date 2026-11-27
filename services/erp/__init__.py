@@ -4,11 +4,12 @@ U4 lands the Money Gate Agent and Books Integrity job. U5 adds the durable
 accounting journal. U6 seals the daily ``finance.books_tied`` certificate.
 U7 (agent commission clawback) lives on AgentOS +
 ``services.jobs.commission_clawback_job`` and gates through Money Gate op
-``agent_commission.clawback``. The integrity scorecard reports plan maturity
-58→100 and is imported lazily (CLI/tests) so boot money paths do not load
-it. Later units add CoA and period close. Callers go through
-``services.erp.money_gate`` / ``accounting_journal`` / ``books_tied`` — this
-package never invents a second money store or pricing writer.
+``agent_commission.clawback``. U8 adds ``coa`` + ``period_close`` (open →
+soft → hard; hard-closed months refuse GL posts). The integrity scorecard
+reports plan maturity 58→100 and is imported lazily (CLI/tests) so boot
+money paths do not load it. Callers go through ``services.erp.money_gate``
+/ ``accounting_journal`` / ``books_tied`` / ``coa`` / ``period_close`` —
+this package never invents a second money store or pricing writer.
 """
 
 from services.erp.money_gate import (
@@ -40,6 +41,10 @@ __all__ = [
     'verify_certificate',
     'compute_integrity_scorecard',
     'render_scorecard_markdown',
+    'assert_period_open_for_post',
+    'hard_close',
+    'soft_close',
+    'seed_chart_of_accounts',
 ]
 
 
@@ -53,4 +58,12 @@ def __getattr__(name: str):
         from services.erp import books_tied as _books_tied
 
         return getattr(_books_tied, name)
+    if name in ('assert_period_open_for_post', 'hard_close', 'soft_close', 'PeriodClosedError'):
+        from services.erp import period_close as _period_close
+
+        return getattr(_period_close, name)
+    if name in ('seed_chart_of_accounts', 'list_accounts', 'chart_fingerprint'):
+        from services.erp import coa as _coa
+
+        return getattr(_coa, name)
     raise AttributeError(f'module {__name__!r} has no attribute {name!r}')

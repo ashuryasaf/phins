@@ -691,10 +691,25 @@ By selecting an investment route, you confirm you understand the risks and benef
         Risk, savings, and the allocation header seal in one journal
         transaction so a mid-post clash cannot leave an orphan debit on
         the shared durable book while memory rolls back (Bugbot U5).
+        U8 / AE4: refuse when today falls in a hard-closed fiscal period.
         """
         if allocation_id not in self.allocations:
             return False, f"Allocation {allocation_id} not found"
-        
+
+        try:
+            from services.erp.period_close import PeriodClosedError, assert_period_open_for_post
+        except ImportError:
+            PeriodClosedError = None  # type: ignore
+            assert_period_open_for_post = None  # type: ignore
+        if assert_period_open_for_post is not None:
+            try:
+                assert_period_open_for_post(date.today())
+            except Exception as period_exc:
+                if PeriodClosedError is not None and isinstance(period_exc, PeriodClosedError):
+                    detail = period_exc.as_response()
+                    return False, str(detail.get('error') or period_exc)
+                raise
+
         allocation = self.allocations[allocation_id]
         prior_status = allocation.status
         prior_posted_date = allocation.posted_date
@@ -790,12 +805,28 @@ By selecting an investment route, you confirm you understand the risks and benef
         Contra lines + the reversed header seal in one journal transaction so
         a mid-loop clash cannot leave a one-sided credit while status stays
         POSTED (Agentic Security Review on U5).
+        U8 / AE4: contra lines are dated today, so a hard-closed current
+        month refuses the reversal before status or the book changes.
         """
         allocation = self.allocations.get(allocation_id)
         if allocation is None:
             return False, f"Allocation {allocation_id} not found"
         if allocation.status != AllocationStatus.POSTED:
             return False, f"Allocation {allocation_id} is not posted"
+        entry_date = date.today()
+        try:
+            from services.erp.period_close import PeriodClosedError, assert_period_open_for_post
+        except ImportError:
+            PeriodClosedError = None  # type: ignore
+            assert_period_open_for_post = None  # type: ignore
+        if assert_period_open_for_post is not None:
+            try:
+                assert_period_open_for_post(entry_date)
+            except Exception as period_exc:
+                if PeriodClosedError is not None and isinstance(period_exc, PeriodClosedError):
+                    detail = period_exc.as_response()
+                    return False, str(detail.get('error') or period_exc)
+                raise
         note = f"reversed_by={reversed_by}" + (f"; {reason}" if reason else "")
         subject = self._premium_cash_subject(allocation)
         # Generation of the POSTED cycle being reversed (= current reverse count).
@@ -822,7 +853,7 @@ By selecting an investment route, you confirm you understand the risks and benef
                     allocation_id=allocation_id,
                     policy_id=allocation.policy_id,
                     customer_id=allocation.customer_id,
-                    entry_date=date.today(),
+                    entry_date=entry_date,
                     entry_type=entry_type,
                     account_type=account_type,
                     credit_amount=amount,
@@ -953,7 +984,18 @@ By selecting an investment route, you confirm you understand the risks and benef
         description: str = '',
         reference_no: str = '',
     ) -> AccountingEntry:
-        """Build a ledger entry (bumps counter) without journaling or appending."""
+        """Build a ledger entry (bumps counter) without journaling or appending.
+
+        U8 / AE4: every GL line path (post, reverse, create) refuses a
+        hard-closed ``entry_date`` here so callers cannot bypass via
+        ``_build_ledger_entry`` alone.
+        """
+        try:
+            from services.erp.period_close import assert_period_open_for_post
+        except ImportError:
+            assert_period_open_for_post = None  # type: ignore
+        if assert_period_open_for_post is not None:
+            assert_period_open_for_post(entry_date)
         balance = self._get_account_balance(account_type)
         debit = Decimal(str(debit_amount))
         credit = Decimal(str(credit_amount))
@@ -1173,6 +1215,7 @@ By selecting an investment route, you confirm you understand the risks and benef
         U5: when the durable accounting journal is on, every post also
         inserts a sealed journal row (idempotent key). In ``db`` mode a
         failed journal write refuses the in-memory append (fail closed).
+        U8 / AE4 is enforced inside ``_build_ledger_entry``.
         """
         debit = Decimal(str(debit_amount))
         credit = Decimal(str(credit_amount))

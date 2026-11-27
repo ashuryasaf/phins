@@ -3,8 +3,9 @@
 ``accounting_journal_entries`` is the sealed GL append log for
 ``AccountingEngine`` posts. Each row carries an idempotency key plus
 canonical JSON + sha256. A checksum mismatch withholds the row on read
-and is never overwritten. Fiscal periods and CoA accounts land in U8;
-this module owns the journal only so peer instances share posts without
+and is never overwritten. Fiscal period / CoA service state lives in
+``services/erp/period_close.py`` and ``services/erp/coa.py`` (U8); this
+module owns the journal only so peer instances share posts without
 memory-only money.
 """
 

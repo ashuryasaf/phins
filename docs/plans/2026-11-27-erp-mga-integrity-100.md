@@ -328,7 +328,7 @@ bash quick_smoke_test.sh
 - [ ] Durable accounting journal
 - [x] Daily books-tied certificate
 - [x] Agent clawbacks
-- [ ] CoA + hard period close
+- [x] CoA + hard period close
 - [ ] Bordereaux + remittance sealed & tied
 - [ ] Trust TB + RI cession cash
 - [ ] Premium tax additive
