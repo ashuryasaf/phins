@@ -406,20 +406,21 @@
                     document.getElementById('pins-result').textContent = failures[body.error] || body.error || 'Could not restore.';
                     if (pins.analysis) renderPinsAnalysis(pins, 'Restore stopped');
                 }
-                await loadPins();
-                load();
-                if (window.PhinsUnifiedCashflow && typeof window.PhinsUnifiedCashflow.reload === 'function') {
-                    window.PhinsUnifiedCashflow.reload();
-                }
             } catch (err) {
                 document.getElementById('pins-result').textContent = (err && err.name === 'AbortError')
                     ? 'Restore timed out. Nothing further was applied after the timeout; refresh and read the pin list.'
                     : 'Restore could not finish. Refresh and read the pin list before trying again.';
-                button.disabled = false;
-                button.textContent = 'Restore the pins that reproduce';
             } finally {
                 if (timer) clearTimeout(timer);
                 button.classList.remove('is-busy');
+                const refresh = document.getElementById('pins-refresh');
+                if (refresh) refresh.disabled = false;
+            }
+            // Always re-read pins so Restore stays enabled only while restorable > 0.
+            await loadPins();
+            load();
+            if (window.PhinsUnifiedCashflow && typeof window.PhinsUnifiedCashflow.reload === 'function') {
+                window.PhinsUnifiedCashflow.reload();
             }
         });
 
