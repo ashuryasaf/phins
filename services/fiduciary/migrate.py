@@ -166,7 +166,9 @@ def migrate_snapshot_to_fiduciary_tables(
                 counts[label] = _write_key(db, key, mapping, force=force)
         except Exception as exc:
             # Rows already committed stay; fill_missing resumes next boot.
-            logger.error("fiduciary migration copy failed: %s", exc)
+            logger.error(
+                "fiduciary migration copy failed: %s", type(exc).__name__
+            )
             result['reason'] = f'error:{type(exc).__name__}'
             result['migrated'] = False
             result['keys'] = sorted(subset.keys())
@@ -239,9 +241,14 @@ def migrate_snapshot_to_fiduciary_tables(
         # Journal failure (or unexpected setup error) must not look like a
         # soft skip — callers in db mode fail closed on this raise.
         if not journaled:
-            logger.error("fiduciary migration refused (journal/setup): %s", exc)
+            logger.error(
+                "fiduciary migration refused (journal/setup): %s",
+                type(exc).__name__,
+            )
             raise
-        logger.error("fiduciary migration failed after journal: %s", exc)
+        logger.error(
+            "fiduciary migration failed after journal: %s", type(exc).__name__
+        )
         result['reason'] = f'error:{type(exc).__name__}'
         result['migrated'] = False
         return result

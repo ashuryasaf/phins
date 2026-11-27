@@ -77,11 +77,12 @@ class SealedFiduciaryRepository(BaseRepository):
             self.session.commit()
             return True
         except SQLAlchemyError as exc:
+            # Log type only — SQLAlchemy may stringify bound payload_json.
             logger.error(
                 "%s upsert failed for %s: %s",
                 self.model_class.__tablename__,
                 record_id,
-                exc,
+                type(exc).__name__,
             )
             self.session.rollback()
             raise
@@ -110,7 +111,12 @@ class SealedFiduciaryRepository(BaseRepository):
         try:
             row = self.session.get(self.model_class, record_id)
         except SQLAlchemyError as exc:
-            logger.error("%s get failed for %s: %s", self.model_class.__tablename__, record_id, exc)
+            logger.error(
+                "%s get failed for %s: %s",
+                self.model_class.__tablename__,
+                record_id,
+                type(exc).__name__,
+            )
             raise
         if row is None:
             return None
@@ -124,7 +130,11 @@ class SealedFiduciaryRepository(BaseRepository):
                 .all()
             )
         except SQLAlchemyError as exc:
-            logger.error("%s load failed: %s", self.model_class.__tablename__, exc)
+            logger.error(
+                "%s load failed: %s",
+                self.model_class.__tablename__,
+                type(exc).__name__,
+            )
             raise
         for row in rows:
             payload = self._verified_payload(row)
@@ -140,7 +150,11 @@ class SealedFiduciaryRepository(BaseRepository):
         try:
             return int(self.session.query(self.model_class).count())
         except SQLAlchemyError as exc:
-            logger.error("%s count failed: %s", self.model_class.__tablename__, exc)
+            logger.error(
+                "%s count failed: %s",
+                self.model_class.__tablename__,
+                type(exc).__name__,
+            )
             raise
 
     def _customer_id_for(
@@ -190,7 +204,7 @@ class SealedFiduciaryRepository(BaseRepository):
                     "%s missing_ids lookup failed for %s: %s",
                     self.model_class.__tablename__,
                     record_id,
-                    exc,
+                    type(exc).__name__,
                 )
                 raise
             if row is None:

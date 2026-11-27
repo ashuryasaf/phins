@@ -404,3 +404,86 @@ def test_snapshot_payload_omits_fiduciary_keys_in_db_mode(monkeypatch):
         assert key not in payload['data']
     assert 'health_wallets' in payload['omitted']
     assert 'phins_balance_sheet' in payload['omitted']
+
+
+def test_dual_empty_placeholders_still_hydrate(sqlite_db, monkeypatch):
+    """db-mode file leaves empty {} books; dual rollback must hydrate sealed rows."""
+    import web_portal.server as portal
+
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    monkeypatch.setenv('USE_DATABASE', 'true')
+    assert flush_fiduciary_to_db(
+        health_wallets={
+            'CUST-EMPTY-PLACEHOLDER': {
+                'customer_id': 'CUST-EMPTY-PLACEHOLDER',
+                'balance': 42,
+            }
+        },
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )['health_wallets']['written'] == 1
+
+    portal.HEALTH_WALLETS.clear()
+    portal.WALLET_WITHDRAWALS.clear()
+    portal.NFT_LEDGER.clear()
+    portal.INVESTMENT_ACCOUNTS.clear()
+    assert not portal.HEALTH_WALLETS
+
+    portal._hydrate_and_migrate_fiduciary(
+        {
+            'health_wallets': {},
+            'wallet_withdrawals': {},
+            'nft_ledger': {},
+            'investment_accounts': {},
+            'phins_balance_sheet': {},
+        }
+    )
+    assert portal.HEALTH_WALLETS['CUST-EMPTY-PLACEHOLDER']['balance'] == 42
+
+
+def test_dual_nonempty_books_skip_gap_fill(sqlite_db, monkeypatch):
+    """Live dual file SoR must not resurrect purged ids via hydrate gap-fill."""
+    import web_portal.server as portal
+
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    monkeypatch.setenv('USE_DATABASE', 'true')
+    assert flush_fiduciary_to_db(
+        health_wallets={
+            'CUST-KEEP': {'customer_id': 'CUST-KEEP', 'balance': 1},
+            'CUST-PURGED': {'customer_id': 'CUST-PURGED', 'balance': 9},
+        },
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )['health_wallets']['written'] == 2
+
+    portal.HEALTH_WALLETS.clear()
+    portal.HEALTH_WALLETS['CUST-KEEP'] = {'customer_id': 'CUST-KEEP', 'balance': 1}
+    portal.WALLET_WITHDRAWALS.clear()
+    portal.NFT_LEDGER.clear()
+    portal.INVESTMENT_ACCOUNTS.clear()
+
+    called = {'n': 0}
+
+    def _mark(*_a, **_k):
+        called['n'] += 1
+        return {'health_wallets': 0, 'withheld': 0}
+
+    monkeypatch.setattr(
+        'services.fiduciary.hydrate_fiduciary_from_db',
+        _mark,
+    )
+    portal._hydrate_and_migrate_fiduciary(
+        {
+            'health_wallets': {'CUST-KEEP': {'customer_id': 'CUST-KEEP', 'balance': 1}},
+            'wallet_withdrawals': {},
+            'nft_ledger': {},
+            'investment_accounts': {},
+            'phins_balance_sheet': {},
+        }
+    )
+    assert called['n'] == 0
+    assert 'CUST-PURGED' not in portal.HEALTH_WALLETS

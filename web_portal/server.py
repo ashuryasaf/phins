@@ -9499,16 +9499,14 @@ def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) ->
                     raise FiduciaryBootError(f"fiduciary migration failed: {reason}")
             elif reason not in ('tables_already_populated', 'no_fiduciary_keys', 'fiduciary_mode_off'):
                 print(f"[FIDUCIARY] Migration skipped: {reason}")
-    # dual + snapshot that still carries fiduciary keys (even empty after a
-    # purge): memory is the file SoR — do not gap-fill (would resurrect
-    # purged ids). A snapshot from db mode omits those keys; then hydrate
-    # from sealed tables so rolling back to dual does not boot empty.
-    from services.fiduciary import FIDUCIARY_SNAPSHOT_KEYS
-    snapshot_has_fiduciary = (
-        isinstance(snapshot, dict)
-        and any(key in snapshot for key in FIDUCIARY_SNAPSHOT_KEYS)
+    # dual + snapshot that already put non-empty money books in memory: do
+    # not gap-fill (would resurrect purged ids). Empty `{}` placeholders
+    # (db-mode file / corrupt rollback) must still hydrate from sealed
+    # tables so we do not boot empty and later flush seed state over Postgres.
+    money_books_loaded = bool(
+        HEALTH_WALLETS or WALLET_WITHDRAWALS or NFT_LEDGER or INVESTMENT_ACCOUNTS
     )
-    if mode == 'dual' and snapshot_has_fiduciary:
+    if mode == 'dual' and snapshot is not None and money_books_loaded:
         return
     try:
         counts = hydrate_fiduciary_from_db(
