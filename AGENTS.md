@@ -524,6 +524,7 @@ Preferred file-by-task:
 | Referral CAC / professional roles | `services/referral_reward_service.py`, `web_portal/api_referral_rewards.py`, `database/repositories/referral_reward_repository.py` |
 | Unified cash flow statement | `services/cashflow_unified_report.py`, `services/premium_flow_reconciliation.py` (`claim_cash_books`), `web_portal/static/cashflow-unified-report.js`; tests in `tests/test_cashflow_unified_report.py` |
 | Health wallet withdrawal / retention bar | `services/wallet_withdrawal_service.py`, `services/id_photo_crop.py`, `web_portal/api_wallet_withdrawal.py`, `web_portal/static/wallet-withdraw-chat.{html,js}`, `web_portal/static/withdrawal-retention-bar.js`; tests in `tests/test_wallet_withdrawal.py` |
+| Money Gate / books integrity (U4) | `services/erp/money_gate.py`, `services/jobs/books_integrity_job.py`; wired on withdrawal release, agent commission settle, `POST /api/claims/pay`; env `PHINS_MONEY_GATE`; goldens in `tests/golden/money_gate/`; tests in `tests/test_money_gate.py` |
 | Fiduciary durability (wallets / NFT / BS) | `services/fiduciary/`, `database/fiduciary_models.py`, `database/repositories/fiduciary_repository.py`; tests in `tests/test_fiduciary_store.py` |
 | Customer intro / invitation landing | `web_portal/static/join.html`; films `join_intro_*` on the media Customer relations tab; briefs in `services/solution_video_blueprints.py` (`JOIN_INTRO_OUTLINES`, `JOIN-` campaigns) |
 | Document archive / durability probe | `services/customer_document_vault_service.py`, `services/document_durability_agent.py` |
@@ -1202,8 +1203,13 @@ Environment variables commonly used:
  consent check for relational copy — an explicit opt-out and the cap still
  apply)
 - **Wallet withdrawal:** `PHINS_WITHDRAWAL_RETENTION_DAYS` (days a filed
- health wallet withdrawal is held for customer relations before payout,
- default 3, range 0–14)
+  health wallet withdrawal is held for customer relations before payout,
+  default 3, range 0–14)
+- **Money Gate (U4):** `PHINS_MONEY_GATE` (`1`/`0`; default on outside
+  `PHINS_TEST_MODE`). Withdrawal release, agent commission settle, and
+  `POST /api/claims/pay` refuse with 409 `{error, failed_checks[]}` when
+  critical unified/reconcile checks are red. Admin break-glass needs a
+  reason and a forensic `finance.money_gate_break_glass` ledger event first
 - **Delivery bidding (B11):** `PHINS_DELIVERY_SLA_TICK_SECONDS` (SLA clock
  interval for closing elapsed bidding windows, default 60)
 - **Admin desk:** an admin saves a mailbox password once on

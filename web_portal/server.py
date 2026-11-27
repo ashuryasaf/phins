@@ -2603,7 +2603,10 @@ def get_customer_with_fallback(customer_id: str) -> dict:
     
     return None
 
-# Health wallets and medical purchases are always in-memory (not yet in DB schema)
+# Fiduciary money books (U2): process dicts with dual/db sealed tables via
+# ``services.fiduciary`` (not schema-less). ``fiduciary_mode`` is ``off`` |
+# ``dual`` | ``db``; production should move to ``db`` for AE2 full credit.
+# Medical purchases stay process-local until a dedicated table lands.
 HEALTH_WALLETS: Dict[str, Dict[str, Any]] = {}  # customer_id -> {balance, transactions, monthly_deposit}
 MEDICAL_PURCHASES: Dict[str, Dict[str, Any]] = {}  # purchase_id -> purchase data
 NFT_LEDGER: Dict[str, Dict[str, Any]] = {}  # token_id -> NFT token data for customer ledger
@@ -59162,7 +59165,26 @@ For claims or questions, please contact:
                         or data.get('processed_by')
                         or 'accountant'
                     )
-                    
+
+                    # U4 Money Gate: refuse when critical reconcile / unified
+                    # checks are red (repair path still calls the wallet
+                    # helper directly and is not gated here).
+                    try:
+                        from services.erp.money_gate import (
+                            MoneyGateError, authorize_money_move, http_refuse,
+                        )
+                        authorize_money_move(
+                            'claim_payout',
+                            break_glass=bool(data.get('break_glass')),
+                            break_glass_reason=str(data.get('break_glass_reason') or ''),
+                            actor=processed_by,
+                            role=str(effective_role or ''),
+                        )
+                    except MoneyGateError as gate_exc:
+                        self._set_json_headers(409)
+                        self.wfile.write(json.dumps(http_refuse(gate_exc)).encode('utf-8'))
+                        return
+
                     # Process payment through PHINS Balance Sheet to Health Wallet
                     payment_result = process_claim_payment_to_wallet(
                         claim_id=claim_id,
