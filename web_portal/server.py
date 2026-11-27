@@ -9435,21 +9435,52 @@ def _offer_ledger_snapshot_to_db(snapshot, *, periodic: bool, force: bool) -> No
         print(f"[PERSISTENCE] Database snapshot copy not written ({outcome})")
 
 
-def _flush_fiduciary_tables() -> bool:
-    """U2: seal live fiduciary dicts into DB tables (dual/db modes).
+def _freeze_fiduciary_books() -> Dict[str, Any]:
+    """Deep-copy process fiduciary books for a shared seal + volume snapshot."""
+    import copy
+    return {
+        'health_wallets': copy.deepcopy(dict(HEALTH_WALLETS)),
+        'wallet_withdrawals': copy.deepcopy(dict(WALLET_WITHDRAWALS)),
+        'nft_ledger': copy.deepcopy(dict(NFT_LEDGER)),
+        'investment_accounts': copy.deepcopy(dict(INVESTMENT_ACCOUNTS)),
+        'balance_sheet': copy.deepcopy(dict(PHINS_BALANCE_SHEET)),
+    }
 
-    Returns ``True`` when the flush succeeded or was skipped (mode off).
+
+def _flush_fiduciary_tables(books: Optional[Dict[str, Any]] = None) -> bool:
+    """U2: seal fiduciary dicts into DB tables (dual/db modes).
+
+    When ``books`` is a freeze from ``_freeze_fiduciary_books``, that freeze
+    is what gets sealed; peer adopts update both the freeze and the live
+    process dicts. Returns ``True`` when the flush succeeded or was skipped.
     """
     try:
         from services.fiduciary import flush_fiduciary_to_db, fiduciary_mode
         if fiduciary_mode() == 'off':
             return True
+        write = books or {
+            'health_wallets': HEALTH_WALLETS,
+            'wallet_withdrawals': WALLET_WITHDRAWALS,
+            'nft_ledger': NFT_LEDGER,
+            'investment_accounts': INVESTMENT_ACCOUNTS,
+            'balance_sheet': PHINS_BALANCE_SHEET,
+        }
+        adopt_into = None
+        if books is not None:
+            adopt_into = {
+                'health_wallets': HEALTH_WALLETS,
+                'wallet_withdrawals': WALLET_WITHDRAWALS,
+                'nft_ledger': NFT_LEDGER,
+                'investment_accounts': INVESTMENT_ACCOUNTS,
+                'balance_sheet': PHINS_BALANCE_SHEET,
+            }
         result = flush_fiduciary_to_db(
-            health_wallets=HEALTH_WALLETS,
-            wallet_withdrawals=WALLET_WITHDRAWALS,
-            nft_ledger=NFT_LEDGER,
-            investment_accounts=INVESTMENT_ACCOUNTS,
-            balance_sheet=PHINS_BALANCE_SHEET,
+            health_wallets=write['health_wallets'],
+            wallet_withdrawals=write['wallet_withdrawals'],
+            nft_ledger=write['nft_ledger'],
+            investment_accounts=write['investment_accounts'],
+            balance_sheet=write['balance_sheet'],
+            adopt_into=adopt_into,
         )
         if result.get('error'):
             print(f"[FIDUCIARY] Flush error: {result['error']}")
@@ -9609,11 +9640,12 @@ def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
     prefers sealed rows on conflict, so a volume file that raced ahead of
     a failed flush must not be reported as durable.
 
-    Fiduciary flush runs **before** the volume file write, and both run
-    under ``_persistence_lock`` (re-entrant with the file writer) so the
-    seal and the file share one view of the books. A mutation that arrives
-    mid-save blocks on the lock, then ``mark_ledger_dirty`` runs after we
-    clear dirty — the next tick seals it. A failed flush re-marks dirty and
+    Fiduciary flush runs **before** the volume file write. Under
+    ``_persistence_lock`` we take one fiduciary freeze, seal that freeze,
+    then write the same freeze into the volume snapshot so dual prefer-db
+    hydrate cannot drop credits that only reached the file. Wallet mutations
+    do not take this lock, so a live re-read between seal and file would
+    diverge — the freeze closes that gap. A failed flush re-marks dirty and
     skips the file write.
     """
     global _persistence_dirty
@@ -9626,10 +9658,11 @@ def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
     except Exception:
         mode = 'off'
 
-    # Hold the persistence lock across seal + file so a concurrent mutation
-    # cannot publish a volume snapshot ahead of sealed tables (or clear dirty
-    # after a seal of an older view). RLock: _save_ledger_data_file re-enters.
+    # Hold the persistence lock across freeze + seal + file. RLock:
+    # _save_ledger_data_file re-enters. Mid-save mark_ledger_dirty blocks,
+    # then re-dirties after we clear — next tick seals the new credit.
     with _persistence_lock:
+        fiduciary_books = None
         if mode in ('dual', 'db'):
             dirty = bool(_persistence_dirty)
             if not _periodic:
@@ -9638,7 +9671,8 @@ def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
                 periodic=_periodic, ledger_dirty=dirty, force_db=force_db,
             )
             if do_fiduciary_flush:
-                if not _flush_fiduciary_tables():
+                fiduciary_books = _freeze_fiduciary_books()
+                if not _flush_fiduciary_tables(fiduciary_books):
                     _persistence_dirty = True
                     print(
                         "[FIDUCIARY] Sealed flush failed; "
@@ -9646,7 +9680,11 @@ def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
                     )
                     return False
         try:
-            file_ok = bool(_save_ledger_data_file(_periodic, frozen))
+            file_ok = bool(
+                _save_ledger_data_file(
+                    _periodic, frozen, fiduciary_books=fiduciary_books,
+                )
+            )
         finally:
             if PERSISTENCE_ENABLED:
                 _offer_ledger_snapshot_to_db(
@@ -9657,7 +9695,12 @@ def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
     return file_ok
 
 
-def _save_ledger_data_file(_periodic: bool, _snapshot_out: list):
+def _save_ledger_data_file(
+    _periodic: bool,
+    _snapshot_out: list,
+    *,
+    fiduciary_books: Optional[Dict[str, Any]] = None,
+):
     global _persistence_dirty
     # The design document has its own checksummed row. Seal it even when the
     # ledger file is disabled: that file is what a new deploy throws away.
@@ -9710,21 +9753,30 @@ def _save_ledger_data_file(_periodic: bool, _snapshot_out: list):
                 FIDUCIARY_BOOKS_DB = 'db'
                 FIDUCIARY_BOOKS_MARKER = 'fiduciary_books'
 
+            # Prefer the freeze sealed into fiduciary tables so dual
+            # prefer-db hydrate cannot drop credits that only hit the file.
+            _fw = fiduciary_books or {}
+            _hw = _fw.get('health_wallets', HEALTH_WALLETS)
+            _ww = _fw.get('wallet_withdrawals', WALLET_WITHDRAWALS)
+            _nl = _fw.get('nft_ledger', NFT_LEDGER)
+            _ia = _fw.get('investment_accounts', INVESTMENT_ACCOUNTS)
+            _bs = _fw.get('balance_sheet', PHINS_BALANCE_SHEET)
+
             data = {
                 'saved_at': datetime.now().isoformat(),
                 'version': '2.0',
-                'health_wallets': {} if _omit_fiduciary else HEALTH_WALLETS,
-                'wallet_withdrawals': {} if _omit_fiduciary else WALLET_WITHDRAWALS,
+                'health_wallets': {} if _omit_fiduciary else _hw,
+                'wallet_withdrawals': {} if _omit_fiduciary else _ww,
                 'medical_purchases': MEDICAL_PURCHASES,
-                'nft_ledger': {} if _omit_fiduciary else NFT_LEDGER,
+                'nft_ledger': {} if _omit_fiduciary else _nl,
                 'customer_allocations': CUSTOMER_ALLOCATIONS,
-                'investment_accounts': {} if _omit_fiduciary else INVESTMENT_ACCOUNTS,
+                'investment_accounts': {} if _omit_fiduciary else _ia,
                 'transaction_ledger': TRANSACTION_LEDGER,
                 # v1.2 additions - algo trading data
                 'algo_trading_balances': algo_balances,
                 'trading_bots': trading_bots,
                 # v1.3 additions - PHINS Main Balance Sheet
-                'phins_balance_sheet': {} if _omit_fiduciary else PHINS_BALANCE_SHEET,
+                'phins_balance_sheet': {} if _omit_fiduciary else _bs,
                 # v1.5 additions - Underwriting Files
                 'underwriting_files': UNDERWRITING_FILES,
                 # v1.6 additions - Media Assets and Design Settings
