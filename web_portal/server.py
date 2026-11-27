@@ -13013,12 +13013,17 @@ def restore_kernel_pins(actor: str = 'accountant', apply: bool = False) -> Dict[
             else:
                 candidate['status'] = 'not_verified'
                 candidate['reason'] = 'pin_not_read_back'
-        # Restorable rows were mutated in place (they are the same dicts as in
-        # result['policies']). Recount open outcomes after apply.
+        # Restorable candidates are the same dicts listed in policies[:200], but
+        # the write list and the preview refused set are uncapped. Keep the
+        # preview refused total and add only restorable rows that flipped to
+        # refused (changed_since_preview); never recount from the 200-row slice.
+        preview_refused = int(counts.get('refused') or 0)
         counts['restored'] = len(restored_ids)
         counts['not_verified'] = sum(1 for _, c in restorable if c.get('status') == 'not_verified')
         counts['restorable'] = sum(1 for _, c in restorable if c.get('status') == 'restorable')
-        counts['refused'] = sum(1 for row in result['policies'] if row.get('status') == 'refused')
+        counts['refused'] = preview_refused + sum(
+            1 for _, c in restorable if c.get('status') == 'refused'
+        )
         result['applied'] = True
         result['restored_policy_ids'] = restored_ids[:200]
         analysis = dict(result.get('analysis') or {})
