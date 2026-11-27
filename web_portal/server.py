@@ -9571,20 +9571,19 @@ def _hydrate_and_migrate_fiduciary(
         print(f"[FIDUCIARY] Hydrated sealed rows: {counts}")
 
 
-def _should_flush_fiduciary(*, periodic: bool, wrote_file: bool, force_db: bool) -> bool:
+def _should_flush_fiduciary(*, periodic: bool, ledger_dirty: bool, force_db: bool) -> bool:
     """Whether this save should dual-write sealed fiduciary tables.
 
     Idle periodic ticks must not republish process-local dicts over shared
-    Postgres. Gate on whether the file save actually wrote (under the
-    persistence lock) — not a pre-lock dirty read — so a mutation that
-    races into the same tick still flushes.
+    Postgres. Gate on the dirty flag (same signal that drives a file write)
+    so a mutation that races into the same tick still flushes.
 
     ``force_db`` alone (SIGTERM shutdown) is not enough: an idle replica or
     cron that only hydrated at boot must not upsert stale books over newer
     sealed rows. Explicit mutation saves (``not periodic`` and not
     shutdown-only) still flush even when persistence is disabled.
     """
-    if wrote_file:
+    if ledger_dirty:
         return True
     if not periodic and not force_db:
         return True
@@ -9605,45 +9604,57 @@ def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
     Returns ``True`` when the snapshot was written (or persistence is
     intentionally disabled / skipped as a no-op) and ``False`` when the
     write failed, so callers can surface a durability failure instead of
-    silently reporting success. In ``PHINS_FIDUCIARY_MODE=db``, a failed
-    fiduciary table flush is also a durability failure (file is not SoR).
+    silently reporting success. In ``dual`` and ``db`` fiduciary modes a
+    failed sealed-table flush is a durability failure: dual volume boot
+    prefers sealed rows on conflict, so a volume file that raced ahead of
+    a failed flush must not be reported as durable.
 
-    Fiduciary table flush follows the file write (or explicit/force paths)
-    so idle replicas cannot stale-overwrite shared rows. A failed flush
-    re-marks the ledger dirty so the next periodic tick retries.
+    Fiduciary flush runs **before** the volume file write so a failed seal
+    leaves the file aligned with Postgres. A failed flush re-marks the
+    ledger dirty so the next periodic tick retries.
     """
     frozen: list = []
     file_ok = False
     flush_ok = True
+    mode = 'off'
     try:
-        file_ok = bool(_save_ledger_data_file(_periodic, frozen))
-    finally:
+        from services.fiduciary import fiduciary_mode
+        mode = fiduciary_mode()
+    except Exception:
+        mode = 'off'
+
+    # Flush sealed tables before the volume file when fiduciary mode is on.
+    # Dual hydrate prefers sealed on conflict; writing the file first and
+    # then failing the flush would leave credits on disk that the next boot
+    # overwrites with the stale seal.
+    if mode in ('dual', 'db'):
+        with _persistence_lock:
+            dirty = bool(_persistence_dirty)
+        if not _periodic:
+            dirty = True
         do_fiduciary_flush = _should_flush_fiduciary(
-            periodic=_periodic, wrote_file=bool(frozen), force_db=force_db,
+            periodic=_periodic, ledger_dirty=dirty, force_db=force_db,
         )
         if do_fiduciary_flush:
             flush_ok = _flush_fiduciary_tables()
             if not flush_ok:
-                # File may already be clean; keep retrying sealed tables.
                 try:
                     mark_ledger_dirty()
                 except Exception:
                     pass
+                print(
+                    "[FIDUCIARY] Sealed flush failed; "
+                    "treating save as durability failure"
+                )
+                return False
+
+    try:
+        file_ok = bool(_save_ledger_data_file(_periodic, frozen))
+    finally:
         if PERSISTENCE_ENABLED:
             _offer_ledger_snapshot_to_db(
                 frozen[0] if frozen else None, periodic=_periodic, force=force_db,
             )
-    if not flush_ok:
-        try:
-            from services.fiduciary import fiduciary_mode
-            if fiduciary_mode() == 'db':
-                print(
-                    "[FIDUCIARY] Authoritative flush failed; "
-                    "treating save as durability failure"
-                )
-                return False
-        except Exception:
-            pass
     return file_ok
 
 

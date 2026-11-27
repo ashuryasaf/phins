@@ -365,13 +365,32 @@ def test_should_flush_fiduciary_skips_clean_periodic_ticks():
     """Idle periodic / shutdown saves must not republish process-local books."""
     from web_portal.server import _should_flush_fiduciary
 
-    assert _should_flush_fiduciary(periodic=True, wrote_file=False, force_db=False) is False
-    assert _should_flush_fiduciary(periodic=True, wrote_file=True, force_db=False) is True
-    assert _should_flush_fiduciary(periodic=False, wrote_file=False, force_db=False) is True
+    assert _should_flush_fiduciary(periodic=True, ledger_dirty=False, force_db=False) is False
+    assert _should_flush_fiduciary(periodic=True, ledger_dirty=True, force_db=False) is True
+    assert _should_flush_fiduciary(periodic=False, ledger_dirty=False, force_db=False) is True
     # force_db alone (idle SIGTERM) must not flush stale hydrated books.
-    assert _should_flush_fiduciary(periodic=True, wrote_file=False, force_db=True) is False
-    assert _should_flush_fiduciary(periodic=False, wrote_file=False, force_db=True) is False
-    assert _should_flush_fiduciary(periodic=False, wrote_file=True, force_db=True) is True
+    assert _should_flush_fiduciary(periodic=True, ledger_dirty=False, force_db=True) is False
+    assert _should_flush_fiduciary(periodic=False, ledger_dirty=False, force_db=True) is False
+    assert _should_flush_fiduciary(periodic=False, ledger_dirty=True, force_db=True) is True
+
+
+def test_dual_flush_failure_is_durability_failure(sqlite_db, monkeypatch):
+    """Dual must fail closed on sealed flush failure (prefer_db hydrate)."""
+    import web_portal.server as portal
+
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    monkeypatch.setenv('USE_DATABASE', 'true')
+    monkeypatch.setattr(portal, '_flush_fiduciary_tables', lambda: False)
+    wrote = {'n': 0}
+
+    def _no_file(_periodic, _snapshot_out):
+        wrote['n'] += 1
+        return True
+
+    monkeypatch.setattr(portal, '_save_ledger_data_file', _no_file)
+    portal.mark_ledger_dirty()
+    assert portal.save_ledger_data() is False
+    assert wrote['n'] == 0
 
 
 def test_graceful_shutdown_skips_flush_when_clean(monkeypatch):
