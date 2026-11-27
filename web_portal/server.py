@@ -9428,12 +9428,15 @@ def _offer_ledger_snapshot_to_db(snapshot, *, periodic: bool, force: bool) -> No
         print(f"[PERSISTENCE] Database snapshot copy not written ({outcome})")
 
 
-def _flush_fiduciary_tables() -> None:
-    """U2: seal live fiduciary dicts into DB tables (dual/db modes)."""
+def _flush_fiduciary_tables() -> bool:
+    """U2: seal live fiduciary dicts into DB tables (dual/db modes).
+
+    Returns ``True`` when the flush succeeded or was skipped (mode off).
+    """
     try:
         from services.fiduciary import flush_fiduciary_to_db, fiduciary_mode
         if fiduciary_mode() == 'off':
-            return
+            return True
         result = flush_fiduciary_to_db(
             health_wallets=HEALTH_WALLETS,
             wallet_withdrawals=WALLET_WITHDRAWALS,
@@ -9443,12 +9446,15 @@ def _flush_fiduciary_tables() -> None:
         )
         if result.get('error'):
             print(f"[FIDUCIARY] Flush error: {result['error']}")
+            return False
+        return True
     except Exception as exc:
         print(f"[FIDUCIARY] Flush failed: {type(exc).__name__}")
+        return False
 
 
 def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) -> None:
-    """U2: one-shot migrate from snapshot, then overlay sealed table rows."""
+    """U2: migrate empty fiduciary tables from snapshot, then hydrate memory."""
     try:
         from services.fiduciary import (
             fiduciary_mode,
@@ -9498,17 +9504,32 @@ def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
     Returns ``True`` when the snapshot was written (or persistence is
     intentionally disabled / skipped as a no-op) and ``False`` when the
     write failed, so callers can surface a durability failure instead of
-    silently reporting success.
+    silently reporting success. In ``PHINS_FIDUCIARY_MODE=db``, a failed
+    fiduciary table flush is also a durability failure (file is not SoR).
     """
     frozen: list = []
+    file_ok = False
+    flush_ok = True
     try:
-        return _save_ledger_data_file(_periodic, frozen)
+        file_ok = bool(_save_ledger_data_file(_periodic, frozen))
     finally:
-        _flush_fiduciary_tables()
+        flush_ok = _flush_fiduciary_tables()
         if PERSISTENCE_ENABLED:
             _offer_ledger_snapshot_to_db(
                 frozen[0] if frozen else None, periodic=_periodic, force=force_db,
             )
+    if not flush_ok:
+        try:
+            from services.fiduciary import fiduciary_mode
+            if fiduciary_mode() == 'db':
+                print(
+                    "[FIDUCIARY] Authoritative flush failed; "
+                    "treating save as durability failure"
+                )
+                return False
+        except Exception:
+            pass
+    return file_ok
 
 
 def _save_ledger_data_file(_periodic: bool, _snapshot_out: list):
@@ -10163,9 +10184,9 @@ def load_ledger_data(allow_db_snapshot: bool = False):
         if _loaded_trading_bots:
             print(f"  - Trading Bots: {len(_loaded_trading_bots)} bots (pending sync)")
         print(f"  - Saved at: {data.get('saved_at', 'unknown')}")
-        # U2: migrate snapshot fiduciary keys into sealed tables (once), then
-        # overlay intact DB rows (DB wins). AE2: redeploy without a volume
-        # still restores wallets/BS from these tables.
+        # U2: migrate empty fiduciary tables from this snapshot, then fill
+        # memory gaps only (snapshot already applied — DB does not win over
+        # a newer file). AE2 bare restore uses prefer_db when snapshot is None.
         _hydrate_and_migrate_fiduciary(data)
         if _LEDGER_LOAD_SOURCE == 'file':
             _resume_stale_ledger_snapshot_copy(data)

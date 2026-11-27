@@ -26,9 +26,12 @@ def fiduciary_mode(environ: Optional[Mapping[str, str]] = None) -> str:
     """Return ``off``, ``dual``, or ``db``.
 
     * ``off`` — memory + JSON snapshot only (tests / no database).
-    * ``dual`` — DB tables are written on every save; boot prefers intact DB
-      rows and fills gaps from the snapshot (default when the DB is up).
-    * ``db`` — DB is authoritative; snapshot omits fiduciary keys.
+    * ``dual`` — DB tables are written on every save; boot migrates empty
+      tables from the snapshot then fills memory gaps from sealed rows
+      (default when the DB is up). Prefer-DB hydrate only when no snapshot
+      was applied (AE2 volume-less restore).
+    * ``db`` — DB is authoritative; snapshot omits fiduciary keys; a failed
+      flush fails the ledger save.
     """
     env = environ if environ is not None else os.environ
     raw = str(env.get(_MODE_ENV) or '').strip().lower()

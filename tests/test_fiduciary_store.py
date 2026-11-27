@@ -161,6 +161,85 @@ def test_migrate_snapshot_journal_first(sqlite_db, monkeypatch):
     assert again['reason'] == 'tables_already_populated'
 
 
+def test_migrate_resumes_empty_tables_after_partial(sqlite_db, monkeypatch):
+    """A half-finished migrate must still fill remaining empty tables."""
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    events = []
+
+    def _append(**kwargs):
+        events.append(kwargs)
+        return {'id': kwargs.get('entity_id')}
+
+    # Simulate crash after only wallets landed.
+    partial = {
+        'health_wallets': {'CUST-P': {'customer_id': 'CUST-P', 'balance': 7}},
+    }
+    first = migrate_snapshot_to_fiduciary_tables(partial, append_event=_append)
+    assert first['migrated'] is True
+    assert first['keys'] == ['health_wallets']
+
+    full = {
+        'health_wallets': {'CUST-P': {'customer_id': 'CUST-P', 'balance': 7}},
+        'phins_balance_sheet': {'claims_reserve': 99.0, 'operating_reserve': 1.0},
+        'wallet_withdrawals': {
+            'WD-P': {'id': 'WD-P', 'customer_id': 'CUST-P', 'amount': 3.0},
+        },
+    }
+    second = migrate_snapshot_to_fiduciary_tables(full, append_event=_append)
+    assert second['migrated'] is True
+    assert second['reason'] == 'ok'
+    assert 'health_wallets' not in second['keys']  # already populated — left alone
+    assert 'phins_balance_sheet' in second['keys']
+    assert 'wallet_withdrawals' in second['keys']
+
+    db = DatabaseManager()
+    assert db.health_wallets.count_rows() == 1
+    assert db.wallet_withdrawals.count_rows() == 1
+    assert db.balance_sheet.get_phins()['claims_reserve'] == 99.0
+    db.close()
+
+    # Everything present → no-op.
+    third = migrate_snapshot_to_fiduciary_tables(full, append_event=_append)
+    assert third['migrated'] is False
+    assert third['reason'] == 'tables_already_populated'
+
+
+def test_flush_error_is_surfaced(sqlite_db, monkeypatch):
+    """db mode callers must see flush failure; dual still returns the error key."""
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'db')
+
+    class _Boom:
+        def replace_mapping(self, *a, **k):
+            raise RuntimeError('boom')
+
+        def upsert_phins(self, *a, **k):
+            raise RuntimeError('boom')
+
+    class _FakeDB:
+        health_wallets = _Boom()
+        wallet_withdrawals = _Boom()
+        nft_ledger = _Boom()
+        investment_accounts = _Boom()
+        balance_sheet = _Boom()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        'services.fiduciary.store._db_manager',
+        lambda: _FakeDB(),
+    )
+    result = flush_fiduciary_to_db(
+        health_wallets={'C': {'balance': 1}},
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={'claims_reserve': 1},
+    )
+    assert result.get('mode') == 'db'
+    assert result.get('error') == 'RuntimeError'
+
+
 def test_snapshot_payload_omits_fiduciary_keys_in_db_mode(monkeypatch):
     monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'db')
     snap = {

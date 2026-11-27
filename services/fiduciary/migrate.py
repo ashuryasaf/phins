@@ -23,14 +23,47 @@ def _fingerprint(snapshot: Mapping[str, Any]) -> str:
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 
-def _tables_empty(db: Any) -> bool:
-    return (
-        db.health_wallets.count_rows() == 0
-        and db.wallet_withdrawals.count_rows() == 0
-        and db.nft_ledger.count_rows() == 0
-        and db.investment_accounts.count_rows() == 0
-        and db.balance_sheet.count_rows() == 0
-    )
+# Snapshot key → (table label used in before/after counts, emptiness predicate).
+_TABLE_FOR_KEY = {
+    'health_wallets': 'health_wallets',
+    'wallet_withdrawals': 'wallet_withdrawals',
+    'nft_ledger': 'nft_ledger',
+    'investment_accounts': 'investment_accounts',
+    'phins_balance_sheet': 'balance_sheet',
+}
+
+
+def _table_row_counts(db: Any) -> Dict[str, int]:
+    return {
+        'health_wallets': db.health_wallets.count_rows(),
+        'wallet_withdrawals': db.wallet_withdrawals.count_rows(),
+        'nft_ledger': db.nft_ledger.count_rows(),
+        'investment_accounts': db.investment_accounts.count_rows(),
+        'balance_sheet': db.balance_sheet.count_rows(),
+    }
+
+
+def _keys_needing_migrate(
+    snapshot: Mapping[str, Any],
+    counts: Mapping[str, int],
+    *,
+    force: bool,
+) -> Dict[str, Any]:
+    """Return snapshot subset for empty tables (or every present key when force).
+
+    A half-finished first boot leaves some tables populated and others empty.
+    The next boot must still migrate the empty ones — never skip the whole
+    migrate just because *any* fiduciary table already has rows.
+    """
+    pending: Dict[str, Any] = {}
+    for key in FIDUCIARY_SNAPSHOT_KEYS:
+        value = snapshot.get(key)
+        if not value or not isinstance(value, dict):
+            continue
+        table = _TABLE_FOR_KEY[key]
+        if force or counts.get(table, 0) == 0:
+            pending[key] = value
+    return pending
 
 
 def migrate_snapshot_to_fiduciary_tables(
@@ -42,9 +75,9 @@ def migrate_snapshot_to_fiduciary_tables(
     """Copy fiduciary keys from a ledger snapshot into sealed tables.
 
     Writes a platform-ledger before/after event **before** any table upsert
-    when ``append_event`` is supplied (fail closed on journal failure). Skips
-    when tables already hold rows unless ``force`` is True. Idempotent on the
-    same fingerprint when the after-event already exists.
+    when ``append_event`` is supplied (fail closed on journal failure). Only
+    empty tables are filled unless ``force`` is True; populated tables are
+    left alone so a partial migrate can finish on the next boot.
     """
     mode = fiduciary_mode()
     result: Dict[str, Any] = {
@@ -61,8 +94,8 @@ def migrate_snapshot_to_fiduciary_tables(
         result['reason'] = 'invalid_snapshot'
         return result
 
-    subset = {k: snapshot.get(k) for k in FIDUCIARY_SNAPSHOT_KEYS if snapshot.get(k)}
-    if not subset:
+    present = {k: snapshot.get(k) for k in FIDUCIARY_SNAPSHOT_KEYS if snapshot.get(k)}
+    if not present:
         result['reason'] = 'no_fiduciary_keys'
         return result
 
@@ -73,17 +106,11 @@ def migrate_snapshot_to_fiduciary_tables(
 
     db = DatabaseManager()
     try:
-        if not force and not _tables_empty(db):
+        before = _table_row_counts(db)
+        subset = _keys_needing_migrate(snapshot, before, force=force)
+        if not subset:
             result['reason'] = 'tables_already_populated'
             return result
-
-        before = {
-            'health_wallets': db.health_wallets.count_rows(),
-            'wallet_withdrawals': db.wallet_withdrawals.count_rows(),
-            'nft_ledger': db.nft_ledger.count_rows(),
-            'investment_accounts': db.investment_accounts.count_rows(),
-            'balance_sheet': db.balance_sheet.count_rows(),
-        }
 
         journal_payload = {
             'schema': 'phins.fiduciary.migration.v1',
@@ -106,33 +133,28 @@ def migrate_snapshot_to_fiduciary_tables(
             )
 
         counts: Dict[str, Any] = {}
-        if 'health_wallets' in subset and isinstance(subset['health_wallets'], dict):
+        if 'health_wallets' in subset:
             counts['health_wallets'] = db.health_wallets.replace_mapping(subset['health_wallets'])
-        if 'wallet_withdrawals' in subset and isinstance(subset['wallet_withdrawals'], dict):
+        if 'wallet_withdrawals' in subset:
             counts['wallet_withdrawals'] = db.wallet_withdrawals.replace_mapping(
                 subset['wallet_withdrawals'], customer_from='customer_id'
             )
-        if 'nft_ledger' in subset and isinstance(subset['nft_ledger'], dict):
+        if 'nft_ledger' in subset:
             counts['nft_ledger'] = db.nft_ledger.replace_mapping(
                 subset['nft_ledger'], customer_from='customer_id'
             )
-        if 'investment_accounts' in subset and isinstance(subset['investment_accounts'], dict):
+        if 'investment_accounts' in subset:
             counts['investment_accounts'] = db.investment_accounts.replace_mapping(
                 subset['investment_accounts']
             )
-        if 'phins_balance_sheet' in subset and isinstance(subset['phins_balance_sheet'], dict):
+        if 'phins_balance_sheet' in subset:
             ok = db.balance_sheet.upsert_phins(subset['phins_balance_sheet'])
             counts['balance_sheet'] = {'written': 1 if ok else 0, 'withheld': 0 if ok else 1}
 
-        after = {
-            'health_wallets': db.health_wallets.count_rows(),
-            'wallet_withdrawals': db.wallet_withdrawals.count_rows(),
-            'nft_ledger': db.nft_ledger.count_rows(),
-            'investment_accounts': db.investment_accounts.count_rows(),
-            'balance_sheet': db.balance_sheet.count_rows(),
-        }
+        after = _table_row_counts(db)
         result['counts'] = counts
         result['after'] = after
+        result['keys'] = sorted(subset.keys())
         result['migrated'] = True
         result['reason'] = 'ok'
 
@@ -149,6 +171,7 @@ def migrate_snapshot_to_fiduciary_tables(
                     'before': before,
                     'after': after,
                     'counts': counts,
+                    'keys': sorted(subset.keys()),
                     'completed_at': datetime.utcnow().isoformat(),
                 },
             )
