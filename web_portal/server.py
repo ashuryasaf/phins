@@ -9322,6 +9322,13 @@ def mark_ledger_dirty():
         pass
 
 
+def _clear_ledger_dirty_after_restore() -> None:
+    """Boot hydrate/load is not a mutation — idle SIGTERM must not flush."""
+    global _persistence_dirty
+    with _persistence_lock:
+        _persistence_dirty = False
+
+
 def verify_persistence_writable() -> bool:
     """Probe the ledger persistence path at startup.
 
@@ -9428,6 +9435,162 @@ def _offer_ledger_snapshot_to_db(snapshot, *, periodic: bool, force: bool) -> No
         print(f"[PERSISTENCE] Database snapshot copy not written ({outcome})")
 
 
+def _flush_fiduciary_tables() -> bool:
+    """U2: seal live fiduciary dicts into DB tables (dual/db modes).
+
+    Returns ``True`` when the flush succeeded or was skipped (mode off).
+    """
+    try:
+        from services.fiduciary import flush_fiduciary_to_db, fiduciary_mode
+        if fiduciary_mode() == 'off':
+            return True
+        result = flush_fiduciary_to_db(
+            health_wallets=HEALTH_WALLETS,
+            wallet_withdrawals=WALLET_WITHDRAWALS,
+            nft_ledger=NFT_LEDGER,
+            investment_accounts=INVESTMENT_ACCOUNTS,
+            balance_sheet=PHINS_BALANCE_SHEET,
+        )
+        if result.get('error'):
+            print(f"[FIDUCIARY] Flush error: {result['error']}")
+            return False
+        # Per-row write failures must not look like a successful seal.
+        for block in result.values():
+            if isinstance(block, dict) and int(block.get('errors') or 0) > 0:
+                print(f"[FIDUCIARY] Flush had row errors: {result}")
+                return False
+        return True
+    except Exception as exc:
+        print(f"[FIDUCIARY] Flush failed: {type(exc).__name__}")
+        return False
+
+
+def _hydrate_and_migrate_fiduciary(
+    snapshot: Optional[Dict[str, Any]] = None,
+    *,
+    prefer_sealed: bool = False,
+) -> None:
+    """U2: migrate missing fiduciary ids from snapshot, then hydrate memory.
+
+    Journal refusal and ``db``-mode copy failures propagate so boot does not
+    silently continue without sealed books. Dual mode logs copy errors and
+    still hydrates with ``preserve_absent`` when a volume file is present.
+
+    ``prefer_sealed`` is set when the applied snapshot came from the throttled
+    ``agent_artifacts`` copy (volume-less / file-lagging Railway restore):
+    sealed tables are dual-written on every mutation save and can be newer
+    than that copy, so dual must hydrate fully (no ``preserve_absent``).
+    """
+    from services.fiduciary import (
+        FiduciaryBootError,
+        fiduciary_mode,
+        hydrate_fiduciary_from_db,
+        migrate_snapshot_to_fiduciary_tables,
+    )
+    mode = fiduciary_mode()
+    if mode == 'off':
+        return
+    if snapshot:
+        try:
+            mig = migrate_snapshot_to_fiduciary_tables(
+                snapshot,
+                append_event=platform_event_ledger.append_event,
+            )
+        except FiduciaryBootError:
+            raise
+        except Exception as exc:
+            print(f"[FIDUCIARY] Migration refused: {type(exc).__name__}: {exc}")
+            if mode == 'db':
+                raise FiduciaryBootError(
+                    f"fiduciary migration refused: {type(exc).__name__}: {exc}"
+                ) from exc
+            # dual: file still holds the books
+        else:
+            reason = str(mig.get('reason') or '')
+            if mig.get('migrated'):
+                print(f"[FIDUCIARY] Migrated keys={mig.get('keys')} counts={mig.get('counts')}")
+            elif reason.startswith('error:'):
+                print(f"[FIDUCIARY] Migration incomplete: {mig}")
+                if mode == 'db':
+                    raise FiduciaryBootError(f"fiduciary migration failed: {reason}")
+            elif reason not in ('tables_already_populated', 'no_fiduciary_keys', 'fiduciary_mode_off'):
+                print(f"[FIDUCIARY] Migration skipped: {reason}")
+    # Dual volume file: prefer sealed on conflict for ids still present, but
+    # do not re-add sealed-only ids (file purges stay gone). db-mode files
+    # stamp fiduciary_books=db — those hydrate fully. A throttled DB snapshot
+    # copy (prefer_sealed) must hydrate without preserve_absent.
+    from services.fiduciary import (
+        FIDUCIARY_BOOKS_DB,
+        FIDUCIARY_BOOKS_MARKER,
+        FIDUCIARY_SNAPSHOT_KEYS,
+    )
+    marker = (
+        str((snapshot or {}).get(FIDUCIARY_BOOKS_MARKER) or '').strip().lower()
+        if isinstance(snapshot, dict)
+        else ''
+    )
+    keys_present = isinstance(snapshot, dict) and any(
+        key in snapshot for key in FIDUCIARY_SNAPSHOT_KEYS
+    )
+    preserve_absent = (
+        mode == 'dual'
+        and snapshot is not None
+        and keys_present
+        and marker != FIDUCIARY_BOOKS_DB
+        and not prefer_sealed
+    )
+    try:
+        counts = hydrate_fiduciary_from_db(
+            health_wallets=HEALTH_WALLETS,
+            wallet_withdrawals=WALLET_WITHDRAWALS,
+            nft_ledger=NFT_LEDGER,
+            investment_accounts=INVESTMENT_ACCOUNTS,
+            balance_sheet=PHINS_BALANCE_SHEET,
+            prefer_db=True,
+            preserve_absent=preserve_absent,
+        )
+    except FiduciaryBootError:
+        raise
+    except Exception as exc:
+        print(f"[FIDUCIARY] Hydrate failed: {type(exc).__name__}")
+        # Fail closed whenever sealed tables are the recovery path: db mode,
+        # AE2 / missing file (snapshot is None), db-mode empty placeholders,
+        # or a throttled DB snapshot copy (prefer_sealed).
+        if (
+            mode == 'db'
+            or snapshot is None
+            or marker == FIDUCIARY_BOOKS_DB
+            or prefer_sealed
+        ):
+            raise FiduciaryBootError(
+                f"fiduciary hydrate failed: {type(exc).__name__}"
+            ) from exc
+        return
+    loaded = sum(v for k, v in counts.items() if k != 'withheld' and isinstance(v, int))
+    if loaded:
+        print(f"[FIDUCIARY] Hydrated sealed rows: {counts}")
+
+
+def _should_flush_fiduciary(*, periodic: bool, wrote_file: bool, force_db: bool) -> bool:
+    """Whether this save should dual-write sealed fiduciary tables.
+
+    Idle periodic ticks must not republish process-local dicts over shared
+    Postgres. Gate on whether the file save actually wrote (under the
+    persistence lock) — not a pre-lock dirty read — so a mutation that
+    races into the same tick still flushes.
+
+    ``force_db`` alone (SIGTERM shutdown) is not enough: an idle replica or
+    cron that only hydrated at boot must not upsert stale books over newer
+    sealed rows. Explicit mutation saves (``not periodic`` and not
+    shutdown-only) still flush even when persistence is disabled.
+    """
+    if wrote_file:
+        return True
+    if not periodic and not force_db:
+        return True
+    return False
+
+
 def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
     """Save all ledger data to persistent storage.
 
@@ -9442,16 +9605,46 @@ def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
     Returns ``True`` when the snapshot was written (or persistence is
     intentionally disabled / skipped as a no-op) and ``False`` when the
     write failed, so callers can surface a durability failure instead of
-    silently reporting success.
+    silently reporting success. In ``PHINS_FIDUCIARY_MODE=db``, a failed
+    fiduciary table flush is also a durability failure (file is not SoR).
+
+    Fiduciary table flush follows the file write (or explicit/force paths)
+    so idle replicas cannot stale-overwrite shared rows. A failed flush
+    re-marks the ledger dirty so the next periodic tick retries.
     """
     frozen: list = []
+    file_ok = False
+    flush_ok = True
     try:
-        return _save_ledger_data_file(_periodic, frozen)
+        file_ok = bool(_save_ledger_data_file(_periodic, frozen))
     finally:
+        do_fiduciary_flush = _should_flush_fiduciary(
+            periodic=_periodic, wrote_file=bool(frozen), force_db=force_db,
+        )
+        if do_fiduciary_flush:
+            flush_ok = _flush_fiduciary_tables()
+            if not flush_ok:
+                # File may already be clean; keep retrying sealed tables.
+                try:
+                    mark_ledger_dirty()
+                except Exception:
+                    pass
         if PERSISTENCE_ENABLED:
             _offer_ledger_snapshot_to_db(
                 frozen[0] if frozen else None, periodic=_periodic, force=force_db,
             )
+    if not flush_ok:
+        try:
+            from services.fiduciary import fiduciary_mode
+            if fiduciary_mode() == 'db':
+                print(
+                    "[FIDUCIARY] Authoritative flush failed; "
+                    "treating save as durability failure"
+                )
+                return False
+        except Exception:
+            pass
+    return file_ok
 
 
 def _save_ledger_data_file(_periodic: bool, _snapshot_out: list):
@@ -9491,21 +9684,37 @@ def _save_ledger_data_file(_periodic: bool, _snapshot_out: list):
             except:
                 pass
             
+            # U2: when fiduciary tables are authoritative, keep empty
+            # placeholders in the file snapshot so older readers stay stable,
+            # and stamp fiduciary_books=db so dual rollback still hydrates.
+            _omit_fiduciary = False
+            try:
+                from services.fiduciary import (
+                    FIDUCIARY_BOOKS_DB,
+                    FIDUCIARY_BOOKS_MARKER,
+                    omit_fiduciary_from_snapshot,
+                )
+                _omit_fiduciary = omit_fiduciary_from_snapshot()
+            except Exception:
+                _omit_fiduciary = False
+                FIDUCIARY_BOOKS_DB = 'db'
+                FIDUCIARY_BOOKS_MARKER = 'fiduciary_books'
+
             data = {
                 'saved_at': datetime.now().isoformat(),
                 'version': '2.0',
-                'health_wallets': HEALTH_WALLETS,
-                'wallet_withdrawals': WALLET_WITHDRAWALS,
+                'health_wallets': {} if _omit_fiduciary else HEALTH_WALLETS,
+                'wallet_withdrawals': {} if _omit_fiduciary else WALLET_WITHDRAWALS,
                 'medical_purchases': MEDICAL_PURCHASES,
-                'nft_ledger': NFT_LEDGER,
+                'nft_ledger': {} if _omit_fiduciary else NFT_LEDGER,
                 'customer_allocations': CUSTOMER_ALLOCATIONS,
-                'investment_accounts': INVESTMENT_ACCOUNTS,
+                'investment_accounts': {} if _omit_fiduciary else INVESTMENT_ACCOUNTS,
                 'transaction_ledger': TRANSACTION_LEDGER,
                 # v1.2 additions - algo trading data
                 'algo_trading_balances': algo_balances,
                 'trading_bots': trading_bots,
                 # v1.3 additions - PHINS Main Balance Sheet
-                'phins_balance_sheet': PHINS_BALANCE_SHEET,
+                'phins_balance_sheet': {} if _omit_fiduciary else PHINS_BALANCE_SHEET,
                 # v1.5 additions - Underwriting Files
                 'underwriting_files': UNDERWRITING_FILES,
                 # v1.6 additions - Media Assets and Design Settings
@@ -9525,6 +9734,8 @@ def _save_ledger_data_file(_periodic: bool, _snapshot_out: list):
                 # v2.2 additions - sandbox pushed customers tracking
                 'sandbox_pushed_customers': list(SANDBOX_PUSHED_CUSTOMERS),
             }
+            if _omit_fiduciary:
+                data[FIDUCIARY_BOOKS_MARKER] = FIDUCIARY_BOOKS_DB
 
             # DB-backed entities: only include in the snapshot when running
             # in pure in-memory mode (no DB). When PostgreSQL is active these
@@ -9887,7 +10098,7 @@ def load_ledger_data(allow_db_snapshot: bool = False):
     used when the file is missing, unreadable, or older than that copy
     (a redeploy without a volume, a failed file write).
     """
-    global HEALTH_WALLETS, MEDICAL_PURCHASES, NFT_LEDGER, CUSTOMER_ALLOCATIONS, INVESTMENT_ACCOUNTS, TRANSACTION_LEDGER
+    global HEALTH_WALLETS, WALLET_WITHDRAWALS, MEDICAL_PURCHASES, NFT_LEDGER, CUSTOMER_ALLOCATIONS, INVESTMENT_ACCOUNTS, TRANSACTION_LEDGER
     global BILLING, POLICIES, CUSTOMERS, UNDERWRITING_APPLICATIONS, PHINS_BALANCE_SHEET, CLAIMS, CLAIM_FILES, UNDERWRITING_FILES
     global MEDIA_ASSETS, DESIGN_SETTINGS, INVITATION_CODES, REGISTERED_CUSTOMERS
     global CUSTOMER_INVITATIONS, CUSTOMER_REFERRAL_STATS
@@ -9903,12 +10114,18 @@ def load_ledger_data(allow_db_snapshot: bool = False):
     
     if not PERSISTENCE_ENABLED:
         print("[PERSISTENCE] Persistence disabled, using in-memory storage only")
+        # U2: sealed fiduciary tables may still restore wallets/BS.
+        _hydrate_and_migrate_fiduciary(None)
+        _clear_ledger_dirty_after_restore()
         return False
 
     db_data = _read_ledger_snapshot_from_db() if allow_db_snapshot else None
     file_present = os.path.exists(LEDGER_PERSISTENCE_FILE)
     if not file_present and db_data is None:
         print(f"[PERSISTENCE] No persistence file found at {LEDGER_PERSISTENCE_FILE}, starting fresh")
+        # AE2: fiduciary tables alone can restore wallets after a volume-less redeploy.
+        _hydrate_and_migrate_fiduciary(None)
+        _clear_ledger_dirty_after_restore()
         return False
 
     # Read the file before anything is applied, so an unreadable file can
@@ -9924,6 +10141,11 @@ def load_ledger_data(allow_db_snapshot: bool = False):
             file_data = None
             print(f"[PERSISTENCE] Error loading ledger data: {e}")
             if db_data is None:
+                # Corrupt/unreadable file and no snapshot copy — still restore
+                # sealed fiduciary books (AE2) so the next flush cannot publish
+                # empty process dicts over intact Postgres rows.
+                _hydrate_and_migrate_fiduciary(None)
+                _clear_ledger_dirty_after_restore()
                 return False
 
     try:
@@ -10093,10 +10315,25 @@ def load_ledger_data(allow_db_snapshot: bool = False):
         if _loaded_trading_bots:
             print(f"  - Trading Bots: {len(_loaded_trading_bots)} bots (pending sync)")
         print(f"  - Saved at: {data.get('saved_at', 'unknown')}")
+        # U2: migrate missing ids; dual+volume uses preserve_absent hydrate.
+        # Throttled DB snapshot copy prefers sealed rows (newer dual-writes).
+        _hydrate_and_migrate_fiduciary(
+            data,
+            prefer_sealed=(_LEDGER_LOAD_SOURCE == 'database'),
+        )
         if _LEDGER_LOAD_SOURCE == 'file':
             _resume_stale_ledger_snapshot_copy(data)
+        _clear_ledger_dirty_after_restore()
         return True
     except Exception as e:
+        # db-mode fiduciary failures must abort boot — do not treat as a
+        # soft "fresh ledger" start (run_server would otherwise continue).
+        try:
+            from services.fiduciary import FiduciaryBootError
+            if isinstance(e, FiduciaryBootError):
+                raise
+        except ImportError:
+            pass
         # Part of the snapshot is now in memory. Saving that over the database
         # copy would replace a whole record with a partial one.
         if _ledger_snapshot_store is not None and _ledger_snapshot_store.enabled:
@@ -10145,13 +10382,20 @@ def _graceful_shutdown(signum, frame):
 
     Railway sends SIGTERM when redeploying or scaling down. Without this
     handler, up to 60 seconds of in-memory mutations can be lost.
+
+    Idle processes (hydrated at boot, never mutated) must not invent
+    dirtiness: that would flush stale fiduciary maps over shared Postgres.
     """
     sig_name = 'SIGTERM' if signum == 15 else 'SIGINT' if signum == 2 else f'signal {signum}'
     print(f"\n[SHUTDOWN] Received {sig_name}, flushing persistence...")
     try:
-        mark_ledger_dirty()
-        save_ledger_data(_periodic=False, force_db=True)
-        print("[SHUTDOWN] Ledger data flushed to disk successfully")
+        with _persistence_lock:
+            had_pending = bool(_persistence_dirty)
+        if had_pending:
+            save_ledger_data(_periodic=False, force_db=True)
+            print("[SHUTDOWN] Ledger data flushed to disk successfully")
+        else:
+            print("[SHUTDOWN] No pending ledger mutations; skipping flush")
     except Exception as exc:
         print(f"[SHUTDOWN] Error flushing ledger: {exc}")
     # Dispose the SQLAlchemy engine so pooled PostgreSQL connections are
@@ -10334,11 +10578,26 @@ def reconcile_fresh_start_with_db() -> int:
             if not all_customers:
                 return 0
 
+            # U2: when sealed fiduciary tables already hold money books, do
+            # not invent $0 wallet/investment rows that could flush over them.
+            seed_money_books = True
+            try:
+                from services.fiduciary import fiduciary_mode
+                if fiduciary_mode() in ('dual', 'db'):
+                    sealed = (
+                        int(db.health_wallets.count_rows() or 0)
+                        + int(db.investment_accounts.count_rows() or 0)
+                    )
+                    if sealed > 0:
+                        seed_money_books = False
+            except Exception:
+                seed_money_books = True
+
             now_iso = datetime.now().isoformat()
             for cust_id, cust_data in all_customers.items():
                 touched = False
 
-                if cust_id not in HEALTH_WALLETS:
+                if seed_money_books and cust_id not in HEALTH_WALLETS:
                     HEALTH_WALLETS[cust_id] = {
                         'customer_id': cust_id,
                         'balance': 0.0,
@@ -10349,7 +10608,7 @@ def reconcile_fresh_start_with_db() -> int:
                     }
                     touched = True
 
-                if cust_id not in INVESTMENT_ACCOUNTS:
+                if seed_money_books and cust_id not in INVESTMENT_ACCOUNTS:
                     INVESTMENT_ACCOUNTS[cust_id] = {
                         'customer_id': cust_id,
                         'balance': 0.0,
@@ -69107,7 +69366,18 @@ def run_server(port: int = PORT) -> None:
         )
     if USE_DATABASE and database_enabled and _ledger_snapshot_store is not None:
         _ledger_snapshot_store.enable()
-    _ledger_loaded = load_ledger_data(allow_db_snapshot=True)
+    try:
+        _ledger_loaded = load_ledger_data(allow_db_snapshot=True)
+    except Exception as exc:
+        try:
+            from services.fiduciary import FiduciaryBootError
+            is_fiduciary = isinstance(exc, FiduciaryBootError)
+        except ImportError:
+            is_fiduciary = False
+        if is_fiduciary:
+            print(f"❌ [FIDUCIARY] Boot refused: {exc}")
+            raise SystemExit(f"Fiduciary boot failed: {exc}") from exc
+        raise
     if _ledger_loaded:
         print("✓ Ledger data restored from persistent storage")
     else:
@@ -69451,7 +69721,18 @@ def run_server(port: int = PORT) -> None:
 def bootstrap_runtime_state_for_command() -> None:
     """Load persisted command/runtime state for one-shot automation tasks."""
     print("📂 Loading persisted ledger data for command execution...")
-    _cmd_loaded = load_ledger_data()
+    try:
+        _cmd_loaded = load_ledger_data()
+    except Exception as exc:
+        try:
+            from services.fiduciary import FiduciaryBootError
+            is_fiduciary = isinstance(exc, FiduciaryBootError)
+        except ImportError:
+            is_fiduciary = False
+        if is_fiduciary:
+            print(f"❌ [FIDUCIARY] Command boot refused: {exc}")
+            raise SystemExit(f"Fiduciary boot failed: {exc}") from exc
+        raise
     if _cmd_loaded:
         print("✓ Ledger data restored from persistent storage")
     else:

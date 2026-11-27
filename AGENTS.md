@@ -524,6 +524,7 @@ Preferred file-by-task:
 | Referral CAC / professional roles | `services/referral_reward_service.py`, `web_portal/api_referral_rewards.py`, `database/repositories/referral_reward_repository.py` |
 | Unified cash flow statement | `services/cashflow_unified_report.py`, `services/premium_flow_reconciliation.py` (`claim_cash_books`), `web_portal/static/cashflow-unified-report.js`; tests in `tests/test_cashflow_unified_report.py` |
 | Health wallet withdrawal / retention bar | `services/wallet_withdrawal_service.py`, `services/id_photo_crop.py`, `web_portal/api_wallet_withdrawal.py`, `web_portal/static/wallet-withdraw-chat.{html,js}`, `web_portal/static/withdrawal-retention-bar.js`; tests in `tests/test_wallet_withdrawal.py` |
+| Fiduciary durability (wallets / NFT / BS) | `services/fiduciary/`, `database/fiduciary_models.py`, `database/repositories/fiduciary_repository.py`; tests in `tests/test_fiduciary_store.py` |
 | Customer intro / invitation landing | `web_portal/static/join.html`; films `join_intro_*` on the media Customer relations tab; briefs in `services/solution_video_blueprints.py` (`JOIN_INTRO_OUTLINES`, `JOIN-` campaigns) |
 | Document archive / durability probe | `services/customer_document_vault_service.py`, `services/document_durability_agent.py` |
 | Unified business plan / investor deck (`/business-plan.html`) | `services/business_plan_model.py` (factor register, `compute_plan`, `ROUND_SEED_ILS` / `ROUND_PRE_MONEY_ILS` — the one writer for seed / pre-money; `appraisal.sensitivity` grid), `services/business_plan_document.py` (narrative, placeholders, founder block, HTML/Markdown renderers), `services/business_plan_charts.py` (chart + Gantt specs read from the plan dict; one layout engine → inline SVG for HTML and `?charts=1`, reportlab Drawing for the PDF; Markdown carries `<!-- phins-chart {json} -->` directives plus a data table), `services/business_plan_sources.py` (figure lineage + research registry kept byte-equal with the pitch-dashboard `sourceRegistry`), `services/business_plan_portrait.py` (Pillow-processed founder portrait), `services/investor_deck_video.py` (Part II paragraph scenes; the plan is not written), `web_portal/server.py` (`GET /api/business-plan/model[?charts=1]`, `GET /api/business-plan/founder-portrait`); then `python3 scripts/build_business_plan.py` and `python3 scripts/generate_investor_pdfs.py --only unified-business-plan`; tests in `tests/test_business_plan.py` |
@@ -857,20 +858,35 @@ Environment variables commonly used:
 - **Ledger:** `ENABLE_LEDGER_PERSISTENCE`, `LEDGER_PERSISTENCE_VERBOSE`,
   `LEDGER_PERSISTENCE_LOG_INTERVAL`, `PHINS_LEDGER_DB_AUTOREPAIR`,
   `LEDGER_PERSISTENCE_FILE`, `PHINS_LEDGER_SNAPSHOT_DB_INTERVAL` (default 60),
-  `PHINS_LEDGER_SNAPSHOT_DB_MAX_BYTES` (default 64 MiB). The image creates
-  `/data`, so `phins_ledger_data.json` (health wallets, withdrawals, NFT
-  ledger, investment accounts, balance sheet, algo balances, policy
-  documents) is lost on redeploy unless a volume is mounted there; HTTP
-  serve **refuses to start** in real production when the resolved path is
-  under the process tempdir (checked in `run_server`, not at import, so
-  cron/worker/bi-snapshot stay alive; `PHINS_ALLOW_EPHEMERAL_LEDGER=true`
-  is the explicit escape hatch) and still warns when `/data` exists but
-  is not a mount point. With the database on, the server
-  (never a one-shot command) also keeps that snapshot as one checksummed
-  `agent_artifacts` row (`services/ledger_snapshot_store.py`, id
-  `platform-ledger-snapshot`; DB-authoritative stores such as the platform
-  ledger and media are left out) and restores it when the file is missing,
-  unreadable, or saved earlier than the copy. A checksum mismatch, unknown
+  `PHINS_LEDGER_SNAPSHOT_DB_MAX_BYTES` (default 64 MiB),
+  `PHINS_FIDUCIARY_MODE` (`off` / `dual` default when DB is up / `db`).
+  With the database on, health wallets, wallet withdrawals, NFT ledger
+  rows, investment accounts and the PHINS balance-sheet counters are
+  sealed into fiduciary tables (`database/fiduciary_models.py`,
+  `services/fiduciary/`); dual mode writes tables on every
+  `save_ledger_data` and hydrates gaps on boot; `db` omits those keys
+  from the JSON / agent_artifacts snapshot and treats a failed table
+  flush as a durability failure on `save_ledger_data`. Fiduciary flush
+  follows the same dirty gate as the ledger file — a clean periodic
+  tick does not republish process-local dicts over shared Postgres.
+  A checksum mismatch withholds the row and never overwrites it.
+  Migration from a snapshot is journal-first on the platform ledger
+  (`fiduciary.tables_migrated`) and inserts only missing record ids
+  (plus an empty balance-sheet row) so a half-finished boot can resume.
+  The image creates `/data`, so `phins_ledger_data.json` (algo balances,
+  policy documents, and fiduciary keys while dual) is lost on redeploy
+  unless a volume is mounted there; HTTP serve **refuses to start** in
+  real production when the resolved path is under the process tempdir
+  (checked in `run_server`, not at import, so cron/worker/bi-snapshot
+  stay alive; `PHINS_ALLOW_EPHEMERAL_LEDGER=true` is the explicit escape
+  hatch) and still warns when `/data` exists but is not a mount point.
+  With the database on, the server (never a one-shot command) also keeps
+  that snapshot as one checksummed `agent_artifacts` row
+  (`services/ledger_snapshot_store.py`, id `platform-ledger-snapshot`;
+  DB-authoritative stores such as the platform ledger, media, and — when
+  `PHINS_FIDUCIARY_MODE=db` — the fiduciary tables are left out) and
+  restores it when the file is missing, unreadable, or saved earlier
+  than the copy. A checksum mismatch, unknown
   format, or failed read is not applied and blocks writes for that process,
   so the row is never overwritten with a fresh state; a snapshot that was
   only partly applied at boot blocks them too. A snapshot over the cap is

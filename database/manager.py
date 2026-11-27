@@ -60,6 +60,11 @@ from database.repositories import (
     AgentArtifactRepository,
     VideoJobRepository,
     ReferralRewardRepository,
+    HealthWalletRepository,
+    WalletWithdrawalRepository,
+    NftLedgerRepository,
+    InvestmentAccountRepository,
+    BalanceSheetRepository,
 )
 
 logger = logging.getLogger(__name__)
@@ -141,6 +146,12 @@ class DatabaseManager:
         self._video_jobs = None
         # Referral acquisition rewards (CAC book, links, professional requests).
         self._referral_rewards = None
+        # Fiduciary money tables (U2).
+        self._health_wallets = None
+        self._wallet_withdrawals = None
+        self._nft_ledger = None
+        self._investment_accounts = None
+        self._balance_sheet = None
     
     def _ensure_session(self) -> Session:
         """
@@ -216,6 +227,11 @@ class DatabaseManager:
         self._agent_artifacts = None
         self._video_jobs = None
         self._referral_rewards = None
+        self._health_wallets = None
+        self._wallet_withdrawals = None
+        self._nft_ledger = None
+        self._investment_accounts = None
+        self._balance_sheet = None
     
     @property
     def customers(self) -> CustomerRepository:
@@ -534,6 +550,41 @@ class DatabaseManager:
         if self._referral_rewards is None:
             self._referral_rewards = ReferralRewardRepository(self._ensure_session())
         return self._referral_rewards
+
+    # ------------------------------------------------------------------
+    # Fiduciary money tables (U2): sealed health wallets / withdrawals /
+    # NFT / investments / balance-sheet counters.
+    # ------------------------------------------------------------------
+
+    @property
+    def health_wallets(self) -> HealthWalletRepository:
+        if self._health_wallets is None:
+            self._health_wallets = HealthWalletRepository(self._ensure_session())
+        return self._health_wallets
+
+    @property
+    def wallet_withdrawals(self) -> WalletWithdrawalRepository:
+        if self._wallet_withdrawals is None:
+            self._wallet_withdrawals = WalletWithdrawalRepository(self._ensure_session())
+        return self._wallet_withdrawals
+
+    @property
+    def nft_ledger(self) -> NftLedgerRepository:
+        if self._nft_ledger is None:
+            self._nft_ledger = NftLedgerRepository(self._ensure_session())
+        return self._nft_ledger
+
+    @property
+    def investment_accounts(self) -> InvestmentAccountRepository:
+        if self._investment_accounts is None:
+            self._investment_accounts = InvestmentAccountRepository(self._ensure_session())
+        return self._investment_accounts
+
+    @property
+    def balance_sheet(self) -> BalanceSheetRepository:
+        if self._balance_sheet is None:
+            self._balance_sheet = BalanceSheetRepository(self._ensure_session())
+        return self._balance_sheet
 
     def commit(self):
         """Commit current transaction"""
