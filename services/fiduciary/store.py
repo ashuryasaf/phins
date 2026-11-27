@@ -136,6 +136,24 @@ def flush_fiduciary_to_db(
 
     result: Dict[str, Any] = {'mode': mode}
     try:
+        # Refuse to publish empty process books over non-empty sealed tables
+        # (corrupt-file boot / empty memory without intentional table wipe).
+        guards = (
+            ('health_wallets', health_wallets, db.health_wallets),
+            ('wallet_withdrawals', wallet_withdrawals, db.wallet_withdrawals),
+            ('nft_ledger', nft_ledger, db.nft_ledger),
+            ('investment_accounts', investment_accounts, db.investment_accounts),
+        )
+        for label, mapping, repo in guards:
+            if not mapping and repo.count_rows() > 0:
+                logger.error(
+                    "fiduciary flush refused empty overwrite of %s (%s sealed rows)",
+                    label,
+                    repo.count_rows(),
+                )
+                result['error'] = f'refuse_empty_overwrite:{label}'
+                return result
+
         result['health_wallets'] = db.health_wallets.replace_mapping(dict(health_wallets))
         result['wallet_withdrawals'] = db.wallet_withdrawals.replace_mapping(
             dict(wallet_withdrawals), customer_from='customer_id'

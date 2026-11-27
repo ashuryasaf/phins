@@ -301,6 +301,9 @@ def test_flush_error_is_surfaced(sqlite_db, monkeypatch):
     monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'db')
 
     class _Boom:
+        def count_rows(self):
+            return 0
+
         def replace_mapping(self, *a, **k):
             raise RuntimeError('boom')
 
@@ -358,6 +361,29 @@ def test_should_flush_fiduciary_skips_clean_periodic_ticks():
     assert _should_flush_fiduciary(periodic=True, wrote_file=True, force_db=False) is True
     assert _should_flush_fiduciary(periodic=False, wrote_file=False, force_db=False) is True
     assert _should_flush_fiduciary(periodic=True, wrote_file=False, force_db=True) is True
+
+
+def test_flush_refuses_empty_overwrite_of_sealed_rows(sqlite_db, monkeypatch):
+    """Empty process dicts must not replace intact sealed wallets."""
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    assert flush_fiduciary_to_db(
+        health_wallets={'CUST-E': {'customer_id': 'CUST-E', 'balance': 5}},
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )['health_wallets']['written'] == 1
+    refused = flush_fiduciary_to_db(
+        health_wallets={},
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )
+    assert refused.get('error') == 'refuse_empty_overwrite:health_wallets'
+    db = DatabaseManager()
+    assert db.health_wallets.get_payload('CUST-E')['balance'] == 5
+    db.close()
 
 
 def test_snapshot_payload_omits_fiduciary_keys_in_db_mode(monkeypatch):

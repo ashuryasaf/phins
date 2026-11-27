@@ -9499,9 +9499,11 @@ def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) ->
                     raise FiduciaryBootError(f"fiduciary migration failed: {reason}")
             elif reason not in ('tables_already_populated', 'no_fiduciary_keys', 'fiduciary_mode_off'):
                 print(f"[FIDUCIARY] Migration skipped: {reason}")
-    # dual + snapshot applied: gaps only (newer file wins over older rows).
-    # db mode, or bare AE2 restore with no snapshot: sealed tables win.
-    prefer_db = snapshot is None or mode == 'db'
+    # dual + snapshot already applied into memory: do not gap-fill from DB
+    # (would resurrect sandbox-purged / account-reset ids still sealed in
+    # tables). db mode and bare AE2 restore (no snapshot) prefer sealed rows.
+    if snapshot is not None and mode == 'dual':
+        return
     try:
         counts = hydrate_fiduciary_from_db(
             health_wallets=HEALTH_WALLETS,
@@ -9509,7 +9511,7 @@ def _hydrate_and_migrate_fiduciary(snapshot: Optional[Dict[str, Any]] = None) ->
             nft_ledger=NFT_LEDGER,
             investment_accounts=INVESTMENT_ACCOUNTS,
             balance_sheet=PHINS_BALANCE_SHEET,
-            prefer_db=prefer_db,
+            prefer_db=True,
         )
     except FiduciaryBootError:
         raise
@@ -10077,6 +10079,10 @@ def load_ledger_data(allow_db_snapshot: bool = False):
             file_data = None
             print(f"[PERSISTENCE] Error loading ledger data: {e}")
             if db_data is None:
+                # Corrupt/unreadable file and no snapshot copy — still restore
+                # sealed fiduciary books (AE2) so the next flush cannot publish
+                # empty process dicts over intact Postgres rows.
+                _hydrate_and_migrate_fiduciary(None)
                 return False
 
     try:
@@ -10246,8 +10252,8 @@ def load_ledger_data(allow_db_snapshot: bool = False):
         if _loaded_trading_bots:
             print(f"  - Trading Bots: {len(_loaded_trading_bots)} bots (pending sync)")
         print(f"  - Saved at: {data.get('saved_at', 'unknown')}")
-        # U2: migrate missing fiduciary ids from this snapshot, then hydrate.
-        # dual: gaps only after a file/snapshot load. db / AE2 bare: prefer_db.
+        # U2: migrate missing ids; dual+snapshot skips gap-fill hydrate.
+        # db / AE2 bare restore prefer sealed rows.
         _hydrate_and_migrate_fiduciary(data)
         if _LEDGER_LOAD_SOURCE == 'file':
             _resume_stale_ledger_snapshot_copy(data)
