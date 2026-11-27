@@ -350,6 +350,12 @@ def test_an_unreadable_file_falls_back_to_the_database_copy(sqlite_db, portal_st
 
 
 def test_the_newer_of_file_and_database_copy_is_restored(sqlite_db, portal_state, monkeypatch):
+    """File vs agent_artifacts copy still picks the newer snapshot source.
+
+    U2 dual hydrate then prefers sealed fiduciary rows on conflict, so a
+    wallet already migrated into sealed tables stays at the sealed balance
+    even when the chosen load source is the volume file.
+    """
     _store().offer(_snapshot(77.0, saved_at="2026-11-23T15:27:00"))
 
     _db_boot(monkeypatch)
@@ -362,7 +368,8 @@ def test_the_newer_of_file_and_database_copy_is_restored(sqlite_db, portal_state
     _write_file(_snapshot(20.0, saved_at="2026-11-23T15:27:00"))
     assert portal.load_ledger_data(allow_db_snapshot=True) is True
     assert portal._LEDGER_LOAD_SOURCE == "file"
-    assert portal.HEALTH_WALLETS["CUST-1"]["balance"] == 20.0
+    # Sealed tables (from the earlier migrate) win over the lagging file book.
+    assert portal.HEALTH_WALLETS["CUST-1"]["balance"] == 77.0
 
     _db_boot(monkeypatch)
     _write_file(_snapshot(25.0, saved_at="2026-11-23T15:00:00+00:00"))
@@ -373,6 +380,7 @@ def test_the_newer_of_file_and_database_copy_is_restored(sqlite_db, portal_state
     _write_file(_snapshot(30.0, saved_at="not a timestamp"))
     assert portal.load_ledger_data(allow_db_snapshot=True) is True
     assert portal._LEDGER_LOAD_SOURCE == "file"
+    assert portal.HEALTH_WALLETS["CUST-1"]["balance"] == 77.0
 
 
 def test_a_partly_applied_snapshot_blocks_the_database_copy(sqlite_db, portal_state, monkeypatch):

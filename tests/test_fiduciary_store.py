@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -365,13 +366,157 @@ def test_should_flush_fiduciary_skips_clean_periodic_ticks():
     """Idle periodic / shutdown saves must not republish process-local books."""
     from web_portal.server import _should_flush_fiduciary
 
-    assert _should_flush_fiduciary(periodic=True, wrote_file=False, force_db=False) is False
-    assert _should_flush_fiduciary(periodic=True, wrote_file=True, force_db=False) is True
-    assert _should_flush_fiduciary(periodic=False, wrote_file=False, force_db=False) is True
+    assert _should_flush_fiduciary(periodic=True, ledger_dirty=False, force_db=False) is False
+    assert _should_flush_fiduciary(periodic=True, ledger_dirty=True, force_db=False) is True
+    assert _should_flush_fiduciary(periodic=False, ledger_dirty=False, force_db=False) is True
     # force_db alone (idle SIGTERM) must not flush stale hydrated books.
-    assert _should_flush_fiduciary(periodic=True, wrote_file=False, force_db=True) is False
-    assert _should_flush_fiduciary(periodic=False, wrote_file=False, force_db=True) is False
-    assert _should_flush_fiduciary(periodic=False, wrote_file=True, force_db=True) is True
+    assert _should_flush_fiduciary(periodic=True, ledger_dirty=False, force_db=True) is False
+    assert _should_flush_fiduciary(periodic=False, ledger_dirty=False, force_db=True) is False
+    assert _should_flush_fiduciary(periodic=False, ledger_dirty=True, force_db=True) is True
+
+
+def test_dual_flush_failure_is_durability_failure(sqlite_db, monkeypatch):
+    """Dual must fail closed on sealed flush failure (prefer_db hydrate)."""
+    import web_portal.server as portal
+
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    monkeypatch.setenv('USE_DATABASE', 'true')
+    monkeypatch.setattr(portal, '_flush_fiduciary_tables', lambda *_a, **_k: False)
+    wrote = {'n': 0}
+
+    def _no_file(_periodic, _snapshot_out, **_kw):
+        wrote['n'] += 1
+        return True
+
+    monkeypatch.setattr(portal, '_save_ledger_data_file', _no_file)
+    portal.mark_ledger_dirty()
+    assert portal.save_ledger_data() is False
+    assert wrote['n'] == 0
+
+
+def test_dual_flush_and_file_share_persistence_lock(sqlite_db, monkeypatch):
+    """Seal and volume write share the lock so mid-save mutations wait."""
+    import threading
+    import time
+
+    import web_portal.server as portal
+
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    monkeypatch.setenv('USE_DATABASE', 'true')
+    in_flush = threading.Event()
+    release_flush = threading.Event()
+    mutator_done = threading.Event()
+    order: list = []
+
+    def _flush(_books=None):
+        order.append('flush')
+        in_flush.set()
+        assert release_flush.wait(2.0)
+        return True
+
+    def _file(_periodic, _snapshot_out, **_kw):
+        order.append('file')
+        return True
+
+    monkeypatch.setattr(portal, '_flush_fiduciary_tables', _flush)
+    monkeypatch.setattr(portal, '_save_ledger_data_file', _file)
+    portal.mark_ledger_dirty()
+
+    def _mutator():
+        assert in_flush.wait(2.0)
+        # Blocks on _persistence_lock until save_ledger_data finishes.
+        portal.mark_ledger_dirty()
+        mutator_done.set()
+
+    saver_result = {'ok': None}
+
+    def _saver():
+        saver_result['ok'] = portal.save_ledger_data(_periodic=True)
+
+    saver = threading.Thread(target=_saver, daemon=True)
+    mutator = threading.Thread(target=_mutator, daemon=True)
+    saver.start()
+    mutator.start()
+    assert in_flush.wait(2.0)
+    time.sleep(0.1)
+    # Mutator must still be blocked on the lock during flush.
+    assert not mutator_done.is_set()
+    release_flush.set()
+    saver.join(2.0)
+    mutator.join(2.0)
+    assert saver_result['ok'] is True
+    assert order == ['flush', 'file']
+    assert mutator_done.is_set()
+    assert portal._persistence_dirty is True
+
+
+def test_dual_seal_and_file_share_one_fiduciary_freeze(sqlite_db, monkeypatch):
+    """Seal and volume file must use the same freeze, not two live reads."""
+    import web_portal.server as portal
+
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    monkeypatch.setenv('USE_DATABASE', 'true')
+    portal.HEALTH_WALLETS.clear()
+    portal.HEALTH_WALLETS['CUST-FREEZE'] = {
+        'customer_id': 'CUST-FREEZE',
+        'balance': 10,
+    }
+    portal.WALLET_WITHDRAWALS.clear()
+    portal.NFT_LEDGER.clear()
+    portal.INVESTMENT_ACCOUNTS.clear()
+
+    seen = {'flush': None, 'file': None}
+
+    def _flush(books=None):
+        assert books is not None
+        seen['flush'] = books
+        # Live mutates after the freeze without taking the lock (wallet path).
+        portal.HEALTH_WALLETS['CUST-FREEZE'] = {
+            'customer_id': 'CUST-FREEZE',
+            'balance': 999,
+        }
+        return True
+
+    def _file(_periodic, _snapshot_out, *, fiduciary_books=None):
+        seen['file'] = fiduciary_books
+        return True
+
+    monkeypatch.setattr(portal, '_flush_fiduciary_tables', _flush)
+    monkeypatch.setattr(portal, '_save_ledger_data_file', _file)
+    portal.mark_ledger_dirty()
+    assert portal.save_ledger_data(_periodic=True) is True
+    assert seen['flush'] is seen['file']
+    assert seen['flush']['health_wallets']['CUST-FREEZE']['balance'] == 10
+    assert portal.HEALTH_WALLETS['CUST-FREEZE']['balance'] == 999
+
+
+def test_fiduciary_freeze_race_is_durability_failure(sqlite_db, monkeypatch):
+    """A torn freeze must fail closed (no seal, no file) and keep dirty."""
+    import web_portal.server as portal
+
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    monkeypatch.setenv('USE_DATABASE', 'true')
+    wrote = {'flush': 0, 'file': 0}
+
+    def _boom():
+        raise RuntimeError('ledger snapshot raced a live dict; refusing empty freeze')
+
+    def _flush(*_a, **_k):
+        wrote['flush'] += 1
+        return True
+
+    def _file(*_a, **_k):
+        wrote['file'] += 1
+        return True
+
+    monkeypatch.setattr(portal, '_freeze_fiduciary_books', _boom)
+    monkeypatch.setattr(portal, '_flush_fiduciary_tables', _flush)
+    monkeypatch.setattr(portal, '_save_ledger_data_file', _file)
+    portal.mark_ledger_dirty()
+    assert portal.save_ledger_data(_periodic=True) is False
+    assert wrote['flush'] == 0
+    assert wrote['file'] == 0
+    assert portal._persistence_dirty is True
 
 
 def test_graceful_shutdown_skips_flush_when_clean(monkeypatch):
@@ -999,5 +1144,150 @@ def test_refresh_does_not_adopt_over_post_flush_live_credit(sqlite_db, monkeypat
     assert live['CUST-R']['balance'] == 150.0
     assert fiduciary_baseline('health_wallets')['CUST-R'] == digest_999
     db.close()
+
+
+def test_flush_adopt_into_mirrors_peer_into_freeze(sqlite_db, monkeypatch):
+    """When sealing a freeze, peer adopts land in both live and the freeze."""
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    peer = {'CUST-M': {'customer_id': 'CUST-M', 'balance': 50.0}}
+    assert flush_fiduciary_to_db(
+        health_wallets=peer,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )['health_wallets']['written'] == 1
+    _, digest_50 = canonical_payload(peer['CUST-M'])
+    db = DatabaseManager()
+    assert db.health_wallets.upsert(
+        'CUST-M',
+        {'customer_id': 'CUST-M', 'balance': 777.0},
+        expected_checksum=digest_50,
+    ) is True
+    db.close()
+
+    freeze = {'CUST-M': {'customer_id': 'CUST-M', 'balance': 50.0}}
+    live = {'CUST-M': {'customer_id': 'CUST-M', 'balance': 50.0}}
+    capture_fiduciary_baseline_from_memory(
+        health_wallets=freeze,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )
+    result = flush_fiduciary_to_db(
+        health_wallets=freeze,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+        adopt_into={'health_wallets': live},
+    )
+    assert result['health_wallets']['withheld'] >= 1
+    assert result['health_wallets'].get('adopted', 0) >= 1
+    assert live['CUST-M']['balance'] == 777.0
+    assert freeze['CUST-M']['balance'] == 777.0
+    # Adopt must deep-copy: an unlocked live mutation must not rewrite freeze.
+    assert live['CUST-M'] is not freeze['CUST-M']
+    live['CUST-M']['balance'] = 1.0
+    assert freeze['CUST-M']['balance'] == 777.0
+
+
+def test_adopt_freeze_stays_isolated_from_live_mutations(sqlite_db, monkeypatch):
+    """In-place credits after adopt must not land in the write freeze.
+
+    Claim payment credits the wallet and appends a transaction, and the
+    balance sheet mutates nested lists, without the persistence lock. The
+    volume snapshot dumps the freeze, so that copy stays at the sealed
+    payload. (Absorbed from Autofix dc1e41d4; tip deep-copies live too.)
+    """
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    peer_wallet = {
+        'customer_id': 'CUST-M',
+        'balance': 50.0,
+        'transactions': [{'id': 'seed', 'amount': 50.0}],
+    }
+    peer_sheet = {
+        'claims_reserve': 10.0,
+        'transactions': [{'id': 'seed'}],
+        'revenue_breakdown': {'premium_income': 1.0},
+    }
+    assert flush_fiduciary_to_db(
+        health_wallets={'CUST-M': peer_wallet},
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet=peer_sheet,
+    )['health_wallets']['written'] == 1
+
+    _, digest_wallet = canonical_payload(peer_wallet)
+    _, digest_sheet = canonical_payload(peer_sheet)
+    sealed_wallet = {
+        'customer_id': 'CUST-M',
+        'balance': 777.0,
+        'transactions': [{'id': 'sealed', 'amount': 777.0}],
+    }
+    sealed_sheet = {
+        'claims_reserve': 20.0,
+        'transactions': [{'id': 'sealed'}],
+        'revenue_breakdown': {'premium_income': 2.0},
+    }
+    db = DatabaseManager()
+    assert db.health_wallets.upsert(
+        'CUST-M', sealed_wallet, expected_checksum=digest_wallet,
+    ) is True
+    assert db.balance_sheet.upsert_phins(
+        sealed_sheet, expected_checksum=digest_sheet,
+    ) is True
+    db.close()
+
+    freeze_wallets = {'CUST-M': copy.deepcopy(peer_wallet)}
+    live_wallets = {'CUST-M': copy.deepcopy(peer_wallet)}
+    freeze_sheet = copy.deepcopy(peer_sheet)
+    live_sheet = copy.deepcopy(peer_sheet)
+    capture_fiduciary_baseline_from_memory(
+        health_wallets=freeze_wallets,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet=freeze_sheet,
+    )
+    result = flush_fiduciary_to_db(
+        health_wallets=freeze_wallets,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet=freeze_sheet,
+        adopt_into={
+            'health_wallets': live_wallets,
+            'balance_sheet': live_sheet,
+        },
+    )
+    assert result['health_wallets'].get('adopted', 0) >= 1
+    assert result['balance_sheet'].get('adopted', 0) >= 1
+    assert live_wallets['CUST-M']['balance'] == 777.0
+    assert live_sheet['claims_reserve'] == 20.0
+
+    live_wallets['CUST-M']['balance'] = 900.0
+    live_wallets['CUST-M']['transactions'].append(
+        {'id': 'unsealed', 'amount': 123.0}
+    )
+    live_sheet['claims_reserve'] = 99.0
+    live_sheet['transactions'].append({'id': 'unsealed'})
+    live_sheet['revenue_breakdown']['premium_income'] = 99.0
+
+    assert freeze_wallets['CUST-M'] is not live_wallets['CUST-M']
+    assert freeze_wallets['CUST-M']['balance'] == 777.0
+    assert freeze_wallets['CUST-M']['transactions'] == [
+        {'id': 'sealed', 'amount': 777.0},
+    ]
+    assert freeze_sheet['claims_reserve'] == 20.0
+    assert freeze_sheet['transactions'] == [{'id': 'sealed'}]
+    assert freeze_sheet['revenue_breakdown']['premium_income'] == 2.0
+    assert freeze_sheet['transactions'] is not live_sheet['transactions']
+    assert (
+        freeze_sheet['revenue_breakdown']
+        is not live_sheet['revenue_breakdown']
+    )
 
 

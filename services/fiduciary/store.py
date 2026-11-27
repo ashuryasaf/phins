@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import os
 from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional
@@ -315,6 +316,7 @@ def _refresh_baseline_after_flush(
     prior_expected: Mapping[str, str],
     written_ids: Iterable[str],
     withheld_ids: Iterable[str],
+    mirror: Optional[MutableMapping[str, Any]] = None,
 ) -> int:
     """Align baseline (and mutable memory) with sealed outcomes.
 
@@ -327,7 +329,9 @@ def _refresh_baseline_after_flush(
     * Withheld ids: adopt sealed into live memory only when live still equals
       the flushed snapshot. If live moved, stamp baseline from the sealed
       digest without adopting so the next flush can CAS-write the local
-      credit over the peer.
+      credit over the peer. When ``mirror`` is the write freeze (distinct
+      from live), adopted sealed payloads are also copied there so a later
+      volume snapshot of that freeze matches the sealed rows.
 
     Baseline is rebuilt only for ids in ``flushed`` / live. Sealed ids this
     replica never held must not receive tokens. Returns adopt count.
@@ -377,7 +381,16 @@ def _refresh_baseline_after_flush(
             and record_id in sealed_payloads
         ):
             # Live still matches what we tried to write — peer win; adopt.
-            live[record_id] = sealed_payloads[record_id]  # type: ignore[index]
+            # Deep-copy into live and freeze separately: wallet writers mutate
+            # payloads in place without the persistence lock, so a shared
+            # reference would let unsealed credits leak into the volume freeze.
+            sealed_row = sealed_payloads[record_id]
+            live[record_id] = copy.deepcopy(sealed_row)  # type: ignore[index]
+            if (
+                isinstance(mirror, MutableMapping)
+                and mirror is not live
+            ):
+                mirror[record_id] = copy.deepcopy(sealed_row)
             baseline[record_id] = sealed_digest
             adopted += 1
         else:
@@ -395,13 +408,19 @@ def flush_fiduciary_to_db(
     nft_ledger: Mapping[str, Any],
     investment_accounts: Mapping[str, Any],
     balance_sheet: Mapping[str, Any],
+    adopt_into: Optional[Mapping[str, MutableMapping[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Dual/db write path: seal every live fiduciary dict into its table.
+    """Dual/db write path: seal fiduciary dicts into their tables.
 
     Passes the process CAS baseline as ``expected_checksum`` so a multi-writer
     flush withholds ids another process updated since this one last
     hydrated/flushed, instead of reverting them. Withheld ids adopt sealed
-    payloads into mutable mappings before the baseline advances.
+    payloads into ``adopt_into[label]`` when provided (else into the write
+    mapping) before the baseline advances.
+
+    Callers that need the seal and a later volume snapshot to share one view
+    pass a freeze as the write mappings and the live process dicts via
+    ``adopt_into``.
     """
     mode = fiduciary_mode()
     if mode == 'off':
@@ -413,6 +432,7 @@ def flush_fiduciary_to_db(
         return {'mode': mode, 'error': type(exc).__name__}
 
     result: Dict[str, Any] = {'mode': mode}
+    adopt_map = adopt_into or {}
     try:
         from database.repositories.fiduciary_repository import (
             BALANCE_SHEET_ID,
@@ -447,15 +467,22 @@ def flush_fiduciary_to_db(
             if customer_from:
                 kwargs['customer_from'] = customer_from
             flushed = dict(mapping)
+            live_target = adopt_map.get(label, mapping)
+            mirror = (
+                mapping
+                if live_target is not mapping and isinstance(mapping, MutableMapping)
+                else None
+            )
             counts = repo.replace_mapping(flushed, **kwargs)
             adopted = _refresh_baseline_after_flush(
                 label,
-                mapping,
+                live_target,
                 repo,
                 flushed=flushed,
                 prior_expected=expected,
                 written_ids=counts.get('written_ids') or [],
                 withheld_ids=counts.get('withheld_ids') or [],
+                mirror=mirror,
             )
             if adopted:
                 counts['adopted'] = adopted
@@ -477,6 +504,7 @@ def flush_fiduciary_to_db(
                 BALANCE_SHEET_ID
             )
             flushed_sheet = dict(balance_sheet)
+            live_sheet = adopt_map.get('balance_sheet', balance_sheet)
             ok = db.balance_sheet.upsert_phins(
                 flushed_sheet, expected_checksum=expected_sheet
             )
@@ -496,15 +524,23 @@ def flush_fiduciary_to_db(
                 prior[BALANCE_SHEET_ID] = sealed_digest or flushed_digest
             elif sealed_digest is not None:
                 live_digest = None
-                if balance_sheet:
-                    _, live_digest = canonical_payload(dict(balance_sheet))
+                if live_sheet:
+                    _, live_digest = canonical_payload(dict(live_sheet))
                 if (
-                    isinstance(balance_sheet, MutableMapping)
+                    isinstance(live_sheet, MutableMapping)
                     and live_digest == flushed_digest
                     and isinstance(sealed_payload, dict)
                 ):
-                    balance_sheet.clear()
-                    balance_sheet.update(sealed_payload)
+                    # Separate deep copies — in-place balance-sheet mutations
+                    # must not rewrite the freeze before the volume write.
+                    live_sheet.clear()
+                    live_sheet.update(copy.deepcopy(sealed_payload))
+                    if (
+                        isinstance(balance_sheet, MutableMapping)
+                        and balance_sheet is not live_sheet
+                    ):
+                        balance_sheet.clear()
+                        balance_sheet.update(copy.deepcopy(sealed_payload))
                     prior[BALANCE_SHEET_ID] = sealed_digest
                     adopted = 1
                 else:

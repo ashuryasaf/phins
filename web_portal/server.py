@@ -9435,21 +9435,58 @@ def _offer_ledger_snapshot_to_db(snapshot, *, periodic: bool, force: bool) -> No
         print(f"[PERSISTENCE] Database snapshot copy not written ({outcome})")
 
 
-def _flush_fiduciary_tables() -> bool:
-    """U2: seal live fiduciary dicts into DB tables (dual/db modes).
+def _freeze_fiduciary_books() -> Dict[str, Any]:
+    """Deep-copy process fiduciary books for a shared seal + volume snapshot.
 
-    Returns ``True`` when the flush succeeded or was skipped (mode off).
+    Uses ``_freeze_for_json`` (retrying items()/list()) so a wallet or NFT
+    mutation that races without the persistence lock cannot raise
+    ``dictionary changed size during iteration`` and tear the freeze. A
+    persistent race raises ``RuntimeError`` — callers fail closed and leave
+    the previous volume file / sealed rows alone.
+    """
+    return {
+        'health_wallets': _freeze_for_json(HEALTH_WALLETS),
+        'wallet_withdrawals': _freeze_for_json(WALLET_WITHDRAWALS),
+        'nft_ledger': _freeze_for_json(NFT_LEDGER),
+        'investment_accounts': _freeze_for_json(INVESTMENT_ACCOUNTS),
+        'balance_sheet': _freeze_for_json(PHINS_BALANCE_SHEET),
+    }
+
+
+def _flush_fiduciary_tables(books: Optional[Dict[str, Any]] = None) -> bool:
+    """U2: seal fiduciary dicts into DB tables (dual/db modes).
+
+    When ``books`` is a freeze from ``_freeze_fiduciary_books``, that freeze
+    is what gets sealed; peer adopts update both the freeze and the live
+    process dicts. Returns ``True`` when the flush succeeded or was skipped.
     """
     try:
         from services.fiduciary import flush_fiduciary_to_db, fiduciary_mode
         if fiduciary_mode() == 'off':
             return True
+        write = books or {
+            'health_wallets': HEALTH_WALLETS,
+            'wallet_withdrawals': WALLET_WITHDRAWALS,
+            'nft_ledger': NFT_LEDGER,
+            'investment_accounts': INVESTMENT_ACCOUNTS,
+            'balance_sheet': PHINS_BALANCE_SHEET,
+        }
+        adopt_into = None
+        if books is not None:
+            adopt_into = {
+                'health_wallets': HEALTH_WALLETS,
+                'wallet_withdrawals': WALLET_WITHDRAWALS,
+                'nft_ledger': NFT_LEDGER,
+                'investment_accounts': INVESTMENT_ACCOUNTS,
+                'balance_sheet': PHINS_BALANCE_SHEET,
+            }
         result = flush_fiduciary_to_db(
-            health_wallets=HEALTH_WALLETS,
-            wallet_withdrawals=WALLET_WITHDRAWALS,
-            nft_ledger=NFT_LEDGER,
-            investment_accounts=INVESTMENT_ACCOUNTS,
-            balance_sheet=PHINS_BALANCE_SHEET,
+            health_wallets=write['health_wallets'],
+            wallet_withdrawals=write['wallet_withdrawals'],
+            nft_ledger=write['nft_ledger'],
+            investment_accounts=write['investment_accounts'],
+            balance_sheet=write['balance_sheet'],
+            adopt_into=adopt_into,
         )
         if result.get('error'):
             print(f"[FIDUCIARY] Flush error: {result['error']}")
@@ -9571,20 +9608,19 @@ def _hydrate_and_migrate_fiduciary(
         print(f"[FIDUCIARY] Hydrated sealed rows: {counts}")
 
 
-def _should_flush_fiduciary(*, periodic: bool, wrote_file: bool, force_db: bool) -> bool:
+def _should_flush_fiduciary(*, periodic: bool, ledger_dirty: bool, force_db: bool) -> bool:
     """Whether this save should dual-write sealed fiduciary tables.
 
     Idle periodic ticks must not republish process-local dicts over shared
-    Postgres. Gate on whether the file save actually wrote (under the
-    persistence lock) — not a pre-lock dirty read — so a mutation that
-    races into the same tick still flushes.
+    Postgres. Gate on the dirty flag (same signal that drives a file write)
+    so a mutation that races into the same tick still flushes.
 
     ``force_db`` alone (SIGTERM shutdown) is not enough: an idle replica or
     cron that only hydrated at boot must not upsert stale books over newer
     sealed rows. Explicit mutation saves (``not periodic`` and not
     shutdown-only) still flush even when persistence is disabled.
     """
-    if wrote_file:
+    if ledger_dirty:
         return True
     if not periodic and not force_db:
         return True
@@ -9605,49 +9641,85 @@ def save_ledger_data(_periodic: bool = False, *, force_db: bool = False):
     Returns ``True`` when the snapshot was written (or persistence is
     intentionally disabled / skipped as a no-op) and ``False`` when the
     write failed, so callers can surface a durability failure instead of
-    silently reporting success. In ``PHINS_FIDUCIARY_MODE=db``, a failed
-    fiduciary table flush is also a durability failure (file is not SoR).
+    silently reporting success. In ``dual`` and ``db`` fiduciary modes a
+    failed sealed-table flush is a durability failure: dual volume boot
+    prefers sealed rows on conflict, so a volume file that raced ahead of
+    a failed flush must not be reported as durable.
 
-    Fiduciary table flush follows the file write (or explicit/force paths)
-    so idle replicas cannot stale-overwrite shared rows. A failed flush
-    re-marks the ledger dirty so the next periodic tick retries.
+    Fiduciary flush runs **before** the volume file write. Under
+    ``_persistence_lock`` we take one fiduciary freeze, seal that freeze,
+    then write the same freeze into the volume snapshot so dual prefer-db
+    hydrate cannot drop credits that only reached the file. Wallet mutations
+    do not take this lock, so a live re-read between seal and file would
+    diverge — the freeze closes that gap. A failed flush re-marks dirty and
+    skips the file write.
     """
+    global _persistence_dirty
     frozen: list = []
     file_ok = False
-    flush_ok = True
+    mode = 'off'
     try:
-        file_ok = bool(_save_ledger_data_file(_periodic, frozen))
-    finally:
-        do_fiduciary_flush = _should_flush_fiduciary(
-            periodic=_periodic, wrote_file=bool(frozen), force_db=force_db,
-        )
-        if do_fiduciary_flush:
-            flush_ok = _flush_fiduciary_tables()
-            if not flush_ok:
-                # File may already be clean; keep retrying sealed tables.
-                try:
-                    mark_ledger_dirty()
-                except Exception:
-                    pass
-        if PERSISTENCE_ENABLED:
-            _offer_ledger_snapshot_to_db(
-                frozen[0] if frozen else None, periodic=_periodic, force=force_db,
+        from services.fiduciary import fiduciary_mode
+        mode = fiduciary_mode()
+    except Exception:
+        mode = 'off'
+
+    # Hold the persistence lock across freeze + seal + file. RLock:
+    # _save_ledger_data_file re-enters. Mid-save mark_ledger_dirty blocks,
+    # then re-dirties after we clear — next tick seals the new credit.
+    with _persistence_lock:
+        fiduciary_books = None
+        if mode in ('dual', 'db'):
+            dirty = bool(_persistence_dirty)
+            if not _periodic:
+                dirty = True
+            do_fiduciary_flush = _should_flush_fiduciary(
+                periodic=_periodic, ledger_dirty=dirty, force_db=force_db,
             )
-    if not flush_ok:
+            if do_fiduciary_flush:
+                try:
+                    fiduciary_books = _freeze_fiduciary_books()
+                except RuntimeError as exc:
+                    # Racing wallet/NFT mutation tore the freeze — keep prior
+                    # seal + volume file; next dirty tick retries.
+                    _persistence_dirty = True
+                    print(
+                        f"[FIDUCIARY] Freeze raced live books "
+                        f"({type(exc).__name__}); "
+                        "treating save as durability failure"
+                    )
+                    return False
+                if not _flush_fiduciary_tables(fiduciary_books):
+                    _persistence_dirty = True
+                    print(
+                        "[FIDUCIARY] Sealed flush failed; "
+                        "treating save as durability failure"
+                    )
+                    # Skip _offer_ledger_snapshot_to_db on purpose: no new
+                    # volume freeze means no snapshot copy for this attempt.
+                    return False
         try:
-            from services.fiduciary import fiduciary_mode
-            if fiduciary_mode() == 'db':
-                print(
-                    "[FIDUCIARY] Authoritative flush failed; "
-                    "treating save as durability failure"
+            file_ok = bool(
+                _save_ledger_data_file(
+                    _periodic, frozen, fiduciary_books=fiduciary_books,
                 )
-                return False
-        except Exception:
-            pass
+            )
+        finally:
+            if PERSISTENCE_ENABLED:
+                _offer_ledger_snapshot_to_db(
+                    frozen[0] if frozen else None,
+                    periodic=_periodic,
+                    force=force_db,
+                )
     return file_ok
 
 
-def _save_ledger_data_file(_periodic: bool, _snapshot_out: list):
+def _save_ledger_data_file(
+    _periodic: bool,
+    _snapshot_out: list,
+    *,
+    fiduciary_books: Optional[Dict[str, Any]] = None,
+):
     global _persistence_dirty
     # The design document has its own checksummed row. Seal it even when the
     # ledger file is disabled: that file is what a new deploy throws away.
@@ -9700,21 +9772,30 @@ def _save_ledger_data_file(_periodic: bool, _snapshot_out: list):
                 FIDUCIARY_BOOKS_DB = 'db'
                 FIDUCIARY_BOOKS_MARKER = 'fiduciary_books'
 
+            # Prefer the freeze sealed into fiduciary tables so dual
+            # prefer-db hydrate cannot drop credits that only hit the file.
+            _fw = fiduciary_books or {}
+            _hw = _fw.get('health_wallets', HEALTH_WALLETS)
+            _ww = _fw.get('wallet_withdrawals', WALLET_WITHDRAWALS)
+            _nl = _fw.get('nft_ledger', NFT_LEDGER)
+            _ia = _fw.get('investment_accounts', INVESTMENT_ACCOUNTS)
+            _bs = _fw.get('balance_sheet', PHINS_BALANCE_SHEET)
+
             data = {
                 'saved_at': datetime.now().isoformat(),
                 'version': '2.0',
-                'health_wallets': {} if _omit_fiduciary else HEALTH_WALLETS,
-                'wallet_withdrawals': {} if _omit_fiduciary else WALLET_WITHDRAWALS,
+                'health_wallets': {} if _omit_fiduciary else _hw,
+                'wallet_withdrawals': {} if _omit_fiduciary else _ww,
                 'medical_purchases': MEDICAL_PURCHASES,
-                'nft_ledger': {} if _omit_fiduciary else NFT_LEDGER,
+                'nft_ledger': {} if _omit_fiduciary else _nl,
                 'customer_allocations': CUSTOMER_ALLOCATIONS,
-                'investment_accounts': {} if _omit_fiduciary else INVESTMENT_ACCOUNTS,
+                'investment_accounts': {} if _omit_fiduciary else _ia,
                 'transaction_ledger': TRANSACTION_LEDGER,
                 # v1.2 additions - algo trading data
                 'algo_trading_balances': algo_balances,
                 'trading_bots': trading_bots,
                 # v1.3 additions - PHINS Main Balance Sheet
-                'phins_balance_sheet': {} if _omit_fiduciary else PHINS_BALANCE_SHEET,
+                'phins_balance_sheet': {} if _omit_fiduciary else _bs,
                 # v1.5 additions - Underwriting Files
                 'underwriting_files': UNDERWRITING_FILES,
                 # v1.6 additions - Media Assets and Design Settings
