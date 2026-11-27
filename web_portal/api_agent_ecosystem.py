@@ -335,7 +335,9 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
                         break_glass=bool(body.get("break_glass")),
                         break_glass_reason=str(body.get("break_glass_reason") or ""),
                         actor=admin,
-                        role=str(ctx.get("role") or "admin"),
+                        # Use the role that passed the admin route gate — never
+                        # invent "admin" for break-glass if the session is empty.
+                        role=str(role or ""),
                         platform_ledger=data_sources.get("platform_ledger"),
                     )
                 except MoneyGateError as gate_exc:
@@ -384,7 +386,9 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
                     break_glass=bool(body.get("break_glass")),
                     break_glass_reason=str(body.get("break_glass_reason") or ""),
                     actor=admin,
-                    role=str(ctx.get("role") or "admin"),
+                    # Use the role that passed the admin route gate — never
+                    # invent "admin" for break-glass if the session is empty.
+                    role=str(role or ""),
                     platform_ledger=data_sources.get("platform_ledger"),
                 )
             except MoneyGateError as gate_exc:
