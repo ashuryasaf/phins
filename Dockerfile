@@ -102,7 +102,10 @@ ENV PYTHONUNBUFFERED=1 \
 STOPSIGNAL SIGTERM
 
 # Curl-based healthcheck (cheaper than spawning a python interpreter).
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+# start-period must cover production DB hydrate + journal reconstruct; Railway
+# deploy gate uses railway.json healthcheckTimeout (300s). A 15s start-period
+# falsely killed cold boots that later became healthy.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 \
     CMD curl -f "http://localhost:${PORT:-8000}/api/health" || exit 1
 
 ENTRYPOINT ["./scripts/entrypoint.sh"]
