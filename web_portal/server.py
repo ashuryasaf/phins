@@ -9439,9 +9439,16 @@ def _flush_fiduciary_tables() -> bool:
     """U2: seal live fiduciary dicts into DB tables (dual/db modes).
 
     Returns ``True`` when the flush succeeded or was skipped (mode off).
+    Dual file-SoR withholds (no adopt) must fail closed so the ledger stays
+    dirty and retries — otherwise a withheld older seal is never overwritten
+    and the next snapshot can freeze a diverge.
     """
     try:
-        from services.fiduciary import flush_fiduciary_to_db, fiduciary_mode
+        from services.fiduciary import (
+            fiduciary_file_sor,
+            flush_fiduciary_to_db,
+            fiduciary_mode,
+        )
         if fiduciary_mode() == 'off':
             return True
         result = flush_fiduciary_to_db(
@@ -9456,8 +9463,13 @@ def _flush_fiduciary_tables() -> bool:
             return False
         # Per-row write failures must not look like a successful seal.
         for block in result.values():
-            if isinstance(block, dict) and int(block.get('errors') or 0) > 0:
+            if not isinstance(block, dict):
+                continue
+            if int(block.get('errors') or 0) > 0:
                 print(f"[FIDUCIARY] Flush had row errors: {result}")
+                return False
+            if fiduciary_file_sor() and int(block.get('withheld') or 0) > 0:
+                print(f"[FIDUCIARY] File-SoR flush withheld rows: {result}")
                 return False
         return True
     except Exception as exc:

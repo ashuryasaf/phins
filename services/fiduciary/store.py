@@ -38,6 +38,16 @@ _FIDUCIARY_BASELINE: Dict[str, Dict[str, str]] = {
     'balance_sheet': {},
 }
 
+# Dual volume boot skipped hydrate: the JSON file is SoR. Flush must CAS
+# against sealed-at-write (so a newer file can overwrite a lagging seal) and
+# must never adopt an older seal over the live file book.
+_FIDUCIARY_FILE_SOR = False
+
+
+def fiduciary_file_sor() -> bool:
+    """True when dual boot left the ledger file as fiduciary SoR."""
+    return bool(_FIDUCIARY_FILE_SOR)
+
 
 class FiduciaryBootError(RuntimeError):
     """Fatal fiduciary migrate/hydrate failure in ``db`` mode (abort boot)."""
@@ -70,8 +80,11 @@ def omit_fiduciary_from_snapshot(environ: Optional[Mapping[str, str]] = None) ->
 
 def reset_fiduciary_baseline() -> None:
     """Clear CAS baselines (tests / process isolation)."""
+    global _FIDUCIARY_FILE_SOR
     for book in _FIDUCIARY_BASELINE:
         _FIDUCIARY_BASELINE[book] = {}
+    _FIDUCIARY_FILE_SOR = False
+
 
 
 def fiduciary_baseline(book: str) -> Dict[str, str]:
@@ -96,14 +109,13 @@ def capture_fiduciary_baseline_from_memory(
     investment_accounts: Mapping[str, Any],
     balance_sheet: Mapping[str, Any],
 ) -> Dict[str, int]:
-    """Stamp CAS baselines from digests of what this process currently holds.
+    """Mark dual file-SoR boot and record held ids (diagnostics only).
 
-    Used on dual file-SoR boot (hydrate skipped). Baseline must reflect the
-    in-memory / file book — not live sealed checksums — otherwise a matching
-    ``expected_checksum`` would authorize flushing an older file book over a
-    newer peer seal. When sealed already differs, the next flush withholds
-    and adopts the peer payload.
+    Flush does **not** use these digests as ``expected_checksum``: that would
+    withhold a newer file against an older seal and then adopt the older
+    payload. File-SoR flushes CAS against sealed-at-write instead.
     """
+    global _FIDUCIARY_FILE_SOR
     from database.repositories.fiduciary_repository import (
         BALANCE_SHEET_ID,
         canonical_payload,
@@ -140,6 +152,7 @@ def capture_fiduciary_baseline_from_memory(
         counts['balance_sheet'] = 1
     else:
         _set_baseline('balance_sheet', {})
+    _FIDUCIARY_FILE_SOR = True
     return counts
 
 
@@ -207,10 +220,14 @@ def hydrate_fiduciary_from_db(
     When ``prefer_db`` is True (dual/db), an intact DB row replaces the
     in-memory value for that key. When False, DB only fills missing keys.
     Always refreshes the process CAS baseline from intact sealed checksums.
+    Clears the dual file-SoR flag: memory is now aligned with sealed tables.
     """
+    global _FIDUCIARY_FILE_SOR
     mode = fiduciary_mode()
     if mode == 'off':
         return {'mode': 0}
+    _FIDUCIARY_FILE_SOR = False
+
     counts = {
         'health_wallets': 0,
         'wallet_withdrawals': 0,
@@ -285,10 +302,13 @@ def _refresh_baseline_after_flush(
 
     * Written / no-op ids: stamp baseline from the flushed digest; never
       clobber a live credit that raced ahead of the snapshot.
-    * Withheld ids: adopt sealed into live memory only when live still
-      equals the flushed snapshot. If live moved, stamp baseline from the
-      sealed digest without adopting so the next flush can CAS-write the
-      local credit over the peer.
+    * Withheld ids (hydrated / db): adopt sealed into live memory only when
+      live still equals the flushed snapshot. If live moved, stamp baseline
+      from the sealed digest without adopting so the next flush can CAS-write
+      the local credit over the peer.
+    * Withheld ids (dual file-SoR): never adopt — the volume file is SoR; an
+      older seal must not replace a newer file book. Observe sealed for the
+      next CAS overwrite instead.
 
     Baseline is rebuilt only for ids in ``flushed`` / live. Sealed ids this
     replica never held must not receive tokens. Returns adopt count.
@@ -304,6 +324,7 @@ def _refresh_baseline_after_flush(
     baseline: Dict[str, str] = {}
     adopted = 0
     mutable = isinstance(live, MutableMapping)
+    file_sor = _FIDUCIARY_FILE_SOR
     written_set = {str(i) for i in written_ids}
     withheld_set = {str(i) for i in withheld_ids}
 
@@ -325,6 +346,13 @@ def _refresh_baseline_after_flush(
             continue
 
         if sealed_digest is None:
+            continue
+
+        if file_sor:
+            # Keep the live file book. Only retain a token for ids we already
+            # held — never mint one for a lazy foreign id on withhold.
+            if record_id in prior_expected:
+                baseline[record_id] = sealed_digest
             continue
 
         live_payload = (live or {}).get(record_id)
@@ -403,7 +431,23 @@ def flush_fiduciary_to_db(
                     'skipped': 'refuse_empty_overwrite',
                 }
                 return
-            expected = dict(_FIDUCIARY_BASELINE.get(label) or {})
+            held = dict(_FIDUCIARY_BASELINE.get(label) or {})
+            if _FIDUCIARY_FILE_SOR:
+                # File is SoR: CAS against sealed-at-write for ids this process
+                # already held so a newer volume book can overwrite a lagging
+                # seal. Foreign sealed ids must not get a token (lazy $0
+                # get-or-create would otherwise authorize a peer overwrite).
+                try:
+                    sealed_now = repo.load_checksums()
+                except Exception:
+                    sealed_now = {}
+                expected = {
+                    str(k): sealed_now[str(k)]
+                    for k in mapping
+                    if str(k) in sealed_now and str(k) in held
+                }
+            else:
+                expected = held
             kwargs: Dict[str, Any] = {'expected_checksums': expected}
             if customer_from:
                 kwargs['customer_from'] = customer_from
@@ -434,9 +478,18 @@ def flush_fiduciary_to_db(
         )
         _write_or_skip('investment_accounts', investment_accounts, db.investment_accounts)
         if balance_sheet:
-            expected_sheet = (_FIDUCIARY_BASELINE.get('balance_sheet') or {}).get(
+            held_sheet = (_FIDUCIARY_BASELINE.get('balance_sheet') or {}).get(
                 BALANCE_SHEET_ID
             )
+            if _FIDUCIARY_FILE_SOR and held_sheet is not None:
+                try:
+                    expected_sheet = db.balance_sheet.load_checksums().get(
+                        BALANCE_SHEET_ID
+                    )
+                except Exception:
+                    expected_sheet = None
+            else:
+                expected_sheet = held_sheet
             flushed_sheet = dict(balance_sheet)
             ok = db.balance_sheet.upsert_phins(
                 flushed_sheet, expected_checksum=expected_sheet
@@ -456,21 +509,25 @@ def flush_fiduciary_to_db(
                 # race that mutated balance_sheet after the snapshot.
                 prior[BALANCE_SHEET_ID] = sealed_digest or flushed_digest
             elif sealed_digest is not None:
-                live_digest = None
-                if balance_sheet:
-                    _, live_digest = canonical_payload(dict(balance_sheet))
-                if (
-                    isinstance(balance_sheet, MutableMapping)
-                    and live_digest == flushed_digest
-                    and isinstance(sealed_payload, dict)
-                ):
-                    balance_sheet.clear()
-                    balance_sheet.update(sealed_payload)
-                    prior[BALANCE_SHEET_ID] = sealed_digest
-                    adopted = 1
+                if _FIDUCIARY_FILE_SOR:
+                    if held_sheet is not None:
+                        prior[BALANCE_SHEET_ID] = sealed_digest
                 else:
-                    # Live raced ahead — observe sealed for the next CAS write.
-                    prior[BALANCE_SHEET_ID] = sealed_digest
+                    live_digest = None
+                    if balance_sheet:
+                        _, live_digest = canonical_payload(dict(balance_sheet))
+                    if (
+                        isinstance(balance_sheet, MutableMapping)
+                        and live_digest == flushed_digest
+                        and isinstance(sealed_payload, dict)
+                    ):
+                        balance_sheet.clear()
+                        balance_sheet.update(sealed_payload)
+                        prior[BALANCE_SHEET_ID] = sealed_digest
+                        adopted = 1
+                    else:
+                        # Live raced ahead — observe sealed for the next CAS write.
+                        prior[BALANCE_SHEET_ID] = sealed_digest
             _set_baseline('balance_sheet', prior)
             result['balance_sheet'] = {
                 'written': 1 if ok else 0,

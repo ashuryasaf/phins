@@ -851,22 +851,24 @@ def test_flush_cas_allows_write_when_baseline_matches(sqlite_db, monkeypatch):
     db.close()
 
 
-def test_dual_file_sor_memory_baseline_cannot_overwrite_newer_seal(
+def test_dual_file_sor_newer_file_writes_without_adopting_old_seal(
     sqlite_db, monkeypatch
 ):
-    """Dual volume boot: baseline from file digests, not sealed checksums."""
+    """Dual volume SoR: newer file overwrites a lagging seal; never adopts it."""
+    from services.fiduciary.store import fiduciary_file_sor
+
     monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
-    # Peer sealed a newer wallet first.
+    # Lagging seal first.
     assert flush_fiduciary_to_db(
-        health_wallets={'CUST-FS': {'customer_id': 'CUST-FS', 'balance': 999.0}},
+        health_wallets={'CUST-FS': {'customer_id': 'CUST-FS', 'balance': 1.0}},
         wallet_withdrawals={},
         nft_ledger={},
         investment_accounts={},
         balance_sheet={},
     )['health_wallets']['written'] == 1
     reset_fiduciary_baseline()
-    # This process boots from an older volume file (hydrate skipped).
-    file_book = {'CUST-FS': {'customer_id': 'CUST-FS', 'balance': 1.0}}
+    # Newer volume file (hydrate skipped) — file is SoR.
+    file_book = {'CUST-FS': {'customer_id': 'CUST-FS', 'balance': 999.0}}
     capture_fiduciary_baseline_from_memory(
         health_wallets=file_book,
         wallet_withdrawals={},
@@ -874,8 +876,7 @@ def test_dual_file_sor_memory_baseline_cannot_overwrite_newer_seal(
         investment_accounts={},
         balance_sheet={},
     )
-    _, file_digest = canonical_payload(file_book['CUST-FS'])
-    assert fiduciary_baseline('health_wallets')['CUST-FS'] == file_digest
+    assert fiduciary_file_sor() is True
     result = flush_fiduciary_to_db(
         health_wallets=file_book,
         wallet_withdrawals={},
@@ -883,8 +884,8 @@ def test_dual_file_sor_memory_baseline_cannot_overwrite_newer_seal(
         investment_accounts={},
         balance_sheet={},
     )
-    assert result['health_wallets']['withheld'] >= 1
-    assert result['health_wallets']['written'] == 0
+    assert result['health_wallets']['written'] == 1
+    assert result['health_wallets'].get('adopted', 0) == 0
     assert file_book['CUST-FS']['balance'] == 999.0
     db = DatabaseManager()
     assert db.health_wallets.get_payload('CUST-FS')['balance'] == 999.0
