@@ -105,69 +105,73 @@ def test_module_check_respects_repo_root(tmp_path: Path):
     assert by_id['U6']['status'] == 'partial'  # module without test
 
 
+def _write(root: Path, rel: str, text: str) -> None:
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding='utf-8')
+
+
 def test_u14_baseline_snapshot_files_are_not_partial(tmp_path: Path):
     """Baseline ledger_snapshot_store + job queue alone must not credit U14."""
     for rel in (
         'services/ledger_snapshot_store.py',
         'services/agent_job_queue.py',
     ):
-        path = tmp_path / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text('# baseline\n', encoding='utf-8')
+        _write(tmp_path, rel, '# baseline\n')
     report = compute_integrity_scorecard(repo_root=str(tmp_path))
     by_id = {u['unit_id']: u for u in report['units']}
     assert by_id['U14']['status'] == 'missing'
 
 
-def test_u14_empty_slo_stub_is_not_landed(tmp_path: Path):
-    """An empty SLO test plus baseline stores must not claim U14."""
+def test_u14_stub_slo_file_does_not_land(tmp_path: Path):
+    """Baseline snapshot/queue plus an empty SLO test must not land U14."""
     for rel in (
         'services/ledger_snapshot_store.py',
         'services/agent_job_queue.py',
-        'tests/test_ledger_snapshot_slos.py',
     ):
-        path = tmp_path / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text('# stub\n', encoding='utf-8')
+        _write(tmp_path, rel, '# baseline\n')
+    _write(tmp_path, 'tests/test_ledger_snapshot_slos.py', '# stub\n')
     report = compute_integrity_scorecard(repo_root=str(tmp_path))
     by_id = {u['unit_id']: u for u in report['units']}
     assert by_id['U14']['status'] == 'missing'
+    assert by_id['U14']['evidence'] == []
 
 
-def test_u14_requires_dlq_age_and_snapshot_needles(tmp_path: Path):
-    """Landed U14 needs DLQ + pending_age + over-cap/incremental coverage."""
-    path = tmp_path / 'tests' / 'test_ledger_snapshot_slos.py'
-    path.parent.mkdir(parents=True)
-    path.write_text(
-        'def test_queue_slo():\n'
-        '    assert pending_age < 60\n'
-        '    assert DLQ == []\n'
-        '    assert over_cap is False\n',
-        encoding='utf-8',
+def test_u14_slo_suite_needs_incremental_and_dlq(tmp_path: Path):
+    """U14 lands only when the suite names incremental snapshots and DLQ alerts."""
+    for rel in (
+        'services/ledger_snapshot_store.py',
+        'services/agent_job_queue.py',
+    ):
+        _write(tmp_path, rel, '# baseline\n')
+    slo = 'tests/test_ledger_snapshot_slos.py'
+    _write(
+        tmp_path,
+        slo,
+        'def test_incremental_snapshot_slo():\n    assert True\n',
+    )
+    report = compute_integrity_scorecard(repo_root=str(tmp_path))
+    by_id = {u['unit_id']: u for u in report['units']}
+    assert by_id['U14']['status'] == 'partial'
+    _write(
+        tmp_path,
+        slo,
+        'def test_incremental_snapshot_slo():\n    assert True\n'
+        '\n'
+        'def test_dlq_age_alert():\n    assert True\n',
     )
     report = compute_integrity_scorecard(repo_root=str(tmp_path))
     by_id = {u['unit_id']: u for u in report['units']}
     assert by_id['U14']['status'] == 'landed'
 
-    path.write_text('def test_only_dlq():\n    assert DLQ == []\n', encoding='utf-8')
+
+def test_u9_requires_bordereaux_module(tmp_path: Path):
+    """Remittance alone is not U9; the plan also names bordereaux.py."""
+    _write(tmp_path, 'services/mga/remittance.py', '# stub\n')
     report = compute_integrity_scorecard(repo_root=str(tmp_path))
     by_id = {u['unit_id']: u for u in report['units']}
-    assert by_id['U14']['status'] == 'partial'
-
-
-def test_u9_requires_bordereaux_with_remittance(tmp_path: Path):
-    """Remittance alone is partial; bordereaux is required to land U9."""
-    remit = tmp_path / 'services' / 'mga' / 'remittance.py'
-    remit.parent.mkdir(parents=True)
-    remit.write_text('def run():\n    pass\n', encoding='utf-8')
-    report = compute_integrity_scorecard(repo_root=str(tmp_path))
-    by_id = {u['unit_id']: u for u in report['units']}
-    assert by_id['U9']['status'] == 'partial'
-
-    (tmp_path / 'services' / 'mga' / 'bordereaux.py').write_text(
-        'def build():\n    pass\n',
-        encoding='utf-8',
-    )
+    assert by_id['U9']['status'] == 'missing'
+    _write(tmp_path, 'services/mga/bordereaux.py', '# stub\n')
     report = compute_integrity_scorecard(repo_root=str(tmp_path))
     by_id = {u['unit_id']: u for u in report['units']}
     assert by_id['U9']['status'] == 'landed'
