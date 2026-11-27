@@ -280,7 +280,12 @@ def _refresh_baseline_after_flush(
     Withholds: adopt the sealed payload into memory when ``mapping`` is
     mutable, then stamp baseline from sealed — never advance the CAS token
     to a peer digest while leaving a stale book in place (that would let the
-    next flush overwrite the peer). Returns how many ids were adopted.
+    next flush overwrite the peer).
+
+    Baseline is rebuilt only for ids in this process's live ``mapping``.
+    Sealed ids this replica never held must not receive tokens — a later
+    lazy ``HEALTH_WALLETS[id] = {$0}`` would otherwise CAS-replace the peer.
+    Returns how many ids were adopted.
     """
     from database.repositories.fiduciary_repository import canonical_payload
 
@@ -291,7 +296,8 @@ def _refresh_baseline_after_flush(
         # Leave prior baseline untouched if sealed cannot be re-read.
         return 0
 
-    baseline = dict(prior_expected)
+    # Drop foreign tokens: only ids present in the live book stay.
+    baseline: Dict[str, str] = {}
     adopted = 0
     mutable = isinstance(mapping, MutableMapping)
     for key, payload in list(mapping.items()):
@@ -302,8 +308,7 @@ def _refresh_baseline_after_flush(
             baseline[record_id] = sealed_digest
             continue
         if sealed_digest is None:
-            # Insert withheld/errored — drop any stale token for this id.
-            baseline.pop(record_id, None)
+            # Insert withheld/errored — no token for a row that is not sealed.
             continue
         # Peer (or broken-seal path) won. Adopt sealed into live memory so
         # the next mutation save cannot CAS-match and revert it.
@@ -311,17 +316,9 @@ def _refresh_baseline_after_flush(
             mapping[record_id] = sealed_payloads[record_id]  # type: ignore[index]
             baseline[record_id] = sealed_digest
             adopted += 1
-        else:
+        elif record_id in prior_expected:
             # Keep the prior token so a later flush still withholds.
-            if record_id in prior_expected:
-                baseline[record_id] = prior_expected[record_id]
-            else:
-                baseline.pop(record_id, None)
-    # Observe sealed ids we did not flush so a later insert of that key
-    # into memory cannot blind-overwrite without a token.
-    for record_id, digest in sealed_cs.items():
-        if record_id not in baseline:
-            baseline[record_id] = digest
+            baseline[record_id] = prior_expected[record_id]
     _set_baseline(label, baseline)
     return adopted
 

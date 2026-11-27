@@ -912,3 +912,49 @@ def test_upsert_atomic_cas_update_requires_matching_checksum(sqlite_db):
     db.close()
 
 
+def test_flush_baseline_excludes_unheld_sealed_ids(sqlite_db, monkeypatch):
+    """Post-flush baseline must not authorize overwriting peers we never held."""
+    monkeypatch.setenv('PHINS_FIDUCIARY_MODE', 'dual')
+    assert flush_fiduciary_to_db(
+        health_wallets={
+            'CUST-PEER': {'customer_id': 'CUST-PEER', 'balance': 999.0},
+            'CUST-LOCAL': {'customer_id': 'CUST-LOCAL', 'balance': 5.0},
+        },
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )['health_wallets']['written'] == 2
+    reset_fiduciary_baseline()
+    # Replica only holds LOCAL (skipped gap-fill hydrate).
+    local = {'CUST-LOCAL': {'customer_id': 'CUST-LOCAL', 'balance': 5.0}}
+    capture_fiduciary_baseline_from_memory(
+        health_wallets=local,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )
+    flush_fiduciary_to_db(
+        health_wallets=local,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )
+    assert 'CUST-PEER' not in fiduciary_baseline('health_wallets')
+    # Lazy get-or-create of a foreign id must not CAS-replace the peer seal.
+    local['CUST-PEER'] = {'customer_id': 'CUST-PEER', 'balance': 0.0}
+    result = flush_fiduciary_to_db(
+        health_wallets=local,
+        wallet_withdrawals={},
+        nft_ledger={},
+        investment_accounts={},
+        balance_sheet={},
+    )
+    assert result['health_wallets']['withheld'] >= 1
+    db = DatabaseManager()
+    assert db.health_wallets.get_payload('CUST-PEER')['balance'] == 999.0
+    db.close()
+
+
