@@ -1,7 +1,7 @@
 {
   "description": "Critical reconcile paid_claims_missing_customer_ledger refuses; kernel_vs_stored is ignored.",
   "expected": {
-    "digest": "cc7420667fb44dca62ecdaaeea04231693f411aeb2a81b241585e8ef9bf63b30",
+    "digest": "ef7f8ca32dfa8a9d85046ed08617a429905722ac30f5ce32a2f2b952d0ba75fd",
     "failed_checks": [
       "paid_claims_missing_customer_ledger"
     ],

@@ -1,7 +1,7 @@
 {
-  "description": "All critical checks green \u2192 Money Gate authorises.",
+  "description": "All critical checks green → Money Gate authorises.",
   "expected": {
-    "digest": "750058c7371d3e6f87babe19c876f144a47bc8043cab0f7300074c092b4c8420",
+    "digest": "0f7adfedfa71142c0ebe6fe5ae8e859a2f8ffa519cf1bd5e7dba7d5ece4de97e",
     "failed_checks": [],
     "ok": true
   },

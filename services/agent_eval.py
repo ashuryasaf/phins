@@ -781,9 +781,13 @@ def _run_money_gate(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     from services.erp.money_gate import evaluate_from_reports
 
+    # Preserve explicit null so books_unreadable fails closed (``or {}``
+    # would turn a missing-book fixture into an empty green report).
+    unified = payload['unified'] if 'unified' in payload else {}
+    reconcile = payload['reconcile'] if 'reconcile' in payload else {}
     verdict = evaluate_from_reports(
-        unified_report=payload.get('unified') or {},
-        reconcile_report=payload.get('reconcile') or {},
+        unified_report=unified,
+        reconcile_report=reconcile,
         operation=str(payload.get('operation') or 'golden'),
     )
     return {

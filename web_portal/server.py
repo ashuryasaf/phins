@@ -8943,7 +8943,11 @@ def process_claim_payment_to_wallet(
     claim_id: str,
     customer_id: str,
     amount: float,
-    processed_by: str = 'accountant'
+    processed_by: str = 'accountant',
+    *,
+    role: str = '',
+    break_glass: bool = False,
+    break_glass_reason: str = '',
 ) -> Dict[str, Any]:
     """
     Process an approved claim payment by:
@@ -8957,10 +8961,17 @@ def process_claim_payment_to_wallet(
     The cash-flow repair replaces those transaction lists. This payment
     holds the same lock, so a row appended here is not dropped after the
     reserve and the wallet have already moved.
+
+    U4 Money Gate: any new money movement is authorized here (HTTP pay,
+    repair, and ``/api/claim/{id}/pay`` share this chokepoint). Idempotent
+    already-posted reads skip the gate.
     """
     with _CASHFLOW_REPAIR_LOCK:
         return _post_claim_payment_to_wallet(
             claim_id, customer_id, amount, processed_by,
+            role=role,
+            break_glass=break_glass,
+            break_glass_reason=break_glass_reason,
         )
 
 
@@ -8968,7 +8979,11 @@ def _post_claim_payment_to_wallet(
     claim_id: str,
     customer_id: str,
     amount: float,
-    processed_by: str = 'accountant'
+    processed_by: str = 'accountant',
+    *,
+    role: str = '',
+    break_glass: bool = False,
+    break_glass_reason: str = '',
 ) -> Dict[str, Any]:
     global PHINS_BALANCE_SHEET, HEALTH_WALLETS
 
@@ -8991,6 +9006,29 @@ def _post_claim_payment_to_wallet(
             'balance_sheet_tx': None,
             'customer_tx': None,
             'claims_reserve_remaining': PHINS_BALANCE_SHEET.get('claims_reserve'),
+        }
+
+    # U4: refuse new claim cash when critical books are red (fail closed).
+    try:
+        from services.erp.money_gate import (
+            GATE_REFUSED_ERROR, MoneyGateError, authorize_money_move,
+        )
+        authorize_money_move(
+            'claim_payout',
+            break_glass=bool(break_glass),
+            break_glass_reason=str(break_glass_reason or ''),
+            actor=processed_by,
+            role=str(role or ''),
+            platform_ledger=platform_event_ledger,
+        )
+    except MoneyGateError as gate_exc:
+        return {
+            'success': False,
+            'error': GATE_REFUSED_ERROR,
+            'failed_checks': list(gate_exc.failed_checks),
+            'digest': gate_exc.digest,
+            'claim_id': claim_id,
+            'customer_id': customer_id,
         }
 
     # Check sufficient reserves for the amount not already on the sheet.
@@ -59166,34 +59204,28 @@ For claims or questions, please contact:
                         or 'accountant'
                     )
 
-                    # U4 Money Gate: refuse when critical reconcile / unified
-                    # checks are red (repair path still calls the wallet
-                    # helper directly and is not gated here).
-                    try:
-                        from services.erp.money_gate import (
-                            MoneyGateError, authorize_money_move, http_refuse,
-                        )
-                        authorize_money_move(
-                            'claim_payout',
-                            break_glass=bool(data.get('break_glass')),
-                            break_glass_reason=str(data.get('break_glass_reason') or ''),
-                            actor=processed_by,
-                            role=str(effective_role or ''),
-                        )
-                    except MoneyGateError as gate_exc:
-                        self._set_json_headers(409)
-                        self.wfile.write(json.dumps(http_refuse(gate_exc)).encode('utf-8'))
-                        return
-
-                    # Process payment through PHINS Balance Sheet to Health Wallet
+                    # U4 Money Gate lives inside process_claim_payment_to_wallet
+                    # (also covers repair + /api/claim/{id}/pay).
                     payment_result = process_claim_payment_to_wallet(
                         claim_id=claim_id,
                         customer_id=customer_id,
                         amount=paid_amount,
-                        processed_by=processed_by
+                        processed_by=processed_by,
+                        role=str(effective_role or ''),
+                        break_glass=bool(data.get('break_glass')),
+                        break_glass_reason=str(data.get('break_glass_reason') or ''),
                     )
                     
                     if not payment_result['success']:
+                        if payment_result.get('failed_checks') is not None:
+                            self._set_json_headers(409)
+                            self.wfile.write(json.dumps({
+                                'error': payment_result.get('error', 'money_gate_refused'),
+                                'failed_checks': payment_result.get('failed_checks') or [],
+                                'digest': payment_result.get('digest') or '',
+                                'operation': 'claim_payout',
+                            }).encode('utf-8'))
+                            return
                         self._set_json_headers(400)
                         self.wfile.write(json.dumps({
                             'error': payment_result.get('error', 'Payment failed'),
@@ -59707,8 +59739,19 @@ For claims or questions, please contact:
                     claim_id=claim_id,
                     customer_id=customer_id,
                     amount=paid_amount,
-                    processed_by=processed_by
+                    processed_by=processed_by,
+                    role=str(effective_role or ''),
                 )
+
+                if not payment_result.get('success') and payment_result.get('failed_checks') is not None:
+                    self._set_json_headers(409)
+                    self.wfile.write(json.dumps({
+                        'error': payment_result.get('error', 'money_gate_refused'),
+                        'failed_checks': payment_result.get('failed_checks') or [],
+                        'digest': payment_result.get('digest') or '',
+                        'operation': 'claim_payout',
+                    }).encode('utf-8'))
+                    return
                 
                 if payment_result.get('success'):
                     claim['status'] = 'paid'

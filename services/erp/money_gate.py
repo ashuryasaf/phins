@@ -19,6 +19,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 
+# Fail-closed when the gate cannot read the books at all.
+BOOKS_UNREADABLE = 'books_unreadable'
+
 # Unified-statement checks that block money moves (AE3 names claims_counted_once).
 CRITICAL_UNIFIED_CHECKS = frozenset({
     'claims_counted_once',
@@ -29,6 +32,7 @@ CRITICAL_UNIFIED_CHECKS = frozenset({
     'balance_sheet_ties',
     'withdrawals_tie',
     'seals_intact',
+    BOOKS_UNREADABLE,
 })
 
 # Reconcile discrepancies that mean cash identity is broken.
@@ -150,8 +154,25 @@ def evaluate_from_reports(
     reconcile_report: Optional[Mapping[str, Any]] = None,
     operation: str = '',
 ) -> MoneyGateVerdict:
-    """Compute the critical-check digest from two already-built reports."""
-    unified = unified_report or {}
+    """Compute the critical-check digest from two already-built reports.
+
+    Both reports missing → ``books_unreadable`` (fail closed). An empty but
+    present report is green for that side; callers must not substitute ``{}``
+    for a failed book read (see ``_unavailable_books``).
+    """
+    if unified_report is None and reconcile_report is None:
+        failed = [BOOKS_UNREADABLE]
+        ok = False
+        return MoneyGateVerdict(
+            ok=ok,
+            failed_checks=failed,
+            digest=digest_for(failed, ok=ok),
+            enforced=money_gate_enforced(),
+            operation=str(operation or ''),
+            evaluated_at=_utc_now(),
+            source='books_unreadable',
+        )
+    unified = unified_report if isinstance(unified_report, Mapping) else {}
     integrity = unified.get('integrity') if isinstance(unified.get('integrity'), Mapping) else {}
     unified_failed = integrity.get('failed') if isinstance(integrity.get('failed'), list) else []
     discrepancies = []
@@ -174,32 +195,61 @@ def evaluate_from_reports(
     )
 
 
+def _unavailable_books() -> Dict[str, Any]:
+    """Synthetic red books when the live portal stores cannot be read."""
+    return {
+        'unified': {
+            'integrity': {'ok': False, 'failed': [BOOKS_UNREADABLE]},
+        },
+        'reconcile': {'discrepancies': []},
+        '_books_error': BOOKS_UNREADABLE,
+    }
+
+
 def evaluate_money_gate(
     *,
     books: Optional[Mapping[str, Any]] = None,
     books_provider: Optional[BooksProvider] = None,
     operation: str = '',
 ) -> MoneyGateVerdict:
-    """Evaluate critical checks. Never writes. Prefer explicit ``books`` in tests."""
-    payload = dict(books or {})
-    if not payload and books_provider is not None:
-        payload = dict(books_provider() or {})
-    if not payload:
-        payload = _default_portal_books()
+    """Evaluate critical checks. Never writes. Prefer explicit ``books`` in tests.
+
+    A missing portal module, a provider exception, or a payload without both
+    report keys fails closed as ``books_unreadable`` — never as an empty green.
+    """
+    try:
+        if books is not None:
+            payload = dict(books)
+        elif books_provider is not None:
+            payload = dict(books_provider() or {})
+        else:
+            payload = _default_portal_books()
+    except Exception:
+        payload = _unavailable_books()
+    if payload.get('_books_error') or (
+        'unified' not in payload and 'reconcile' not in payload
+    ):
+        # Empty ``{}`` from a failed default used to look green — refuse.
+        if 'unified' not in payload and 'reconcile' not in payload:
+            payload = _unavailable_books()
     return evaluate_from_reports(
-        unified_report=payload.get('unified'),
-        reconcile_report=payload.get('reconcile'),
+        unified_report=payload.get('unified') if 'unified' in payload else None,
+        reconcile_report=payload.get('reconcile') if 'reconcile' in payload else None,
         operation=operation,
     )
 
 
 def _default_portal_books() -> Dict[str, Any]:
-    """Live portal books when the web process (or worker with same stores) is up."""
+    """Live portal books when the web process (or worker with same stores) is up.
+
+    Fail closed: portal missing, builder missing, or any exception →
+    ``books_unreadable`` (never an empty green payload).
+    """
     try:
         import sys
         portal = sys.modules.get('web_portal.server') or sys.modules.get('server')
         if portal is None:
-            return {}
+            return _unavailable_books()
         from services.financial_unification_service import reconcile_financial_books
 
         policies = getattr(portal, 'POLICIES', {}) or {}
@@ -217,10 +267,16 @@ def _default_portal_books() -> Dict[str, Any]:
             investment_accounts=getattr(portal, 'INVESTMENT_ACCOUNTS', None),
         )
         build_unified = getattr(portal, 'build_cashflow_unified_report', None)
-        unified = build_unified() if callable(build_unified) else {}
+        if not callable(build_unified):
+            return _unavailable_books()
+        unified = build_unified()
+        if not isinstance(unified, Mapping):
+            return _unavailable_books()
+        if not isinstance(reconcile, Mapping):
+            return _unavailable_books()
         return {'unified': unified, 'reconcile': reconcile}
     except Exception:
-        return {}
+        return _unavailable_books()
 
 
 def _record_break_glass(

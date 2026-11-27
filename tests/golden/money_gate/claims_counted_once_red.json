@@ -1,7 +1,7 @@
 {
   "description": "AE3: claims_counted_once red refuses; non-critical marketplace_orders_tie is ignored.",
   "expected": {
-    "digest": "5ddb384cb75db74a65df9d82092f2cc14df8fd8ab4cc143a7764acd57cfa09c2",
+    "digest": "ede453e1a377d9a7d47891672b255b112e7a5844ee69beef75ccbfc5d5b84dd8",
     "failed_checks": [
       "claims_counted_once"
     ],

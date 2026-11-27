@@ -5,12 +5,14 @@ from __future__ import annotations
 import pytest
 
 from services.erp.money_gate import (
+    BOOKS_UNREADABLE,
     GATE_REFUSED_ERROR,
     MoneyGateError,
     authorize_money_move,
     critical_failures,
     digest_for,
     evaluate_from_reports,
+    evaluate_money_gate,
     http_refuse,
     money_gate_enforced,
 )
@@ -100,6 +102,31 @@ def test_authorize_green_path(monkeypatch):
     )
     assert verdict.ok is True
     assert verdict.failed_checks == []
+
+
+def test_unreadable_books_fail_closed(monkeypatch):
+    """Book-read failure must refuse — never treat empty payload as green."""
+    monkeypatch.setenv('PHINS_MONEY_GATE', '1')
+    empty = evaluate_money_gate(books={}, operation='claim_payout')
+    assert empty.ok is False
+    assert BOOKS_UNREADABLE in empty.failed_checks
+
+    def _boom():
+        raise RuntimeError('portal down')
+
+    boom = evaluate_money_gate(books_provider=_boom, operation='claim_payout')
+    assert boom.ok is False
+    assert BOOKS_UNREADABLE in boom.failed_checks
+
+    both_missing = evaluate_from_reports(
+        unified_report=None, reconcile_report=None, operation='claim_payout',
+    )
+    assert both_missing.ok is False
+    assert both_missing.failed_checks == [BOOKS_UNREADABLE]
+
+    with pytest.raises(MoneyGateError) as raised:
+        authorize_money_move('claim_payout', books={}, actor='admin', role='admin')
+    assert BOOKS_UNREADABLE in raised.value.failed_checks
 
 
 def test_break_glass_requires_admin_reason_and_journal(monkeypatch):
@@ -240,3 +267,39 @@ def test_agent_settle_api_returns_409_on_red(monkeypatch):
     assert status == 409
     assert body['failed_checks'] == ['claims_counted_once']
     assert settled['called'] is False
+
+
+def test_agent_payouts_run_settle_gates_before_run(monkeypatch):
+    """settle=1 must refuse before run_payouts so calculated runs are not stranded."""
+    monkeypatch.setenv('PHINS_MONEY_GATE', '1')
+    ran = {'called': False}
+
+    def _run_boom(*_a, **_k):
+        ran['called'] = True
+        return {'payouts': [{'id': 'APAY-X', 'status': 'calculated'}]}
+
+    monkeypatch.setattr(agent_api.svc, 'run_payouts', _run_boom)
+    monkeypatch.setattr(agent_api, '_recompute', lambda *_a, **_k: 0)
+
+    from services.erp import money_gate as mg
+
+    def _refuse(operation, **_kwargs):
+        verdict = mg.evaluate_from_reports(
+            unified_report=_red_books()['unified'],
+            reconcile_report=_red_books()['reconcile'],
+            operation=operation,
+        )
+        raise mg.MoneyGateError(verdict)
+
+    monkeypatch.setattr(mg, 'authorize_money_move', _refuse)
+
+    status, body = agent_api.handle_post(
+        '/api/admin/agents/payouts/run',
+        {},
+        {'role': 'admin', 'username': 'admin'},
+        {'settle': True},
+        {'platform_ledger': None},
+    )
+    assert status == 409
+    assert body['failed_checks'] == ['claims_counted_once']
+    assert ran['called'] is False
