@@ -601,7 +601,8 @@ By selecting an investment route, you confirm you understand the risks and benef
                 account_type=AccountType.RISK_FUND,
                 debit_amount=allocation.risk_premium,
                 description=f"Risk Premium Posted - Total Premium: ${allocation.total_premium:.2f}",
-                reference_no=allocation.bill_id
+                reference_no=allocation.bill_id,
+                idempotency_key=f"ae:{self.engine_id}:alloc:{allocation_id}:risk:debit",
             )
             
             # Create Savings Fund entry
@@ -614,7 +615,8 @@ By selecting an investment route, you confirm you understand the risks and benef
                 account_type=AccountType.SAVINGS_FUND,
                 debit_amount=allocation.savings_premium,
                 description=f"Savings Premium Posted - Total Premium: ${allocation.total_premium:.2f}",
-                reference_no=allocation.bill_id
+                reference_no=allocation.bill_id,
+                idempotency_key=f"ae:{self.engine_id}:alloc:{allocation_id}:savings:debit",
             )
             
             return True, f"Allocation {allocation_id} posted successfully"
@@ -650,6 +652,10 @@ By selecting an investment route, you confirm you understand the risks and benef
                 credit_amount=amount,
                 description=f"Reversal of allocation {allocation_id} ({note})",
                 reference_no=allocation.bill_id,
+                idempotency_key=(
+                    f"ae:{self.engine_id}:alloc:{allocation_id}:"
+                    f"{account_type.value}:credit:rev"
+                ),
             )
         allocation.status = AllocationStatus.REVERSED
         allocation.notes = "; ".join(bit for bit in (allocation.notes, note) if bit)
@@ -808,7 +814,8 @@ By selecting an investment route, you confirm you understand the risks and benef
                 account_type=AccountType.RISK_FUND,
                 credit_amount=Decimal(str(amount)),
                 description=f"Claim payment {claim_id} - ${amount:.2f} to customer wallet",
-                reference_no=claim_id
+                reference_no=claim_id,
+                idempotency_key=f"ae:{self.engine_id}:claim:{claim_id}:risk:credit",
             )
             return True, f"Claim payment {claim_id} for ${amount:.2f} recorded"
         except Exception as e:
@@ -817,8 +824,14 @@ By selecting an investment route, you confirm you understand the risks and benef
     def _create_ledger_entry(self, allocation_id: str, policy_id: str, customer_id: str,
                             entry_date: date, entry_type: EntryType, account_type: AccountType,
                             debit_amount: Decimal = Decimal(0), credit_amount: Decimal = Decimal(0),
-                            description: str = "", reference_no: str = "") -> AccountingEntry:
-        """Create and track ledger entry"""
+                            description: str = "", reference_no: str = "",
+                            idempotency_key: str = "") -> AccountingEntry:
+        """Create and track ledger entry.
+
+        U5: when the durable accounting journal is on, every post also
+        inserts a sealed journal row (idempotent key). In ``db`` mode a
+        failed journal write refuses the in-memory append (fail closed).
+        """
         # Calculate running balance using Decimal arithmetic
         balance = self._get_account_balance(account_type)
         debit = Decimal(str(debit_amount))
@@ -847,7 +860,67 @@ By selecting an investment route, you confirm you understand the risks and benef
             reference_no=reference_no,
             posted_by=self.engine_id
         )
-        
+
+        try:
+            from services.erp.accounting_journal import (
+                append_journal_entry,
+                journal_enabled,
+                journal_required,
+                make_idempotency_key,
+            )
+        except Exception:
+            append_journal_entry = None  # type: ignore
+            journal_enabled = lambda: False  # type: ignore
+            journal_required = lambda: False  # type: ignore
+            make_idempotency_key = None  # type: ignore
+
+        if append_journal_entry is not None and journal_enabled():
+            side = 'debit' if debit > Decimal('0') else ('credit' if credit > Decimal('0') else 'zero')
+            key = str(idempotency_key or '').strip()
+            if not key and make_idempotency_key is not None:
+                subject = str(reference_no or allocation_id or entry.entry_no)
+                kind = 'claim' if entry_type == EntryType.CLAIM_PAYMENT else 'alloc'
+                key = make_idempotency_key(
+                    engine_id=self.engine_id,
+                    kind=kind,
+                    subject_id=subject,
+                    account_type=account_type.value,
+                    side=side,
+                )
+            payload = entry.to_dict()
+            payload['idempotency_key'] = key
+            result = append_journal_entry(
+                idempotency_key=key,
+                payload=payload,
+                engine_id=self.engine_id,
+                allocation_id=allocation_id,
+                policy_id=policy_id,
+                customer_id=customer_id,
+                entry_type=entry_type.value,
+                account_type=account_type.value,
+            )
+            if not result.get('ok'):
+                self.entry_counter -= 1
+                if journal_required():
+                    raise RuntimeError(
+                        f"accounting journal refused post: {result.get('reason') or 'withheld'}"
+                    )
+                # dual mode: keep memory post when durable write fails (logged upstream)
+            elif result.get('reused'):
+                # Peer already sealed this key — do not double-book memory when
+                # the same subject is already on the in-process book.
+                for existing in self.ledger_entries:
+                    if (
+                        str(getattr(existing, 'allocation_id', '') or '') == str(allocation_id or '')
+                        and getattr(existing, 'entry_type', None) == entry_type
+                        and getattr(existing, 'account_type', None) == account_type
+                        and str(getattr(existing, 'reference_no', '') or '') == str(reference_no or '')
+                        and Decimal(str(getattr(existing, 'debit_amount', 0) or 0)) == debit
+                        and Decimal(str(getattr(existing, 'credit_amount', 0) or 0)) == credit
+                    ):
+                        self.entry_counter -= 1
+                        return existing
+
         self.ledger_entries.append(entry)
         return entry
     

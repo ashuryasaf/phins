@@ -8766,11 +8766,26 @@ def initialize_balance_sheet():
 
 
 def hydrate_accounting_book_from_ledger() -> Dict[str, Any]:
-    """Reconstruct the in-memory accounting book from durable ledger cash once per boot.
+    """Reconstruct the in-memory accounting book from durable sources once per boot.
 
+    Order (U5): sealed accounting journal first (peer-shared GL), then
+    ledger-cash reconstruct as the reconciler for any remaining gaps.
     GET handlers must not do this as a side effect. Repair remains the
     operator path that can also reconstruct missing ledger rows.
     """
+    journal_result: Dict[str, Any] = {'loaded': 0}
+    try:
+        from accounting_engine import get_accounting_engine
+        from services.erp.accounting_journal import hydrate_accounting_engine_from_journal
+
+        journal_result = hydrate_accounting_engine_from_journal(get_accounting_engine())
+        loaded = int(journal_result.get('loaded') or 0)
+        if loaded:
+            print(f"📒 Hydrated {loaded} accounting journal entries into the book")
+    except Exception as exc:
+        print(f"[ACCOUNTING_JOURNAL] hydrate skipped: {exc}")
+        journal_result = {'loaded': 0, 'error': str(exc)}
+
     try:
         from services.financial_unification_service import reconstruct_accounting_book_from_ledger
         result = reconstruct_accounting_book_from_ledger(
@@ -8784,10 +8799,11 @@ def hydrate_accounting_book_from_ledger() -> Dict[str, Any]:
         posted = int(result.get('posted_count') or 0)
         if posted:
             print(f"📒 Reconstructed {posted} accounting-book posts from customer ledger")
+        result['journal'] = journal_result
         return result
     except Exception as exc:
         print(f"[FINANCIAL_UNIFICATION] accounting reconstruct skipped: {exc}")
-        return {'posted_count': 0, 'error': str(exc)}
+        return {'posted_count': 0, 'error': str(exc), 'journal': journal_result}
 
 
 def record_balance_sheet_transaction(

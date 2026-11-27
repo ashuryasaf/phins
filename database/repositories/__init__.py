@@ -62,6 +62,7 @@ from .fiduciary_repository import (
     InvestmentAccountRepository,
     BalanceSheetRepository,
 )
+from .accounting_journal_repository import AccountingJournalRepository
 
 __all__ = [
     'BaseRepository',
@@ -114,4 +115,5 @@ __all__ = [
     'NftLedgerRepository',
     'InvestmentAccountRepository',
     'BalanceSheetRepository',
+    'AccountingJournalRepository',
 ]
