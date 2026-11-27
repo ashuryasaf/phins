@@ -12839,6 +12839,92 @@ def _cashflow_repair_refused(before: Dict[str, Any]) -> Dict[str, Any]:
 _CASHFLOW_REPAIR_LOCK = threading.RLock()
 
 
+def _kernel_pin_restore_scan() -> Dict[str, Any]:
+    """Reprice every unpinned policy once. Read-only; holds no repair lock.
+
+    Snapshots customers and underwriting applications through ``items()`` so a
+    database-backed store is not opened once per policy (that N+1 path made
+    ``GET /api/admin/cashflow/kernel-pins`` look like it rendered forever on
+    production).
+    """
+    from services.financial_unification_service import kernel_pin_restore_candidate
+
+    started = time.perf_counter()
+    applications: Dict[str, Any] = {}
+    try:
+        for app_id, app in list(UNDERWRITING_APPLICATIONS.items()):
+            if not isinstance(app, dict):
+                continue
+            applications[str(app_id)] = app
+            if app.get('policy_id'):
+                applications.setdefault('policy:' + str(app.get('policy_id')), app)
+    except Exception:
+        applications = {}
+    try:
+        customers = {
+            str(cid): record
+            for cid, record in list(CUSTOMERS.items())
+            if isinstance(record, dict)
+        }
+    except Exception:
+        customers = {}
+
+    rows = []
+    restorable = []
+    counts = {'pinned': 0, 'restorable': 0, 'refused': 0, 'restored': 0, 'not_verified': 0}
+    restorable_annual = 0.0
+    scanned = 0
+    quote_cache: Dict[tuple, Any] = {}
+    for policy_id, policy in list(POLICIES.items()):
+        if not isinstance(policy, dict) or safe_float(policy.get('annual_premium'), 0.0) <= 0:
+            continue
+        scanned += 1
+        application = (
+            applications.get(str(policy.get('underwriting_id') or ''))
+            or applications.get('policy:' + str(policy_id))
+        )
+        customer = customers.get(str(policy.get('customer_id') or ''))
+        candidate = kernel_pin_restore_candidate(
+            policy,
+            application=application,
+            customer=customer,
+            quote_cache=quote_cache,
+        )
+        candidate['policy_id'] = candidate.get('policy_id') or str(policy_id)
+        status = candidate.get('status')
+        counts[status if status in counts else 'refused'] += 1
+        if status == 'pinned':
+            continue
+        if status == 'restorable':
+            restorable.append((str(policy_id), candidate))
+            restorable_annual += safe_float(candidate.get('annual_premium'), 0.0)
+        rows.append(candidate)
+
+    elapsed_ms = int(round((time.perf_counter() - started) * 1000))
+    open_count = counts['restorable'] + counts['refused'] + counts['not_verified']
+    return {
+        'success': True,
+        'applied': False,
+        'writes_premiums': False,
+        'counts': counts,
+        'restorable_annual_premium': round(restorable_annual, 2),
+        'policies': rows[:200],
+        'policies_listed': min(len(rows), 200),
+        'policies_total': len(rows),
+        'durable': True,
+        'analysis': {
+            'policies_scanned': scanned,
+            'without_pin': open_count,
+            'quote_cache_entries': len(quote_cache),
+            'elapsed_ms': elapsed_ms,
+            'success_rate': (
+                round(counts['restorable'] / open_count, 4) if open_count else 1.0
+            ),
+        },
+        '_restorable': restorable,
+    }
+
+
 def restore_kernel_pins(actor: str = 'accountant', apply: bool = False) -> Dict[str, Any]:
     """Put the kernel decomposition back on policies stored without one.
 
@@ -12849,65 +12935,26 @@ def restore_kernel_pins(actor: str = 'accountant', apply: bool = False) -> Dict[
     they are. Savings that were charged and never landed are credited by
     the claim-transfer repair, as a separate step.
 
-    With ``apply`` the before-state is journaled first. If that line cannot
-    be written, no policy is changed. Each write is read back. Premium cash
-    already booked on a restored policy is then re-split on the accounting
-    book (reversal plus a new posting), so the book and the pin agree.
+    Preview (``apply=False``) does not take the cashflow repair lock, so the
+    integrity page can analyse pins without blocking claim transfers. With
+    ``apply`` the before-state is journaled first under the lock. If that
+    line cannot be written, no policy is changed. Each write is read back.
+    Premium cash already booked on a restored policy is then re-split on the
+    accounting book (reversal plus a new posting), so the book and the pin
+    agree.
     """
-    from services.financial_unification_service import (
-        kernel_pin_restore_candidate,
-        resplit_accounting_book_premiums,
-    )
-    with _CASHFLOW_REPAIR_LOCK:
-        applications: Dict[str, Any] = {}
-        try:
-            for app_id, app in list(UNDERWRITING_APPLICATIONS.items()):
-                if not isinstance(app, dict):
-                    continue
-                applications[str(app_id)] = app
-                if app.get('policy_id'):
-                    applications.setdefault('policy:' + str(app.get('policy_id')), app)
-        except Exception:
-            applications = {}
-        rows = []
-        restorable = []
-        counts = {'pinned': 0, 'restorable': 0, 'refused': 0, 'restored': 0, 'not_verified': 0}
-        restorable_annual = 0.0
-        for policy_id, policy in list(POLICIES.items()):
-            if not isinstance(policy, dict) or safe_float(policy.get('annual_premium'), 0.0) <= 0:
-                continue
-            application = (
-                applications.get(str(policy.get('underwriting_id') or ''))
-                or applications.get('policy:' + str(policy_id))
-            )
-            customer = CUSTOMERS.get(policy.get('customer_id')) if policy.get('customer_id') else None
-            candidate = kernel_pin_restore_candidate(
-                policy,
-                application=application,
-                customer=customer if isinstance(customer, dict) else None,
-            )
-            candidate['policy_id'] = candidate.get('policy_id') or str(policy_id)
-            status = candidate.get('status')
-            counts[status if status in counts else 'refused'] += 1
-            if status == 'pinned':
-                continue
-            if status == 'restorable':
-                restorable.append((str(policy_id), candidate))
-                restorable_annual += safe_float(candidate.get('annual_premium'), 0.0)
-            rows.append(candidate)
+    from services.financial_unification_service import resplit_accounting_book_premiums
 
-        result = {
-            'success': True,
-            'applied': False,
-            'writes_premiums': False,
-            'counts': counts,
-            'restorable_annual_premium': round(restorable_annual, 2),
-            'policies': rows[:200],
-            'policies_listed': min(len(rows), 200),
-            'policies_total': len(rows),
-            'durable': True,
-        }
-        if not apply or not restorable:
+    if not apply:
+        preview = _kernel_pin_restore_scan()
+        preview.pop('_restorable', None)
+        return preview
+
+    with _CASHFLOW_REPAIR_LOCK:
+        scanned = _kernel_pin_restore_scan()
+        restorable = scanned.pop('_restorable', []) or []
+        result = scanned
+        if not restorable:
             return result
 
         stamp = datetime.now().isoformat()
@@ -12940,6 +12987,7 @@ def restore_kernel_pins(actor: str = 'accountant', apply: bool = False) -> Dict[
             return result
 
         restored_ids = []
+        counts = result['counts']
         for policy_id, candidate in restorable:
             policy = POLICIES.get(policy_id)
             if not isinstance(policy, dict) or policy.get('risk_premium_annual') is not None:
@@ -12965,11 +13013,21 @@ def restore_kernel_pins(actor: str = 'accountant', apply: bool = False) -> Dict[
             else:
                 candidate['status'] = 'not_verified'
                 candidate['reason'] = 'pin_not_read_back'
+        # Restorable rows were mutated in place (they are the same dicts as in
+        # result['policies']). Recount open outcomes after apply.
         counts['restored'] = len(restored_ids)
         counts['not_verified'] = sum(1 for _, c in restorable if c.get('status') == 'not_verified')
         counts['restorable'] = sum(1 for _, c in restorable if c.get('status') == 'restorable')
+        counts['refused'] = sum(1 for row in result['policies'] if row.get('status') == 'refused')
         result['applied'] = True
         result['restored_policy_ids'] = restored_ids[:200]
+        analysis = dict(result.get('analysis') or {})
+        analysis['restored'] = len(restored_ids)
+        analysis['not_verified'] = counts['not_verified']
+        analysis['success_rate'] = (
+            round(len(restored_ids) / len(restorable), 4) if restorable else 1.0
+        )
+        result['analysis'] = analysis
         book = {'resplit_count': 0, 'resplit': [], 'failed': []}
         if restored_ids:
             try:

@@ -671,6 +671,11 @@ def test_kernel_pin_restore_reproduces_the_premium_and_journals_first(live_books
     assert status == 200, body
     preview = body["kernel_pins"]
     assert preview["applied"] is False
+    analysis = preview["analysis"]
+    assert analysis["policies_scanned"] >= 1
+    assert analysis["without_pin"] >= 1
+    assert analysis["elapsed_ms"] >= 0
+    assert 0.0 <= analysis["success_rate"] <= 1.0
     row = next(r for r in preview["policies"] if r["policy_id"] == policy_id)
     assert row["status"] == "restorable"
     assert {key: row["pins"][key] for key in _MONEY_PINS} == issued
