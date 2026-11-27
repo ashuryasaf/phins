@@ -46,6 +46,22 @@ def test_mode_defaults_off_under_test_env(monkeypatch):
     assert journal.accounting_journal_mode({'PHINS_ACCOUNTING_JOURNAL_MODE': 'db'}) == 'db'
 
 
+def test_reset_accounting_engine_clears_journal_when_requested(sqlite_journal):
+    """Shared Postgres/SQLite CI must not leak seals across cases."""
+    eng = AccountingEngine('ACC-J-CLR', 'Clear Co')
+    alloc = eng.create_allocation(
+        bill_id='BILL-CLR', policy_id='P1', customer_id='C1',
+        total_premium=Decimal('10.00'), risk_percentage=Decimal('100'),
+    )
+    assert eng.post_allocation(alloc.allocation_id, 'accountant')[0] is True
+    assert journal.load_journal_entries(engine_id='ACC-J-CLR')
+    # Default reset keeps seals (peer hydrate). Explicit clear is for isolation.
+    reset_accounting_engine()
+    assert journal.load_journal_entries(engine_id='ACC-J-CLR')
+    reset_accounting_engine(clear_journal=True)
+    assert journal.load_journal_entries(engine_id='ACC-J-CLR') == []
+
+
 def test_idempotency_key_stable():
     a = journal.make_idempotency_key(
         engine_id='PHI-AE-001', kind='claim', subject_id='CLM-1',

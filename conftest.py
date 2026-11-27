@@ -287,9 +287,11 @@ def pytest_runtest_setup(item):  # type: ignore[no-redef]
         pass
 
     # Reset shared accounting engine so accounting ledger tests stay isolated.
+    # Also clear the durable journal under PHINS_TEST_MODE so USE_DATABASE
+    # Postgres CI does not leak content-addressed seals across cases.
     try:
         from accounting_engine import reset_accounting_engine
-        reset_accounting_engine()
+        reset_accounting_engine(clear_journal=True)
     except Exception:
         pass
 

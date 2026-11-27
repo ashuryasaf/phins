@@ -1192,8 +1192,19 @@ def get_accounting_engine() -> AccountingEngine:
     return _SHARED_ACCOUNTING_ENGINE
 
 
-def reset_accounting_engine() -> None:
-    """Reset the process-wide accounting engine used by server flows."""
+def reset_accounting_engine(*, clear_journal: bool = False) -> None:
+    """Reset the process-wide accounting engine used by server flows.
+
+    ``clear_journal=True`` wipes durable journal rows (test isolation only).
+    Peer-hydrate tests reset memory while keeping the journal, so the
+    default leaves seals intact; root ``conftest`` clears between cases.
+    """
     global _SHARED_ACCOUNTING_ENGINE
     _SHARED_ACCOUNTING_ENGINE = None
+    if clear_journal:
+        try:
+            from services.erp.accounting_journal import clear_journal_for_tests
+            clear_journal_for_tests()
+        except Exception:
+            pass
 

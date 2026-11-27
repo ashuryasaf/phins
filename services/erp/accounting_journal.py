@@ -139,6 +139,33 @@ def load_journal_entries(*, engine_id: Optional[str] = None) -> List[Dict[str, A
         return []
 
 
+def clear_journal_for_tests() -> int:
+    """Wipe journal rows under ``PHINS_TEST_MODE`` so suites do not share seals.
+
+    Production never calls this. Financial CI shares one Postgres; without a
+    clear, two tests that reuse ``BILL-FS``/``CLM-1`` with different splits
+    collide on content-addressed keys after ``reset_accounting_engine``.
+    """
+    if str(os.environ.get('PHINS_TEST_MODE') or '').strip().lower() not in (
+        '1', 'true', 'yes', 'on',
+    ):
+        return 0
+    if not journal_enabled():
+        return 0
+    try:
+        from database.accounting_models import AccountingJournalEntry
+
+        db = _db_manager()
+        with db.session_scope():
+            deleted = (
+                db.accounting_journal.session.query(AccountingJournalEntry).delete()
+            )
+            return int(deleted or 0)
+    except Exception as exc:
+        logger.warning("accounting journal test clear failed: %s", type(exc).__name__)
+        return 0
+
+
 def _parse_entry_date(raw: Any) -> date:
     if isinstance(raw, date) and not isinstance(raw, datetime):
         return raw
@@ -299,5 +326,6 @@ __all__ = [
     'make_idempotency_key',
     'append_journal_entry',
     'load_journal_entries',
+    'clear_journal_for_tests',
     'hydrate_accounting_engine_from_journal',
 ]
