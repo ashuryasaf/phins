@@ -268,6 +268,8 @@ def _default_trust() -> Dict[str, str]:
             "state": "down",
             "note": "Trust Recon reports a deficit. No cash was invented to close it.",
         }
+    # No bank import still sets ok when seals held. That book is readable
+    # and is not tied, so it stays on watch ahead of the green return.
     if "bank_balance_unavailable" in codes:
         return {
             "state": "watch",
@@ -285,22 +287,26 @@ def _policy_rows(policies: Any) -> list:
     return list(values)
 
 
-def _policy_has_pin(policy: Mapping[str, Any]) -> bool:
-    """True when the policy carries a pin on the row or under ``kernel_pin``."""
-    pin = policy.get("kernel_pin")
-    if isinstance(pin, Mapping) and pin:
-        fields = pin.get("fields")
-        if isinstance(fields, Mapping) and fields:
-            return True
-        if "sha256" in pin:
-            return bool(fields)
-        return True
-    try:
-        from database.models import policy_kernel_pin_fields
+def _has_risk_premium(policy: Mapping[str, Any]) -> bool:
+    return (
+        policy.get("risk_premium_annual") is not None
+        or policy.get("risk_premium") is not None
+    )
 
-        return bool(policy_kernel_pin_fields(policy))
-    except Exception:
+
+def _policy_has_pin(policy: Mapping[str, Any]) -> bool:
+    """Pin is present when risk premium is pinned on the row or nested pin."""
+    if _has_risk_premium(policy):
+        return True
+    pin = policy.get("kernel_pin")
+    if not isinstance(pin, Mapping) or not pin:
         return False
+    fields = pin.get("fields")
+    if isinstance(fields, Mapping) and fields:
+        return _has_risk_premium(fields)
+    if "sha256" in pin:
+        return _has_risk_premium(fields if isinstance(fields, Mapping) else {})
+    return _has_risk_premium(pin)
 
 
 def _kernel_note(policies: Any) -> Dict[str, str]:

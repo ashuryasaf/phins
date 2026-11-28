@@ -83,39 +83,61 @@ def test_kernel_pins_missing_on_in_force_is_watch():
     assert cell["state"] == "watch"
 
 
-def test_kernel_pins_flattened_fields_on_row_is_up():
+def test_kernel_pins_flattened_fields_are_up():
     from services.cyber_books_posture import _kernel_note
 
     policies = {
         "POL-1": {
-            "status": "issued",
-            "risk_premium_annual": 2400.0,
-            "integrity_hash": "deadbeef",
-        }
+            "status": "in_force",
+            "risk_premium_annual": 100.0,
+            "savings_premium_annual": 20.0,
+        },
+        "POL-2": {"status": "issued", "risk_premium": 50.0},
+        "POL-3": {"status": "lapsed"},
     }
     cell = _kernel_note(policies)
     assert cell["state"] == "up"
 
 
-def test_trust_ok_without_bank_import_is_watch(monkeypatch):
-    from services import cyber_books_posture as mod
+def test_kernel_pins_incidental_fields_only_is_watch():
+    from services.cyber_books_posture import _kernel_note
+
+    policies = {
+        "POL-1": {
+            "status": "in_force",
+            "product_id": "life_only",
+            "application_channel": "chat",
+            "integrity_hash": "deadbeef",
+        }
+    }
+    cell = _kernel_note(policies)
+    assert cell["state"] == "watch"
+
+
+def test_trust_without_bank_import_is_watch(monkeypatch):
+    from services.cyber_books_posture import _default_trust
+
+    def _report():
+        return {
+            "ok": True,
+            "findings": [{"code": "bank_balance_unavailable"}],
+        }
+
+    monkeypatch.setattr("services.mga.trust.reconcile_trust", _report)
+    cell = _default_trust()
+    assert cell["state"] == "watch"
+    assert "bank" in cell["note"].lower()
+
+
+def test_trust_tied_to_bank_is_up(monkeypatch):
+    from services.cyber_books_posture import _default_trust
 
     monkeypatch.setattr(
         "services.mga.trust.reconcile_trust",
-        lambda: {
-            "ok": True,
-            "findings": [
-                {
-                    "code": "bank_balance_unavailable",
-                    "severity": "info",
-                    "detail": "no bank import",
-                }
-            ],
-        },
+        lambda: {"ok": True, "findings": []},
     )
-    cell = mod._default_trust()
-    assert cell["state"] == "watch"
-    assert "bank" in cell["note"].lower()
+    cell = _default_trust()
+    assert cell["state"] == "up"
 
 
 def test_score_pipeline_folds_books_without_closing_sessions():
