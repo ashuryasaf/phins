@@ -4131,18 +4131,14 @@ class SupplyChainEcosystemService:
         if not shipping_address:
             raise ValueError("A delivery location with latitude/longitude is required")
 
-        # Persist destination onto the order so notify (and later tracking)
-        # see the same location the carrier will receive.
-        order["delivery_location"] = shipping_address
-        plan = order.get("delivery_plan") if isinstance(order.get("delivery_plan"), dict) else {}
-        plan = dict(plan)
-        plan["requested_location"] = shipping_address
-        order["delivery_plan"] = plan
-        if payload.get("delivery_method"):
-            order["delivery_method"] = self._safe_text(payload.get("delivery_method")) or order.get(
-                "delivery_method"
-            )
-        order["updated_date"] = datetime.now(timezone.utc).isoformat()
+        # Refuse before mutating the order when status cannot accept pre-dispatch.
+        status = str(order.get("status") or "").strip().lower()
+        if status not in {
+            OrderStatus.CONFIRMED.value,
+            OrderStatus.PROCESSING.value,
+            OrderStatus.IN_TRANSIT.value,
+        }:
+            raise ValueError("Pre-dispatch notice is only available after the order is confirmed")
 
         supplier = self.suppliers.get(order.get("supplier_id"))
         if not supplier:
@@ -4152,12 +4148,51 @@ class SupplyChainEcosystemService:
         if not supplier_location:
             raise ValueError("Supplier location must include latitude and longitude")
 
-        # Notify first — refuse before booking when destination/status blocks it.
-        dispatch_notice = self.notify_customer_before_dispatch(
-            order_id=order_id,
-            actor=actor,
-            data=payload,
+        # Snapshot so a failed notify does not leave a partial destination write.
+        previous_location = order.get("delivery_location")
+        previous_plan = (
+            dict(order["delivery_plan"])
+            if isinstance(order.get("delivery_plan"), dict)
+            else order.get("delivery_plan")
         )
+        previous_method = order.get("delivery_method")
+        previous_updated = order.get("updated_date")
+
+        order["delivery_location"] = shipping_address
+        plan = dict(previous_plan) if isinstance(previous_plan, dict) else {}
+        plan["requested_location"] = shipping_address
+        order["delivery_plan"] = plan
+        if payload.get("delivery_method"):
+            order["delivery_method"] = self._safe_text(payload.get("delivery_method")) or order.get(
+                "delivery_method"
+            )
+        order["updated_date"] = datetime.now(timezone.utc).isoformat()
+
+        # Notify first — refuse before booking when destination blocks it.
+        try:
+            dispatch_notice = self.notify_customer_before_dispatch(
+                order_id=order_id,
+                actor=actor,
+                data=payload,
+            )
+        except Exception:
+            if previous_location is None:
+                order.pop("delivery_location", None)
+            else:
+                order["delivery_location"] = previous_location
+            if previous_plan is None:
+                order.pop("delivery_plan", None)
+            else:
+                order["delivery_plan"] = previous_plan
+            if previous_method is None:
+                order.pop("delivery_method", None)
+            else:
+                order["delivery_method"] = previous_method
+            if previous_updated is None:
+                order.pop("updated_date", None)
+            else:
+                order["updated_date"] = previous_updated
+            raise
 
         connector = create_delivery_provider_connector(provider_name)
         shipment_payload = {

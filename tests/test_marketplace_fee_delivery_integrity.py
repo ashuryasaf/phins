@@ -460,3 +460,6 @@ def test_create_delivery_shipment_refuses_before_booking_when_notify_fails(monke
         )
     assert booked["n"] == 0
     assert not svc.delivery_shipments
+    # Failed create must not leave a destination stamped on a pending order.
+    assert "delivery_location" not in svc.orders[order_id]
+    assert "delivery_plan" not in svc.orders[order_id]
