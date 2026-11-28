@@ -1790,6 +1790,8 @@
       let emailHtml = '';
       if (email.sent) {
         emailHtml = '<div class="email-status">Customer email sent with the Approve or dispute document link.</div>';
+      } else if (email.skipped || email.error === 'already_sent') {
+        emailHtml = '<div class="email-status">Customer already emailed for this approval link — showing QR only.</div>';
       } else if (email.error === 'customer_email_missing') {
         emailHtml = '<div class="email-status warn">No customer email on file — share this QR directly.</div>';
       } else if (email.error) {

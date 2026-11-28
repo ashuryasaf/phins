@@ -121,6 +121,57 @@ def test_email_customer_settlement_approval_uses_template(monkeypatch):
     assert order["settlement_email_log"][-1]["sent"] is True
 
 
+def test_show_qr_skips_repeat_email_for_same_url(monkeypatch):
+    from services.supply_chain_ecosystem_service import SupplyChainEcosystemService
+
+    svc = SupplyChainEcosystemService()
+    order = {
+        "id": "ORD-REPEAT-1",
+        "customer_id": "CUST-REPEAT-1",
+        "item_name": "Repeat pack",
+        "settlement_notifications": [],
+        "settlement_email_log": [],
+    }
+    artifacts = {
+        "settlement_code": "SET-REPEAT1",
+        "settlement_approval_url": (
+            "https://www.phins.ai/settlement-approval.html"
+            "?order_id=ORD-REPEAT-1&token=tok"
+        ),
+        "settlement_qr_image_url": "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=x",
+    }
+    monkeypatch.setattr(
+        SupplyChainEcosystemService,
+        "_resolve_customer_contact",
+        staticmethod(lambda _cid: ("customer@example.com", "Pat")),
+    )
+
+    class _Result:
+        success = True
+        notification_id = "NOTIF-1"
+        error_code = None
+
+    sends = {"n": 0}
+
+    def _deliver(request):
+        sends["n"] += 1
+        return _Result()
+
+    import services.notification_service as ns
+    monkeypatch.setattr(ns, "deliver_notification", _deliver)
+
+    first = svc._email_customer_settlement_approval(order, artifacts=artifacts, actor="s")
+    second = svc._email_customer_settlement_approval(order, artifacts=artifacts, actor="s")
+    forced = svc._email_customer_settlement_approval(
+        order, artifacts=artifacts, actor="s", force=True,
+    )
+    assert first["sent"] is True
+    assert second.get("skipped") is True
+    assert second["error"] == "already_sent"
+    assert forced["sent"] is True
+    assert sends["n"] == 2
+
+
 def test_mint_false_does_not_invent_token_for_code_only_row():
     from services.supply_chain_ecosystem_service import SupplyChainEcosystemService
 

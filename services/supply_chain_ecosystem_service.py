@@ -862,23 +862,51 @@ class SupplyChainEcosystemService:
         ).strip()
         return email, name
 
+    def _settlement_email_already_sent(
+        self,
+        order: Dict[str, Any],
+        approval_url: str,
+    ) -> bool:
+        """True when a successful send already covered this approval URL."""
+        target = self._safe_text(approval_url)
+        if not target:
+            return False
+        for row in order.get("settlement_email_log") or []:
+            if not isinstance(row, dict):
+                continue
+            if row.get("sent") and self._safe_text(row.get("approval_url")) == target:
+                return True
+        return False
+
     def _email_customer_settlement_approval(
         self,
         order: Dict[str, Any],
         *,
         artifacts: Dict[str, str],
         actor: str = "supplier",
+        force: bool = False,
     ) -> Dict[str, Any]:
-        """Email the customer the Approve-or-dispute settlement document link."""
+        """Email the customer the Approve-or-dispute settlement document link.
+
+        Repeat Show QR calls do not re-mail the same approval URL unless
+        ``force=True`` (explicit resend).
+        """
         customer_id = self._safe_text(order.get("customer_id"))
         email, name = self._resolve_customer_contact(customer_id)
+        approval_url = artifacts.get("settlement_approval_url") or ""
         record: Dict[str, Any] = {
             "attempted_at": datetime.now(timezone.utc).isoformat(),
             "customer_id": customer_id,
             "recipient_present": bool(email),
-            "approval_url": artifacts.get("settlement_approval_url"),
+            "approval_url": approval_url,
             "actor": self._safe_text(actor) or "supplier",
         }
+        if not force and self._settlement_email_already_sent(order, approval_url):
+            record["sent"] = False
+            record["skipped"] = True
+            record["error"] = "already_sent"
+            order.setdefault("settlement_email_log", []).append(record)
+            return record
         if not email:
             record["sent"] = False
             record["error"] = "customer_email_missing"
@@ -887,7 +915,6 @@ class SupplyChainEcosystemService:
 
         item_name = self._safe_text(order.get("item_name")) or self._safe_text(order.get("id")) or "your order"
         order_id = self._safe_text(order.get("id"))
-        approval_url = artifacts.get("settlement_approval_url") or ""
         settlement_code = artifacts.get("settlement_code") or ""
         qr_image_url = artifacts.get("settlement_qr_image_url") or ""
 
@@ -1577,10 +1604,12 @@ class SupplyChainEcosystemService:
                 "settlement_approval_url": artifacts["settlement_approval_url"],
             },
         )
+        resend = bool(payload.get("resend_email") or payload.get("force_email"))
         email_result = self._email_customer_settlement_approval(
             order,
             artifacts=artifacts,
             actor=actor,
+            force=resend,
         )
         return self._settlement_share_payload(
             order,
