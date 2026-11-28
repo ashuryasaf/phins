@@ -46,16 +46,33 @@ import json
 import os
 import secrets
 import uuid
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlsplit
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
+from html import escape as html_escape
+import logging
 import random
 
 from services.delivery_provider_connectors import (
     create_delivery_provider_connector,
     DeliveryProviderConnectorError,
+)
+
+logger = logging.getLogger(__name__)
+
+# Customer-facing settlement QR / email links always resolve to the live site.
+# Deploy hosts (Railway, Render, …) are common BASE_URL values and must not
+# appear in a customer QR or the "Approve or dispute" email.
+_PUBLIC_SETTLEMENT_ORIGIN = "https://www.phins.ai"
+_PUBLIC_SETTLEMENT_HOSTS = frozenset({"phins.ai", "www.phins.ai"})
+_BLOCKED_SETTLEMENT_HOST_SUFFIXES = (
+    ".railway.app",
+    ".onrender.com",
+    ".herokuapp.com",
+    ".vercel.app",
+    ".netlify.app",
 )
 
 
@@ -493,11 +510,51 @@ class SupplyChainEcosystemService:
         return f"https://api.qrserver.com/v1/create-qr-code/?size=220x220&data={quote(payload, safe='')}"
 
     @staticmethod
-    def _get_public_base_url() -> str:
-        """Resolve the externally reachable PHINS base URL used in QR flows."""
-        return str(
-            os.environ.get("BASE_URL", "https://phins-portal-production.up.railway.app")
-        ).strip().rstrip("/")
+    def _safe_public_origin(value: str) -> str:
+        """Scheme + host for settlement links. Deploy PaaS hosts are refused."""
+        text = str(value or "").strip()
+        if not text or any(ch in text for ch in ("\r", "\n", " ")):
+            return ""
+        if "://" not in text:
+            text = "https://" + text
+        parts = urlsplit(text)
+        if parts.scheme not in ("http", "https") or not parts.hostname:
+            return ""
+        if parts.username or parts.password:
+            return ""
+        host = str(parts.hostname or "").lower().rstrip(".")
+        if not host:
+            return ""
+        if host.endswith(_BLOCKED_SETTLEMENT_HOST_SUFFIXES) or "railway" in host:
+            return ""
+        if host in _PUBLIC_SETTLEMENT_HOSTS:
+            # Keep the canonical customer site; drop any custom port.
+            return f"https://{host}"
+        # Embedded pytest / local smoke only.
+        if host in {"localhost", "127.0.0.1"} or host.endswith(".local"):
+            port = f":{parts.port}" if parts.port else ""
+            return f"{parts.scheme}://{host}{port}"
+        return ""
+
+    @classmethod
+    def _get_public_base_url(cls) -> str:
+        """Customer-facing origin for settlement QR codes and approval emails.
+
+        Prefers ``BASE_URL`` / ``WEBHOOK_BASE_URL`` only when the host is a
+        phins.ai name (or localhost under test). Railway and other deploy
+        hosts are never emitted — fall back to ``https://www.phins.ai``.
+        """
+        for key in ("BASE_URL", "WEBHOOK_BASE_URL"):
+            origin = cls._safe_public_origin(os.environ.get(key, ""))
+            if origin:
+                return origin
+        if str(os.environ.get("PHINS_TEST_MODE", "")).strip().lower() in (
+            "1", "true", "yes", "y",
+        ):
+            origin = cls._safe_public_origin(os.environ.get("TEST_BASE_URL", ""))
+            if origin:
+                return origin
+        return _PUBLIC_SETTLEMENT_ORIGIN
 
     @classmethod
     def _build_settlement_approval_url(cls, order_id: str, qr_token: str) -> str:
@@ -512,12 +569,18 @@ class SupplyChainEcosystemService:
         provided = self._safe_text(token)
         if not provided:
             return False
-        artifacts = self._ensure_settlement_artifacts(order)
+        # Do not mint on validate — recover from stored URL, then compare.
+        # Also accept a full prior approval URL by extracting its token=.
+        artifacts = self._ensure_settlement_artifacts(order, mint=False)
+        provided_token = self._token_from_approval_url(provided) or provided
         return provided in {
             artifacts["settlement_qr_token"],
             artifacts["settlement_code"],
             artifacts["settlement_qr_data"],
             artifacts["settlement_approval_url"],
+        } or provided_token in {
+            artifacts["settlement_qr_token"],
+            artifacts["settlement_code"],
         }
 
     def _remove_pending_settlement_entry(self, supplier_id: Optional[str], order_id: str) -> None:
@@ -666,6 +729,8 @@ class SupplyChainEcosystemService:
 
     def _build_settlement_snapshot(self, order: Dict[str, Any]) -> Dict[str, Any]:
         """Expose a safe settlement-centric view of an order."""
+        # Read path: rewrite origin when a token is recoverable; never mint.
+        artifacts = self._ensure_settlement_artifacts(order, mint=False)
         supplier = self.suppliers.get(order.get("supplier_id"), {}) if isinstance(order.get("supplier_id"), str) else {}
         settlement_request = order.get("settlement_request") if isinstance(order.get("settlement_request"), dict) else {}
         customer_approval = order.get("customer_approval") if isinstance(order.get("customer_approval"), dict) else {}
@@ -685,9 +750,9 @@ class SupplyChainEcosystemService:
             "settlement_phase": order.get("settlement_phase"),
             "amount": round(float(order.get("total_amount", 0) or 0), 2),
             "supplier_payout": round(float(order.get("supplier_payout", 0) or 0), 2),
-            "settlement_code": order.get("settlement_code"),
-            "settlement_qr_image_url": order.get("settlement_qr_image_url"),
-            "settlement_approval_url": order.get("settlement_approval_url"),
+            "settlement_code": artifacts["settlement_code"],
+            "settlement_qr_image_url": artifacts["settlement_qr_image_url"],
+            "settlement_approval_url": artifacts["settlement_approval_url"],
             "settlement_request": settlement_request,
             "customer_approval": customer_approval,
             "delivery_validation": delivery_validation,
@@ -697,10 +762,68 @@ class SupplyChainEcosystemService:
             "updated_date": order.get("updated_date"),
         }
 
-    def _ensure_settlement_artifacts(self, order: Dict[str, Any]) -> Dict[str, str]:
-        """Ensure an order has a stable settlement code and QR assets."""
+    def _token_from_approval_url(self, value: Any) -> str:
+        """Recover a settlement token from a stored approval URL query string."""
+        text = self._safe_text(value)
+        if not text or "token=" not in text:
+            return ""
+        try:
+            query = urlsplit(text).query
+            if not query and "?" in text:
+                query = text.split("?", 1)[1].split("#", 1)[0]
+            recovered = parse_qs(query).get("token") or []
+            if recovered:
+                return self._safe_text(recovered[0])
+        except Exception:
+            return ""
+        return ""
+
+    def _recover_settlement_token(self, order: Dict[str, Any]) -> str:
+        """Prefer the stored token; else recover it from a prior approval URL."""
+        token = self._safe_text(order.get("settlement_qr_token"))
+        if token:
+            return token
+        for key in ("settlement_approval_url", "settlement_qr_data"):
+            recovered = self._token_from_approval_url(order.get(key))
+            if recovered:
+                return recovered
+        settlement_request = order.get("settlement_request")
+        if isinstance(settlement_request, dict):
+            for key in ("settlement_approval_url", "settlement_qr_data", "settlement_qr_token"):
+                if key == "settlement_qr_token":
+                    recovered = self._safe_text(settlement_request.get(key))
+                else:
+                    recovered = self._token_from_approval_url(settlement_request.get(key))
+                if recovered:
+                    return recovered
+        return ""
+
+    def _ensure_settlement_artifacts(
+        self,
+        order: Dict[str, Any],
+        *,
+        mint: bool = True,
+    ) -> Dict[str, str]:
+        """Ensure an order has a stable settlement code and QR assets.
+
+        Token and code stay stable once minted. The approval URL and QR image
+        are always rebuilt from the current public origin so a prior Railway
+        (or other deploy-host) link is rewritten to ``phins.ai`` on the next
+        read, request, or Show QR share. Dashboard reads pass ``mint=False``
+        so a code-only row never receives a brand-new token on list.
+        """
         order_id = str(order.get("id") or "").strip()
-        qr_token = self._safe_text(order.get("settlement_qr_token")) or secrets.token_urlsafe(10)
+        qr_token = self._recover_settlement_token(order)
+        if not qr_token:
+            if not mint:
+                return {
+                    "settlement_qr_token": "",
+                    "settlement_code": self._safe_text(order.get("settlement_code")),
+                    "settlement_qr_data": self._safe_text(order.get("settlement_qr_data")),
+                    "settlement_qr_image_url": self._safe_text(order.get("settlement_qr_image_url")),
+                    "settlement_approval_url": self._safe_text(order.get("settlement_approval_url")),
+                }
+            qr_token = secrets.token_urlsafe(10)
         settlement_code = self._safe_text(order.get("settlement_code")) or f"SET-{qr_token[:8].upper()}"
         approval_url = self._build_settlement_approval_url(order_id, qr_token)
         qr_image_url = self._build_settlement_qr_image_url(approval_url)
@@ -711,6 +834,13 @@ class SupplyChainEcosystemService:
         order["settlement_qr_image_url"] = qr_image_url
         order["settlement_approval_url"] = approval_url
 
+        settlement_request = order.get("settlement_request")
+        if isinstance(settlement_request, dict):
+            settlement_request["settlement_code"] = settlement_code
+            settlement_request["settlement_qr_data"] = approval_url
+            settlement_request["settlement_qr_image_url"] = qr_image_url
+            settlement_request["settlement_approval_url"] = approval_url
+
         return {
             "settlement_qr_token": qr_token,
             "settlement_code": settlement_code,
@@ -718,6 +848,185 @@ class SupplyChainEcosystemService:
             "settlement_qr_image_url": qr_image_url,
             "settlement_approval_url": approval_url,
         }
+
+    @staticmethod
+    def _resolve_customer_contact(customer_id: str) -> Tuple[str, str]:
+        """Resolve the customer's email and display name from the portal book."""
+        cid = str(customer_id or "").strip()
+        if not cid:
+            return "", ""
+        try:
+            from web_portal import server as portal
+            customer = getattr(portal, "CUSTOMERS", {}).get(cid) or {}
+        except Exception:
+            customer = {}
+        if not isinstance(customer, dict):
+            customer = {}
+        email = str(customer.get("email") or "").strip()
+        name = str(
+            customer.get("name")
+            or customer.get("full_name")
+            or customer.get("display_name")
+            or "PHINS Customer"
+        ).strip()
+        return email, name
+
+    def _settlement_email_already_sent(
+        self,
+        order: Dict[str, Any],
+        approval_url: str,
+    ) -> bool:
+        """True when a successful send already covered this approval link.
+
+        Matches the full URL or the same ``token`` after a host rewrite
+        (Railway → phins.ai), so Show QR does not re-mail the customer.
+        """
+        target = self._safe_text(approval_url)
+        if not target:
+            return False
+        target_token = self._token_from_approval_url(target)
+        log = order.get("settlement_email_log")
+        if not isinstance(log, list):
+            return False
+        for row in log:
+            if not isinstance(row, dict) or not row.get("sent"):
+                continue
+            prior = self._safe_text(row.get("approval_url"))
+            if prior == target:
+                return True
+            if target_token and self._token_from_approval_url(prior) == target_token:
+                return True
+        return False
+
+    def _email_customer_settlement_approval(
+        self,
+        order: Dict[str, Any],
+        *,
+        artifacts: Dict[str, str],
+        actor: str = "supplier",
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """Email the customer the Approve-or-dispute settlement document link.
+
+        Repeat Show QR calls do not re-mail the same approval URL unless
+        ``force=True`` (explicit resend).
+        """
+        customer_id = self._safe_text(order.get("customer_id"))
+        email, name = self._resolve_customer_contact(customer_id)
+        approval_url = artifacts.get("settlement_approval_url") or ""
+        record: Dict[str, Any] = {
+            "attempted_at": datetime.now(timezone.utc).isoformat(),
+            "customer_id": customer_id,
+            "recipient_present": bool(email),
+            "approval_url": approval_url,
+            "actor": self._safe_text(actor) or "supplier",
+        }
+        if not force and self._settlement_email_already_sent(order, approval_url):
+            record["sent"] = False
+            record["skipped"] = True
+            record["error"] = "already_sent"
+            order.setdefault("settlement_email_log", []).append(record)
+            return record
+        if not email:
+            record["sent"] = False
+            record["error"] = "customer_email_missing"
+            order.setdefault("settlement_email_log", []).append(record)
+            return record
+
+        item_name = self._safe_text(order.get("item_name")) or self._safe_text(order.get("id")) or "your order"
+        order_id = self._safe_text(order.get("id"))
+        settlement_code = artifacts.get("settlement_code") or ""
+        qr_image_url = artifacts.get("settlement_qr_image_url") or ""
+
+        try:
+            from services.notification_service import (
+                NotificationChannel,
+                NotificationPriority,
+                NotificationRequest,
+                TemplateEngine,
+                deliver_notification,
+                get_notification_service,
+            )
+
+            # TemplateEngine does not HTML-escape. Render plain and HTML
+            # separately so the text body stays copy-pasteable while the HTML
+            # body escapes name / item / URLs for attribute and text safety.
+            plain_vars = {
+                "name": name,
+                "order_id": order_id,
+                "item_name": item_name,
+                "settlement_code": settlement_code,
+                "approval_url": approval_url,
+                "qr_image_url": qr_image_url,
+            }
+            html_vars = {
+                key: html_escape(str(value), quote=True)
+                for key, value in plain_vars.items()
+            }
+            tpl = (getattr(get_notification_service(), "_templates", {}) or {}).get(
+                "settlement_approval"
+            ) or {}
+            subject = TemplateEngine.render(
+                tpl.get("subject") or "Approve or dispute this PHINS settlement — {{ order_id }}",
+                plain_vars,
+            )
+            body = TemplateEngine.render(tpl.get("body") or "{{ approval_url }}", plain_vars)
+            html_body = None
+            if tpl.get("html_body"):
+                html_body = TemplateEngine.render(tpl["html_body"], html_vars)
+            result = deliver_notification(NotificationRequest(
+                channel=NotificationChannel.EMAIL,
+                recipient=email,
+                subject=subject,
+                content=body,
+                html_content=html_body,
+                priority=NotificationPriority.HIGH,
+                customer_id=customer_id,
+                metadata={
+                    "purpose": "settlement_approval",
+                    "template": "settlement_approval",
+                    "order_id": order_id,
+                    "settlement_code": settlement_code,
+                    "settlement_approval_url": approval_url,
+                },
+            ))
+            record["sent"] = bool(getattr(result, "success", False))
+            record["notification_id"] = str(getattr(result, "notification_id", "") or "")
+            record["error_code"] = str(getattr(result, "error_code", "") or "") or None
+            if not record["sent"]:
+                record["error"] = record["error_code"] or "SEND_FAILED"
+                logger.warning(
+                    "settlement approval email was not delivered for %s (%s)",
+                    order_id,
+                    record["error"],
+                )
+        except Exception as exc:
+            record["sent"] = False
+            record["error"] = str(exc)
+            logger.warning(
+                "settlement approval email was not handed to the notification service for %s",
+                order_id,
+            )
+
+        order.setdefault("settlement_email_log", []).append(record)
+        self._append_settlement_notification(
+            order,
+            audience="customer",
+            recipient=customer_id or email,
+            subject=f"Approve or dispute PHINS settlement {order_id}",
+            content=(
+                f"Open the PHINS settlement page to approve or dispute {item_name}: {approval_url}"
+            ),
+            customer_id=customer_id,
+            priority="high",
+            metadata={
+                "event_type": "settlement_approval_email",
+                "settlement_approval_url": approval_url,
+                "settlement_code": settlement_code,
+                "email_sent": bool(record.get("sent")),
+            },
+        )
+        return record
 
     def _validate_customer_settlement_approval(
         self,
@@ -728,7 +1037,7 @@ class SupplyChainEcosystemService:
     ) -> Dict[str, Any]:
         """Validate the customer-side approval that releases an order into settlement."""
         payload = data or {}
-        artifacts = self._ensure_settlement_artifacts(order)
+        artifacts = self._ensure_settlement_artifacts(order, mint=False)
         settlement_request = order.get("settlement_request") if isinstance(order.get("settlement_request"), dict) else {}
         requested_validation_type = str(
             payload.get("validation_type")
@@ -1197,7 +1506,8 @@ class SupplyChainEcosystemService:
             subject=f"Customer approval requested for order {order_id}",
             content=(
                 f"Supplier settlement approval is waiting for customer action on "
-                f"{order.get('item_name') or order_id}."
+                f"{order.get('item_name') or order_id}. "
+                f"Approve or dispute: {artifacts['settlement_approval_url']}"
             ),
             actor=actor,
             priority="normal",
@@ -1205,6 +1515,11 @@ class SupplyChainEcosystemService:
                 "validation_type": validation_type,
                 "settlement_approval_url": artifacts["settlement_approval_url"],
             },
+        )
+        email_result = self._email_customer_settlement_approval(
+            order,
+            artifacts=artifacts,
+            actor=actor,
         )
 
         self._record_ledger_entry(
@@ -1222,14 +1537,106 @@ class SupplyChainEcosystemService:
                 "fulfillment_kind": fulfillment_kind,
                 "settlement_code": artifacts["settlement_code"],
                 "settlement_approval_url": artifacts["settlement_approval_url"],
+                "customer_email_sent": bool(email_result.get("sent")),
             },
         )
 
+        return self._settlement_share_payload(
+            order,
+            artifacts=artifacts,
+            email_result=email_result,
+            message=f"Customer approval requested for order {order_id}",
+        )
+
+    def _settlement_share_payload(
+        self,
+        order: Dict[str, Any],
+        *,
+        artifacts: Dict[str, str],
+        email_result: Optional[Dict[str, Any]] = None,
+        message: str = "",
+    ) -> Dict[str, Any]:
+        """Public share response: snapshot only, never the raw order or token field."""
+        snapshot = self._build_settlement_snapshot(order)
+        order_id = self._safe_text(order.get("id")) or snapshot.get("order_id")
+        # UI expects order.id; keep a thin alias without exposing vaulted fields.
+        public_order = {
+            "id": order_id,
+            "order_id": order_id,
+            "settlement_code": artifacts.get("settlement_code"),
+            "settlement_approval_url": artifacts.get("settlement_approval_url"),
+            "settlement_qr_data": artifacts.get("settlement_qr_data"),
+            "settlement_qr_image_url": artifacts.get("settlement_qr_image_url"),
+            "settlement_status": snapshot.get("settlement_status"),
+            "item_name": snapshot.get("item_name"),
+            "customer_id": snapshot.get("customer_id"),
+            "customer_name": snapshot.get("customer_name"),
+        }
         return {
             "success": True,
-            "order": order,
-            "message": f"Customer approval requested for order {order_id}",
+            "order": public_order,
+            "settlement": snapshot,
+            "settlement_code": artifacts.get("settlement_code"),
+            "settlement_qr_data": artifacts.get("settlement_qr_data"),
+            "settlement_qr_image_url": artifacts.get("settlement_qr_image_url"),
+            "settlement_approval_url": artifacts.get("settlement_approval_url"),
+            "customer_email": email_result or {},
+            "message": message,
         }
+
+    def share_settlement_qr(
+        self,
+        *,
+        order_id: str,
+        actor: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Regenerate the PHINS QR / approval link and email it to the customer.
+
+        Used by the supplier portal Show QR action during delivery approval.
+        Token and code stay stable; the public URL is rewritten to phins.ai
+        when a deploy-host link was previously stored. Does not start a
+        settlement request — use ``request_settlement_release`` first.
+        """
+        if order_id not in self.orders:
+            raise ValueError(f"Order {order_id} not found")
+
+        payload = data or {}
+        order = self.orders[order_id]
+        settlement_status = str(order.get("settlement_status") or "").strip().lower()
+        if settlement_status not in {"awaiting_customer_approval", "settlement_dispute"}:
+            raise ValueError(
+                "Settlement QR can be shared only while customer approval is pending. "
+                "Request approval first."
+            )
+
+        artifacts = self._ensure_settlement_artifacts(order)
+        order["updated_date"] = datetime.now(timezone.utc).isoformat()
+        self._append_settlement_message(
+            order,
+            author_role="supplier",
+            author_id=actor,
+            message_type="qr_shared",
+            content=self._safe_text(payload.get("notes"))
+            or "Supplier shared the PHINS settlement QR with the customer",
+            metadata={
+                "settlement_code": artifacts["settlement_code"],
+                "settlement_approval_url": artifacts["settlement_approval_url"],
+            },
+        )
+        resend = bool(payload.get("resend_email") or payload.get("force_email"))
+        email_result = self._email_customer_settlement_approval(
+            order,
+            artifacts=artifacts,
+            actor=actor,
+            force=resend,
+        )
+        return self._settlement_share_payload(
+            order,
+            artifacts=artifacts,
+            email_result=email_result,
+            message=f"Settlement QR ready for order {order_id}",
+        )
 
     def approve_order_settlement(
         self,
@@ -1587,7 +1994,7 @@ class SupplyChainEcosystemService:
                 continue
             if str(order.get("settlement_status") or "").strip().lower() != "awaiting_customer_approval":
                 continue
-            artifacts = self._ensure_settlement_artifacts(order)
+            artifacts = self._ensure_settlement_artifacts(order, mint=False)
             settlement_request = order.get("settlement_request") if isinstance(order.get("settlement_request"), dict) else {}
             items.append({
                 "order_id": order.get("id"),
@@ -1625,6 +2032,7 @@ class SupplyChainEcosystemService:
                 continue
             if str(order.get("settlement_status") or "").strip().lower() != "awaiting_customer_approval":
                 continue
+            artifacts = self._ensure_settlement_artifacts(order, mint=False)
             settlement_request = order.get("settlement_request") if isinstance(order.get("settlement_request"), dict) else {}
             items.append({
                 "order_id": order.get("id"),
@@ -1633,8 +2041,9 @@ class SupplyChainEcosystemService:
                 "amount": round(float(order.get("supplier_payout", 0) or 0), 2),
                 "requested_at": settlement_request.get("requested_at"),
                 "validation_type": settlement_request.get("validation_type"),
-                "settlement_code": order.get("settlement_code"),
-                "settlement_approval_url": order.get("settlement_approval_url"),
+                "settlement_code": artifacts["settlement_code"],
+                "settlement_approval_url": artifacts["settlement_approval_url"],
+                "settlement_qr_image_url": artifacts["settlement_qr_image_url"],
                 "settlement_dispute": order.get("settlement_dispute") if isinstance(order.get("settlement_dispute"), dict) else {},
             })
         items.sort(key=lambda x: x.get("requested_at") or "", reverse=True)

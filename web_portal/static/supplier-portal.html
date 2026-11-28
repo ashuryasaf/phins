@@ -9,6 +9,21 @@
   <title>PHINS - Supplier Portal</title>
   <link rel="stylesheet" href="/styles.css">
   <style>
+    :root {
+      --sp-navy: #060d1f;
+      --sp-ink: #0e2f63;
+      --sp-gold: #e3bf6f;
+      --sp-gold-strong: #f7e2a0;
+      --sp-surface: #f4f7fc;
+      --sp-card: #ffffff;
+      --sp-line: rgba(14, 47, 99, 0.14);
+    }
+    body {
+      background:
+        radial-gradient(900px 280px at 12% -10%, rgba(21, 68, 155, 0.12), transparent 70%),
+        linear-gradient(180deg, #eef3fb 0%, var(--sp-surface) 40%, #e8eef8 100%);
+      font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+    }
     .portal-header {
       display: flex;
       justify-content: space-between;
@@ -17,6 +32,14 @@
     }
     .portal-header h2 {
       margin: 0;
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      color: var(--sp-ink);
+      letter-spacing: 0.02em;
+    }
+    #desk-section > h2,
+    #sales-section > h2 {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      color: var(--sp-ink);
     }
     .dashboard-grid {
       display: grid;
@@ -25,28 +48,33 @@
       margin-bottom: 24px;
     }
     .stat-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 20px;
+      background: linear-gradient(160deg, #0e2f63 0%, #1a4a8a 55%, #0b244f 100%);
+      border: 1px solid rgba(247, 226, 160, 0.22);
+      border-radius: 14px;
+      padding: 18px 20px;
+      color: var(--sp-gold-strong);
+      box-shadow: 0 10px 28px rgba(6, 13, 31, 0.18);
     }
     .stat-card .label {
-      font-size: 0.85rem;
-      color: var(--text-muted);
+      font-size: 0.78rem;
+      color: rgba(247, 226, 160, 0.85);
       margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
     }
     .stat-card .value {
-      font-size: 1.8rem;
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-size: 1.65rem;
       font-weight: 700;
-      color: var(--primary);
+      color: #ffffff;
     }
     .stat-card .value.success {
-      color: #10b981;
+      color: #b8f5d0;
     }
     .tabs {
       display: flex;
       gap: 4px;
-      border-bottom: 2px solid var(--border);
+      border-bottom: 2px solid var(--sp-line);
       margin-bottom: 24px;
     }
     .tab {
@@ -54,16 +82,16 @@
       cursor: pointer;
       border-bottom: 2px solid transparent;
       margin-bottom: -2px;
-      font-weight: 500;
-      color: var(--text-muted);
+      font-weight: 600;
+      color: #5f6c80;
       transition: all 0.2s;
     }
     .tab:hover {
-      color: var(--primary);
+      color: var(--sp-ink);
     }
     .tab.active {
-      color: var(--primary);
-      border-bottom-color: var(--primary);
+      color: var(--sp-ink);
+      border-bottom-color: var(--sp-gold);
     }
     .tab-content {
       display: none;
@@ -84,10 +112,16 @@
       display: block;
       background: #0d1b3e;
     }
+    .offer-card,
+    .card,
+    .table-card,
+    .profile-section {
+      background: var(--sp-card);
+      border: 1px solid var(--sp-line);
+      border-radius: 14px;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+    }
     .offer-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
       padding: 16px;
       position: relative;
     }
@@ -148,33 +182,67 @@
       margin-top: 12px;
     }
     .btn-sm {
-      padding: 6px 12px;
-      font-size: 0.85rem;
-      border-radius: 4px;
+      padding: 7px 12px;
+      font-size: 0.82rem;
+      border-radius: 8px;
       cursor: pointer;
       border: none;
+      font-weight: 600;
       transition: all 0.2s;
     }
     .btn-edit {
-      background: #3b82f6;
-      color: white;
+      background: linear-gradient(135deg, #0e2f63 0%, #1a4a8a 100%);
+      color: #f7e2a0;
     }
     .btn-edit:hover {
-      background: #2563eb;
+      filter: brightness(1.08);
     }
     .btn-toggle {
-      background: #f59e0b;
-      color: white;
+      background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
+      color: #071022;
     }
     .btn-toggle:hover {
-      background: #d97706;
+      filter: brightness(1.05);
     }
     .btn-delete {
-      background: #ef4444;
+      background: #b91c1c;
       color: white;
     }
     .btn-delete:hover {
-      background: #dc2626;
+      background: #991b1b;
+    }
+    .qr-modal-body {
+      text-align: center;
+    }
+    .qr-modal-body img {
+      width: 220px;
+      height: 220px;
+      border-radius: 14px;
+      border: 1px solid var(--sp-line);
+      background: #fff;
+      margin: 8px auto 14px;
+      display: block;
+    }
+    .qr-modal-body .code {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--sp-ink);
+      letter-spacing: 0.04em;
+    }
+    .qr-modal-body .link {
+      word-break: break-all;
+      font-size: 0.85rem;
+      color: #1d4ed8;
+      margin-top: 10px;
+    }
+    .qr-modal-body .email-status {
+      margin-top: 12px;
+      font-size: 0.88rem;
+      color: #166534;
+    }
+    .qr-modal-body .email-status.warn {
+      color: #92400e;
     }
     .add-offer-btn {
       background: linear-gradient(135deg, #f7e2a0 0%, #e3bf6f 100%);
@@ -647,6 +715,23 @@
     </div>
     </section>
   </main>
+
+  <!-- Settlement QR Modal -->
+  <div class="modal" id="settlement-qr-modal">
+    <div class="modal-content" style="max-width:420px">
+      <div class="modal-header">
+        <h3>PHINS settlement QR</h3>
+        <button class="modal-close" type="button" onclick="closeSettlementQrModal()">&times;</button>
+      </div>
+      <div class="qr-modal-body" id="settlement-qr-body">
+        <p class="muted-text">Generating the Approve or dispute document…</p>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap">
+        <button type="button" class="btn btn-outline" onclick="closeSettlementQrModal()">Close</button>
+        <a class="btn-sm btn-edit" id="settlement-qr-open" href="#" target="_blank" rel="noopener" style="display:none;text-decoration:none">Open approval page</a>
+      </div>
+    </div>
+  </div>
 
   <!-- Offer Modal -->
   <div class="modal" id="offer-modal">
@@ -1673,36 +1758,85 @@
 
     async function requestSettlement(orderId) {
       try {
-        await apiPost(`/api/supply-chain/orders/${encodeURIComponent(orderId)}/request-settlement`, {
+        const result = await apiPost(`/api/supply-chain/orders/${encodeURIComponent(orderId)}/request-settlement`, {
           notes: 'Supplier requested customer settlement approval'
         });
-        alert(`Settlement approval requested for ${orderId}. Share the PHINS QR/code with the customer.`);
         await Promise.all([refreshOrders(), loadSettlementData()]);
+        await showSettlementQr(orderId, result);
       } catch (e) {
         alert('Failed to request settlement: ' + e.message);
       }
     }
 
-    async function showSettlementQr(orderId) {
+    function closeSettlementQrModal() {
+      const modal = document.getElementById('settlement-qr-modal');
+      if (modal) modal.classList.remove('active');
+    }
+
+    function renderSettlementQrModal(payload) {
+      const body = document.getElementById('settlement-qr-body');
+      const openLink = document.getElementById('settlement-qr-open');
+      const modal = document.getElementById('settlement-qr-modal');
+      if (!body || !modal) return;
+      const order = payload.order || {};
+      const approvalUrl = payload.settlement_approval_url
+        || order.settlement_approval_url
+        || order.settlement_qr_data
+        || '';
+      const qrUrl = payload.settlement_qr_image_url || order.settlement_qr_image_url || '';
+      const code = payload.settlement_code || order.settlement_code || 'Pending';
+      const orderId = order.id || payload.order_id || '';
+      const email = payload.customer_email || {};
+      let emailHtml = '';
+      if (email.sent) {
+        emailHtml = '<div class="email-status">Customer email sent with the Approve or dispute document link.</div>';
+      } else if (email.skipped || email.error === 'already_sent') {
+        emailHtml = '<div class="email-status">Customer already emailed for this approval link — showing QR only.</div>';
+      } else if (email.error === 'customer_email_missing') {
+        emailHtml = '<div class="email-status warn">No customer email on file — share this QR directly.</div>';
+      } else if (email.error) {
+        emailHtml = `<div class="email-status warn">Email not delivered (${esc(email.error)}). Share the QR instead.</div>`;
+      } else {
+        emailHtml = '<div class="email-status">Customer notified when an email address is on file.</div>';
+      }
+      body.innerHTML = `
+        <p class="muted-text" style="margin:0 0 6px">Approve or dispute this PHINS settlement</p>
+        <div class="code">${esc(code)}</div>
+        <p class="muted-text" style="margin:6px 0 0">Order ${esc(orderId)}</p>
+        ${qrUrl ? `<img src="${esc(qrUrl)}" alt="PHINS settlement QR">` : '<p class="muted-text">QR image unavailable</p>'}
+        <div class="link">${esc(approvalUrl || 'Approval link unavailable')}</div>
+        ${emailHtml}
+      `;
+      if (openLink) {
+        if (approvalUrl) {
+          openLink.href = approvalUrl;
+          openLink.style.display = 'inline-block';
+        } else {
+          openLink.style.display = 'none';
+        }
+      }
+      modal.classList.add('active');
+    }
+
+    async function showSettlementQr(orderId, existingPayload) {
       try {
-        const data = await apiGet('/api/supplier/orders');
-        const order = (data.items || []).find(o => o.id === orderId);
-        if (!order) {
-          throw new Error('Order not found');
+        let payload = existingPayload;
+        if (!payload || !payload.settlement_approval_url) {
+          payload = await apiPost(
+            `/api/supply-chain/orders/${encodeURIComponent(orderId)}/settlement-qr`,
+            { notes: 'Supplier shared PHINS settlement QR' }
+          );
         }
-        const qrUrl = order.settlement_qr_image_url;
-        const approvalUrl = order.settlement_approval_url || order.settlement_qr_data;
-        const code = order.settlement_code || 'Pending';
-        if (!qrUrl) {
-          throw new Error('Settlement QR not ready yet');
+        if (!payload || payload.success === false) {
+          throw new Error((payload && payload.error) || 'Settlement QR not ready');
         }
-        const destination = approvalUrl || qrUrl;
-        window.alert(
-          `Settlement code for ${orderId}: ${code}\n` +
-          `PHINS approval page: ${approvalUrl || 'Unavailable'}\n\n` +
-          'Open the next browser tab if your popup blocker allows it.'
-        );
-        window.open(destination, '_blank', 'noopener');
+        if (!payload.order) {
+          payload.order = { id: orderId };
+        } else if (!payload.order.id) {
+          payload.order.id = orderId;
+        }
+        renderSettlementQrModal(payload);
+        await Promise.all([refreshOrders(), loadSettlementData()]);
       } catch (e) {
         alert('Failed to open settlement QR: ' + e.message);
       }

@@ -3433,6 +3433,30 @@ Open this chat to confirm your details, identity, a company only if you add one,
 <p>{{ chat_url }}</p>
 <p>- PHINS</p>''',
             },
+            # Customer settlement approval: same NotificationService path as
+            # otp_email / professional_inquiry_chat. Link must stay on phins.ai.
+            'settlement_approval': {
+                'subject': 'Approve or dispute this PHINS settlement — {{ order_id }}',
+                'body': '''Hello {{ name }},
+
+Your supplier asked you to approve or dispute a PHINS settlement for {{ item_name }} (order {{ order_id }}).
+
+Settlement code: {{ settlement_code }}
+
+Open this PHINS page to approve delivery or raise a dispute before any payout is released:
+{{ approval_url }}
+
+- PHINS''',
+                'html_body': '''<div style="font-family:Arial,Helvetica,sans-serif;color:#122033;line-height:1.5;max-width:560px">
+<p>Hello {{ name }},</p>
+<p>Your supplier asked you to <strong>approve or dispute this PHINS settlement</strong> for <strong>{{ item_name }}</strong> (order {{ order_id }}).</p>
+<p>Settlement code: <strong>{{ settlement_code }}</strong></p>
+<p><a href="{{ approval_url }}" style="display:inline-block;background:#060d1f;color:#f7e2a0;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:600">Approve or dispute this PHINS settlement</a></p>
+<p style="font-size:13px;color:#5f6c80">Or open: <a href="{{ approval_url }}">{{ approval_url }}</a></p>
+<p style="margin-top:18px"><img src="{{ qr_image_url }}" alt="PHINS settlement QR" width="180" height="180" style="border:1px solid #d7deea;border-radius:12px"/></p>
+<p>- PHINS</p>
+</div>''',
+            },
             'password_reset': {
                 'subject': 'PHINS Password Reset Request',
                 'body': '''Hello {{ name }},

@@ -1360,6 +1360,8 @@ def test_public_settlement_qr_page_and_dispute_resolution_flow():
         requested_order = settlement_request.get("order", {})
         approval_url = requested_order.get("settlement_approval_url")
         assert approval_url and "settlement-approval.html" in approval_url
+        assert "railway.app" not in str(approval_url)
+        assert "phins.ai" in str(approval_url) or "127.0.0.1" in str(approval_url) or "localhost" in str(approval_url)
 
         public_detail, status = _get(
             f"{base}/api/supply-chain/public-settlement?order_id={order_id}&token={requested_order.get('settlement_code')}"
@@ -1369,6 +1371,7 @@ def test_public_settlement_qr_page_and_dispute_resolution_flow():
         assert settlement.get("order_id") == order_id
         assert settlement.get("settlement_status") == "awaiting_customer_approval"
         assert settlement.get("settlement_approval_url")
+        assert "railway.app" not in str(settlement.get("settlement_approval_url") or "")
 
         dispute_result, status = _post(
             f"{base}/api/supply-chain/public-settlement/action",

@@ -1590,6 +1590,24 @@ def get_supplier_display_name(supplier_id: Any) -> str:
 
 def normalize_supply_chain_order_row(order: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize supply-chain orders for supplier, customer, and admin dashboards."""
+    # Rewrite customer-facing settlement links on the live order first so a
+    # stored Railway (or other deploy-host) URL never leaves the portal.
+    # mint=False: a dashboard read must not invent a new token for a code-only row.
+    if (
+        isinstance(order, dict)
+        and supply_chain_enabled
+        and supply_chain_service
+        and hasattr(supply_chain_service, '_ensure_settlement_artifacts')
+    ):
+        try:
+            if (
+                order.get('settlement_qr_token')
+                or order.get('settlement_approval_url')
+                or order.get('settlement_qr_data')
+            ):
+                supply_chain_service._ensure_settlement_artifacts(order, mint=False)
+        except Exception:
+            pass
     row = dict(order or {})
     supplier_id = row.get('supplier_id')
     customer_id = row.get('customer_id')
@@ -52981,6 +52999,56 @@ For claims or questions, please contact:
                     actor=actor,
                     data=data,
                 )
+                if result.get('success') and order_id in SUPPLIER_ORDERS:
+                    _persist_supplier_order(order_id, SUPPLIER_ORDERS[order_id])
+                    _sync_recent_ledger_entries()
+                self._set_json_headers(200 if result.get('success') else 400)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path.startswith('/api/supply-chain/orders/') and path.endswith('/settlement-qr'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'supplier']):
+                self._set_json_headers(403 if session else 401)
+                self.wfile.write(json.dumps({'error': 'Authentication required' if not session else 'Unauthorized'}).encode('utf-8'))
+                return
+
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+
+            try:
+                order_id = path.split('/')[4]
+                data = json.loads(body or '{}')
+                order = getattr(supply_chain_service, 'orders', {}).get(order_id)
+                if not order:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Order not found'}).encode('utf-8'))
+                    return
+
+                role = get_effective_role(session)
+                supplier_id = (session or {}).get('supplier_id') or (session or {}).get('username')
+                if role == 'supplier' and order.get('supplier_id') != supplier_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                    return
+
+                actor = (session or {}).get('username', 'system')
+                share = getattr(supply_chain_service, 'share_settlement_qr', None)
+                if not callable(share):
+                    self._set_json_headers(503)
+                    self.wfile.write(json.dumps({'error': 'Settlement QR share unavailable'}).encode('utf-8'))
+                    return
+                result = share(order_id=order_id, actor=actor, data=data)
                 if result.get('success') and order_id in SUPPLIER_ORDERS:
                     _persist_supplier_order(order_id, SUPPLIER_ORDERS[order_id])
                     _sync_recent_ledger_entries()
