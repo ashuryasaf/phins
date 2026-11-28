@@ -4094,14 +4094,25 @@ class SupplyChainEcosystemService:
             raise ValueError("provider is required")
 
         # Idempotent: an already-booked shipment is returned, not rebooked.
+        # Best-effort notify — a status/destination refusal must not turn a
+        # successful prior booking into a retry error (e.g. after delivered).
         existing_shipment_id = self._safe_text(order.get("shipment_id"))
         if existing_shipment_id and existing_shipment_id in self.delivery_shipments:
             existing = self.delivery_shipments[existing_shipment_id]
-            dispatch_notice = self.notify_customer_before_dispatch(
-                order_id=order_id,
-                actor=actor,
-                data=payload,
-            )
+            try:
+                dispatch_notice = self.notify_customer_before_dispatch(
+                    order_id=order_id,
+                    actor=actor,
+                    data=payload,
+                )
+            except ValueError as exc:
+                dispatch_notice = {
+                    "success": False,
+                    "skipped": True,
+                    "error": str(exc),
+                    "order_id": order_id,
+                    "message": "Shipment already booked; pre-dispatch notice skipped",
+                }
             return {
                 "success": True,
                 "provider": order.get("delivery_provider") or provider_name,

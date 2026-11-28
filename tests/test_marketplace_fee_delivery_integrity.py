@@ -333,8 +333,11 @@ def test_create_delivery_shipment_notifies_before_booking(monkeypatch):
     sequence = []
 
     def _notify(self, **kwargs):
-        sequence.append("notify")
         order = self.orders[kwargs["order_id"]]
+        status = str(order.get("status") or "").strip().lower()
+        if status not in {"confirmed", "processing", "in_transit"}:
+            raise ValueError("Pre-dispatch notice is only available after the order is confirmed")
+        sequence.append("notify")
         assert order.get("delivery_location")
         return {"success": True, "delivery_tracking_url": "https://www.phins.ai/t"}
 
@@ -393,6 +396,20 @@ def test_create_delivery_shipment_notifies_before_booking(monkeypatch):
     assert again.get("idempotent") is True
     assert sequence == ["notify"]
     assert len(svc.delivery_shipments) == 1
+
+    # After delivery, notify refuses — retry must still return the shipment.
+    svc.orders[order_id]["status"] = "delivered"
+    sequence.clear()
+    late = svc.create_delivery_shipment(
+        order_id=order_id,
+        actor="supplier-demo",
+        data={"provider": "wolt"},
+    )
+    assert late.get("idempotent") is True
+    assert late["success"] is True
+    assert late["shipment"]["shipment_id"] == "SHP-1"
+    assert late["pre_dispatch_notice"].get("skipped") is True
+    assert sequence == []
 
 
 def test_create_delivery_shipment_refuses_before_booking_when_notify_fails(monkeypatch):
