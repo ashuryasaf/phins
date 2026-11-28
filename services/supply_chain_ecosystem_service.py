@@ -768,8 +768,10 @@ class SupplyChainEcosystemService:
         if not text or "token=" not in text:
             return ""
         try:
-            query = parse_qs(urlsplit(text).query)
-            recovered = query.get("token") or []
+            query = urlsplit(text).query
+            if not query and "?" in text:
+                query = text.split("?", 1)[1].split("#", 1)[0]
+            recovered = parse_qs(query).get("token") or []
             if recovered:
                 return self._safe_text(recovered[0])
         except Exception:
@@ -874,14 +876,25 @@ class SupplyChainEcosystemService:
         order: Dict[str, Any],
         approval_url: str,
     ) -> bool:
-        """True when a successful send already covered this approval URL."""
+        """True when a successful send already covered this approval link.
+
+        Matches the full URL or the same ``token`` after a host rewrite
+        (Railway → phins.ai), so Show QR does not re-mail the customer.
+        """
         target = self._safe_text(approval_url)
         if not target:
             return False
-        for row in order.get("settlement_email_log") or []:
-            if not isinstance(row, dict):
+        target_token = self._token_from_approval_url(target)
+        log = order.get("settlement_email_log")
+        if not isinstance(log, list):
+            return False
+        for row in log:
+            if not isinstance(row, dict) or not row.get("sent"):
                 continue
-            if row.get("sent") and self._safe_text(row.get("approval_url")) == target:
+            prior = self._safe_text(row.get("approval_url"))
+            if prior == target:
+                return True
+            if target_token and self._token_from_approval_url(prior) == target_token:
                 return True
         return False
 

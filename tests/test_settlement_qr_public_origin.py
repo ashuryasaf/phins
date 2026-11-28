@@ -282,3 +282,235 @@ def test_request_settlement_approval_url_is_phins_origin(monkeypatch):
     )
     assert "settlement_qr_token" not in shared
     assert "settlement_qr_token" not in (shared.get("order") or {})
+
+
+def test_ensure_artifacts_keeps_token_from_stored_url(monkeypatch):
+    """A legacy row with only the Railway URL must not rotate the token."""
+    from services.supply_chain_ecosystem_service import SupplyChainEcosystemService
+
+    monkeypatch.setenv("PHINS_TEST_MODE", "false")
+    monkeypatch.setenv("BASE_URL", "https://phins-portal-production.up.railway.app")
+    monkeypatch.delenv("WEBHOOK_BASE_URL", raising=False)
+    monkeypatch.delenv("TEST_BASE_URL", raising=False)
+    svc = SupplyChainEcosystemService()
+    legacy_url = (
+        "https://phins-portal-production.up.railway.app/settlement-approval.html"
+        "?order_id=ORD-LEGACY-1&token=oldtoken_value"
+    )
+    order = {
+        "id": "ORD-LEGACY-1",
+        "settlement_code": "SET-OLDTOKE",
+        "settlement_approval_url": legacy_url,
+    }
+    artifacts = svc._ensure_settlement_artifacts(order)
+    assert artifacts["settlement_qr_token"] == "oldtoken_value"
+    assert order["settlement_qr_token"] == "oldtoken_value"
+    assert "token=oldtoken_value" in artifacts["settlement_approval_url"]
+    assert artifacts["settlement_approval_url"].startswith("https://www.phins.ai/")
+    assert "railway.app" not in artifacts["settlement_approval_url"]
+    assert artifacts["settlement_code"] == "SET-OLDTOKE"
+    assert svc._is_settlement_token_valid(order, "oldtoken_value") is True
+
+    again = svc._ensure_settlement_artifacts(order)
+    assert again["settlement_qr_token"] == "oldtoken_value"
+
+
+def test_ensure_artifacts_reads_token_from_nested_request(monkeypatch):
+    from services.supply_chain_ecosystem_service import SupplyChainEcosystemService
+
+    monkeypatch.setenv("PHINS_TEST_MODE", "false")
+    monkeypatch.setenv("BASE_URL", "https://phins-portal-production.up.railway.app")
+    monkeypatch.delenv("WEBHOOK_BASE_URL", raising=False)
+    monkeypatch.delenv("TEST_BASE_URL", raising=False)
+    svc = SupplyChainEcosystemService()
+    order = {
+        "id": "ORD-NESTED-1",
+        "settlement_request": {
+            "settlement_approval_url": (
+                "https://phins-portal-production.up.railway.app/settlement-approval.html"
+                "?order_id=ORD-NESTED-1&token=nested_token_1"
+            ),
+        },
+    }
+    artifacts = svc._ensure_settlement_artifacts(order)
+    assert artifacts["settlement_qr_token"] == "nested_token_1"
+    assert "token=nested_token_1" in order["settlement_request"]["settlement_approval_url"]
+    assert "railway.app" not in order["settlement_request"]["settlement_approval_url"]
+
+
+def test_ensure_artifacts_prefers_explicit_token_field(monkeypatch):
+    from services.supply_chain_ecosystem_service import SupplyChainEcosystemService
+
+    monkeypatch.setenv("PHINS_TEST_MODE", "false")
+    monkeypatch.setenv("BASE_URL", "https://example.up.railway.app")
+    monkeypatch.delenv("WEBHOOK_BASE_URL", raising=False)
+    monkeypatch.delenv("TEST_BASE_URL", raising=False)
+    svc = SupplyChainEcosystemService()
+    order = {
+        "id": "ORD-FIELD-1",
+        "settlement_qr_token": "field_token",
+        "settlement_approval_url": (
+            "https://phins-portal-production.up.railway.app/settlement-approval.html"
+            "?order_id=ORD-FIELD-1&token=url_token"
+        ),
+    }
+    artifacts = svc._ensure_settlement_artifacts(order)
+    assert artifacts["settlement_qr_token"] == "field_token"
+    assert "token=field_token" in artifacts["settlement_approval_url"]
+
+
+def test_repeat_show_qr_does_not_email_again(monkeypatch):
+    import services.notification_service as ns
+    from services.supply_chain_ecosystem_service import SupplyChainEcosystemService
+
+    monkeypatch.setenv("PHINS_TEST_MODE", "false")
+    monkeypatch.setenv("BASE_URL", "https://www.phins.ai")
+    monkeypatch.delenv("WEBHOOK_BASE_URL", raising=False)
+    monkeypatch.delenv("TEST_BASE_URL", raising=False)
+
+    svc = SupplyChainEcosystemService()
+    order_id = "ORD-QR-ONCE"
+    svc.orders[order_id] = {
+        "id": order_id,
+        "supplier_id": "SUP-1",
+        "customer_id": "CUST-1",
+        "item_name": "Pack",
+        "settlement_status": "awaiting_customer_approval",
+        "settlement_qr_token": "tok_stable",
+        "settlement_code": "SET-TOKSTABL",
+        "settlement_messages": [],
+        "settlement_notifications": [],
+        "settlement_email_log": [],
+    }
+    monkeypatch.setattr(
+        SupplyChainEcosystemService,
+        "_resolve_customer_contact",
+        staticmethod(lambda _cid: ("customer@example.com", "Pat")),
+    )
+
+    class _Result:
+        success = True
+        notification_id = "NOTIF-ONCE"
+        error_code = None
+
+    calls = {"n": 0}
+
+    def _deliver(request):
+        calls["n"] += 1
+        assert "Approve or dispute" in (request.subject or "")
+        assert "https://www.phins.ai/" in (request.content or "")
+        return _Result()
+
+    monkeypatch.setattr(ns, "deliver_notification", _deliver)
+    first = svc.share_settlement_qr(order_id=order_id, actor="supplier-demo")
+    second = svc.share_settlement_qr(order_id=order_id, actor="supplier-demo")
+
+    assert calls["n"] == 1
+    assert first["customer_email"]["sent"] is True
+    assert second["customer_email"].get("skipped") is True
+    assert second["customer_email"]["error"] == "already_sent"
+    assert second["customer_email"]["sent"] is False
+    assert "settlement_qr_token" not in second
+    assert second["settlement_approval_url"] == first["settlement_approval_url"]
+    sent = [row for row in svc.orders[order_id]["settlement_email_log"] if row.get("sent")]
+    assert len(sent) == 1
+
+
+def test_show_qr_skips_email_when_same_token_was_sent_on_old_origin(monkeypatch):
+    import services.notification_service as ns
+    from services.supply_chain_ecosystem_service import SupplyChainEcosystemService
+
+    monkeypatch.setenv("PHINS_TEST_MODE", "false")
+    monkeypatch.setenv("BASE_URL", "https://phins-portal-production.up.railway.app")
+    monkeypatch.delenv("WEBHOOK_BASE_URL", raising=False)
+    monkeypatch.delenv("TEST_BASE_URL", raising=False)
+
+    svc = SupplyChainEcosystemService()
+    order_id = "ORD-QR-REWRITE"
+    railway_url = (
+        "https://phins-portal-production.up.railway.app/settlement-approval.html"
+        f"?order_id={order_id}&token=tok_same"
+    )
+    svc.orders[order_id] = {
+        "id": order_id,
+        "supplier_id": "SUP-1",
+        "customer_id": "CUST-1",
+        "item_name": "Pack",
+        "settlement_status": "awaiting_customer_approval",
+        "settlement_approval_url": railway_url,
+        "settlement_messages": [],
+        "settlement_notifications": [],
+        "settlement_email_log": [
+            {
+                "sent": True,
+                "approval_url": railway_url,
+                "customer_id": "CUST-1",
+            }
+        ],
+    }
+    calls = {"n": 0}
+
+    def _deliver(_request):
+        calls["n"] += 1
+        raise AssertionError("should not re-send after host rewrite")
+
+    monkeypatch.setattr(ns, "deliver_notification", _deliver)
+    shared = svc.share_settlement_qr(order_id=order_id, actor="supplier-demo")
+    assert calls["n"] == 0
+    assert shared["customer_email"]["error"] == "already_sent"
+    assert shared["customer_email"].get("skipped") is True
+    assert "settlement_qr_token" not in shared
+    assert shared["settlement_approval_url"].startswith(
+        "https://www.phins.ai/settlement-approval.html"
+    )
+    assert "token=tok_same" in shared["settlement_approval_url"]
+    assert svc.orders[order_id]["settlement_qr_token"] == "tok_same"
+
+
+def test_failed_settlement_email_is_retried_on_next_show_qr(monkeypatch):
+    import services.notification_service as ns
+    from services.supply_chain_ecosystem_service import SupplyChainEcosystemService
+
+    monkeypatch.setenv("PHINS_TEST_MODE", "false")
+    monkeypatch.setenv("BASE_URL", "https://www.phins.ai")
+    monkeypatch.delenv("WEBHOOK_BASE_URL", raising=False)
+    monkeypatch.delenv("TEST_BASE_URL", raising=False)
+
+    svc = SupplyChainEcosystemService()
+    order_id = "ORD-QR-RETRY"
+    svc.orders[order_id] = {
+        "id": order_id,
+        "supplier_id": "SUP-1",
+        "customer_id": "CUST-1",
+        "item_name": "Pack",
+        "settlement_status": "awaiting_customer_approval",
+        "settlement_qr_token": "tok_retry",
+        "settlement_code": "SET-TOKRETRY",
+        "settlement_messages": [],
+        "settlement_notifications": [],
+        "settlement_email_log": [],
+    }
+    monkeypatch.setattr(
+        SupplyChainEcosystemService,
+        "_resolve_customer_contact",
+        staticmethod(lambda _cid: ("customer@example.com", "Pat")),
+    )
+
+    class _Result:
+        def __init__(self, success):
+            self.success = success
+            self.notification_id = "NOTIF-RETRY" if success else ""
+            self.error_code = None if success else "SEND_FAILED"
+
+    calls = {"n": 0}
+
+    def _deliver(_request):
+        calls["n"] += 1
+        return _Result(calls["n"] > 1)
+
+    monkeypatch.setattr(ns, "deliver_notification", _deliver)
+    first = svc.share_settlement_qr(order_id=order_id, actor="supplier-demo")
+    second = svc.share_settlement_qr(order_id=order_id, actor="supplier-demo")
+    assert calls["n"] == 2
+    assert first["customer_email"]["sent"] is False
+    assert second["customer_email"]["sent"] is True
