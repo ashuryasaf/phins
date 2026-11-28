@@ -1024,7 +1024,7 @@ class SupplyChainEcosystemService:
     ) -> Dict[str, Any]:
         """Validate the customer-side approval that releases an order into settlement."""
         payload = data or {}
-        artifacts = self._ensure_settlement_artifacts(order)
+        artifacts = self._ensure_settlement_artifacts(order, mint=False)
         settlement_request = order.get("settlement_request") if isinstance(order.get("settlement_request"), dict) else {}
         requested_validation_type = str(
             payload.get("validation_type")
