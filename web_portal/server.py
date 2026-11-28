@@ -21456,6 +21456,7 @@ def _generate_security_ai_report(
     login_activity: dict,
     app_stats: dict,
     quarantine_data: list,
+    books: dict | None = None,
 ) -> dict:
     """Generate an AI-style security posture report from current telemetry."""
     findings: list = []
@@ -21525,22 +21526,10 @@ def _generate_security_ai_report(
         recommendations.append("Review blocked IP list for false positives from legitimate users")
     if active_sessions > 50:
         recommendations.append("Monitor high session count for potential session fixation attacks")
-    if risk_score < 10:
-        recommendations.append("Security posture is healthy. Continue monitoring.")
     if total_attempts > 50:
         recommendations.append("Consider enabling stricter rate limits during peak attack periods")
     if quarantined > 5:
         recommendations.append("Tighten file upload policies — multiple malicious uploads detected")
-
-    # Determine overall risk level
-    if risk_score >= 60:
-        risk_level = "CRITICAL"
-    elif risk_score >= 40:
-        risk_level = "HIGH"
-    elif risk_score >= 20:
-        risk_level = "MEDIUM"
-    else:
-        risk_level = "LOW"
 
     # Protection summary
     protections = []
@@ -21574,6 +21563,35 @@ def _generate_security_ai_report(
     else:
         protections.append("24/7 cyber autopilot (read-only, checksummed): OFF")
 
+    money_down = 0
+    if books:
+        try:
+            from services.cyber_books_posture import score_books
+            folded = score_books(books)
+        except Exception:
+            folded = None
+        if folded:
+            findings.extend(folded.get('findings') or [])
+            recommendations.extend(folded.get('recommendations') or [])
+            protections.extend(folded.get('protections') or [])
+            risk_score += int(folded.get('points') or 0)
+            money_down = sum(
+                1 for state in (folded.get('stages') or {}).values() if state == 'down'
+            )
+
+    # Determine overall risk level
+    if risk_score >= 60:
+        risk_level = "CRITICAL"
+    elif risk_score >= 40:
+        risk_level = "HIGH"
+    elif risk_score >= 20:
+        risk_level = "MEDIUM"
+    else:
+        risk_level = "LOW"
+
+    if risk_score < 10:
+        recommendations.append("Security posture is healthy. Continue monitoring.")
+    money_clause = f" Money controls down: {money_down}." if money_down else ""
     return {
         'risk_level': risk_level,
         'risk_score': min(risk_score, 100),
@@ -21584,7 +21602,7 @@ def _generate_security_ai_report(
         'summary': (
             f"Security posture: {risk_level} (score {min(risk_score, 100)}/100). "
             f"{total_attempts} attack attempts detected, {total_blocked} IPs blocked, "
-            f"{active_alerts} active alerts, {quarantined} files quarantined."
+            f"{active_alerts} active alerts, {quarantined} files quarantined.{money_clause}"
         ),
     }
 
@@ -21658,7 +21676,8 @@ def _cyber_pipeline_telemetry() -> Dict[str, Any]:
         from services.cyber_crisis import crisis_public_status
         crisis = crisis_public_status()
     except Exception:
-        crisis = {'generation_intact': True, 'journal_intact': True}
+        # A failed read is not an intact generation. Fail closed.
+        crisis = {'generation_intact': False, 'journal_intact': False}
 
     def _len(mapping: Any) -> int:
         try:
@@ -21703,13 +21722,13 @@ def _cyber_pipeline_telemetry() -> Dict[str, Any]:
         )
     except Exception:
         permanent = 0
-    return {
+    payload = {
         'firewall_enabled': bool(_firewall_enabled),
         'ids_enabled': bool(_ids_enabled),
         'file_scanner_enabled': bool(_file_scanner_enabled),
         'request_sanitizer_enabled': bool(_request_sanitizer_enabled),
-        'generation_intact': bool(crisis.get('generation_intact', True)),
-        'journal_intact': bool(crisis.get('journal_intact', True)),
+        'generation_intact': crisis.get('generation_intact') is True,
+        'journal_intact': crisis.get('journal_intact') is True,
         'malicious_attempts': _len(MALICIOUS_ATTEMPTS),
         'blocked_ips': _len(BLOCKED_IPS),
         'permanent_blocks': permanent,
@@ -21722,6 +21741,19 @@ def _cyber_pipeline_telemetry() -> Dict[str, Any]:
         'claims': _len(CLAIMS),
         'billing': _len(BILLING),
     }
+    try:
+        from services.cyber_books_posture import collect_books_posture
+        payload['books'] = collect_books_posture(
+            policies=POLICIES,
+            ledger=platform_event_ledger,
+        )
+    except Exception:
+        try:
+            from services.cyber_books_posture import unreadable_posture
+            payload['books'] = unreadable_posture()
+        except Exception:
+            payload['books'] = None
+    return payload
 
 
 def _cyber_autopilot_tick() -> Dict[str, Any]:
@@ -28351,20 +28383,6 @@ For claims or questions, please contact:
                 except Exception:
                     pass
 
-                # AI security report generation
-                try:
-                    ai_report = _generate_security_ai_report(
-                        threat_intel, fw_status, ids_summary_data, ids_alerts_data,
-                        login_activity, app_stats, quarantine_data,
-                    )
-                except Exception:
-                    ai_report = {
-                        'risk_level': 'LOW', 'risk_score': 0,
-                        'findings': [], 'recommendations': [],
-                        'protections_active': [], 'summary': 'Report generation failed.',
-                        'generated_at': now.isoformat(),
-                    }
-
                 # Session overview
                 session_overview = []
                 try:
@@ -28403,11 +28421,54 @@ For claims or questions, please contact:
                     from services.cyber_crisis import crisis_public_status
                     crisis_status = crisis_public_status()
                 except Exception:
-                    crisis_status = {}
+                    crisis_status = {
+                        'generation': 0,
+                        'generation_intact': False,
+                        'journal_intact': False,
+                    }
                 try:
                     autopilot_status = _cyber_autopilot_tick()
                 except Exception:
-                    autopilot_status = {}
+                    autopilot_status = {
+                        'chain_intact': False,
+                        'mode': 'assess',
+                        'closes_sessions': False,
+                        'findings': ['Autopilot could not be read.'],
+                    }
+                try:
+                    from services.cyber_books_posture import last_books_posture
+                    books_posture = last_books_posture()
+                except Exception:
+                    books_posture = {
+                        'stages': {
+                            'money_gate': 'down',
+                            'books_tied': 'down',
+                            'period_close': 'down',
+                            'trust_account': 'down',
+                            'kernel_pins': 'down',
+                            'ledger_chain': 'down',
+                        },
+                        'findings': ['ERP/MGA books posture could not be read.'],
+                        'recommendations': [],
+                        'protections': [],
+                        'points': 35,
+                        'readable': False,
+                    }
+                try:
+                    ai_report = _generate_security_ai_report(
+                        threat_intel, fw_status, ids_summary_data, ids_alerts_data,
+                        login_activity, app_stats, quarantine_data,
+                        books=books_posture,
+                    )
+                except Exception:
+                    ai_report = {
+                        'risk_level': 'HIGH', 'risk_score': 40,
+                        'findings': ['The security report could not be assembled.'],
+                        'recommendations': [],
+                        'protections_active': [],
+                        'summary': 'Report generation failed.',
+                        'generated_at': now.isoformat(),
+                    }
                 try:
                     from services.admin_desk_network import unauthorized_report
                     unauthorized_use = unauthorized_report(
@@ -28436,6 +28497,7 @@ For claims or questions, please contact:
                     'sessions': session_overview,
                     'crisis': crisis_status,
                     'autopilot': autopilot_status,
+                    'books_posture': books_posture,
                     'system': {
                         'firewall_enabled': _firewall_enabled,
                         'file_scanner_enabled': _file_scanner_enabled,
@@ -28451,7 +28513,6 @@ For claims or questions, please contact:
                     self._set_json_headers(500)
                     self.wfile.write(json.dumps({
                         'error': 'Dashboard data assembly failed',
-                        'detail': str(e),
                     }).encode('utf-8'))
                 except Exception:
                     pass

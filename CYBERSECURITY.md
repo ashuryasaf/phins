@@ -81,6 +81,16 @@ high score tells the operator to use Drop all. Pause it with
 on unless `PHINS_TEST_MODE` is set or `PHINS_CYBER_AUTOPILOT_THREAD` is
 false. State lives in `PHINS_CYBER_CRISIS_DIR`.
 
+The same assessment now reads six ERP/MGA controls and does not write
+them: Money Gate, the books-tied certificate, the current fiscal period,
+trust seals, in-force kernel pins, and the platform-ledger chain. A
+reader that fails is `down`, not green. Those stages are on
+`autopilot.pipeline`, on `ai_report.protections_active`, and on
+`books_posture` in `GET /api/security/dashboard`. A red book does not
+close a session and does not by itself recommend Drop all. The page
+renders the new stages with the pipeline chips and the protections grid
+it already has.
+
 ### 2.3 Password storage
 
 Passwords use PBKDF2-HMAC-SHA256 with 100 000 iterations and a 16-byte

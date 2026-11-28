@@ -158,9 +158,10 @@ def score_pipeline(telemetry: Mapping[str, Any]) -> Dict[str, Any]:
         add(10, "Upload scanner is not active")
     if not telemetry.get("request_sanitizer_enabled", False):
         add(10, "Request sanitizer is not active")
-    if not telemetry.get("generation_intact", True):
+    # A missing flag is not intact. The desk fails closed.
+    if telemetry.get("generation_intact") is not True:
         add(40, "Session generation record failed its checksum")
-    if not telemetry.get("journal_intact", True):
+    if telemetry.get("journal_intact") is not True:
         add(40, "Crisis journal chain failed its checksum")
 
     attempts = _as_int(telemetry.get("malicious_attempts"))
@@ -199,11 +200,24 @@ def score_pipeline(telemetry: Mapping[str, Any]) -> Dict[str, Any]:
         "intrusion_detection": "up" if telemetry.get("ids_enabled") else "down",
         "upload_scanner": "up" if telemetry.get("file_scanner_enabled") else "down",
         "request_sanitizer": "up" if telemetry.get("request_sanitizer_enabled") else "down",
-        "session_generation": "up" if telemetry.get("generation_intact", True) else "down",
-        "crisis_journal": "up" if telemetry.get("journal_intact", True) else "down",
+        "session_generation": "up" if telemetry.get("generation_intact") is True else "down",
+        "crisis_journal": "up" if telemetry.get("journal_intact") is True else "down",
         "identity": "watch" if lockouts else "up",
         "detection": "watch" if alerts else "up",
     }
+    books = telemetry.get("books")
+    if books is not None:
+        try:
+            from services.cyber_books_posture import score_books
+            folded = score_books(books if isinstance(books, Mapping) else None)
+        except Exception:
+            from services.cyber_books_posture import unreadable_posture
+            folded = unreadable_posture()
+        score += int(folded.get("points") or 0)
+        findings.extend(folded.get("findings") or [])
+        recommendations.extend(folded.get("recommendations") or [])
+        for name, state in (folded.get("stages") or {}).items():
+            stages[str(name)] = state if state in ("up", "watch", "down") else "down"
     if score >= 40:
         recommendations.append(
             "Use Drop all on Login Activity after the one-time code. "
@@ -987,7 +1001,19 @@ def _signal_fingerprint(telemetry: Mapping[str, Any]) -> Dict[str, Any]:
         "claims",
         "billing",
     )
-    return {key: telemetry.get(key) for key in keys}
+    finger = {key: telemetry.get(key) for key in keys}
+    books = telemetry.get("books")
+    stages = None
+    if isinstance(books, Mapping) and isinstance(books.get("stages"), Mapping):
+        try:
+            from services.cyber_books_posture import BOOK_CONTROLS
+            stages = {name: books["stages"].get(name) for name in BOOK_CONTROLS}
+        except Exception:
+            stages = "unreadable"
+    elif books is not None:
+        stages = "unreadable"
+    finger["books_stages"] = stages
+    return finger
 
 
 def _age_seconds(ts: str) -> Optional[float]:
