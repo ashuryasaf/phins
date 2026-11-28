@@ -93,6 +93,29 @@ def test_auth_and_landing_pages_have_no_decorative_dingbats():
     assert leftovers == [], "decorative symbols remain:\n" + "\n".join(leftovers)
 
 
+def test_cyber_security_uses_the_unified_surface():
+    """Chrome only: the command center shares the operational PHINS surface."""
+    html = _read("cyber-security.html")
+    assert 'data-phins-letterhead="off"' in html
+    assert 'class="phins-unified"' in html
+    assert 'href="/phins-theme.css"' in html
+    assert 'href="/phins-surface.css"' in html
+    assert 'class="phins-header"' in html
+    assert "phins-header-top" in html
+    assert 'data-phins-role-home="logo"' in html
+    assert "phins-spectrum-stats" in html
+    assert 'class="denial-ring"' in html
+    assert 'class="burst-figure"' in html
+    assert 'src="/phins-doc-return.js"' in html
+    assert 'src="/ui-clarity.js"' in html
+    assert 'id="crisis-drop"' in html
+    assert 'id="autopilot"' in html
+    assert 'id="threatChart"' in html
+    assert "/api/security/dashboard" in html
+    for leftover in ("#00d4ff", "#0a0e1a", "#0d47a1", "cyber-header", "JetBrains Mono"):
+        assert leftover not in html, leftover
+
+
 def test_copilot_chrome_nits_remove_empty_icons_and_variation_selectors():
     """Operational leftovers from emoji stripping: no dead icon helpers or VS16."""
     cyber = _read("cyber-security.html")
