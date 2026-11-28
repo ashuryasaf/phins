@@ -83,6 +83,41 @@ def test_kernel_pins_missing_on_in_force_is_watch():
     assert cell["state"] == "watch"
 
 
+def test_kernel_pins_flattened_fields_on_row_is_up():
+    from services.cyber_books_posture import _kernel_note
+
+    policies = {
+        "POL-1": {
+            "status": "issued",
+            "risk_premium_annual": 2400.0,
+            "integrity_hash": "deadbeef",
+        }
+    }
+    cell = _kernel_note(policies)
+    assert cell["state"] == "up"
+
+
+def test_trust_ok_without_bank_import_is_watch(monkeypatch):
+    from services import cyber_books_posture as mod
+
+    monkeypatch.setattr(
+        "services.mga.trust.reconcile_trust",
+        lambda: {
+            "ok": True,
+            "findings": [
+                {
+                    "code": "bank_balance_unavailable",
+                    "severity": "info",
+                    "detail": "no bank import",
+                }
+            ],
+        },
+    )
+    cell = mod._default_trust()
+    assert cell["state"] == "watch"
+    assert "bank" in cell["note"].lower()
+
+
 def test_score_pipeline_folds_books_without_closing_sessions():
     telemetry = {
         "firewall_enabled": True,

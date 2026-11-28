@@ -268,13 +268,13 @@ def _default_trust() -> Dict[str, str]:
             "state": "down",
             "note": "Trust Recon reports a deficit. No cash was invented to close it.",
         }
-    if report.get("ok") is True:
-        return {"state": "up", "note": "Trust movements that were read kept their seals."}
     if "bank_balance_unavailable" in codes:
         return {
             "state": "watch",
             "note": "Trust book was read. No bank balance is on file to tie.",
         }
+    if report.get("ok") is True:
+        return {"state": "up", "note": "Trust movements that were read kept their seals."}
     return {"state": "down", "note": "Trust Recon is not green."}
 
 
@@ -283,6 +283,24 @@ def _policy_rows(policies: Any) -> list:
         raise RuntimeError("policies unread")
     values = policies.values() if hasattr(policies, "values") else policies
     return list(values)
+
+
+def _policy_has_pin(policy: Mapping[str, Any]) -> bool:
+    """True when the policy carries a pin on the row or under ``kernel_pin``."""
+    pin = policy.get("kernel_pin")
+    if isinstance(pin, Mapping) and pin:
+        fields = pin.get("fields")
+        if isinstance(fields, Mapping) and fields:
+            return True
+        if "sha256" in pin:
+            return bool(fields)
+        return True
+    try:
+        from database.models import policy_kernel_pin_fields
+
+        return bool(policy_kernel_pin_fields(policy))
+    except Exception:
+        return False
 
 
 def _kernel_note(policies: Any) -> Dict[str, str]:
@@ -297,8 +315,7 @@ def _kernel_note(policies: Any) -> Dict[str, str]:
         if policy.get("kernel_pin_intact") is False:
             broken += 1
             continue
-        pin = policy.get("kernel_pin")
-        if not isinstance(pin, Mapping) or not pin:
+        if not _policy_has_pin(policy):
             missing += 1
     if broken:
         return {
