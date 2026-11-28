@@ -532,15 +532,15 @@
           <table class="data" id="net-table">
             <thead>
               <tr>
-                <th>Agent</th><th>Customer</th><th>Status</th><th>Policies</th>
-                <th>Premium basis</th><th>Locked rate</th><th>Expected</th><th>Accrued</th>
+                <th>Agent</th><th>Customer</th><th>Status</th><th>Basis</th><th>Policies / GMV orders</th>
+                <th>Basis amount</th><th>Locked rate</th><th>Expected</th><th>Accrued</th>
                 <th>Referral</th><th>Commission</th>
               </tr>
             </thead>
             <tbody></tbody>
           </table>
         </div>
-        <p class="muted" style="margin-top:8px">Outline only — affiliated customers' PII/medical data is never exposed. Expected = premium basis × locked affiliation rate.</p>
+        <p class="muted" style="margin-top:8px">Outline only — affiliated customers' PII/medical data is never exposed. Expected = premium × rate (premium basis) or marketplace GMV × rate (gmv basis). Ledger and payout runs stay hash-chained.</p>
       </div>
 
       <div class="card">
@@ -653,12 +653,18 @@
       ALL_CONNECTIONS = rows || [];
       $('#net-title').textContent = title || 'Agent ↔ customer connections';
       const body = ALL_CONNECTIONS.map(r=>{
+        const basis = String(r.commission_basis || 'premium').toLowerCase();
+        const basisAmount = basis === 'gmv' ? r.gmv_basis : r.premium_basis;
+        const countLabel = basis === 'gmv'
+          ? `${escHtml(r.gmv_order_count || 0)} orders`
+          : `${escHtml(r.policy_count)} policies`;
         return `<tr>
           <td><code>${escHtml(r.agent_id)}</code></td>
           <td>${escHtml(r.customer_name)} <code class="h">${escHtml(r.customer_id)}</code></td>
           <td>${pillFor(r.status)}</td>
-          <td>${escHtml(r.policy_count)}</td>
-          <td>${fmt(r.premium_basis)}</td>
+          <td><code>${escHtml(basis)}</code></td>
+          <td>${countLabel}</td>
+          <td>${fmt(basisAmount)}</td>
           <td>${pct(r.locked_rate != null ? r.locked_rate : r.commission_rate)}</td>
           <td>${fmt(r.expected_commission)}</td>
           <td>${fmt(r.accrued_commission)}</td>
@@ -666,7 +672,7 @@
           <td>${yesNo(r.commission_consistent)}</td>
         </tr>`;
       }).join('');
-      $('#net-table tbody').innerHTML = body || '<tr><td colspan="10" class="muted">No affiliated customers.</td></tr>';
+      $('#net-table tbody').innerHTML = body || '<tr><td colspan="11" class="muted">No affiliated customers.</td></tr>';
     }
 
     async function loadIntegrity(){

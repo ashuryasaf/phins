@@ -978,9 +978,11 @@
         actions.push(`<button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'processing')">Start</button>`);
         actions.push(`<button class="btn-sm btn-delete" onclick="cancelOrder('${orderId}')">Cancel</button>`);
       } else if (status === 'processing') {
+        actions.push(`<button class="btn-sm btn-edit" onclick="notifyBeforeDispatch('${orderId}')">Notify customer</button>`);
         actions.push(`<button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'in_transit')">Dispatch</button>`);
         actions.push(`<button class="btn-sm btn-edit" onclick="requestSettlement('${orderId}')">Request approval</button>`);
       } else if (status === 'in_transit') {
+        actions.push(`<button class="btn-sm btn-edit" onclick="notifyBeforeDispatch('${orderId}')">Resend tracking</button>`);
         actions.push(`<button class="btn-sm btn-edit" onclick="updateOrderStatus('${orderId}', 'delivered')">Mark delivered</button>`);
         actions.push(`<button class="btn-sm btn-edit" onclick="requestSettlement('${orderId}')">Request approval</button>`);
       } else if (status === 'delivered' && settlementStatus !== 'pending_admin_payout' && settlementStatus !== 'settled') {
@@ -1745,14 +1747,49 @@
 
     async function updateOrderStatus(orderId, status) {
       try {
-        await apiPost('/api/supplier/orders/update-status', { 
+        const result = await apiPost('/api/supplier/orders/update-status', { 
           transaction_id: orderId, 
           status,
           notes: `Updated from supplier portal to ${status}`
         });
+        if (status === 'in_transit' && result && result.pre_dispatch_notice) {
+          const notice = result.pre_dispatch_notice;
+          const url = notice.delivery_tracking_url || '';
+          const email = notice.customer_email || {};
+          if (email.sent) {
+            alert('Customer emailed with tracking link before dispatch.\n' + url);
+          } else if (email.skipped || email.error === 'already_sent') {
+            alert('Tracking link already sent.\n' + url);
+          } else if (url) {
+            alert('Dispatched. Tracking link: ' + url + (email.error ? '\nEmail: ' + email.error : ''));
+          }
+        }
         await Promise.all([refreshOrders(), loadSettlementData()]);
       } catch (e) {
         alert('Failed to update order: ' + e.message);
+      }
+    }
+
+    async function notifyBeforeDispatch(orderId) {
+      try {
+        const result = await apiPost(
+          `/api/supply-chain/orders/${encodeURIComponent(orderId)}/pre-dispatch-notice`,
+          { notes: 'Supplier notified customer before dispatch' }
+        );
+        const url = (result && result.delivery_tracking_url) || '';
+        const email = (result && result.customer_email) || {};
+        if (email.sent) {
+          alert('Customer emailed with delivery tracking link.\n' + url);
+        } else if (email.skipped || email.error === 'already_sent') {
+          alert('Tracking already sent for this link.\n' + url);
+        } else if (email.error === 'customer_email_missing') {
+          alert('No customer email on file. Share this tracking link:\n' + url);
+        } else {
+          alert((email.error ? 'Email not delivered (' + email.error + '). ' : '') + 'Tracking link:\n' + url);
+        }
+        await Promise.all([refreshOrders(), loadSettlementData()]);
+      } catch (e) {
+        alert('Failed to notify customer: ' + e.message);
       }
     }
 

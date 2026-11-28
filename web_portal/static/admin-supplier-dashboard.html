@@ -561,7 +561,7 @@
       <div class="stat-card">
         <div class="label">Platform fees</div>
         <div class="value" id="stat-revenue">-</div>
-        <div class="change muted-text">Supplier book commissions</div>
+        <div class="change muted-text" id="stat-revenue-note">Marketplace book (out of bid)</div>
       </div>
     </div>
 
@@ -1122,11 +1122,24 @@
     // Data Loading Functions
     async function loadDashboardStats() {
       try {
-        const data = await apiGet('/api/admin/suppliers/analytics');
+        const [data, ordersPage] = await Promise.all([
+          apiGet('/api/admin/suppliers/analytics'),
+          apiGet('/api/admin/suppliers/orders?page=1&page_size=1').catch(() => null),
+        ]);
         document.getElementById('stat-total').textContent = data.total_suppliers || 0;
         document.getElementById('stat-pending').textContent = data.pending_applications || 0;
         document.getElementById('stat-active').textContent = data.active_suppliers || 0;
-        document.getElementById('stat-revenue').textContent = formatCurrency(data.total_platform_fees || 0);
+        const bookFees = ordersPage && ordersPage.totals
+          ? Number(ordersPage.totals.platform_fees || 0)
+          : Number(data.total_platform_fees || 0);
+        document.getElementById('stat-revenue').textContent = formatCurrency(bookFees);
+        const note = document.getElementById('stat-revenue-note');
+        if (note) {
+          const book = (ordersPage && ordersPage.book) || data.book || 'marketplace';
+          note.textContent = book === 'supply_chain'
+            ? 'Supply-chain book (commission out of bid)'
+            : 'Marketplace book commissions';
+        }
         document.getElementById('pending-count').textContent = data.pending_applications || 0;
       } catch (e) {
         console.error('Failed to load stats:', e);
