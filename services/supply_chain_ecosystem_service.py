@@ -569,12 +569,18 @@ class SupplyChainEcosystemService:
         provided = self._safe_text(token)
         if not provided:
             return False
-        artifacts = self._ensure_settlement_artifacts(order)
+        # Do not mint on validate — recover from stored URL, then compare.
+        # Also accept a full prior approval URL by extracting its token=.
+        artifacts = self._ensure_settlement_artifacts(order, mint=False)
+        provided_token = self._token_from_approval_url(provided) or provided
         return provided in {
             artifacts["settlement_qr_token"],
             artifacts["settlement_code"],
             artifacts["settlement_qr_data"],
             artifacts["settlement_approval_url"],
+        } or provided_token in {
+            artifacts["settlement_qr_token"],
+            artifacts["settlement_code"],
         }
 
     def _remove_pending_settlement_entry(self, supplier_id: Optional[str], order_id: str) -> None:
@@ -723,7 +729,8 @@ class SupplyChainEcosystemService:
 
     def _build_settlement_snapshot(self, order: Dict[str, Any]) -> Dict[str, Any]:
         """Expose a safe settlement-centric view of an order."""
-        artifacts = self._ensure_settlement_artifacts(order)
+        # Read path: rewrite origin when a token is recoverable; never mint.
+        artifacts = self._ensure_settlement_artifacts(order, mint=False)
         supplier = self.suppliers.get(order.get("supplier_id"), {}) if isinstance(order.get("supplier_id"), str) else {}
         settlement_request = order.get("settlement_request") if isinstance(order.get("settlement_request"), dict) else {}
         customer_approval = order.get("customer_approval") if isinstance(order.get("customer_approval"), dict) else {}
@@ -1974,7 +1981,7 @@ class SupplyChainEcosystemService:
                 continue
             if str(order.get("settlement_status") or "").strip().lower() != "awaiting_customer_approval":
                 continue
-            artifacts = self._ensure_settlement_artifacts(order)
+            artifacts = self._ensure_settlement_artifacts(order, mint=False)
             settlement_request = order.get("settlement_request") if isinstance(order.get("settlement_request"), dict) else {}
             items.append({
                 "order_id": order.get("id"),
@@ -2012,7 +2019,7 @@ class SupplyChainEcosystemService:
                 continue
             if str(order.get("settlement_status") or "").strip().lower() != "awaiting_customer_approval":
                 continue
-            artifacts = self._ensure_settlement_artifacts(order)
+            artifacts = self._ensure_settlement_artifacts(order, mint=False)
             settlement_request = order.get("settlement_request") if isinstance(order.get("settlement_request"), dict) else {}
             items.append({
                 "order_id": order.get("id"),
