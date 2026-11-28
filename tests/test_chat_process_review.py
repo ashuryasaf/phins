@@ -1191,3 +1191,166 @@ def test_filed_claim_review_reads_the_seal_and_does_not_write():
     assert json.dumps(portal.CLAIMS[claim_id], sort_keys=True, default=str) == claim_copy
     status, applicant = _get(f"/api/claims-chat/{app_id}/process-review", token)
     assert status == 403, applicant
+
+
+# ---------------------------------------------------------------------------
+# Process book / catalog (every discoverable chat)
+# ---------------------------------------------------------------------------
+
+
+def test_process_review_catalog_lists_live_sealed_and_pointers():
+    """Staff see live chats, ledger seals, and UW pointers without rewriting."""
+    import web_portal.server as portal
+    from services.chat_answer_revisions import (
+        append_revision,
+        build_seal,
+        build_process_review_catalog,
+    )
+    from services.chat_application_service import get_chat_application_service
+
+    underwriter = _login("underwriter", "under123")
+    accountant = _login("accountant", "acct123")
+
+    status, anon = _get("/api/chat-process-review/list")
+    assert status in (401, 403), anon
+
+    # Accountants are staff but outside PROCESS_REVIEW_ROLES.
+    status, denied = _get("/api/chat-process-review/list", accountant)
+    assert status == 403, denied
+
+    live_id, resume = _start("catalog.live@example.com")
+    _answer(live_id, "42", resume)
+
+    sealed_id, sealed_resume = _start("catalog.sealed@example.com")
+    # Advance far enough that finalize can seal; use a minimal seal inject
+    # for the catalog path when a full apply would be too heavy.
+    session = _session(sealed_id)
+    append_revision(
+        session.setdefault("revisions", []),
+        step_id="name", action="set", at="2026-01-01T00:00:00Z",
+        current="Catalog Sealed", current_display="Catalog Sealed",
+    )
+    session["revision_head"] = session["revisions"][-1]["checksum"]
+    session["status"] = "submitted"
+    session["contact"] = {
+        "name": "Catalog Sealed",
+        "email": "catalog.sealed@example.com",
+        "phone": "+1-555-0100",
+    }
+    seal = build_seal(session, kind="policy_application")
+    portal.TRANSACTION_LEDGER[f"LEDGER-CATALOG-{sealed_id}"] = {
+        "id": f"LEDGER-CATALOG-{sealed_id}",
+        "event_type": "chat.process_sealed",
+        "entity_id": sealed_id,
+        "application_id": sealed_id,
+        "sequence_no": 900001,
+        "timestamp": "2026-01-02T00:00:00Z",
+        "seal": seal,
+    }
+    del get_chat_application_service()._sessions[sealed_id]
+
+    portal.UNDERWRITING_APPLICATIONS["UW-CATALOG-POINTER"] = {
+        "id": "UW-CATALOG-POINTER",
+        "customer_id": "CUST-CATALOG-POINTER",
+        "customer_name": "Pointer Nora",
+        "customer_email": "pointer.nora@example.com",
+        "status": "pending",
+        "source": "chat_adl_referral",
+        "chat_application_id": "CHAPP-POINTER-MISSING",
+        "created_date": "2026-01-03T00:00:00Z",
+    }
+    portal.CUSTOMERS["CUST-CATALOG-POINTER"] = {
+        "id": "CUST-CATALOG-POINTER",
+        "name": "Pointer Nora",
+        "email": "pointer.nora@example.com",
+        "status": "active",
+    }
+
+    ledger_n = len(portal.TRANSACTION_LEDGER)
+    status, book = _get("/api/chat-process-review/list?page_size=100", underwriter)
+    assert status == 200, book
+    assert book["secret"] is True
+    assert "health" in book and "report" in book
+    assert book["report"]["integrity"]
+    ids = {item["application_id"]: item for item in book["items"]}
+    assert live_id in ids
+    assert ids[live_id]["reviewable"] is True
+    assert ids[live_id]["source"] == "session"
+    assert sealed_id in ids
+    assert ids[sealed_id]["sealed"] is True
+    assert ids[sealed_id]["reviewable"] is True
+    assert ids[sealed_id]["integrity_ok"] is True
+    assert "CHAPP-POINTER-MISSING" in ids
+    assert ids["CHAPP-POINTER-MISSING"]["reviewable"] is False
+    assert "pointer_without_seal" in ids["CHAPP-POINTER-MISSING"]["flags"]
+    assert ids["CHAPP-POINTER-MISSING"]["has_report"] is True
+    assert ids["CHAPP-POINTER-MISSING"]["report_url"].endswith("UW-CATALOG-POINTER")
+    assert book["health"]["pointers_without_seal"] >= 1
+    assert book["health"]["reviewable"] >= 2
+    blob = json.dumps(book)
+    assert _PAN not in blob
+    assert _NATIONAL_ID not in blob
+    assert len(portal.TRANSACTION_LEDGER) == ledger_n
+
+    status, filtered = _get(
+        "/api/chat-process-review/list?filter=unsealed&page_size=50",
+        underwriter,
+    )
+    assert status == 200, filtered
+    assert all(
+        "pointer_without_seal" in (item.get("flags") or [])
+        for item in filtered["items"]
+    )
+
+    # Alias route stays staff-only and read-only.
+    status, alias = _get(
+        "/api/chat-application/admin/process-reviews?kind=policy",
+        underwriter,
+    )
+    assert status == 200, alias
+    assert all(item["kind"] == "policy_application" for item in alias["items"])
+
+    # Unit: withheld seal is flagged in the catalog without repair.
+    broken_seal = json.loads(json.dumps(seal))
+    broken_seal["application_id"] = "CHAPP-BROKEN-SEAL"
+    broken_seal["revisions"][-1]["checksum"] = "d" * 64
+    broken_seal["integrity_ok"] = False
+    catalog = build_process_review_catalog(
+        memory_entries=[{
+            "event_type": "chat.process_sealed",
+            "entity_id": "CHAPP-BROKEN-SEAL",
+            "application_id": "CHAPP-BROKEN-SEAL",
+            "sequence_no": 900002,
+            "timestamp": "2099-01-01T00:00:00Z",
+            "seal": broken_seal,
+        }],
+        db_entries=[],
+        include_inquiries=False,
+        q="CHAPP-BROKEN-SEAL",
+        page_size=20,
+    )
+    broken_row = next(
+        item for item in catalog["items"]
+        if item["application_id"] == "CHAPP-BROKEN-SEAL"
+    )
+    assert broken_row["withheld"] is True
+    assert broken_row["integrity_ok"] is False
+    assert broken_row["revision_head"] is None
+    assert catalog["health"]["withheld"] >= 1
+
+
+def test_chat_process_review_page_loads_catalog_endpoint():
+    page = open(
+        os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "web_portal",
+            "static",
+            "chat-process-review.html",
+        ),
+        encoding="utf-8",
+    ).read()
+    assert "/api/chat-process-review/list" in page
+    assert "Process book" in page
+    assert "health-tile" in page
+    assert "All chats" in page

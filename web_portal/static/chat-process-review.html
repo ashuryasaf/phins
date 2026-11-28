@@ -14,10 +14,10 @@
         .process-review .review-head { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 0 0 14px; margin-bottom: 8px; border-bottom: 1px solid #d5deea; }
         .process-review h1 { font-family: "Space Grotesk", sans-serif; font-size: 1.35rem; margin: 0; color: #0e2f63; }
         .process-review a { color: #0e2f63; }
-        .process-review main { max-width: 1080px; margin: 0 auto; padding: 8px 0 24px; }
+        .process-review main { max-width: 1180px; margin: 0 auto; padding: 8px 0 24px; }
         .process-review .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-        .process-review input, .process-review button, .process-review textarea { font: inherit; }
-        .process-review input[type="text"], .process-review textarea { background: #fff; color: #12284c; border: 1px solid #d5deea; border-radius: 10px; padding: 10px 12px; }
+        .process-review input, .process-review button, .process-review textarea, .process-review select { font: inherit; }
+        .process-review input[type="text"], .process-review textarea, .process-review select { background: #fff; color: #12284c; border: 1px solid #d5deea; border-radius: 10px; padding: 10px 12px; }
         .process-review input[type="text"] { min-width: 280px; }
         .process-review textarea { width: 100%; min-height: 64px; resize: vertical; }
         .process-review button, .process-review .tab { background: #fff; color: #0e2f63; border: 1px solid #c9a04e; border-radius: 999px; padding: 8px 14px; cursor: pointer; }
@@ -26,32 +26,70 @@
         .process-review .sections label { display: flex; gap: 6px; align-items: center; font-size: 0.88rem; color: #0e2f63; }
         .process-review .ask { margin-top: 12px; }
         .process-review .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 18px; }
+        .process-review .health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 14px 0; }
+        .process-review .health-tile { background: linear-gradient(160deg, #0e2f63 0%, #1a4a8a 55%, #0b244f 100%); color: #f7e2a0; border-radius: 14px; padding: 14px; }
+        .process-review .health-tile .n { font-family: "Space Grotesk", sans-serif; font-size: 1.55rem; display: block; }
+        .process-review .health-tile .l { font-size: 0.78rem; opacity: 0.9; }
+        .process-review .health-tile.warn { background: linear-gradient(160deg, #7a2e12 0%, #a34a1f 100%); color: #ffe6c7; }
+        .process-review .health-tile.ok { background: linear-gradient(160deg, #0f5a3a 0%, #17835a 100%); color: #e5ffe8; }
         .process-review .card { background: #f3f7fd; border: 1px solid #d5deea; border-radius: 16px; padding: 16px; color: #12284c; }
         .process-review .card h2 { margin: 0 0 10px; font-size: 0.95rem; letter-spacing: 0.06em; text-transform: uppercase; color: #0e2f63; }
         .process-review .muted { color: #5b6b82; font-size: 0.88rem; }
         .process-review table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
         .process-review th, .process-review td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #d5deea; vertical-align: top; color: #12284c; }
+        .process-review tr.clickable { cursor: pointer; }
+        .process-review tr.clickable:hover { background: #e8eef8; }
         .process-review .ok { color: #0f6b45; } .process-review .bad { color: #9b2c2c; }
         .process-review .error { color: #9b2c2c; }
         .process-review code { font-family: "Space Grotesk", monospace; font-size: 0.82rem; color: #123f82; }
         .process-review .summary { white-space: pre-wrap; margin: 0 0 8px; }
+        .process-review .pill { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 0.75rem; border: 1px solid #c9a04e; color: #0e2f63; background: #fff; margin: 0 4px 4px 0; }
+        .process-review .pill.bad { border-color: #c97a7a; color: #9b2c2c; background: #fff5f5; }
+        .process-review .pill.ok { border-color: #7bc4a0; color: #0f6b45; background: #f1fff7; }
+        .process-review .detail-tools { display: none; }
+        .process-review.show-detail .detail-tools { display: block; }
+        .process-review.show-detail #catalog { display: none; }
+        .process-review:not(.show-detail) #quick,
+        .process-review:not(.show-detail) #full,
+        .process-review:not(.show-detail) #ai { display: none; }
     </style>
 </head>
 <body>
-    <div class="process-review">
+    <div class="process-review" id="shell">
     <header class="review-head">
         <h1>Chat process review</h1>
-        <a href="/underwriter-dashboard.html">Underwriting</a>
+        <div class="row">
+            <a href="#" id="back-catalog" hidden>All chats</a>
+            <a href="/underwriter-dashboard.html">Underwriting</a>
+            <a href="/risk-assessment-viewer.html">Risk reports</a>
+        </div>
     </header>
     <main>
         <form class="row" id="lookup">
-            <input id="file-id" type="text" placeholder="CHAPP-… or CLCHAT-…" autocomplete="off" spellcheck="false">
+            <input id="file-id" type="text" placeholder="CHAPP-… or CLCHAT-… or search" autocomplete="off" spellcheck="false">
             <button type="submit">Open</button>
-            <button type="button" class="tab active" id="tab-both">Both</button>
-            <button type="button" class="tab" id="tab-quick">Quick</button>
-            <button type="button" class="tab" id="tab-full">Full</button>
+            <button type="button" id="btn-refresh">Refresh book</button>
+            <button type="button" class="tab active detail-tools" id="tab-both">Both</button>
+            <button type="button" class="tab detail-tools" id="tab-quick">Quick</button>
+            <button type="button" class="tab detail-tools" id="tab-full">Full</button>
         </form>
-        <div class="sections" id="sections">
+        <div class="row" id="catalog-filters" style="margin-top:10px">
+            <select id="kind-filter">
+                <option value="all">All kinds</option>
+                <option value="policy">Policy chats</option>
+                <option value="claim">Claim chats</option>
+                <option value="inquiry">Professional inquiries</option>
+            </select>
+            <select id="flag-filter">
+                <option value="">Every status</option>
+                <option value="reviewable">Openable now</option>
+                <option value="sealed">Sealed</option>
+                <option value="withheld">Withheld / broken chain</option>
+                <option value="unsealed">Missing seal</option>
+                <option value="report">With risk report</option>
+            </select>
+        </div>
+        <div class="sections detail-tools" id="sections">
             <label><input type="checkbox" name="section" value="identity" checked> Identity</label>
             <label><input type="checkbox" name="section" value="health" checked> Health</label>
             <label><input type="checkbox" name="section" value="billing" checked> Billing</label>
@@ -64,12 +102,13 @@
             <label><input type="checkbox" name="section" value="rejected" checked> Rejected edits</label>
             <label><input type="checkbox" name="section" value="ai" checked> AI report</label>
         </div>
-        <div class="ask">
+        <div class="ask detail-tools">
             <label class="muted" for="ask">How to ask the AI report</label>
             <textarea id="ask" maxlength="500" placeholder="Optional focus. Figures here are not treated as facts." spellcheck="false"></textarea>
             <label class="muted"><input type="checkbox" id="narrate"> Ask the assessment model</label>
         </div>
         <p class="muted" id="status-line">For underwriting and claims staff. Applicants do not see this view. Opening it does not change the file.</p>
+        <div id="catalog"></div>
         <div id="quick"></div>
         <div id="ai"></div>
         <div id="full" hidden></div>
@@ -82,6 +121,7 @@
         const FULL = ["intention", "revisions", "contradictions", "rejected", "prior", "ai"];
         let review = null;
         let mode = "both";
+        let catalogItems = [];
 
         function esc(value) {
             return String(value == null || value === '' ? '—' : value)
@@ -112,8 +152,22 @@
             $('tab-full').classList.toggle('active', next === 'full');
         }
 
+        function showCatalog() {
+            $('shell').classList.remove('show-detail');
+            $('back-catalog').hidden = true;
+            $('file-id').placeholder = 'CHAPP-… or CLCHAT-… or search';
+            history.replaceState(null, '', location.pathname);
+            loadCatalog();
+        }
+
+        function showDetail() {
+            $('shell').classList.add('show-detail');
+            $('back-catalog').hidden = false;
+        }
+
         function render() {
             if (!review) return;
+            showDetail();
             const integrity = review.integrity || {};
             $('status-line').innerHTML = esc(review.application_id) + ' · ' + esc(review.status)
                 + ' · <span class="' + (integrity.ok ? 'ok' : 'bad') + '">'
@@ -242,9 +296,136 @@
             return root + encodeURIComponent(fileId) + '/process-review' + (qs ? '?' + qs : '');
         }
 
+        function catalogPath() {
+            const params = new URLSearchParams();
+            params.set('page_size', '100');
+            const kind = $('kind-filter').value;
+            if (kind && kind !== 'all') params.set('kind', kind);
+            const flag = $('flag-filter').value;
+            if (flag) params.set('filter', flag);
+            const q = $('file-id').value.trim();
+            if (q && !/^(CHAPP|CLCHAT|PRO)-/i.test(q)) params.set('q', q);
+            return '/api/chat-process-review/list?' + params.toString();
+        }
+
+        function healthTiles(health, report) {
+            const intact = (health.integrity || {}).intact || 0;
+            const withheld = health.withheld || 0;
+            const missing = health.pointers_without_seal || 0;
+            return '<div class="health-grid">'
+                + '<div class="health-tile"><span class="n">' + esc(health.total || 0) + '</span><span class="l">On the book</span></div>'
+                + '<div class="health-tile"><span class="n">' + esc(health.reviewable || 0) + '</span><span class="l">Openable now</span></div>'
+                + '<div class="health-tile ok"><span class="n">' + esc(intact) + '</span><span class="l">Chains intact</span></div>'
+                + '<div class="health-tile' + (withheld ? ' warn' : '') + '"><span class="n">' + esc(withheld) + '</span><span class="l">Withheld</span></div>'
+                + '<div class="health-tile' + (missing ? ' warn' : '') + '"><span class="n">' + esc(missing) + '</span><span class="l">Missing seals</span></div>'
+                + '<div class="health-tile"><span class="n">' + esc(health.with_risk_report || 0) + '</span><span class="l">Risk reports</span></div>'
+                + '</div>'
+                + '<p class="muted">' + esc((report && report.summary) || '') + '</p>';
+        }
+
+        function flagPills(row) {
+            const pills = [];
+            if (row.sealed) pills.push('<span class="pill ok">sealed</span>');
+            if (row.reviewable) pills.push('<span class="pill">openable</span>');
+            if (row.withheld) pills.push('<span class="pill bad">withheld</span>');
+            (row.flags || []).forEach((flag) => {
+                if (flag === 'withheld' || flag === 'live_session') return;
+                pills.push('<span class="pill' + (flag.indexOf('pointer') >= 0 || flag.indexOf('referral') >= 0 ? ' bad' : '') + '">' + esc(flag.replace(/_/g, ' ')) + '</span>');
+            });
+            if (row.has_report) pills.push('<span class="pill">risk report</span>');
+            return pills.join('');
+        }
+
+        function renderCatalog(payload) {
+            catalogItems = payload.items || [];
+            const health = payload.health || {};
+            const report = payload.report || {};
+            const body = catalogItems.length ? catalogItems.map((row, index) => {
+                const links = [];
+                if (row.reviewable) links.push('Open review');
+                else if (row.report_url) links.push('Risk report');
+                else if (row.desk_url) links.push('Desk');
+                else links.push('Trace');
+                return '<tr class="clickable" data-index="' + index + '">'
+                    + '<td><strong>' + esc(row.application_id) + '</strong><br><span class="muted">' + esc(row.kind) + ' · ' + esc(row.source) + '</span><br>' + flagPills(row) + '</td>'
+                    + '<td>' + esc(row.customer_name) + '<br><span class="muted">' + esc(row.customer_email || row.customer_id) + '</span></td>'
+                    + '<td>' + esc(row.status) + '<br><span class="muted">edits ' + esc(row.edit_count) + ' · revs ' + esc(row.revision_count) + '</span></td>'
+                    + '<td><span class="' + (row.withheld ? 'bad' : (row.integrity_ok ? 'ok' : 'muted')) + '">'
+                    + esc(row.withheld ? 'withheld' : (row.integrity_ok === true ? 'intact' : (row.integrity_ok === false ? 'failed' : 'n/a')))
+                    + '</span>'
+                    + (row.linked_underwriting_id ? '<br><span class="muted">' + esc(row.linked_underwriting_id) + '</span>' : '')
+                    + (row.linked_claim_id ? '<br><span class="muted">' + esc(row.linked_claim_id) + '</span>' : '')
+                    + '</td>'
+                    + '<td>' + esc(row.updated_at || row.created_at) + '<br><span class="muted">' + esc(links[0]) + '</span></td>'
+                    + '</tr>';
+            }).join('') : '<tr><td colspan="5" class="muted">No chats match these filters.</td></tr>';
+            $('catalog').innerHTML = '<section class="card">'
+                + '<h2>Process book</h2>'
+                + '<p class="muted">Live chats, sealed ledger rows, underwriting and claim pointers, and professional inquiries. Opening a row does not rewrite anything.</p>'
+                + healthTiles(health, report)
+                + '<div style="overflow-x:auto"><table><thead><tr>'
+                + '<th>Chat</th><th>Person</th><th>Status</th><th>Integrity / links</th><th>Updated</th>'
+                + '</tr></thead><tbody>' + body + '</tbody></table></div></section>';
+            $('catalog').querySelectorAll('tr.clickable').forEach((tr) => {
+                tr.addEventListener('click', () => openCatalogRow(Number(tr.getAttribute('data-index'))));
+            });
+            $('status-line').textContent = 'Signed in as ' + (payload.viewer_role || 'staff')
+                + '. ' + (catalogItems.length) + ' of ' + (payload.total || 0) + ' shown. Read only.';
+        }
+
+        function openCatalogRow(index) {
+            const row = catalogItems[index];
+            if (!row) return;
+            if (row.reviewable && row.application_id) {
+                $('file-id').value = row.application_id;
+                load(row.application_id);
+                return;
+            }
+            if (row.report_url) {
+                window.location.href = row.report_url;
+                return;
+            }
+            if (row.desk_url) {
+                window.location.href = row.desk_url;
+                return;
+            }
+            $('status-line').innerHTML = '<span class="error">' + esc(row.note || 'This chat cannot be opened as a process review.') + '</span>';
+        }
+
+        async function loadCatalog() {
+            $('status-line').textContent = 'Loading process book…';
+            $('catalog').innerHTML = '<p class="muted">Loading…</p>';
+            try {
+                const response = await fetch(catalogPath(), {
+                    headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+                });
+                const data = await response.json().catch(() => ({}));
+                if (response.status === 401) {
+                    window.location.href = '/login.html';
+                    return;
+                }
+                if (!response.ok) {
+                    $('catalog').innerHTML = '<section class="card"><p class="error">'
+                        + esc(data.error || 'Could not load the process book') + '</p></section>';
+                    return;
+                }
+                renderCatalog(data);
+            } catch (err) {
+                $('catalog').innerHTML = '<section class="card"><p class="error">'
+                    + esc(err.message || 'Network error') + '</p></section>';
+            }
+        }
+
         async function load(id) {
             const fileId = String(id || '').trim().toUpperCase();
-            if (!fileId) return;
+            if (!fileId) {
+                showCatalog();
+                return;
+            }
+            if (!/^(CHAPP|CLCHAT)-/.test(fileId)) {
+                loadCatalog();
+                return;
+            }
             $('status-line').textContent = 'Loading ' + fileId + '…';
             const response = await fetch(reviewPath(fileId), {
                 headers: token ? { 'Authorization': 'Bearer ' + token } : {}
@@ -259,7 +440,11 @@
                 $('quick').innerHTML = '';
                 $('full').innerHTML = '';
                 $('ai').innerHTML = '';
-                $('status-line').innerHTML = '<span class="error">' + esc(data.error || 'Could not open this review') + '</span>';
+                showDetail();
+                $('status-line').innerHTML = '<span class="error">' + esc(data.error || 'Could not open this review') + '</span>'
+                    + ' <button type="button" id="retry-catalog">Back to book</button>';
+                const retry = document.getElementById('retry-catalog');
+                if (retry) retry.addEventListener('click', showCatalog);
                 return;
             }
             review = data;
@@ -273,8 +458,27 @@
 
         $('lookup').addEventListener('submit', (event) => {
             event.preventDefault();
-            load($('file-id').value);
+            const value = $('file-id').value.trim();
+            if (/^(CHAPP|CLCHAT)-/i.test(value)) load(value);
+            else loadCatalog();
         });
+        $('btn-refresh').addEventListener('click', () => {
+            if ($('shell').classList.contains('show-detail') && $('file-id').value.trim()) {
+                load($('file-id').value);
+            } else {
+                loadCatalog();
+            }
+        });
+        $('back-catalog').addEventListener('click', (event) => {
+            event.preventDefault();
+            review = null;
+            $('quick').innerHTML = '';
+            $('full').innerHTML = '';
+            $('ai').innerHTML = '';
+            showCatalog();
+        });
+        $('kind-filter').addEventListener('change', loadCatalog);
+        $('flag-filter').addEventListener('change', loadCatalog);
         $('tab-both').addEventListener('click', () => {
             setMode('both');
             setSections(sectionBoxes().map((box) => box.value));
@@ -304,10 +508,14 @@
         else if (initialView === 'full') setSections(FULL);
         if (initial.get('ask')) $('ask').value = initial.get('ask');
         $('narrate').checked = initial.get('narrate') === '1';
+        if (initial.get('kind')) $('kind-filter').value = initial.get('kind');
+        if (initial.get('filter')) $('flag-filter').value = initial.get('filter');
         const initialId = initial.get('id');
         if (initialId) {
             $('file-id').value = initialId;
             load(initialId);
+        } else {
+            showCatalog();
         }
     </script>
     <script src="/ui-clarity.js"></script>

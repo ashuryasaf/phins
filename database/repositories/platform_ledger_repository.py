@@ -145,6 +145,29 @@ class PlatformLedgerRepository(BaseRepository[PlatformLedgerEntry]):
         except Exception:
             return []
 
+    def get_by_event_types(self, event_types: List[str],
+                           limit: int = 2000) -> List[PlatformLedgerEntry]:
+        """Newest rows for one or more event types. Read-only; never inserts.
+
+        Used by the chat process-review catalog to discover sealed chats
+        without already knowing each ``entity_id``. Caps the scan so a large
+        ledger cannot unbounded-query the database.
+        """
+        wanted = [str(item).strip() for item in (event_types or []) if str(item or "").strip()]
+        if not wanted:
+            return []
+        cap = max(1, min(int(limit or 2000), 5000))
+        try:
+            return (
+                self.session.query(PlatformLedgerEntry)
+                .filter(PlatformLedgerEntry.event_type.in_(wanted))
+                .order_by(PlatformLedgerEntry.sequence_no.desc())
+                .limit(cap)
+                .all()
+            )
+        except Exception:
+            return []
+
     def record_event(self, **kwargs: Any) -> Optional[PlatformLedgerEntry]:
         payload = kwargs.get("payload")
         if payload is not None and not isinstance(payload, str):
