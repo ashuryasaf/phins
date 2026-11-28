@@ -2355,8 +2355,10 @@ def connection_integrity(customers: Optional[Dict[str, Any]] = None,
                 premium_basis = round(sum(
                     float(p.get("annual_premium") or p.get("premium") or 0)
                     for p in cust_policies), 2)
-                settled_statuses = {
-                    "completed", "pending_admin_payout", "settled", "customer_approved",
+                # GMV accrues only in complete_order (pending_admin_payout /
+                # settled). customer_approved alone has not written commission.
+                accrued_settlements = {
+                    "pending_admin_payout", "settled",
                 }
                 for order in marketplace_orders.values():
                     if not isinstance(order, dict):
@@ -2365,7 +2367,7 @@ def connection_integrity(customers: Optional[Dict[str, Any]] = None,
                         continue
                     status = str(order.get("status") or "").strip().lower()
                     settlement = str(order.get("settlement_status") or "").strip().lower()
-                    if status == "completed" or settlement in settled_statuses:
+                    if status == "completed" or settlement in accrued_settlements:
                         gmv_basis += float(order.get("total_amount") or 0)
                         gmv_order_count += 1
                 gmv_basis = round(gmv_basis, 2)

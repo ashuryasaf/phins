@@ -1306,14 +1306,13 @@ class SupplyChainEcosystemService:
         Never mints a token on this unauthenticated path — a wrong or missing
         token must not invent a capability secret on the order.
         """
+        # Same refusal for missing order and bad token — do not probe ids.
         order = self.orders.get(order_id)
-        if not order:
-            raise ValueError("Order not found")
         provided = self._safe_text(token)
-        stored_token = self._safe_text(order.get("delivery_tracking_token"))
-        if not stored_token:
+        stored_token = self._safe_text((order or {}).get("delivery_tracking_token"))
+        if not stored_token and order:
             stored_token = self._token_from_approval_url(order.get("delivery_tracking_url"))
-        if not provided or not stored_token or provided not in {
+        if not order or not provided or not stored_token or provided not in {
             stored_token,
             self._safe_text(order.get("delivery_tracking_url")),
         }:
@@ -4079,7 +4078,12 @@ class SupplyChainEcosystemService:
         actor: str,
         data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Create an external shipment via Wolt/UPS/FedEx style delivery connectors."""
+        """Create an external shipment via Wolt/UPS/FedEx style delivery connectors.
+
+        Destination is stamped on the order and the customer is notified with a
+        PHINS tracking link *before* the carrier is booked, so a notify failure
+        never leaves an orphan shipment that a retry would double-book.
+        """
         if order_id not in self.orders:
             raise ValueError(f"Order {order_id} not found")
 
@@ -4088,6 +4092,24 @@ class SupplyChainEcosystemService:
         provider_name = self._resolve_delivery_provider(order, payload)
         if not provider_name:
             raise ValueError("provider is required")
+
+        # Idempotent: an already-booked shipment is returned, not rebooked.
+        existing_shipment_id = self._safe_text(order.get("shipment_id"))
+        if existing_shipment_id and existing_shipment_id in self.delivery_shipments:
+            existing = self.delivery_shipments[existing_shipment_id]
+            dispatch_notice = self.notify_customer_before_dispatch(
+                order_id=order_id,
+                actor=actor,
+                data=payload,
+            )
+            return {
+                "success": True,
+                "provider": order.get("delivery_provider") or provider_name,
+                "order": order,
+                "shipment": existing,
+                "pre_dispatch_notice": dispatch_notice,
+                "idempotent": True,
+            }
 
         shipping_address = (
             self._coerce_location(payload.get("delivery_location"))
@@ -4098,6 +4120,19 @@ class SupplyChainEcosystemService:
         if not shipping_address:
             raise ValueError("A delivery location with latitude/longitude is required")
 
+        # Persist destination onto the order so notify (and later tracking)
+        # see the same location the carrier will receive.
+        order["delivery_location"] = shipping_address
+        plan = order.get("delivery_plan") if isinstance(order.get("delivery_plan"), dict) else {}
+        plan = dict(plan)
+        plan["requested_location"] = shipping_address
+        order["delivery_plan"] = plan
+        if payload.get("delivery_method"):
+            order["delivery_method"] = self._safe_text(payload.get("delivery_method")) or order.get(
+                "delivery_method"
+            )
+        order["updated_date"] = datetime.now(timezone.utc).isoformat()
+
         supplier = self.suppliers.get(order.get("supplier_id"))
         if not supplier:
             raise ValueError(f"Supplier {order.get('supplier_id')} not found")
@@ -4105,6 +4140,13 @@ class SupplyChainEcosystemService:
         supplier_location = self._build_location_from_fields(supplier)
         if not supplier_location:
             raise ValueError("Supplier location must include latitude and longitude")
+
+        # Notify first — refuse before booking when destination/status blocks it.
+        dispatch_notice = self.notify_customer_before_dispatch(
+            order_id=order_id,
+            actor=actor,
+            data=payload,
+        )
 
         connector = create_delivery_provider_connector(provider_name)
         shipment_payload = {
@@ -4170,6 +4212,7 @@ class SupplyChainEcosystemService:
                 "order": order,
                 "shipment": shipment,
                 "retry": retry,
+                "pre_dispatch_notice": dispatch_notice,
                 "message": reason,
             }
 
@@ -4186,12 +4229,6 @@ class SupplyChainEcosystemService:
         order["delivery_status"] = shipment.get("status")
         order["delivery_provider_payload"] = shipment
         order["updated_date"] = datetime.now(timezone.utc).isoformat()
-        # Notify the customer with a PHINS tracking link before the courier leaves.
-        dispatch_notice = self.notify_customer_before_dispatch(
-            order_id=order_id,
-            actor=actor,
-            data=payload,
-        )
         if str(order.get("status") or "").strip().lower() == OrderStatus.PROCESSING.value:
             order["status"] = OrderStatus.IN_TRANSIT.value
 

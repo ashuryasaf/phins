@@ -276,7 +276,15 @@ def test_connection_integrity_gmv_basis_uses_marketplace_orders():
                 "status": "completed",
                 "settlement_status": "pending_admin_payout",
                 "total_amount": 200.0,
-            }
+            },
+            # customer_approved alone has not accrued GMV commission yet.
+            "ORD-PENDING": {
+                "id": "ORD-PENDING",
+                "customer_id": "CUST-GMV",
+                "status": "delivered",
+                "settlement_status": "customer_approved",
+                "total_amount": 500.0,
+            },
         }
         report = agent_svc.connection_integrity(
             customers=customers,
@@ -288,8 +296,150 @@ def test_connection_integrity_gmv_basis_uses_marketplace_orders():
         assert rows
         assert rows[0]["commission_basis"] == "gmv"
         assert rows[0]["gmv_basis"] == 200.0
+        assert rows[0]["gmv_order_count"] == 1
         assert rows[0]["expected_commission"] == 20.0
         # No accrued commission yet → shortfall warning, not silent pass.
         assert rows[0]["commission_consistent"] is False
     finally:
         agent_svc.reset_agent_ecosystem()
+
+
+def test_create_delivery_shipment_notifies_before_booking(monkeypatch):
+    from services.supply_chain_ecosystem_service import SupplyChainEcosystemService
+
+    svc = SupplyChainEcosystemService()
+    order_id = "ORD-SHIP-1"
+    svc.orders[order_id] = {
+        "id": order_id,
+        "supplier_id": "SUP-SHIP",
+        "customer_id": "CUST-1",
+        "item_name": "Kit",
+        "status": "processing",
+        "quantity": 1,
+        "total_amount": 25.0,
+        "commission": 2.5,
+        "supplier_payout": 22.5,
+        "delivery_method": "courier_delivery",
+    }
+    svc.suppliers["SUP-SHIP"] = {
+        "id": "SUP-SHIP",
+        "company_name": "Ship Co",
+        "latitude": 32.08,
+        "longitude": 34.78,
+        "city": "Tel Aviv",
+        "country": "IL",
+    }
+
+    sequence = []
+
+    def _notify(self, **kwargs):
+        sequence.append("notify")
+        order = self.orders[kwargs["order_id"]]
+        assert order.get("delivery_location")
+        return {"success": True, "delivery_tracking_url": "https://www.phins.ai/t"}
+
+    class _Shipment:
+        def to_dict(self):
+            sequence.append("book")
+            return {
+                "success": True,
+                "shipment_id": "SHP-1",
+                "tracking_number": "TRK-1",
+                "tracking_url": "https://carrier.example/TRK-1",
+                "status": "created",
+            }
+
+    class _Connector:
+        def create_shipment(self, payload):
+            assert payload["destination"]["latitude"] == 32.1
+            return _Shipment()
+
+    monkeypatch.setattr(
+        SupplyChainEcosystemService,
+        "notify_customer_before_dispatch",
+        _notify,
+    )
+    monkeypatch.setattr(
+        "services.supply_chain_ecosystem_service.create_delivery_provider_connector",
+        lambda _name: _Connector(),
+    )
+    monkeypatch.setattr(SupplyChainEcosystemService, "_record_ledger_entry", lambda *a, **k: None)
+
+    result = svc.create_delivery_shipment(
+        order_id=order_id,
+        actor="supplier-demo",
+        data={
+            "provider": "wolt",
+            "delivery_location": {
+                "city": "Tel Aviv",
+                "country": "IL",
+                "latitude": 32.1,
+                "longitude": 34.8,
+            },
+        },
+    )
+    assert result["success"] is True
+    assert sequence == ["notify", "book"]
+    assert result["pre_dispatch_notice"]["success"] is True
+    assert svc.orders[order_id]["shipment_id"] == "SHP-1"
+
+    # Retry must not rebook — notify again, return existing shipment.
+    sequence.clear()
+    again = svc.create_delivery_shipment(
+        order_id=order_id,
+        actor="supplier-demo",
+        data={"provider": "wolt"},
+    )
+    assert again.get("idempotent") is True
+    assert sequence == ["notify"]
+    assert len(svc.delivery_shipments) == 1
+
+
+def test_create_delivery_shipment_refuses_before_booking_when_notify_fails(monkeypatch):
+    from services.supply_chain_ecosystem_service import SupplyChainEcosystemService
+
+    svc = SupplyChainEcosystemService()
+    order_id = "ORD-SHIP-2"
+    svc.orders[order_id] = {
+        "id": order_id,
+        "supplier_id": "SUP-SHIP",
+        "customer_id": "CUST-1",
+        "item_name": "Kit",
+        "status": "pending",  # not confirmed → notify refuses
+        "total_amount": 25.0,
+        "commission": 2.5,
+        "supplier_payout": 22.5,
+        "delivery_method": "courier_delivery",
+    }
+    svc.suppliers["SUP-SHIP"] = {
+        "id": "SUP-SHIP",
+        "company_name": "Ship Co",
+        "latitude": 32.08,
+        "longitude": 34.78,
+    }
+    booked = {"n": 0}
+
+    class _Connector:
+        def create_shipment(self, payload):
+            booked["n"] += 1
+            return {"success": True, "shipment_id": "SHP-X"}
+
+    monkeypatch.setattr(
+        "services.supply_chain_ecosystem_service.create_delivery_provider_connector",
+        lambda _name: _Connector(),
+    )
+    with pytest.raises(ValueError, match="after the order is confirmed"):
+        svc.create_delivery_shipment(
+            order_id=order_id,
+            actor="supplier-demo",
+            data={
+                "provider": "wolt",
+                "delivery_location": {
+                    "city": "Tel Aviv",
+                    "latitude": 32.1,
+                    "longitude": 34.8,
+                },
+            },
+        )
+    assert booked["n"] == 0
+    assert not svc.delivery_shipments
