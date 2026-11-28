@@ -26,8 +26,10 @@
 
     body {
       margin: 0;
-      font-family: Arial, sans-serif;
-      background: linear-gradient(180deg, #eef4ff 0%, var(--bg) 35%, #eef2f7 100%);
+      font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+      background:
+        radial-gradient(900px 280px at 88% -20%, rgba(21, 68, 155, 0.16), transparent 70%),
+        linear-gradient(180deg, #eef4ff 0%, var(--bg) 35%, #eef2f7 100%);
       color: var(--text);
     }
 
@@ -38,17 +40,22 @@
     }
 
     .hero {
-      background: linear-gradient(135deg, var(--phins-navy) 0%, #1976d2 60%, #42a5f5 100%);
+      background:
+        radial-gradient(700px 180px at 85% -60%, rgba(21, 68, 155, 0.5), transparent 70%),
+        linear-gradient(135deg, #060d1f 0%, #0e2f63 55%, #1a4a8a 100%);
       color: #fff;
-      border-radius: 24px;
+      border-radius: 20px;
       padding: 28px;
       box-shadow: var(--shadow);
       margin-bottom: 24px;
+      border: 1px solid rgba(247, 226, 160, 0.22);
     }
 
     .hero h1 {
       margin: 0 0 10px;
-      font-size: 2rem;
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-size: 1.85rem;
+      letter-spacing: 0.01em;
     }
 
     .hero p {
