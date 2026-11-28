@@ -1262,7 +1262,8 @@ class SupplyChainEcosystemService:
             description="Customer notified before delivery dispatch",
             metadata={
                 "actor": actor,
-                "tracking_url": artifacts["delivery_tracking_url"],
+                # Do not persist the live tokenised URL on the ledger.
+                "tracking_notified": True,
                 "email_sent": bool(email_result.get("sent")),
                 "destination_label": location.get("label"),
             },
@@ -1281,21 +1282,40 @@ class SupplyChainEcosystemService:
             "message": f"Pre-dispatch notice ready for order {order_id}",
         }
 
+    @staticmethod
+    def _safe_http_url(value: Any) -> str:
+        """Allow only http(s) absolute URLs for public customer links."""
+        text = str(value or "").strip()
+        if not text or any(ch in text for ch in ("\r", "\n", " ")):
+            return ""
+        parts = urlsplit(text)
+        if parts.scheme not in ("http", "https") or not parts.hostname:
+            return ""
+        if parts.username or parts.password:
+            return ""
+        return text
+
     def get_public_delivery_tracking(
         self,
         *,
         order_id: str,
         token: str,
     ) -> Dict[str, Any]:
-        """Public read of delivery status for a customer holding the tracking token."""
+        """Public read of delivery status for a customer holding the tracking token.
+
+        Never mints a token on this unauthenticated path — a wrong or missing
+        token must not invent a capability secret on the order.
+        """
         order = self.orders.get(order_id)
         if not order:
             raise ValueError("Order not found")
-        artifacts = self._ensure_delivery_tracking_artifacts(order)
         provided = self._safe_text(token)
-        if not provided or provided not in {
-            artifacts["delivery_tracking_token"],
-            artifacts["delivery_tracking_url"],
+        stored_token = self._safe_text(order.get("delivery_tracking_token"))
+        if not stored_token:
+            stored_token = self._token_from_approval_url(order.get("delivery_tracking_url"))
+        if not provided or not stored_token or provided not in {
+            stored_token,
+            self._safe_text(order.get("delivery_tracking_url")),
         }:
             raise ValueError("Invalid tracking token")
         location = self._location_summary_for_customer(order)
@@ -1317,7 +1337,7 @@ class SupplyChainEcosystemService:
             "estimated_delivery": order.get("estimated_delivery"),
             "actual_delivery": order.get("actual_delivery"),
             "tracking_number": order.get("tracking_number"),
-            "carrier_tracking_url": order.get("tracking_url"),
+            "carrier_tracking_url": self._safe_http_url(order.get("tracking_url")),
             "pre_dispatch_notified_at": order.get("pre_dispatch_notified_at"),
         }
 
@@ -3283,8 +3303,10 @@ class SupplyChainEcosystemService:
             except (TypeError, ValueError):
                 rate_f = None
             if rate_f is not None and rate_f > 0:
-                # Supply-chain snapshots are percents; legacy management used fractions.
-                if rate_f <= 1.0:
+                # Supply-chain locks are percents (8.0 = 8%). Legacy fraction
+                # rows are (0, 1) exclusive — never rescale exactly 1.0, or a
+                # deliberate 1% lock would become a 100% fee.
+                if 0.0 < rate_f < 1.0:
                     rate_f = rate_f * 100.0
                 rate_override = rate_f
         

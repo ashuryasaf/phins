@@ -106,8 +106,10 @@
           throw new Error((data && data.error) || 'Tracking unavailable');
         }
         const dest = data.destination || {};
-        const carrier = data.carrier_tracking_url
-          ? '<a class="carrier" href="' + esc(data.carrier_tracking_url) + '" rel="noopener" target="_blank">Open carrier tracking</a>'
+        const carrierRaw = String(data.carrier_tracking_url || '');
+        const carrierSafe = /^https?:\/\//i.test(carrierRaw) ? carrierRaw : '';
+        const carrier = carrierSafe
+          ? '<a class="carrier" href="' + esc(carrierSafe) + '" rel="noopener" target="_blank">Open carrier tracking</a>'
           : '—';
         el.innerHTML =
           '<div class="row"><div class="label">Order</div><div class="value">' + esc(data.order_id) + '</div></div>'

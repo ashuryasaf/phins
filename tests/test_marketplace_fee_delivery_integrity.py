@@ -39,6 +39,35 @@ def test_calculate_order_fees_uses_supplier_commission_rate():
     assert calc["supplier_payout"] == 176.0
 
 
+def test_one_percent_lock_is_not_inflated_to_one_hundred():
+    from services.supply_chain_ecosystem_service import SupplyChainEcosystemService
+
+    svc = SupplyChainEcosystemService()
+    svc.suppliers["SUP-FEE-1PCT"] = {
+        "id": "SUP-FEE-1PCT",
+        "supplier_type": "pharmacy",
+        "commission_rate": 1.0,
+        "created_date": "2026-01-01T00:00:00+00:00",
+        "total_revenue": 0,
+        "status": "approved",
+    }
+    calc = svc.calculate_order_fees("SUP-FEE-1PCT", 200.0)
+    assert calc["base_rate_pct"] == 1.0
+    assert calc["commission"] == 2.0
+
+    svc.suppliers["SUP-FEE-FRAC"] = {
+        "id": "SUP-FEE-FRAC",
+        "supplier_type": "pharmacy",
+        "commission_rate": 0.08,
+        "created_date": "2026-01-01T00:00:00+00:00",
+        "total_revenue": 0,
+        "status": "approved",
+    }
+    frac = svc.calculate_order_fees("SUP-FEE-FRAC", 200.0)
+    assert frac["base_rate_pct"] == 8.0
+    assert frac["commission"] == 16.0
+
+
 def test_supplier_order_money_totals_reads_commission_or_platform_fee():
     import web_portal.server as portal
 
@@ -127,6 +156,19 @@ def test_pre_dispatch_notice_uses_phins_origin_and_is_idempotent(monkeypatch):
     )
     assert public["destination"]["city"] == "Tel Aviv"
     assert public["status"] == "processing"
+
+    # Wrong token must not mint a capability secret.
+    before = dict(svc.orders[order_id])
+    with pytest.raises(ValueError, match="Invalid tracking token"):
+        svc.get_public_delivery_tracking(order_id=order_id, token="wrong-token")
+    assert svc.orders[order_id].get("delivery_tracking_token") == before.get("delivery_tracking_token")
+
+    svc.orders[order_id]["tracking_url"] = "javascript:alert(1)"
+    public2 = svc.get_public_delivery_tracking(
+        order_id=order_id,
+        token=svc.orders[order_id]["delivery_tracking_token"],
+    )
+    assert public2["carrier_tracking_url"] == ""
 
 
 def test_dispatch_status_sends_pre_dispatch_notice(monkeypatch):
