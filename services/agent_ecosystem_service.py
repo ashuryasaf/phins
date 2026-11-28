@@ -2224,14 +2224,16 @@ def _principal_record(customers: Optional[Dict[str, Any]],
 def connection_integrity(customers: Optional[Dict[str, Any]] = None,
                          policies: Optional[Dict[str, Any]] = None,
                          suppliers: Optional[Dict[str, Any]] = None,
-                         bills: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                         bills: Optional[Dict[str, Any]] = None,
+                         marketplace_orders: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Audit agent↔principal affiliation, referral FK, and commission consistency.
 
     Read-only. Flags (never silently repairs) any break in the locked-rate
     chain: one active affiliation per principal, ``referring_agent_id`` matching
     that affiliation, invitation rate snapshot matching the affiliation, and
-    accrued commission matching ``premium_basis × locked_rate``. U7 also flags
-    live commissions that remain on a lapsed or overdue policy (AE6).
+    accrued commission matching ``premium_basis × locked_rate`` (or marketplace
+    GMV × rate when ``commission_basis`` is ``gmv``). U7 also flags live
+    commissions that remain on a lapsed or overdue policy (AE6).
     """
     with _LOCK:
         _hydrate_from_db()
@@ -2241,6 +2243,7 @@ def connection_integrity(customers: Optional[Dict[str, Any]] = None,
         policies = policies or {}
         suppliers = suppliers or {}
         bills = bills or {}
+        marketplace_orders = marketplace_orders or {}
 
         def _issue(severity: str, code: str, message: str, **extra: Any) -> None:
             row = {"severity": severity, "code": code, "message": message}
@@ -2342,7 +2345,9 @@ def connection_integrity(customers: Optional[Dict[str, Any]] = None,
                            agent_id=aff.get("agent_id"), status=comm.get("status"))
 
             premium_basis = 0.0
+            gmv_basis = 0.0
             policy_count = 0
+            gmv_order_count = 0
             if ptype == "customer":
                 cust_policies = [p for p in policies.values()
                                  if p.get("customer_id") == pid and _policy_drives_commission(p)]
@@ -2350,31 +2355,62 @@ def connection_integrity(customers: Optional[Dict[str, Any]] = None,
                 premium_basis = round(sum(
                     float(p.get("annual_premium") or p.get("premium") or 0)
                     for p in cust_policies), 2)
+                settled_statuses = {
+                    "completed", "pending_admin_payout", "settled", "customer_approved",
+                }
+                for order in marketplace_orders.values():
+                    if not isinstance(order, dict):
+                        continue
+                    if order.get("customer_id") != pid:
+                        continue
+                    status = str(order.get("status") or "").strip().lower()
+                    settlement = str(order.get("settlement_status") or "").strip().lower()
+                    if status == "completed" or settlement in settled_statuses:
+                        gmv_basis += float(order.get("total_amount") or 0)
+                        gmv_order_count += 1
+                gmv_basis = round(gmv_basis, 2)
             live_comms = [c for c in aff_comms if (c.get("status") or "") != "reversed"]
             accrued = round(sum(float(c.get("amount") or 0) for c in live_comms), 2)
             initial_accrued, renewal_accrued, renewal_periods = _split_terms(live_comms)
-            is_premium = (aff.get("commission_basis") or "premium") == "premium"
-            expected = round(premium_basis * rate, 2) if is_premium else initial_accrued
+            basis = (aff.get("commission_basis") or "premium").lower()
+            is_premium = basis == "premium"
+            is_gmv = basis == "gmv"
+            if is_premium:
+                expected = round(premium_basis * rate, 2)
+                compare_accrued = initial_accrued
+                basis_label = "premium_basis × locked rate"
+            elif is_gmv:
+                expected = round(gmv_basis * rate, 2)
+                # GMV accruals are one event per order (initial term).
+                compare_accrued = initial_accrued
+                basis_label = "marketplace_gmv × locked rate"
+            else:
+                expected = initial_accrued
+                compare_accrued = initial_accrued
+                basis_label = "locked one-time amount"
             # Locked-rate consistency is judged on the initial term; renewal terms
             # are recurring add-ons validated row-by-row above.
-            commission_ok = _money_eq(expected, initial_accrued)
+            commission_ok = _money_eq(expected, compare_accrued)
             if aff.get("status") == "active" and ptype == "customer" and not commission_ok:
                 agent = AGENTS.get(aff.get("agent_id") or "")
-                if initial_accrued > expected + 0.015:
+                if compare_accrued > expected + 0.015:
                     _issue("error", "commission_overage",
-                           "Initial-term accrued commission exceeds premium_basis × locked rate",
+                           f"Initial-term accrued commission exceeds {basis_label}",
                            affiliation_id=aff.get("id"), agent_id=aff.get("agent_id"),
-                           principal_id=pid, expected=expected, accrued=initial_accrued)
+                           principal_id=pid, expected=expected, accrued=compare_accrued,
+                           commission_basis=basis)
                 elif agent and agent.get("status") == "suspended":
                     _issue("warning", "suspended_agent_shortfall",
                            "Suspended agent has not accrued the full expected commission",
                            affiliation_id=aff.get("id"), agent_id=aff.get("agent_id"),
-                           principal_id=pid, expected=expected, accrued=initial_accrued)
+                           principal_id=pid, expected=expected, accrued=compare_accrued,
+                           commission_basis=basis)
                 else:
                     _issue("warning", "commission_shortfall",
-                           "Initial-term accrued commission is below premium_basis × locked rate",
+                           f"Initial-term accrued commission is below {basis_label}",
                            affiliation_id=aff.get("id"), agent_id=aff.get("agent_id"),
-                           principal_id=pid, expected=expected, accrued=initial_accrued)
+                           principal_id=pid, expected=expected, accrued=compare_accrued,
+                           commission_basis=basis)
 
             if ptype == "customer":
                 connections.append({
@@ -2384,11 +2420,14 @@ def connection_integrity(customers: Optional[Dict[str, Any]] = None,
                     "customer_name": rec.get("name") or rec.get("first_name") or "Affiliated customer",
                     "status": aff.get("status"),
                     "invitation_code": aff.get("source_invitation_code"),
+                    "commission_basis": basis,
                     "locked_rate": rate,
                     "invitation_rate": invitation_rate,
                     "rate_locked_consistent": rate_locked_ok,
                     "policy_count": policy_count,
                     "premium_basis": premium_basis,
+                    "gmv_basis": gmv_basis,
+                    "gmv_order_count": gmv_order_count,
                     "expected_commission": expected,
                     "accrued_commission": accrued,
                     "initial_term_commission": initial_accrued,

@@ -990,12 +990,20 @@ def issued_premium_view(policy: Any, application: Any, quote_summary: Any) -> Di
 
 
 def supplier_order_money_totals(orders: Any) -> Dict[str, Any]:
-    """Sum order money across the full filtered book, not one page."""
+    """Sum order money across the full filtered book, not one page.
+
+    Live supply-chain rows store the fee as ``commission``; normalised and
+    legacy rows use ``platform_fee``. Prefer ``platform_fee``, fall back to
+    ``commission`` so analytics and Transactions stay on one total.
+    """
     rows = list(orders or [])
     return {
         'order_count': len(rows),
         'order_value': round(sum(safe_float(row.get('total_amount'), 0.0) for row in rows), 2),
-        'platform_fees': round(sum(safe_float(row.get('platform_fee'), 0.0) for row in rows), 2),
+        'platform_fees': round(sum(
+            safe_float(row.get('platform_fee'), safe_float(row.get('commission'), 0.0))
+            for row in rows
+        ), 2),
         'supplier_payouts': round(sum(safe_float(row.get('supplier_payout'), 0.0) for row in rows), 2),
     }
 
@@ -12277,8 +12285,16 @@ def agent_ecosystem_data_sources() -> Dict[str, Any]:
 
     Paid bills drive per-renewal commission accrual (§C); the wallet /
     investment / transaction stores feed the subtree-scoped broker funnel; the
-    platform event ledger anchors executed payout runs.
+    platform event ledger anchors executed payout runs. Marketplace orders feed
+    GMV-basis affiliation integrity against completed / settled supply-chain
+    rows.
     """
+    marketplace_orders: Dict[str, Any] = {}
+    try:
+        if supply_chain_enabled and supply_chain_service:
+            marketplace_orders = getattr(supply_chain_service, 'orders', {}) or {}
+    except Exception:
+        marketplace_orders = {}
     return {
         'customers': CUSTOMERS, 'policies': POLICIES, 'suppliers': SUPPLIERS,
         'bills': BILLING,
@@ -12286,6 +12302,7 @@ def agent_ecosystem_data_sources() -> Dict[str, Any]:
         'investment_accounts': INVESTMENT_ACCOUNTS,
         'transaction_ledger': TRANSACTION_LEDGER,
         'platform_ledger': platform_event_ledger,
+        'marketplace_orders': marketplace_orders,
     }
 
 
@@ -31618,8 +31635,35 @@ For claims or questions, please contact:
             
             try:
                 analytics = supplier_service.get_supplier_analytics()
+                # Prefer the live marketplace supply-chain book for order money
+                # so the Platform fees tile matches Transactions / cashflow.
+                if supply_chain_enabled and supply_chain_service:
+                    items = list_normalized_supply_chain_orders()
+                    money = supplier_order_money_totals(items)
+                    status_counts: Dict[str, int] = {}
+                    for row in items:
+                        st = get_status_lower(row) or 'unknown'
+                        status_counts[st] = status_counts.get(st, 0) + 1
+                    analytics['total_orders'] = money['order_count']
+                    analytics['total_revenue'] = money['order_value']
+                    analytics['total_platform_fees'] = money['platform_fees']
+                    analytics['total_supplier_payouts'] = money['supplier_payouts']
+                    analytics['orders_by_status'] = status_counts
+                    analytics['book'] = 'supply_chain'
+                    analytics['money_identity'] = (
+                        'commission_out_of_supplier_bid'
+                    )
+                else:
+                    analytics.setdefault('book', 'supplier_service')
+                    analytics.setdefault(
+                        'total_supplier_payouts',
+                        round(sum(
+                            safe_float(o.get('supplier_payout'), 0.0)
+                            for o in getattr(supplier_service, 'orders', {}).values()
+                        ), 2),
+                    )
                 self._set_json_headers()
-                self.wfile.write(json.dumps(analytics).encode('utf-8'))
+                self.wfile.write(json.dumps(analytics, default=str).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
@@ -31888,6 +31932,33 @@ For claims or questions, please contact:
                 self.wfile.write(json.dumps(detail, default=str).encode('utf-8'))
             except ValueError as e:
                 self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        # Public customer delivery tracking (tokenised; no session).
+        if path in ('/api/public/delivery-tracking', '/api/supply-chain/public-delivery-tracking'):
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            try:
+                order_id = (qs.get('order_id', [None])[0] or '').strip()
+                token_value = (qs.get('token', [None])[0] or '').strip()
+                if not order_id or not token_value:
+                    self._set_json_headers(400)
+                    self.wfile.write(json.dumps({'error': 'order_id and token are required'}).encode('utf-8'))
+                    return
+                detail = supply_chain_service.get_public_delivery_tracking(
+                    order_id=order_id,
+                    token=token_value,
+                )
+                self._set_json_headers()
+                self.wfile.write(json.dumps(detail, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(404)
                 self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
@@ -52497,10 +52568,13 @@ For claims or questions, please contact:
                     except Exception:
                         pass
                 self._set_json_headers(200 if result.get('success') else 400)
-                self.wfile.write(json.dumps(result).encode('utf-8'))
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except json.JSONDecodeError:
                 self._set_json_headers(400)
                 self.wfile.write(json.dumps({'error': 'Invalid JSON payload'}).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
             except Exception as e:
                 self._set_json_headers(500)
                 self.wfile.write(json.dumps({'error': 'Failed to update status', 'details': str(e)}).encode('utf-8'))
@@ -52954,6 +53028,48 @@ For claims or questions, please contact:
                     _sync_recent_ledger_entries()
                 
                 self._set_json_headers(200)
+                self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
+            except ValueError as e:
+                self._set_json_headers(400)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            except Exception as e:
+                self._set_json_headers(500)
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if path.startswith('/api/supply-chain/orders/') and path.endswith('/pre-dispatch-notice'):
+            auth_header = self.headers.get('Authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+            session = validate_session(token) if token else None
+            if not require_role(session, ['admin', 'supplier']):
+                self._set_json_headers(403 if session else 401)
+                self.wfile.write(json.dumps({'error': 'Authentication required' if not session else 'Unauthorized'}).encode('utf-8'))
+                return
+            if not supply_chain_enabled or not supply_chain_service:
+                self._set_json_headers(503)
+                self.wfile.write(json.dumps({'error': 'Supply chain service unavailable'}).encode('utf-8'))
+                return
+            try:
+                order_id = path.split('/')[4]
+                data = json.loads(body or '{}')
+                order = getattr(supply_chain_service, 'orders', {}).get(order_id)
+                if not order:
+                    self._set_json_headers(404)
+                    self.wfile.write(json.dumps({'error': 'Order not found'}).encode('utf-8'))
+                    return
+                role = get_effective_role(session)
+                supplier_id = (session or {}).get('supplier_id') or (session or {}).get('username')
+                if role == 'supplier' and order.get('supplier_id') != supplier_id:
+                    self._set_json_headers(403)
+                    self.wfile.write(json.dumps({'error': 'Forbidden'}).encode('utf-8'))
+                    return
+                actor = (session or {}).get('username', 'system')
+                result = supply_chain_service.notify_customer_before_dispatch(
+                    order_id=order_id,
+                    actor=actor,
+                    data=data,
+                )
+                self._set_json_headers()
                 self.wfile.write(json.dumps(result, default=str).encode('utf-8'))
             except ValueError as e:
                 self._set_json_headers(400)

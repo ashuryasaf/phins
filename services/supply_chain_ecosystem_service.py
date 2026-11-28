@@ -214,10 +214,18 @@ class FeeSchedule:
             ]
     
     def calculate_commission(self, amount: float, supplier_type: str, 
-                           monthly_volume: float = 0, promo_code: str = None) -> Dict:
-        """Calculate commission for a transaction"""
-        # Base rate from category
-        base_rate = self.category_adjustments.get(supplier_type, self.base_commission_pct)
+                           monthly_volume: float = 0, promo_code: str = None,
+                           rate_override: Optional[float] = None) -> Dict:
+        """Calculate commission for a transaction.
+
+        ``rate_override`` is a locked supplier percent (e.g. 8.0 for 8%). When
+        set it replaces the category base rate before volume/promo discounts.
+        """
+        # Base rate from category (or the supplier's locked percent).
+        if rate_override is not None:
+            base_rate = max(0.0, float(rate_override))
+        else:
+            base_rate = self.category_adjustments.get(supplier_type, self.base_commission_pct)
         
         # Apply volume discount
         volume_discount = 0
@@ -1027,6 +1035,312 @@ class SupplyChainEcosystemService:
             },
         )
         return record
+
+    @classmethod
+    def _build_delivery_tracking_url(cls, order_id: str, token: str) -> str:
+        """Customer-facing delivery tracking URL (always phins.ai in production)."""
+        return (
+            f"{cls._get_public_base_url()}/delivery-tracking.html"
+            f"?order_id={quote(order_id, safe='')}&token={quote(token, safe='')}"
+        )
+
+    def _ensure_delivery_tracking_artifacts(self, order: Dict[str, Any]) -> Dict[str, str]:
+        """Stable tracking token + phins.ai link for pre-dispatch customer notice."""
+        order_id = str(order.get("id") or "").strip()
+        token = self._safe_text(order.get("delivery_tracking_token"))
+        if not token:
+            token = self._token_from_approval_url(order.get("delivery_tracking_url")) or secrets.token_urlsafe(10)
+        tracking_url = self._build_delivery_tracking_url(order_id, token)
+        order["delivery_tracking_token"] = token
+        order["delivery_tracking_url"] = tracking_url
+        return {
+            "delivery_tracking_token": token,
+            "delivery_tracking_url": tracking_url,
+        }
+
+    def _location_summary_for_customer(self, order: Dict[str, Any]) -> Dict[str, Any]:
+        """Safe destination summary for the customer tracking page / email."""
+        plan = order.get("delivery_plan") if isinstance(order.get("delivery_plan"), dict) else {}
+        requested = plan.get("requested_location") if isinstance(plan.get("requested_location"), dict) else {}
+        if not requested:
+            requested = self._coerce_location(order.get("delivery_location")) or {}
+        if not requested:
+            requested = self._build_location_from_fields(order.get("delivery_address")) or {}
+        method = self._safe_text(order.get("delivery_method"))
+        recommended = plan.get("recommended_method") if isinstance(plan.get("recommended_method"), dict) else {}
+        if not method:
+            method = self._safe_text(recommended.get("method"))
+        addr = order.get("delivery_address") if isinstance(order.get("delivery_address"), dict) else {}
+        city = self._safe_text(
+            requested.get("city") or requested.get("locality") or addr.get("city")
+        )
+        region = self._safe_text(
+            requested.get("region") or requested.get("state") or addr.get("state")
+        )
+        country = self._safe_text(
+            requested.get("country") or requested.get("country_code") or addr.get("country")
+        )
+        has_coords = requested.get("latitude") is not None and requested.get("longitude") is not None
+        return {
+            "city": city,
+            "region": region,
+            "country": country,
+            "label": ", ".join(part for part in (city, region, country) if part) or (
+                "Destination on file" if has_coords or order.get("delivery_address") else "Destination pending"
+            ),
+            "has_coordinates": bool(has_coords),
+            "distance_km": plan.get("distance_km"),
+            "delivery_method": method or "courier_delivery",
+            "delivery_method_label": self._safe_text(recommended.get("label")) or method or "Delivery",
+            "eta_days": recommended.get("eta_days"),
+            "estimated_delivery": order.get("estimated_delivery"),
+            "service_radius_km": plan.get("service_radius_km"),
+        }
+
+    def _email_customer_delivery_dispatch(
+        self,
+        order: Dict[str, Any],
+        *,
+        artifacts: Dict[str, str],
+        actor: str = "supplier",
+    ) -> Dict[str, Any]:
+        """Email the customer a tracking link before the delivery is dispatched."""
+        customer_id = self._safe_text(order.get("customer_id"))
+        email, name = self._resolve_customer_contact(customer_id)
+        tracking_url = artifacts.get("delivery_tracking_url") or ""
+        location = self._location_summary_for_customer(order)
+        record: Dict[str, Any] = {
+            "attempted_at": datetime.now(timezone.utc).isoformat(),
+            "customer_id": customer_id,
+            "recipient_present": bool(email),
+            "tracking_url": tracking_url,
+            "actor": self._safe_text(actor) or "supplier",
+            "event": "pre_dispatch",
+        }
+        # Idempotent: one pre-dispatch notice per tracking URL.
+        for row in order.get("delivery_email_log") or []:
+            if (
+                isinstance(row, dict)
+                and row.get("sent")
+                and self._safe_text(row.get("tracking_url")) == tracking_url
+            ):
+                record["sent"] = False
+                record["skipped"] = True
+                record["error"] = "already_sent"
+                order.setdefault("delivery_email_log", []).append(record)
+                return record
+        if not email:
+            record["sent"] = False
+            record["error"] = "customer_email_missing"
+            order.setdefault("delivery_email_log", []).append(record)
+            return record
+
+        order_id = self._safe_text(order.get("id"))
+        item_name = self._safe_text(order.get("item_name")) or order_id or "your order"
+        plain_vars = {
+            "name": name,
+            "order_id": order_id,
+            "item_name": item_name,
+            "tracking_url": tracking_url,
+            "destination_label": location.get("label") or "Destination on file",
+            "delivery_method": location.get("delivery_method_label") or "Delivery",
+            "estimated_delivery": self._safe_text(location.get("estimated_delivery")) or "soon",
+        }
+        html_vars = {key: html_escape(str(value), quote=True) for key, value in plain_vars.items()}
+
+        try:
+            from services.notification_service import (
+                NotificationChannel,
+                NotificationPriority,
+                NotificationRequest,
+                TemplateEngine,
+                deliver_notification,
+                get_notification_service,
+            )
+
+            tpl = (getattr(get_notification_service(), "_templates", {}) or {}).get(
+                "delivery_dispatch_notice"
+            ) or {}
+            subject = TemplateEngine.render(
+                tpl.get("subject") or "Your PHINS delivery is preparing to dispatch — {{ order_id }}",
+                plain_vars,
+            )
+            body = TemplateEngine.render(
+                tpl.get("body") or "Track your delivery: {{ tracking_url }}",
+                plain_vars,
+            )
+            html_body = None
+            if tpl.get("html_body"):
+                html_body = TemplateEngine.render(tpl["html_body"], html_vars)
+            result = deliver_notification(NotificationRequest(
+                channel=NotificationChannel.EMAIL,
+                recipient=email,
+                subject=subject,
+                content=body,
+                html_content=html_body,
+                priority=NotificationPriority.HIGH,
+                customer_id=customer_id,
+                metadata={
+                    "purpose": "delivery_dispatch_notice",
+                    "template": "delivery_dispatch_notice",
+                    "order_id": order_id,
+                    "delivery_tracking_url": tracking_url,
+                },
+            ))
+            record["sent"] = bool(getattr(result, "success", False))
+            record["notification_id"] = getattr(result, "notification_id", None)
+            if not record["sent"]:
+                record["error"] = getattr(result, "error_code", None) or "send_failed"
+        except Exception as exc:
+            logger.exception("delivery dispatch email failed for %s", order_id)
+            record["sent"] = False
+            record["error"] = str(exc)[:200]
+
+        order.setdefault("delivery_email_log", []).append(record)
+        order.setdefault("settlement_notifications", []).append({
+            "audience": "customer",
+            "event_type": "delivery_dispatch_notice",
+            "tracking_url": tracking_url,
+            "email_sent": bool(record.get("sent")),
+            "at": record["attempted_at"],
+        })
+        return record
+
+    def notify_customer_before_dispatch(
+        self,
+        *,
+        order_id: str,
+        actor: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Send the customer a tracking link before courier dispatch leaves.
+
+        Requires a destination on the delivery plan (coordinates or address).
+        Safe to call again — repeats skip the email for the same tracking URL.
+        """
+        if order_id not in self.orders:
+            raise ValueError(f"Order {order_id} not found")
+        order = self.orders[order_id]
+        status = str(order.get("status") or "").strip().lower()
+        if status not in {
+            OrderStatus.CONFIRMED.value,
+            OrderStatus.PROCESSING.value,
+            OrderStatus.IN_TRANSIT.value,
+        }:
+            raise ValueError("Pre-dispatch notice is only available after the order is confirmed")
+        location = self._location_summary_for_customer(order)
+        method = str(location.get("delivery_method") or "").strip().lower()
+        needs_destination = method in {
+            "courier_delivery",
+            "same_day_priority",
+            "on_site_visit",
+        } or method.startswith("courier")
+        if (
+            needs_destination
+            and not location.get("has_coordinates")
+            and location.get("label") in {"", "Destination pending"}
+        ):
+            raise ValueError(
+                "A delivery destination (address or coordinates) is required before dispatch"
+            )
+        artifacts = self._ensure_delivery_tracking_artifacts(order)
+        email_result = self._email_customer_delivery_dispatch(
+            order, artifacts=artifacts, actor=actor,
+        )
+        order["pre_dispatch_notified_at"] = datetime.now(timezone.utc).isoformat()
+        order["updated_date"] = order["pre_dispatch_notified_at"]
+        if data and data.get("notes"):
+            order["delivery_notes"] = self._safe_text(data.get("notes")) or order.get("delivery_notes")
+        self._record_ledger_entry(
+            entry_type="delivery_pre_dispatch_notice",
+            supplier_id=order.get("supplier_id"),
+            customer_id=order.get("customer_id"),
+            order_id=order_id,
+            amount=order.get("total_amount", 0.0),
+            commission=order.get("commission", 0.0),
+            supplier_payout=order.get("supplier_payout", 0.0),
+            description="Customer notified before delivery dispatch",
+            metadata={
+                "actor": actor,
+                "tracking_url": artifacts["delivery_tracking_url"],
+                "email_sent": bool(email_result.get("sent")),
+                "destination_label": location.get("label"),
+            },
+        )
+        return {
+            "success": True,
+            "order_id": order_id,
+            "delivery_tracking_url": artifacts["delivery_tracking_url"],
+            "location": location,
+            "customer_email": {
+                "sent": bool(email_result.get("sent")),
+                "skipped": bool(email_result.get("skipped")),
+                "error": email_result.get("error"),
+                "recipient_present": bool(email_result.get("recipient_present")),
+            },
+            "message": f"Pre-dispatch notice ready for order {order_id}",
+        }
+
+    def get_public_delivery_tracking(
+        self,
+        *,
+        order_id: str,
+        token: str,
+    ) -> Dict[str, Any]:
+        """Public read of delivery status for a customer holding the tracking token."""
+        order = self.orders.get(order_id)
+        if not order:
+            raise ValueError("Order not found")
+        artifacts = self._ensure_delivery_tracking_artifacts(order)
+        provided = self._safe_text(token)
+        if not provided or provided not in {
+            artifacts["delivery_tracking_token"],
+            artifacts["delivery_tracking_url"],
+        }:
+            raise ValueError("Invalid tracking token")
+        location = self._location_summary_for_customer(order)
+        return {
+            "success": True,
+            "order_id": order_id,
+            "item_name": order.get("item_name"),
+            "status": order.get("status"),
+            "settlement_status": order.get("settlement_status"),
+            "delivery_method": location.get("delivery_method"),
+            "delivery_method_label": location.get("delivery_method_label"),
+            "destination": {
+                "label": location.get("label"),
+                "city": location.get("city"),
+                "region": location.get("region"),
+                "country": location.get("country"),
+                "has_coordinates": location.get("has_coordinates"),
+            },
+            "estimated_delivery": order.get("estimated_delivery"),
+            "actual_delivery": order.get("actual_delivery"),
+            "tracking_number": order.get("tracking_number"),
+            "carrier_tracking_url": order.get("tracking_url"),
+            "pre_dispatch_notified_at": order.get("pre_dispatch_notified_at"),
+        }
+
+    def _accrue_gmv_commission_for_order(self, order: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Accrue agent GMV commission when a marketplace order is completed."""
+        customer_id = self._safe_text(order.get("customer_id"))
+        order_id = self._safe_text(order.get("id"))
+        base = self._safe_float(order.get("total_amount"), 0.0)
+        if not customer_id or not order_id or base <= 0:
+            return None
+        try:
+            from services import agent_ecosystem_service as agent_svc
+            return agent_svc.accrue_commission(
+                "customer",
+                customer_id,
+                base_amount=base,
+                source_event_id=f"order:{order_id}",
+                source_type="marketplace_order",
+                basis="gmv",
+            )
+        except Exception:
+            logger.exception("GMV commission accrual failed for order %s", order_id)
+            return None
 
     def _validate_customer_settlement_approval(
         self,
@@ -2937,7 +3251,12 @@ class SupplyChainEcosystemService:
     
     def calculate_order_fees(self, supplier_id: str, amount: float, 
                             promo_code: str = None) -> Dict:
-        """Calculate fees for an order"""
+        """Calculate fees for an order.
+
+        Honours a supplier locked ``commission_rate`` percent when present
+        (invitation / approval snapshot). Legacy fraction rates (0–1] are
+        normalised to percent so both books stay on the same scale.
+        """
         supplier = self.suppliers.get(supplier_id)
         if not supplier:
             raise ValueError(f"Supplier {supplier_id} not found")
@@ -2953,12 +3272,28 @@ class SupplyChainEcosystemService:
         now_dt = datetime.now(created_dt.tzinfo)
         days_active = max(1, (now_dt - created_dt).days)
         monthly_volume = self._safe_float(supplier.get("total_revenue"), 0.0) / max(1, days_active / 30)
+
+        rate_override = None
+        raw_rate = supplier.get("commission_rate")
+        if raw_rate is None:
+            raw_rate = supplier.get("commission_override")
+        if raw_rate is not None and str(raw_rate).strip() != "":
+            try:
+                rate_f = float(raw_rate)
+            except (TypeError, ValueError):
+                rate_f = None
+            if rate_f is not None and rate_f > 0:
+                # Supply-chain snapshots are percents; legacy management used fractions.
+                if rate_f <= 1.0:
+                    rate_f = rate_f * 100.0
+                rate_override = rate_f
         
         return self.fee_schedule.calculate_commission(
             amount=amount,
             supplier_type=supplier_type,
             monthly_volume=monthly_volume,
-            promo_code=promo_code
+            promo_code=promo_code,
+            rate_override=rate_override,
         )
     
     # =========================================================================
@@ -3138,6 +3473,7 @@ class SupplyChainEcosystemService:
             "discounted_rate_amount": pricing_plan["discounted_rate_amount"],
             "gross_before_discount": pricing_plan["gross_before_discount"],
             "commission": commission,
+            "platform_fee": commission,
             "commission_rate_pct": fee_calc["effective_rate_pct"],
             "supplier_payout": supplier_payout,
             "payment_method": payment_method,
@@ -3385,11 +3721,18 @@ class SupplyChainEcosystemService:
             description=f"Order completed: {order['item_name']}",
             metadata={"completed_by": completed_by}
         )
+
+        # Agent GMV affiliations accrue once when the marketplace order settles
+        # into the admin payout queue (customer-approved / completed).
+        gmv_commission = self._accrue_gmv_commission_for_order(order)
+        if gmv_commission:
+            order["agent_gmv_commission_id"] = gmv_commission.get("id")
         
         return {
             "success": True,
             "order": order,
-            "message": f"Order {order_id} completed"
+            "message": f"Order {order_id} completed",
+            "agent_gmv_commission": gmv_commission,
         }
 
     def update_order_status(
@@ -3468,6 +3811,18 @@ class SupplyChainEcosystemService:
                 f"Invalid status transition from {current_status or 'unknown'} to {normalized_status}"
             )
 
+        dispatch_notice = None
+        if (
+            normalized_status == OrderStatus.IN_TRANSIT.value
+            and current_status != OrderStatus.IN_TRANSIT.value
+        ):
+            # Customer must receive the tracking link before the delivery leaves.
+            dispatch_notice = self.notify_customer_before_dispatch(
+                order_id=order_id,
+                actor=updated_by,
+                data={"notes": notes} if notes else None,
+            )
+
         now = datetime.now(timezone.utc).isoformat()
         order["status"] = normalized_status
         order["updated_date"] = now
@@ -3491,14 +3846,20 @@ class SupplyChainEcosystemService:
                 "previous_status": current_status,
                 "new_status": normalized_status,
                 "notes": notes,
+                "pre_dispatch_notified": bool(
+                    dispatch_notice and dispatch_notice.get("success")
+                ),
             }
         )
 
-        return {
+        result = {
             "success": True,
             "order": order,
             "message": f"Order {order_id} updated to {normalized_status}"
         }
+        if dispatch_notice:
+            result["pre_dispatch_notice"] = dispatch_notice
+        return result
     
     # =========================================================================
     # SETTLEMENT AND PAYOUTS
@@ -3803,6 +4164,12 @@ class SupplyChainEcosystemService:
         order["delivery_status"] = shipment.get("status")
         order["delivery_provider_payload"] = shipment
         order["updated_date"] = datetime.now(timezone.utc).isoformat()
+        # Notify the customer with a PHINS tracking link before the courier leaves.
+        dispatch_notice = self.notify_customer_before_dispatch(
+            order_id=order_id,
+            actor=actor,
+            data=payload,
+        )
         if str(order.get("status") or "").strip().lower() == OrderStatus.PROCESSING.value:
             order["status"] = OrderStatus.IN_TRANSIT.value
 
@@ -3842,6 +4209,7 @@ class SupplyChainEcosystemService:
             "provider": provider_name,
             "order": order,
             "shipment": shipment,
+            "pre_dispatch_notice": dispatch_notice,
         }
 
     def track_delivery_shipment(

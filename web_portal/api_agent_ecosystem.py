@@ -210,11 +210,13 @@ def handle_get(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
                          "ledger_intact": svc.verify_ledger_integrity()}
         if path == "/api/admin/agents/integrity":
             _recompute(data_sources)
+            marketplace_orders = data_sources.get("marketplace_orders") or data_sources.get("orders") or {}
             return 200, svc.connection_integrity(
                 customers=data_sources.get("customers", {}),
                 policies=data_sources.get("policies", {}),
                 suppliers=data_sources.get("suppliers", {}),
                 bills=data_sources.get("bills") or {},
+                marketplace_orders=marketplace_orders,
             )
         if path == "/api/admin/agents/funnel":
             agent_id = _first(qs, "agent_id")
@@ -457,6 +459,12 @@ def handle_post(path: str, qs: Dict[str, Any], ctx: Dict[str, Any],
                 customers=data_sources.get("customers", {}),
                 policies=data_sources.get("policies", {}),
                 suppliers=data_sources.get("suppliers", {}),
+                bills=data_sources.get("bills") or {},
+                marketplace_orders=(
+                    data_sources.get("marketplace_orders")
+                    or data_sources.get("orders")
+                    or {}
+                ),
             )
             result["integrity"] = {
                 "ok": audit.get("ok"),

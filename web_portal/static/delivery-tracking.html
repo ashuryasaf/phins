@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" type="image/svg+xml" href="/phins-logo.svg">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHINS — Delivery tracking</title>
+  <link rel="stylesheet" href="/phins-document.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap');
+    :root {
+      --navy: #060d1f;
+      --ink: #0e2f63;
+      --gold: #e3bf6f;
+      --gold-strong: #f7e2a0;
+      --line: rgba(14, 47, 99, 0.14);
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, -apple-system, sans-serif;
+      color: #122033;
+      background:
+        radial-gradient(900px 280px at 12% -10%, rgba(21, 68, 155, 0.12), transparent 70%),
+        linear-gradient(180deg, #eef3fb 0%, #f4f7fc 40%, #e8eef8 100%);
+    }
+    .wrap { max-width: 640px; margin: 0 auto; padding: 28px 18px 48px; }
+    .hero {
+      border-radius: 16px;
+      padding: 22px 24px;
+      color: #eaf1ff;
+      background:
+        radial-gradient(420px 180px at 90% -30%, rgba(21, 68, 155, 0.55), transparent 70%),
+        linear-gradient(135deg, #060d1f 0%, #0e2f63 55%, #0a1f4a 100%);
+      box-shadow: 0 12px 28px rgba(6, 13, 31, 0.22);
+    }
+    .hero h1 {
+      margin: 8px 0 6px;
+      font-family: 'Space Grotesk', Inter, sans-serif;
+      font-size: 1.55rem;
+    }
+    .hero .muted { color: rgba(247, 226, 160, 0.85); font-size: 0.92rem; }
+    .card {
+      margin-top: 18px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px 20px;
+    }
+    .row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #eef2f8; }
+    .row:last-child { border-bottom: 0; }
+    .label { color: #5f6c80; font-size: 0.86rem; }
+    .value { font-weight: 600; text-align: right; }
+    .status {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #e8f0ff;
+      color: var(--ink);
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .err { color: #b42318; margin-top: 18px; }
+    a.carrier {
+      color: var(--ink);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div class="muted" data-phins-mark>PHINS©</div>
+      <h1>Delivery tracking</h1>
+      <div class="muted">Location-aware status for your marketplace order</div>
+    </div>
+    <div id="content" class="card"><p class="muted">Loading…</p></div>
+  </div>
+  <script src="/phins-brand-mark.js"></script>
+  <script>
+    function esc(v) {
+      return String(v == null ? '' : v).replace(/[&<>"']/g, function (ch) {
+        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
+      });
+    }
+    function qs(name) {
+      return new URLSearchParams(window.location.search).get(name) || '';
+    }
+    async function load() {
+      const orderId = qs('order_id');
+      const token = qs('token');
+      const el = document.getElementById('content');
+      if (!orderId || !token) {
+        el.innerHTML = '<p class="err">Missing order or tracking token.</p>';
+        return;
+      }
+      try {
+        const resp = await fetch(
+          '/api/public/delivery-tracking?order_id=' + encodeURIComponent(orderId)
+          + '&token=' + encodeURIComponent(token)
+        );
+        const data = await resp.json();
+        if (!resp.ok || data.success === false) {
+          throw new Error((data && data.error) || 'Tracking unavailable');
+        }
+        const dest = data.destination || {};
+        const carrier = data.carrier_tracking_url
+          ? '<a class="carrier" href="' + esc(data.carrier_tracking_url) + '" rel="noopener" target="_blank">Open carrier tracking</a>'
+          : '—';
+        el.innerHTML =
+          '<div class="row"><div class="label">Order</div><div class="value">' + esc(data.order_id) + '</div></div>'
+          + '<div class="row"><div class="label">Item</div><div class="value">' + esc(data.item_name || '—') + '</div></div>'
+          + '<div class="row"><div class="label">Status</div><div class="value"><span class="status">' + esc(data.status || '—') + '</span></div></div>'
+          + '<div class="row"><div class="label">Method</div><div class="value">' + esc(data.delivery_method_label || data.delivery_method || '—') + '</div></div>'
+          + '<div class="row"><div class="label">Destination</div><div class="value">' + esc(dest.label || '—') + '</div></div>'
+          + '<div class="row"><div class="label">Estimated arrival</div><div class="value">' + esc(data.estimated_delivery || '—') + '</div></div>'
+          + '<div class="row"><div class="label">Tracking number</div><div class="value">' + esc(data.tracking_number || '—') + '</div></div>'
+          + '<div class="row"><div class="label">Carrier</div><div class="value">' + carrier + '</div></div>';
+      } catch (e) {
+        el.innerHTML = '<p class="err">' + esc(e.message || 'Tracking unavailable') + '</p>';
+      }
+    }
+    load();
+  </script>
+</body>
+</html>

@@ -3457,6 +3457,31 @@ Open this PHINS page to approve delivery or raise a dispute before any payout is
 <p>- PHINS</p>
 </div>''',
             },
+            'delivery_dispatch_notice': {
+                'subject': 'Your PHINS delivery is preparing to dispatch — {{ order_id }}',
+                'body': '''Hello {{ name }},
+
+Your PHINS order {{ item_name }} ({{ order_id }}) is preparing to leave for delivery.
+
+Destination: {{ destination_label }}
+Method: {{ delivery_method }}
+Estimated arrival: {{ estimated_delivery }}
+
+Track this delivery on PHINS before the courier is dispatched:
+{{ tracking_url }}
+
+- PHINS''',
+                'html_body': '''<div style="font-family:Arial,Helvetica,sans-serif;color:#122033;line-height:1.5;max-width:560px">
+<p>Hello {{ name }},</p>
+<p>Your PHINS order <strong>{{ item_name }}</strong> (<strong>{{ order_id }}</strong>) is preparing to leave for delivery.</p>
+<p>Destination: <strong>{{ destination_label }}</strong><br/>
+Method: <strong>{{ delivery_method }}</strong><br/>
+Estimated arrival: <strong>{{ estimated_delivery }}</strong></p>
+<p><a href="{{ tracking_url }}" style="display:inline-block;background:#060d1f;color:#f7e2a0;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:600">Track this delivery</a></p>
+<p style="font-size:13px;color:#5f6c80">Or open: <a href="{{ tracking_url }}">{{ tracking_url }}</a></p>
+<p>- PHINS</p>
+</div>''',
+            },
             'password_reset': {
                 'subject': 'PHINS Password Reset Request',
                 'body': '''Hello {{ name }},
