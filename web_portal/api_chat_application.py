@@ -25,6 +25,7 @@ POST ``/api/chat-application/resume``                (public, code+email)
 POST ``/api/chat-application/<id>/message``          (public, session-scoped)
 POST ``/api/chat-application/<id>/edit``             (resume code; staff cannot rewrite)
 GET  ``/api/chat-application/<id>/process-review``   (admin, underwriter, claims)
+GET  ``/api/chat-process-review/list``               (admin, underwriter, claims)
 POST ``/api/chat-application/<id>/otp/request``      (public)
 POST ``/api/chat-application/<id>/otp/verify``       (public)
 POST ``/api/chat-application/<id>/media``            (public, verified only)
@@ -1041,6 +1042,10 @@ def _handle_journey(application_id: str) -> Tuple[int, Dict[str, Any]]:
 def dispatch_get(path: str, session: Optional[Dict[str, Any]],
                  query_params: Dict[str, Any],
                  client_ip: str) -> Optional[Tuple[int, Dict[str, Any]]]:
+    if path in ("/api/chat-process-review/list", "/api/chat-process-review"):
+        from services.chat_answer_revisions import serve_process_review_catalog
+        return serve_process_review_catalog(session, query_params)
+
     if not path.startswith("/api/chat-application"):
         return None
 
@@ -1063,6 +1068,10 @@ def dispatch_get(path: str, session: Optional[Dict[str, Any]],
             "channels": ["email", "sms", "whatsapp"],
         }
         return 200, snapshot
+
+    if path == "/api/chat-application/admin/process-reviews":
+        from services.chat_answer_revisions import serve_process_review_catalog
+        return serve_process_review_catalog(session, query_params)
 
     match = _ID_RE.match(path)
     if not match:

@@ -1416,3 +1416,692 @@ def serve_process_review(session_review: Mapping[str, Any], application_id: str,
         provider=provider,
     )
     return 200, shown
+
+
+# ---------------------------------------------------------------------------
+# Staff catalog: every discoverable chat for process review (read-only)
+# ---------------------------------------------------------------------------
+
+PROCESS_SEAL_EVENT_TYPES = ("chat.process_sealed", "claims_chat.process_sealed")
+_CATALOG_PAGE_DEFAULT = 50
+_CATALOG_PAGE_MAX = 200
+_DB_SEAL_SCAN_LIMIT = 2000
+
+
+def _is_suspended(customer_id: Any) -> bool:
+    if not customer_id:
+        return False
+    try:
+        try:
+            from web_portal import server as portal
+        except ImportError:
+            import server as portal  # type: ignore
+        checker = getattr(portal, "is_suspended_account", None)
+        if callable(checker):
+            return bool(checker(str(customer_id)))
+    except Exception:
+        return False
+    return False
+
+
+def _seal_payload(entry: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    payload = entry.get("payload") if isinstance(entry.get("payload"), Mapping) else {}
+    seal = payload.get("seal") if isinstance(payload.get("seal"), dict) else entry.get("seal")
+    return seal if isinstance(seal, dict) else None
+
+
+def _entry_application_id(entry: Mapping[str, Any], seal: Mapping[str, Any]) -> str:
+    payload = entry.get("payload") if isinstance(entry.get("payload"), Mapping) else {}
+    for candidate in (
+        seal.get("application_id"),
+        entry.get("application_id"),
+        entry.get("entity_id"),
+        payload.get("application_id"),
+    ):
+        text = str(candidate or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def database_process_seal_entries(limit: int = _DB_SEAL_SCAN_LIMIT) -> List[Dict[str, Any]]:
+    """All recent process-seal ledger rows. Does not copy them into memory."""
+    try:
+        try:
+            from web_portal import server as portal
+        except ImportError:
+            import server as portal  # type: ignore
+    except Exception:
+        return []
+    if not (getattr(portal, "USE_DATABASE", False) and getattr(portal, "database_enabled", False)):
+        return []
+    try:
+        from database.manager import DatabaseManager
+
+        with DatabaseManager() as db:
+            rows = db.platform_ledger.get_by_event_types(
+                list(PROCESS_SEAL_EVENT_TYPES), limit=limit,
+            )
+            copied = [row.to_dict() for row in rows or [] if row is not None]
+            db.rollback()
+            return copied
+    except Exception as exc:
+        logger.warning("Process review seal catalog DB scan failed: %s", type(exc).__name__)
+        return []
+
+
+def _latest_seals_by_id(
+    entries: Sequence[Mapping[str, Any]], *, source: str,
+) -> Dict[str, Dict[str, Any]]:
+    """One newest seal per application id. Entries are not modified."""
+    found: Dict[str, Dict[str, Any]] = {}
+    for pos, entry in enumerate(entries or []):
+        if not isinstance(entry, Mapping):
+            continue
+        event_type = str(entry.get("event_type") or entry.get("type") or "")
+        if event_type not in PROCESS_SEAL_EVENT_TYPES:
+            continue
+        seal = _seal_payload(entry)
+        if seal is None:
+            continue
+        app_id = _entry_application_id(entry, seal)
+        if not app_id:
+            continue
+        seq = _sequence_no(entry)
+        payload = entry.get("payload") if isinstance(entry.get("payload"), Mapping) else {}
+        if seq is None and payload:
+            seq = _sequence_no(payload)
+        stamp = str(
+            entry.get("timestamp")
+            or payload.get("timestamp")
+            or seal.get("sealed_at")
+            or ""
+        )
+        prior = found.get(app_id)
+        if prior is None:
+            newer = True
+        else:
+            prior_seq = prior.get("_seq")
+            if seq is None and prior_seq is None:
+                newer = pos >= int(prior.get("_pos") or -1)
+            elif seq is None:
+                newer = False
+            elif prior_seq is None or seq > prior_seq:
+                newer = True
+            elif seq == prior_seq:
+                newer = pos >= int(prior.get("_pos") or -1)
+            else:
+                newer = False
+        if not newer:
+            continue
+        found[app_id] = {
+            "application_id": app_id,
+            "seal": seal,
+            "event_type": event_type,
+            "source": source,
+            "timestamp": stamp,
+            "_seq": seq,
+            "_pos": pos,
+        }
+    return found
+
+
+def _verify_seal_integrity(seal: Mapping[str, Any]) -> Tuple[bool, str, Optional[str], int]:
+    revisions = list(seal.get("revisions") or [])
+    ok, reason = verify_revisions(revisions)
+    # Prefer live verification over a stale integrity_ok flag; never repair.
+    if seal.get("integrity_ok") is False and ok:
+        ok = False
+        reason = str(seal.get("integrity_reason") or reason or _INTEGRITY_ERROR)
+    head = revisions[-1]["checksum"] if revisions else seal.get("revision_head")
+    return ok, reason, head if isinstance(head, str) else None, len(revisions)
+
+
+def _row_base(**fields: Any) -> Dict[str, Any]:
+    row = {
+        "application_id": None,
+        "kind": None,
+        "status": None,
+        "source": None,
+        "sealed": False,
+        "reviewable": False,
+        "integrity_ok": None,
+        "withheld": False,
+        "revision_count": 0,
+        "edit_count": 0,
+        "revision_head": None,
+        "customer_id": None,
+        "customer_name": None,
+        "customer_email": None,
+        "linked_underwriting_id": None,
+        "linked_policy_id": None,
+        "linked_claim_id": None,
+        "has_report": False,
+        "report_url": None,
+        "created_at": None,
+        "updated_at": None,
+        "review_url": None,
+        "desk_url": None,
+        "flags": [],
+    }
+    row.update(fields)
+    return row
+
+
+def _summary_from_seal(bundle: Mapping[str, Any]) -> Dict[str, Any]:
+    seal = bundle.get("seal") or {}
+    app_id = str(bundle.get("application_id") or seal.get("application_id") or "")
+    event_type = str(bundle.get("event_type") or "")
+    kind = "claim" if event_type == "claims_chat.process_sealed" or seal.get("kind") == "claim" else "policy_application"
+    ok, reason, head, revision_count = _verify_seal_integrity(seal)
+    subject = seal.get("subject") if isinstance(seal.get("subject"), Mapping) else {}
+    counts = seal.get("counts") if isinstance(seal.get("counts"), Mapping) else {}
+    flags = []
+    if not ok:
+        flags.append("withheld")
+    row = _row_base(
+        application_id=app_id,
+        kind=kind,
+        status=str(seal.get("status") or "submitted"),
+        source=str(bundle.get("source") or "ledger"),
+        sealed=True,
+        reviewable=True,
+        integrity_ok=ok,
+        withheld=not ok,
+        revision_count=revision_count,
+        edit_count=int(seal.get("edit_count") or counts.get("total") or 0),
+        revision_head=None if not ok else head,
+        customer_id=subject.get("customer_id"),
+        customer_name=subject.get("name"),
+        customer_email=subject.get("email"),
+        created_at=bundle.get("timestamp"),
+        updated_at=bundle.get("timestamp") or counts.get("last_edited_at"),
+        review_url=f"/chat-process-review.html?id={app_id}" if app_id else None,
+        flags=flags,
+        integrity_reason="" if ok else (reason or _INTEGRITY_ERROR),
+    )
+    return row
+
+
+def _summary_from_live(session_row: Mapping[str, Any], *, kind: str,
+                       source: str) -> Dict[str, Any]:
+    app_id = str(session_row.get("application_id") or session_row.get("id") or "")
+    revisions = list(session_row.get("revisions") or [])
+    if revisions:
+        ok, reason = verify_revisions(revisions)
+        head = revisions[-1].get("checksum")
+        revision_count = len(revisions)
+        edit_count = edit_counts(revisions).get("total") or 0
+    else:
+        ok, reason = True, ""
+        head = session_row.get("revision_head")
+        revision_count = 0
+        edit_count = 0
+    flags = ["live_session"]
+    if not ok:
+        flags.append("withheld")
+    status = str(session_row.get("status") or "in_progress")
+    if status == "referred_senior_uw":
+        flags.append("senior_referral")
+    return _row_base(
+        application_id=app_id,
+        kind=kind,
+        status=status,
+        source=source,
+        sealed=False,
+        reviewable=True,
+        integrity_ok=ok,
+        withheld=not ok,
+        revision_count=revision_count,
+        edit_count=int(edit_count or 0),
+        revision_head=None if not ok else head,
+        customer_id=session_row.get("customer_id"),
+        customer_name=session_row.get("customer_name") or (session_row.get("contact") or {}).get("name"),
+        customer_email=session_row.get("customer_email") or (session_row.get("contact") or {}).get("email"),
+        linked_underwriting_id=session_row.get("senior_underwriting_id") or (
+            (session_row.get("submission") or {}).get("underwriting_id")
+        ),
+        linked_policy_id=(session_row.get("submission") or {}).get("policy_id") or session_row.get("policy_id"),
+        linked_claim_id=session_row.get("claim_id") or (session_row.get("submission") or {}).get("claim_id"),
+        created_at=session_row.get("created_at") or session_row.get("created_date"),
+        updated_at=session_row.get("updated_at") or session_row.get("created_at") or session_row.get("created_date"),
+        review_url=f"/chat-process-review.html?id={app_id}" if app_id else None,
+        flags=flags,
+        integrity_reason="" if ok else (reason or _INTEGRITY_ERROR),
+    )
+
+
+def _attach_book_links(row: Dict[str, Any], books: Mapping[str, Any]) -> None:
+    app_id = str(row.get("application_id") or "")
+    if not app_id:
+        return
+    applications = books.get("applications") or {}
+    claims = books.get("claims") or {}
+    for uw_id, app in list(applications.items()):
+        if not isinstance(app, dict):
+            continue
+        if str(app.get("chat_application_id") or "") != app_id and str(uw_id) != app_id:
+            continue
+        row["linked_underwriting_id"] = row.get("linked_underwriting_id") or uw_id
+        row["linked_policy_id"] = row.get("linked_policy_id") or app.get("policy_id")
+        row["has_report"] = True
+        row["report_url"] = f"/risk-assessment-viewer.html?id={uw_id}"
+        if not row.get("customer_name"):
+            row["customer_name"] = app.get("customer_name")
+        if not row.get("customer_email"):
+            row["customer_email"] = app.get("customer_email")
+        if not row.get("customer_id"):
+            row["customer_id"] = app.get("customer_id")
+        break
+    for claim_id, claim in list(claims.items()):
+        if not isinstance(claim, dict):
+            continue
+        if str(claim.get("claims_chat_id") or "") != app_id:
+            continue
+        row["linked_claim_id"] = row.get("linked_claim_id") or claim_id
+        if not row.get("customer_id"):
+            row["customer_id"] = claim.get("customer_id")
+        break
+
+
+def _pointer_rows(books: Mapping[str, Any], known: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """UW / claim rows that name a chat id with no live session or seal yet."""
+    rows: List[Dict[str, Any]] = []
+    applications = books.get("applications") or {}
+    claims = books.get("claims") or {}
+    for uw_id, app in list(applications.items()):
+        if not isinstance(app, dict):
+            continue
+        chat_id = str(app.get("chat_application_id") or "").strip()
+        if not chat_id or chat_id in known:
+            continue
+        if _is_suspended(app.get("customer_id")):
+            continue
+        flags = ["pointer_without_seal"]
+        if str(app.get("source") or "") == "chat_adl_referral":
+            flags.append("adl_referral")
+        rows.append(_row_base(
+            application_id=chat_id,
+            kind="policy_application",
+            status=str(app.get("status") or "referred"),
+            source="underwriting_pointer",
+            sealed=False,
+            reviewable=False,
+            integrity_ok=None,
+            withheld=False,
+            customer_id=app.get("customer_id"),
+            customer_name=app.get("customer_name"),
+            customer_email=app.get("customer_email"),
+            linked_underwriting_id=uw_id,
+            linked_policy_id=app.get("policy_id"),
+            has_report=True,
+            report_url=f"/risk-assessment-viewer.html?id={uw_id}",
+            created_at=app.get("created_date") or app.get("submitted_date"),
+            updated_at=app.get("updated_date") or app.get("submitted_date") or app.get("created_date"),
+            review_url=f"/chat-process-review.html?id={chat_id}",
+            desk_url="/underwriter-dashboard.html",
+            flags=flags,
+            note="Chat session and seal are gone; open the linked risk report or underwriting file.",
+        ))
+    for claim_id, claim in list(claims.items()):
+        if not isinstance(claim, dict):
+            continue
+        chat_id = str(claim.get("claims_chat_id") or "").strip()
+        if not chat_id or chat_id in known:
+            continue
+        if _is_suspended(claim.get("customer_id")):
+            continue
+        rows.append(_row_base(
+            application_id=chat_id,
+            kind="claim",
+            status=str(claim.get("status") or "filed"),
+            source="claim_pointer",
+            sealed=False,
+            reviewable=False,
+            integrity_ok=None,
+            withheld=False,
+            customer_id=claim.get("customer_id"),
+            customer_name=claim.get("customer_name") or claim.get("claimant_name"),
+            customer_email=claim.get("customer_email") or claim.get("email"),
+            linked_claim_id=claim_id,
+            linked_policy_id=claim.get("policy_id"),
+            created_at=claim.get("created_date") or claim.get("filed_date"),
+            updated_at=claim.get("updated_date") or claim.get("created_date"),
+            review_url=f"/chat-process-review.html?id={chat_id}",
+            desk_url="/claims-adjuster-dashboard.html",
+            flags=["pointer_without_seal"],
+            note="Claim chat seal was not found; the claim row still names this chat id.",
+        ))
+    return rows
+
+
+def _inquiry_rows() -> List[Dict[str, Any]]:
+    try:
+        from services.referral_reward_service import list_requests
+        requests = list_requests()
+    except Exception as exc:
+        logger.warning("Process review inquiry catalog failed: %s", type(exc).__name__)
+        return []
+    rows: List[Dict[str, Any]] = []
+    for item in requests or []:
+        if not isinstance(item, dict):
+            continue
+        if _is_suspended(item.get("customer_id")):
+            continue
+        req_id = str(item.get("id") or "")
+        rows.append(_row_base(
+            application_id=req_id,
+            kind="professional_inquiry",
+            status=str(item.get("status") or "open"),
+            source="referral_request",
+            sealed=False,
+            reviewable=False,
+            integrity_ok=None,
+            customer_id=item.get("customer_id"),
+            customer_name=item.get("applicant_name") or item.get("company_name"),
+            customer_email=None,
+            created_at=item.get("created_at"),
+            updated_at=item.get("updated_at") or item.get("created_at"),
+            desk_url=f"/professional-inquiry-chat.html?r={req_id}" if req_id else "/customer-management.html",
+            flags=["professional_inquiry"],
+            note="Professional role inquiry — separate from answer-chain process review.",
+            requested_role=item.get("requested_role"),
+        ))
+    return rows
+
+
+def _catalog_health(items: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    health = {
+        "live_apply_sessions": 0,
+        "live_claims_sessions": 0,
+        "sealed_apply": 0,
+        "sealed_claims": 0,
+        "pointers_without_seal": 0,
+        "withheld": 0,
+        "professional_inquiries": 0,
+        "reviewable": 0,
+        "with_risk_report": 0,
+        "total": len(items),
+    }
+    by_status: Dict[str, int] = {}
+    by_kind: Dict[str, int] = {}
+    for item in items:
+        kind = str(item.get("kind") or "other")
+        status = str(item.get("status") or "unknown")
+        by_kind[kind] = by_kind.get(kind, 0) + 1
+        by_status[status] = by_status.get(status, 0) + 1
+        if item.get("reviewable"):
+            health["reviewable"] += 1
+        if item.get("withheld"):
+            health["withheld"] += 1
+        if item.get("has_report") or item.get("report_url"):
+            health["with_risk_report"] += 1
+        source = str(item.get("source") or "")
+        if source in ("session", "apply_chat", "funnel") and kind == "policy_application":
+            health["live_apply_sessions"] += 1
+        elif source in ("session", "claims_chat") and kind == "claim":
+            health["live_claims_sessions"] += 1
+        if item.get("sealed") and kind == "policy_application":
+            health["sealed_apply"] += 1
+        if item.get("sealed") and kind == "claim":
+            health["sealed_claims"] += 1
+        if "pointer_without_seal" in (item.get("flags") or []):
+            health["pointers_without_seal"] += 1
+        if kind == "professional_inquiry":
+            health["professional_inquiries"] += 1
+    return {
+        **health,
+        "by_kind": by_kind,
+        "by_status": by_status,
+        "integrity": {
+            "intact": sum(1 for i in items if i.get("integrity_ok") is True),
+            "withheld": health["withheld"],
+            "unsealed_pointers": health["pointers_without_seal"],
+            "unknown": sum(1 for i in items if i.get("integrity_ok") is None),
+        },
+    }
+
+
+def build_process_review_catalog(
+    *,
+    page: int = 1,
+    page_size: int = _CATALOG_PAGE_DEFAULT,
+    kind: Optional[str] = None,
+    q: Optional[str] = None,
+    filter_flag: Optional[str] = None,
+    memory_entries: Optional[Sequence[Mapping[str, Any]]] = None,
+    db_entries: Optional[Sequence[Mapping[str, Any]]] = None,
+    include_inquiries: bool = True,
+) -> Dict[str, Any]:
+    """Read-only roster of every chat staff can open or must chase.
+
+    Merge order (first wins per ``application_id``): live sessions, ledger
+    seals (memory then database), underwriting/claim pointers without a seal,
+    then professional inquiries (separate ids). Never writes a store, never
+    repairs a checksum, never copies database seals into the memory ledger.
+    """
+    page = max(1, int(page or 1))
+    page_size = max(1, min(int(page_size or _CATALOG_PAGE_DEFAULT), _CATALOG_PAGE_MAX))
+    books = load_books()
+    merged: Dict[str, Dict[str, Any]] = {}
+
+    # 1) Live apply + claims sessions
+    try:
+        from services.chat_application_service import get_chat_application_service
+        funnel = get_chat_application_service().funnel_snapshot()
+        for item in funnel.get("sessions") or []:
+            if not isinstance(item, dict):
+                continue
+            if _is_suspended(item.get("customer_id")):
+                continue
+            app_id = str(item.get("application_id") or "")
+            if not app_id:
+                continue
+            # Need revisions for integrity — pull from live session when present.
+            live = dict(item)
+            try:
+                session = get_chat_application_service()._sessions.get(app_id)
+                if isinstance(session, dict):
+                    live["revisions"] = session.get("revisions") or []
+                    live["contact"] = session.get("contact") or {}
+                    live["submission"] = session.get("submission") or {}
+                    live["revision_head"] = session.get("revision_head")
+            except Exception:
+                pass
+            row = _summary_from_live(live, kind="policy_application", source="session")
+            _attach_book_links(row, books)
+            merged[app_id] = row
+    except Exception as exc:
+        logger.warning("Process review apply catalog failed: %s", type(exc).__name__)
+
+    try:
+        from services.claims_chat_service import get_claims_chat_service
+        for item in get_claims_chat_service().intake_catalog():
+            if not isinstance(item, dict):
+                continue
+            if _is_suspended(item.get("customer_id")):
+                continue
+            app_id = str(item.get("application_id") or "")
+            if not app_id or app_id in merged:
+                continue
+            live = dict(item)
+            try:
+                session = get_claims_chat_service()._sessions.get(app_id)
+                if isinstance(session, dict):
+                    live["revisions"] = session.get("revisions") or []
+                    live["contact"] = session.get("contact") or {}
+                    live["submission"] = session.get("submission") or {}
+                    live["revision_head"] = session.get("revision_head")
+                    live["claim_id"] = session.get("claim_id") or live.get("claim_id")
+            except Exception:
+                pass
+            row = _summary_from_live(live, kind="claim", source="claims_chat")
+            _attach_book_links(row, books)
+            merged[app_id] = row
+    except Exception as exc:
+        logger.warning("Process review claims catalog failed: %s", type(exc).__name__)
+
+    # 2) Seals from memory ledger, then database (DB fills gaps only)
+    memory = list(memory_entries) if memory_entries is not None else memory_ledger_entries()
+    seal_map = _latest_seals_by_id(memory, source="ledger")
+    db_rows = list(db_entries) if db_entries is not None else database_process_seal_entries()
+    for app_id, bundle in _latest_seals_by_id(db_rows, source="database").items():
+        seal_map.setdefault(app_id, bundle)
+
+    for app_id, bundle in seal_map.items():
+        if app_id in merged:
+            # Enrich live row with seal metadata; do not drop the live view.
+            live = merged[app_id]
+            live["sealed"] = True
+            summary = _summary_from_seal(bundle)
+            if summary.get("withheld"):
+                live["withheld"] = True
+                live["integrity_ok"] = False
+                live["flags"] = sorted(set((live.get("flags") or []) + ["withheld"]))
+                live["integrity_reason"] = summary.get("integrity_reason")
+                live["revision_head"] = None
+            else:
+                live["integrity_ok"] = True if live.get("integrity_ok") is not False else False
+            live["source"] = live.get("source") or summary.get("source")
+            _attach_book_links(live, books)
+            continue
+        if _is_suspended((bundle.get("seal") or {}).get("subject", {}).get("customer_id")
+                         if isinstance((bundle.get("seal") or {}).get("subject"), Mapping) else None):
+            continue
+        row = _summary_from_seal(bundle)
+        if _is_suspended(row.get("customer_id")):
+            continue
+        _attach_book_links(row, books)
+        merged[app_id] = row
+
+    # 3) Pointers without seal/session
+    for row in _pointer_rows(books, merged):
+        merged[str(row["application_id"])] = row
+
+    items = list(merged.values())
+    if include_inquiries:
+        items.extend(_inquiry_rows())
+
+    kind_filter = str(kind or "").strip().lower()
+    flag_filter = str(filter_flag or "").strip().lower()
+    query = str(q or "").strip().lower()
+
+    def _match(item: Mapping[str, Any]) -> bool:
+        if kind_filter and kind_filter not in ("all", "*"):
+            if kind_filter in ("policy", "apply", "policy_application"):
+                if item.get("kind") != "policy_application":
+                    return False
+            elif kind_filter in ("claim", "claims"):
+                if item.get("kind") != "claim":
+                    return False
+            elif kind_filter in ("inquiry", "professional", "professional_inquiry"):
+                if item.get("kind") != "professional_inquiry":
+                    return False
+            elif item.get("kind") != kind_filter:
+                return False
+        if flag_filter in ("withheld", "broken"):
+            if not item.get("withheld"):
+                return False
+        elif flag_filter in ("unsealed", "pointer", "pointers_without_seal"):
+            if "pointer_without_seal" not in (item.get("flags") or []):
+                return False
+        elif flag_filter in ("sealed",):
+            if not item.get("sealed"):
+                return False
+        elif flag_filter in ("reviewable", "openable"):
+            if not item.get("reviewable"):
+                return False
+        elif flag_filter in ("report", "reports", "risk"):
+            if not (item.get("has_report") or item.get("report_url")):
+                return False
+        if query:
+            hay = " ".join([
+                str(item.get("application_id") or ""),
+                str(item.get("customer_name") or ""),
+                str(item.get("customer_email") or ""),
+                str(item.get("customer_id") or ""),
+                str(item.get("linked_underwriting_id") or ""),
+                str(item.get("linked_claim_id") or ""),
+                str(item.get("status") or ""),
+            ]).lower()
+            if query not in hay:
+                return False
+        return True
+
+    filtered = [item for item in items if _match(item)]
+    filtered.sort(
+        key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""),
+        reverse=True,
+    )
+    total = len(filtered)
+    start = (page - 1) * page_size
+    page_items = filtered[start:start + page_size]
+    # Strip internal scratch keys before return
+    clean = []
+    for item in page_items:
+        row = {k: v for k, v in item.items() if not str(k).startswith("_")}
+        clean.append(row)
+    health = _catalog_health(filtered)
+    return {
+        "items": clean,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "health": health,
+        "report": {
+            "title": "Chat process review health",
+            "summary": (
+                f"{health['reviewable']} reviewable · "
+                f"{health['integrity']['intact']} intact · "
+                f"{health['withheld']} withheld · "
+                f"{health['pointers_without_seal']} missing seals · "
+                f"{health['with_risk_report']} with risk report"
+            ),
+            "integrity": health["integrity"],
+            "by_kind": health["by_kind"],
+            "by_status": health["by_status"],
+        },
+        "controls": {
+            "kind": kind_filter or "all",
+            "q": query or None,
+            "filter": flag_filter or None,
+        },
+    }
+
+
+def serve_process_review_catalog(session: Optional[Mapping[str, Any]],
+                                 query: Optional[Mapping[str, Any]] = None,
+                                 ) -> Tuple[int, Dict[str, Any]]:
+    """Staff-only catalog endpoint body. Read-only."""
+    role = str((session or {}).get("role") or "").lower()
+    if role not in PROCESS_REVIEW_ROLES:
+        return 403, {"error": "Staff access required"}
+
+    def _qp(name: str, default: Any = None) -> Any:
+        if not query:
+            return default
+        value = query.get(name, default)
+        if isinstance(value, list):
+            return value[0] if value else default
+        return value
+
+    try:
+        page = int(_qp("page", 1) or 1)
+    except (TypeError, ValueError):
+        return 400, {"error": "page must be an integer"}
+    try:
+        page_size = int(_qp("page_size", _CATALOG_PAGE_DEFAULT) or _CATALOG_PAGE_DEFAULT)
+    except (TypeError, ValueError):
+        return 400, {"error": "page_size must be an integer"}
+    include_inquiries = str(_qp("inquiries", "1") or "1").lower() not in ("0", "false", "no")
+    catalog = build_process_review_catalog(
+        page=page,
+        page_size=page_size,
+        kind=_qp("kind"),
+        q=_qp("q"),
+        filter_flag=_qp("filter"),
+        include_inquiries=include_inquiries,
+    )
+    catalog["viewer_role"] = role
+    catalog["secret"] = True
+    return 200, catalog

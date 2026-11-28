@@ -27266,7 +27266,10 @@ For claims or questions, please contact:
         # journey (A-Z pipeline), staff funnel. Session optional (resume-code
         # scoped for applicants, role-gated for staff views).
         # =====================================================================
-        if chat_application_enabled and api_chat_app_get and path.startswith('/api/chat-application'):
+        if chat_application_enabled and api_chat_app_get and (
+            path.startswith('/api/chat-application')
+            or path.startswith('/api/chat-process-review')
+        ):
             try:
                 chat_result = api_chat_app_get(path, session, qs, client_ip)
                 if chat_result is not None:
