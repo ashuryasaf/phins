@@ -766,6 +766,10 @@ class TestCyberSecurityDashboardAPI:
         assert "sessions" in data
         assert "system" in data
         assert "quarantine" in data
+        assert "books_posture" in data
+        posture = data["books_posture"]
+        assert "stages" in posture
+        assert "money_gate" in posture["stages"]
 
     def test_ai_report_structure(self):
         import urllib.request
@@ -789,6 +793,7 @@ class TestCyberSecurityDashboardAPI:
         assert ai["risk_level"] in ("LOW", "MEDIUM", "HIGH", "CRITICAL")
         assert isinstance(ai["risk_score"], (int, float))
         assert 0 <= ai["risk_score"] <= 100
+        assert any("Money Gate" in p for p in ai["protections_active"])
 
     def test_dashboard_system_flags(self):
         import urllib.request
