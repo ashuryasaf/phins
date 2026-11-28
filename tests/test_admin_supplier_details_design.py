@@ -35,6 +35,16 @@ def test_supplier_details_modal_is_opaque_phins_letterhead():
     modal_css = html.split(".modal-content.supplier-detail-doc")[1].split(".supplier-detail-banner")[0]
     assert "var(--bg-card)" not in modal_css
     assert "#ffffff" in modal_css
+    # Primary actions stay pinned outside the scroll pane (sibling, not child).
+    scroll_then_actions = html.split('class="supplier-detail-scroll">', 1)[1]
+    before_actions, sep, after_actions = scroll_then_actions.partition(
+        'class="supplier-detail-actions"'
+    )
+    assert sep
+    assert 'id="modal-body"' in before_actions
+    assert before_actions.count("</div>") >= 2  # body + scroll close
+    assert 'id="modal-actions"' in after_actions
+    assert 'id="modal-body"' not in after_actions
 
 
 def test_supplier_details_render_preserves_all_fields_and_actions():

@@ -328,7 +328,8 @@
     }
     .supplier-detail-scroll {
       overflow-y: auto;
-      flex: 1;
+      flex: 1 1 auto;
+      min-height: 0;
       background: #ffffff;
       -webkit-overflow-scrolling: touch;
     }
@@ -339,11 +340,12 @@
     }
     .supplier-detail-actions {
       margin: 0;
-      padding: 16px 24px 22px;
+      padding: 14px 24px 18px;
       display: flex;
       gap: 8px;
       justify-content: flex-end;
       flex-wrap: wrap;
+      flex-shrink: 0;
       background: #ffffff;
       border-top: 1px solid #d5deea;
     }
@@ -994,9 +996,9 @@
         <div class="supplier-detail-body" id="modal-body">
           <!-- Populated dynamically -->
         </div>
-        <div class="supplier-detail-actions" id="modal-actions">
-          <!-- Action buttons -->
-        </div>
+      </div>
+      <div class="supplier-detail-actions" id="modal-actions">
+        <!-- Action buttons stay pinned below the scroll pane -->
       </div>
     </div>
   </div>
