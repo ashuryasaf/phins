@@ -238,8 +238,8 @@ def test_request_settlement_approval_url_is_phins_origin(monkeypatch):
         "settlement_status": "pending_supplier_request",
     }
 
-    def _skip_email(self, order, *, artifacts, actor="supplier"):
-        return {"sent": False, "error": "skipped"}
+    def _skip_email(self, order, *, artifacts, actor="supplier", force=False):
+        return {"sent": False, "error": "skipped", "forced": force}
 
     monkeypatch.setattr(
         SupplyChainEcosystemService,
