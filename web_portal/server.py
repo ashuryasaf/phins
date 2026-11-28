@@ -1592,6 +1592,7 @@ def normalize_supply_chain_order_row(order: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize supply-chain orders for supplier, customer, and admin dashboards."""
     # Rewrite customer-facing settlement links on the live order first so a
     # stored Railway (or other deploy-host) URL never leaves the portal.
+    # mint=False: a dashboard read must not invent a new token for a code-only row.
     if (
         isinstance(order, dict)
         and supply_chain_enabled
@@ -1599,8 +1600,12 @@ def normalize_supply_chain_order_row(order: Dict[str, Any]) -> Dict[str, Any]:
         and hasattr(supply_chain_service, '_ensure_settlement_artifacts')
     ):
         try:
-            if order.get('settlement_qr_token') or order.get('settlement_code') or order.get('settlement_approval_url'):
-                supply_chain_service._ensure_settlement_artifacts(order)
+            if (
+                order.get('settlement_qr_token')
+                or order.get('settlement_approval_url')
+                or order.get('settlement_qr_data')
+            ):
+                supply_chain_service._ensure_settlement_artifacts(order, mint=False)
         except Exception:
             pass
     row = dict(order or {})

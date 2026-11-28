@@ -73,7 +73,7 @@ def test_email_customer_settlement_approval_uses_template(monkeypatch):
     order = {
         "id": "ORD-EMAIL-1",
         "customer_id": "CUST-EMAIL-1",
-        "item_name": "Home delivery pack",
+        "item_name": 'Pack <script>alert(1)</script>',
         "settlement_notifications": [],
         "settlement_email_log": [],
     }
@@ -89,7 +89,7 @@ def test_email_customer_settlement_approval_uses_template(monkeypatch):
     monkeypatch.setattr(
         SupplyChainEcosystemService,
         "_resolve_customer_contact",
-        staticmethod(lambda _cid: ("customer@example.com", "Pat Customer")),
+        staticmethod(lambda _cid: ("customer@example.com", 'Pat <b>Customer</b>')),
     )
 
     class _Result:
@@ -111,17 +111,57 @@ def test_email_customer_settlement_approval_uses_template(monkeypatch):
     )
 
     assert record["sent"] is True
-    assert captured["request"].template_id == "settlement_approval"
     assert captured["request"].recipient == "customer@example.com"
-    assert captured["request"].template_vars["approval_url"].startswith(
-        "https://www.phins.ai/"
-    )
+    assert "https://www.phins.ai/" in captured["request"].content
+    assert "<script>" in captured["request"].content  # plain body keeps raw text
+    assert captured["request"].html_content
+    assert "<script>" not in captured["request"].html_content
+    assert "&lt;script&gt;" in captured["request"].html_content
+    assert "&lt;b&gt;Customer&lt;/b&gt;" in captured["request"].html_content
     assert order["settlement_email_log"][-1]["sent"] is True
+
+
+def test_mint_false_does_not_invent_token_for_code_only_row():
+    from services.supply_chain_ecosystem_service import SupplyChainEcosystemService
+
+    svc = SupplyChainEcosystemService()
+    order = {
+        "id": "ORD-CODE-ONLY",
+        "settlement_code": "SET-ONLYCODE",
+    }
+    artifacts = svc._ensure_settlement_artifacts(order, mint=False)
+    assert artifacts["settlement_qr_token"] == ""
+    assert order.get("settlement_qr_token") in (None, "")
+    assert artifacts["settlement_code"] == "SET-ONLYCODE"
+
+
+def test_recover_token_from_stored_railway_url(monkeypatch):
+    from services.supply_chain_ecosystem_service import SupplyChainEcosystemService
+
+    monkeypatch.setenv("PHINS_TEST_MODE", "false")
+    monkeypatch.setenv("BASE_URL", "https://phins-portal-production.up.railway.app")
+    monkeypatch.delenv("WEBHOOK_BASE_URL", raising=False)
+    monkeypatch.delenv("TEST_BASE_URL", raising=False)
+
+    svc = SupplyChainEcosystemService()
+    order = {
+        "id": "ORD-RECOVER-1",
+        "settlement_code": "SET-RECOVER1",
+        "settlement_approval_url": (
+            "https://phins-portal-production.up.railway.app/settlement-approval.html"
+            "?order_id=ORD-RECOVER-1&token=old_token_value"
+        ),
+    }
+    artifacts = svc._ensure_settlement_artifacts(order, mint=False)
+    assert artifacts["settlement_qr_token"] == "old_token_value"
+    assert "token=old_token_value" in artifacts["settlement_approval_url"]
+    assert artifacts["settlement_approval_url"].startswith("https://www.phins.ai/")
 
 
 def test_request_settlement_approval_url_is_phins_origin(monkeypatch):
     """request-settlement / Show QR must not emit a Railway approval URL."""
     from services.supply_chain_ecosystem_service import SupplyChainEcosystemService
+    import pytest
 
     monkeypatch.setenv("PHINS_TEST_MODE", "false")
     monkeypatch.setenv(
@@ -166,6 +206,9 @@ def test_request_settlement_approval_url_is_phins_origin(monkeypatch):
         lambda *a, **k: None,
     )
 
+    with pytest.raises(ValueError, match="Request approval first"):
+        svc.share_settlement_qr(order_id=order_id, actor="supplier-demo")
+
     result = svc.request_settlement_release(
         order_id=order_id,
         actor="supplier-demo",
@@ -175,7 +218,10 @@ def test_request_settlement_approval_url_is_phins_origin(monkeypatch):
     url = result["settlement_approval_url"]
     assert "railway.app" not in url
     assert url.startswith("https://www.phins.ai/settlement-approval.html")
-    assert result["order"]["settlement_status"] == "awaiting_customer_approval"
+    assert result["order"].get("settlement_status") == "awaiting_customer_approval"
+    assert "settlement_qr_token" not in result
+    assert result["order"].get("settlement_qr_token") is None
+    assert svc.orders[order_id]["settlement_status"] == "awaiting_customer_approval"
 
     shared = svc.share_settlement_qr(order_id=order_id, actor="supplier-demo")
     assert shared["success"] is True
@@ -183,3 +229,5 @@ def test_request_settlement_approval_url_is_phins_origin(monkeypatch):
     assert shared["settlement_approval_url"].startswith(
         "https://www.phins.ai/settlement-approval.html"
     )
+    assert "settlement_qr_token" not in shared
+    assert "settlement_qr_token" not in (shared.get("order") or {})
