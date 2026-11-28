@@ -233,6 +233,8 @@
       height: 12px;
       border-radius: 50%;
     }
+    /* Supplier Details / invitation modal — opaque PHINS letterhead sheet.
+       (Previously used undefined --bg-card, so the panel was transparent.) */
     .modal {
       display: none;
       position: fixed;
@@ -240,61 +242,191 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(0,0,0,0.5);
-      z-index: 1000;
+      background: rgba(6, 13, 31, 0.72);
+      z-index: 3200;
       align-items: center;
       justify-content: center;
+      padding: 16px;
+      box-sizing: border-box;
     }
     .modal.active {
       display: flex;
     }
-    .modal-content {
-      background: var(--bg-card);
-      border-radius: 12px;
-      padding: 24px;
-      max-width: 600px;
-      width: 90%;
-      max-height: 80vh;
-      overflow-y: auto;
-    }
-    .modal-header {
+    .modal-content.supplier-detail-doc {
+      background: #ffffff;
+      color: #12284c;
+      border-radius: 16px;
+      padding: 0;
+      max-width: 720px;
+      width: min(720px, 100%);
+      max-height: min(88vh, 900px);
+      overflow: hidden;
       display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
+      flex-direction: column;
+      box-shadow: 0 24px 60px rgba(2, 8, 23, 0.45);
+      border: 1px solid rgba(127, 178, 255, 0.16);
     }
-    .modal-header h3 {
+    .supplier-detail-banner {
+      background: linear-gradient(135deg, #060d1f 0%, #0e2f63 46%, #123f82 100%);
+      color: #fff;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .supplier-detail-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .supplier-detail-brand img {
+      width: 44px;
+      height: 44px;
+      display: block;
+      flex: 0 0 44px;
+      filter: drop-shadow(0 4px 14px rgba(79, 216, 255, 0.3));
+    }
+    .supplier-detail-wordmark {
+      font-family: "Space Grotesk", Inter, sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      font-size: 1.05rem;
+      line-height: 1.2;
+    }
+    .supplier-detail-tagline {
+      font-size: 0.7rem;
+      letter-spacing: 0.03em;
+      opacity: 0.84;
+      margin-top: 2px;
+    }
+    .supplier-detail-kicker {
+      text-align: right;
+      font-family: "Space Grotesk", Inter, sans-serif;
+      font-weight: 600;
+      font-size: 0.95rem;
+      flex: 1;
+      min-width: 0;
+    }
+    .supplier-detail-kicker #modal-title {
+      display: block;
+      margin-top: 2px;
+      font-weight: 400;
+      font-size: 0.78rem;
+      opacity: 0.82;
+      font-family: Inter, "Segoe UI", sans-serif;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .supplier-detail-gold {
+      height: 4px;
+      flex-shrink: 0;
+      background: linear-gradient(90deg, #b8893b 0%, #f7e2a0 42%, #e3bf6f 100%);
+    }
+    .supplier-detail-scroll {
+      overflow-y: auto;
+      flex: 1 1 auto;
+      min-height: 0;
+      background: #ffffff;
+      -webkit-overflow-scrolling: touch;
+    }
+    .supplier-detail-body {
+      padding: 22px 24px 8px;
+      background: #ffffff;
+      color: #12284c;
+    }
+    .supplier-detail-actions {
       margin: 0;
+      padding: 14px 24px 18px;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+      background: #ffffff;
+      border-top: 1px solid #d5deea;
     }
     .modal-close {
-      background: none;
-      border: none;
-      font-size: 1.5rem;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(227, 191, 111, 0.45);
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      font-size: 1.35rem;
+      line-height: 1;
       cursor: pointer;
-      color: var(--text-muted);
+      color: #f7e2a0;
+      flex: 0 0 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+    .modal-close:hover {
+      background: rgba(247, 226, 160, 0.18);
+    }
+    .supplier-detail-section {
+      margin: 0 0 18px;
+    }
+    .supplier-detail-section + .supplier-detail-section {
+      border-top: 1px solid #d5deea;
+      padding-top: 16px;
+    }
+    .supplier-detail-section h4 {
+      margin: 0 0 12px;
+      font-family: "Space Grotesk", Inter, sans-serif;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #0e2f63;
+      letter-spacing: 0.02em;
     }
     .detail-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 16px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
     }
     .detail-item {
-      margin-bottom: 12px;
+      margin: 0;
+      background: #f3f7fd;
+      border: 1px solid #d5deea;
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+    .detail-item.span-all {
+      grid-column: 1 / -1;
     }
     .detail-item .label {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      margin-bottom: 4px;
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #5b6b82;
+      margin-bottom: 6px;
+      font-weight: 600;
     }
     .detail-item .value {
       font-weight: 500;
+      color: #12284c;
+      font-size: 0.95rem;
+      word-break: break-word;
+      line-height: 1.45;
+    }
+    .detail-item .value a {
+      color: #123f82;
+      font-weight: 600;
+    }
+    .detail-item .value small {
+      color: #5b6b82;
+      font-size: 0.85rem;
     }
     .score-bar {
       height: 8px;
-      background: var(--bg);
+      background: #e5e7eb;
       border-radius: 4px;
       overflow: hidden;
-      margin-top: 4px;
+      margin-top: 8px;
     }
     .score-bar-fill {
       height: 100%;
@@ -309,6 +441,48 @@
     .score-bar-fill.low {
       background: #ef4444;
     }
+    .supplier-invite-form label {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #5b6b82;
+    }
+    .supplier-invite-form input,
+    .supplier-invite-form select,
+    .supplier-invite-form textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d5deea;
+      border-radius: 8px;
+      background: #fff;
+      color: #12284c;
+      font: inherit;
+      box-sizing: border-box;
+    }
+    .supplier-invite-form input:focus,
+    .supplier-invite-form select:focus,
+    .supplier-invite-form textarea:focus {
+      outline: 2px solid rgba(14, 47, 99, 0.25);
+      border-color: #0e2f63;
+    }
+    .supplier-invite-result {
+      margin-top: 16px;
+      background: #f3f7fd;
+      border: 1px solid #d5deea;
+      border-left: 4px solid #c9a04e;
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .supplier-invite-result .code {
+      font-family: ui-monospace, monospace;
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #0e2f63;
+      letter-spacing: 0.04em;
+    }
     @media (max-width: 1024px) {
       .dashboard-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -320,6 +494,17 @@
       }
       .tabs {
         overflow-x: auto;
+      }
+      .detail-grid {
+        grid-template-columns: 1fr;
+      }
+      .supplier-detail-banner {
+        flex-wrap: wrap;
+      }
+      .supplier-detail-kicker {
+        text-align: left;
+        order: 3;
+        flex: 1 1 100%;
       }
     }
   </style>
@@ -789,18 +974,31 @@
       </div>
     </div>
 
-    <!-- Supplier Detail Modal -->
-  <div class="modal" id="supplier-modal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3>Supplier Details</h3>
-        <button class="modal-close" onclick="closeModal()">&times;</button>
+    <!-- Supplier Detail Modal (PHINS letterhead sheet) -->
+  <div class="modal" id="supplier-modal" role="dialog" aria-modal="true" aria-labelledby="modal-kicker">
+    <div class="modal-content supplier-detail-doc">
+      <header class="supplier-detail-banner">
+        <div class="supplier-detail-brand">
+          <img src="/phins-logo.svg" alt="PHINS emblem">
+          <div>
+            <div class="supplier-detail-wordmark">PHINS</div>
+            <div class="supplier-detail-tagline">Personal Health Insurance &amp; Savings</div>
+          </div>
+        </div>
+        <div class="supplier-detail-kicker">
+          <span id="modal-kicker">Supplier Desk</span>
+          <span id="modal-title">Supplier Details</span>
+        </div>
+        <button type="button" class="modal-close" onclick="closeModal()" aria-label="Close">&times;</button>
+      </header>
+      <div class="supplier-detail-gold" aria-hidden="true"></div>
+      <div class="supplier-detail-scroll">
+        <div class="supplier-detail-body" id="modal-body">
+          <!-- Populated dynamically -->
+        </div>
       </div>
-      <div id="modal-body">
-        <!-- Populated dynamically -->
-      </div>
-      <div style="margin-top:24px; display:flex; gap:8px; justify-content:flex-end;" id="modal-actions">
-        <!-- Action buttons -->
+      <div class="supplier-detail-actions" id="modal-actions">
+        <!-- Action buttons stay pinned below the scroll pane -->
       </div>
     </div>
   </div>
@@ -1245,6 +1443,37 @@
       }
     }
 
+    function setSupplierModalTitle(kicker, title) {
+      const kickerEl = document.getElementById('modal-kicker');
+      const titleEl = document.getElementById('modal-title');
+      if (kickerEl) kickerEl.textContent = kicker || 'Supplier Desk';
+      if (titleEl) titleEl.textContent = title || 'Supplier Details';
+    }
+
+    function formatSupplierAddress(supplier) {
+      const parts = [
+        supplier.address,
+        supplier.city,
+        supplier.state,
+        supplier.postal_code,
+        supplier.country
+      ].filter(Boolean).map(esc);
+      return parts.length ? parts.join(', ') : 'N/A';
+    }
+
+    function pctScore(value) {
+      return ((parseFloat(value) || 0) * 100).toFixed(0);
+    }
+
+    // Supply-chain book stores commission as percent points (11); the legacy
+    // supplier service stores a 0–1 fraction. Show the true percent either way.
+    function formatCommissionPct(rate) {
+      const n = parseFloat(rate);
+      if (!Number.isFinite(n) || n < 0) return '0';
+      const pct = (n > 0 && n <= 1) ? (n * 100) : n;
+      return Number.isInteger(pct) ? String(pct) : pct.toFixed(1);
+    }
+
     // Supplier Actions
     async function viewSupplier(id) {
       try {
@@ -1252,110 +1481,123 @@
         const modal = document.getElementById('supplier-modal');
         const body = document.getElementById('modal-body');
         const actions = document.getElementById('modal-actions');
-        
+        const trust = parseFloat(supplier.ai_trust_score) || 0;
+        const risk = parseFloat(supplier.ai_risk_score) || 0;
+        const commission = parseFloat(supplier.commission_rate) || 0;
+        const recommendation = (supplier.ai_recommendation || 'review').toLowerCase();
+        const status = (supplier.status || '').toLowerCase();
+
+        setSupplierModalTitle(
+          supplier.company_name || 'Supplier',
+          'Supplier Details'
+        );
+
         body.innerHTML = `
-          <div class="detail-grid">
-            <div class="detail-item">
-              <div class="label">Company Name</div>
-              <div class="value">${esc(supplier.company_name)}</div>
-            </div>
-            <div class="detail-item">
-              <div class="label">Supplier Type</div>
-              <div class="value">${formatSupplierType(supplier.supplier_type)}</div>
-            </div>
-            <div class="detail-item">
-              <div class="label">Contact</div>
-              <div class="value">${esc(supplier.contact_name)}<br><small>${esc(supplier.contact_email)}</small></div>
-            </div>
-            <div class="detail-item">
-              <div class="label">Phone</div>
-              <div class="value">${esc(supplier.contact_phone) || 'N/A'}</div>
-            </div>
-            <div class="detail-item">
-              <div class="label">Website</div>
-              <div class="value">${supplier.website ? `<a href="${esc(supplier.website)}" target="_blank">${esc(supplier.website)}</a>` : 'N/A'}</div>
-            </div>
-            <div class="detail-item">
-              <div class="label">Status</div>
-              <div class="value"><span class="status-badge ${supplier.status}">${(supplier.status || '').toUpperCase()}</span></div>
-            </div>
-          </div>
-          
-          <hr style="margin:16px 0;border:none;border-top:1px solid var(--border)">
-          
-          <h4 style="margin-bottom:12px">AI Risk Assessment</h4>
-          <div class="detail-grid">
-            <div class="detail-item">
-              <div class="label">Trust Score</div>
-              <div class="value">${((supplier.ai_trust_score || 0) * 100).toFixed(0)}%</div>
-              <div class="score-bar">
-                <div class="score-bar-fill ${(supplier.ai_trust_score || 0) > 0.7 ? 'high' : (supplier.ai_trust_score || 0) > 0.4 ? 'medium' : 'low'}" 
-                     style="width:${(supplier.ai_trust_score || 0) * 100}%"></div>
+          <section class="supplier-detail-section" aria-label="Profile">
+            <h4>Profile</h4>
+            <div class="detail-grid">
+              <div class="detail-item">
+                <div class="label">Company Name</div>
+                <div class="value">${esc(supplier.company_name)}</div>
+              </div>
+              <div class="detail-item">
+                <div class="label">Supplier Type</div>
+                <div class="value">${esc(formatSupplierType(supplier.supplier_type))}</div>
+              </div>
+              <div class="detail-item">
+                <div class="label">Contact</div>
+                <div class="value">${esc(supplier.contact_name)}<br><small>${esc(supplier.contact_email)}</small></div>
+              </div>
+              <div class="detail-item">
+                <div class="label">Phone</div>
+                <div class="value">${esc(supplier.contact_phone) || 'N/A'}</div>
+              </div>
+              <div class="detail-item">
+                <div class="label">Website</div>
+                <div class="value">${supplier.website ? `<a href="${esc(supplier.website)}" target="_blank" rel="noopener noreferrer">${esc(supplier.website)}</a>` : 'N/A'}</div>
+              </div>
+              <div class="detail-item">
+                <div class="label">Status</div>
+                <div class="value"><span class="status-badge ${esc(status)}">${esc((supplier.status || '').toUpperCase())}</span></div>
               </div>
             </div>
-            <div class="detail-item">
-              <div class="label">Risk Score</div>
-              <div class="value">${((supplier.ai_risk_score || 0) * 100).toFixed(0)}%</div>
-              <div class="score-bar">
-                <div class="score-bar-fill ${(supplier.ai_risk_score || 0) < 0.3 ? 'high' : (supplier.ai_risk_score || 0) < 0.6 ? 'medium' : 'low'}" 
-                     style="width:${(supplier.ai_risk_score || 0) * 100}%"></div>
+          </section>
+
+          <section class="supplier-detail-section" aria-label="AI Risk Assessment">
+            <h4>AI Risk Assessment</h4>
+            <div class="detail-grid">
+              <div class="detail-item">
+                <div class="label">Trust Score</div>
+                <div class="value">${pctScore(trust)}%</div>
+                <div class="score-bar">
+                  <div class="score-bar-fill ${trust > 0.7 ? 'high' : trust > 0.4 ? 'medium' : 'low'}"
+                       style="width:${Math.max(0, Math.min(100, trust * 100))}%"></div>
+                </div>
+              </div>
+              <div class="detail-item">
+                <div class="label">Risk Score</div>
+                <div class="value">${pctScore(risk)}%</div>
+                <div class="score-bar">
+                  <div class="score-bar-fill ${risk < 0.3 ? 'high' : risk < 0.6 ? 'medium' : 'low'}"
+                       style="width:${Math.max(0, Math.min(100, risk * 100))}%"></div>
+                </div>
+              </div>
+              <div class="detail-item">
+                <div class="label">AI Recommendation</div>
+                <div class="value">
+                  <span class="ai-badge ${esc(recommendation)}">
+                    ${esc(recommendation.toUpperCase())}
+                  </span>
+                </div>
+              </div>
+              <div class="detail-item">
+                <div class="label">Commission Rate</div>
+                <div class="value">${esc(formatCommissionPct(commission))}%</div>
               </div>
             </div>
-            <div class="detail-item">
-              <div class="label">AI Recommendation</div>
-              <div class="value">
-                <span class="ai-badge ${supplier.ai_recommendation || 'review'}">
-                  ${(supplier.ai_recommendation || 'review').toUpperCase()}
-                </span>
+          </section>
+
+          <section class="supplier-detail-section" aria-label="Business Details">
+            <h4>Business Details</h4>
+            <div class="detail-grid">
+              <div class="detail-item">
+                <div class="label">Business Registration</div>
+                <div class="value">${esc(supplier.business_registration_number) || 'Not provided'}</div>
+              </div>
+              <div class="detail-item">
+                <div class="label">License Number</div>
+                <div class="value">${esc(supplier.license_number) || 'Not provided'}</div>
+              </div>
+              <div class="detail-item span-all">
+                <div class="label">Description</div>
+                <div class="value">${esc(supplier.description) || 'No description provided'}</div>
+              </div>
+              <div class="detail-item span-all">
+                <div class="label">Address</div>
+                <div class="value">${formatSupplierAddress(supplier)}</div>
               </div>
             </div>
-            <div class="detail-item">
-              <div class="label">Commission Rate</div>
-              <div class="value">${((supplier.commission_rate || 0) * 100).toFixed(0)}%</div>
-            </div>
-          </div>
-          
-          <hr style="margin:16px 0;border:none;border-top:1px solid var(--border)">
-          
-          <h4 style="margin-bottom:12px">Business Details</h4>
-          <div class="detail-grid">
-            <div class="detail-item">
-              <div class="label">Business Registration</div>
-              <div class="value">${esc(supplier.business_registration_number) || 'Not provided'}</div>
-            </div>
-            <div class="detail-item">
-              <div class="label">License Number</div>
-              <div class="value">${esc(supplier.license_number) || 'Not provided'}</div>
-            </div>
-            <div class="detail-item" style="grid-column:1/-1">
-              <div class="label">Description</div>
-              <div class="value">${esc(supplier.description) || 'No description provided'}</div>
-            </div>
-            <div class="detail-item" style="grid-column:1/-1">
-              <div class="label">Address</div>
-              <div class="value">${[supplier.address, supplier.city, supplier.state, supplier.postal_code, supplier.country].filter(Boolean).join(', ') || 'N/A'}</div>
-            </div>
-          </div>
+          </section>
         `;
-        
-        // Action buttons based on status
-        if (supplier.status === 'pending' || supplier.status === 'under_review') {
+
+        // Action buttons based on status — same transitions as before
+        if (status === 'pending' || status === 'under_review') {
           actions.innerHTML = `
-            <button class="btn-sm btn-approve" onclick="approveSupplier('${esc(supplier.id)}'); closeModal();">Approve</button>
-            <button class="btn-sm btn-reject" onclick="rejectSupplier('${esc(supplier.id)}'); closeModal();">Reject</button>
+            <button type="button" class="btn-sm btn-approve" onclick="approveSupplier('${esc(supplier.id)}'); closeModal();">Approve</button>
+            <button type="button" class="btn-sm btn-reject" onclick="rejectSupplier('${esc(supplier.id)}'); closeModal();">Reject</button>
           `;
-        } else if (supplier.status === 'approved') {
+        } else if (status === 'approved') {
           actions.innerHTML = `
-            <button class="btn-sm btn-suspend" onclick="suspendSupplier('${esc(supplier.id)}'); closeModal();">Suspend</button>
+            <button type="button" class="btn-sm btn-suspend" onclick="suspendSupplier('${esc(supplier.id)}'); closeModal();">Suspend</button>
           `;
-        } else if (supplier.status === 'suspended') {
+        } else if (status === 'suspended') {
           actions.innerHTML = `
-            <button class="btn-sm btn-approve" onclick="reactivateSupplier('${esc(supplier.id)}'); closeModal();">Reactivate</button>
+            <button type="button" class="btn-sm btn-approve" onclick="reactivateSupplier('${esc(supplier.id)}'); closeModal();">Reactivate</button>
           `;
         } else {
           actions.innerHTML = '';
         }
-        
+
         modal.classList.add('active');
       } catch (e) {
         alert('Failed to load supplier details: ' + e.message);
@@ -1364,6 +1606,7 @@
 
     function closeModal() {
       document.getElementById('supplier-modal').classList.remove('active');
+      setSupplierModalTitle('Supplier Desk', 'Supplier Details');
     }
 
     async function approveSupplier(id) {
@@ -1465,54 +1708,57 @@
       const modal = document.getElementById('supplier-modal');
       const body = document.getElementById('modal-body');
       const actions = document.getElementById('modal-actions');
-      document.querySelector('#supplier-modal .modal-header h3').textContent = 'Generate Invitation Code';
-      
+      setSupplierModalTitle('Supplier Desk', 'Generate Invitation Code');
+
       body.innerHTML = `
-        <div style="display:grid; gap:16px;">
-          <div>
-            <label style="display:block;margin-bottom:4px;">Supplier Type Restriction (optional)</label>
-            <select id="invite-type" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;">
-              <option value="">Any Type</option>
-              <option value="doctor">Doctor</option>
-              <option value="lawyer">Lawyer</option>
-              <option value="pharmacy">Pharmacy</option>
-              <option value="delivery">Delivery</option>
-              <option value="hospital">Hospital</option>
-              <option value="clinic">Clinic</option>
-              <option value="laboratory">Laboratory</option>
-              <option value="equipment">Equipment</option>
-              <option value="wellness">Wellness</option>
-              <option value="financial">Financial</option>
-              <option value="tech_provider">Tech Provider</option>
-            </select>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <section class="supplier-detail-section supplier-invite-form" aria-label="Invitation fields">
+          <h4>Invitation</h4>
+          <div style="display:grid; gap:16px;">
             <div>
-              <label style="display:block;margin-bottom:4px;">Max Uses</label>
-              <input type="number" id="invite-max-uses" value="1" min="1" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;">
+              <label for="invite-type">Supplier Type Restriction (optional)</label>
+              <select id="invite-type">
+                <option value="">Any Type</option>
+                <option value="doctor">Doctor</option>
+                <option value="lawyer">Lawyer</option>
+                <option value="pharmacy">Pharmacy</option>
+                <option value="delivery">Delivery</option>
+                <option value="hospital">Hospital</option>
+                <option value="clinic">Clinic</option>
+                <option value="laboratory">Laboratory</option>
+                <option value="equipment">Equipment</option>
+                <option value="wellness">Wellness</option>
+                <option value="financial">Financial</option>
+                <option value="tech_provider">Tech Provider</option>
+              </select>
+            </div>
+            <div class="detail-grid">
+              <div>
+                <label for="invite-max-uses">Max Uses</label>
+                <input type="number" id="invite-max-uses" value="1" min="1">
+              </div>
+              <div>
+                <label for="invite-expires">Expires In (days)</label>
+                <input type="number" id="invite-expires" value="30" min="1">
+              </div>
             </div>
             <div>
-              <label style="display:block;margin-bottom:4px;">Expires In (days)</label>
-              <input type="number" id="invite-expires" value="30" min="1" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;">
+              <label for="invite-commission">Commission Override % (optional)</label>
+              <input type="number" id="invite-commission" placeholder="e.g., 8 (leave empty for default)" step="0.5">
+            </div>
+            <div>
+              <label for="invite-notes">Notes (optional)</label>
+              <textarea id="invite-notes" rows="2"></textarea>
             </div>
           </div>
-          <div>
-            <label style="display:block;margin-bottom:4px;">Commission Override % (optional)</label>
-            <input type="number" id="invite-commission" placeholder="e.g., 8 (leave empty for default)" step="0.5" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;">
-          </div>
-          <div>
-            <label style="display:block;margin-bottom:4px;">Notes (optional)</label>
-            <textarea id="invite-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px;"></textarea>
-          </div>
-        </div>
-        <div id="invite-result" style="margin-top:16px;display:none;"></div>
+          <div id="invite-result" style="display:none;"></div>
+        </section>
       `;
-      
+
       actions.innerHTML = `
-        <button class="btn" onclick="generateInvitation()" style="background:#3b82f6;color:white;">Generate Code</button>
-        <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+        <button type="button" class="btn-sm btn-review" onclick="generateInvitation()">Generate Code</button>
+        <button type="button" class="btn btn-outline" onclick="closeModal()">Cancel</button>
       `;
-      
+
       modal.classList.add('active');
     }
     
@@ -1532,19 +1778,21 @@
         
         const response = await apiPost('/api/supply-chain/invitations', data);
         
+        result.className = 'supplier-invite-result';
         result.innerHTML = `
-          <div style="background:#d1fae5;padding:16px;border-radius:8px;text-align:center;">
-            <div style="font-size:0.9rem;color:#065f46;margin-bottom:8px;">Invitation Code Generated</div>
-            <div style="font-size:1.5rem;font-weight:bold;font-family:monospace;color:#065f46;">${esc(response.invitation.code)}</div>
-            <button onclick="copyCode('${esc(response.invitation.code)}')" style="margin-top:12px;padding:8px 16px;background:#10b981;color:white;border:none;border-radius:4px;cursor:pointer;">
+          <div style="text-align:center;">
+            <div class="label" style="margin-bottom:8px;color:#0f6b45;">Invitation Code Generated</div>
+            <div class="code">${esc(response.invitation.code)}</div>
+            <button type="button" class="btn-sm btn-approve" onclick="copyCode('${esc(response.invitation.code)}')" style="margin-top:12px;">
               Copy to Clipboard
             </button>
           </div>
         `;
-        
+
         refreshInvitations();
       } catch (e) {
-        result.innerHTML = `<div style="background:#fee2e2;padding:12px;border-radius:4px;color:#991b1b;">Error: ${esc(e.message)}</div>`;
+        result.className = 'supplier-invite-result';
+        result.innerHTML = `<div style="color:#9b2c2c;">Error: ${esc(e.message)}</div>`;
       }
     }
     
