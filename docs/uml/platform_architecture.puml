@@ -1,0 +1,102 @@
+@startuml
+title PHINS Platform — Architectural Structure (Component Sketch)
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam wrapWidth 260
+skinparam maxMessageSize 220
+
+legend left
+  This is a sketch of the CURRENT repo structure.
+  - Web/API is dependency-free (stdlib http.server)
+  - Persistence is optional (USE_DATABASE=1) with DB-backed dict wrappers
+  - Domain logic lives in services/ and standalone engines/*.py
+endlegend
+
+package "Client / UI" {
+  [Browser\n(Admin + Customer Portals)\nweb_portal/static/*.html|*.js|*.css] as UI
+}
+
+package "Web Runtime (API + Static File Server)" {
+  [HTTP Server\nThreadingHTTPServer + BaseHTTPRequestHandler\nweb_portal/server.py] as WEB
+  [In-process Operational State\nsessions, rate-limit, security counters\n(dicts guarded by STATE_LOCK)] as OPS
+}
+
+package "Domain Services (Application Layer)" {
+  [PolicyService\nservices/policy_service.py] as SVC_POLICY
+  [UnderwritingService\nservices/underwriting_service.py] as SVC_UW
+  [ClaimsService\nservices/claims_service.py] as SVC_CLAIMS
+  [BillingService\nservices/billing_service.py] as SVC_BILLING
+  [AuditService\nservices/audit_service.py] as SVC_AUDIT
+  [MetricsService\nservices/metrics_service.py] as SVC_METRICS
+  [MarketDataService (optional)\nservices/market_data_service.py] as SVC_MKT
+}
+
+package "Automation + Engines (Decisioning/Rules)" {
+  [AI Automation Controller\nai_automation_controller.py] as AI_CTRL
+  [Underwriting Assistant\nunderwriting_assistant.py] as UW_ASST
+  [Billing Engine\nbilling_engine.py] as BILL_ENG
+  [Accounting Engine\naccounting_engine.py] as ACCT_ENG
+  [Customer Validation\ncustomer_validation.py] as CUST_VAL
+}
+
+package "Persistence Layer" {
+  [DB-backed dict adapters\n(database/data_access.py)\nDatabaseDict wrappers] as DB_DICT
+  [DatabaseManager\n(database/manager.py)\nUnit-of-Work + repositories] as DB_MGR
+  [Repositories\n(database/repositories/*_repository.py)] as REPOS
+  [ORM Models\n(database/models.py)\nSQLAlchemy schema] as MODELS
+  [Secrets/Vault (optional)\nsecurity/vault.py\nencrypt_json / decrypt_json] as VAULT
+}
+
+database "System of Record (OLTP)\nSQLite (dev) / Postgres (prod)" as OLTP
+
+cloud "External/Upstream (optional)" {
+  [Market Data Providers\n(crypto/index feeds)] as EXT_MKT
+}
+
+UI --> WEB : HTTP(S)\nJSON API + static assets
+
+WEB --> OPS : read/write\nsessions/rate-limits\n(shared state)
+
+WEB --> SVC_POLICY
+WEB --> SVC_UW
+WEB --> SVC_CLAIMS
+WEB --> SVC_BILLING
+WEB --> SVC_AUDIT : app/security/audit events
+WEB --> SVC_METRICS
+WEB --> SVC_MKT : quotes/pricing context
+
+SVC_UW --> AI_CTRL : automation workflows\n(quote/underwrite/claims)
+AI_CTRL --> UW_ASST : underwriting analysis
+SVC_BILLING --> BILL_ENG : invoices/reconciliation
+SVC_BILLING --> ACCT_ENG : ledger postings\n(reporting)
+SVC_POLICY --> CUST_VAL : data checks
+
+WEB --> DB_DICT : when USE_DATABASE=1\n(compat dict interface)
+DB_DICT --> DB_MGR
+DB_MGR --> REPOS
+REPOS --> MODELS
+MODELS --> OLTP
+
+SVC_AUDIT ..> OLTP : persisted audit\n(database/models.py: AuditLog)\n(when wired through repositories)
+
+VAULT ..> MODELS : encrypted payload columns\n(e.g., actuarial_tables.payload)
+SVC_MKT --> EXT_MKT
+
+note right of WEB
+  Demo-grade runtime:
+  - Stateless-ish API surface
+  - Stateful in-process security/session maps
+  - Optional DB persistence via dict wrappers
+end note
+
+note right of OLTP
+  Key tables (current):
+  customers, policies, claims,
+  underwriting_applications, bills,
+  users, sessions, audit_logs,
+  actuarial_tables, token_registry
+end note
+
+@enduml
+
